@@ -1,0 +1,61 @@
+name: atape
+
+services:
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: atape
+      POSTGRES_USER: atape
+      POSTGRES_PASSWORD: ${ATAPE_POSTGRES_PASSWORD:-atape}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atape -d atape"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  server:
+    build:
+      context: .
+      dockerfile: deploy/server.Dockerfile
+    restart: unless-stopped
+    environment:
+      ATAPE_SERVER_ADDRESS: 0.0.0.0:8080
+      ATAPE_DATABASE_URL: postgres://atape:${ATAPE_POSTGRES_PASSWORD:-atape}@database:5432/atape?sslmode=disable
+      ATAPE_RAW_DIRECTORY: /var/lib/atape/raw
+      ATAPE_DEMO_MODE: "false"
+    volumes:
+      - raw-data:/var/lib/atape/raw
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${ATAPE_BIND_ADDRESS:-127.0.0.1}:${ATAPE_PORT:-8080}:8080"
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  postgres-data:
+  raw-data:

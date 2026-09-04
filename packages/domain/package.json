@@ -1,0 +1,21 @@
+{
+  "name": "@atape/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.4.0",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

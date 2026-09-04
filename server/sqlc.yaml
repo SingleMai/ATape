@@ -1,0 +1,17 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "internal/adapters/postgres/migrations"
+    queries: "internal/adapters/postgres/queries"
+    gen:
+      go:
+        package: "db"
+        out: "internal/adapters/postgres/internal/db"
+        sql_package: "pgx/v5"
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"

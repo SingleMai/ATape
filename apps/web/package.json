@@ -1,0 +1,30 @@
+{
+  "name": "@atape/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && vite build",
+    "dev": "vite",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@atape/application": "workspace:*",
+    "@atape/domain": "workspace:*",
+    "@atape/ui": "workspace:*",
+    "@effect/atom-react": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "effect": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:build",
+    "@types/react-dom": "catalog:build",
+    "@vitejs/plugin-react": "catalog:build",
+    "typescript": "catalog:build",
+    "vite": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

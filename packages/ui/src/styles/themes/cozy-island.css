@@ -1,0 +1,79 @@
+:root,
+[data-atape-theme="cozy-island"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --atape-color-canvas: #eef7e8;
+  --atape-color-navigation: #d8f3ec;
+  --atape-color-panel: #fffaf0;
+  --atape-color-paper: #fffdf7;
+  --atape-color-surface-muted: #f5efdf;
+  --atape-color-paper-translucent: rgba(255, 253, 247, 0.86);
+
+  /* Content and structure */
+  --atape-color-text: #5b4533;
+  --atape-color-text-muted: #786753;
+  --atape-color-border: #d6c6a6;
+  --atape-color-border-soft: #e9dfc9;
+  --atape-color-navigation-border: #abd6ca;
+
+  /* Brand and interaction */
+  --atape-color-accent: #237f70;
+  --atape-color-accent-strong: #1d665b;
+  --atape-color-accent-bright: #54c8ad;
+  --atape-color-accent-soft: #d9f2e8;
+  --atape-color-on-accent: #493b2c;
+  --atape-color-focus: #e8b900;
+
+  /* Island accents */
+  --atape-color-yellow: #f4cc61;
+  --atape-color-yellow-soft: #fff1b9;
+  --atape-color-yellow-border: #ddc875;
+  --atape-color-coral: #e88f78;
+  --atape-color-blue: #8fc7dc;
+  --atape-color-lavender: #e5def7;
+  --atape-color-lavender-border: #b6a5df;
+  --atape-color-green: #8fc98d;
+
+  /* Semantic states */
+  --atape-color-success: #4f9e59;
+  --atape-color-success-text: #316b3c;
+  --atape-color-success-soft: #dbefd9;
+  --atape-color-warning: #9a661e;
+  --atape-color-warning-text: #70440a;
+  --atape-color-warning-soft: #fff1b9;
+  --atape-color-danger: #a84e45;
+  --atape-color-danger-text: #7e332c;
+  --atape-color-danger-soft: #f6deda;
+  --atape-color-code: #372b23;
+  --atape-color-code-text: #f2e6d2;
+
+  /* Typography */
+  --atape-font-sans: Nunito, "Noto Sans SC", ui-rounded, "Avenir Next", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --atape-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  /* Geometry */
+  --atape-radius-sm: 14px;
+  --atape-radius-md: 20px;
+  --atape-radius-lg: 28px;
+  --atape-radius-pill: 999px;
+
+  /* Spacing */
+  --atape-space-1: 4px;
+  --atape-space-2: 8px;
+  --atape-space-3: 12px;
+  --atape-space-4: 16px;
+  --atape-space-6: 24px;
+  --atape-space-8: 32px;
+  --atape-space-12: 48px;
+  --atape-space-16: 64px;
+
+  /* Depth and motion */
+  --atape-shadow-resting: 0 2px 5px rgba(91, 69, 51, 0.05);
+  --atape-shadow-raised: 0 10px 28px rgba(91, 69, 51, 0.1);
+  --atape-shadow-control: 0 4px 9px rgba(91, 69, 51, 0.11);
+  --atape-duration-fast: 150ms;
+  --atape-duration-normal: 200ms;
+  --atape-duration-page: 300ms;
+  --atape-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@atape/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles/index.css",
+    "./theme/cozy-island.css": "./src/styles/themes/cozy-island.css"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:build",
+    "@types/react-dom": "catalog:build",
+    "react-dom": "catalog:",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

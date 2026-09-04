@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+.DS_Store
+
+# Local process configuration
+.env
+.env.local
+
+# Go build and test artifacts
+server/bin/
+server/coverage.out

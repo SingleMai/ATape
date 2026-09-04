@@ -1,0 +1,103 @@
+# ATape
+
+ATape is a project-first shared history for coding-agent conversations. It lets a team follow active work, replay prior decisions, and inspect captured subagent threads without changing each member's preferred harness CLI.
+
+The first vertical slices implement **Workspace → Project Memory → Session Reader**, **Keyword Search → Exact Event replay**, and an explicitly opened **Raw source drawer** against a real Go API. The Workspace supports multiple Teams and typed Git-repository or ordinary-directory Projects. Canonical conversation data, Raw source data, and the Search read model use separate APIs and storage paths.
+
+Reusable visual primitives, semantic tokens, and themes live in [`packages/ui`](packages/ui/README.md). Product pages consume that package while keeping their business-specific composition local to the Web app.
+
+## Self-host with Docker
+
+Requirements: Docker Engine and Docker Compose v2.
+
+Start a durable local ATape deployment:
+
+```sh
+docker compose up --build -d
+```
+
+Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). The same URL is the Server address passed to `atape setup`. PostgreSQL metadata and Raw source bytes live in separate named volumes and survive ordinary container recreation.
+
+The defaults bind only to localhost and use a development database password. Copy [`.env.example`](.env.example) to `.env` before changing the port, bind address, or password. ATape v0.1 does not yet provide authentication or TLS; do not bind it publicly unless an authenticating TLS reverse proxy or equivalent trusted-network boundary protects it.
+
+Inspect startup and migration progress with `docker compose logs -f server`, and stop the deployment without deleting retained volumes with:
+
+```sh
+docker compose down
+```
+
+## Run locally
+
+Requirements: Node.js 24+, pnpm 11, and Go 1.24+. PostgreSQL is optional for the seeded UI demo and required for durable Canonical storage.
+
+Install dependencies:
+
+```sh
+pnpm install --frozen-lockfile
+```
+
+Start the Go server with explicitly enabled in-memory demo data:
+
+```sh
+pnpm dev:server
+```
+
+`pnpm dev:server` sets `ATAPE_DEMO_MODE=true`. A direct server process without `ATAPE_DATABASE_URL` otherwise refuses to start, preventing accidental ephemeral production history. To use durable Canonical, Search, and Raw manifest storage, provide a PostgreSQL connection string and an explicit Raw chunk directory; embedded forward migrations complete before the HTTP listener starts:
+
+```sh
+ATAPE_DATABASE_URL='postgres://atape:atape@127.0.0.1:5432/atape?sslmode=disable' \
+ATAPE_RAW_DIRECTORY='/var/lib/atape/raw' \
+pnpm dev:server
+```
+
+A PostgreSQL deployment without `ATAPE_RAW_DIRECTORY` still serves Canonical and Search data, but Raw uploads and byte reads return `503` rather than falling back to process-local storage.
+
+In a second terminal, start the Web app:
+
+```sh
+pnpm dev:web
+```
+
+Open [http://127.0.0.1:4187/](http://127.0.0.1:4187/).
+
+Configure local capture Projects and independently installed Harness Adapters with the Node/Effect CLI:
+
+```sh
+pnpm atape setup --user-id liying --team-id acme-engineering
+pnpm atape adapters install ./adapters/codex
+pnpm atape adapters enable codex --project payments-api
+pnpm atape collect --once
+```
+
+`collect` dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and advances local cursors only after both succeed. Omit `--once` to run every 30 seconds. See the [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+
+## Verify
+
+```sh
+pnpm check
+pnpm build
+```
+
+`pnpm check` includes an isolated cross-process E2E test that starts the real Go server and drives the Node Collector with the Codex Adapter through Canonical ingestion, Search projection, Raw chunking, incremental append, archive finalization, and provider-source deletion. It reuses the workspace Adapter package and does not install anything from npm. Run only that boundary with:
+
+```sh
+pnpm test:e2e
+```
+
+Run the real PostgreSQL Adapter contract and restart-durability suite when Docker is available:
+
+```sh
+pnpm test:go:integration
+```
+
+Regenerate the private pgx query package after changing a migration or query:
+
+```sh
+pnpm generate:sqlc
+```
+
+## Architecture
+
+Read [`docs/architecture/README.md`](docs/architecture/README.md) before changing production code. The Web runtime decision is recorded in [`ADR-0001`](docs/architecture/adr/0001-web-runtime-and-view-stack.md).
+
+The current internal ingestion envelopes are documented in [`docs/api/canonical-ingestion.md`](docs/api/canonical-ingestion.md) and [`docs/api/raw-archive.md`](docs/api/raw-archive.md). Read APIs are documented in [`docs/api/workspace.md`](docs/api/workspace.md) and [`docs/api/project-search.md`](docs/api/project-search.md). Client runtime decisions are recorded in [`ADR-0008`](docs/architecture/adr/0008-node-cli-and-on-demand-adapters.md) and [`ADR-0009`](docs/architecture/adr/0009-pull-adapter-runtime-and-checkpointed-collector.md).

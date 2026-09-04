@@ -1,0 +1,5 @@
+@layer atape.theme, atape.foundation, atape.components;
+
+@import "./themes/cozy-island.css" layer(atape.theme);
+@import "./foundation.css" layer(atape.foundation);
+@import "./primitives.css" layer(atape.components);

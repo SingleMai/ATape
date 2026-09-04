@@ -1,0 +1,1730 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ATape · Project memory prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #eef7e8;
+      --sky: #d8f3ec;
+      --panel: #fffaf0;
+      --paper: #fffdf7;
+      --ink: #5b4533;
+      --muted: #786753;
+      --line: #d6c6a6;
+      --line-soft: #e9dfc9;
+      --soft: #f5efdf;
+      --accent: #237f70;
+      --accent-bright: #54c8ad;
+      --accent-soft: #d9f2e8;
+      --yellow: #f4cc61;
+      --yellow-soft: #fff1b9;
+      --coral-soft: #f7ddd6;
+      --blue-soft: #ddecf3;
+      --lavender-soft: #e8e1f7;
+      --green: #77c978;
+      --green-dark: #4f9e59;
+      --warn: #9a661e;
+      --danger: #a84e45;
+      --code: #372b23;
+      --code-text: #f2e6d2;
+      --focus: #e8b900;
+      --radius-sm: 14px;
+      --radius: 20px;
+      --radius-lg: 28px;
+      --ease: cubic-bezier(.4, 0, .2, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-width: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font: 500 16px/1.55 Nunito, "Noto Sans SC", -apple-system, "PingFang SC", sans-serif;
+      letter-spacing: .01em;
+    }
+
+    button, input, select { font: inherit; color: inherit; }
+    button, [role="button"], summary { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    button { letter-spacing: .02em; }
+
+    button:focus-visible,
+    [role="button"]:focus-visible,
+    summary:focus-visible,
+    a:focus-visible {
+      outline: 3px solid var(--accent-bright);
+      outline-offset: 3px;
+    }
+
+    input:focus-visible,
+    select:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
+
+    .hidden { display: none !important; }
+    .visually-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .skip-link {
+      position: fixed;
+      left: 16px;
+      top: 12px;
+      z-index: 200;
+      padding: 10px 16px;
+      border: 3px solid var(--focus);
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--ink);
+      font-weight: 800;
+      transform: translateY(-150%);
+      transition: transform .18s var(--ease);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr);
+    }
+
+    .workspace-rail {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 22px 16px;
+      border-right: 2px solid #b7d9cf;
+      background: var(--sky);
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+      overflow: hidden;
+      z-index: 20;
+    }
+
+    .workspace-rail::before,
+    .workspace-rail::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .34);
+      pointer-events: none;
+    }
+
+    .workspace-rail::before { width: 130px; height: 130px; right: -58px; top: 16%; }
+    .workspace-rail::after { width: 86px; height: 86px; left: -36px; bottom: 10%; }
+    .workspace-rail > * { position: relative; z-index: 1; }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 2px 8px;
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .brand-mark {
+      width: 40px;
+      height: 32px;
+      border: 2px solid #765d3e;
+      border-radius: 12px 12px 15px 15px;
+      background: var(--yellow);
+      position: relative;
+      transform: rotate(-2deg);
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      top: 7px;
+      width: 8px;
+      height: 8px;
+      border: 2px solid #765d3e;
+      border-radius: 50%;
+      background: var(--paper);
+    }
+
+    .brand-mark::before { left: 7px; }
+    .brand-mark::after { right: 7px; }
+
+    .team-context {
+      min-height: 64px;
+      padding: 11px 14px;
+      border: 2px solid #b8d8ce;
+      border-radius: var(--radius);
+      background: rgba(255, 253, 247, .86);
+      box-shadow: 0 3px 8px rgba(91, 69, 51, .08);
+    }
+
+    .team-context strong { display: block; font-weight: 800; }
+    .team-context span { color: var(--muted); font-size: 13px; }
+
+    .rail-label {
+      margin: 0 12px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .project-list { display: grid; gap: 6px; }
+
+    .project-link {
+      min-height: 46px;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border: 2px solid transparent;
+      border-radius: 16px;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      font-weight: 750;
+      transition: transform .18s var(--ease), background .18s var(--ease), border-color .18s var(--ease);
+    }
+
+    .project-link:hover { transform: translateX(2px); background: rgba(255, 253, 247, .56); }
+    .project-link.active { background: var(--paper); border-color: #b8d8ce; color: var(--accent); }
+    .project-link:disabled { cursor: not-allowed; opacity: .52; }
+
+    .project-icon,
+    .search-icon,
+    .sync-icon,
+    .close-icon,
+    .raw-icon {
+      width: 20px;
+      height: 20px;
+      position: relative;
+      flex: 0 0 auto;
+      color: currentColor;
+    }
+
+    .project-icon::before {
+      content: "";
+      position: absolute;
+      width: 13px;
+      height: 13px;
+      left: 3px;
+      top: 3px;
+      border: 2px solid currentColor;
+      border-radius: 5px 9px 5px 9px;
+      transform: rotate(-7deg);
+    }
+
+    .search-icon::before {
+      content: "";
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      left: 1px;
+      top: 1px;
+      border: 2px solid currentColor;
+      border-radius: 50%;
+    }
+
+    .search-icon::after {
+      content: "";
+      position: absolute;
+      width: 8px;
+      height: 2px;
+      right: 0;
+      bottom: 3px;
+      border-radius: 2px;
+      background: currentColor;
+      transform: rotate(45deg);
+    }
+
+    .sync-icon::before {
+      content: "";
+      position: absolute;
+      inset: 3px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+    }
+
+    .sync-icon::after {
+      content: "";
+      position: absolute;
+      width: 5px;
+      height: 5px;
+      right: 2px;
+      top: 2px;
+      border-right: 2px solid currentColor;
+      border-top: 2px solid currentColor;
+    }
+
+    .close-icon::before,
+    .close-icon::after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 9px;
+      width: 16px;
+      height: 2px;
+      border-radius: 2px;
+      background: currentColor;
+      transform: rotate(45deg);
+    }
+
+    .close-icon::after { transform: rotate(-45deg); }
+
+    .raw-icon::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 1px;
+      width: 12px;
+      height: 16px;
+      border: 2px solid currentColor;
+      border-radius: 4px;
+    }
+
+    .raw-icon::after {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 7px;
+      width: 8px;
+      height: 2px;
+      background: currentColor;
+      box-shadow: 0 4px 0 currentColor;
+    }
+
+    .collector-state {
+      margin-top: auto;
+      padding: 12px 13px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border: 2px dashed #a6cfc3;
+      border-radius: var(--radius-sm);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .product { min-width: 0; position: relative; }
+
+    .product::after {
+      content: "";
+      position: fixed;
+      width: 250px;
+      height: 250px;
+      right: -92px;
+      bottom: -96px;
+      border-radius: 48% 52% 55% 45%;
+      background: rgba(143, 199, 220, .18);
+      transform: rotate(18deg);
+      pointer-events: none;
+    }
+
+    .product-bar {
+      min-height: 72px;
+      padding: 10px clamp(18px, 3vw, 38px);
+      border-bottom: 2px dashed rgba(119, 102, 80, .2);
+      background: rgba(238, 247, 232, .94);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 12;
+    }
+
+    .project-location {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .project-location strong { color: var(--ink); }
+
+    .search-launcher {
+      width: min(480px, 52vw);
+      min-height: 48px;
+      padding: 8px 13px 8px 16px;
+      border: 2px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      box-shadow: 0 3px 0 #cabd9f;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      text-align: left;
+      cursor: text;
+      transition: transform .2s var(--ease), border-color .2s var(--ease), box-shadow .2s var(--ease);
+    }
+
+    .search-launcher:hover { transform: translateY(-1px); border-color: var(--accent-bright); box-shadow: 0 4px 0 #cabd9f; }
+
+    .shortcut {
+      margin-left: auto;
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .page {
+      width: min(1080px, 100%);
+      margin: 0 auto;
+      padding: 38px clamp(18px, 4vw, 48px) 72px;
+      position: relative;
+      z-index: 1;
+      animation: page-in .3s var(--ease) both;
+    }
+
+    .memory-intro {
+      position: relative;
+      overflow: hidden;
+      padding: 25px 27px;
+      border: 2px solid #a9d6c8;
+      border-radius: var(--radius-lg);
+      background: #ccecdf;
+      margin-bottom: 32px;
+    }
+
+    .memory-intro::before,
+    .memory-intro::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .memory-intro::before { width: 140px; height: 140px; right: 90px; top: -82px; background: rgba(255, 253, 247, .58); }
+    .memory-intro::after { width: 76px; height: 76px; right: 35px; bottom: -38px; background: rgba(244, 204, 97, .64); }
+
+    .eyebrow {
+      position: relative;
+      z-index: 1;
+      margin: 0 0 6px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 7px; font-size: clamp(28px, 3vw, 36px); line-height: 1.17; font-weight: 900; text-wrap: balance; }
+    h2 { margin-bottom: 0; font-size: 21px; font-weight: 900; }
+    h3 { font-size: 17px; font-weight: 850; }
+    .muted { color: var(--muted); }
+    .memory-intro h1, .memory-intro p { position: relative; z-index: 1; max-width: 700px; }
+    .memory-intro p { margin-bottom: 0; color: var(--muted); }
+
+    .freshness {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .section-heading {
+      margin: 0 2px 13px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .section-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    .active-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 15px;
+      margin-bottom: 38px;
+    }
+
+    .active-session {
+      min-height: 294px;
+      width: 100%;
+      padding: 20px;
+      border: 2px solid #a8d3c6;
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      transition: transform .22s var(--ease), border-color .22s var(--ease), background .22s var(--ease);
+    }
+
+    .active-session:hover { transform: translateY(-3px); border-color: var(--accent-bright); background: var(--paper); }
+    .active-session:active { transform: translateY(0); }
+
+    .session-owner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 2px solid #99cdbd;
+      border-radius: 45% 55% 51% 49%;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 900;
+      transform: rotate(-3deg);
+      flex: 0 0 auto;
+    }
+
+    .avatar.blue { border-color: #a6cbd9; background: var(--blue-soft); color: #466d7c; }
+    .avatar.yellow { border-color: #e2c56e; background: var(--yellow-soft); color: #755a21; }
+    .owner-copy { min-width: 0; flex: 1; }
+    .owner-copy strong { display: block; font-weight: 850; }
+    .owner-copy span { color: var(--muted); font-size: 13px; }
+
+    .live-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--green-dark);
+      font-size: 12px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    .live-dot {
+      width: 10px;
+      height: 10px;
+      border: 2px solid var(--green-dark);
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 0 3px #dbefd9;
+    }
+
+    .active-session h3 { margin-bottom: 14px; font-size: 19px; line-height: 1.3; }
+    .conversation-peek { display: grid; gap: 7px; margin-bottom: 17px; }
+
+    .peek {
+      max-width: 93%;
+      padding: 9px 11px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      line-height: 1.42;
+    }
+
+    .peek.user { justify-self: end; background: var(--yellow-soft); border: 1.5px solid #e3cb7b; }
+    .peek.agent { justify-self: start; background: var(--accent-soft); border: 1.5px solid #aed8cb; }
+
+    .session-foot {
+      margin-top: auto;
+      padding-top: 13px;
+      border-top: 2px dashed var(--line-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .open-cue { color: var(--accent); font-weight: 850; }
+
+    .trail { position: relative; padding-left: 28px; }
+    .trail::before { content: ""; position: absolute; left: 7px; top: 13px; bottom: 10px; border-left: 2px dashed var(--line); }
+
+    .trail-day {
+      position: relative;
+      margin: 0 0 11px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .trail-day::before {
+      content: "";
+      position: absolute;
+      left: -27px;
+      top: 4px;
+      width: 11px;
+      height: 11px;
+      border: 2px solid var(--accent);
+      border-radius: 50%;
+      background: var(--canvas);
+    }
+
+    .trail-item {
+      width: 100%;
+      min-height: 112px;
+      margin-bottom: 13px;
+      padding: 16px 18px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+      text-align: left;
+      cursor: pointer;
+      transition: transform .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+    }
+
+    .trail-item:hover { transform: translateX(3px); border-color: #9dcebf; background: var(--paper); }
+    .trail-title { display: block; margin-bottom: 3px; font-weight: 850; }
+    .trail-summary { display: block; color: var(--muted); font-size: 14px; }
+
+    .tag-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+
+    .tag {
+      min-height: 26px;
+      padding: 3px 9px;
+      display: inline-flex;
+      align-items: center;
+      border: 1.5px solid var(--line);
+      border-radius: 999px;
+      background: var(--soft);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .trail-time { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+    .reader-page {
+      width: min(1000px, 100%);
+      margin: 0 auto;
+      padding: 26px clamp(16px, 4vw, 46px) 74px;
+      position: relative;
+      z-index: 1;
+      animation: page-in .3s var(--ease) both;
+    }
+
+    .reader-nav {
+      min-height: 44px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .text-action {
+      min-height: 44px;
+      padding: 7px 12px;
+      border: 2px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--accent);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .text-action:hover { border-color: #add5c9; background: var(--accent-soft); }
+
+    .reader-header {
+      position: relative;
+      padding: 22px 23px;
+      border: 2px solid #c7bce4;
+      border-radius: var(--radius-lg);
+      background: var(--lavender-soft);
+      margin-bottom: 13px;
+    }
+
+    .reader-header h1 { max-width: 760px; font-size: clamp(25px, 3vw, 32px); }
+    .reader-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .reader-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 17px; }
+
+    .button {
+      min-height: 44px;
+      padding: 7px 16px;
+      border: 2px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      box-shadow: 0 2px 4px rgba(91, 69, 51, .08);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .2s var(--ease), border-color .2s var(--ease), color .2s var(--ease), box-shadow .2s var(--ease);
+    }
+
+    .button:hover { transform: translateY(-1px); border-color: var(--accent-bright); color: var(--accent); box-shadow: 0 4px 9px rgba(91, 69, 51, .11); }
+    .button:active { transform: translateY(1px); }
+    .button.compact { min-height: 44px; padding: 8px 13px; font-size: 13px; }
+
+    .context-wrap { position: relative; }
+
+    .context-panel {
+      position: absolute;
+      left: 0;
+      top: calc(100% + 8px);
+      width: min(330px, 80vw);
+      padding: 15px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: 0 10px 28px rgba(91, 69, 51, .15);
+      z-index: 8;
+    }
+
+    .context-grid { display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; margin: 0; }
+    .context-grid dt { color: var(--muted); font-size: 12px; }
+    .context-grid dd { margin: 0; font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
+
+    .search-return {
+      margin-bottom: 13px;
+      padding: 11px 14px;
+      border: 2px dashed #d4b954;
+      border-radius: var(--radius-sm);
+      background: var(--yellow-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .search-return span { font-size: 13px; }
+
+    .thread-path {
+      min-height: 47px;
+      margin-bottom: 12px;
+      padding: 6px 9px;
+      border: 2px solid #acd5c8;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      overflow-x: auto;
+    }
+
+    .thread-crumb {
+      min-height: 44px;
+      min-width: 44px;
+      padding: 7px 11px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--accent);
+      font-weight: 800;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .thread-crumb.current { background: var(--paper); }
+    .thread-separator { color: var(--muted); }
+
+    .conversation { width: min(780px, 100%); margin: 0 auto; }
+
+    .turn {
+      position: relative;
+      margin-bottom: 13px;
+      padding: 19px 21px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      scroll-margin-top: 96px;
+      transition: border-color .2s var(--ease), background .2s var(--ease), transform .2s var(--ease);
+    }
+
+    .turn.user { margin-left: clamp(18px, 7vw, 72px); border-color: #dfc67a; background: #fff8d9; }
+    .turn.assistant { margin-right: clamp(12px, 4vw, 42px); }
+    .turn.highlighted { border-color: var(--focus); background: var(--yellow-soft); transform: translateY(-2px); }
+
+    .turn-head { margin-bottom: 9px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+    .speaker { font-weight: 850; }
+    .turn-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+    .turn p { margin-bottom: 0; }
+
+    mark { padding: 0 3px; border-radius: 4px; background: #f7d45e; color: var(--ink); }
+
+    .tool {
+      margin-top: 13px;
+      overflow: hidden;
+      border: 2px solid var(--line-soft);
+      border-radius: var(--radius-sm);
+      background: var(--soft);
+    }
+
+    .tool summary {
+      min-height: 44px;
+      padding: 10px 13px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      list-style: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .tool summary::-webkit-details-marker { display: none; }
+
+    .tool summary::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform .2s var(--ease);
+    }
+
+    .tool[open] summary::before { transform: rotate(45deg); }
+    .tool pre { margin: 0; padding: 13px; border-top: 2px dashed var(--line); background: var(--code); color: var(--code-text); overflow: auto; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .child-entry {
+      width: 100%;
+      min-height: 70px;
+      margin-top: 13px;
+      padding: 12px 14px;
+      border: 2px dashed #8fc8b6;
+      border-radius: var(--radius);
+      background: var(--accent-soft);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      text-align: left;
+      cursor: pointer;
+      transition: transform .2s var(--ease), background .2s var(--ease);
+    }
+
+    .child-entry:hover { transform: translateY(-2px); background: #ccebdd; }
+    .child-entry strong { display: block; font-weight: 850; }
+    .child-entry span { color: var(--muted); font-size: 13px; }
+    .child-cue { color: var(--accent); font-size: 13px; font-weight: 850; white-space: nowrap; }
+
+    .mirror-foot {
+      width: min(780px, 100%);
+      min-height: 48px;
+      margin: 18px auto 0;
+      padding: 10px 14px;
+      border: 2px dashed #aacfc3;
+      border-radius: var(--radius-sm);
+      background: rgba(217, 242, 232, .7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 750;
+      text-align: center;
+    }
+
+    .layer-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      padding: clamp(12px, 3vw, 34px);
+      background: rgba(61, 52, 40, .42);
+      backdrop-filter: blur(8px);
+      display: grid;
+      place-items: start center;
+      overflow: auto;
+      animation: fade-in .18s var(--ease) both;
+    }
+
+    .search-dialog {
+      width: min(900px, 100%);
+      max-height: calc(100vh - 2 * clamp(12px, 3vw, 34px));
+      overflow: auto;
+      border: 2px solid #b5d8ce;
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      box-shadow: 0 18px 60px rgba(61, 52, 40, .2);
+      animation: dialog-in .24s var(--ease) both;
+    }
+
+    .dialog-head {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      padding: 17px;
+      border-bottom: 2px dashed var(--line-soft);
+      background: rgba(255, 250, 240, .96);
+      backdrop-filter: blur(10px);
+    }
+
+    .search-input-row { display: flex; align-items: center; gap: 10px; }
+
+    .search-field {
+      min-width: 0;
+      flex: 1;
+      min-height: 54px;
+      padding: 12px 18px;
+      border: 3px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--ink);
+      font-size: 17px;
+      transition: border-color .2s var(--ease), box-shadow .2s var(--ease);
+    }
+
+    .search-field:focus { border-color: var(--focus); box-shadow: 0 4px 0 #d5b24e; }
+
+    .icon-button {
+      width: 46px;
+      height: 46px;
+      padding: 0;
+      border: 2px solid var(--line);
+      border-radius: 50%;
+      background: var(--paper);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+
+    .icon-button:hover { border-color: var(--accent-bright); color: var(--accent); }
+
+    .search-tools { margin-top: 11px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+    .scope-pill {
+      min-height: 36px;
+      padding: 5px 11px;
+      border: 1.5px solid #aacfc3;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .filter-panel {
+      margin-top: 11px;
+      padding: 13px;
+      border: 2px dashed var(--line);
+      border-radius: var(--radius-sm);
+      background: var(--soft);
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .field-label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 800; }
+    .select-field { min-height: 44px; padding: 7px 12px; border: 2px solid var(--line); border-radius: 999px; background: var(--paper); }
+    .search-content { padding: 17px; }
+    .search-status { margin: 0 2px 11px; color: var(--muted); font-size: 13px; }
+    .result-list { display: grid; gap: 9px; }
+
+    .search-result {
+      width: 100%;
+      min-height: 96px;
+      padding: 14px 16px;
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+      text-align: left;
+      cursor: pointer;
+      transition: transform .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+    }
+
+    .search-result:hover { transform: translateX(3px); border-color: #a3d0c2; background: #fff8d9; }
+    .result-path { display: block; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+    .result-text { display: block; }
+
+    .search-empty {
+      min-height: 230px;
+      padding: 32px 20px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      border: 2px dashed var(--line);
+      border-radius: var(--radius);
+      background: var(--paper);
+    }
+
+    .suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 110;
+      background: rgba(61, 52, 40, .36);
+      backdrop-filter: blur(5px);
+      display: flex;
+      justify-content: flex-end;
+      animation: fade-in .18s var(--ease) both;
+    }
+
+    .raw-drawer {
+      width: min(640px, 92vw);
+      height: 100%;
+      padding: 22px;
+      border-left: 2px solid var(--line);
+      background: var(--panel);
+      overflow: auto;
+      box-shadow: -18px 0 45px rgba(61, 52, 40, .16);
+      animation: drawer-in .25s var(--ease) both;
+    }
+
+    .drawer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 17px; }
+    .drawer-head h2 { margin-top: 4px; }
+    .raw-notice { margin-bottom: 13px; padding: 12px 14px; border: 2px solid #e2c46b; border-radius: var(--radius-sm); background: var(--yellow-soft); color: #694f27; font-size: 13px; }
+    .raw-meta { margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 7px; }
+
+    .raw-block {
+      margin: 0;
+      min-height: 300px;
+      padding: 17px;
+      border-radius: var(--radius);
+      background: var(--code);
+      color: var(--code-text);
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .raw-loading {
+      min-height: 300px;
+      display: grid;
+      place-items: center;
+      border: 2px dashed var(--line);
+      border-radius: var(--radius);
+      background: var(--soft);
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .loading-pulse { width: 28px; height: 28px; margin: 0 auto 10px; border: 4px solid #abd6c9; border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+
+    @keyframes page-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes dialog-in {
+      from { opacity: 0; transform: translateY(12px) scale(.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes drawer-in {
+      from { transform: translateX(28px); opacity: .7; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 860px) {
+      .app-shell { display: block; }
+      .workspace-rail {
+        position: relative;
+        width: 100%;
+        height: auto;
+        padding: 13px 17px;
+        border-right: 0;
+        border-bottom: 2px solid #b7d9cf;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand { padding: 0; }
+      .brand-mark { width: 36px; height: 30px; }
+      .team-context { justify-self: end; min-height: 50px; padding: 7px 12px; }
+      .team-context span { display: none; }
+      .rail-projects, .collector-state { display: none; }
+      .product-bar { top: 0; }
+      .active-grid { grid-template-columns: 1fr; }
+      .active-session { min-height: 260px; }
+    }
+
+    @media (max-width: 640px) {
+      .workspace-rail { grid-template-columns: 1fr; }
+      .brand { justify-self: center; }
+      .team-context { width: 100%; justify-self: stretch; text-align: center; }
+      .product-bar { padding: 11px 14px; align-items: stretch; flex-direction: column; gap: 9px; }
+      .project-location { justify-content: center; }
+      .search-launcher { width: 100%; }
+      .page { padding: 25px 14px 54px; }
+      .memory-intro { padding: 21px; margin-bottom: 27px; }
+      .section-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
+      .active-session { padding: 17px; }
+      .trail { padding-left: 22px; }
+      .trail::before { left: 5px; }
+      .trail-day::before { left: -22px; }
+      .trail-item { grid-template-columns: 42px minmax(0, 1fr); padding: 14px; }
+      .trail-time { grid-column: 2; }
+      .reader-page { padding: 16px 12px 54px; }
+      .reader-nav { align-items: flex-start; flex-direction: column; }
+      .reader-header { padding: 18px; }
+      .search-return { align-items: flex-start; flex-direction: column; }
+      .turn { padding: 17px; }
+      .turn.user { margin-left: 16px; }
+      .turn.assistant { margin-right: 8px; }
+      .child-entry { align-items: flex-start; flex-direction: column; }
+      .layer-backdrop { padding: 0; place-items: stretch; }
+      .search-dialog { max-height: 100vh; min-height: 100vh; border: 0; border-radius: 0; }
+      .dialog-head { padding: 13px; }
+      .search-content { padding: 13px; }
+      .filter-panel { grid-template-columns: 1fr; }
+      .raw-drawer { width: 100%; padding: 17px; border-left: 0; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to project memory</a>
+
+  <div class="app-shell" id="app-shell">
+    <aside class="workspace-rail" aria-label="Workspace">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span>ATape</div>
+      <div class="team-context">
+        <strong>Acme Engineering</strong>
+        <span>Shared agent memory</span>
+      </div>
+      <nav class="rail-projects" aria-label="Projects">
+        <p class="rail-label">Project memory</p>
+        <div class="project-list">
+          <button class="project-link active" data-action="go-project"><span class="project-icon" aria-hidden="true"></span>payments-api</button>
+          <button class="project-link" disabled title="Not included in this prototype"><span class="project-icon" aria-hidden="true"></span>web-console</button>
+          <button class="project-link" disabled title="Not included in this prototype"><span class="project-icon" aria-hidden="true"></span>infra</button>
+        </div>
+      </nav>
+      <div class="collector-state"><span class="sync-icon" aria-hidden="true"></span>Collector healthy · 18s</div>
+    </aside>
+
+    <main class="product" id="main-content">
+      <header class="product-bar">
+        <div class="project-location"><span>Acme Engineering</span><span aria-hidden="true">/</span><strong>payments-api</strong></div>
+        <button class="search-launcher" data-action="open-search">
+          <span class="search-icon" aria-hidden="true"></span>
+          <span>Search what the team discussed…</span>
+          <span class="shortcut">⌘ K</span>
+        </button>
+      </header>
+
+      <section class="page" id="project-view" aria-labelledby="project-memory-title">
+        <header class="memory-intro">
+          <p class="eyebrow">Project memory</p>
+          <h1 id="project-memory-title">What changed while you were away?</h1>
+          <p>Follow active work or retrace an earlier decision without asking someone to reconstruct the conversation.</p>
+          <div class="freshness" role="status" aria-atomic="true"><span class="sync-icon" aria-hidden="true"></span>Everything captured through 10:52:18</div>
+        </header>
+
+        <section aria-labelledby="happening-heading">
+          <div class="section-heading">
+            <h2 id="happening-heading">Happening now</h2>
+            <p>2 conversations updated in the last minute</p>
+          </div>
+          <div class="active-grid">
+            <button class="active-session" data-action="open-session" data-session="checkout">
+              <span class="session-owner">
+                <span class="avatar">LY</span>
+                <span class="owner-copy"><strong>Liying · Codex CLI</strong><span>main · updated 18s ago</span></span>
+                <span class="live-label"><span class="live-dot"></span>Active</span>
+              </span>
+              <h3>Fix duplicate checkout charge on retry</h3>
+              <span class="conversation-peek" aria-hidden="true">
+                <span class="peek user">Retries occasionally charge a customer twice…</span>
+                <span class="peek agent">Two retry layers do not share a durable key.</span>
+              </span>
+              <span class="session-foot"><span>23 events · 1 child thread</span><span class="open-cue">Open conversation</span></span>
+            </button>
+
+            <button class="active-session" data-action="open-session" data-session="webhook">
+              <span class="session-owner">
+                <span class="avatar blue">MK</span>
+                <span class="owner-copy"><strong>Mika · Claude Code</strong><span>fix/webhooks · updated 42s ago</span></span>
+                <span class="live-label"><span class="live-dot"></span>Active</span>
+              </span>
+              <h3>Trace missing webhook deliveries</h3>
+              <span class="conversation-peek" aria-hidden="true">
+                <span class="peek user">Why did valid webhook events disappear?</span>
+                <span class="peek agent">The queue visibility timeout overlaps deploy drain.</span>
+              </span>
+              <span class="session-foot"><span>41 events · root thread</span><span class="open-cue">Open conversation</span></span>
+            </button>
+          </div>
+        </section>
+
+        <section aria-labelledby="trail-heading">
+          <div class="section-heading">
+            <h2 id="trail-heading">Memory trail</h2>
+            <p>Recent conversations, in the order the team experienced them</p>
+          </div>
+          <div class="trail">
+            <p class="trail-day">Today</p>
+            <button class="trail-item" data-action="open-session" data-session="checkout">
+              <span class="avatar">LY</span>
+              <span>
+                <span class="trail-title">Checkout retries now share one durable boundary</span>
+                <span class="trail-summary">The conversation moved from two competing retry layers to a merchant-scoped idempotency key.</span>
+                <span class="tag-row"><span class="tag">Codex CLI</span><span class="tag">main</span><span class="tag">Active</span></span>
+              </span>
+              <span class="trail-time">10:52</span>
+            </button>
+            <button class="trail-item" data-action="open-session" data-session="webhook">
+              <span class="avatar blue">MK</span>
+              <span>
+                <span class="trail-title">Webhook loss traced to deploy drain timing</span>
+                <span class="trail-summary">Mika followed signature verification through the queue and found the visibility timeout boundary.</span>
+                <span class="tag-row"><span class="tag">Claude Code</span><span class="tag">fix/webhooks</span><span class="tag">Active</span></span>
+              </span>
+              <span class="trail-time">10:46</span>
+            </button>
+            <p class="trail-day" style="margin-top:24px">Yesterday</p>
+            <button class="trail-item" data-action="open-session" data-session="migration">
+              <span class="avatar yellow">QN</span>
+              <span>
+                <span class="trail-title">Ledger migration chose shadow writes</span>
+                <span class="trail-summary">Qian compared rollback paths and kept backfill replay safe with a stable key.</span>
+                <span class="tag-row"><span class="tag">OpenCode</span><span class="tag">design/ledger-v2</span><span class="tag">Ended</span></span>
+              </span>
+              <span class="trail-time">Yesterday</span>
+            </button>
+          </div>
+        </section>
+      </section>
+
+      <section class="reader-page hidden" id="session-view" aria-labelledby="session-title">
+        <nav class="reader-nav" aria-label="Session navigation">
+          <button class="text-action" data-action="go-project">Back to payments-api</button>
+          <span class="muted" id="reader-freshness">Read-only mirror · synced 18s ago</span>
+        </nav>
+        <div class="search-return hidden" id="search-return">
+          <span id="search-return-copy">Opened from search results</span>
+          <button class="button compact" data-action="back-history">Back to results</button>
+        </div>
+        <header class="reader-header">
+          <p class="eyebrow">Shared conversation</p>
+          <h1 id="session-title"></h1>
+          <div class="reader-meta" id="session-meta"></div>
+          <div class="reader-actions">
+            <div class="context-wrap">
+              <button class="button compact" id="context-button" data-action="toggle-context" aria-expanded="false">Session context</button>
+              <aside class="context-panel hidden" id="context-panel" aria-label="Session context"><dl class="context-grid" id="context-grid"></dl></aside>
+            </div>
+            <button class="button compact" data-action="open-raw"><span class="raw-icon" aria-hidden="true"></span>View raw source</button>
+          </div>
+        </header>
+        <nav class="thread-path" id="thread-path" aria-label="Thread path"></nav>
+        <div class="conversation" id="conversation"></div>
+        <div class="mirror-foot"><span class="sync-icon" aria-hidden="true"></span>This is a read-only mirror. New captured events appear here automatically.</div>
+      </section>
+    </main>
+  </div>
+
+  <div class="layer-backdrop hidden" id="search-layer">
+    <section class="search-dialog" role="dialog" aria-modal="true" aria-labelledby="search-title">
+      <header class="dialog-head">
+        <h2 id="search-title" class="visually-hidden">Search project memory</h2>
+        <div class="search-input-row">
+          <label class="visually-hidden" for="search-input">Search messages</label>
+          <input class="search-field" id="search-input" type="search" autocomplete="off" placeholder="Keyword, error, file, or decision…" />
+          <button class="icon-button" data-action="close-layer" aria-label="Close search"><span class="close-icon" aria-hidden="true"></span></button>
+        </div>
+        <div class="search-tools">
+          <span class="scope-pill">Project · payments-api</span>
+          <button class="button compact" id="filter-button" data-action="toggle-filters" aria-expanded="false">Filters</button>
+          <span class="muted" style="font-size:12px">Searches Canonical messages, including child threads</span>
+        </div>
+        <div class="filter-panel hidden" id="filter-panel">
+          <label class="field-label">Member
+            <select class="select-field" id="member-filter">
+              <option value="">Anyone</option>
+              <option value="Liying">Liying</option>
+              <option value="Mika">Mika</option>
+              <option value="Qian">Qian</option>
+            </select>
+          </label>
+          <label class="field-label">Harness
+            <select class="select-field" id="harness-filter">
+              <option value="">Any harness</option>
+              <option value="Codex CLI">Codex CLI</option>
+              <option value="Claude Code">Claude Code</option>
+              <option value="OpenCode">OpenCode</option>
+            </select>
+          </label>
+        </div>
+      </header>
+      <div class="search-content">
+        <p class="search-status" id="search-status" role="status" aria-atomic="true"></p>
+        <div class="result-list" id="search-results"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="drawer-backdrop hidden" id="raw-layer">
+    <aside class="raw-drawer" role="dialog" aria-modal="true" aria-labelledby="raw-title">
+      <header class="drawer-head">
+        <div>
+          <p class="eyebrow">Source-native capture</p>
+          <h2 id="raw-title">Raw source</h2>
+          <p class="muted" id="raw-subtitle"></p>
+        </div>
+        <button class="icon-button" data-action="close-layer" aria-label="Close raw source"><span class="close-icon" aria-hidden="true"></span></button>
+      </header>
+      <div class="raw-notice">Raw is fetched separately and only after this drawer opens. Client-side redaction was applied before upload.</div>
+      <div class="raw-meta" id="raw-meta"></div>
+      <div class="raw-loading" id="raw-loading" role="status"><div><div class="loading-pulse" aria-hidden="true"></div>Loading source pack…</div></div>
+      <pre class="raw-block hidden" id="raw-content"></pre>
+    </aside>
+  </div>
+
+  <script>
+    var sessions = {
+      checkout: {
+        title: "Fix duplicate checkout charge on retry",
+        member: "Liying",
+        harness: "Codex CLI",
+        branch: "main",
+        status: "Active · healthy",
+        updated: "18s ago",
+        nativeId: "codex-7d93a",
+        raw: [
+          "{\"timestamp\":\"2026-09-04T10:42:08Z\",\"type\":\"user_message\",\"payload\":{\"text\":\"Retries occasionally charge a customer twice…\"}}",
+          "{\"timestamp\":\"2026-09-04T10:42:19Z\",\"type\":\"assistant_message\",\"payload\":{\"text\":\"I found two retry layers…\"}}",
+          "{\"timestamp\":\"2026-09-04T10:42:20Z\",\"type\":\"tool_call\",\"payload\":{\"name\":\"read_file\",\"path\":\"internal/checkout/service.go\"}}",
+          "{\"timestamp\":\"2026-09-04T10:43:02Z\",\"type\":\"spawn_agent\",\"payload\":{\"native_id\":\"agent-a813\",\"label\":\"schema-review\"}}"
+        ].join("\n"),
+        threads: {
+          root: {
+            label: "Root thread",
+            messages: [
+              { id: "c1", role: "user", speaker: "Liying", time: "10:42:08", body: "Retries occasionally charge a customer twice. Trace the request path and propose the smallest safe fix." },
+              { id: "c2", role: "assistant", speaker: "Codex", time: "10:42:19", body: "I found two retry layers. The API retries after a timeout, while the provider client also retries network failures. Neither shares a durable key.", tool: { label: "Read 4 files", output: "internal/checkout/service.go\ninternal/payments/provider.go\ninternal/payments/attempt_repository.go\ndb/migrations/041_payment_attempts.sql" } },
+              { id: "c3", role: "assistant", speaker: "Codex", time: "10:44:53", body: "Recommendation: create the idempotency key at the payment-attempt boundary, persist it before the first provider call, and reuse it for every retry. The schema review confirmed that the unique key must be scoped by merchant.", child: { key: "schema-review", label: "schema-review", summary: "Checked uniqueness constraints and migration safety", coverage: "partial · 7 events" } },
+              { id: "c4", role: "user", speaker: "Liying", time: "10:45:21", body: "Do that, but keep provider-specific details out of the service layer." }
+            ]
+          },
+          "schema-review": {
+            label: "schema-review",
+            messages: [
+              { id: "c5", role: "assistant", speaker: "Parent context", time: "10:43:02", body: "Review the payment-attempt schema and propose the safest uniqueness boundary." },
+              { id: "c6", role: "assistant", speaker: "schema-review · subagent", time: "10:43:24", body: "The provider request ID arrives too late to prevent duplicate sends. The unique constraint should cover merchant_id + idempotency key.", tool: { label: "Inspected migration", output: "UNIQUE (merchant_id, idempotency_key)" } },
+              { id: "c7", role: "assistant", speaker: "Capture boundary", time: "10:43:31", body: "This child thread is partial because the native harness exposed only a subset of its events. No missing-event placeholders are rendered." }
+            ]
+          }
+        }
+      },
+      webhook: {
+        title: "Trace missing webhook deliveries",
+        member: "Mika",
+        harness: "Claude Code",
+        branch: "fix/webhooks",
+        status: "Active · healthy",
+        updated: "42s ago",
+        nativeId: "claude-2af81",
+        raw: [
+          "{\"type\":\"human\",\"message\":{\"content\":\"Why did valid webhook events disappear?\"}}",
+          "{\"type\":\"assistant\",\"message\":{\"content\":\"Tracing signature verification through queue acknowledgement.\"}}",
+          "{\"type\":\"tool_result\",\"tool\":\"Read\",\"content\":\"visibility_timeout = 30\"}"
+        ].join("\n"),
+        threads: {
+          root: {
+            label: "Root thread",
+            messages: [
+              { id: "w1", role: "user", speaker: "Mika", time: "10:44:03", body: "The provider says delivery succeeded, signature verification passed, but some events never reach the handler. Trace the loss." },
+              { id: "w2", role: "assistant", speaker: "Claude", time: "10:44:31", body: "The event is acknowledged only after handler completion, but the queue visibility timeout is shorter than the deploy drain window.", tool: { label: "Compared queue and deploy settings", output: "visibility_timeout = 30s\ndeploy_drain_timeout = 45s\nmax_handler_time = 20s" } },
+              { id: "w3", role: "assistant", speaker: "Claude", time: "10:45:48", body: "During deploy, a message becomes visible again while the old worker is draining. The replacement worker rejects the duplicated lease, and the original acknowledgement arrives too late." }
+            ]
+          }
+        }
+      },
+      migration: {
+        title: "Plan ledger schema migration",
+        member: "Qian",
+        harness: "OpenCode",
+        branch: "design/ledger-v2",
+        status: "Ended · healthy",
+        updated: "Yesterday",
+        nativeId: "opencode-91bf0",
+        raw: [
+          "{\"role\":\"user\",\"content\":\"Compare in-place and shadow-table migration paths.\"}",
+          "{\"role\":\"assistant\",\"content\":\"Shadow writes keep rollback measurable.\"}",
+          "{\"role\":\"tool\",\"name\":\"schema_diff\",\"result\":\"3 changed columns\"}"
+        ].join("\n"),
+        threads: {
+          root: {
+            label: "Root thread",
+            messages: [
+              { id: "m1", role: "user", speaker: "Qian", time: "16:08:11", body: "Compare an in-place migration with shadow writes. Rollback must remain observable while backfill is running." },
+              { id: "m2", role: "assistant", speaker: "OpenCode", time: "16:09:02", body: "Shadow writes cost more temporary storage, but they keep rollback measurable. Backfill jobs should also use a stable idempotency key so replay cannot duplicate ledger rows." },
+              { id: "m3", role: "user", speaker: "Qian", time: "16:10:17", body: "Use shadow writes and document the cutover metric before implementation." }
+            ]
+          }
+        }
+      }
+    };
+
+    var searchRecords = [
+      { session: "checkout", thread: "root", event: "c3", member: "Liying", harness: "Codex CLI", path: "Fix duplicate checkout charge on retry · Root thread", text: "Create the idempotency key at the payment-attempt boundary and reuse it for every retry." },
+      { session: "checkout", thread: "schema-review", event: "c6", member: "Liying", harness: "Codex CLI", path: "Fix duplicate checkout charge on retry › schema-review · child thread", text: "The unique constraint should cover merchant_id + idempotency key, not only provider request ID." },
+      { session: "migration", thread: "root", event: "m2", member: "Qian", harness: "OpenCode", path: "Plan ledger schema migration · Root thread", text: "Backfill jobs need a stable idempotency key so replay cannot duplicate ledger rows." },
+      { session: "webhook", thread: "root", event: "w2", member: "Mika", harness: "Claude Code", path: "Trace missing webhook deliveries · Root thread", text: "The queue visibility timeout is shorter than the deploy drain window." },
+      { session: "webhook", thread: "root", event: "w3", member: "Mika", harness: "Claude Code", path: "Trace missing webhook deliveries · Root thread", text: "The replacement worker rejects the duplicated lease before the original acknowledgement arrives." }
+    ];
+
+    var defaultState = { atape: true, view: "project", project: "payments-api", overlay: null };
+    var appState = null;
+    var previousFocus = null;
+    var searchTimer = null;
+    var rawTimer = null;
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, function (character) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[character];
+      });
+    }
+
+    function escapeRegExp(value) {
+      return String(value).replace(/[.*+?^$(){}|[\]\\]/g, "\\$&");
+    }
+
+    function highlight(value, query) {
+      var safe = escapeHtml(value);
+      var terms = String(query || "").trim().split(/\s+/).filter(Boolean);
+      if (!terms.length) return safe;
+      var expression = new RegExp("(" + terms.map(escapeRegExp).join("|") + ")", "gi");
+      return safe.replace(expression, "<mark>$1</mark>");
+    }
+
+    function stateFromHash() {
+      var raw = location.hash.replace(/^#/, "");
+      if (!raw) return Object.assign({}, defaultState);
+      var pieces = raw.split("?");
+      var path = pieces[0].split("/").filter(Boolean);
+      var params = new URLSearchParams(pieces[1] || "");
+      if (path[0] === "search") {
+        return { atape: true, view: "project", project: path[1] || "payments-api", overlay: "search", query: params.get("q") || "idempotency key" };
+      }
+      if (path[0] === "session" && sessions[path[1]]) {
+        return {
+          atape: true,
+          view: "session",
+          project: "payments-api",
+          sessionId: path[1],
+          thread: path[2] || "root",
+          overlay: path[3] === "raw" ? "raw" : null,
+          event: params.get("event") || null,
+          query: params.get("q") || "",
+          originSearch: params.get("from") === "search"
+        };
+      }
+      return Object.assign({}, defaultState);
+    }
+
+    function stateHash(state) {
+      if (state.overlay === "search") return "#search/" + state.project + "?q=" + encodeURIComponent(state.query || "");
+      if (state.view === "session") {
+        var base = "#session/" + state.sessionId + "/" + (state.thread || "root");
+        if (state.overlay === "raw") base += "/raw";
+        var params = new URLSearchParams();
+        if (state.event) params.set("event", state.event);
+        if (state.query) params.set("q", state.query);
+        if (state.originSearch) params.set("from", "search");
+        var query = params.toString();
+        return query ? base + "?" + query : base;
+      }
+      return "#project/" + (state.project || "payments-api");
+    }
+
+    function navigate(nextState, replace) {
+      appState = Object.assign({ atape: true, overlay: null }, nextState);
+      var method = replace ? "replaceState" : "pushState";
+      history[method](appState, "", stateHash(appState));
+      applyState();
+    }
+
+    function applyState() {
+      var projectView = document.getElementById("project-view");
+      var sessionView = document.getElementById("session-view");
+      var searchLayer = document.getElementById("search-layer");
+      var rawLayer = document.getElementById("raw-layer");
+      var shell = document.getElementById("app-shell");
+      projectView.classList.toggle("hidden", appState.view !== "project");
+      sessionView.classList.toggle("hidden", appState.view !== "session");
+      if (appState.view === "session") renderSession();
+      var searchOpen = appState.overlay === "search";
+      var rawOpen = appState.overlay === "raw";
+      searchLayer.classList.toggle("hidden", !searchOpen);
+      rawLayer.classList.toggle("hidden", !rawOpen);
+      shell.inert = searchOpen || rawOpen;
+      if (searchOpen) {
+        renderSearchLayer();
+        window.setTimeout(function () { document.getElementById("search-input").focus(); }, 30);
+      } else if (rawOpen) {
+        renderRawLayer();
+        window.setTimeout(function () { rawLayer.querySelector("[data-action='close-layer']").focus(); }, 30);
+      } else if (previousFocus) {
+        window.setTimeout(function () { previousFocus.focus(); previousFocus = null; }, 0);
+      }
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
+
+    function renderSession() {
+      var session = sessions[appState.sessionId] || sessions.checkout;
+      var threadKey = session.threads[appState.thread] ? appState.thread : "root";
+      var thread = session.threads[threadKey];
+      document.getElementById("session-title").textContent = session.title;
+      document.getElementById("reader-freshness").textContent = "Read-only mirror · synced " + session.updated;
+      document.getElementById("session-meta").innerHTML = [session.member, session.harness, session.branch, session.status].map(function (item) {
+        return '<span class="tag">' + escapeHtml(item) + "</span>";
+      }).join("");
+      document.getElementById("context-grid").innerHTML =
+        "<dt>Member</dt><dd>" + escapeHtml(session.member) + "</dd>" +
+        "<dt>Harness</dt><dd>" + escapeHtml(session.harness) + "</dd>" +
+        "<dt>Project</dt><dd>payments-api</dd>" +
+        "<dt>Branch</dt><dd>" + escapeHtml(session.branch) + "</dd>" +
+        "<dt>Capture</dt><dd>" + escapeHtml(session.status.split(" · ")[1] || "unknown") + "</dd>" +
+        "<dt>Native ID</dt><dd>" + escapeHtml(session.nativeId) + "</dd>";
+
+      var path = '<button class="thread-crumb ' + (threadKey === "root" ? "current" : "") + '" data-action="open-thread" data-thread="root">Root thread</button>';
+      if (threadKey !== "root") {
+        path += '<span class="thread-separator" aria-hidden="true">/</span><button class="thread-crumb current" data-action="open-thread" data-thread="' + escapeHtml(threadKey) + '">' + escapeHtml(thread.label) + "</button>";
+      }
+      document.getElementById("thread-path").innerHTML = path;
+
+      var returnBar = document.getElementById("search-return");
+      returnBar.classList.toggle("hidden", !appState.originSearch);
+      if (appState.originSearch) {
+        document.getElementById("search-return-copy").innerHTML = 'Opened from results for <strong>' + escapeHtml(appState.query || "") + "</strong>";
+      }
+
+      document.getElementById("conversation").innerHTML = thread.messages.map(function (message) {
+        var tool = "";
+        if (message.tool) tool = '<details class="tool"><summary>' + escapeHtml(message.tool.label) + '</summary><pre>' + escapeHtml(message.tool.output) + "</pre></details>";
+        var child = "";
+        if (message.child) {
+          child = '<button class="child-entry" data-action="open-thread" data-thread="' + escapeHtml(message.child.key) + '"><span><strong>' + escapeHtml(message.child.label) + ' · child thread</strong><span>' + escapeHtml(message.child.summary) + " · " + escapeHtml(message.child.coverage) + '</span></span><span class="child-cue">Follow thread</span></button>';
+        }
+        var isHighlighted = appState.event === message.id;
+        return '<article class="turn ' + escapeHtml(message.role) + (isHighlighted ? " highlighted" : "") + '" id="event-' + escapeHtml(message.id) + '" tabindex="-1"><div class="turn-head"><span class="speaker">' + escapeHtml(message.speaker) + '</span><time class="turn-time">' + escapeHtml(message.time) + "</time></div><p>" + highlight(message.body, isHighlighted ? appState.query : "") + "</p>" + tool + child + "</article>";
+      }).join("");
+
+      if (appState.event) {
+        window.setTimeout(function () {
+          var target = document.getElementById("event-" + appState.event);
+          if (target) {
+            target.scrollIntoView({ block: "center" });
+            target.focus({ preventScroll: true });
+          }
+        }, 80);
+      }
+    }
+
+    function renderSearchLayer() {
+      var input = document.getElementById("search-input");
+      if (input.value !== (appState.query || "")) input.value = appState.query || "";
+      renderSearchResults();
+    }
+
+    function matchingSearchRecords() {
+      var query = document.getElementById("search-input").value.trim().toLowerCase();
+      var member = document.getElementById("member-filter").value;
+      var harness = document.getElementById("harness-filter").value;
+      var terms = query.split(/\s+/).filter(Boolean);
+      return searchRecords.filter(function (record) {
+        var haystack = (record.path + " " + record.text).toLowerCase();
+        var queryMatch = terms.length && terms.every(function (term) { return haystack.includes(term); });
+        return queryMatch && (!member || record.member === member) && (!harness || record.harness === harness);
+      });
+    }
+
+    function renderSearchResults() {
+      var query = document.getElementById("search-input").value.trim();
+      var results = query ? matchingSearchRecords() : [];
+      var status = document.getElementById("search-status");
+      var container = document.getElementById("search-results");
+      if (!query) {
+        status.textContent = "Start with the detail you remember.";
+        container.innerHTML = '<div class="search-empty"><div><strong>Search the team memory, not file exports.</strong><p class="muted">Try a decision phrase, error, filename, or implementation detail.</p><div class="suggestions"><button class="button compact" data-suggestion="idempotency key">idempotency key</button><button class="button compact" data-suggestion="webhook timeout">webhook timeout</button></div></div></div>';
+        return;
+      }
+      status.textContent = results.length + (results.length === 1 ? " matching message" : " matching messages") + " in payments-api";
+      if (!results.length) {
+        container.innerHTML = '<div class="search-empty"><div><strong>No matching conversation yet.</strong><p class="muted">Try fewer words, a person, or the Harness wording you saw.</p><div class="suggestions"><button class="button compact" data-suggestion="idempotency">Try idempotency</button><button class="button compact" data-suggestion="webhook">Try webhook</button></div></div></div>';
+        return;
+      }
+      container.innerHTML = results.map(function (record) {
+        return '<button class="search-result" data-action="open-result" data-session="' + escapeHtml(record.session) + '" data-thread="' + escapeHtml(record.thread) + '" data-event="' + escapeHtml(record.event) + '"><span class="result-path">' + escapeHtml(record.path) + " · " + escapeHtml(record.member) + " · " + escapeHtml(record.harness) + '</span><span class="result-text">' + highlight(record.text, query) + "</span></button>";
+      }).join("");
+    }
+
+    function renderRawLayer() {
+      var session = sessions[appState.sessionId] || sessions.checkout;
+      document.getElementById("raw-subtitle").textContent = session.title + " · " + session.harness;
+      document.getElementById("raw-meta").innerHTML = '<span class="tag">generation 1</span><span class="tag">pack sha256: 5c8…e41</span><span class="tag">client redacted</span>';
+      document.getElementById("raw-loading").classList.remove("hidden");
+      document.getElementById("raw-content").classList.add("hidden");
+      window.clearTimeout(rawTimer);
+      rawTimer = window.setTimeout(function () {
+        document.getElementById("raw-content").textContent = session.raw;
+        document.getElementById("raw-loading").classList.add("hidden");
+        document.getElementById("raw-content").classList.remove("hidden");
+      }, 420);
+    }
+
+    function openSearch() {
+      previousFocus = document.activeElement;
+      navigate(Object.assign({}, appState, { overlay: "search", query: appState.query || "idempotency key", event: null }));
+    }
+
+    function closeLayer() {
+      if (appState.overlay) history.back();
+    }
+
+    function trapFocus(event, layer) {
+      if (event.key !== "Tab") return;
+      var controls = Array.from(layer.querySelectorAll("button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex='0']")).filter(function (element) {
+        return !element.closest(".hidden");
+      });
+      if (!controls.length) return;
+      var first = controls[0];
+      var last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("click", function (event) {
+      var suggestion = event.target.closest("[data-suggestion]");
+      if (suggestion) {
+        var searchInput = document.getElementById("search-input");
+        searchInput.value = suggestion.dataset.suggestion;
+        appState.query = searchInput.value;
+        history.replaceState(appState, "", stateHash(appState));
+        renderSearchResults();
+        searchInput.focus();
+        return;
+      }
+      var target = event.target.closest("[data-action]");
+      if (!target) return;
+      var action = target.dataset.action;
+      if (action === "go-project") {
+        navigate(Object.assign({}, defaultState));
+      } else if (action === "open-search") {
+        openSearch();
+      } else if (action === "close-layer") {
+        closeLayer();
+      } else if (action === "back-history") {
+        history.back();
+      } else if (action === "open-session") {
+        navigate({ atape: true, view: "session", project: "payments-api", sessionId: target.dataset.session, thread: "root", overlay: null });
+      } else if (action === "open-result") {
+        navigate({ atape: true, view: "session", project: "payments-api", sessionId: target.dataset.session, thread: target.dataset.thread, event: target.dataset.event, query: document.getElementById("search-input").value.trim(), originSearch: true, overlay: null });
+      } else if (action === "open-thread") {
+        navigate(Object.assign({}, appState, { thread: target.dataset.thread, event: null, overlay: null }));
+      } else if (action === "open-raw") {
+        previousFocus = target;
+        navigate(Object.assign({}, appState, { overlay: "raw" }));
+      } else if (action === "toggle-context") {
+        var panel = document.getElementById("context-panel");
+        var expanded = target.getAttribute("aria-expanded") === "true";
+        target.setAttribute("aria-expanded", String(!expanded));
+        panel.classList.toggle("hidden", expanded);
+      } else if (action === "toggle-filters") {
+        var filters = document.getElementById("filter-panel");
+        var open = target.getAttribute("aria-expanded") === "true";
+        target.setAttribute("aria-expanded", String(!open));
+        filters.classList.toggle("hidden", open);
+      }
+    });
+
+    document.getElementById("search-input").addEventListener("input", function (event) {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(function () {
+        appState.query = event.target.value;
+        history.replaceState(appState, "", stateHash(appState));
+        renderSearchResults();
+      }, 140);
+    });
+
+    document.getElementById("member-filter").addEventListener("change", renderSearchResults);
+    document.getElementById("harness-filter").addEventListener("change", renderSearchResults);
+
+    document.addEventListener("keydown", function (event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (appState.overlay !== "search") openSearch();
+        return;
+      }
+      if (event.key === "Escape") {
+        if (appState.overlay) {
+          closeLayer();
+          return;
+        }
+        var contextPanel = document.getElementById("context-panel");
+        if (!contextPanel.classList.contains("hidden")) {
+          contextPanel.classList.add("hidden");
+          document.getElementById("context-button").setAttribute("aria-expanded", "false");
+          document.getElementById("context-button").focus();
+        }
+      }
+      if (appState.overlay === "search") trapFocus(event, document.getElementById("search-layer"));
+      if (appState.overlay === "raw") trapFocus(event, document.getElementById("raw-layer"));
+    });
+
+    window.addEventListener("popstate", function (event) {
+      appState = event.state && event.state.atape ? event.state : stateFromHash();
+      applyState();
+    });
+
+    appState = history.state && history.state.atape ? history.state : stateFromHash();
+    history.replaceState(appState, "", stateHash(appState));
+    applyState();
+  </script>
+</body>
+</html>

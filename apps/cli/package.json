@@ -1,0 +1,25 @@
+{
+  "name": "@atape/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "atape": "./src/main.ts"
+  },
+  "scripts": {
+    "dev": "node src/main.ts",
+    "test": "vitest run",
+    "test:e2e": "vitest run src/collectorServer.e2e.test.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@atape/application": "workspace:*",
+    "@atape/domain": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

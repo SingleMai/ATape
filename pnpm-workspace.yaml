@@ -1,0 +1,30 @@
+packages:
+  - "apps/*"
+  - "adapters/*"
+  - "packages/*"
+
+allowBuilds:
+  # Vite requires esbuild's platform binary; optional msgpackr acceleration is unnecessary.
+  esbuild: true
+  msgpackr-extract: false
+
+catalog:
+  effect: 4.0.0-rc.112
+  "@effect/atom-react": 4.0.0-rc.112
+  react: 19.2.8
+  react-dom: 19.2.8
+  "@tanstack/react-router": 1.170.32
+
+catalogs:
+  build:
+    "@types/react": 19.2.18
+    "@types/react-dom": 19.2.7
+    "@vitejs/plugin-react": 6.1.1
+    typescript: 7.0.2
+    vite: 8.2.2
+    vitest: 5.0.0
+
+minimumReleaseAgeExclude:
+  - '@vitest/mocker@5.0.0'
+  - '@vitest/spy@5.0.0'
+  - vitest@5.0.0
