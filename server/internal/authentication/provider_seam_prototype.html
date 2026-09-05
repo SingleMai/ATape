@@ -1,0 +1,1270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATape Federated Identity Seam Prototype</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f6f7fb;
+      --surface: #ffffff;
+      --surface-subtle: #f0f2f8;
+      --border: #d9deeb;
+      --text: #182033;
+      --muted: #5f6b82;
+      --accent: #4f46e5;
+      --accent-soft: #eeedff;
+      --good: #147d64;
+      --good-soft: #e9f8f3;
+      --warn: #9a6510;
+      --warn-soft: #fff7df;
+      --bad: #ad3545;
+      --bad-soft: #fff0f2;
+      --code: #151b2b;
+      --shadow: 0 14px 34px rgba(37, 48, 78, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--background);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    main {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 64px;
+    }
+
+    header,
+    section {
+      margin-bottom: 24px;
+    }
+
+    .hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      border-radius: 999px;
+      background: var(--warn-soft);
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      padding: 6px 10px;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin-bottom: 10px;
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.08;
+      letter-spacing: -0.035em;
+    }
+
+    h2 {
+      margin-bottom: 6px;
+      font-size: 22px;
+      letter-spacing: -0.015em;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 17px;
+    }
+
+    .lede {
+      max-width: 900px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 17px;
+    }
+
+    .question {
+      margin-top: 18px;
+      border-left: 4px solid var(--accent);
+      background: var(--accent-soft);
+      border-radius: 0 12px 12px 0;
+      padding: 14px 16px;
+      font-weight: 650;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+
+    .section-heading p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .design-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .state-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .walkthrough-grid {
+      grid-template-columns: minmax(0, 1.3fr) minmax(320px, .7fr);
+    }
+
+    .card,
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .card {
+      display: flex;
+      min-height: 100%;
+      flex-direction: column;
+      padding: 20px;
+    }
+
+    .card.recommended {
+      border: 2px solid var(--accent);
+    }
+
+    .card-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .candidate-label {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 750;
+      white-space: nowrap;
+    }
+
+    .pill.good {
+      background: var(--good-soft);
+      color: var(--good);
+    }
+
+    .pill.warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .pill.bad {
+      background: var(--bad-soft);
+      color: var(--bad);
+    }
+
+    .card p,
+    .card li {
+      color: var(--muted);
+    }
+
+    .card ul {
+      margin: 6px 0 16px;
+      padding-left: 20px;
+    }
+
+    .score-list {
+      display: grid;
+      gap: 7px;
+      margin-top: auto;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .score-row strong {
+      color: var(--text);
+    }
+
+    .panel {
+      padding: 20px;
+    }
+
+    .state-card {
+      min-height: 116px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    .state-label {
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .state-value {
+      font-size: 18px;
+      font-weight: 780;
+      overflow-wrap: anywhere;
+    }
+
+    .state-detail {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .control-group {
+      margin-top: 16px;
+    }
+
+    .control-group:first-child {
+      margin-top: 0;
+    }
+
+    .control-label {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .button {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      padding: 9px 12px;
+      font-weight: 700;
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      border-color: var(--accent);
+      outline: 3px solid var(--accent-soft);
+    }
+
+    .button.primary {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #ffffff;
+    }
+
+    .button.danger {
+      border-color: #efb3bc;
+      color: var(--bad);
+    }
+
+    .button[disabled] {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 840px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--border);
+      padding: 13px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    td {
+      font-size: 14px;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .status.ready,
+    .status.pending {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .status.completed {
+      background: var(--good-soft);
+      color: var(--good);
+    }
+
+    .status.failed,
+    .status.lost,
+    .status.denied {
+      background: var(--bad-soft);
+      color: var(--bad);
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .tab {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--muted);
+      padding: 7px 11px;
+      font-weight: 760;
+    }
+
+    .tab[aria-selected="true"] {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .walkthrough-copy {
+      min-height: 52px;
+      color: var(--muted);
+    }
+
+    .steps {
+      display: grid;
+      gap: 9px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+    }
+
+    .step-number {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .step.done .step-number {
+      background: var(--good-soft);
+      color: var(--good);
+    }
+
+    .step .button {
+      width: 100%;
+      text-align: left;
+    }
+
+    .code-shell {
+      overflow: hidden;
+      border-radius: 14px;
+      background: var(--code);
+    }
+
+    pre {
+      overflow: auto;
+      margin: 0;
+      padding: 20px;
+      color: #e8ecf8;
+      font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      tab-size: 2;
+    }
+
+    .contract-notes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .note {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-subtle);
+      padding: 13px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .note strong {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--text);
+    }
+
+    .history {
+      display: grid;
+      max-height: 300px;
+      overflow: auto;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .history li {
+      border-left: 3px solid var(--border);
+      padding: 5px 0 5px 11px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .history li:first-child {
+      border-left-color: var(--accent);
+      color: var(--text);
+    }
+
+    .verdict {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      border: 2px solid var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .verdict p {
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .verdict-choice {
+      min-width: 180px;
+      color: var(--accent);
+      font-size: 17px;
+      font-weight: 850;
+      text-align: right;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .design-grid,
+      .state-grid,
+      .contract-notes,
+      .walkthrough-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      main {
+        width: min(100% - 20px, 1180px);
+        padding-top: 10px;
+      }
+
+      .hero,
+      .panel,
+      .card {
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .design-grid,
+      .state-grid,
+      .contract-notes,
+      .walkthrough-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-heading,
+      .verdict {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .verdict-choice {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="eyebrow">Throwaway logic prototype · Issue 19</div>
+      <h1>Where should the Federated Identity Seam end?</h1>
+      <p class="lede">Drive GitHub and OIDC login scenarios through three materially different Go Interface shapes. Watch what survives a restart, what crosses the Seam, and which Module must understand provider protocol details.</p>
+      <div class="question">
+        Question: which Interface lets ATape replace GitHub with a future OIDC Adapter while Provider tokens, raw Claims, PKCE/nonce, bounded retries, and remote protocol details remain inside the Adapter?
+      </div>
+    </header>
+
+    <section aria-labelledby="candidates-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="candidates-heading">Three candidate shapes</h2>
+          <p>Each is plausible. Their failure surfaces are not.</p>
+        </div>
+      </div>
+      <div id="designCards" class="grid design-grid"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="state-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="state-heading">Current experiment state</h2>
+          <p>Every action re-renders the full state for all three designs.</p>
+        </div>
+        <button class="button" type="button" data-action="RESET">Reset experiment</button>
+      </div>
+      <div class="grid state-grid" aria-live="polite">
+        <div class="state-card">
+          <div class="state-label">Identity Provider</div>
+          <div id="providerValue" class="state-value"></div>
+          <div id="providerDetail" class="state-detail"></div>
+        </div>
+        <div class="state-card">
+          <div class="state-label">ATape transaction</div>
+          <div id="transactionValue" class="state-value"></div>
+          <div id="transactionDetail" class="state-detail"></div>
+        </div>
+        <div class="state-card">
+          <div class="state-label">Runtime location</div>
+          <div id="replicaValue" class="state-value"></div>
+          <div id="replicaDetail" class="state-detail"></div>
+        </div>
+        <div class="state-card">
+          <div class="state-label">Last change</div>
+          <div id="lastChangeValue" class="state-value"></div>
+          <div id="verdictValue" class="state-detail"></div>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="control-label">Provider</span>
+        <div class="controls">
+          <button class="button" type="button" data-action="SELECT_GITHUB">Use GitHub OAuth</button>
+          <button class="button" type="button" data-action="SELECT_OIDC">Swap to standard OIDC</button>
+        </div>
+      </div>
+      <div class="control-group">
+        <span class="control-label">Login lifecycle</span>
+        <div class="controls">
+          <button class="button primary" type="button" data-action="BEGIN">Begin browser login</button>
+          <button class="button" type="button" data-action="MOVE_REPLICA">Complete on another replica</button>
+          <button class="button" type="button" data-action="RESTART">Restart the server</button>
+          <button class="button" type="button" data-action="ROTATE_REGISTRATION">Rotate Provider Registration</button>
+          <button class="button primary" type="button" data-action="PROVIDER_APPROVES">Provider approves</button>
+          <button class="button danger" type="button" data-action="PROVIDER_DENIES">User denies at Provider</button>
+          <button class="button danger" type="button" data-action="PROVIDER_OUTAGE">Provider becomes unavailable</button>
+        </div>
+      </div>
+
+      <div class="table-wrap" style="margin-top: 20px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Candidate</th>
+              <th>Status</th>
+              <th>Provider-private state</th>
+              <th>What crosses the Seam</th>
+              <th>Observed consequence</th>
+            </tr>
+          </thead>
+          <tbody id="candidateState"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid walkthrough-grid" aria-labelledby="walkthrough-heading">
+      <div class="panel">
+        <h2 id="walkthrough-heading">Guided walkthroughs</h2>
+        <p class="small">Selecting a walkthrough resets the experiment. Press its steps in order and compare the candidate rows after every step.</p>
+        <div id="walkthroughTabs" class="tabs" role="tablist" aria-label="Prototype walkthroughs"></div>
+        <div id="walkthroughCopy" class="walkthrough-copy"></div>
+        <div id="walkthroughSteps" class="steps"></div>
+      </div>
+      <div class="panel">
+        <h2>Event history</h2>
+        <p class="small">Newest event first. Illegal transitions are retained because they expose hidden ordering assumptions.</p>
+        <ol id="history" class="history" aria-live="polite"></ol>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="code-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="code-heading">Go Interface detail</h2>
+          <p>The snippets are the actual shapes under review, not production code.</p>
+        </div>
+      </div>
+      <div id="codeTabs" class="tabs" role="tablist" aria-label="Candidate Go Interfaces"></div>
+      <div class="code-shell"><pre id="codeView"></pre></div>
+      <div id="contractNotes" class="contract-notes"></div>
+    </section>
+
+    <section class="panel verdict" aria-labelledby="verdict-heading">
+      <div>
+        <h2 id="verdict-heading">Record your reaction</h2>
+        <p>The working hypothesis is Candidate A. Pick the shape you would hand to the GitHub, OIDC, and controlled test Adapter authors.</p>
+        <div class="controls" style="margin-top: 12px;">
+          <button class="button" type="button" data-design-choice="deep">Choose A</button>
+          <button class="button" type="button" data-design-choice="primitives">Choose B</button>
+          <button class="button" type="button" data-design-choice="stateful">Choose C</button>
+        </div>
+      </div>
+      <div id="verdictChoice" class="verdict-choice">No choice recorded</div>
+    </section>
+  </main>
+
+  <script>
+    const PrototypeModel = (() => {
+      const designs = {
+        deep: {
+          letter: "A",
+          name: "Deep begin / complete",
+          badge: "Working hypothesis",
+          badgeTone: "good",
+          summary: "A registration-bound, stateless Adapter hides the whole remote protocol behind two operations and round-trips bounded private continuation state.",
+          strengths: [
+            "Only Verified External Identity crosses inward",
+            "Survives restart and multi-replica completion",
+            "GitHub and OIDC share one caller contract"
+          ],
+          scores: { Depth: "High", Leverage: "High", Locality: "High" },
+          code: `package federatedidentity
+
+type Adapter interface {
+    Begin(context.Context, BeginRequest) (BeginResult, error)
+    Complete(context.Context, CompleteRequest) (VerifiedExternalIdentity, error)
+}
+
+type BeginRequest struct {
+    CallbackURI string // validated canonical URI
+    State       string // ATape login-transaction state
+}
+
+type BeginResult struct {
+    AuthorizationURI string
+    PrivateState     PrivateState // confidential, bounded, versioned
+}
+
+type PrivateState []byte
+
+type CompleteRequest struct {
+    Response     AuthorizationResponse
+    PrivateState PrivateState // exact value returned by Begin
+}
+
+type AuthorizationResponse struct {
+    Code             string
+    ProviderError    string
+    ErrorDescription string
+}
+
+type VerifiedExternalIdentity struct {
+    Issuer  string
+    Subject string
+    Profile ProfileSnapshot // no raw Claims
+}
+
+type Failure struct {
+    Kind  FailureKind
+    Cause error
+}
+
+type FailureKind string
+
+func (failure *Failure) Error() string { return string(failure.Kind) }
+func (failure *Failure) Unwrap() error { return failure.Cause }
+
+const (
+    FailureAccessDenied      FailureKind = "access_denied"
+    FailureInvalidResponse  FailureKind = "invalid_response"
+    FailureUnavailable      FailureKind = "unavailable"
+    FailureMisconfigured    FailureKind = "misconfigured"
+    FailureProtocolViolation FailureKind = "protocol_violation"
+)
+
+// Provider-specific configuration is constructor-only:
+// github.New(github.Config{...})
+// oidc.New(ctx, oidc.Config{...})
+// Implementing Adapter is the BrowserFederatedLogin capability.`,
+          notes: [
+            ["Transaction ownership", "Authentication owns state, expiry, one-time completion, and confidential persistence. The Adapter owns only its opaque PrivateState contents."],
+            ["Failure contract", "The Adapter contains bounded remote retries and token cleanup. Any Complete failure returned to Authentication is terminal for that login transaction."],
+            ["Configuration", "Concrete typed constructors validate provider configuration. No map[string]any configuration or secret crosses the Interface."],
+            ["Conformance", "The same contract suite runs against GitHub, future OIDC, and a controlled test Adapter. Optional future capabilities get separate Interfaces, not SupportsX flags."]
+          ]
+        },
+        primitives: {
+          letter: "B",
+          name: "Protocol primitives",
+          badge: "Wide surface",
+          badgeTone: "warn",
+          summary: "Authentication orchestrates authorization URLs, token exchange, and identity extraction through several low-level provider calls.",
+          strengths: [
+            "Core can customize every protocol step",
+            "Restart works if core persists every protocol field",
+            "OAuth helpers can be shared explicitly"
+          ],
+          scores: { Depth: "Low", Leverage: "Medium", Locality: "Low" },
+          code: `package federatedidentity
+
+type OAuthProvider interface {
+    AuthorizationURL(AuthorizationRequest) (string, error)
+    ExchangeCode(context.Context, CodeExchangeRequest) (AccessToken, error)
+    FetchClaims(context.Context, AccessToken) (map[string]any, error)
+    NormalizeClaims(map[string]any) (VerifiedExternalIdentity, error)
+}
+
+type AuthorizationRequest struct {
+    CallbackURI  string
+    State        string
+    PKCEChallenge string
+    Nonce        string
+    Scopes       []string
+}
+
+// Authentication must now own PKCE, nonce, scopes, token lifetime,
+// provider retries, raw Claims, and GitHub-vs-OIDC branching.`,
+          notes: [
+            ["Transaction ownership", "Authentication persists provider protocol fields directly, so a new provider changes core transaction data and orchestration."],
+            ["Failure contract", "Failures reveal the step that failed. The caller must know whether token exchange happened and whether retrying a code is safe."],
+            ["Configuration", "Generic protocol parameters look reusable but provider quirks and OIDC discovery migrate into Authentication."],
+            ["Conformance", "A contract suite must test call order and intermediate token behavior, coupling tests to private orchestration."]
+          ]
+        },
+        stateful: {
+          letter: "C",
+          name: "Stateful login object",
+          badge: "Process-bound",
+          badgeTone: "bad",
+          summary: "Begin returns an in-memory Login handle that owns all provider state and later completes the callback.",
+          strengths: [
+            "Very small-looking top-level Interface",
+            "Provider details remain behind the object",
+            "Natural for a single-process demo"
+          ],
+          scores: { Depth: "High", Leverage: "Medium", Locality: "Low" },
+          code: `package federatedidentity
+
+type Adapter interface {
+    Start(context.Context, BeginRequest) (Login, error)
+}
+
+type Login interface {
+    AuthorizationURI() string
+    Complete(context.Context, AuthorizationResponse) (
+        VerifiedExternalIdentity,
+        error,
+    )
+}
+
+// The Login value owns PKCE verifier, nonce, provider client,
+// registration revision, and any pending resources in memory.
+// Marshal/Resume would enlarge this into a second lifecycle protocol.`,
+          notes: [
+            ["Transaction ownership", "The Go object is the transaction. A callback must reach the process that created it unless Marshal/Resume is added."],
+            ["Failure contract", "Errors can be typed, but object lifetime and retry legality become hidden mutable state."],
+            ["Configuration", "The handle captures a registration revision in memory, complicating rotation and shutdown."],
+            ["Conformance", "Simple happy-path tests pass; restart, cross-replica, and resource-lifetime tests require implementation-aware harnesses."]
+          ]
+        }
+      };
+
+      const walkthroughs = [
+        {
+          id: "github",
+          name: "GitHub happy path",
+          description: "Start and complete a normal GitHub login. Watch whether Provider tokens or raw user data cross the Seam.",
+          steps: ["SELECT_GITHUB", "BEGIN", "PROVIDER_APPROVES"]
+        },
+        {
+          id: "oidc",
+          name: "Swap to OIDC",
+          description: "Change the Provider without changing Authentication. Candidate B makes the core learn nonce, discovery, ID Token validation, and Claims.",
+          steps: ["SELECT_OIDC", "BEGIN", "PROVIDER_APPROVES"]
+        },
+        {
+          id: "replica",
+          name: "Another replica",
+          description: "Begin on replica A, then receive the callback on replica B. This exposes whether the Interface can round-trip its private state through the database.",
+          steps: ["SELECT_GITHUB", "BEGIN", "MOVE_REPLICA", "PROVIDER_APPROVES"]
+        },
+        {
+          id: "restart",
+          name: "Server restart",
+          description: "Restart between Begin and Complete. A process-local Login object disappears even though the ATape transaction is still pending.",
+          steps: ["SELECT_OIDC", "BEGIN", "RESTART", "PROVIDER_APPROVES"]
+        },
+        {
+          id: "rotation",
+          name: "Registration rotation",
+          description: "Rotate Provider configuration while a login is pending. Observe which design can name and contain the compatibility obligation.",
+          steps: ["SELECT_GITHUB", "BEGIN", "ROTATE_REGISTRATION", "PROVIDER_APPROVES"]
+        },
+        {
+          id: "failure",
+          name: "Provider outage",
+          description: "Force a remote failure after Begin. The deep Adapter returns one stable failure and owns bounded retries and cleanup.",
+          steps: ["SELECT_GITHUB", "BEGIN", "PROVIDER_OUTAGE"]
+        }
+      ];
+
+      const actionLabels = {
+        RESET: "Reset experiment",
+        SELECT_GITHUB: "Use GitHub OAuth",
+        SELECT_OIDC: "Swap to standard OIDC",
+        BEGIN: "Begin browser login",
+        MOVE_REPLICA: "Complete on another replica",
+        RESTART: "Restart the server",
+        ROTATE_REGISTRATION: "Rotate Provider Registration",
+        PROVIDER_APPROVES: "Provider approves",
+        PROVIDER_DENIES: "User denies at Provider",
+        PROVIDER_OUTAGE: "Provider becomes unavailable"
+      };
+
+      const candidate = (stateOwner, exposure) => ({
+        phase: "ready",
+        stateOwner,
+        exposure,
+        consequence: "No login has started."
+      });
+
+      const initialState = () => ({
+        provider: "github",
+        providerName: "GitHub OAuth",
+        transaction: "not started",
+        transactionRevision: null,
+        registrationRevision: 7,
+        replica: "replica-a",
+        restartCount: 0,
+        lastChange: "Experiment reset",
+        verdict: null,
+        history: ["Experiment reset to a clean in-memory state."],
+        candidates: {
+          deep: candidate("No private state yet", "Verified External Identity only"),
+          primitives: candidate("No protocol fields yet", "Token and Claims cross during completion"),
+          stateful: candidate("No Login handle yet", "Verified External Identity only")
+        }
+      });
+
+      const copy = (value) => JSON.parse(JSON.stringify(value));
+
+      function addHistory(state, message) {
+        state.lastChange = message;
+        state.history.unshift(message);
+      }
+
+      function rejectTransition(state, message) {
+        addHistory(state, `Ignored: ${message}`);
+        return state;
+      }
+
+      function setProvider(state, provider, providerName) {
+        if (state.transaction === "pending") {
+          return rejectTransition(state, "a pending login cannot change Identity Provider");
+        }
+        state.provider = provider;
+        state.providerName = providerName;
+        addHistory(state, `Selected ${providerName} for the next login.`);
+        return state;
+      }
+
+      function begin(state) {
+        if (state.transaction === "pending") {
+          return rejectTransition(state, "a login transaction is already pending");
+        }
+        state.transaction = "pending";
+        state.transactionRevision = state.registrationRevision;
+        state.candidates.deep = {
+          phase: "pending",
+          stateOwner: "Confidential ATape transaction + opaque Adapter PrivateState",
+          exposure: "Authorization URI + opaque PrivateState",
+          consequence: `${state.providerName} details remain inside the Adapter.`
+        };
+        state.candidates.primitives = {
+          phase: "pending",
+          stateOwner: state.provider === "oidc"
+            ? "Authentication stores PKCE verifier, nonce, issuer, discovery revision, and scopes"
+            : "Authentication stores PKCE verifier, callback, scopes, and provider step",
+          exposure: "Protocol fields cross the Seam before redirect",
+          consequence: "Authentication owns provider-specific call ordering."
+        };
+        state.candidates.stateful = {
+          phase: "pending",
+          stateOwner: `Login handle in ${state.replica} memory`,
+          exposure: "Authorization URI only",
+          consequence: "Completion now depends on this process and object lifetime."
+        };
+        addHistory(state, `Began ${state.providerName} login with Provider Registration revision ${state.transactionRevision}.`);
+        return state;
+      }
+
+      function moveReplica(state, restarted) {
+        if (state.transaction !== "pending") {
+          return rejectTransition(state, "there is no pending login to move");
+        }
+        state.replica = restarted ? "replica-a (new process)" : "replica-b";
+        if (restarted) state.restartCount += 1;
+        state.candidates.deep.consequence = "Opaque PrivateState is loaded from the ATape transaction; Complete can run here.";
+        state.candidates.primitives.consequence = "The flow survives, but Authentication reloads and interprets provider protocol fields.";
+        state.candidates.stateful.phase = "lost";
+        state.candidates.stateful.stateOwner = "Login handle was lost with the original process";
+        state.candidates.stateful.consequence = "Callback cannot complete without inventing Marshal/Resume and handle versioning.";
+        addHistory(state, restarted
+          ? "Restarted the server while the login remained pending."
+          : "Routed the callback to another replica.");
+        return state;
+      }
+
+      function rotateRegistration(state) {
+        const previous = state.registrationRevision;
+        state.registrationRevision += 1;
+        if (state.transaction === "pending") {
+          state.candidates.deep.consequence = `Transaction explicitly pins revision ${state.transactionRevision}; retain it until its short expiry or return Misconfigured.`;
+          state.candidates.primitives.consequence = `Authentication must preserve revision ${previous} secrets while coordinating each protocol step.`;
+          if (state.candidates.stateful.phase === "pending") {
+            state.candidates.stateful.consequence = `The live handle captured revision ${previous}; shutdown still destroys it.`;
+          }
+        }
+        addHistory(state, `Rotated Provider Registration from revision ${previous} to ${state.registrationRevision}.`);
+        return state;
+      }
+
+      function complete(state, outcome) {
+        if (state.transaction !== "pending") {
+          return rejectTransition(state, "a provider result arrived without a pending login");
+        }
+
+        if (outcome === "approved") {
+          state.transaction = "completed";
+          state.candidates.deep.phase = "completed";
+          state.candidates.deep.stateOwner = "PrivateState consumed and cleared";
+          state.candidates.deep.exposure = "Verified { issuer, subject, profile } only";
+          state.candidates.deep.consequence = "Provider token, raw Claims, PKCE, nonce, validation, and retries stayed behind the Seam.";
+
+          state.candidates.primitives.phase = "completed";
+          state.candidates.primitives.stateOwner = "Core completed the provider-specific orchestration";
+          state.candidates.primitives.exposure = "Provider access token + raw Claims + normalized identity";
+          state.candidates.primitives.consequence = state.provider === "oidc"
+            ? "Authentication had to validate issuer, audience, nonce, ID Token, and Claims."
+            : "Authentication had to coordinate exchange and GET /user token handling.";
+
+          if (state.candidates.stateful.phase === "lost") {
+            state.candidates.stateful.phase = "failed";
+            state.candidates.stateful.exposure = "No result";
+            state.candidates.stateful.consequence = "The callback found no in-memory Login handle.";
+          } else {
+            state.candidates.stateful.phase = "completed";
+            state.candidates.stateful.stateOwner = "Login handle consumed";
+            state.candidates.stateful.exposure = "Verified External Identity only";
+            state.candidates.stateful.consequence = "Works only because the original process and handle survived.";
+          }
+          addHistory(state, `Provider approved; compared successful ${state.providerName} completion.`);
+          return state;
+        }
+
+        state.transaction = outcome === "denied" ? "failed: access denied" : "failed: unavailable";
+        state.candidates.deep.phase = outcome === "denied" ? "denied" : "failed";
+        state.candidates.deep.stateOwner = "PrivateState consumed and cleared";
+        state.candidates.deep.exposure = outcome === "denied" ? "FailureAccessDenied" : "FailureUnavailable";
+        state.candidates.deep.consequence = outcome === "denied"
+          ? "Authentication receives a stable terminal denial."
+          : "Adapter completed bounded retries and token cleanup; caller starts a new login.";
+
+        state.candidates.primitives.phase = "failed";
+        state.candidates.primitives.exposure = "Step-specific provider error and possible partial token state";
+        state.candidates.primitives.consequence = outcome === "denied"
+          ? "Authentication maps provider-specific error parameters."
+          : "Authentication must decide whether exchange happened and whether retrying the code is safe.";
+
+        state.candidates.stateful.phase = state.candidates.stateful.phase === "lost" ? "lost" : "failed";
+        state.candidates.stateful.exposure = outcome === "denied" ? "Handle-specific denial" : "Handle-specific remote error";
+        state.candidates.stateful.consequence = state.candidates.stateful.phase === "lost"
+          ? "The process-local handle was already unavailable."
+          : "Retry legality is hidden in mutable object state.";
+        addHistory(state, outcome === "denied"
+          ? "The user denied access at the Identity Provider."
+          : "The Identity Provider became unavailable during completion.");
+        return state;
+      }
+
+      function transition(previous, action) {
+        if (action.type === "RESET") return initialState();
+        const state = copy(previous);
+        switch (action.type) {
+          case "SELECT_GITHUB": return setProvider(state, "github", "GitHub OAuth");
+          case "SELECT_OIDC": return setProvider(state, "oidc", "standard OIDC");
+          case "BEGIN": return begin(state);
+          case "MOVE_REPLICA": return moveReplica(state, false);
+          case "RESTART": return moveReplica(state, true);
+          case "ROTATE_REGISTRATION": return rotateRegistration(state);
+          case "PROVIDER_APPROVES": return complete(state, "approved");
+          case "PROVIDER_DENIES": return complete(state, "denied");
+          case "PROVIDER_OUTAGE": return complete(state, "outage");
+          case "PICK_DESIGN":
+            state.verdict = action.design;
+            addHistory(state, `Recorded a review preference for Candidate ${designs[action.design].letter}.`);
+            return state;
+          default:
+            return rejectTransition(state, `unknown action ${action.type}`);
+        }
+      }
+
+      return Object.freeze({ designs, walkthroughs, actionLabels, initialState, transition });
+    })();
+
+    let state = PrototypeModel.initialState();
+    let activeCodeDesign = "deep";
+    let activeWalkthrough = PrototypeModel.walkthroughs[0].id;
+    let walkthroughStep = 0;
+
+    const byId = (id) => document.getElementById(id);
+
+    function statusClass(phase) {
+      if (phase === "ready" || phase === "pending") return phase;
+      if (phase === "completed") return "completed";
+      if (phase === "denied") return "denied";
+      if (phase === "lost") return "lost";
+      return "failed";
+    }
+
+    function renderDesignCards() {
+      byId("designCards").innerHTML = Object.entries(PrototypeModel.designs).map(([id, design]) => `
+        <article class="card ${id === "deep" ? "recommended" : ""}">
+          <div class="card-topline">
+            <span class="candidate-label">Candidate ${design.letter}</span>
+            <span class="pill ${design.badgeTone}">${design.badge}</span>
+          </div>
+          <h3>${design.name}</h3>
+          <p>${design.summary}</p>
+          <ul>${design.strengths.map((item) => `<li>${item}</li>`).join("")}</ul>
+          <div class="score-list">
+            ${Object.entries(design.scores).map(([label, value]) => `<div class="score-row"><span>${label}</span><strong>${value}</strong></div>`).join("")}
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderState() {
+      byId("providerValue").textContent = state.providerName;
+      byId("providerDetail").textContent = state.provider === "github"
+        ? "Authorization Code + GET /user"
+        : "Authorization Code + validated ID Token";
+      byId("transactionValue").textContent = state.transaction;
+      byId("transactionDetail").textContent = state.transactionRevision === null
+        ? `Current registration revision: ${state.registrationRevision}`
+        : `Pinned r${state.transactionRevision}; current r${state.registrationRevision}`;
+      byId("replicaValue").textContent = state.replica;
+      byId("replicaDetail").textContent = `${state.restartCount} simulated restart${state.restartCount === 1 ? "" : "s"}`;
+      byId("lastChangeValue").textContent = state.lastChange;
+      byId("verdictValue").textContent = state.verdict
+        ? `Review preference: Candidate ${PrototypeModel.designs[state.verdict].letter}`
+        : "No review preference yet";
+
+      byId("candidateState").innerHTML = Object.entries(state.candidates).map(([id, candidateState]) => {
+        const design = PrototypeModel.designs[id];
+        return `
+          <tr>
+            <td><strong>${design.letter} · ${design.name}</strong></td>
+            <td><span class="status ${statusClass(candidateState.phase)}">${candidateState.phase}</span></td>
+            <td>${candidateState.stateOwner}</td>
+            <td>${candidateState.exposure}</td>
+            <td>${candidateState.consequence}</td>
+          </tr>
+        `;
+      }).join("");
+
+      byId("history").innerHTML = state.history.map((item) => `<li>${item}</li>`).join("");
+      byId("verdictChoice").textContent = state.verdict
+        ? `Candidate ${PrototypeModel.designs[state.verdict].letter}: ${PrototypeModel.designs[state.verdict].name}`
+        : "No choice recorded";
+    }
+
+    function renderCode() {
+      byId("codeTabs").innerHTML = Object.entries(PrototypeModel.designs).map(([id, design]) => `
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          aria-selected="${id === activeCodeDesign}"
+          data-code-design="${id}"
+        >Candidate ${design.letter}</button>
+      `).join("");
+      const design = PrototypeModel.designs[activeCodeDesign];
+      byId("codeView").textContent = design.code;
+      byId("contractNotes").innerHTML = design.notes.map(([title, copy]) => `
+        <div class="note"><strong>${title}</strong>${copy}</div>
+      `).join("");
+    }
+
+    function renderWalkthrough() {
+      byId("walkthroughTabs").innerHTML = PrototypeModel.walkthroughs.map((walkthrough) => `
+        <button
+          class="tab"
+          type="button"
+          role="tab"
+          aria-selected="${walkthrough.id === activeWalkthrough}"
+          data-walkthrough="${walkthrough.id}"
+        >${walkthrough.name}</button>
+      `).join("");
+      const walkthrough = PrototypeModel.walkthroughs.find((item) => item.id === activeWalkthrough);
+      byId("walkthroughCopy").textContent = walkthrough.description;
+      byId("walkthroughSteps").innerHTML = walkthrough.steps.map((action, index) => `
+        <div class="step ${index < walkthroughStep ? "done" : ""}">
+          <span class="step-number">${index + 1}</span>
+          <button
+            class="button ${index === walkthroughStep ? "primary" : ""}"
+            type="button"
+            data-walkthrough-step="${index}"
+            ${index === walkthroughStep ? "" : "disabled"}
+          >${PrototypeModel.actionLabels[action]}</button>
+        </div>
+      `).join("");
+    }
+
+    function render() {
+      renderState();
+      renderCode();
+      renderWalkthrough();
+    }
+
+    function dispatch(type, details = {}) {
+      state = PrototypeModel.transition(state, { type, ...details });
+      render();
+    }
+
+    document.addEventListener("click", (event) => {
+      const actionButton = event.target.closest("[data-action]");
+      if (actionButton) {
+        walkthroughStep = 0;
+        dispatch(actionButton.dataset.action);
+        return;
+      }
+
+      const choiceButton = event.target.closest("[data-design-choice]");
+      if (choiceButton) {
+        dispatch("PICK_DESIGN", { design: choiceButton.dataset.designChoice });
+        return;
+      }
+
+      const codeButton = event.target.closest("[data-code-design]");
+      if (codeButton) {
+        activeCodeDesign = codeButton.dataset.codeDesign;
+        renderCode();
+        return;
+      }
+
+      const walkthroughButton = event.target.closest("[data-walkthrough]");
+      if (walkthroughButton) {
+        activeWalkthrough = walkthroughButton.dataset.walkthrough;
+        walkthroughStep = 0;
+        state = PrototypeModel.initialState();
+        render();
+        return;
+      }
+
+      const stepButton = event.target.closest("[data-walkthrough-step]");
+      if (stepButton) {
+        const walkthrough = PrototypeModel.walkthroughs.find((item) => item.id === activeWalkthrough);
+        const index = Number(stepButton.dataset.walkthroughStep);
+        if (index !== walkthroughStep) return;
+        state = PrototypeModel.transition(state, { type: walkthrough.steps[index] });
+        walkthroughStep += 1;
+        render();
+      }
+    });
+
+    renderDesignCards();
+    render();
+  </script>
+</body>
+</html>
