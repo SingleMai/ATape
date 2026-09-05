@@ -44,7 +44,7 @@ WHERE id = sqlc.arg(project_id);
 -- name: GetSessionForUpdate :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count
+       reported_event_count, captured_by_user_id
 FROM canonical_sessions
 WHERE id = $1
 FOR UPDATE;
@@ -53,10 +53,10 @@ FOR UPDATE;
 INSERT INTO canonical_sessions (
     id, project_id, source_key, revision, digest, title, summary, insight,
     actor_name, actor_harness, branch, status, capture_status, updated_at,
-    reported_event_count
+    reported_event_count, captured_by_user_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15
+    $9, $10, $11, $12, $13, $14, $15, $16
 );
 
 -- name: UpdateSession :exec
@@ -173,7 +173,7 @@ INSERT INTO canonical_projection_changes (event_id, event_ingest_seq, observed_a
 VALUES ($1, $2, $3);
 
 -- name: GetProjectForRead :one
-SELECT id, team_id, name, captured_through, project_type
+SELECT id, team_id, name, captured_through, project_type, state
 FROM canonical_projects
 WHERE id = $1;
 
@@ -181,6 +181,7 @@ WHERE id = $1;
 SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        s.summary, s.insight, s.actor_name, s.actor_harness, s.branch,
        s.status, s.capture_status, s.updated_at, s.reported_event_count,
+       s.captured_by_user_id,
        GREATEST(
            s.reported_event_count,
            (SELECT COUNT(*) FROM canonical_events e WHERE e.session_id = s.id)
@@ -197,7 +198,7 @@ ORDER BY s.updated_at DESC, s.id;
 -- name: GetSessionForRead :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count
+       reported_event_count, captured_by_user_id
 FROM canonical_sessions
 WHERE id = $1;
 

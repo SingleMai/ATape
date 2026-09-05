@@ -22,11 +22,13 @@ type ProjectRecord struct {
 	TeamID string
 	Name   string
 	Type   string
+	State  string
 }
 
 type SessionRecord struct {
 	ID                 string
 	ProjectID          string
+	CapturedByUserID   string
 	SourceKey          string
 	Revision           int64
 	Digest             string
@@ -83,8 +85,7 @@ type WriteBatch struct {
 	Key        string
 	Digest     string
 	ObservedAt time.Time
-	Team       TeamRecord
-	Project    ProjectRecord
+	ProjectID  string
 	Session    SessionRecord
 	Threads    []ThreadRecord
 	Events     []EventRecord
@@ -165,6 +166,14 @@ type ProjectionChange struct {
 type ConflictError struct {
 	Identity string
 	Reason   string
+}
+
+type ProjectStateError struct {
+	State string
+}
+
+func (e *ProjectStateError) Error() string {
+	return fmt.Sprintf("canonical ingestion is unavailable while project is %q", e.State)
 }
 
 func (e *ConflictError) Error() string {

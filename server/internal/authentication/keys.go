@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
 
 	"golang.org/x/crypto/hkdf"
 )
@@ -91,6 +92,36 @@ func (r KeyRing) ids() []string {
 	for id := range r.keys {
 		ids = append(ids, id)
 	}
+	return ids
+}
+
+// ActiveShortCodeDigest returns a purpose-separated HMAC for a normalized
+// low-entropy code without exposing the root pepper to another Module.
+func (r KeyRing) ActiveShortCodeDigest(purpose, normalized string) (string, [sha256.Size]byte, error) {
+	id, root, err := r.active()
+	if err != nil {
+		return "", [sha256.Size]byte{}, err
+	}
+	digest, err := keyedCodeDigest(root, purpose, normalized)
+	return id, digest, err
+}
+
+// ShortCodeDigest verifies a normalized low-entropy code against one accepted
+// pepper generation without exposing the root pepper.
+func (r KeyRing) ShortCodeDigest(id, purpose, normalized string) ([sha256.Size]byte, bool, error) {
+	root, ok := r.get(id)
+	if !ok {
+		return [sha256.Size]byte{}, false, nil
+	}
+	digest, err := keyedCodeDigest(root, purpose, normalized)
+	return digest, true, err
+}
+
+// KeyIDs returns accepted key generations in stable order. It contains no key
+// material and is safe for bounded verification loops.
+func (r KeyRing) KeyIDs() []string {
+	ids := r.ids()
+	sort.Strings(ids)
 	return ids
 }
 

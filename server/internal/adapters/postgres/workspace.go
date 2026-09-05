@@ -4,11 +4,18 @@ import (
 	"context"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/adapters/postgres/internal/db"
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) Workspace(ctx context.Context, activeSince time.Time) (canonical.WorkspaceSnapshot, error) {
+func (s *Store) Workspace(
+	ctx context.Context,
+	principal authentication.Principal,
+	activeSince time.Time,
+) (canonical.WorkspaceSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.WorkspaceSnapshot{}, err
 	}
@@ -18,11 +25,24 @@ func (s *Store) Workspace(ctx context.Context, activeSince time.Time) (canonical
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
-	teamRows, err := queries.ListWorkspaceTeams(ctx)
+	if err := enforceAccess(principal, authorization.WorkspaceListVisible,
+		authorization.ResourceFacts{Kind: authorization.InstanceResource},
+		authorization.MembershipFacts{}); err != nil {
+		return canonical.WorkspaceSnapshot{}, err
+	}
+	userID, err := principalUUID(principal)
+	if err != nil {
+		return canonical.WorkspaceSnapshot{}, concealedAccess(
+			principal, authorization.WorkspaceListVisible, authorization.InstanceResource,
+		)
+	}
+	teamRows, err := queries.ListWorkspaceTeams(ctx, userID)
 	if err != nil {
 		return canonical.WorkspaceSnapshot{}, persist("list Workspace teams", err)
 	}
-	projectRows, err := queries.ListWorkspaceProjects(ctx, activeSince)
+	projectRows, err := queries.ListWorkspaceProjects(ctx, db.ListWorkspaceProjectsParams{
+		ActiveSince: activeSince, UserID: userID,
+	})
 	if err != nil {
 		return canonical.WorkspaceSnapshot{}, persist("list Workspace projects", err)
 	}
@@ -36,7 +56,7 @@ func (s *Store) Workspace(ctx context.Context, activeSince time.Time) (canonical
 	for _, row := range projectRows {
 		snapshot.Projects = append(snapshot.Projects, canonical.WorkspaceProjectSnapshot{
 			Project: canonical.ProjectRecord{
-				ID: row.ID, TeamID: row.TeamID, Name: row.Name, Type: row.ProjectType,
+				ID: row.ID, TeamID: row.TeamID, Name: row.Name, Type: row.ProjectType, State: row.State,
 			},
 			CapturedThrough: row.CapturedThrough, SessionCount: int(row.SessionCount),
 			ActiveSessionCount: int(row.ActiveSessionCount),

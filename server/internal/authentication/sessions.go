@@ -117,6 +117,7 @@ func (m *Module) authenticateWebInTransaction(
 	}
 	state.csrfToken = csrfToken
 	state.principal.AuthenticatedAt = now
+	state.principal.Fresh = requireFresh
 	if touch {
 		if touchedAt, touchErr := queries.TouchWebSession(ctx, authdb.TouchWebSessionParams{
 			ID: row.ID, WriteIntervalSeconds: mustDurationSeconds(m.policy.LastUsedWriteInterval),

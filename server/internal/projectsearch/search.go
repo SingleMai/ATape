@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
 
@@ -34,7 +35,7 @@ type IndexPage struct {
 
 // QueryIndex is the production-varying Seam consumed by Searcher.
 type QueryIndex interface {
-	SearchProjectionDocuments(context.Context, IndexQuery) (IndexPage, error)
+	SearchProjectionDocuments(context.Context, authentication.Principal, IndexQuery) (IndexPage, error)
 }
 
 type ThreadPathItem struct {
@@ -82,6 +83,7 @@ func NewSearcher(index QueryIndex) *Searcher {
 
 func (s *Searcher) Search(
 	ctx context.Context,
+	principal authentication.Principal,
 	projectID string,
 	term string,
 	cursor string,
@@ -105,7 +107,7 @@ func (s *Searcher) Search(
 		return Page{}, &InvalidQueryError{Field: "cursor", Reason: "is not valid"}
 	}
 
-	indexed, err := s.index.SearchProjectionDocuments(ctx, IndexQuery{
+	indexed, err := s.index.SearchProjectionDocuments(ctx, principal, IndexQuery{
 		ProjectID: projectID,
 		Term:      term,
 		Offset:    offset,

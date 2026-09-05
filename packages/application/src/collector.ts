@@ -90,25 +90,21 @@ export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
 
 export type CanonicalSubmission = {
   readonly serverUrl: string
-  readonly userId: string
   readonly installationId: string
-  readonly project: LocalProject
-  readonly adapter: AdapterInstallation
-  readonly observation: AdapterObservation
+  readonly projectId: string
+  readonly adapterId: string
+  readonly adapterVersion: string
+  readonly observation: Pick<AdapterObservation, "observedAt" | "session" | "threads" | "events">
 }
 
 export type RawSubmission = {
   readonly serverUrl: string
-  readonly userId: string
   readonly installationId: string
-  readonly project: LocalProject
-  readonly adapter: AdapterInstallation
-  readonly sourceSessionId: string
+  readonly adapterId: string
+  readonly adapterVersion: string
   readonly serverSessionId: string
-  readonly observationId: string
   readonly observedAt: string
-  readonly adapterSegmentIndex: number
-  readonly transportChunkIndex: number
+  readonly sourceChunkId: string
   readonly sourceObjectId: string
   readonly sourceName: string
   readonly mediaType: string
@@ -364,19 +360,22 @@ const collectAdapter = (
       redactions += redacted.replacements
       const canonical = yield* retryTransport(transport.submitCanonical({
         serverUrl,
-        userId,
         installationId: snapshot.installationId,
-        project,
-        adapter,
-        observation: redacted.observation
+        projectId: project.id,
+        adapterId: adapter.adapterId,
+        adapterVersion: adapter.version,
+        observation: {
+          observedAt: redacted.observation.observedAt,
+          session: redacted.observation.session,
+          threads: redacted.observation.threads,
+          events: redacted.observation.events
+        }
       }))
       canonicalBatches++
       const appended = yield* appendRawSegments({
         transport,
         serverUrl,
-        userId,
         installationId: snapshot.installationId,
-        project,
         adapter,
         original: observation,
         redacted: redacted.observation,
@@ -418,9 +417,7 @@ const collectAdapter = (
 const appendRawSegments = (input: {
   readonly transport: CollectorTransportService
   readonly serverUrl: string
-  readonly userId: string
   readonly installationId: string
-  readonly project: LocalProject
   readonly adapter: AdapterInstallation
   readonly original: AdapterObservation
   readonly redacted: AdapterObservation
@@ -470,16 +467,12 @@ const appendRawSegments = (input: {
       const final = segment.final && chunkIndex === transportChunks.length - 1
       const receipt = yield* retryTransport(input.transport.appendRaw({
         serverUrl: input.serverUrl,
-        userId: input.userId,
         installationId: input.installationId,
-        project: input.project,
-        adapter: input.adapter,
-        sourceSessionId: input.redacted.session.sourceSessionId,
+        adapterId: input.adapter.adapterId,
+        adapterVersion: input.adapter.version,
         serverSessionId: input.serverSessionId,
-        observationId: input.redacted.observationId,
         observedAt: input.redacted.observedAt,
-        adapterSegmentIndex: index,
-        transportChunkIndex: chunkIndex,
+        sourceChunkId: `g${progress.serverGeneration}-o${serverOffset}`,
         sourceObjectId: segment.sourceObjectId,
         sourceName: segment.sourceName,
         mediaType: segment.mediaType,

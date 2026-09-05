@@ -382,17 +382,9 @@ export const makeCollectorTransportLayer = () => Layer.succeed(
 
 const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
   const source = {
-    adapterId: submission.adapter.adapterId,
-    adapterVersion: submission.adapter.version,
-    userId: submission.userId,
+    adapterId: submission.adapterId,
+    adapterVersion: submission.adapterVersion,
     installationId: submission.installationId
-  }
-  const project = {
-    id: submission.project.id,
-    teamId: submission.project.teamId,
-    teamName: submission.project.teamName,
-    name: submission.project.name,
-    type: submission.project.type
   }
   const events = submission.observation.events.map((event) => {
     const projection = projectAcpUpdate(event.update, submission.observation.session.actor)
@@ -406,8 +398,12 @@ const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
       orderFidelity: event.orderFidelity,
       fidelity: event.fidelity,
       rawRef: event.rawRef._tag === "object"
-        ? `${rawObjectId(submission, event.rawRef.sourceObjectId)}${event.rawRef.fragment ?? ""}`
-        : `unavailable:${event.rawRef.reason}`,
+        ? {
+            type: "object" as const,
+            sourceObjectId: event.rawRef.sourceObjectId,
+            ...(event.rawRef.fragment === undefined ? {} : { fragment: event.rawRef.fragment })
+          }
+        : { type: "unavailable" as const, reason: event.rawRef.reason },
       kind: event.childSourceThreadId === undefined ? projection.kind : "spawn" as const,
       author: projection.author,
       occurredAt: event.occurredAt,
@@ -421,7 +417,7 @@ const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
     canonicalProfileVersion: CanonicalProfileVersion,
     observedAt: submission.observation.observedAt,
     source,
-    project,
+    projectId: submission.projectId,
     session: submission.observation.session,
     threads: submission.observation.threads,
     events
@@ -478,51 +474,24 @@ const projectAcpContent = (content: AcpContentBlock): string => {
 const rawChunk = (submission: RawSubmission): RawUploadChunk => {
   const content = Buffer.from(submission.content, "utf8")
   const sha256 = digest(content)
-  const objectId = rawObjectId(submission, submission.sourceObjectId)
   const base = {
     protocolVersion: RawIngestionProtocolVersion,
-    objectId,
-    projectId: submission.project.id,
+    sourceObjectId: submission.sourceObjectId,
     sessionId: submission.serverSessionId,
+    installationId: submission.installationId,
     generation: submission.serverGeneration,
     offset: submission.serverOffset,
     sourceName: submission.sourceName,
     mediaType: submission.mediaType,
-    adapterId: submission.adapter.adapterId,
-    adapterVersion: submission.adapter.version,
+    adapterId: submission.adapterId,
+    adapterVersion: submission.adapterVersion,
     capturedAt: submission.observedAt,
     clientRedacted: true as const,
     final: submission.final,
     contentBase64: content.toString("base64"),
     sha256
   }
-  return {
-    ...base,
-    chunkId: `c_${digest(JSON.stringify({
-      ...base,
-      observationId: submission.observationId,
-      adapterSegmentIndex: submission.adapterSegmentIndex,
-      transportChunkIndex: submission.transportChunkIndex
-    }))}`
-  }
-}
-
-const rawObjectId = (
-  submission: Pick<CanonicalSubmission, "userId" | "installationId" | "project" | "adapter" | "observation"> |
-    Pick<RawSubmission, "userId" | "installationId" | "project" | "adapter" | "sourceSessionId">,
-  sourceObjectId: string
-) => {
-  const sourceSessionId = "observation" in submission
-    ? submission.observation.session.sourceSessionId
-    : submission.sourceSessionId
-  return `r_${digest(JSON.stringify({
-    projectId: submission.project.id,
-    userId: submission.userId,
-    installationId: submission.installationId,
-    adapterId: submission.adapter.adapterId,
-    sourceSessionId,
-    sourceObjectId
-  }))}`
+  return { ...base, sourceChunkId: submission.sourceChunkId }
 }
 
 const postJSON = <A, I>(

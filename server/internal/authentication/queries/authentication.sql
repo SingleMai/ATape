@@ -87,6 +87,44 @@ FROM auth_users
 WHERE id = $1
 FOR UPDATE;
 
+-- name: ListActiveOwnerTeamIDsForUser :many
+SELECT team_id
+FROM team_memberships
+WHERE user_id = $1 AND status = 'active' AND role = 'owner'
+ORDER BY team_id;
+
+-- name: LockTeamForUserDisable :exec
+SELECT id
+FROM workspace_teams
+WHERE id = $1
+FOR UPDATE;
+
+-- name: CountOtherActiveOwnersForUserDisable :one
+SELECT COUNT(*)::bigint
+FROM team_memberships memberships
+JOIN auth_users users ON users.id = memberships.user_id
+WHERE memberships.team_id = $1
+  AND memberships.status = 'active'
+  AND memberships.role = 'owner'
+  AND users.status = 'active'
+  AND memberships.user_id <> $2;
+
+-- name: DisableUser :execrows
+UPDATE auth_users
+SET status = 'disabled', disabled_at = clock_timestamp(), updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active';
+
+-- name: FailFederatedLoginsForUser :execrows
+UPDATE auth_federated_login_transactions
+SET status = 'failed', terminal_at = clock_timestamp(), failure_code = 'user_disabled',
+    private_state_key_id = NULL, private_state_nonce = NULL, private_state_ciphertext = NULL
+WHERE initiating_user_id = $1 AND status IN ('pending', 'completing');
+
+-- name: ExpireApprovedCLIAuthorizationsForUser :execrows
+UPDATE auth_cli_device_authorizations
+SET status = 'expired', terminal_at = clock_timestamp()
+WHERE approving_user_id = $1 AND status = 'approved_unclaimed';
+
 -- name: InsertExternalIdentity :exec
 INSERT INTO auth_external_identities (
     id, user_id, issuer, subject, status, display_name, avatar_url

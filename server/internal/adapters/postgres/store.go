@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/postgres/internal/db"
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +24,11 @@ func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool, queries: db.New(pool)}
 }
 
-func (s *Store) ApplyBatch(ctx context.Context, batch canonical.WriteBatch) (canonical.ApplyResult, error) {
+func (s *Store) ApplyBatch(
+	ctx context.Context,
+	principal authentication.Principal,
+	batch canonical.WriteBatch,
+) (canonical.ApplyResult, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.ApplyResult{}, err
 	}
@@ -32,12 +38,23 @@ func (s *Store) ApplyBatch(ctx context.Context, batch canonical.WriteBatch) (can
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
-
 	if err := queries.AcquireCanonicalLock(ctx, "batch:"+batch.Key); err != nil {
 		return canonical.ApplyResult{}, persist("lock batch", err)
 	}
 	if err := queries.AcquireCanonicalLock(ctx, "session:"+batch.Session.SourceKey); err != nil {
 		return canonical.ApplyResult{}, persist("lock session", err)
+	}
+	project, err := resolveProjectAccess(
+		ctx, queries, principal, batch.ProjectID, authorization.CanonicalIngest, true,
+	)
+	if err != nil {
+		return canonical.ApplyResult{}, err
+	}
+	if project.projectState != "active" {
+		return canonical.ApplyResult{}, &canonical.ProjectStateError{State: project.projectState}
+	}
+	if batch.Session.ProjectID != batch.ProjectID || batch.Session.CapturedByUserID != principal.UserID {
+		return canonical.ApplyResult{}, conflict(batch.Session.ID, "server capture scope is inconsistent")
 	}
 
 	if receipt, err := queries.GetBatchReceipt(ctx, batch.Key); err == nil {
@@ -57,32 +74,6 @@ func (s *Store) ApplyBatch(ctx context.Context, batch canonical.WriteBatch) (can
 		return canonical.ApplyResult{}, persist("read batch receipt", err)
 	}
 
-	if err := queries.RegisterTeam(ctx, db.RegisterTeamParams{
-		ID: batch.Team.ID, Name: batch.Team.Name,
-	}); err != nil {
-		return canonical.ApplyResult{}, persist("register team", err)
-	}
-	team, err := queries.GetTeam(ctx, batch.Team.ID)
-	if err != nil {
-		return canonical.ApplyResult{}, persist("read team", err)
-	}
-	if team.Name != batch.Team.Name {
-		return canonical.ApplyResult{}, conflict(batch.Team.ID, "team identity is immutable")
-	}
-	if err := queries.InsertProject(ctx, db.InsertProjectParams{
-		ID: batch.Project.ID, TeamID: batch.Project.TeamID, Name: batch.Project.Name,
-		ProjectType: batch.Project.Type,
-	}); err != nil {
-		return canonical.ApplyResult{}, persist("insert project", err)
-	}
-	project, err := queries.GetProject(ctx, batch.Project.ID)
-	if err != nil {
-		return canonical.ApplyResult{}, persist("read project", err)
-	}
-	if project.TeamID != batch.Project.TeamID || project.Name != batch.Project.Name || project.ProjectType != batch.Project.Type {
-		return canonical.ApplyResult{}, conflict(batch.Project.ID, "project identity is immutable")
-	}
-
 	result := canonical.ApplyResult{SessionID: batch.Session.ID}
 	existingSession, err := queries.GetSessionForUpdate(ctx, batch.Session.ID)
 	sessionExists := err == nil
@@ -96,11 +87,20 @@ func (s *Store) ApplyBatch(ctx context.Context, batch canonical.WriteBatch) (can
 		if existingSession.ProjectID != batch.Session.ProjectID {
 			return canonical.ApplyResult{}, conflict(batch.Session.SourceKey, "session project is immutable")
 		}
+		if domainUUID(existingSession.CapturedByUserID) != principal.UserID {
+			return canonical.ApplyResult{}, conflict(batch.Session.SourceKey, "capturing User is immutable")
+		}
 		if existingSession.Revision == batch.Session.Revision && existingSession.Digest != batch.Session.Digest {
 			return canonical.ApplyResult{}, conflict(batch.Session.SourceKey, "session revision has different content")
 		}
-	} else if err := queries.InsertSession(ctx, insertSessionParams(batch.Session)); err != nil {
-		return canonical.ApplyResult{}, persist("insert session", err)
+	} else {
+		params, mappingErr := insertSessionParams(batch.Session)
+		if mappingErr != nil {
+			return canonical.ApplyResult{}, conflict(batch.Session.ID, "capturing User is invalid")
+		}
+		if err := queries.InsertSession(ctx, params); err != nil {
+			return canonical.ApplyResult{}, persist("insert session", err)
+		}
 	}
 	result.SessionCreated = !sessionExists
 	if sessionExists && batch.Session.Revision > existingSession.Revision {
@@ -210,7 +210,7 @@ func (s *Store) ApplyBatch(ctx context.Context, batch canonical.WriteBatch) (can
 
 	if err := queries.AdvanceProjectCapture(ctx, db.AdvanceProjectCaptureParams{
 		ObservedAt: batch.ObservedAt,
-		ProjectID:  batch.Project.ID,
+		ProjectID:  batch.ProjectID,
 	}); err != nil {
 		return canonical.ApplyResult{}, persist("advance project capture", err)
 	}
@@ -232,7 +232,11 @@ func (s *Store) ApplyBatch(ctx context.Context, batch canonical.WriteBatch) (can
 	return result, nil
 }
 
-func (s *Store) Project(ctx context.Context, projectID string) (canonical.ProjectSnapshot, bool, error) {
+func (s *Store) Project(
+	ctx context.Context,
+	principal authentication.Principal,
+	projectID string,
+) (canonical.ProjectSnapshot, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.ProjectSnapshot{}, false, err
 	}
@@ -242,6 +246,14 @@ func (s *Store) Project(ctx context.Context, projectID string) (canonical.Projec
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
+	if _, err := resolveProjectAccess(
+		ctx, queries, principal, projectID, authorization.ProjectMemoryRead, false,
+	); err != nil {
+		if isConcealedAccess(err) {
+			return canonical.ProjectSnapshot{}, false, nil
+		}
+		return canonical.ProjectSnapshot{}, false, err
+	}
 	project, err := queries.GetProjectForRead(ctx, projectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return canonical.ProjectSnapshot{}, false, nil
@@ -254,13 +266,13 @@ func (s *Store) Project(ctx context.Context, projectID string) (canonical.Projec
 		return canonical.ProjectSnapshot{}, false, persist("list project sessions", err)
 	}
 	snapshot := canonical.ProjectSnapshot{
-		Project:         canonical.ProjectRecord{ID: project.ID, TeamID: project.TeamID, Name: project.Name, Type: project.ProjectType},
+		Project:         canonical.ProjectRecord{ID: project.ID, TeamID: project.TeamID, Name: project.Name, Type: project.ProjectType, State: project.State},
 		CapturedThrough: project.CapturedThrough,
 		Sessions:        make([]canonical.ProjectSessionSnapshot, 0, len(rows)),
 	}
 	for _, row := range rows {
 		snapshot.Sessions = append(snapshot.Sessions, canonical.ProjectSessionSnapshot{
-			Session:          sessionRecord(row.ID, row.ProjectID, row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount),
+			Session:          sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount),
 			EventCount:       int(row.EventCount),
 			ChildThreadCount: int(row.ChildThreadCount),
 		})
@@ -271,7 +283,12 @@ func (s *Store) Project(ctx context.Context, projectID string) (canonical.Projec
 	return snapshot, true, nil
 }
 
-func (s *Store) Conversation(ctx context.Context, sessionID string, threadID string) (canonical.ConversationSnapshot, bool, error) {
+func (s *Store) Conversation(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+	threadID string,
+) (canonical.ConversationSnapshot, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.ConversationSnapshot{}, false, err
 	}
@@ -281,6 +298,14 @@ func (s *Store) Conversation(ctx context.Context, sessionID string, threadID str
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
+	if _, err := resolveSessionAccess(
+		ctx, queries, principal, sessionID, authorization.ConversationRead, false,
+	); err != nil {
+		if isConcealedAccess(err) {
+			return canonical.ConversationSnapshot{}, false, nil
+		}
+		return canonical.ConversationSnapshot{}, false, err
+	}
 	storedSession, err := queries.GetSessionForRead(ctx, sessionID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return canonical.ConversationSnapshot{}, false, nil

@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 )
@@ -17,12 +19,20 @@ type Index struct {
 	mu          sync.RWMutex
 	documents   map[string]canonical.EventProjection
 	checkpoints map[string]time.Time
+	access      ProjectAccess
 }
 
-func New() *Index {
+// ProjectAccess keeps the development Search index free of copied Membership
+// state. The current control-plane Adapter remains authoritative.
+type ProjectAccess interface {
+	AuthorizeProject(context.Context, authentication.Principal, string, authorization.Action) error
+}
+
+func New(access ProjectAccess) *Index {
 	return &Index{
 		documents:   make(map[string]canonical.EventProjection),
 		checkpoints: make(map[string]time.Time),
+		access:      access,
 	}
 }
 
@@ -46,8 +56,20 @@ func (i *Index) UpsertProjectionDocuments(ctx context.Context, documents []canon
 	return nil
 }
 
-func (i *Index) SearchProjectionDocuments(ctx context.Context, query projectsearch.IndexQuery) (projectsearch.IndexPage, error) {
+func (i *Index) SearchProjectionDocuments(
+	ctx context.Context,
+	principal authentication.Principal,
+	query projectsearch.IndexQuery,
+) (projectsearch.IndexPage, error) {
 	if err := ctx.Err(); err != nil {
+		return projectsearch.IndexPage{}, err
+	}
+	if i.access == nil {
+		return projectsearch.IndexPage{}, authorization.Enforce(authorization.Outcome{
+			Decision: authorization.Conceal, Denial: authorization.ResourceConcealed,
+		})
+	}
+	if err := i.access.AuthorizeProject(ctx, principal, query.ProjectID, authorization.ProjectSearchQuery); err != nil {
 		return projectsearch.IndexPage{}, err
 	}
 	i.mu.RLock()

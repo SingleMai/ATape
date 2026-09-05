@@ -3,6 +3,7 @@ package ingestion
 import (
 	"context"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
 
@@ -10,5 +11,5 @@ import (
 // Implementations must apply a normalized batch atomically and preserve the
 // idempotency and revision semantics represented by canonical.ApplyResult.
 type BatchStore interface {
-	ApplyBatch(context.Context, canonical.WriteBatch) (canonical.ApplyResult, error)
+	ApplyBatch(context.Context, authentication.Principal, canonical.WriteBatch) (canonical.ApplyResult, error)
 }

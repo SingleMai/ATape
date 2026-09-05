@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/postgres/internal/db"
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/jackc/pgx/v5"
@@ -138,8 +140,23 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 	return nil
 }
 
-func (s *Store) SearchProjectionDocuments(ctx context.Context, query projectsearch.IndexQuery) (projectsearch.IndexPage, error) {
-	rows, err := s.queries.SearchDocuments(ctx, db.SearchDocumentsParams{
+func (s *Store) SearchProjectionDocuments(
+	ctx context.Context,
+	principal authentication.Principal,
+	query projectsearch.IndexQuery,
+) (projectsearch.IndexPage, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return projectsearch.IndexPage{}, persist("begin Search query", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	queries := s.queries.WithTx(tx)
+	if _, err := resolveProjectAccess(
+		ctx, queries, principal, query.ProjectID, authorization.ProjectSearchQuery, false,
+	); err != nil {
+		return projectsearch.IndexPage{}, err
+	}
+	rows, err := queries.SearchDocuments(ctx, db.SearchDocumentsParams{
 		ProjectID:    query.ProjectID,
 		Term:         query.Term,
 		ResultOffset: int32(query.Offset),
@@ -167,11 +184,15 @@ func (s *Store) SearchProjectionDocuments(ctx context.Context, query projectsear
 		})
 		total = int(row.TotalCount)
 	}
-	checkpoint, err := s.queries.GetSearchCheckpoint(ctx, query.ProjectID)
+	checkpoint, err := queries.GetSearchCheckpoint(ctx, query.ProjectID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return projectsearch.IndexPage{}, persist("read Search checkpoint", err)
 	}
-	return projectsearch.IndexPage{
+	page := projectsearch.IndexPage{
 		Documents: documents, Total: total, IndexedThrough: checkpoint,
-	}, nil
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return projectsearch.IndexPage{}, persist("commit Search query", err)
+	}
+	return page, nil
 }
