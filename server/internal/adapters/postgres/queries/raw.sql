@@ -4,7 +4,7 @@ SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(lock_key)::text, 1));
 -- name: GetRawCanonicalSessionProject :one
 SELECT project_id
 FROM canonical_sessions
-WHERE id = $1;
+WHERE id = $1 AND record_state = 'active';
 
 -- name: GetRawChunkForReplay :one
 SELECT c.chunk_id, c.object_id, c.generation, c.ordinal, c.byte_offset,

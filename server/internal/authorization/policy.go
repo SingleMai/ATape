@@ -57,6 +57,59 @@ const (
 	actionLimit
 )
 
+var actionNames = [...]string{
+	WorkspaceListVisible:       "workspace.list_visible",
+	TeamCreate:                 "team.create",
+	UserReadSelf:               "user.read_self",
+	UserUpdateProfile:          "user.update_profile",
+	ExternalIdentityList:       "external_identity.list",
+	ExternalIdentityBind:       "external_identity.bind",
+	WebSessionList:             "web_session.list",
+	WebSessionRevokeOne:        "web_session.revoke_one",
+	WebSessionRevokeAll:        "web_session.revoke_all",
+	CLICredentialList:          "cli_credential.list",
+	CLICredentialRevokeOne:     "cli_credential.revoke_one",
+	CLICredentialRevokeAll:     "cli_credential.revoke_all",
+	CLICredentialReadCurrent:   "cli_credential.read_current",
+	CLICredentialRevokeCurrent: "cli_credential.revoke_current",
+	TeamJoinWithCode:           "team.join_with_code",
+	TeamReadMetadata:           "team.read_metadata",
+	ProjectListMetadata:        "project.list_metadata",
+	ProjectReadMetadata:        "project.read_metadata",
+	ProjectMatch:               "project.match",
+	MembershipList:             "membership.list",
+	TeamUpdateDisplayProfile:   "team.update_display_profile",
+	MembershipPromoteToOwner:   "membership.promote_to_owner",
+	MembershipDemoteOwner:      "membership.demote_owner",
+	MembershipRemoveMember:     "membership.remove_member",
+	MembershipRemoveOwner:      "membership.remove_owner",
+	MembershipLeaveSelf:        "membership.leave_self",
+	TeamJoinCodeReadStatus:     "team_join_code.read_status",
+	TeamJoinCodeRotate:         "team_join_code.rotate",
+	TeamJoinCodeDisable:        "team_join_code.disable",
+	ProjectCreate:              "project.create",
+	FolderProjectRename:        "folder_project.rename",
+	GitProjectRelinkRepository: "git_project.relink_repository",
+	ProjectArchive:             "project.archive",
+	ProjectDelete:              "project.delete",
+	ProjectMemoryRead:          "project_memory.read",
+	ConversationRead:           "conversation.read",
+	ProjectSearchQuery:         "project_search.query",
+	RawSessionList:             "raw_session.list",
+	RawObjectRead:              "raw_object.read",
+	CanonicalIngest:            "canonical.ingest",
+	RawIngest:                  "raw.ingest",
+	CapturedSessionDeleteOwn:   "captured_session.delete_own",
+	CapturedSessionDeleteAny:   "captured_session.delete_any",
+}
+
+func (action Action) String() string {
+	if action <= UnknownAction || action >= actionLimit || actionNames[action] == "" {
+		return "unknown"
+	}
+	return actionNames[action]
+}
+
 // ResourceKind is the trusted semantic kind resolved by the Module that owns
 // the Resource. It is deliberately unrelated to routes or client input.
 type ResourceKind uint8
@@ -286,4 +339,16 @@ func Actions() []Action {
 		actions = append(actions, action)
 	}
 	return actions
+}
+
+// ActionInventory returns the complete stable names used by policy reviews and
+// contract tooling. These names describe server capabilities; they are not
+// claims embedded in a Web Session or CLI Credential.
+func ActionInventory() []string {
+	actions := Actions()
+	result := make([]string, 0, len(actions))
+	for _, action := range actions {
+		result = append(result, action.String())
+	}
+	return result
 }

@@ -66,4 +66,4 @@ For consequential Interfaces, design at least two substantially different shapes
 
 ## Status
 
-The architectural rules are accepted. Exact implementation choices are recorded in the ADR index. The Go transport/router remains undecided unless another project decision explicitly fixes it.
+The architectural rules are accepted. Exact implementation choices are recorded in the ADR index. ADR-0017 fixes the Go HTTP Adapter on a closed route registry over the standard-library router.

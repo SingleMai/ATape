@@ -81,6 +81,9 @@ func (s *Store) ApplyBatch(
 		return canonical.ApplyResult{}, persist("read session", err)
 	}
 	if sessionExists {
+		if existingSession.RecordState != "active" {
+			return canonical.ApplyResult{}, &canonical.ProjectStateError{State: "session_deleted"}
+		}
 		if existingSession.SourceKey != batch.Session.SourceKey {
 			return canonical.ApplyResult{}, conflict(batch.Session.ID, "session id resolved from a different source")
 		}

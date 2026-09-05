@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,21 +22,32 @@ import (
 	postgresadapter "github.com/SingleMai/ATape/server/internal/adapters/postgres"
 	"github.com/SingleMai/ATape/server/internal/adapters/rawchunks"
 	"github.com/SingleMai/ATape/server/internal/authentication"
+	githubauth "github.com/SingleMai/ATape/server/internal/authentication/github"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/workspace"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
 )
 
 type serverConfig struct {
-	address      string
-	databaseURL  string
-	rawDirectory string
-	demoMode     bool
+	address       string
+	databaseURL   string
+	rawDirectory  string
+	demoMode      bool
+	http          httpapi.Config
+	pepperKeys    authentication.KeyRing
+	privateKeys   authentication.KeyRing
+	github        githubauth.Config
+	githubEnabled bool
 }
+
+func (serverConfig) String() string          { return "main.serverConfig{secrets:redacted}" }
+func (config serverConfig) GoString() string { return config.String() }
 
 func loadConfig() (serverConfig, error) {
 	address := os.Getenv("ATAPE_SERVER_ADDRESS")
@@ -54,7 +69,174 @@ func loadConfig() (serverConfig, error) {
 	if config.databaseURL == "" && !config.demoMode {
 		return serverConfig{}, errors.New("ATAPE_DATABASE_URL is required unless ATAPE_DEMO_MODE=true")
 	}
+	if config.demoMode {
+		if config.databaseURL != "" {
+			return serverConfig{}, errors.New("ATAPE_DEMO_MODE cannot be combined with ATAPE_DATABASE_URL")
+		}
+		demoHTTP, err := demoHTTPConfig(address)
+		if err != nil {
+			return serverConfig{}, err
+		}
+		principal := authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication, Fresh: true}
+		demoHTTP.DevelopmentPrincipal = &principal
+		config.http = demoHTTP
+		return config, nil
+	}
+
+	publicURL := os.Getenv("ATAPE_PUBLIC_URL")
+	if publicURL == "" {
+		return serverConfig{}, errors.New("ATAPE_PUBLIC_URL is required outside demo mode")
+	}
+	apiPublicURL := os.Getenv("ATAPE_API_PUBLIC_URL")
+	if apiPublicURL == "" {
+		apiPublicURL = publicURL
+	}
+	allowHTTP, err := optionalBoolean("ATAPE_DEVELOPMENT_ALLOW_HTTP")
+	if err != nil {
+		return serverConfig{}, err
+	}
+	configuredHTTP := httpapi.Config{
+		InstanceOrigin: publicURL, WebOrigin: publicURL, APIOrigin: apiPublicURL,
+		CookieDomain: os.Getenv("ATAPE_COOKIE_DOMAIN"), DevelopmentAllowHTTP: allowHTTP,
+	}
+	config.http, err = httpapi.NormalizeConfig(configuredHTTP)
+	if err != nil {
+		return serverConfig{}, fmt.Errorf("validate public HTTP topology: %w", err)
+	}
+
+	config.pepperKeys, err = loadKeyRing("ATAPE_AUTH_PEPPER_KEY_RING")
+	if err != nil {
+		return serverConfig{}, err
+	}
+	config.privateKeys, err = loadKeyRing("ATAPE_AUTH_PRIVATE_STATE_KEY_RING")
+	if err != nil {
+		return serverConfig{}, err
+	}
+	clientID, clientIDSet := os.LookupEnv("ATAPE_GITHUB_CLIENT_ID")
+	clientSecret, clientSecretSet, err := readSecretSetting("ATAPE_GITHUB_CLIENT_SECRET")
+	if err != nil {
+		return serverConfig{}, err
+	}
+	if clientIDSet != clientSecretSet {
+		return serverConfig{}, errors.New("GitHub Provider requires both client id and client secret")
+	}
+	if clientIDSet {
+		if clientID == "" || strings.TrimSpace(clientID) != clientID || strings.ContainsAny(clientID, "\x00\r\n") {
+			return serverConfig{}, errors.New("ATAPE_GITHUB_CLIENT_ID is invalid")
+		}
+		config.github = githubauth.Config{ClientID: clientID, ClientSecret: clientSecret}
+		config.githubEnabled = true
+	}
 	return config, nil
+}
+
+func demoHTTPConfig(address string) (httpapi.Config, error) {
+	host, port, err := net.SplitHostPort(address)
+	parsedHost := net.ParseIP(host)
+	if err != nil || port == "" || (!strings.EqualFold(host, "localhost") && (parsedHost == nil || !parsedHost.IsLoopback())) {
+		return httpapi.Config{}, errors.New("ATAPE_DEMO_MODE requires an explicit loopback listen address")
+	}
+	origin := "http://" + net.JoinHostPort(host, port)
+	config, err := httpapi.NormalizeConfig(httpapi.Config{
+		InstanceOrigin: origin, WebOrigin: origin, APIOrigin: origin, DevelopmentAllowHTTP: true,
+	})
+	if err != nil {
+		return httpapi.Config{}, fmt.Errorf("validate demo HTTP topology: %w", err)
+	}
+	return config, nil
+}
+
+func optionalBoolean(name string) (bool, error) {
+	value, configured := os.LookupEnv(name)
+	if !configured || value == "" {
+		return false, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return parsed, nil
+}
+
+func readSecretSetting(name string) (string, bool, error) {
+	direct, hasDirect := os.LookupEnv(name)
+	path, hasFile := os.LookupEnv(name + "_FILE")
+	if hasDirect && hasFile {
+		return "", false, fmt.Errorf("%s and %s_FILE are mutually exclusive", name, name)
+	}
+	if !hasDirect && !hasFile {
+		return "", false, nil
+	}
+	if hasDirect {
+		if direct == "" {
+			return "", false, fmt.Errorf("%s must not be empty", name)
+		}
+		return direct, true, nil
+	}
+	if path == "" {
+		return "", false, fmt.Errorf("%s_FILE must not be empty", name)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", false, fmt.Errorf("read %s_FILE: %w", name, err)
+	}
+	defer file.Close()
+	encoded, err := io.ReadAll(io.LimitReader(file, (64<<10)+1))
+	if err != nil {
+		return "", false, fmt.Errorf("read %s_FILE: %w", name, err)
+	}
+	if len(encoded) > 64<<10 {
+		return "", false, fmt.Errorf("%s_FILE exceeds 64 KiB", name)
+	}
+	value := string(encoded)
+	value = strings.TrimSuffix(value, "\n")
+	value = strings.TrimSuffix(value, "\r")
+	if value == "" {
+		return "", false, fmt.Errorf("%s_FILE must not be empty", name)
+	}
+	return value, true, nil
+}
+
+type encodedKeyRing struct {
+	Active string            `json:"active"`
+	Keys   map[string]string `json:"keys"`
+}
+
+func loadKeyRing(name string) (authentication.KeyRing, error) {
+	encoded, configured, err := readSecretSetting(name)
+	if err != nil {
+		return authentication.KeyRing{}, err
+	}
+	if !configured {
+		return authentication.KeyRing{}, fmt.Errorf("%s or %s_FILE is required", name, name)
+	}
+	decoder := json.NewDecoder(strings.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	var document encodedKeyRing
+	if err := decoder.Decode(&document); err != nil {
+		return authentication.KeyRing{}, fmt.Errorf("%s is not a valid key ring", name)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return authentication.KeyRing{}, fmt.Errorf("%s must contain exactly one JSON object", name)
+	}
+	ids := make([]string, 0, len(document.Keys))
+	for id := range document.Keys {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	entries := make([]authentication.KeyMaterial, 0, len(ids))
+	for _, id := range ids {
+		entry, err := authentication.DecodeKeyMaterial(id, document.Keys[id])
+		if err != nil {
+			return authentication.KeyRing{}, fmt.Errorf("validate %s: %w", name, err)
+		}
+		entries = append(entries, entry)
+	}
+	ring, err := authentication.NewKeyRing(document.Active, entries)
+	if err != nil {
+		return authentication.KeyRing{}, fmt.Errorf("validate %s: %w", name, err)
+	}
+	return ring, nil
 }
 
 type persistenceAdapters struct {
@@ -67,10 +249,11 @@ type persistenceAdapters struct {
 	QueryIndex      projectsearch.QueryIndex
 	DirectoryStore  workspace.DirectoryStore
 	RawArchive      *rawarchive.Archive
+	Pool            *pgxpool.Pool
 }
 
 func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (persistenceAdapters, error) {
-	if config.databaseURL == "" {
+	if config.demoMode {
 		store := canonical.NewDemoStore()
 		index := memorysearch.New(store)
 		raw, err := memoryraw.NewDemoArchive(store)
@@ -82,6 +265,9 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 			BatchStore: store, SnapshotStore: store, ChangeSource: store,
 			ProjectionIndex: index, QueryIndex: index, DirectoryStore: store, RawArchive: raw,
 		}, nil
+	}
+	if config.databaseURL == "" {
+		return persistenceAdapters{}, errors.New("PostgreSQL persistence requires ATAPE_DATABASE_URL")
 	}
 
 	pool, err := postgresadapter.NewPool(config.databaseURL)
@@ -118,8 +304,69 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 	return persistenceAdapters{
 		BatchStore: store, SnapshotStore: store, ChangeSource: store,
 		ProjectionIndex: store, QueryIndex: store, DirectoryStore: store,
-		RawArchive: rawarchive.NewArchive(store, chunkStore),
+		RawArchive: rawarchive.NewArchive(store, chunkStore), Pool: pool,
 	}, nil
+}
+
+type securityModules struct {
+	fx.Out
+
+	Authentication *authentication.Module
+	Teams          *team.Module
+}
+
+func provideSecurityModules(
+	lifecycle fx.Lifecycle,
+	config serverConfig,
+	pool *pgxpool.Pool,
+) (securityModules, error) {
+	if config.demoMode {
+		return securityModules{}, nil
+	}
+	registrations := make([]authentication.ProviderRegistration, 0, 1)
+	if config.githubEnabled {
+		adapter, err := githubauth.New(config.github)
+		if err != nil {
+			return securityModules{}, err
+		}
+		registrations = append(registrations, authentication.ProviderRegistration{
+			ID: githubauth.RegistrationID, Label: "GitHub", Revision: githubauth.RegistrationRevision,
+			ExpectedIssuer: githubauth.Issuer,
+			CallbackURI:    config.http.APIOrigin + "/api/v1/auth/github/callback",
+			Active:         true, Adapter: adapter,
+		})
+	}
+	authenticationModule, err := authentication.New(pool, authentication.Config{
+		ProviderRegistrations: registrations, PepperKeys: config.pepperKeys,
+		PrivateStateKeys: config.privateKeys, Policy: authentication.DefaultPolicy(),
+	})
+	if err != nil {
+		return securityModules{}, err
+	}
+	teamModule, err := team.New(pool, team.Config{
+		PepperKeys: config.pepperKeys, Policy: team.DefaultPolicy(),
+	})
+	if err != nil {
+		return securityModules{}, err
+	}
+	lifecycle.Append(fx.Hook{OnStart: authenticationModule.Prepare})
+	return securityModules{Authentication: authenticationModule, Teams: teamModule}, nil
+}
+
+func provideHTTPHandler(
+	config serverConfig,
+	authenticationModule *authentication.Module,
+	teamModule *team.Module,
+	memory *conversation.Memory,
+	ingestor *ingestion.Ingestor,
+	searcher *projectsearch.Searcher,
+	directory *workspace.Directory,
+	raw *rawarchive.Archive,
+) (*httpapi.Handler, error) {
+	return httpapi.NewHandler(config.http, httpapi.Modules{
+		Authentication: authenticationModule, Teams: teamModule, Memory: memory,
+		Ingestor: ingestor, Searcher: searcher, Directory: directory, Raw: raw,
+	})
 }
 
 func ownProjectorLifetime(lifecycle fx.Lifecycle, projector *projectsearch.Projector) {
@@ -157,21 +404,14 @@ func ownProjectorLifetime(lifecycle fx.Lifecycle, projector *projectsearch.Proje
 }
 
 func newHTTPServer(config serverConfig, handler *httpapi.Handler) *http.Server {
-	var root http.Handler = handler
-	if config.demoMode {
-		root = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-			method := authentication.WebAuthentication
-			if request.Method == http.MethodPost {
-				method = authentication.CLIAuthentication
-			}
-			principal := authentication.Principal{UserID: canonical.DemoUserID, Method: method}
-			handler.ServeHTTP(response, request.WithContext(httpapi.WithPrincipal(request.Context(), principal)))
-		})
-	}
 	return &http.Server{
 		Addr:              config.address,
-		Handler:           root,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
 	}
 }
 
@@ -215,12 +455,13 @@ func main() {
 		fx.Provide(
 			loadConfig,
 			providePersistenceAdapters,
+			provideSecurityModules,
 			conversation.NewMemory,
 			ingestion.NewIngestor,
 			projectsearch.NewProjector,
 			projectsearch.NewSearcher,
 			workspace.NewDirectory,
-			httpapi.NewHandler,
+			provideHTTPHandler,
 			newHTTPServer,
 		),
 		fx.Invoke(ownProjectorLifetime, ownServerLifetime),

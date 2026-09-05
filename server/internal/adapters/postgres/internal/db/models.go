@@ -6,8 +6,6 @@ package db
 
 import (
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type CanonicalEvent struct {
@@ -34,25 +32,6 @@ type CanonicalEvent struct {
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
-}
-
-type CanonicalSession struct {
-	ID                 string
-	ProjectID          string
-	SourceKey          string
-	Revision           int64
-	Digest             string
-	Title              string
-	Summary            string
-	Insight            string
-	ActorName          string
-	ActorHarness       string
-	Branch             string
-	Status             string
-	CaptureStatus      string
-	UpdatedAt          time.Time
-	ReportedEventCount int64
-	CapturedByUserID   pgtype.UUID
 }
 
 type CanonicalThread struct {

@@ -9,6 +9,7 @@ Raw source drawer.
 
 ```http
 POST /api/v1/ingestion/raw/chunks
+Authorization: Bearer atc_v1_...
 Content-Type: application/json
 ```
 
@@ -67,6 +68,7 @@ Session may append its Raw source; current Team members may read it.
 
 ```http
 GET /api/v1/sessions/{sessionId}/raw
+Cookie: __Secure-atape_session=...
 Accept: application/json
 ```
 
@@ -77,6 +79,7 @@ This returns manifests and generation summaries only. It never returns
 
 ```http
 GET /api/v1/raw-objects/{objectId}/content?generation=1&cursor=...&limit=4
+Cookie: __Secure-atape_session=...
 Accept: application/json
 ```
 
@@ -85,6 +88,10 @@ Accept: application/json
 opaque and binds the next request to the same Raw object and generation. A page
 therefore contains at most 2 MiB of decoded source.
 
-Raw v1 does not synchronize provider deletion and exposes no automatic Raw
-delete operation. Database and blob capacity remain an operator concern;
+Provider-side deletion does not delete captured history. An explicit
+`DELETE /api/v1/sessions/{sessionId}` tombstones the captured Session and makes
+its Canonical, Search, Raw-manifest, and Raw-content reads unavailable in the
+same authorization outcome. Immutable Raw bytes remain retained for a future
+bounded garbage collector; deletion does not put blob reclamation latency on
+the HTTP request. Database and blob capacity remain an operator concern, while
 per-request and per-page bounds protect application memory.

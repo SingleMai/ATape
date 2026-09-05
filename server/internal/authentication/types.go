@@ -78,11 +78,20 @@ func (e *ProviderFailure) Error() string {
 
 type ProviderRegistration struct {
 	ID             string
+	Label          string
 	Revision       string
 	ExpectedIssuer string
 	CallbackURI    string
 	Active         bool
 	Adapter        FederatedIdentityAdapter
+}
+
+// ProviderRegistrationView is the public, non-secret login entry exposed by
+// instance HTTP metadata. Provider endpoints, Client IDs, revisions, and
+// Adapter kinds deliberately remain private.
+type ProviderRegistrationView struct {
+	ID    string
+	Label string
 }
 
 type LoginIntent string
@@ -122,6 +131,23 @@ type User struct {
 	DisplayName string
 	AvatarURL   string
 	CreatedAt   time.Time
+}
+
+type UpdateUserProfileInput struct {
+	Principal   Principal
+	DisplayName string
+	RequestID   string
+}
+
+// ExternalIdentityView is a normalized account-security snapshot. Provider
+// subjects, tokens, and raw claims never cross the Authentication Interface.
+type ExternalIdentityView struct {
+	ID                     string
+	ProviderRegistrationID string
+	DisplayName            string
+	AvatarURL              string
+	CreatedAt              time.Time
+	LastVerifiedAt         time.Time
 }
 
 type DisableUserInput struct {

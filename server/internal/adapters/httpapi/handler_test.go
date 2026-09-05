@@ -40,6 +40,7 @@ func TestRawChunkEndpointIsIdempotent(t *testing.T) {
 	}
 	for attempt, want := range []int{http.StatusCreated, http.StatusOK} {
 		request := httptest.NewRequest(http.MethodPost, "/api/v1/ingestion/raw/chunks", bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != want {
@@ -78,6 +79,7 @@ func TestIngestionEndpointsRejectClientDeclaredAuthority(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Code != http.StatusBadRequest {
@@ -114,15 +116,25 @@ func TestProjectSearchEndpointRejectsEmptyQuery(t *testing.T) {
 
 	handler.ServeHTTP(response, request)
 
-	if got, want := response.Code, http.StatusBadRequest; got != want {
+	if got, want := response.Code, http.StatusUnprocessableEntity; got != want {
 		t.Fatalf("status = %d, want %d: %s", got, want, response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"code":"invalid_search"`) {
+	if !strings.Contains(response.Body.String(), `"code":"validation_failed"`) {
 		t.Fatalf("response does not contain typed Search error: %s", response.Body.String())
 	}
 }
 
-func testHandler(t *testing.T) http.Handler {
+func testHandler(t *testing.T) *Handler {
+	t.Helper()
+	principal := authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication}
+	return testHandlerWithConfig(t, Config{
+		InstanceOrigin: "http://127.0.0.1:8080", WebOrigin: "http://127.0.0.1:8080",
+		APIOrigin: "http://127.0.0.1:8080", DevelopmentAllowHTTP: true,
+		DevelopmentPrincipal: &principal,
+	})
+}
+
+func testHandlerWithConfig(t *testing.T, config Config) *Handler {
 	t.Helper()
 	store := canonical.NewDemoStore()
 	index := memorysearch.New(store)
@@ -134,18 +146,14 @@ func testHandler(t *testing.T) http.Handler {
 	if _, err := projector.ProjectOnce(t.Context()); err != nil {
 		t.Fatalf("project demo Search index: %v", err)
 	}
-	handler := NewHandler(
-		conversation.NewMemory(store), ingestion.NewIngestor(store),
-		projectsearch.NewSearcher(index), workspace.NewDirectory(store), raw,
-	)
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		method := authentication.WebAuthentication
-		if request.Method == http.MethodPost {
-			method = authentication.CLIAuthentication
-		}
-		principal := authentication.Principal{UserID: canonical.DemoUserID, Method: method}
-		handler.ServeHTTP(response, request.WithContext(WithPrincipal(request.Context(), principal)))
+	handler, err := NewHandler(config, Modules{
+		Memory: conversation.NewMemory(store), Ingestor: ingestion.NewIngestor(store),
+		Searcher: projectsearch.NewSearcher(index), Directory: workspace.NewDirectory(store), Raw: raw,
 	})
+	if err != nil {
+		t.Fatalf("construct HTTP Adapter: %v", err)
+	}
+	return handler
 }
 
 func TestRawSessionAndContentEndpointsAreSeparateAndBounded(t *testing.T) {
@@ -255,6 +263,7 @@ func TestCanonicalBatchEndpointIsReadableAndReplaySafe(t *testing.T) {
 	}
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/ingestion/canonical/batches", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if got, want := response.Code, http.StatusCreated; got != want {
@@ -262,6 +271,7 @@ func TestCanonicalBatchEndpointIsReadableAndReplaySafe(t *testing.T) {
 	}
 
 	replayRequest := httptest.NewRequest(http.MethodPost, "/api/v1/ingestion/canonical/batches", bytes.NewReader(body))
+	replayRequest.Header.Set("Content-Type", "application/json")
 	replayResponse := httptest.NewRecorder()
 	handler.ServeHTTP(replayResponse, replayRequest)
 	if got, want := replayResponse.Code, http.StatusOK; got != want {

@@ -12,4 +12,5 @@ import (
 // idempotency and revision semantics represented by canonical.ApplyResult.
 type BatchStore interface {
 	ApplyBatch(context.Context, authentication.Principal, canonical.WriteBatch) (canonical.ApplyResult, error)
+	DeleteSession(context.Context, authentication.Principal, string, string) error
 }

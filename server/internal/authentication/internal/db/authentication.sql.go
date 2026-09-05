@@ -1252,6 +1252,49 @@ func (q *Queries) ListActiveCLICredentialsForUser(ctx context.Context, userID pg
 	return items, nil
 }
 
+const listActiveExternalIdentitiesForUser = `-- name: ListActiveExternalIdentitiesForUser :many
+SELECT id, issuer, display_name, avatar_url, created_at, last_verified_at
+FROM auth_external_identities
+WHERE user_id = $1 AND status = 'active'
+ORDER BY created_at, id
+`
+
+type ListActiveExternalIdentitiesForUserRow struct {
+	ID             pgtype.UUID
+	Issuer         string
+	DisplayName    string
+	AvatarUrl      string
+	CreatedAt      time.Time
+	LastVerifiedAt time.Time
+}
+
+func (q *Queries) ListActiveExternalIdentitiesForUser(ctx context.Context, userID pgtype.UUID) ([]ListActiveExternalIdentitiesForUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveExternalIdentitiesForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveExternalIdentitiesForUserRow{}
+	for rows.Next() {
+		var i ListActiveExternalIdentitiesForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Issuer,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.CreatedAt,
+			&i.LastVerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveOwnerTeamIDsForUser = `-- name: ListActiveOwnerTeamIDsForUser :many
 SELECT team_id
 FROM team_memberships
@@ -1703,6 +1746,31 @@ func (q *Queries) TryMaintenanceLock(ctx context.Context, lockID int64) (bool, e
 	var acquired bool
 	err := row.Scan(&acquired)
 	return acquired, err
+}
+
+const updateActiveUserProfile = `-- name: UpdateActiveUserProfile :one
+UPDATE auth_users
+SET display_name = $2, updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active'
+RETURNING display_name, avatar_url, created_at
+`
+
+type UpdateActiveUserProfileParams struct {
+	ID          pgtype.UUID
+	DisplayName string
+}
+
+type UpdateActiveUserProfileRow struct {
+	DisplayName string
+	AvatarUrl   string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) UpdateActiveUserProfile(ctx context.Context, arg UpdateActiveUserProfileParams) (UpdateActiveUserProfileRow, error) {
+	row := q.db.QueryRow(ctx, updateActiveUserProfile, arg.ID, arg.DisplayName)
+	var i UpdateActiveUserProfileRow
+	err := row.Scan(&i.DisplayName, &i.AvatarUrl, &i.CreatedAt)
+	return i, err
 }
 
 const upsertCodeAttemptFailure = `-- name: UpsertCodeAttemptFailure :one

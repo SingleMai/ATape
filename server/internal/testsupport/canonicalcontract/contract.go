@@ -52,6 +52,41 @@ func MemoryControlPlane() canonical.MemoryControlPlane {
 
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
+	t.Run("deletes a captured Session through the ingestion lifecycle", func(t *testing.T) {
+		store := factory(t)
+		ingestor := ingestion.NewIngestor(store)
+		created, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), ValidBatch())
+		if err != nil {
+			t.Fatalf("apply batch: %v", err)
+		}
+		if err := ingestor.DeleteSession(context.Background(), WebPrincipal(), created.SessionID, "request-delete-session"); err != nil {
+			t.Fatalf("delete captured Session: %v", err)
+		}
+		if err := ingestor.DeleteSession(context.Background(), WebPrincipal(), created.SessionID, "request-delete-session-repeat"); err != nil {
+			t.Fatalf("repeat captured Session deletion: %v", err)
+		}
+
+		reader := conversation.NewMemory(store)
+		_, err = reader.OpenConversation(context.Background(), WebPrincipal(), created.SessionID, "root")
+		var notFound *conversation.NotFoundError
+		if !errors.As(err, &notFound) {
+			t.Fatalf("deleted Conversation error = %v, want not found", err)
+		}
+		project, err := reader.OpenProject(context.Background(), WebPrincipal(), TestProjectID)
+		if err != nil {
+			t.Fatalf("open Project after Session deletion: %v", err)
+		}
+		if len(project.Trail) != 0 {
+			t.Fatalf("deleted Session remained in Project memory: %+v", project.Trail)
+		}
+
+		_, err = ingestor.ApplyBatch(context.Background(), CLIPrincipal(), ValidBatch())
+		var state *canonical.ProjectStateError
+		if !errors.As(err, &state) || state.State != "session_deleted" {
+			t.Fatalf("re-ingest error = %v, want session_deleted lifecycle conflict", err)
+		}
+	})
+
 	t.Run("creates readable Canonical snapshots", func(t *testing.T) {
 		store := factory(t)
 		ingestor := ingestion.NewIngestor(store)

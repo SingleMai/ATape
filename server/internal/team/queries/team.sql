@@ -4,6 +4,9 @@ SELECT clock_timestamp()::timestamptz;
 -- name: AcquireTeamAdvisoryLock :exec
 SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg(lock_key)::text, 0));
 
+-- name: TryAcquireTeamAdvisoryLock :one
+SELECT pg_try_advisory_xact_lock(hashtextextended(sqlc.arg(lock_key)::text, 0));
+
 -- name: GetPrincipalUserForShare :one
 SELECT id, status
 FROM auth_users

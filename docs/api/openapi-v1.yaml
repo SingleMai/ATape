@@ -1,0 +1,1684 @@
+openapi: 3.1.0
+info:
+  title: ATape HTTP API
+  version: 1.0.0
+  license:
+    name: MIT
+    identifier: MIT
+  description: |
+    First-party ATape Web and CLI contract. Domain behavior is owned by the
+    Authentication, Team, ingestion, conversation, Raw, and Search Modules;
+    this document describes only their HTTP representation.
+servers:
+  - url: https://api.atape.dev
+    description: Official service API origin
+tags:
+  - {name: Protocol, description: Public liveness and instance-discovery documents.}
+  - {name: Authentication, description: Federated login and Web Session lifecycle.}
+  - {name: Account, description: Current User and credential self-service.}
+  - {name: CLI authorization, description: First-party browser-assisted CLI authorization.}
+  - {name: Teams, description: Team and Membership control plane.}
+  - {name: Projects, description: Project matching and lifecycle.}
+  - {name: Captured sessions, description: "Authorized Canonical, Search, and Raw reads."}
+  - {name: Ingestion, description: Authenticated Canonical and Raw ingestion.}
+x-atape-route-classes:
+  public_protocol: Never establishes an optional Principal.
+  any_principal: Accepts exactly one valid Web Session or CLI Credential.
+  web_only: Accepts a Web Session; unsafe methods also require exact Origin and CSRF proof.
+  cli_only: Accepts a CLI Credential in the Authorization header.
+x-atape-authorization-actions:
+  - workspace.list_visible
+  - team.create
+  - user.read_self
+  - user.update_profile
+  - external_identity.list
+  - external_identity.bind
+  - web_session.list
+  - web_session.revoke_one
+  - web_session.revoke_all
+  - cli_credential.list
+  - cli_credential.revoke_one
+  - cli_credential.revoke_all
+  - cli_credential.read_current
+  - cli_credential.revoke_current
+  - team.join_with_code
+  - team.read_metadata
+  - project.list_metadata
+  - project.read_metadata
+  - project.match
+  - membership.list
+  - team.update_display_profile
+  - membership.promote_to_owner
+  - membership.demote_owner
+  - membership.remove_member
+  - membership.remove_owner
+  - membership.leave_self
+  - team_join_code.read_status
+  - team_join_code.rotate
+  - team_join_code.disable
+  - project.create
+  - folder_project.rename
+  - git_project.relink_repository
+  - project.archive
+  - project.delete
+  - project_memory.read
+  - conversation.read
+  - project_search.query
+  - raw_session.list
+  - raw_object.read
+  - canonical.ingest
+  - raw.ingest
+  - captured_session.delete_own
+  - captured_session.delete_any
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      tags: [Protocol]
+      summary: Report process liveness
+      x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      responses:
+        "200": {$ref: "#/components/responses/Health"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/instance:
+    get:
+      operationId: getInstance
+      tags: [Protocol]
+      summary: Discover canonical public origins and protocol versions
+      x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: public-300, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      responses:
+        "200": {$ref: "#/components/responses/Instance"}
+        "304": {$ref: "#/components/responses/NotModified"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/provider-registrations:
+    get:
+      operationId: listProviderRegistrations
+      tags: [Authentication]
+      summary: List enabled sign-in entries
+      x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: public-300, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      responses:
+        "200": {$ref: "#/components/responses/ProviderRegistrations"}
+        "304": {$ref: "#/components/responses/NotModified"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/federated/sign-ins:
+    post:
+      operationId: beginFederatedSignIn
+      tags: [Authentication]
+      summary: Begin a browser sign-in transaction
+      x-atape-route: {class: public_protocol, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+      requestBody: {$ref: "#/components/requestBodies/FederatedBegin"}
+      responses:
+        "201": {$ref: "#/components/responses/FederatedChallenge"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/federated/identity-bindings:
+    post:
+      operationId: beginFederatedIdentityBinding
+      tags: [Authentication]
+      summary: Begin binding another external identity
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/FederatedBegin"}
+      responses:
+        "201": {$ref: "#/components/responses/FederatedChallenge"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/federated/reauthentications:
+    post:
+      operationId: beginFederatedReauthentication
+      tags: [Authentication]
+      summary: Begin refreshing the current Web Session
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/FederatedBegin"}
+      responses:
+        "201": {$ref: "#/components/responses/FederatedChallenge"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/github/callback:
+    get:
+      operationId: completeGitHubFederatedLogin
+      tags: [Authentication]
+      summary: Complete the exact GitHub callback transaction
+      description: The only API operation that redirects. Provider error descriptions are never forwarded.
+      x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      parameters:
+        - {name: state, in: query, required: true, schema: {type: string, maxLength: 512}}
+        - {name: code, in: query, required: false, schema: {type: string, maxLength: 4096}}
+        - {name: error, in: query, required: false, schema: {type: string, maxLength: 100}}
+      responses:
+        "303": {$ref: "#/components/responses/FederatedRedirect"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/session:
+    get:
+      operationId: getCurrentWebSession
+      tags: [Authentication]
+      summary: Bootstrap the current User, Session, and CSRF proof
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/SessionBootstrap"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/logout:
+    post:
+      operationId: logoutWebSession
+      tags: [Authentication]
+      summary: Revoke and clear the current Web Session
+      description: Missing or already-revoked session state remains an idempotent success.
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Account]
+      summary: Read the current User profile
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200": {$ref: "#/components/responses/User"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    patch:
+      operationId: updateCurrentUser
+      tags: [Account]
+      summary: Update the local User profile
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/UserProfile"}
+      responses:
+        "200": {$ref: "#/components/responses/User"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/external-identities:
+    get:
+      operationId: listExternalIdentities
+      tags: [Account]
+      summary: List normalized external identities without provider secrets
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/ExternalIdentities"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/web-sessions:
+    get:
+      operationId: listWebSessions
+      tags: [Account]
+      summary: List active non-secret Web Session records
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/WebSessions"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/web-sessions/{sessionId}:
+    parameters:
+      - {$ref: "#/components/parameters/SessionId"}
+    delete:
+      operationId: revokeWebSession
+      tags: [Account]
+      summary: Revoke one Web Session
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/web-sessions/revoke-all:
+    post:
+      operationId: revokeAllWebSessions
+      tags: [Account]
+      summary: Revoke all Web Sessions for the current User
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/cli-credentials:
+    get:
+      operationId: listCliCredentials
+      tags: [Account]
+      summary: List active non-secret CLI Credential records
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/CLICredentials"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/cli-credentials/{credentialId}:
+    parameters:
+      - {$ref: "#/components/parameters/CredentialId"}
+    delete:
+      operationId: revokeCliCredential
+      tags: [Account]
+      summary: Revoke one CLI Credential
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/cli-credentials/revoke-all:
+    post:
+      operationId: revokeAllCliCredentials
+      tags: [Account]
+      summary: Revoke all CLI Credentials for the current User
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/cli/device-grants:
+    post:
+      operationId: createCliDeviceGrant
+      tags: [CLI authorization]
+      summary: Create a CLI Device Authorization
+      x-atape-route: {class: public_protocol, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "201": {$ref: "#/components/responses/CLIDeviceGrant"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/cli/token:
+    post:
+      operationId: pollCliDeviceGrant
+      tags: [CLI authorization]
+      summary: Poll and claim a CLI Credential once
+      x-atape-route: {class: public_protocol, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      requestBody: {$ref: "#/components/requestBodies/DeviceCode"}
+      responses:
+        "200": {$ref: "#/components/responses/CLICredentialGrant"}
+        "202": {$ref: "#/components/responses/AuthorizationPending"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/cli/device-grants/resolve:
+    post:
+      operationId: resolveCliDeviceGrant
+      tags: [CLI authorization]
+      summary: Resolve a human-entered User Code to a non-secret review view
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/UserCode"}
+      responses:
+        "200": {$ref: "#/components/responses/CLIDeviceGrantView"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/cli/device-grants/{grantViewId}/approve:
+    parameters:
+      - {$ref: "#/components/parameters/GrantViewId"}
+    post:
+      operationId: approveCliDeviceGrant
+      tags: [CLI authorization]
+      summary: Approve a CLI Device Authorization
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/cli/device-grants/{grantViewId}/deny:
+    parameters:
+      - {$ref: "#/components/parameters/GrantViewId"}
+    post:
+      operationId: denyCliDeviceGrant
+      tags: [CLI authorization]
+      summary: Deny a CLI Device Authorization
+      x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/auth/cli/credentials/current:
+    delete:
+      operationId: revokeCurrentCliCredential
+      tags: [CLI authorization]
+      summary: Revoke the presented CLI Credential
+      description: Unknown, malformed, and already-revoked bearer values are indistinguishable successful no-ops.
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/workspace:
+    get:
+      operationId: getWorkspace
+      tags: [Teams]
+      summary: List Team and Project metadata visible to the current User
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Workspace"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams:
+    post:
+      operationId: createTeam
+      tags: [Teams]
+      summary: Create a Team with the current User as Owner
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: true}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/TeamCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Team"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    get:
+      operationId: getTeam
+      tags: [Teams]
+      summary: Read visible Team metadata
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Team"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    patch:
+      operationId: updateTeam
+      tags: [Teams]
+      summary: Update a Team display profile as Owner
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/TeamUpdate"}
+      responses:
+        "200": {$ref: "#/components/responses/Team"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/members:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    get:
+      operationId: listTeamMembers
+      tags: [Teams]
+      summary: List active Team Memberships
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Memberships"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/members/{userId}/role:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+      - {$ref: "#/components/parameters/UserId"}
+    put:
+      operationId: setTeamMemberRole
+      tags: [Teams]
+      summary: Set a Team Membership role
+      description: Promoting or demoting an Owner is subject to fresh authentication and last-Owner policy.
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/MembershipRole"}
+      responses:
+        "200": {$ref: "#/components/responses/Membership"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/members/{userId}:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+      - {$ref: "#/components/parameters/UserId"}
+    delete:
+      operationId: removeTeamMember
+      tags: [Teams]
+      summary: Remove a Team Membership
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/leave:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    post:
+      operationId: leaveTeam
+      tags: [Teams]
+      summary: Remove the current User's Team Membership
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/join-code:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    get:
+      operationId: getTeamJoinCodeStatus
+      tags: [Teams]
+      summary: Read Join Code state without plaintext
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/JoinCodeStatus"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    delete:
+      operationId: disableTeamJoinCode
+      tags: [Teams]
+      summary: Idempotently disable the current Join Code
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/join-code/rotations:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    post:
+      operationId: rotateTeamJoinCode
+      tags: [Teams]
+      summary: Rotate and disclose a Join Code once
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "201": {$ref: "#/components/responses/JoinCodeGrant"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/team-memberships:
+    post:
+      operationId: joinTeam
+      tags: [Teams]
+      summary: Join or restore Membership using a Join Code
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/TeamJoin"}
+      responses:
+        "200": {$ref: "#/components/responses/Team"}
+        "201": {$ref: "#/components/responses/Team"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/project-matches:
+    post:
+      operationId: matchProject
+      tags: [Projects]
+      summary: Match a normalized Git remote within one visible Team
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody: {$ref: "#/components/requestBodies/ProjectMatch"}
+      responses:
+        "200": {$ref: "#/components/responses/ProjectMatch"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/projects:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    post:
+      operationId: createProject
+      tags: [Projects]
+      summary: Create a Git or Folder Project
+      x-atape-route: {class: any_principal, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web-when-cookie, freshAuthentication: false, requiresIdempotencyKey: true}
+      security: [{webSession: []}, {cliCredential: []}]
+      parameters:
+        - {$ref: "#/components/parameters/OriginOptionalForCLI"}
+        - {$ref: "#/components/parameters/CSRFOptionalForCLI"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+      requestBody: {$ref: "#/components/requestBodies/ProjectCreate"}
+      responses:
+        "201": {$ref: "#/components/responses/Project"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/projects/{projectId}:
+    parameters:
+      - {$ref: "#/components/parameters/ProjectId"}
+    get:
+      operationId: getProject
+      tags: [Projects]
+      summary: Read visible Project metadata
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200": {$ref: "#/components/responses/Project"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    patch:
+      operationId: renameFolderProject
+      tags: [Projects]
+      summary: Rename a Folder Project as Owner
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/ProjectRename"}
+      responses:
+        "200": {$ref: "#/components/responses/Project"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    delete:
+      operationId: deleteProject
+      tags: [Projects]
+      summary: Delete a Project and its captured data as fresh Owner
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/projects/{projectId}/repository-relinks:
+    parameters:
+      - {$ref: "#/components/parameters/ProjectId"}
+    post:
+      operationId: relinkGitProject
+      tags: [Projects]
+      summary: Relink a Git Project remote as fresh Owner
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/ProjectRelink"}
+      responses:
+        "200": {$ref: "#/components/responses/Project"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/projects/{projectId}/archive:
+    parameters:
+      - {$ref: "#/components/parameters/ProjectId"}
+    post:
+      operationId: archiveProject
+      tags: [Projects]
+      summary: Idempotently archive a Project as Owner
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody: {$ref: "#/components/requestBodies/EmptyJSON"}
+      responses:
+        "200": {$ref: "#/components/responses/Project"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/projects/{projectId}/memory:
+    parameters:
+      - {$ref: "#/components/parameters/ProjectId"}
+    get:
+      operationId: getProjectMemory
+      tags: [Captured sessions]
+      summary: Read Canonical Project memory
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/projects/{projectId}/search:
+    parameters:
+      - {$ref: "#/components/parameters/ProjectId"}
+    get:
+      operationId: searchProject
+      tags: [Captured sessions]
+      summary: Search the Canonical-derived Project read model
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+        - {name: cursor, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50}}
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/sessions/{sessionId}:
+    parameters:
+      - {$ref: "#/components/parameters/SessionId"}
+    get:
+      operationId: getCapturedSession
+      tags: [Captured sessions]
+      summary: Read a Canonical conversation
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: thread, in: query, required: false, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    delete:
+      operationId: deleteCapturedSession
+      tags: [Captured sessions]
+      summary: Delete a captured Session
+      description: The capturing User may delete their own Session; deleting another User's Session requires a fresh Owner session.
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      responses:
+        "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/sessions/{sessionId}/raw:
+    parameters:
+      - {$ref: "#/components/parameters/SessionId"}
+    get:
+      operationId: listCapturedSessionRawObjects
+      tags: [Captured sessions]
+      summary: List Raw manifests without content bytes
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/raw-objects/{objectId}/content:
+    parameters:
+      - {$ref: "#/components/parameters/ObjectId"}
+    get:
+      operationId: getRawObjectContent
+      tags: [Captured sessions]
+      summary: Read one bounded Raw content page
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: generation, in: query, required: false, schema: {type: integer, format: int64, minimum: 1}}
+        - {name: cursor, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/ingestion/canonical/batches:
+    post:
+      operationId: ingestCanonicalBatch
+      tags: [Ingestion]
+      summary: Atomically apply a bounded Canonical v1 batch
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-canonical, requestBodyLimit: 4194304, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody: {$ref: "#/components/requestBodies/CanonicalBatch"}
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "201": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/ingestion/raw/chunks:
+    post:
+      operationId: ingestRawChunk
+      tags: [Ingestion]
+      summary: Idempotently append one bounded Raw v1 chunk
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-raw, requestBodyLimit: 524288, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody: {$ref: "#/components/requestBodies/RawChunk"}
+      responses:
+        "200": {$ref: "#/components/responses/GenericJSON"}
+        "201": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+components:
+  securitySchemes:
+    webSession:
+      type: apiKey
+      in: cookie
+      name: __Secure-atape_session
+      description: The production Cookie name is derived from topology and may use the __Host- prefix.
+    cliCredential:
+      type: http
+      scheme: bearer
+      bearerFormat: atc_v1 opaque credential
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: true
+      schema: {type: string, format: uri}
+      description: Must exactly equal the configured canonical Web origin.
+    OriginOptionalForCLI:
+      name: Origin
+      in: header
+      required: false
+      schema: {type: string, format: uri}
+      description: Required and exact when the operation uses a Web Session; omitted for CLI Credential calls.
+    CSRF:
+      name: X-ATape-CSRF
+      in: header
+      required: true
+      schema: {type: string, minLength: 1}
+      description: Session-bound synchronizer token from the Session bootstrap response.
+    CSRFOptionalForCLI:
+      name: X-ATape-CSRF
+      in: header
+      required: false
+      schema: {type: string, minLength: 1}
+      description: Required when the operation uses a Web Session; omitted for CLI Credential calls.
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string, minLength: 22, maxLength: 128}
+      description: A caller-generated 128-bit random operation key, retained for 24 hours.
+    TeamSlug:
+      name: teamSlug
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 63}
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OpaqueId"}
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OpaqueId"}
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OpaqueId"}
+    ObjectId:
+      name: objectId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OpaqueId"}
+    CredentialId:
+      name: credentialId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OpaqueId"}
+    GrantViewId:
+      name: grantViewId
+      in: path
+      required: true
+      schema: {$ref: "#/components/schemas/OpaqueId"}
+  requestBodies:
+    EmptyJSON:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/EmptyObject"}
+    FederatedBegin:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/FederatedBeginRequest"}
+    UserProfile:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/UserProfileRequest"}
+    DeviceCode:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [device_code]
+            properties:
+              device_code: {type: string, pattern: "^atd_v1_[A-Za-z0-9_-]+$"}
+    UserCode:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [user_code]
+            properties:
+              user_code: {type: string, minLength: 6, maxLength: 16}
+    TeamCreate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [slug, displayName]
+            properties:
+              slug: {type: string, minLength: 1, maxLength: 63}
+              displayName: {type: string, minLength: 1, maxLength: 200}
+    TeamUpdate:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [displayName]
+            properties:
+              displayName: {type: string, minLength: 1, maxLength: 200}
+    MembershipRole:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [role]
+            properties:
+              role: {type: string, enum: [owner, member]}
+    TeamJoin:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [joinCode]
+            properties:
+              joinCode: {type: string, minLength: 6, maxLength: 16}
+    ProjectMatch:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [teamId, type, remote]
+            properties:
+              teamId: {$ref: "#/components/schemas/OpaqueId"}
+              type: {const: git}
+              remote: {type: string, minLength: 1}
+    ProjectCreate:
+      required: true
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                additionalProperties: false
+                required: [type, remote]
+                properties:
+                  type: {const: git}
+                  remote: {type: string, minLength: 1}
+              - type: object
+                additionalProperties: false
+                required: [type, name]
+                properties:
+                  type: {const: folder}
+                  name: {type: string, minLength: 1, maxLength: 200}
+    ProjectRename:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [name]
+            properties:
+              name: {type: string, minLength: 1, maxLength: 200}
+    ProjectRelink:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [remote]
+            properties:
+              remote: {type: string, minLength: 1}
+    CanonicalBatch:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CanonicalBatch"}
+    RawChunk:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/RawChunk"}
+  responses:
+    Problem:
+      description: RFC 9457 Problem Details. The stable code determines client behavior.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        Retry-After: {$ref: "#/components/headers/RetryAfter"}
+      content:
+        application/problem+json:
+          schema: {$ref: "#/components/schemas/Problem"}
+    NoContent:
+      description: The desired state has been reached.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+    NotModified:
+      description: The public metadata ETag still matches.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        ETag: {$ref: "#/components/headers/ETag"}
+    GenericJSON:
+      description: Successful typed JSON representation; see the focused API document for the Module schema.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {type: object}
+    Health:
+      description: Process can serve HTTP.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status]
+            properties:
+              status: {const: ok}
+    Instance:
+      description: Canonical instance metadata.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/PublicMetadataCache"}
+        ETag: {$ref: "#/components/headers/ETag"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Instance"}
+    ProviderRegistrations:
+      description: Enabled sign-in entries.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/PublicMetadataCache"}
+        ETag: {$ref: "#/components/headers/ETag"}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [items]
+            properties:
+              items:
+                type: array
+                items: {$ref: "#/components/schemas/ProviderRegistration"}
+    FederatedChallenge:
+      description: A new short-lived federated login transaction.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        Pragma: {schema: {type: string, const: no-cache}}
+        Set-Cookie: {schema: {type: string}, description: Host-only HttpOnly login-binding Cookie.}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/FederatedChallenge"}
+    FederatedRedirect:
+      description: Safe redirect to the stored canonical Web return path.
+      headers:
+        Location: {required: true, schema: {type: string, format: uri}}
+        Set-Cookie: {schema: {type: string}, description: "Clears login binding and, on success, sets the Web Session Cookie."}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        Referrer-Policy: {schema: {type: string, const: no-referrer}}
+    SessionBootstrap:
+      description: Current Web Session bootstrap.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/SessionBootstrap"}
+    User:
+      description: Current User profile.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/User"}
+    ExternalIdentities:
+      description: Normalized external identity snapshots.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [items]
+            properties:
+              items: {type: array, items: {$ref: "#/components/schemas/ExternalIdentity"}}
+    WebSessions:
+      description: Active Web Session records.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [items]
+            properties:
+              items: {type: array, items: {$ref: "#/components/schemas/WebSession"}}
+    CLICredentials:
+      description: Active CLI Credential records without bearer secrets.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [items]
+            properties:
+              items: {type: array, items: {$ref: "#/components/schemas/CLICredential"}}
+    CLIDeviceGrant:
+      description: New CLI Device Authorization proof.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        Pragma: {schema: {type: string, const: no-cache}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CLIDeviceGrant"}
+    CLICredentialGrant:
+      description: One-time CLI Credential disclosure.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CLICredentialGrant"}
+    AuthorizationPending:
+      description: Device Authorization remains pending.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+        Retry-After: {schema: {type: integer, minimum: 1}}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [status, retry_after]
+            properties:
+              status: {const: authorization_pending}
+              retry_after: {type: integer, minimum: 1}
+    CLIDeviceGrantView:
+      description: Non-secret browser review view.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/CLIDeviceGrantView"}
+    Workspace:
+      description: Query-time filtered Team and Project metadata.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Workspace"}
+    Team:
+      description: Team metadata plus the caller's Membership role.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Team"}
+    Memberships:
+      description: Active Team Membership roster.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [items]
+            properties:
+              items: {type: array, items: {$ref: "#/components/schemas/Membership"}}
+    Membership:
+      description: Updated Team Membership.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/MembershipMutation"}
+    JoinCodeStatus:
+      description: Join Code status without plaintext.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/JoinCodeStatus"}
+    JoinCodeGrant:
+      description: One-time six-character Join Code disclosure.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/JoinCodeGrant"}
+    Project:
+      description: Project metadata.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Project"}
+    ProjectMatch:
+      description: Exact same-Team Git match or none.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ProjectMatch"}
+  headers:
+    RequestId:
+      required: true
+      schema: {type: string, format: uuid}
+    NoStore:
+      required: true
+      schema: {type: string, const: no-store}
+    PublicMetadataCache:
+      required: true
+      schema: {type: string, const: "public, max-age=300"}
+    ETag:
+      required: true
+      schema: {type: string}
+    RetryAfter:
+      required: false
+      schema: {type: integer, minimum: 1}
+      description: Present for retryable 409, 429, and 503 outcomes.
+  schemas:
+    EmptyObject:
+      type: object
+      additionalProperties: false
+      maxProperties: 0
+    OpaqueId:
+      type: string
+      minLength: 1
+      maxLength: 200
+      description: Opaque identifier without embedded authority.
+    Timestamp:
+      type: string
+      format: date-time
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, avatarUrl]
+      properties:
+        id: {$ref: "#/components/schemas/OpaqueId"}
+        displayName: {type: string}
+        avatarUrl: {type: string}
+    Instance:
+      type: object
+      additionalProperties: false
+      required: [protocol, instance_origin, web_origin, api_origin, protocols]
+      properties:
+        protocol: {const: atape.instance.v1}
+        instance_origin: {type: string, format: uri}
+        web_origin: {type: string, format: uri}
+        api_origin: {type: string, format: uri}
+        protocols:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+    ProviderRegistration:
+      type: object
+      additionalProperties: false
+      required: [id, label]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 100}
+        label: {type: string, minLength: 1, maxLength: 100}
+    FederatedBeginRequest:
+      type: object
+      additionalProperties: false
+      required: [providerRegistrationId, returnTo]
+      properties:
+        providerRegistrationId: {type: string, minLength: 1, maxLength: 100}
+        returnTo: {type: string, minLength: 1, maxLength: 2048, pattern: "^/"}
+    FederatedChallenge:
+      type: object
+      additionalProperties: false
+      required: [loginTransactionId, authorizationUri, expiresAt]
+      properties:
+        loginTransactionId: {$ref: "#/components/schemas/OpaqueId"}
+        authorizationUri: {type: string, format: uri}
+        expiresAt: {$ref: "#/components/schemas/Timestamp"}
+    UserProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 200}
+    WebSession:
+      type: object
+      additionalProperties: false
+      required: [id, createdAt, lastUsedAt, reauthenticatedAt, absoluteExpiresAt]
+      properties:
+        id: {$ref: "#/components/schemas/OpaqueId"}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        lastUsedAt: {$ref: "#/components/schemas/Timestamp"}
+        reauthenticatedAt: {$ref: "#/components/schemas/Timestamp"}
+        absoluteExpiresAt: {$ref: "#/components/schemas/Timestamp"}
+        current: {type: boolean}
+    SessionBootstrap:
+      type: object
+      additionalProperties: false
+      required: [user, webSession, csrfToken]
+      properties:
+        user: {$ref: "#/components/schemas/User"}
+        webSession: {$ref: "#/components/schemas/WebSession"}
+        csrfToken: {type: string, pattern: "^atx_v1_[A-Za-z0-9_-]+$"}
+    ExternalIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, providerRegistrationId, displayName, avatarUrl, createdAt, lastVerifiedAt]
+      properties:
+        id: {$ref: "#/components/schemas/OpaqueId"}
+        providerRegistrationId: {type: string}
+        displayName: {type: string}
+        avatarUrl: {type: string}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        lastVerifiedAt: {$ref: "#/components/schemas/Timestamp"}
+    CLICredential:
+      type: object
+      additionalProperties: false
+      required: [id, capability, createdAt, lastUsedAt]
+      properties:
+        id: {$ref: "#/components/schemas/OpaqueId"}
+        capability: {const: atape-cli.v1}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        lastUsedAt: {$ref: "#/components/schemas/Timestamp"}
+    CLIDeviceGrant:
+      type: object
+      additionalProperties: false
+      required: [protocol, device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval]
+      properties:
+        protocol: {const: atape.cli-authorization.v1}
+        device_code: {type: string, pattern: "^atd_v1_[A-Za-z0-9_-]+$", x-atape-one-time-secret: true}
+        user_code: {type: string}
+        verification_uri: {type: string, format: uri}
+        verification_uri_complete: {type: string, format: uri}
+        expires_in: {type: integer, minimum: 1}
+        interval: {type: integer, minimum: 1}
+    CLICredentialGrant:
+      type: object
+      additionalProperties: false
+      required: [token_type, credential, credential_id, capability_version, created_at, user]
+      properties:
+        token_type: {const: Bearer}
+        credential: {type: string, pattern: "^atc_v1_[A-Za-z0-9_-]+$", x-atape-one-time-secret: true}
+        credential_id: {$ref: "#/components/schemas/OpaqueId"}
+        capability_version: {const: atape-cli.v1}
+        created_at: {$ref: "#/components/schemas/Timestamp"}
+        user:
+          type: object
+          additionalProperties: false
+          required: [id, display_name]
+          properties:
+            id: {$ref: "#/components/schemas/OpaqueId"}
+            display_name: {type: string}
+    CLIDeviceGrantView:
+      type: object
+      additionalProperties: false
+      required: [grantViewId, userCode, instanceOrigin, clientLabel, capabilityVersion, permissionSummary, expiresAt, status]
+      properties:
+        grantViewId: {$ref: "#/components/schemas/OpaqueId"}
+        userCode: {type: string}
+        instanceOrigin: {type: string, format: uri}
+        clientLabel: {const: atape-cli}
+        capabilityVersion: {const: atape-cli.v1}
+        permissionSummary: {type: string}
+        expiresAt: {$ref: "#/components/schemas/Timestamp"}
+        status: {type: string, enum: [pending, approved_unclaimed, denied, expired, claimed]}
+    TeamMembershipSummary:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role: {type: string, enum: [owner, member]}
+    Team:
+      type: object
+      additionalProperties: false
+      required: [id, slug, displayName, membership, createdAt, updatedAt]
+      properties:
+        id: {$ref: "#/components/schemas/OpaqueId"}
+        slug: {type: string}
+        displayName: {type: string}
+        membership: {$ref: "#/components/schemas/TeamMembershipSummary"}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, teamId, type, name, state, createdAt, updatedAt]
+      properties:
+        id: {$ref: "#/components/schemas/OpaqueId"}
+        teamId: {$ref: "#/components/schemas/OpaqueId"}
+        type: {type: string, enum: [git, folder]}
+        name: {type: string}
+        state: {type: string, enum: [active, archived]}
+        repositoryIdentity: {type: string}
+        capturedThrough: {$ref: "#/components/schemas/Timestamp"}
+        createdAt: {$ref: "#/components/schemas/Timestamp"}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+    Workspace:
+      type: object
+      additionalProperties: false
+      required: [teams, projects]
+      properties:
+        teams: {type: array, items: {$ref: "#/components/schemas/Team"}}
+        projects: {type: array, items: {$ref: "#/components/schemas/Project"}}
+    Membership:
+      type: object
+      additionalProperties: false
+      required: [userId, displayName, avatarUrl, role, joinedAt, updatedAt]
+      properties:
+        userId: {$ref: "#/components/schemas/OpaqueId"}
+        displayName: {type: string}
+        avatarUrl: {type: string}
+        role: {type: string, enum: [owner, member]}
+        joinedAt: {$ref: "#/components/schemas/Timestamp"}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+    MembershipMutation:
+      type: object
+      additionalProperties: false
+      required: [teamId, userId, role, status]
+      properties:
+        teamId: {$ref: "#/components/schemas/OpaqueId"}
+        userId: {$ref: "#/components/schemas/OpaqueId"}
+        role: {type: string, enum: [owner, member]}
+        status: {const: active}
+    JoinCodeStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, generation, updatedAt]
+      properties:
+        enabled: {type: boolean}
+        generation: {type: integer, minimum: 0}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+    JoinCodeGrant:
+      type: object
+      additionalProperties: false
+      required: [code, generation, rotatedAt]
+      properties:
+        code: {type: string, pattern: "^[A-Z0-9]{6}$", x-atape-one-time-secret: true}
+        generation: {type: integer, minimum: 1}
+        rotatedAt: {$ref: "#/components/schemas/Timestamp"}
+    ProjectMatch:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status: {const: none}
+        - type: object
+          additionalProperties: false
+          required: [status, project]
+          properties:
+            status: {const: exact}
+            project: {$ref: "#/components/schemas/Project"}
+    CanonicalSource:
+      type: object
+      additionalProperties: false
+      required: [adapterId, adapterVersion, installationId]
+      properties:
+        adapterId: {type: string, minLength: 1, maxLength: 200}
+        adapterVersion: {type: string, minLength: 1, maxLength: 100}
+        installationId: {type: string, minLength: 1, maxLength: 200}
+    CanonicalActor:
+      type: object
+      additionalProperties: false
+      required: [name, harness]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        harness: {type: string, minLength: 1, maxLength: 200}
+    CanonicalSession:
+      type: object
+      additionalProperties: false
+      required: [sourceSessionId, revision, title, summary, insight, actor, branch, status, captureStatus, updatedAt, reportedEventCount]
+      properties:
+        sourceSessionId: {type: string, minLength: 1, maxLength: 500}
+        revision: {type: integer, format: int64, minimum: 1}
+        title: {type: string, maxLength: 2000}
+        summary: {type: string, maxLength: 2000}
+        insight: {type: string, maxLength: 2000}
+        actor: {$ref: "#/components/schemas/CanonicalActor"}
+        branch: {type: string, maxLength: 2000}
+        status: {type: string, enum: [active, idle, ended]}
+        captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+        reportedEventCount: {type: integer, minimum: 0}
+    CanonicalThread:
+      type: object
+      additionalProperties: false
+      required: [sourceThreadId, revision, label, summary, captureStatus]
+      properties:
+        sourceThreadId: {type: string, minLength: 1, maxLength: 500}
+        parentSourceThreadId: {type: [string, "null"]}
+        revision: {type: integer, format: int64, minimum: 1}
+        label: {type: string, maxLength: 200}
+        summary: {type: string, maxLength: 2000}
+        captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
+    RawReference:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [type, sourceObjectId]
+          properties:
+            type: {const: object}
+            sourceObjectId: {type: string, minLength: 1}
+            fragment: {type: string}
+        - type: object
+          additionalProperties: false
+          required: [type, reason]
+          properties:
+            type: {const: unavailable}
+            reason: {type: string, minLength: 1}
+    CanonicalEvent:
+      type: object
+      additionalProperties: false
+      required: [sourceEventId, sourceThreadId, revision, projectionRevision, sourceOrder, eventIndex, orderFidelity, fidelity, rawRef, kind, author, occurredAt, text]
+      properties:
+        sourceEventId: {type: string, minLength: 1, maxLength: 500}
+        sourceThreadId: {type: string, minLength: 1, maxLength: 500}
+        revision: {type: integer, format: int64, minimum: 1}
+        projectionRevision: {type: integer, format: int64, minimum: 1}
+        sourceOrder: {type: integer, format: int64, minimum: 0}
+        eventIndex: {type: integer, minimum: 0}
+        orderFidelity: {type: string, enum: [native, derived]}
+        fidelity: {type: string, enum: [native, derived, partial, redacted]}
+        rawRef: {$ref: "#/components/schemas/RawReference"}
+        kind: {type: string, enum: [message, thought, tool_call, tool_result, artifact, spawn, lifecycle]}
+        author: {type: string}
+        occurredAt: {$ref: "#/components/schemas/Timestamp"}
+        text: {type: string, maxLength: 1048576}
+        toolLabel: {type: string}
+        childSourceThreadId: {type: [string, "null"]}
+    CanonicalBatch:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, canonicalProfileVersion, batchId, observedAt, source, projectId, session, threads, events]
+      properties:
+        protocolVersion: {const: atape.canonical.v1}
+        canonicalProfileVersion: {const: atape.acp-centered.v1}
+        batchId: {type: string, minLength: 1, maxLength: 200}
+        observedAt: {$ref: "#/components/schemas/Timestamp"}
+        source: {$ref: "#/components/schemas/CanonicalSource"}
+        projectId: {$ref: "#/components/schemas/OpaqueId"}
+        session: {$ref: "#/components/schemas/CanonicalSession"}
+        threads:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: "#/components/schemas/CanonicalThread"}
+        events:
+          type: array
+          maxItems: 500
+          items: {$ref: "#/components/schemas/CanonicalEvent"}
+    RawChunk:
+      type: object
+      additionalProperties: false
+      required: [protocolVersion, sourceChunkId, sourceObjectId, sessionId, installationId, generation, offset, sourceName, mediaType, adapterId, adapterVersion, capturedAt, clientRedacted, final, contentBase64, sha256]
+      properties:
+        protocolVersion: {const: atape.raw.v1}
+        sourceChunkId: {type: string, minLength: 1}
+        sourceObjectId: {type: string, minLength: 1}
+        sessionId: {$ref: "#/components/schemas/OpaqueId"}
+        installationId: {type: string, minLength: 1}
+        generation: {type: integer, format: int64, minimum: 1}
+        offset: {type: integer, format: int64, minimum: 0}
+        sourceName: {type: string, minLength: 1}
+        mediaType: {type: string, minLength: 1}
+        adapterId: {type: string, minLength: 1}
+        adapterVersion: {type: string, minLength: 1}
+        capturedAt: {$ref: "#/components/schemas/Timestamp"}
+        clientRedacted: {type: boolean}
+        final: {type: boolean}
+        contentBase64: {type: string, contentEncoding: base64}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+    ProblemField:
+      type: object
+      additionalProperties: false
+      required: [field, code]
+      properties:
+        field: {type: string}
+        code: {type: string}
+    Problem:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, detail, instance, requestId]
+      properties:
+        type: {type: string, format: uri, pattern: "^https://atape[.]dev/problems/v1/"}
+        title: {type: string}
+        status: {type: integer, minimum: 400, maximum: 599}
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_user_code
+            - invalid_join_code
+            - invalid_device_code
+            - unsupported_protocol_version
+            - ambiguous_credentials
+            - unauthenticated
+            - session_expired
+            - session_revoked
+            - fresh_authentication_required
+            - origin_rejected
+            - csrf_rejected
+            - access_denied
+            - membership_role_denied
+            - credential_capability_denied
+            - not_found
+            - method_not_allowed
+            - external_identity_conflict
+            - last_owner_required
+            - grant_already_decided
+            - grant_consumed
+            - idempotency_conflict
+            - idempotency_in_progress
+            - resource_state_conflict
+            - login_expired
+            - expired_token
+            - request_too_large
+            - unsupported_media_type
+            - validation_failed
+            - slow_down
+            - too_many_code_attempts
+            - internal_error
+            - provider_unavailable
+            - service_unavailable
+        detail: {type: string}
+        instance: {type: string, format: uri, pattern: "^urn:atape:request:"}
+        requestId: {type: string, format: uuid}
+        errors:
+          type: array
+          items: {$ref: "#/components/schemas/ProblemField"}

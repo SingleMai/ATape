@@ -753,7 +753,9 @@ func (m *Module) RevokeCLICredentials(ctx context.Context, input RevokeCLICreden
 		} else {
 			credentialID, parseErr := databaseUUID(input.CredentialID)
 			if parseErr != nil {
-				return struct{}{}, parseErr
+				// Keep proof-authorized revocation idempotent for opaque IDs that
+				// cannot correspond to a stored CLI Credential.
+				return struct{}{}, nil
 			}
 			affected, err = queries.RevokeCLICredentialForUser(ctx, authdb.RevokeCLICredentialForUserParams{
 				ID: credentialID, UserID: userID,

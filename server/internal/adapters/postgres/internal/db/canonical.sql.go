@@ -214,12 +214,31 @@ SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
        reported_event_count, captured_by_user_id
 FROM canonical_sessions
-WHERE id = $1
+WHERE id = $1 AND record_state = 'active'
 `
 
-func (q *Queries) GetSessionForRead(ctx context.Context, id string) (CanonicalSession, error) {
+type GetSessionForReadRow struct {
+	ID                 string
+	ProjectID          string
+	SourceKey          string
+	Revision           int64
+	Digest             string
+	Title              string
+	Summary            string
+	Insight            string
+	ActorName          string
+	ActorHarness       string
+	Branch             string
+	Status             string
+	CaptureStatus      string
+	UpdatedAt          time.Time
+	ReportedEventCount int64
+	CapturedByUserID   pgtype.UUID
+}
+
+func (q *Queries) GetSessionForRead(ctx context.Context, id string) (GetSessionForReadRow, error) {
 	row := q.db.QueryRow(ctx, getSessionForRead, id)
-	var i CanonicalSession
+	var i GetSessionForReadRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -244,15 +263,35 @@ func (q *Queries) GetSessionForRead(ctx context.Context, id string) (CanonicalSe
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count, captured_by_user_id
+       reported_event_count, captured_by_user_id, record_state
 FROM canonical_sessions
 WHERE id = $1
 FOR UPDATE
 `
 
-func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (CanonicalSession, error) {
+type GetSessionForUpdateRow struct {
+	ID                 string
+	ProjectID          string
+	SourceKey          string
+	Revision           int64
+	Digest             string
+	Title              string
+	Summary            string
+	Insight            string
+	ActorName          string
+	ActorHarness       string
+	Branch             string
+	Status             string
+	CaptureStatus      string
+	UpdatedAt          time.Time
+	ReportedEventCount int64
+	CapturedByUserID   pgtype.UUID
+	RecordState        string
+}
+
+func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (GetSessionForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getSessionForUpdate, id)
-	var i CanonicalSession
+	var i GetSessionForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -270,6 +309,7 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (Canonical
 		&i.UpdatedAt,
 		&i.ReportedEventCount,
 		&i.CapturedByUserID,
+		&i.RecordState,
 	)
 	return i, err
 }
@@ -661,7 +701,7 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
            WHERE child.session_id = s.id AND child.parent_thread_id IS NOT NULL
        )::bigint AS child_thread_count
 FROM canonical_sessions s
-WHERE s.project_id = $1
+WHERE s.project_id = $1 AND s.record_state = 'active'
 ORDER BY s.updated_at DESC, s.id
 `
 
@@ -963,7 +1003,7 @@ SET revision = $2,
     capture_status = $11,
     updated_at = $12,
     reported_event_count = $13
-WHERE id = $1 AND revision < $2
+WHERE id = $1 AND revision < $2 AND record_state = 'active'
 `
 
 type UpdateSessionParams struct {

@@ -12,6 +12,123 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteSessionBatchReceipts = `-- name: DeleteSessionBatchReceipts :exec
+DELETE FROM canonical_batch_receipts WHERE session_id = $1
+`
+
+func (q *Queries) DeleteSessionBatchReceipts(ctx context.Context, sessionID string) error {
+	_, err := q.db.Exec(ctx, deleteSessionBatchReceipts, sessionID)
+	return err
+}
+
+const deleteSessionProjectionChanges = `-- name: DeleteSessionProjectionChanges :exec
+DELETE FROM canonical_projection_changes
+WHERE event_id IN (SELECT id FROM canonical_events WHERE session_id = $1)
+`
+
+func (q *Queries) DeleteSessionProjectionChanges(ctx context.Context, sessionID string) error {
+	_, err := q.db.Exec(ctx, deleteSessionProjectionChanges, sessionID)
+	return err
+}
+
+const deleteSessionSearchDocuments = `-- name: DeleteSessionSearchDocuments :exec
+DELETE FROM project_search_documents WHERE session_id = $1
+`
+
+func (q *Queries) DeleteSessionSearchDocuments(ctx context.Context, sessionID string) error {
+	_, err := q.db.Exec(ctx, deleteSessionSearchDocuments, sessionID)
+	return err
+}
+
+const insertResourceSecurityAuditEvent = `-- name: InsertResourceSecurityAuditEvent :exec
+INSERT INTO security_audit_events (
+    id, initiator_kind, initiator_id, action, target_kind, target_id,
+    outcome, reason, request_id, web_session_id, cli_credential_id, metadata
+) VALUES (
+    $1, 'principal', $2, $3, $4, $5,
+    'succeeded', $6, $7, $8, $9, '{}'::jsonb
+)
+`
+
+type InsertResourceSecurityAuditEventParams struct {
+	ID              pgtype.UUID
+	InitiatorID     string
+	Action          string
+	TargetKind      string
+	TargetID        string
+	Reason          string
+	RequestID       string
+	WebSessionID    pgtype.UUID
+	CliCredentialID pgtype.UUID
+}
+
+func (q *Queries) InsertResourceSecurityAuditEvent(ctx context.Context, arg InsertResourceSecurityAuditEventParams) error {
+	_, err := q.db.Exec(ctx, insertResourceSecurityAuditEvent,
+		arg.ID,
+		arg.InitiatorID,
+		arg.Action,
+		arg.TargetKind,
+		arg.TargetID,
+		arg.Reason,
+		arg.RequestID,
+		arg.WebSessionID,
+		arg.CliCredentialID,
+	)
+	return err
+}
+
+const resolveCapturedSessionDeleteForUpdate = `-- name: ResolveCapturedSessionDeleteForUpdate :one
+SELECT sessions.id, sessions.project_id, sessions.captured_by_user_id, sessions.record_state,
+       projects.team_id, projects.state,
+       membership.user_id, membership.role, membership.status
+FROM canonical_sessions sessions
+JOIN canonical_projects projects ON projects.id = sessions.project_id
+JOIN team_memberships membership
+  ON membership.team_id = projects.team_id
+ AND membership.user_id = $1
+JOIN auth_users users
+  ON users.id = membership.user_id
+ AND users.status = 'active'
+WHERE sessions.id = $2
+  AND projects.state <> 'deleted'
+FOR UPDATE OF sessions, projects
+FOR SHARE OF membership, users
+`
+
+type ResolveCapturedSessionDeleteForUpdateParams struct {
+	UserID    pgtype.UUID
+	SessionID string
+}
+
+type ResolveCapturedSessionDeleteForUpdateRow struct {
+	ID               string
+	ProjectID        string
+	CapturedByUserID pgtype.UUID
+	RecordState      string
+	TeamID           string
+	State            string
+	UserID           pgtype.UUID
+	Role             string
+	Status           string
+}
+
+func (q *Queries) ResolveCapturedSessionDeleteForUpdate(ctx context.Context, arg ResolveCapturedSessionDeleteForUpdateParams) (ResolveCapturedSessionDeleteForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, resolveCapturedSessionDeleteForUpdate, arg.UserID, arg.SessionID)
+	var i ResolveCapturedSessionDeleteForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.CapturedByUserID,
+		&i.RecordState,
+		&i.TeamID,
+		&i.State,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+	)
+	return i, err
+}
+
 const resolveProjectAccess = `-- name: ResolveProjectAccess :one
 
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
@@ -130,6 +247,7 @@ JOIN auth_users users
   ON users.id = membership.user_id
  AND users.status = 'active'
 WHERE objects.id = $2
+  AND sessions.record_state = 'active'
   AND projects.state <> 'deleted'
 `
 
@@ -180,6 +298,7 @@ JOIN auth_users users
   ON users.id = membership.user_id
  AND users.status = 'active'
 WHERE sessions.id = $2
+  AND sessions.record_state = 'active'
   AND projects.state <> 'deleted'
 `
 
@@ -228,6 +347,7 @@ JOIN auth_users users
   ON users.id = membership.user_id
  AND users.status = 'active'
 WHERE sessions.id = $2
+  AND sessions.record_state = 'active'
   AND projects.state <> 'deleted'
 FOR SHARE OF sessions, projects, membership, users
 `
@@ -262,4 +382,23 @@ func (q *Queries) ResolveSessionAccessForShare(ctx context.Context, arg ResolveS
 		&i.Status,
 	)
 	return i, err
+}
+
+const tombstoneCapturedSession = `-- name: TombstoneCapturedSession :execrows
+UPDATE canonical_sessions
+SET record_state = 'deleted', deleted_at = clock_timestamp(), deleted_by_user_id = $2
+WHERE id = $1 AND record_state = 'active'
+`
+
+type TombstoneCapturedSessionParams struct {
+	ID              string
+	DeletedByUserID pgtype.UUID
+}
+
+func (q *Queries) TombstoneCapturedSession(ctx context.Context, arg TombstoneCapturedSessionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, tombstoneCapturedSession, arg.ID, arg.DeletedByUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

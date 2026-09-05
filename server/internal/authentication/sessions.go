@@ -107,7 +107,8 @@ func (m *Module) authenticateWebInTransaction(
 		}
 		return webAuthenticationState{}, commitWithError(domainError(CodeSessionIdleExpired))
 	}
-	if requireFresh && now.Sub(row.ReauthenticatedAt) > m.policy.FreshAuthenticationTTL {
+	fresh := now.Sub(row.ReauthenticatedAt) <= m.policy.FreshAuthenticationTTL
+	if requireFresh && !fresh {
 		return webAuthenticationState{}, domainError(CodeFreshAuthenticationRequired)
 	}
 	csrfToken := deriveCSRFToken(sessionSecret)
@@ -117,7 +118,7 @@ func (m *Module) authenticateWebInTransaction(
 	}
 	state.csrfToken = csrfToken
 	state.principal.AuthenticatedAt = now
-	state.principal.Fresh = requireFresh
+	state.principal.Fresh = fresh
 	if touch {
 		if touchedAt, touchErr := queries.TouchWebSession(ctx, authdb.TouchWebSessionParams{
 			ID: row.ID, WriteIntervalSeconds: mustDurationSeconds(m.policy.LastUsedWriteInterval),
@@ -323,7 +324,10 @@ func (m *Module) RevokeWebSessions(ctx context.Context, input RevokeWebSessionsI
 		} else {
 			sessionID, parseErr := databaseUUID(input.SessionID)
 			if parseErr != nil {
-				return struct{}{}, parseErr
+				// Revocation is a desired-state operation. A syntactically valid
+				// opaque path value that cannot name one of our Session records is
+				// already in the requested state.
+				return struct{}{}, nil
 			}
 			affected, err = queries.RevokeWebSessionForUser(ctx, authdb.RevokeWebSessionForUserParams{
 				ID: sessionID, UserID: principal.UserID,

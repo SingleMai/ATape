@@ -44,7 +44,7 @@ WHERE id = sqlc.arg(project_id);
 -- name: GetSessionForUpdate :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count, captured_by_user_id
+       reported_event_count, captured_by_user_id, record_state
 FROM canonical_sessions
 WHERE id = $1
 FOR UPDATE;
@@ -73,7 +73,7 @@ SET revision = $2,
     capture_status = $11,
     updated_at = $12,
     reported_event_count = $13
-WHERE id = $1 AND revision < $2;
+WHERE id = $1 AND revision < $2 AND record_state = 'active';
 
 -- name: GetThreadForUpdate :one
 SELECT session_id, id, source_key, revision, digest, label, summary,
@@ -192,7 +192,7 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
            WHERE child.session_id = s.id AND child.parent_thread_id IS NOT NULL
        )::bigint AS child_thread_count
 FROM canonical_sessions s
-WHERE s.project_id = $1
+WHERE s.project_id = $1 AND s.record_state = 'active'
 ORDER BY s.updated_at DESC, s.id;
 
 -- name: GetSessionForRead :one
@@ -200,7 +200,7 @@ SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
        reported_event_count, captured_by_user_id
 FROM canonical_sessions
-WHERE id = $1;
+WHERE id = $1 AND record_state = 'active';
 
 -- name: GetThreadForRead :one
 SELECT session_id, id, source_key, revision, digest, label, summary,

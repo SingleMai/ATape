@@ -87,6 +87,18 @@ FROM auth_users
 WHERE id = $1
 FOR UPDATE;
 
+-- name: UpdateActiveUserProfile :one
+UPDATE auth_users
+SET display_name = $2, updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active'
+RETURNING display_name, avatar_url, created_at;
+
+-- name: ListActiveExternalIdentitiesForUser :many
+SELECT id, issuer, display_name, avatar_url, created_at, last_verified_at
+FROM auth_external_identities
+WHERE user_id = $1 AND status = 'active'
+ORDER BY created_at, id;
+
 -- name: ListActiveOwnerTeamIDsForUser :many
 SELECT team_id
 FROM team_memberships
