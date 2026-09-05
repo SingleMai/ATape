@@ -1,12 +1,31 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    schema: "internal/adapters/postgres/migrations"
+    schema:
+      - "internal/adapters/postgres/migrations/000001_canonical.sql"
+      - "internal/adapters/postgres/migrations/000002_project_search.sql"
+      - "internal/adapters/postgres/migrations/000003_workspace_directory.sql"
+      - "internal/adapters/postgres/migrations/000004_raw_archive.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
         package: "db"
         out: "internal/adapters/postgres/internal/db"
+        sql_package: "pgx/v5"
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+  - engine: "postgresql"
+    schema: "internal/adapters/postgres/migrations/000005_authentication.sql"
+    queries: "internal/authentication/queries"
+    gen:
+      go:
+        package: "db"
+        out: "internal/authentication/internal/db"
         sql_package: "pgx/v5"
         emit_empty_slices: true
         emit_pointers_for_null_types: true

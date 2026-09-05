@@ -16,5 +16,6 @@
 | [0012](0012-single-bundle-cli-distribution.md) | Accepted | One installable CLI bundle with independently loaded Adapter packages and tarball-level release verification |
 | [0013](0013-bounded-adapter-artifact-distribution.md) | Accepted | Bounded inert `.tgz`/HTTPS Adapter acquisition and separate checksummed CLI/Adapter release artifacts |
 | [0014](0014-mit-and-tag-driven-package-publication.md) | Accepted | MIT licensing and recoverable tag-driven npm/GitHub publication from one verified artifact set |
+| [0015](0015-authentication-module-and-secret-state.md) | Accepted | One deep Authentication Module with a narrow Federated Identity Adapter Seam and opaque secret persistence |
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.
