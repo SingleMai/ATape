@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ATape Instance Discovery Contract Prototype</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #596780;
+      --line: #d8deea;
+      --surface: #ffffff;
+      --canvas: #f4f6fa;
+      --accent: #5148e5;
+      --accent-soft: #efefff;
+      --good: #087d5d;
+      --good-soft: #e7f7f1;
+      --warn: #9a5a00;
+      --warn-soft: #fff3d9;
+      --bad: #b52c3d;
+      --bad-soft: #ffebee;
+      --shadow: 0 14px 32px rgba(31, 42, 68, .08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    button { font: inherit; }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 44px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 10px; font-size: clamp(31px, 5vw, 52px); line-height: 1.02; letter-spacing: -.045em; }
+    h2 { margin-bottom: 8px; font-size: 22px; letter-spacing: -.025em; }
+    h3 { margin-bottom: 6px; font-size: 17px; }
+    p { margin-bottom: 12px; color: var(--muted); }
+
+    .hero,
+    .panel,
+    .candidate {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .hero { padding: 28px; }
+
+    .eyebrow,
+    .label {
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .question {
+      margin-top: 18px;
+      border-left: 4px solid var(--accent);
+      border-radius: 0 12px 12px 0;
+      background: var(--accent-soft);
+      padding: 14px 16px;
+      font-weight: 750;
+    }
+
+    section { margin-top: 24px; }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .section-heading p { margin-bottom: 0; }
+
+    .candidate-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .candidate {
+      display: flex;
+      min-height: 220px;
+      flex-direction: column;
+      padding: 18px;
+    }
+
+    .candidate.recommended { border: 2px solid var(--accent); }
+
+    .candidate-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .candidate-letter { color: var(--accent); font-weight: 850; }
+
+    .pill {
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: var(--warn-soft);
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .pill.good { background: var(--good-soft); color: var(--good); }
+    .pill.bad { background: var(--bad-soft); color: var(--bad); }
+
+    .candidate .consequence {
+      margin: auto 0 14px;
+      color: var(--ink);
+      font-size: 14px;
+    }
+
+    .button,
+    .tab {
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .button { width: 100%; padding: 8px 12px; }
+    .button:hover, .tab:hover { border-color: var(--accent); }
+    .button.selected { border-color: var(--accent); background: var(--accent); color: #fff; }
+
+    .decision {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-top: 14px;
+      border-radius: 12px;
+      background: var(--accent-soft);
+      padding: 12px 14px;
+    }
+
+    .decision strong { color: var(--accent); }
+    .decision span { color: var(--muted); font-size: 13px; }
+
+    .panel { padding: 22px; }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 14px 0 18px;
+    }
+
+    .tab { padding: 8px 12px; }
+    .tab[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+    .topology-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(330px, .95fr);
+      gap: 18px;
+    }
+
+    .flow {
+      display: grid;
+      gap: 8px;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 10px 12px;
+    }
+
+    .flow-row strong { font-size: 13px; }
+    .flow-row code { overflow-wrap: anywhere; color: var(--accent); }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 12px;
+      border-radius: 999px;
+      background: var(--good-soft);
+      color: var(--good);
+      padding: 5px 10px;
+      font-size: 13px;
+      font-weight: 750;
+    }
+
+    .status::before {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+    }
+
+    .code-card {
+      border-radius: 12px;
+      background: #111827;
+      color: #d8e1f0;
+      overflow: hidden;
+    }
+
+    .code-title {
+      border-bottom: 1px solid #2d374a;
+      padding: 8px 12px;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    pre {
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+      padding: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .fixed-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .fixed-item {
+      border-left: 3px solid var(--good);
+      border-radius: 8px;
+      background: var(--good-soft);
+      padding: 10px 12px;
+    }
+
+    .fixed-item strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    .fixed-item span { color: var(--muted); font-size: 13px; }
+
+    .boundary {
+      margin-top: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .boundary ul {
+      margin: 7px 0 0;
+      padding-left: 19px;
+      color: var(--muted);
+    }
+
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
+    @media (max-width: 860px) {
+      .candidate-grid,
+      .topology-grid { grid-template-columns: 1fr; }
+
+      .candidate { min-height: 0; }
+    }
+
+    @media (max-width: 560px) {
+      main { width: min(100% - 20px, 1120px); padding-top: 10px; }
+      .hero, .panel, .candidate { border-radius: 12px; padding: 16px; }
+      .section-heading, .decision { align-items: flex-start; flex-direction: column; }
+      .fixed-grid { grid-template-columns: 1fr; }
+      .flow-row { grid-template-columns: 1fr; gap: 2px; }
+      .tab { flex: 1 1 45%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div class="eyebrow">Throwaway contract prototype · Issue 25</div>
+      <h1>How should the CLI discover an ATape instance?</h1>
+      <p>This prototype deliberately has one decision. The deployment examples below are consequences, not additional questions.</p>
+      <div class="question">Decision: for v0.1, should ATape replace the unregistered <code>/.well-known/atape</code> idea with <code>GET /api/v1/instance</code> on the canonical Web Origin?</div>
+    </header>
+
+    <section aria-labelledby="choice-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="choice-heading">Choose the bootstrap contract</h2>
+          <p>The CLI already speaks an ATape-specific protocol; the question is how honestly and safely to publish it.</p>
+        </div>
+      </div>
+      <div id="candidateGrid" class="candidate-grid"></div>
+      <div class="decision" aria-live="polite">
+        <strong id="decisionValue">Working hypothesis: Candidate A</strong>
+        <span>No choice is persisted; reply on Issue 25 after reviewing.</span>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="topology-heading">
+      <div class="section-heading">
+        <div>
+          <h2 id="topology-heading">One contract, four deployments</h2>
+          <p>Switch examples to verify that the same bootstrap rule covers official hosting and complete self-hosting.</p>
+        </div>
+      </div>
+      <div id="profileTabs" class="tabs" role="tablist" aria-label="Deployment profiles"></div>
+      <div class="topology-grid">
+        <div>
+          <div id="profileSummary"></div>
+          <div id="flow" class="flow"></div>
+          <div class="status">Startup contract is internally consistent</div>
+        </div>
+        <div class="code-card">
+          <div id="codeTitle" class="code-title"></div>
+          <pre id="codeView"></pre>
+        </div>
+      </div>
+
+      <div class="fixed-grid" aria-label="Fixed deployment invariants">
+        <div class="fixed-item"><strong>Explicit public URLs</strong><span>Callbacks, CORS and cookies derive only from validated startup config—never Host or Forwarded headers.</span></div>
+        <div class="fixed-item"><strong>HTTPS, with one exception</strong><span>Plain HTTP requires an explicit development flag and a loopback host. Private-LAN HTTP is rejected.</span></div>
+        <div class="fixed-item"><strong>Exact instance isolation</strong><span>The CLI stores credentials under the normalized Instance Origin and pins the discovered exact API Origin.</span></div>
+        <div class="fixed-item"><strong>Deterministic CLI precedence</strong><span><code>--instance</code> → <code>ATAPE_INSTANCE_URL</code> → saved active instance → <code>https://atape.dev</code>.</span></div>
+      </div>
+
+      <div class="boundary">
+        <strong>Configuration boundary</strong>
+        <ul>
+          <li>Same-origin deployments omit Cookie Domain; split sibling deployments require one explicit common trusted parent.</li>
+          <li>The discovery request does not follow redirects. Origins contain no path, userinfo, query or fragment and normalize default ports.</li>
+          <li>Every secret-valued environment setting has a mutually exclusive <code>_FILE</code> form. Partial Provider config fails startup; changes take effect after restart.</li>
+          <li>Self-hosted instances own their Provider registration, database and keys. No request to ATape infrastructure is part of startup or login.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const ContractModel = (() => {
+      const discoveryPath = "/api/v1/instance";
+      const githubCallbackPath = "/api/v1/auth/providers/github/callback";
+
+      const candidates = {
+        ordinary: {
+          letter: "A",
+          name: "Versioned ATape endpoint",
+          badge: "Recommended",
+          tone: "good",
+          description: "Fetch a small ATape document from GET /api/v1/instance on the canonical Web Origin.",
+          consequence: "Simple first-party discovery without claiming an unregistered standard. A registered alias can be added later."
+        },
+        wellKnown: {
+          letter: "B",
+          name: "Publish /.well-known/atape now",
+          badge: "Not registered",
+          tone: "bad",
+          description: "Keep the earlier URL and describe it as the stable public discovery mechanism.",
+          consequence: "RFC 8615 requires a new well-known suffix to be registered before use. This makes the public contract misleading."
+        },
+        oauthMetadata: {
+          letter: "C",
+          name: "Become an OAuth metadata issuer",
+          badge: "Too broad",
+          tone: "",
+          description: "Model ATape as a general OAuth Authorization Server and reuse RFC 8414 / RFC 9728 metadata.",
+          consequence: "Those standards do not describe ATape's Web/API topology, and v0.1 does not promise a third-party OAuth platform."
+        }
+      };
+
+      const profiles = {
+        official: {
+          name: "Official",
+          summary: "The canonical instance and Web live at atape.dev; the API is one trusted sibling.",
+          instanceOrigin: "https://atape.dev",
+          webOrigin: "https://atape.dev",
+          apiOrigin: "https://api.atape.dev",
+          cookieDomain: "atape.dev",
+          allowHTTP: false,
+          providerConfig: [
+            "ATAPE_PUBLIC_URL=https://atape.dev",
+            "ATAPE_API_PUBLIC_URL=https://api.atape.dev",
+            "ATAPE_COOKIE_DOMAIN=atape.dev",
+            "ATAPE_GITHUB_CLIENT_ID=<official-registration>",
+            "ATAPE_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github-client-secret"
+          ]
+        },
+        selfSame: {
+          name: "Self-host · one origin",
+          summary: "The default Compose shape keeps Web, discovery and API behind one operator-owned origin.",
+          instanceOrigin: "https://atape.example.com",
+          webOrigin: "https://atape.example.com",
+          apiOrigin: "https://atape.example.com",
+          cookieDomain: null,
+          allowHTTP: false,
+          providerConfig: [
+            "ATAPE_PUBLIC_URL=https://atape.example.com",
+            "# ATAPE_API_PUBLIC_URL defaults to ATAPE_PUBLIC_URL",
+            "# Cookie Domain omitted: session remains host-only",
+            "ATAPE_GITHUB_CLIENT_ID=<self-hosted-registration>",
+            "ATAPE_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github-client-secret"
+          ]
+        },
+        selfSplit: {
+          name: "Self-host · split",
+          summary: "An operator may split Web and API across trusted siblings without changing the CLI contract.",
+          instanceOrigin: "https://atape.example.com",
+          webOrigin: "https://atape.example.com",
+          apiOrigin: "https://api.atape.example.com",
+          cookieDomain: "atape.example.com",
+          allowHTTP: false,
+          providerConfig: [
+            "ATAPE_PUBLIC_URL=https://atape.example.com",
+            "ATAPE_API_PUBLIC_URL=https://api.atape.example.com",
+            "ATAPE_COOKIE_DOMAIN=atape.example.com",
+            "ATAPE_GITHUB_CLIENT_ID=<self-hosted-registration>",
+            "ATAPE_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github-client-secret"
+          ]
+        },
+        loopback: {
+          name: "Local loopback",
+          summary: "Local development keeps the existing single-origin Compose URL and opts into the only HTTP exception.",
+          instanceOrigin: "http://127.0.0.1:8080",
+          webOrigin: "http://127.0.0.1:8080",
+          apiOrigin: "http://127.0.0.1:8080",
+          cookieDomain: null,
+          allowHTTP: true,
+          providerConfig: [
+            "ATAPE_PUBLIC_URL=http://127.0.0.1:8080",
+            "ATAPE_DEVELOPMENT_ALLOW_HTTP=true",
+            "# Loopback only; 192.168.x.x and public HTTP are rejected",
+            "# Cookie Domain omitted",
+            "ATAPE_GITHUB_CLIENT_ID=<development-registration>",
+            "ATAPE_GITHUB_CLIENT_SECRET_FILE=/run/secrets/github-client-secret"
+          ]
+        }
+      };
+
+      const initialState = () => ({ choice: null, profile: "official" });
+
+      const transition = (state, action) => {
+        if (action.type === "CHOOSE") return { ...state, choice: action.choice };
+        if (action.type === "SELECT_PROFILE") return { ...state, profile: action.profile };
+        return state;
+      };
+
+      const derive = (state) => {
+        const profile = profiles[state.profile];
+        const sameOrigin = profile.webOrigin === profile.apiOrigin;
+        const discoveryURL = profile.instanceOrigin + discoveryPath;
+        const callbackURL = profile.apiOrigin + githubCallbackPath;
+        const metadata = {
+          protocol: "atape.instance.v1",
+          instance_origin: profile.instanceOrigin,
+          web_origin: profile.webOrigin,
+          api_origin: profile.apiOrigin
+        };
+        return {
+          profile,
+          sameOrigin,
+          discoveryURL,
+          callbackURL,
+          metadata,
+          cors: sameOrigin ? "same-origin; no CORS response" : `allow exactly ${profile.webOrigin}`,
+          cookie: profile.cookieDomain ? `Domain=${profile.cookieDomain} (trusted siblings)` : "host-only (Domain omitted)"
+        };
+      };
+
+      return Object.freeze({ candidates, profiles, initialState, transition, derive });
+    })();
+
+    let state = ContractModel.initialState();
+    const byId = (id) => document.getElementById(id);
+
+    function renderCandidates() {
+      byId("candidateGrid").innerHTML = Object.entries(ContractModel.candidates).map(([id, candidate]) => `
+        <article class="candidate ${id === "ordinary" ? "recommended" : ""}">
+          <div class="candidate-top">
+            <span class="candidate-letter">Candidate ${candidate.letter}</span>
+            <span class="pill ${candidate.tone}">${candidate.badge}</span>
+          </div>
+          <h3>${candidate.name}</h3>
+          <p>${candidate.description}</p>
+          <div class="consequence">${candidate.consequence}</div>
+          <button class="button ${state.choice === id ? "selected" : ""}" type="button" data-choice="${id}">Choose ${candidate.letter}</button>
+        </article>
+      `).join("");
+
+      if (state.choice === null) {
+        byId("decisionValue").textContent = "Working hypothesis: Candidate A";
+      } else {
+        const candidate = ContractModel.candidates[state.choice];
+        byId("decisionValue").textContent = `Review preference: Candidate ${candidate.letter} · ${candidate.name}`;
+      }
+    }
+
+    function renderProfile() {
+      byId("profileTabs").innerHTML = Object.entries(ContractModel.profiles).map(([id, profile]) => `
+        <button class="tab" type="button" role="tab" aria-selected="${state.profile === id}" data-profile="${id}">${profile.name}</button>
+      `).join("");
+
+      const view = ContractModel.derive(state);
+      byId("profileSummary").innerHTML = `<h3>${view.profile.name}</h3><p>${view.profile.summary}</p>`;
+
+      const rows = [
+        ["CLI input", view.profile.instanceOrigin],
+        ["Discovery", `GET ${view.discoveryURL}`],
+        ["API target", view.profile.apiOrigin],
+        ["GitHub callback", view.callbackURL],
+        ["Browser CORS", view.cors],
+        ["Session scope", view.cookie]
+      ];
+      byId("flow").innerHTML = rows.map(([label, value]) => `
+        <div class="flow-row"><strong>${label}</strong><code>${value}</code></div>
+      `).join("");
+
+      byId("codeTitle").textContent = "Startup config → public metadata";
+      byId("codeView").textContent = `${view.profile.providerConfig.join("\n")}
+
+# Served without authentication at:
+# ${view.discoveryURL}
+
+${JSON.stringify(view.metadata, null, 2)}`;
+    }
+
+    document.addEventListener("click", (event) => {
+      const choice = event.target.closest("[data-choice]");
+      if (choice) {
+        state = ContractModel.transition(state, { type: "CHOOSE", choice: choice.dataset.choice });
+        renderCandidates();
+        return;
+      }
+
+      const profile = event.target.closest("[data-profile]");
+      if (profile) {
+        state = ContractModel.transition(state, { type: "SELECT_PROFILE", profile: profile.dataset.profile });
+        renderProfile();
+      }
+    });
+
+    renderCandidates();
+    renderProfile();
+  </script>
+</body>
+</html>
