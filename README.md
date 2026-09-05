@@ -13,6 +13,10 @@ Requirements: Docker Engine and Docker Compose v2.
 Start a durable local ATape deployment:
 
 ```sh
+cp .env.example .env
+./scripts/generate-self-hosted-secrets.sh ./secrets
+# Set the GitHub Client ID in .env and write its OAuth App secret to
+# ./secrets/github_client_secret with mode 0600.
 docker compose up --build -d
 ```
 
@@ -20,7 +24,7 @@ Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). The same URL is the Serve
 
 The Web root opens the most recently captured Project. Before the first successful collection, it presents the CLI-first setup flow instead of redirecting to demo data.
 
-The defaults bind only to localhost and use a development database password. Copy [`.env.example`](.env.example) to `.env` before changing the port, bind address, or password. ATape v0.1 does not yet provide authentication or TLS; do not bind it publicly unless an authenticating TLS reverse proxy or equivalent trusted-network boundary protects it.
+The defaults bind only to localhost and permit HTTP only for that explicit loopback origin. Production uses a configured HTTPS origin behind an operator-owned TLS/WAF edge. Database credentials, authentication key rings, and the GitHub Client Secret are mounted as files rather than expanded into the Compose environment. See the [self-hosting guide](docs/operations/self-hosting.md), [backup/restore runbook](docs/operations/backup-and-restore.md), and [v0.1.1 authenticated cutover](docs/operations/auth-cutover.md).
 
 Inspect startup and migration progress with `docker compose logs -f server`, and stop the deployment without deleting retained volumes with:
 
@@ -44,15 +48,7 @@ Start the Go server with explicitly enabled in-memory demo data:
 pnpm dev:server
 ```
 
-`pnpm dev:server` sets `ATAPE_DEMO_MODE=true`. A direct server process without `ATAPE_DATABASE_URL` otherwise refuses to start, preventing accidental ephemeral production history. To use durable Canonical, Search, and Raw manifest storage, provide a PostgreSQL connection string and an explicit Raw chunk directory; embedded forward migrations complete before the HTTP listener starts:
-
-```sh
-ATAPE_DATABASE_URL='postgres://atape:atape@127.0.0.1:5432/atape?sslmode=disable' \
-ATAPE_RAW_DIRECTORY='/var/lib/atape/raw' \
-pnpm dev:server
-```
-
-A PostgreSQL deployment without `ATAPE_RAW_DIRECTORY` still serves Canonical and Search data, but Raw uploads and byte reads return `503` rather than falling back to process-local storage.
+`pnpm dev:server` sets `ATAPE_DEMO_MODE=true`. This seeded, loopback-only UI mode deliberately bypasses the production Authentication Module and cannot be combined with durable PostgreSQL. A production process requires PostgreSQL, a writable Raw directory, canonical public origins, authentication key rings, and at least one active Provider registration; it fails before listening rather than falling back to ephemeral or partially configured state. Use the Compose path above for an end-to-end local authenticated Instance.
 
 In a second terminal, start the Web app:
 
@@ -62,7 +58,7 @@ pnpm dev:web
 
 Open [http://127.0.0.1:4187/](http://127.0.0.1:4187/).
 
-Configure local capture Projects and independently installed Harness Adapters with the Node/Effect CLI:
+Against the authenticated Compose Instance, configure local capture Projects and independently installed Harness Adapters with the Node/Effect CLI:
 
 ```sh
 ATAPE_DEVELOPMENT_ALLOW_HTTP=true pnpm atape login --instance http://127.0.0.1:8080 --no-browser
@@ -106,10 +102,18 @@ pnpm build
 pnpm test:e2e
 ```
 
-Run the real PostgreSQL Adapter contract and restart-durability suite when Docker is available:
+Run the real PostgreSQL, authentication, cutover, HTTP, and Team integration suites when Docker is available:
 
 ```sh
 pnpm test:go:integration
+pnpm test:self-hosting:config
+```
+
+The full paired PostgreSQL + Raw recovery rehearsal is intentionally separate
+because it builds containers and creates then destroys isolated volumes:
+
+```sh
+pnpm test:self-hosting:restore
 ```
 
 Regenerate the private pgx query package after changing a migration or query:
@@ -122,7 +126,7 @@ pnpm generate:sqlc
 
 Read [`docs/architecture/README.md`](docs/architecture/README.md) before changing production code. The Web runtime decision is recorded in [`ADR-0001`](docs/architecture/adr/0001-web-runtime-and-view-stack.md).
 
-The authenticated browser/CLI boundary is documented in [`docs/api/authentication-http.md`](docs/api/authentication-http.md), with its complete OpenAPI 3.1 contract in [`docs/api/openapi-v1.yaml`](docs/api/openapi-v1.yaml). The ingestion envelopes are documented in [`docs/api/canonical-ingestion.md`](docs/api/canonical-ingestion.md) and [`docs/api/raw-archive.md`](docs/api/raw-archive.md). Read APIs are documented in [`docs/api/workspace.md`](docs/api/workspace.md) and [`docs/api/project-search.md`](docs/api/project-search.md). Client runtime decisions are recorded in [`ADR-0008`](docs/architecture/adr/0008-node-cli-and-on-demand-adapters.md) and [`ADR-0009`](docs/architecture/adr/0009-pull-adapter-runtime-and-checkpointed-collector.md).
+The authenticated browser/CLI boundary is documented in [`docs/api/authentication-http.md`](docs/api/authentication-http.md), with its complete OpenAPI 3.1 contract in [`docs/api/openapi-v1.yaml`](docs/api/openapi-v1.yaml). The authenticated deployment and data transition are recorded in [`ADR-0018`](docs/architecture/adr/0018-auth-cutover-and-deployable-self-hosting.md). The ingestion envelopes are documented in [`docs/api/canonical-ingestion.md`](docs/api/canonical-ingestion.md) and [`docs/api/raw-archive.md`](docs/api/raw-archive.md). Read APIs are documented in [`docs/api/workspace.md`](docs/api/workspace.md) and [`docs/api/project-search.md`](docs/api/project-search.md). Client runtime decisions are recorded in [`ADR-0008`](docs/architecture/adr/0008-node-cli-and-on-demand-adapters.md) and [`ADR-0009`](docs/architecture/adr/0009-pull-adapter-runtime-and-checkpointed-collector.md).
 
 ## License
 

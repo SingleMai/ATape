@@ -11,6 +11,8 @@ release/
 # Local process configuration
 .env
 .env.local
+/secrets/
+/.atape-restore-rehearsal.*
 
 # Go build and test artifacts
 server/bin/
