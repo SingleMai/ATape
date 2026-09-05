@@ -110,9 +110,9 @@ const server = http.createServer(async (request, response) => {
   if (path === "/api/v1/instance" && request.method === "GET") {
     return json(response, 200, {
       protocol: "atape.instance.v1",
-      instanceOrigin: "http://127.0.0.1:4187",
-      webOrigin: "http://127.0.0.1:4187",
-      apiOrigin: "http://127.0.0.1:4187",
+      instance_origin: "http://127.0.0.1:4187",
+      web_origin: "http://127.0.0.1:4187",
+      api_origin: "http://127.0.0.1:4187",
       protocols: ["atape.cli-authorization.v1"]
     })
   }

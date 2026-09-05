@@ -32,6 +32,13 @@ const BeginFederatedResponse = Schema.Struct({
   authorizationUri: Schema.String,
   expiresAt: Schema.String
 })
+const WireInstanceMetadata = Schema.Struct({
+  protocol: Schema.Literal("atape.instance.v1"),
+  instance_origin: Schema.String,
+  web_origin: Schema.String,
+  api_origin: Schema.String,
+  protocols: Schema.Array(Schema.String)
+})
 const WireSessionBootstrap = Schema.Struct({
   user: AuthenticatedSession.fields.user,
   webSession: AuthenticatedSession.fields.webSession,
@@ -152,7 +159,16 @@ const authenticationGateway = AuthenticationGateway.of({
     Effect.tapError(() => Effect.sync(clearBrowserAuthentication)),
     Effect.map(({ user, webSession }) => ({ user, webSession }))
   ),
-  loadInstance: () => requestDecoded("/api/v1/instance", InstanceMetadata),
+  loadInstance: () => requestDecoded("/api/v1/instance", WireInstanceMetadata).pipe(
+    Effect.map((metadata) => ({
+      protocol: metadata.protocol,
+      instanceOrigin: metadata.instance_origin,
+      webOrigin: metadata.web_origin,
+      apiOrigin: metadata.api_origin,
+      protocols: metadata.protocols
+    })),
+    Effect.flatMap((metadata) => decode(InstanceMetadata, metadata))
+  ),
   listProviderRegistrations: () => requestDecoded(
     "/api/v1/auth/provider-registrations",
     Items(ProviderRegistration)

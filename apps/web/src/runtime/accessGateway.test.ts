@@ -45,6 +45,26 @@ describe("browser access Gateway Adapter", () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
+  it("translates the public snake-case Instance document at the Adapter boundary", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({
+      protocol: "atape.instance.v1",
+      instance_origin: "https://atape.dev",
+      web_origin: "https://atape.dev",
+      api_origin: "https://api.atape.dev",
+      protocols: ["atape.cli-authorization.v1"]
+    }), { status: 200 }))
+
+    const metadata = await run(Effect.flatMap(AuthenticationGateway, (gateway) => gateway.loadInstance()))
+
+    expect(metadata).toEqual({
+      protocol: "atape.instance.v1",
+      instanceOrigin: "https://atape.dev",
+      webOrigin: "https://atape.dev",
+      apiOrigin: "https://api.atape.dev",
+      protocols: ["atape.cli-authorization.v1"]
+    })
+  })
+
   it("captures the private CSRF proof only through session restoration", async () => {
     fetchMock
       .mockResolvedValueOnce(new Response(JSON.stringify(bootstrap), { status: 200 }))
