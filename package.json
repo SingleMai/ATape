@@ -19,7 +19,7 @@
     "pack:adapter-codex": "pnpm --filter @atape/adapter-codex pack:release",
     "pack:release": "node scripts/pack-release.mjs",
     "test:adapter-package": "pnpm --filter @atape/adapter-codex verify:package",
-    "test:e2e": "pnpm --filter @atape/cli test:e2e",
+    "test:e2e": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/cli test:e2e",
     "test:cli-package": "pnpm --filter @atape/cli verify:package",
     "test:release": "pnpm test:cli-package && pnpm test:adapter-package && node scripts/verify-release.mjs",
     "test:go": "cd server && go test ./...",
