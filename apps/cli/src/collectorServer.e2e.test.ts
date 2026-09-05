@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { createHash } from "node:crypto"
 import {
   appendFile,
   mkdir,
@@ -206,12 +207,14 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
   }
   const now = new Date().toISOString()
   await writeFile(fixture.configFile, `${JSON.stringify({
-    version: 1,
-    serverUrl,
-    userId: "e2e-user",
+    version: 2,
+    activeInstanceOrigin: serverUrl,
     projects: [{
       id: "support-notes",
+      instanceOrigin: serverUrl,
+      userId: "e2e-user",
       teamId: "acme-engineering",
+      teamSlug: "acme-engineering",
       teamName: "Acme Engineering",
       name: "E2E Project",
       type: "directory",
@@ -229,6 +232,22 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
       updatedAt: now
     }]
   }, null, 2)}\n`)
+  const credentialDirectory = join(fixture.root, "credentials")
+  await mkdir(credentialDirectory, { mode: 0o700 })
+  const credentialFile = join(
+    credentialDirectory,
+    `${createHash("sha256").update(serverUrl).digest("hex")}.json`
+  )
+  await writeFile(credentialFile, `${JSON.stringify({
+    version: 1,
+    instanceOrigin: serverUrl,
+    apiOrigin: serverUrl,
+    credential: "atc_v1_e2e-development",
+    credentialId: "credential-e2e",
+    capabilityVersion: "atape-cli.v1",
+    createdAt: now,
+    user: { id: "e2e-user", displayName: "E2E User" }
+  }, null, 2)}\n`, { mode: 0o600 })
 }
 
 const collect = async (fixture: Fixture, serverUrl: string) => {
@@ -288,6 +307,9 @@ const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
 
 const clientEnvironment = (fixture: Fixture, serverUrl: string): NodeJS.ProcessEnv => ({
   ...process.env,
+  ATAPE_HOME: fixture.root,
+  ATAPE_INSTANCE_URL: serverUrl,
+  ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
   ATAPE_CONFIG_FILE: fixture.configFile,
   ATAPE_COLLECTOR_STATE_FILE: fixture.collectorStateFile,
   ATAPE_COLLECTOR_PROCESS_FILE: fixture.collectorProcessFile,

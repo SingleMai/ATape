@@ -26,7 +26,7 @@ export const CLIDeviceAuthorization = Schema.Struct({
     Schema.isPattern(/^atd_v1_[A-Za-z0-9_-]+$/)
   ),
   userCode: Schema.String.check(
-    Schema.isPattern(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/)
+    Schema.isPattern(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/)
   ),
   verificationUri: OriginText,
   verificationUriComplete: OriginText,

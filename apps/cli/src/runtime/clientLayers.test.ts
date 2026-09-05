@@ -28,12 +28,22 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
   const root = await mkdtemp(join(tmpdir(), "atape-cli-test-"))
   temporaryDirectories.push(root)
   const paths = {
+    atapeHome: root,
+    credentialDirectory: join(root, "credentials"),
     configFile: join(root, "config", "config.json"),
     collectorStateFile: join(root, "state", "collector.json"),
     collectorProcessFile: join(root, "state", "collector-process.json"),
     collectorStatusFile: join(root, "state", "collector-status.json"),
     collectorLogFile: join(root, "state", "collector.log"),
-    adapterDirectory: join(root, "data", "adapters")
+    adapterDirectory: join(root, "data", "adapters"),
+    legacy: {
+      configFile: join(root, "legacy", "config.json"),
+      collectorStateFile: join(root, "legacy", "collector.json"),
+      collectorProcessFile: join(root, "legacy", "collector-process.json"),
+      collectorStatusFile: join(root, "legacy", "collector-status.json"),
+      collectorLogFile: join(root, "legacy", "collector.log"),
+      adapterDirectory: join(root, "legacy", "adapters")
+    }
   }
   const layer = makeNodeClientLayer(paths, process.env, fetchAdapterPackage)
   const run = <A, E>(effect: Effect.Effect<
@@ -45,6 +55,19 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
   return { root, paths, run }
 }
 
+const setupInput = (path: string, type: "auto" | "git" | "directory" = "auto") => ({
+  path,
+  instanceOrigin: "https://atape.dev",
+  userId: "user-1",
+  teamId: "team-1",
+  teamSlug: "acme",
+  teamName: "Acme Engineering",
+  projectId: type === "directory" ? path.split("/").at(-1) ?? "project" : "payments",
+  name: type === "directory" ? path.split("/").at(-1) ?? "Project" : "Payments",
+  createdAt: "2026-09-06T00:00:00Z",
+  type
+} as const)
+
 describe("Node client Layers", () => {
   it("detects the Git root and persists owner-only atomic configuration", async () => {
     const client = await fixture()
@@ -54,11 +77,7 @@ describe("Node client Layers", () => {
     await exec("git", ["init", "-q", repository])
     const canonicalRepository = await realpath(repository)
 
-    const result = await client.run(setupProject({
-      path: nested,
-      teamId: "acme",
-      teamName: "Acme Engineering"
-    }))
+    const result = await client.run(setupProject(setupInput(nested)))
     const persisted = JSON.parse(await readFile(client.paths.configFile, "utf8")) as {
       projects: ReadonlyArray<{ path: string; type: string }>
     }
@@ -76,8 +95,8 @@ describe("Node client Layers", () => {
     await Promise.all([mkdir(first), mkdir(second)])
 
     await Promise.all([
-      client.run(setupProject({ path: first, teamId: "acme", teamName: "Acme", type: "directory" })),
-      client.run(setupProject({ path: second, teamId: "acme", teamName: "Acme", type: "directory" }))
+      client.run(setupProject(setupInput(first, "directory"))),
+      client.run(setupProject(setupInput(second, "directory")))
     ])
 
     const config = await client.run(inspectClient())
@@ -96,12 +115,7 @@ describe("Node client Layers", () => {
       createdAt: new Date().toISOString()
     }))
 
-    const result = await client.run(setupProject({
-      path: project,
-      teamId: "acme",
-      teamName: "Acme",
-      type: "directory"
-    }))
+    const result = await client.run(setupProject(setupInput(project, "directory")))
 
     expect(result.project.id).toBe("project")
     await expect(stat(`${client.paths.configFile}.lock`)).rejects.toMatchObject({ code: "ENOENT" })
@@ -128,7 +142,7 @@ describe("Node client Layers", () => {
       }
     }))
 
-    await client.run(setupProject({ path: project, teamId: "acme", teamName: "Acme", type: "directory" }))
+    await client.run(setupProject(setupInput(project, "directory")))
     const installed = await client.run(installAdapter(adapter))
     const enabled = await client.run(setProjectAdapter({
       projectId: "project", adapterId: "fixture", enabled: true

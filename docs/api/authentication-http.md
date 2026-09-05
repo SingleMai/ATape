@@ -60,7 +60,7 @@ next authenticated request.
 
 The CLI posts `{}` to `/api/v1/auth/cli/device-grants`, opens the returned
 `verification_uri_complete`, and polls `/api/v1/auth/cli/token` using the
-opaque Device Code. The browser resolves the eight-character, case-insensitive
+opaque Device Code. The browser resolves the six-character, case-insensitive
 User Code and explicitly approves or denies the non-secret grant view. A CLI
 Credential is returned exactly once and is stored by the CLI under `~/.atape`.
 

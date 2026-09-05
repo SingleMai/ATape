@@ -42,6 +42,7 @@ describe("Node Collector run status Adapter", () => {
       failures: [{
         projectId: "atape",
         adapterId: "codex",
+        reason: "transport" as const,
         retryable: true,
         message: "Server unavailable"
       }]
@@ -62,6 +63,7 @@ describe("Node Collector run status Adapter", () => {
       lastSuccessAt: first.completedAt,
       lastFailureAt: second.completedAt,
       failureMessage: "Server unavailable",
+      failureReason: "transport",
       retryable: true
     })])
   })

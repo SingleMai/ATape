@@ -554,9 +554,15 @@ const acquireCredentialLock = (
       while (true) {
         try {
           const handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollowFlag(), 0o600)
-          await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
-          await handle.sync()
-          return { path, close: () => handle.close() }
+          try {
+            await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
+            await handle.sync()
+            return { path, close: () => handle.close() }
+          } catch (cause) {
+            await handle.close().catch(() => undefined)
+            await unlink(path).catch(() => undefined)
+            throw cause
+          }
         } catch (cause) {
           if (!hasCode(cause, "EEXIST")) throw cause
           if (await staleLock(path)) {

@@ -16,9 +16,9 @@ describe("authentication boundary values", () => {
   })
 
   it("normalizes the human CLI code but rejects ambiguous characters", () => {
-    expect(normalizeDeviceUserCode("q7km 4wdp")).toBe("Q7KM-4WDP")
-    expect(normalizeDeviceUserCode("q7km-4wdp")).toBe("Q7KM-4WDP")
-    expect(normalizeDeviceUserCode("Q7KM-IWDP")).toBeUndefined()
+    expect(normalizeDeviceUserCode("q7 km4w")).toBe("Q7KM4W")
+    expect(normalizeDeviceUserCode("q7km4w")).toBe("Q7KM4W")
+    expect(normalizeDeviceUserCode("Q7KMIW")).toBeUndefined()
   })
 
   it("accepts only credential-free HTTPS Provider navigation", () => {

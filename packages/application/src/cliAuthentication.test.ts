@@ -4,7 +4,8 @@ import type {
   IssuedCLICredential,
   StoredCLICredential
 } from "@atape/domain"
-import { Effect, Layer, Ref } from "effect"
+import { Effect, Fiber, Layer, Ref } from "effect"
+import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import {
   CLIAuthenticationError,
@@ -29,9 +30,9 @@ const metadata: InstanceMetadata = {
 const authorization: CLIDeviceAuthorization = {
   protocol: "atape.cli-authorization.v1",
   deviceCode: "atd_v1_device-secret",
-  userCode: "Q7KM-4WDP",
+  userCode: "Q7KM4W",
   verificationUri: "https://atape.dev/cli/authorize",
-  verificationUriComplete: "https://atape.dev/cli/authorize?user_code=Q7KM-4WDP",
+  verificationUriComplete: "https://atape.dev/cli/authorize?user_code=Q7KM4W",
   expiresInSeconds: 60,
   intervalSeconds: 1
 }
@@ -57,7 +58,12 @@ const oldCredential: StoredCLICredential = {
 
 const fixture = async (options: {
   readonly previous?: StoredCLICredential
-  readonly polls?: ReadonlyArray<"pending" | "slow_down" | "transport" | "authorized">
+  readonly authorization?: CLIDeviceAuthorization
+  readonly polls?: ReadonlyArray<
+    "pending" | "slow_down" | "transport" | "denied" | "expired" | "authorized"
+  >
+  readonly browserOpened?: boolean
+  readonly readFailure?: boolean
   readonly saveFailure?: boolean
   readonly revokeFailureIds?: ReadonlyArray<string>
 } = {}) => {
@@ -72,7 +78,7 @@ const fixture = async (options: {
     }),
     createDeviceAuthorization: () => Effect.sync(() => {
       events.push(["create"])
-      return authorization
+      return options.authorization ?? authorization
     }),
     pollDeviceAuthorization: (_instance, deviceCode) => Effect.suspend(
       (): Effect.Effect<CLIPollResult, CLIAuthenticationError> => {
@@ -86,6 +92,12 @@ const fixture = async (options: {
         case "transport": return Effect.fail(new CLIAuthenticationError({
           reason: "transport", message: "Offline."
         }))
+        case "denied": return Effect.fail(new CLIAuthenticationError({
+          reason: "authorization_denied", message: "Denied."
+        }))
+        case "expired": return Effect.fail(new CLIAuthenticationError({
+          reason: "authorization_expired", message: "Expired."
+        }))
         default: return Effect.succeed({ _tag: "Authorized" as const, credential: issued })
       }
       }
@@ -98,7 +110,9 @@ const fixture = async (options: {
     })
   })
   const store = CLICredentialStore.of({
-    read: () => Ref.get(current),
+    read: () => options.readFailure
+      ? Effect.fail(new CLICredentialStoreError({ reason: "unsafe", message: "Unsafe credential directory." }))
+      : Ref.get(current),
     replace: ({ expectedCredentialId, credential }) => Effect.gen(function*() {
       events.push(["replace", expectedCredentialId, credential.credentialId])
       if (options.saveFailure) {
@@ -122,7 +136,7 @@ const fixture = async (options: {
     presentChallenge: (challenge) => Effect.sync(() => { events.push(["present", challenge]) }),
     openBrowser: (uri) => Effect.sync(() => {
       events.push(["browser", uri])
-      return true
+      return options.browserOpened ?? true
     })
   })
   const layer = Layer.mergeAll(
@@ -133,6 +147,7 @@ const fixture = async (options: {
   return {
     current,
     events,
+    layer,
     run: <A, E>(effect: Effect.Effect<A, E, CLIAuthenticationGateway | CLICredentialStore | CLIAuthenticationInteraction>) =>
       effect.pipe(Effect.provide(layer), Effect.runPromise)
   }
@@ -168,12 +183,76 @@ describe("CLI authentication Module", () => {
       .toBeLessThan(client.events.findIndex((event) => Array.isArray(event) && event[0] === "revoke"))
   })
 
+  it.each([
+    ["denied", "authorization_denied"],
+    ["expired", "authorization_expired"]
+  ] as const)("propagates a %s browser decision without persisting authority", async (poll, reason) => {
+    const client = await fixture({ polls: [poll] })
+    const failure = await Effect.gen(function*() {
+      const fiber = yield* Effect.flip(loginCLI({
+        instanceOrigin: "https://atape.dev", openBrowser: false
+      })).pipe(Effect.forkChild)
+      yield* TestClock.adjust("2 seconds")
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(client.layer), Effect.provide(TestClock.layer()), Effect.runPromise)
+
+    expect(failure).toMatchObject({ reason })
+    expect(await Effect.runPromise(Ref.get(client.current))).toBeUndefined()
+  })
+
+  it("continues when the browser cannot be opened and survives slow-down plus response loss", async () => {
+    const client = await fixture({
+      polls: ["slow_down", "transport", "authorized"],
+      browserOpened: false
+    })
+    const result = await Effect.gen(function*() {
+      const fiber = yield* loginCLI({ instanceOrigin: "https://atape.dev" }).pipe(Effect.forkChild)
+      yield* TestClock.adjust("20 seconds")
+      return yield* Fiber.join(fiber)
+    }).pipe(Effect.provide(client.layer), Effect.provide(TestClock.layer()), Effect.runPromise)
+
+    expect(result).toMatchObject({ browserOpened: false, credentialId: "credential-new" })
+    expect(client.events.filter((event) => Array.isArray(event) && event[0] === "poll")).toHaveLength(3)
+  })
+
+  it("cancels a pending login without polling again or persisting a credential", async () => {
+    const client = await fixture({ polls: ["pending"] })
+    await Effect.gen(function*() {
+      const fiber = yield* loginCLI({
+        instanceOrigin: "https://atape.dev", openBrowser: false
+      }).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* Fiber.interrupt(fiber)
+    }).pipe(Effect.provide(client.layer), Effect.provide(TestClock.layer()), Effect.runPromise)
+
+    expect(client.events.some((event) => Array.isArray(event) && event[0] === "replace")).toBe(false)
+    expect(await Effect.runPromise(Ref.get(client.current))).toBeUndefined()
+  })
+
+  it("expires locally at the grant deadline without making a late poll", async () => {
+    const client = await fixture({
+      authorization: { ...authorization, expiresInSeconds: 1, intervalSeconds: 1 },
+      polls: ["authorized"]
+    })
+    await expect(client.run(loginCLI({
+      instanceOrigin: "https://atape.dev", openBrowser: false
+    }))).rejects.toMatchObject({ reason: "authorization_expired" })
+    expect(client.events.some((event) => Array.isArray(event) && event[0] === "poll")).toBe(false)
+  })
+
   it("revokes a newly issued credential when durable storage fails", async () => {
     const client = await fixture({ saveFailure: true })
     await expect(client.run(loginCLI({ instanceOrigin: "https://atape.dev", openBrowser: false })))
       .rejects.toMatchObject({ reason: "credential_store" })
     expect(client.events).toContainEqual(["revoke", "credential-new"])
     expect(await Effect.runPromise(Ref.get(client.current))).toBeUndefined()
+  })
+
+  it("refuses an unsafe local store before asking the server to issue authority", async () => {
+    const client = await fixture({ readFailure: true })
+    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.dev" })))
+      .rejects.toMatchObject({ reason: "credential_store" })
+    expect(client.events).toEqual([])
   })
 
   it("reports an orphan without ever returning its bearer when save and cleanup both fail", async () => {

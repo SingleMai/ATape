@@ -16,7 +16,7 @@ import (
 
 const (
 	deviceUserCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	deviceUserCodeLength   = 8
+	deviceUserCodeLength   = 6
 )
 
 // CLIClientLabel is the stable client identity shown on browser approval views.
@@ -113,16 +113,9 @@ func (m *Module) randomDeviceUserCode() (string, error) {
 
 func normalizeDeviceUserCode(value string) (string, bool) {
 	var builder strings.Builder
-	hyphens := 0
 	for _, character := range strings.ToUpper(strings.TrimSpace(value)) {
 		switch character {
 		case ' ':
-			continue
-		case '-':
-			hyphens++
-			if hyphens > 1 || builder.Len() != 4 {
-				return "", false
-			}
 			continue
 		}
 		if character > 127 || !strings.ContainsRune(deviceUserCodeAlphabet, character) {
@@ -138,7 +131,7 @@ func displayDeviceUserCode(normalized string) string {
 	if len(normalized) != deviceUserCodeLength {
 		return ""
 	}
-	return normalized[:4] + "-" + normalized[4:]
+	return normalized
 }
 
 func (m *Module) liveCodeCollision(

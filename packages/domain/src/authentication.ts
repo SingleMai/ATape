@@ -80,7 +80,7 @@ export type CLIDeviceGrantStatus = typeof CLIDeviceGrantStatus.Type
 
 export const CLIDeviceGrantView = Schema.Struct({
   grantViewId: OpaqueIdentifier,
-  userCode: Schema.String.check(Schema.isPattern(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/)),
+  userCode: Schema.String.check(Schema.isPattern(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/)),
   instanceOrigin: URIText,
   clientLabel: Schema.Literal("atape-cli"),
   capabilityVersion: Schema.Literal("atape-cli.v1"),
@@ -112,15 +112,11 @@ export const safeLocalReturnTo = (input: string | undefined, fallback = "/"): st
   }
 }
 
-const deviceCodeAlphabet = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/
+const deviceCodeAlphabet = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/
 
 export const normalizeDeviceUserCode = (input: string): string | undefined => {
   const compact = input.trim().toUpperCase().replaceAll(" ", "")
-  const normalized = compact.length === 9 && compact[4] === "-"
-    ? compact.slice(0, 4) + compact.slice(5)
-    : compact
-  if (!deviceCodeAlphabet.test(normalized)) return undefined
-  return `${normalized.slice(0, 4)}-${normalized.slice(4)}`
+  return deviceCodeAlphabet.test(compact) ? compact : undefined
 }
 
 export const safeAuthorizationURI = (input: string): string | undefined => {

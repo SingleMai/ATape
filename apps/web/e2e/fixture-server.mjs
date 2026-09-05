@@ -230,10 +230,10 @@ const server = http.createServer(async (request, response) => {
     if (!requireCSRF(request, response)) return
     state.cliResolveCount++
     const input = await readBody(request)
-    if (input.user_code !== "Q7KM-4WDP") return problem(response, 400, "invalid_user_code")
+    if (input.user_code !== "Q7KM4W") return problem(response, 400, "invalid_user_code")
     return json(response, 200, {
       grantViewId: "grant-view-one",
-      userCode: "Q7KM-4WDP",
+      userCode: "Q7KM4W",
       instanceOrigin: "http://127.0.0.1:4187",
       clientLabel: "atape-cli",
       capabilityVersion: "atape-cli.v1",

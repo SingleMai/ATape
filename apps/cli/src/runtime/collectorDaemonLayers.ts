@@ -345,6 +345,7 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
       lastFailureAt: report.completedAt,
       failureMessage: failure.message,
       retryable: failure.retryable,
+      failureReason: failure.reason,
       ...(previous?.lastSuccessAt === undefined ? {} : { lastSuccessAt: previous.lastSuccessAt })
     }
     jobs.set(jobKey(failure.projectId, failure.adapterId), next)

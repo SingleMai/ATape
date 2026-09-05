@@ -59,7 +59,7 @@ const credential: CLICredential = {
 }
 const grant: CLIDeviceGrantView = {
   grantViewId: "grant-1",
-  userCode: "Q7KM-4WDP",
+  userCode: "Q7KM4W",
   instanceOrigin: "https://atape.dev",
   clientLabel: "atape-cli",
   capabilityVersion: "atape-cli.v1",
@@ -152,10 +152,10 @@ describe("Authentication application Module", () => {
 
   it("normalizes the CLI code before crossing the Gateway Seam", async () => {
     const fixture = authenticationFixture()
-    await fixture.run(resolveCLIDeviceGrant("q7km 4wdp"))
-    expect(fixture.calls).toEqual([["resolve", "Q7KM-4WDP"]])
+    await fixture.run(resolveCLIDeviceGrant("q7 km4w"))
+    expect(fixture.calls).toEqual([["resolve", "Q7KM4W"]])
 
-    await expect(fixture.run(resolveCLIDeviceGrant("Q7KM-IWDP")))
+    await expect(fixture.run(resolveCLIDeviceGrant("Q7KMIW")))
       .rejects.toMatchObject({ reason: "invalid_input" })
     expect(fixture.calls).toHaveLength(1)
   })

@@ -61,9 +61,9 @@ describe("Node CLI authentication HTTP Adapter", () => {
       json({
         protocol: "atape.cli-authorization.v1",
         device_code: "atd_v1_device-secret",
-        user_code: "Q7KM-4WDP",
+        user_code: "Q7KM4W",
         verification_uri: "https://atape.dev/cli/authorize",
-        verification_uri_complete: "https://atape.dev/cli/authorize?user_code=Q7KM-4WDP",
+        verification_uri_complete: "https://atape.dev/cli/authorize?user_code=Q7KM4W",
         expires_in: 900,
         interval: 5
       }, 201),
@@ -175,6 +175,34 @@ describe("Node CLI Credential store Adapter", () => {
       return yield* (yield* CLICredentialStore).read("https://atape.dev")
     }))
     expect(restored).toEqual(credential)
+  })
+
+  it("isolates multiple Instance credentials and removes only the selected authority", async () => {
+    const fixture = await credentialFixture()
+    const selfHosted: StoredCLICredential = {
+      ...credential,
+      instanceOrigin: "https://self-hosted.example",
+      apiOrigin: "https://api.self-hosted.example",
+      credentialId: "credential-self-hosted",
+      credential: "atc_v1_self-hosted-secret"
+    }
+    await fixture.run(Effect.gen(function*() {
+      const store = yield* CLICredentialStore
+      yield* store.replace({ credential })
+      yield* store.replace({ credential: selfHosted })
+    }))
+
+    expect(await readdir(fixture.directory)).toHaveLength(2)
+    expect(await fixture.run(CLICredentialStore.use((store) => store.read(credential.instanceOrigin))))
+      .toEqual(credential)
+    expect(await fixture.run(CLICredentialStore.use((store) => store.read(selfHosted.instanceOrigin))))
+      .toEqual(selfHosted)
+    expect(await fixture.run(CLICredentialStore.use((store) => store.remove({
+      instanceOrigin: credential.instanceOrigin,
+      expectedCredentialId: credential.credentialId
+    })))).toBe(true)
+    expect(await fixture.run(CLICredentialStore.use((store) => store.read(selfHosted.instanceOrigin))))
+      .toEqual(selfHosted)
   })
 
   it("rejects symlink, non-regular, and broadly readable credential targets", async () => {

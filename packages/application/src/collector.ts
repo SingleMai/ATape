@@ -18,7 +18,7 @@ import { Clock, Context, Effect, Layer, Schema, Scope } from "effect"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 
 export class CollectorConfigurationError extends Schema.TaggedError<CollectorConfigurationError>()("CollectorConfigurationError", {
-  reason: Schema.Literals(["identity", "project", "limits"]),
+  reason: Schema.Literals(["identity", "project", "limits", "unauthenticated"]),
   message: Schema.String
 }) {}
 
@@ -40,7 +40,7 @@ export class CollectionContractError extends Schema.TaggedError<CollectionContra
 }) {}
 
 export class CollectionTransportError extends Schema.TaggedError<CollectionTransportError>()("CollectionTransportError", {
-  reason: Schema.Literals(["network", "rejected", "invalid_response"]),
+  reason: Schema.Literals(["network", "unauthenticated", "rejected", "invalid_response"]),
   operation: Schema.Literals(["canonical", "raw"]),
   status: Schema.optionalKey(Schema.Number),
   retryable: Schema.Boolean,
@@ -53,8 +53,15 @@ export type CollectorStateSnapshot = {
 }
 
 export class CollectorStateStore extends Context.Service<CollectorStateStore, {
-  snapshot(projectId: string, adapterId: string): Effect.Effect<CollectorStateSnapshot, CollectorStateError>
+  snapshot(
+    instanceOrigin: string,
+    userId: string,
+    projectId: string,
+    adapterId: string
+  ): Effect.Effect<CollectorStateSnapshot, CollectorStateError>
   commit(input: {
+    readonly instanceOrigin: string
+    readonly userId: string
     readonly projectId: string
     readonly adapterId: string
     readonly expectedRevision: number
@@ -83,13 +90,12 @@ export type HostedAdapter = {
 export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
   open(
     project: LocalProject,
-    adapter: AdapterInstallation,
-    userId: string
+    adapter: AdapterInstallation
   ): Effect.Effect<HostedAdapter, AdapterRuntimeError, Scope.Scope>
 }>()("atape/application/AdapterRuntimes") {}
 
 export type CanonicalSubmission = {
-  readonly serverUrl: string
+  readonly instanceOrigin: string
   readonly installationId: string
   readonly projectId: string
   readonly adapterId: string
@@ -98,7 +104,7 @@ export type CanonicalSubmission = {
 }
 
 export type RawSubmission = {
-  readonly serverUrl: string
+  readonly instanceOrigin: string
   readonly installationId: string
   readonly adapterId: string
   readonly adapterVersion: string
@@ -158,6 +164,7 @@ export type AdapterCollectionReport = {
 export type AdapterCollectionFailure = {
   readonly projectId: string
   readonly adapterId: string
+  readonly reason: "unauthenticated" | "transport" | "adapter" | "state" | "contract"
   readonly retryable: boolean
   readonly message: string
 }
@@ -196,6 +203,12 @@ export const runCollector = Effect.fn("Collector.run")(function*(options: RunCol
   while (true) {
     const report = yield* runCollectionCycle(options)
     if (options.once === true) return report
+    if (hasUnauthenticatedFailure(report)) {
+      return yield* new CollectorConfigurationError({
+        reason: "unauthenticated",
+        message: "The ATape Collector stopped because a CLI credential is missing, invalid, or expired. Run `atape login`."
+      })
+    }
     yield* Effect.logInfo("ATape collection cycle completed", {
       jobs: report.jobs.length,
       failures: report.failures.length,
@@ -208,8 +221,6 @@ export const runCollector = Effect.fn("Collector.run")(function*(options: RunCol
 
 type PreparedCycle = {
   readonly startedAt: string
-  readonly serverUrl: string
-  readonly userId: string
   readonly concurrency: number
   readonly jobs: ReadonlyArray<{ readonly project: LocalProject; readonly adapter: AdapterInstallation }>
 }
@@ -226,12 +237,6 @@ const prepareCycle = (options: CollectionCycleOptions): Effect.Effect<
     })
   }
   const config = yield* inspectClient()
-  if (!config.userId) {
-    return yield* new CollectorConfigurationError({
-      reason: "identity",
-      message: "This client has no Team user ID. Run `atape setup --user-id <id>` first."
-    })
-  }
   const projects = options.projectId === undefined
     ? config.projects
     : config.projects.filter((project) => project.id === options.projectId)
@@ -254,8 +259,6 @@ const prepareCycle = (options: CollectionCycleOptions): Effect.Effect<
   }
   return {
     startedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
-    serverUrl: config.serverUrl,
-    userId: config.userId,
     concurrency,
     jobs
   }
@@ -263,11 +266,12 @@ const prepareCycle = (options: CollectionCycleOptions): Effect.Effect<
 
 const collectPreparedCycle = (input: PreparedCycle) => Effect.gen(function*() {
   const results = yield* Effect.forEach(input.jobs, ({ project, adapter }) =>
-    collectAdapter(input.serverUrl, input.userId, project, adapter).pipe(
+    collectAdapter(project, adapter).pipe(
       Effect.match({
         onFailure: (error): AdapterCollectionFailure => ({
           projectId: project.id,
           adapterId: adapter.adapterId,
+          reason: collectionFailureReason(error),
           retryable: isRetryable(error),
           message: error.message
         }),
@@ -284,8 +288,6 @@ const collectPreparedCycle = (input: PreparedCycle) => Effect.gen(function*() {
 })
 
 const collectAdapter = (
-  serverUrl: string,
-  userId: string,
   project: LocalProject,
   adapter: AdapterInstallation
 ): Effect.Effect<
@@ -297,8 +299,13 @@ const collectAdapter = (
   const runtimes = yield* AdapterRuntimes
   const transport = yield* CollectorTransport
   const redactor = yield* SecretRedactor
-  const snapshot = yield* states.snapshot(project.id, adapter.adapterId)
-  const runtime = yield* runtimes.open(project, adapter, userId)
+  const snapshot = yield* states.snapshot(
+    project.instanceOrigin,
+    project.userId,
+    project.id,
+    adapter.adapterId
+  )
+  const runtime = yield* runtimes.open(project, adapter)
   let checkpoint = snapshot.checkpoint?.projectCreatedAt === project.createdAt
     ? snapshot.checkpoint
     : undefined
@@ -318,6 +325,8 @@ const collectAdapter = (
     adapterVersion: string
   ) => Effect.gen(function*() {
     const nextCheckpoint: CollectorCheckpoint = {
+      instanceOrigin: project.instanceOrigin,
+      userId: project.userId,
       projectId: project.id,
       projectCreatedAt: project.createdAt,
       adapterId: adapter.adapterId,
@@ -328,6 +337,8 @@ const collectAdapter = (
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString()
     }
     yield* states.commit({
+      instanceOrigin: project.instanceOrigin,
+      userId: project.userId,
       projectId: project.id,
       adapterId: adapter.adapterId,
       expectedRevision,
@@ -359,7 +370,7 @@ const collectAdapter = (
       const redacted = redactObservation(redactor, observation)
       redactions += redacted.replacements
       const canonical = yield* retryTransport(transport.submitCanonical({
-        serverUrl,
+        instanceOrigin: project.instanceOrigin,
         installationId: snapshot.installationId,
         projectId: project.id,
         adapterId: adapter.adapterId,
@@ -374,7 +385,7 @@ const collectAdapter = (
       canonicalBatches++
       const appended = yield* appendRawSegments({
         transport,
-        serverUrl,
+        instanceOrigin: project.instanceOrigin,
         installationId: snapshot.installationId,
         adapter,
         original: observation,
@@ -416,7 +427,7 @@ const collectAdapter = (
 
 const appendRawSegments = (input: {
   readonly transport: CollectorTransportService
-  readonly serverUrl: string
+  readonly instanceOrigin: string
   readonly installationId: string
   readonly adapter: AdapterInstallation
   readonly original: AdapterObservation
@@ -466,7 +477,7 @@ const appendRawSegments = (input: {
       const content = transportChunks[chunkIndex] ?? ""
       const final = segment.final && chunkIndex === transportChunks.length - 1
       const receipt = yield* retryTransport(input.transport.appendRaw({
-        serverUrl: input.serverUrl,
+        instanceOrigin: input.instanceOrigin,
         installationId: input.installationId,
         adapterId: input.adapter.adapterId,
         adapterVersion: input.adapter.version,
@@ -749,6 +760,18 @@ const isRetryable = (error: CollectionJobError) =>
     : error instanceof AdapterRuntimeError ? error.retryable
       : error instanceof CollectorStateError ? error.reason === "io" || error.reason === "conflict"
         : false
+
+const collectionFailureReason = (error: CollectionJobError): AdapterCollectionFailure["reason"] =>
+  error instanceof CollectionTransportError
+    ? error.reason === "unauthenticated" ? "unauthenticated" : "transport"
+    : error instanceof AdapterRuntimeError
+      ? "adapter"
+      : error instanceof CollectorStateError
+        ? "state"
+        : "contract"
+
+export const hasUnauthenticatedFailure = (report: CollectionCycleReport): boolean =>
+  report.failures.some((failure) => failure.reason === "unauthenticated")
 
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength
 const positiveInteger = (value: number) => Number.isSafeInteger(value) && value >= 1

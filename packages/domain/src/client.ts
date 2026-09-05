@@ -1,15 +1,19 @@
 import { Schema } from "effect"
 
-export const ClientConfigVersion = 1 as const
+export const ClientConfigVersion = 2 as const
 export const AdapterProtocolVersion = "atape.adapter.v1alpha1" as const
 
 export const LocalProject = Schema.Struct({
   id: Schema.String,
+  instanceOrigin: Schema.String,
+  userId: Schema.String,
   teamId: Schema.String,
+  teamSlug: Schema.String,
   teamName: Schema.String,
   name: Schema.String,
   type: Schema.Literals(["git", "directory"]),
   path: Schema.String,
+  repositoryRemote: Schema.optionalKey(Schema.String),
   adapterIds: Schema.Array(Schema.String),
   createdAt: Schema.String
 })
@@ -28,8 +32,7 @@ export type AdapterInstallation = typeof AdapterInstallation.Type
 
 export const ClientConfig = Schema.Struct({
   version: Schema.Literal(ClientConfigVersion),
-  serverUrl: Schema.String,
-  userId: Schema.optionalKey(Schema.String),
+  activeInstanceOrigin: Schema.optionalKey(Schema.String),
   projects: Schema.Array(LocalProject),
   adapters: Schema.Array(AdapterInstallation)
 })
@@ -46,7 +49,6 @@ export type AdapterManifest = typeof AdapterManifest.Type
 
 export const emptyClientConfig = (): ClientConfig => ({
   version: ClientConfigVersion,
-  serverUrl: "http://127.0.0.1:8080",
   projects: [],
   adapters: []
 })

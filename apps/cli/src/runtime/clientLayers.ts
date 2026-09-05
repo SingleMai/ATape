@@ -28,47 +28,97 @@ import {
 } from "./adapterPackageSource.ts"
 import { makeNodeCollectorLayer } from "./collectorLayers.ts"
 import { makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
+import { makeNodeAuthenticationLayer } from "./authenticationLayers.ts"
+import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
+import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
+import {
+  legacyDataExists,
+  makeClientMigrationLayer,
+  type LegacyClientPaths
+} from "./clientMigrationLayers.ts"
 
 export type NodeClientPaths = {
+  readonly atapeHome: string
+  readonly credentialDirectory: string
   readonly configFile: string
   readonly collectorStateFile: string
   readonly collectorProcessFile: string
   readonly collectorStatusFile: string
   readonly collectorLogFile: string
   readonly adapterDirectory: string
+  readonly legacy: LegacyClientPaths
 }
 
 export const defaultNodeClientPaths = (environment: NodeJS.ProcessEnv = process.env): NodeClientPaths => {
-  const configRoot = environment.XDG_CONFIG_HOME || join(homedir(), ".config")
-  const dataRoot = environment.XDG_DATA_HOME || join(homedir(), ".local", "share")
-  const stateRoot = environment.XDG_STATE_HOME || join(homedir(), ".local", "state")
+  const atapeHome = environment.ATAPE_HOME || join(homedir(), ".atape")
+  const legacyConfigRoot = environment.XDG_CONFIG_HOME || join(homedir(), ".config")
+  const legacyDataRoot = environment.XDG_DATA_HOME || join(homedir(), ".local", "share")
+  const legacyStateRoot = environment.XDG_STATE_HOME || join(homedir(), ".local", "state")
   return {
-    configFile: environment.ATAPE_CONFIG_FILE || join(configRoot, "atape", "config.json"),
-    collectorStateFile: environment.ATAPE_COLLECTOR_STATE_FILE || join(stateRoot, "atape", "collector.json"),
-    collectorProcessFile: environment.ATAPE_COLLECTOR_PROCESS_FILE || join(stateRoot, "atape", "collector-process.json"),
-    collectorStatusFile: environment.ATAPE_COLLECTOR_STATUS_FILE || join(stateRoot, "atape", "collector-status.json"),
-    collectorLogFile: environment.ATAPE_COLLECTOR_LOG_FILE || join(stateRoot, "atape", "collector.log"),
-    adapterDirectory: environment.ATAPE_ADAPTER_DIRECTORY || join(dataRoot, "atape", "adapters")
+    atapeHome,
+    credentialDirectory: join(atapeHome, "credentials"),
+    configFile: environment.ATAPE_CONFIG_FILE || join(atapeHome, "config", "client.json"),
+    collectorStateFile: environment.ATAPE_COLLECTOR_STATE_FILE || join(atapeHome, "state", "collector.json"),
+    collectorProcessFile: environment.ATAPE_COLLECTOR_PROCESS_FILE || join(atapeHome, "state", "collector-process.json"),
+    collectorStatusFile: environment.ATAPE_COLLECTOR_STATUS_FILE || join(atapeHome, "state", "collector-status.json"),
+    collectorLogFile: environment.ATAPE_COLLECTOR_LOG_FILE || join(atapeHome, "logs", "collector.log"),
+    adapterDirectory: environment.ATAPE_ADAPTER_DIRECTORY || join(atapeHome, "adapters"),
+    legacy: {
+      configFile: join(legacyConfigRoot, "atape", "config.json"),
+      collectorStateFile: join(legacyStateRoot, "atape", "collector.json"),
+      collectorProcessFile: join(legacyStateRoot, "atape", "collector-process.json"),
+      collectorStatusFile: join(legacyStateRoot, "atape", "collector-status.json"),
+      collectorLogFile: join(legacyStateRoot, "atape", "collector.log"),
+      adapterDirectory: join(legacyDataRoot, "atape", "adapters")
+    }
   }
 }
 
 export const makeNodeClientLayer = (
   paths: NodeClientPaths,
   environment: NodeJS.ProcessEnv = process.env,
-  fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch
-) => Layer.mergeAll(
-  makeConfigStoreLayer(paths.configFile),
-  makeProjectLocatorLayer(),
-  makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
-  makeNodeCollectorLayer(paths, environment),
-  makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "", environment)
-)
+  fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch,
+  fetchAuthentication: typeof globalThis.fetch = globalThis.fetch
+) => {
+  const authentication = makeNodeAuthenticationLayer({
+    atapeHome: paths.atapeHome,
+    credentialDirectory: paths.credentialDirectory,
+    fetch: fetchAuthentication
+  })
+  const authenticatedHTTP = makeAuthenticatedHTTPClientLayer(
+    fetchAuthentication,
+    environment.ATAPE_DEVELOPMENT_ALLOW_HTTP === "true"
+  ).pipe(
+    Layer.provide(authentication)
+  )
+  const collector = makeNodeCollectorLayer(paths, environment).pipe(
+    Layer.provide(authenticatedHTTP)
+  )
+  const projectSetup = makeProjectSetupGatewayLayer().pipe(
+    Layer.provide(authenticatedHTTP)
+  )
+  return Layer.mergeAll(
+    authentication,
+    authenticatedHTTP,
+    makeConfigStoreLayer(paths.configFile, paths.legacy),
+    makeProjectLocatorLayer(),
+    makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
+    projectSetup,
+    makeClientMigrationLayer({
+      atapeHome: paths.atapeHome,
+      configFile: paths.configFile,
+      legacy: paths.legacy
+    }),
+    collector,
+    makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "", environment)
+  )
+}
 
-export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
+export const makeConfigStoreLayer = (configFile: string, legacy: LegacyClientPaths) => Layer.succeed(
   ClientConfigStore,
   ClientConfigStore.of({
     transact: <A, E, R>(change: (config: ClientConfig) => Effect.Effect<ClientConfigChange<A>, E, R>) =>
-      Effect.acquireUseRelease(
+      guardLegacyCutover(configFile, legacy).pipe(Effect.flatMap(() => Effect.acquireUseRelease(
         acquireConfigLock(configFile),
         () => readClientConfig(configFile).pipe(
           Effect.flatMap(change),
@@ -80,9 +130,34 @@ export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
           await lock.close().catch(() => undefined)
           await rm(lock.path, { force: true }).catch(() => undefined)
         })
-      )
+      )))
   })
 )
+
+const guardLegacyCutover = (
+  configFile: string,
+  legacy: LegacyClientPaths
+): Effect.Effect<void, ClientConfigStoreError> => Effect.tryPromise({
+  try: async () => {
+    try {
+      await stat(configFile)
+      return
+    } catch (cause) {
+      if (!hasCode(cause, "ENOENT")) throw cause
+    }
+    if (await legacyDataExists(legacy)) throw new LegacyMigrationRequired()
+  },
+  catch: (cause) => cause instanceof LegacyMigrationRequired
+    ? new ClientConfigStoreError({
+      reason: "migration_required",
+      message: "v0.1 XDG data exists. Run `atape migrate-local-v0.1` before using v0.2."
+    })
+    : new ClientConfigStoreError({
+      reason: "io", message: "Could not inspect the local ATape configuration layout."
+    })
+})
+
+class LegacyMigrationRequired extends Error {}
 
 const acquireConfigLock = (configFile: string) => Effect.tryPromise({
   try: async () => {
@@ -207,7 +282,13 @@ export const makeProjectLocatorLayer = () => Layer.succeed(ProjectLocator, Proje
         return { path: requested, name: basename(requested), type: "directory" as const }
       }
       const root = await realpath(gitRoot)
-      return { path: root, name: basename(root), type: "git" as const }
+      const repositoryRemote = await findGitRemote(root)
+      return {
+        path: root,
+        name: basename(root),
+        type: "git" as const,
+        ...(repositoryRemote === undefined ? {} : { repositoryRemote })
+      }
     },
     catch: (cause) => {
       if (cause instanceof ProjectLocatorError) return cause
@@ -231,6 +312,25 @@ const findGitRoot = (path: string): Promise<string | undefined> => new Promise((
   }, (error, stdout) => {
     if (error === null) {
       resolveResult(stdout.trim())
+      return
+    }
+    if (hasCode(error, "ENOENT")) {
+      reject(error)
+      return
+    }
+    resolveResult(undefined)
+  })
+})
+
+const findGitRemote = (path: string): Promise<string | undefined> => new Promise((resolveResult, reject) => {
+  execFile("git", ["-C", path, "config", "--get", "remote.origin.url"], {
+    encoding: "utf8",
+    timeout: 10_000,
+    maxBuffer: 1024 * 1024
+  }, (error, stdout) => {
+    if (error === null) {
+      const remote = stdout.trim()
+      resolveResult(remote === "" || /[\r\n\0]/.test(remote) ? undefined : remote)
       return
     }
     if (hasCode(error, "ENOENT")) {

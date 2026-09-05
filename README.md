@@ -65,14 +65,14 @@ Open [http://127.0.0.1:4187/](http://127.0.0.1:4187/).
 Configure local capture Projects and independently installed Harness Adapters with the Node/Effect CLI:
 
 ```sh
-pnpm atape setup --user-id liying --team-id acme-engineering
+ATAPE_DEVELOPMENT_ALLOW_HTTP=true pnpm atape login --instance http://127.0.0.1:8080 --no-browser
 pnpm atape adapters install ./adapters/codex
-pnpm atape adapters enable codex --project payments-api
+pnpm atape setup /path/to/project --team acme-engineering --create --adapter codex
 pnpm atape start
 pnpm atape status
 ```
 
-`start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and advances local cursors only after both succeed. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+The loopback command also requires `ATAPE_DEVELOPMENT_ALLOW_HTTP=true`; production and self-hosted Instances are HTTPS-only. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and advances local cursors only after both succeed. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
 
 Build and verify the installable, zero-runtime-dependency CLI and Codex Adapter tarballs with:
 

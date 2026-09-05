@@ -14,10 +14,13 @@ const now = "2026-09-05T02:30:00.000Z"
 
 const configuredClient = (): ClientConfig => ({
   ...emptyClientConfig(),
-  userId: "liying",
+  activeInstanceOrigin: "https://atape.dev",
   projects: [{
     id: "atape",
+    instanceOrigin: "https://atape.dev",
+    userId: "user-1",
     teamId: "team",
+    teamSlug: "team",
     teamName: "Team",
     name: "ATape",
     type: "git",
@@ -119,7 +122,7 @@ describe("managed Collector Module", () => {
   })
 
   it("refuses to start without a configured Project/Adapter job", async () => {
-    const client = fixture({ ...emptyClientConfig(), userId: "liying" }, { version: 1, jobs: [] })
+    const client = fixture(emptyClientConfig(), { version: 1, jobs: [] })
     await expect(client.run(startManagedCollector())).rejects.toMatchObject({
       _tag: "CollectorConfigurationError",
       reason: "project"

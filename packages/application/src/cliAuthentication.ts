@@ -137,6 +137,12 @@ export const loginCLI = Effect.fn("CLIAuthentication.login")(function*(input: Lo
     commandLine: input.instanceOrigin,
     allowLoopbackHttp: policy.allowLoopbackHttp
   })
+  // Validate and snapshot the existing local authority before asking the
+  // server to mint anything. A locally unsafe/unreadable store must not leave
+  // a newly issued Credential that the client cannot durably adopt or revoke.
+  const previous = yield* credentials.read(instanceOrigin).pipe(
+    Effect.mapError(credentialStoreFailure)
+  )
   const discovered = yield* gateway.discover(instanceOrigin)
   const topology = normalizeInstanceTopology(discovered, policy)
   if (topology === undefined || topology.instanceOrigin !== instanceOrigin) {
@@ -230,9 +236,6 @@ export const loginCLI = Effect.fn("CLIAuthentication.login")(function*(input: Lo
     createdAt: issued.createdAt,
     user: issued.user
   }
-  const previous = yield* credentials.read(instanceOrigin).pipe(
-    Effect.mapError(credentialStoreFailure)
-  )
   const saved = yield* credentials.replace({
     ...(previous === undefined ? {} : { expectedCredentialId: previous.credentialId }),
     credential: nextCredential
@@ -288,10 +291,6 @@ export const logoutCLI = Effect.fn("CLIAuthentication.logout")(function*(input: 
   if (current === undefined) {
     return { instanceOrigin, signedOut: false, warnings: [] } satisfies LogoutCLIResult
   }
-  const remoteRevoked = yield* gateway.revokeCredential(current).pipe(Effect.match({
-    onFailure: () => false,
-    onSuccess: () => true
-  }))
   const removed = yield* credentials.remove({
     instanceOrigin,
     expectedCredentialId: current.credentialId
@@ -300,6 +299,19 @@ export const logoutCLI = Effect.fn("CLIAuthentication.logout")(function*(input: 
     return yield* authError(
       "credential_conflict",
       "The local credential changed while logout was in progress; no newer credential was removed."
+    )
+  }
+  // Local authority is removed before the network call so cancellation or an
+  // offline Instance cannot leave this process signed in on disk.
+  const remoteRevoked = yield* gateway.revokeCredential(current).pipe(Effect.match({
+    onFailure: () => false,
+    onSuccess: () => true
+  }))
+  const replacement = yield* credentials.read(instanceOrigin).pipe(Effect.mapError(credentialStoreFailure))
+  if (replacement !== undefined) {
+    return yield* authError(
+      "credential_conflict",
+      "A newer local credential was created while logout was in progress; it was not removed."
     )
   }
   return {

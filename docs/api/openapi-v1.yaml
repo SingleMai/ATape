@@ -909,7 +909,7 @@ components:
             additionalProperties: false
             required: [user_code]
             properties:
-              user_code: {type: string, minLength: 6, maxLength: 16}
+              user_code: {type: string, pattern: "^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"}
     TeamCreate:
       required: true
       content:
@@ -1383,7 +1383,7 @@ components:
       properties:
         protocol: {const: atape.cli-authorization.v1}
         device_code: {type: string, pattern: "^atd_v1_[A-Za-z0-9_-]+$", x-atape-one-time-secret: true}
-        user_code: {type: string}
+        user_code: {type: string, pattern: "^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"}
         verification_uri: {type: string, format: uri}
         verification_uri_complete: {type: string, format: uri}
         expires_in: {type: integer, minimum: 1}
@@ -1411,7 +1411,7 @@ components:
       required: [grantViewId, userCode, instanceOrigin, clientLabel, capabilityVersion, permissionSummary, expiresAt, status]
       properties:
         grantViewId: {$ref: "#/components/schemas/OpaqueId"}
-        userCode: {type: string}
+        userCode: {type: string, pattern: "^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$"}
         instanceOrigin: {type: string, format: uri}
         clientLabel: {const: atape-cli}
         capabilityVersion: {const: atape-cli.v1}

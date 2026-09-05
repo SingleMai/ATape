@@ -475,12 +475,12 @@ WHERE id = $1`, grant.User.ID); err != nil {
 			t, poolA, &contractIdentityAdapter{}, authentication.DefaultPolicy(),
 			defaultPepper(), defaultPrivate(), false,
 		)
-		sequence := make([]byte, 0, 32+8+32+8+8)
+		sequence := make([]byte, 0, 32+6+32+6+6)
 		sequence = append(sequence, bytes.Repeat([]byte{1}, 32)...)
-		sequence = append(sequence, bytes.Repeat([]byte{0}, 8)...)
+		sequence = append(sequence, bytes.Repeat([]byte{0}, 6)...)
 		sequence = append(sequence, bytes.Repeat([]byte{2}, 32)...)
-		sequence = append(sequence, bytes.Repeat([]byte{0}, 8)...)
-		sequence = append(sequence, bytes.Repeat([]byte{1}, 8)...)
+		sequence = append(sequence, bytes.Repeat([]byte{0}, 6)...)
+		sequence = append(sequence, bytes.Repeat([]byte{1}, 6)...)
 		authentication.SetRandomSourceForContractTest(module, bytes.NewReader(sequence))
 		first, err := module.CreateCLIDeviceAuthorization(ctx)
 		if err != nil {
@@ -490,7 +490,7 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if err != nil {
 			t.Fatalf("retry colliding User Code: %v", err)
 		}
-		if first.UserCode != "AAAA-AAAA" || second.UserCode != "BBBB-BBBB" {
+		if first.UserCode != "AAAAAA" || second.UserCode != "BBBBBB" {
 			t.Fatalf("collision sequence produced %q then %q", first.UserCode, second.UserCode)
 		}
 	})
@@ -830,7 +830,7 @@ WHERE id = $1
 		}
 
 		for attempt := 1; attempt <= policy.MaximumCodeFailures; attempt++ {
-			_, err := moduleA.ResolveCLIDeviceAuthorization(ctx, web.Principal, "AAAA-AAAA", fmt.Sprintf("request-invalid-%d", attempt))
+			_, err := moduleA.ResolveCLIDeviceAuthorization(ctx, web.Principal, "AAAAAA", fmt.Sprintf("request-invalid-%d", attempt))
 			want := authentication.CodeInvalidUserCode
 			if attempt == policy.MaximumCodeFailures {
 				want = authentication.CodeTooManyCodeAttempts

@@ -65,7 +65,7 @@ export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
           number={1}
           eyebrow="Choose the boundary"
           title="Register a local Project"
-          command="atape setup /path/to/project --user-id you --team-id your-team"
+          command={"atape login\natape setup /path/to/project --team your-team --create"}
         >
           ATape captures only the Git repository or ordinary folder you explicitly select.
         </SetupStep>
