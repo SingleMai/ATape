@@ -201,6 +201,9 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
   const installedScope = join(fixture.adapterDirectory, "node_modules", "@atape")
   await mkdir(installedScope, { recursive: true })
   await symlink(codexAdapter, join(installedScope, "adapter-codex"), "dir")
+  const adapterPackage = JSON.parse(await readFile(join(codexAdapter, "package.json"), "utf8")) as {
+    readonly version: string
+  }
   const now = new Date().toISOString()
   await writeFile(fixture.configFile, `${JSON.stringify({
     version: 1,
@@ -221,7 +224,7 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
       packageName: "@atape/adapter-codex",
       upgradeSpec: `file:${codexAdapter}`,
       displayName: "Codex",
-      version: "0.1.0",
+      version: adapterPackage.version,
       installedAt: now,
       updatedAt: now
     }]

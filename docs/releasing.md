@@ -16,7 +16,7 @@ pnpm check
 pnpm build
 pnpm test:release
 pnpm test:go:integration
-node scripts/check-release-tag.mjs v0.1.0
+node scripts/check-release-tag.mjs v0.1.1
 ```
 
 `test:release` builds checksummed npm tarballs, installs the CLI into a clean prefix, installs the packaged Codex Adapter through that CLI, and executes a bounded collection. The workflow publishes those exact tarballs to npm and attaches them plus `SHA256SUMS` to the GitHub Release.

@@ -56,8 +56,6 @@ jobs:
 
       - name: Publish public npm packages
         run: node scripts/publish-npm-release.mjs
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create the GitHub Release
         run: >-
