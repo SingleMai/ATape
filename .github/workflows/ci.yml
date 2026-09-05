@@ -38,6 +38,9 @@ jobs:
           cache: true
           cache-dependency-path: server/go.sum
 
+      - name: Install the browser used by Web interaction tests
+        run: pnpm --filter @atape/web exec playwright install --with-deps chromium
+
       - name: Run repository checks
         run: pnpm check
 

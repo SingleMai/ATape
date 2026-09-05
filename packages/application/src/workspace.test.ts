@@ -6,7 +6,9 @@ import { WorkspaceGateway, openWorkspace } from "./workspace"
 const workspace: Workspace = {
   teams: [{
     id: "acme",
+    slug: "acme",
     name: "Acme Engineering",
+    role: "owner",
     projects: [{
       id: "payments-api",
       name: "payments-api",

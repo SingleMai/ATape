@@ -1,3 +1,4 @@
+export * from "./access.ts"
 export * from "./clientManagement.ts"
 export * from "./collector.ts"
 export * from "./collectorDaemon.ts"

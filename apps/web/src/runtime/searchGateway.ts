@@ -1,32 +1,14 @@
 import { SearchGateway, SearchGatewayError } from "@atape/application"
 import { SearchPage as SearchPageSchema } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
-
-class HttpFailure extends Error {
-  constructor(readonly status: number, message: string) {
-    super(message)
-  }
-}
+import { BrowserHTTPError, browserRequest } from "./http"
 
 const requestJSON = (path: string): Effect.Effect<unknown, SearchGatewayError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const response = await fetch(path, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (!response.ok) {
-        throw new HttpFailure(response.status, `ATape Search returned ${response.status}.`)
-      }
-      return response.json() as Promise<unknown>
-    },
-    catch: (cause) => cause instanceof HttpFailure
-      ? new SearchGatewayError({ reason: "http", message: cause.message, status: cause.status })
-      : new SearchGatewayError({
-        reason: "transport",
-        message: cause instanceof Error ? cause.message : "ATape Search is unavailable."
-      })
-  })
+  browserRequest(path).pipe(Effect.mapError((cause: BrowserHTTPError) => new SearchGatewayError({
+    reason: cause.reason === "transport" ? "transport" : cause.reason === "decode" ? "decode" : "http",
+    message: cause.message,
+    ...(cause.status === undefined ? {} : { status: cause.status })
+  })))
 
 const decodeSearchPage = (payload: unknown) =>
   Schema.decodeUnknownEffect(SearchPageSchema)(payload).pipe(
