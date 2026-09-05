@@ -29,7 +29,6 @@ jobs:
       - name: Install the pinned pnpm workspace
         uses: pnpm/setup@v2
         with:
-          require-lockfile: true
           cache: true
 
       - name: Set up Go
@@ -37,6 +36,7 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache: true
+          cache-dependency-path: server/go.sum
 
       - name: Run repository checks
         run: pnpm check

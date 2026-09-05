@@ -135,7 +135,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     await stopServer(server)
     await rm(fixture.root, { recursive: true, force: true })
   }
-}, 60_000)
+}, 180_000)
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>
 

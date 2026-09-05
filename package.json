@@ -10,7 +10,7 @@
   "scripts": {
     "atape": "node apps/cli/src/main.ts",
     "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
-    "check": "pnpm -r typecheck && pnpm -r test && pnpm test:go",
+    "check": "pnpm -r typecheck && pnpm -r test && pnpm test:e2e && pnpm test:go",
     "dev:server": "cd server && ATAPE_DEMO_MODE=true go run ./cmd/atape-server",
     "dev:web": "pnpm --filter @atape/web dev",
     "format:go": "cd server && gofmt -w .",

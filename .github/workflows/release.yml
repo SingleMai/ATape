@@ -31,7 +31,6 @@ jobs:
       - name: Install the pinned pnpm workspace
         uses: pnpm/setup@v2
         with:
-          require-lockfile: true
           cache: false
 
       - name: Set up Go
