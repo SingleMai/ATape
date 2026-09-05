@@ -21,15 +21,16 @@ type teamDTO struct {
 }
 
 type projectDTO struct {
-	ID                 string    `json:"id"`
-	TeamID             string    `json:"teamId"`
-	Type               string    `json:"type"`
-	Name               string    `json:"name"`
-	State              string    `json:"state"`
-	RepositoryIdentity string    `json:"repositoryIdentity,omitempty"`
-	CapturedThrough    time.Time `json:"capturedThrough,omitempty"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	ID                  string    `json:"id"`
+	TeamID              string    `json:"teamId"`
+	Type                string    `json:"type"`
+	Name                string    `json:"name"`
+	State               string    `json:"state"`
+	RepositoryIdentity  string    `json:"repositoryIdentity,omitempty"`
+	RepositoryLinkState string    `json:"repositoryLinkState"`
+	CapturedThrough     time.Time `json:"capturedThrough,omitempty"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 type workspaceDTO struct {
@@ -53,7 +54,8 @@ func projectDTOFromDomain(project team.Project) projectDTO {
 	return projectDTO{
 		ID: project.ID, TeamID: project.TeamID, Type: projectType, Name: project.Name,
 		State: string(project.State), RepositoryIdentity: project.RepositoryIdentity,
-		CapturedThrough: project.CapturedThrough, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt,
+		RepositoryLinkState: string(project.RepositoryLinkState),
+		CapturedThrough:     project.CapturedThrough, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt,
 	}
 }
 

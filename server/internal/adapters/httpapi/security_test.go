@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
@@ -32,6 +33,7 @@ func TestRouteInventoryIsClosedAndUnique(t *testing.T) {
 	}
 	for key, expected := range map[string]RouteClass{
 		"GET /healthz":                                      PublicProtocol,
+		"GET /readyz":                                       PublicProtocol,
 		"GET /api/v1/instance":                              PublicProtocol,
 		"GET /api/v1/workspace":                             AnyPrincipal,
 		"GET /api/v1/projects/{projectId}/memory":           WebOnly,
@@ -62,6 +64,77 @@ func TestRouteInventoryIsClosedAndUnique(t *testing.T) {
 	if err == nil {
 		t.Fatal("route without a request body policy unexpectedly succeeded")
 	}
+}
+
+func TestBootstrapAllowlistIsClosedBeforeAuthenticationAndParsing(t *testing.T) {
+	handler := testHandler(t)
+	handler.config.cutoverMode = authcutover.BootstrapMode
+	allowed := map[string]struct{}{
+		"GET /healthz":         {},
+		"GET /readyz":          {},
+		"GET /api/v1/instance": {},
+		"GET /api/v1/auth/provider-registrations":          {},
+		"POST /api/v1/auth/federated/sign-ins":             {},
+		"POST /api/v1/auth/federated/identity-bindings":    {},
+		"POST /api/v1/auth/federated/reauthentications":    {},
+		"GET /api/v1/auth/github/callback":                 {},
+		"GET /api/v1/auth/session":                         {},
+		"POST /api/v1/auth/logout":                         {},
+		"GET /api/v1/users/me":                             {},
+		"PATCH /api/v1/users/me":                           {},
+		"GET /api/v1/users/me/external-identities":         {},
+		"GET /api/v1/users/me/web-sessions":                {},
+		"DELETE /api/v1/users/me/web-sessions/{sessionId}": {},
+		"POST /api/v1/users/me/web-sessions/revoke-all":    {},
+	}
+	for _, registered := range handler.routes {
+		key := registered.Method + " " + registered.Pattern
+		_, expected := allowed[key]
+		if registered.bootstrapAllowed != expected {
+			t.Fatalf("bootstrap availability for %s = %t, want %t", key, registered.bootstrapAllowed, expected)
+		}
+		delete(allowed, key)
+	}
+	if len(allowed) != 0 {
+		t.Fatalf("bootstrap allowlist references missing routes: %+v", allowed)
+	}
+
+	for _, target := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodGet, "/api/v1/workspace", ""},
+		{http.MethodPost, "/api/v1/auth/cli/device-grants", "not-json"},
+		{http.MethodPost, "/api/v1/ingestion/canonical/batches", "not-json"},
+	} {
+		request := httptest.NewRequest(target.method, target.path, strings.NewReader(target.body))
+		request.Header.Set("Origin", "https://attacker.example")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("bootstrap %s %s status = %d: %s", target.method, target.path, response.Code, response.Body.String())
+		}
+		assertProblemEnvelope(t, response, "cutover_incomplete")
+	}
+
+	account := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+	accountResponse := httptest.NewRecorder()
+	handler.ServeHTTP(accountResponse, account)
+	if accountResponse.Code != http.StatusOK {
+		t.Fatalf("bootstrap account status = %d: %s", accountResponse.Code, accountResponse.Body.String())
+	}
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/api/v1/teams", nil)
+	preflight.Header.Set("Origin", "http://127.0.0.1:8080")
+	preflight.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	preflight.Header.Set("Access-Control-Request-Headers", "content-type")
+	preflightResponse := httptest.NewRecorder()
+	handler.ServeHTTP(preflightResponse, preflight)
+	if preflightResponse.Code != http.StatusServiceUnavailable {
+		t.Fatalf("bootstrap preflight status = %d: %s", preflightResponse.Code, preflightResponse.Body.String())
+	}
+	assertProblemEnvelope(t, preflightResponse, "cutover_incomplete")
 }
 
 func TestTopologyDerivesOneCookieShape(t *testing.T) {

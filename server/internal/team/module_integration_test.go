@@ -330,7 +330,8 @@ FROM team_join_codes WHERE team_id = $1`, created.Team.ID).Scan(&enabledCodes, &
 			Spec:         team.ProjectSpec{Type: team.FolderProject, Name: "Local notes"},
 			OperationKey: operationKey(5), RequestID: "folder-create",
 		})
-		if err != nil || folder.Type != team.FolderProject {
+		if err != nil || folder.Type != team.FolderProject ||
+			folder.RepositoryLinkState != team.RepositoryNotApplicable {
 			t.Fatalf("Member Folder Project create = %+v, %v", folder, err)
 		}
 		if _, err := moduleB.RenameFolderProject(ctx, team.RenameFolderProjectInput{
@@ -350,7 +351,8 @@ FROM team_join_codes WHERE team_id = $1`, created.Team.ID).Scan(&enabledCodes, &
 			Spec:         team.ProjectSpec{Type: team.GitProject, Remote: "git@github.com:SingleMai/ATape.git"},
 			OperationKey: operationKey(6), RequestID: "git-create",
 		})
-		if err != nil || gitProject.RepositoryIdentity != "github.com/singlemai/atape" {
+		if err != nil || gitProject.RepositoryIdentity != "github.com/singlemai/atape" ||
+			gitProject.RepositoryLinkState != team.RepositoryLinked {
 			t.Fatalf("Git Project create = %+v, %v", gitProject, err)
 		}
 		matched, err := moduleA.MatchProject(ctx, team.MatchProjectInput{
@@ -375,7 +377,8 @@ FROM team_join_codes WHERE team_id = $1`, created.Team.ID).Scan(&enabledCodes, &
 			Principal: aliceFresh, ProjectID: gitProject.ID,
 			Remote: "https://github.com/SingleMai/ATape-Next.git", RequestID: "relink-fresh",
 		})
-		if err != nil || relinked.RepositoryIdentity != "github.com/singlemai/atape-next" {
+		if err != nil || relinked.RepositoryIdentity != "github.com/singlemai/atape-next" ||
+			relinked.RepositoryLinkState != team.RepositoryLinked {
 			t.Fatalf("Git relink = %+v, %v", relinked, err)
 		}
 		oldAlias, err := moduleB.MatchProject(ctx, team.MatchProjectInput{

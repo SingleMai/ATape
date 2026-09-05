@@ -14,8 +14,13 @@ INSERT INTO canonical_batch_receipts (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: InsertProject :exec
-INSERT INTO canonical_projects (id, team_id, name, project_type)
-VALUES ($1, $2, $3, $4)
+INSERT INTO canonical_projects (
+    id, team_id, name, project_type, repository_link_state
+)
+VALUES (
+    $1, $2, $3, $4,
+    CASE WHEN $4::text = 'git' THEN 'unknown' ELSE 'not_applicable' END
+)
 ON CONFLICT (id) DO NOTHING;
 
 -- name: RegisterTeam :exec
@@ -53,10 +58,10 @@ FOR UPDATE;
 INSERT INTO canonical_sessions (
     id, project_id, source_key, revision, digest, title, summary, insight,
     actor_name, actor_harness, branch, status, capture_status, updated_at,
-    reported_event_count, captured_by_user_id
+    reported_event_count, captured_by_user_id, capture_lineage
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15, $16
+    $9, $10, $11, $12, $13, $14, $15, $16, 'authenticated'
 );
 
 -- name: UpdateSession :exec

@@ -67,6 +67,15 @@ func TestAuthenticationPostgresContract(t *testing.T) {
 
 	t.Run("cutover gate fails closed", func(t *testing.T) {
 		resetAuthentication(t, poolA)
+		if _, err := poolA.Exec(ctx, `
+UPDATE auth_cutover_ledger
+SET installation_kind = 'mapped', status = 'prepared', mapping_protocol = NULL,
+    mapping_digest = NULL, snapshot_digest = NULL, snapshot_schema_version = NULL,
+    prepared_at = clock_timestamp(), bootstrap_at = NULL, completed_at = NULL,
+    normal_serving_started_at = NULL, updated_at = clock_timestamp()
+WHERE protocol_version = 'auth-v1'`); err != nil {
+			t.Fatalf("prepare test cutover gate: %v", err)
+		}
 		adapter := &contractIdentityAdapter{}
 		module := newContractModule(t, poolA, adapter, authentication.DefaultPolicy(),
 			keySpec{active: "pepper-1", keys: map[string]byte{"pepper-1": 1}},
@@ -77,7 +86,10 @@ func TestAuthenticationPostgresContract(t *testing.T) {
 		}
 		if _, err := poolA.Exec(ctx, `
 UPDATE auth_cutover_ledger
-SET status = 'completed', completed_at = clock_timestamp(), updated_at = clock_timestamp()
+SET installation_kind = 'fresh', status = 'completed', mapping_protocol = NULL,
+    mapping_digest = NULL, snapshot_digest = NULL, snapshot_schema_version = NULL,
+    bootstrap_at = NULL, completed_at = clock_timestamp(),
+    normal_serving_started_at = NULL, updated_at = clock_timestamp()
 WHERE protocol_version = 'auth-v1'`); err != nil {
 			t.Fatalf("complete test cutover: %v", err)
 		}
@@ -1355,7 +1367,11 @@ TRUNCATE security_audit_events,
          auth_federated_login_transactions, auth_web_session_secrets,
          auth_web_sessions, auth_external_identities, auth_users CASCADE;
 UPDATE auth_cutover_ledger
-SET status = 'pending', completed_at = NULL, updated_at = clock_timestamp()
+SET installation_kind = 'fresh', status = 'completed', mapping_protocol = NULL,
+    mapping_digest = NULL, snapshot_digest = NULL, snapshot_schema_version = NULL,
+    prepared_at = clock_timestamp(), bootstrap_at = NULL,
+    completed_at = clock_timestamp(), normal_serving_started_at = NULL,
+    updated_at = clock_timestamp()
 WHERE protocol_version = 'auth-v1'`); err != nil {
 		t.Fatalf("reset Authentication state: %v", err)
 	}

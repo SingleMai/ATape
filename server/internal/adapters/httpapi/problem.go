@@ -56,6 +56,7 @@ const (
 	problemInternal                   problemCode = "internal_error"
 	problemProviderUnavailable        problemCode = "provider_unavailable"
 	problemServiceUnavailable         problemCode = "service_unavailable"
+	problemCutoverIncomplete          problemCode = "cutover_incomplete"
 )
 
 type problemDefinition struct {
@@ -99,6 +100,7 @@ var problemRegistry = map[problemCode]problemDefinition{
 	problemInternal:                   {500, "The request could not be completed", "An internal error occurred."},
 	problemProviderUnavailable:        {503, "The identity provider is unavailable", "Start a new login after the provider recovers."},
 	problemServiceUnavailable:         {503, "The service is unavailable", "Try the operation again later if it is safe to retry."},
+	problemCutoverIncomplete:          {503, "Authentication cutover is incomplete", "The operator must complete the authenticated data cutover before this operation is available."},
 }
 
 type fieldProblem struct {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/SingleMai/ATape/server/internal/adapters/memoryraw"
 	"github.com/SingleMai/ATape/server/internal/adapters/memorysearch"
+	"github.com/SingleMai/ATape/server/internal/adapters/rawchunks"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
@@ -154,6 +155,19 @@ func testHandlerWithConfig(t *testing.T, config Config) *Handler {
 		t.Fatalf("construct HTTP Adapter: %v", err)
 	}
 	return handler
+}
+
+func TestReadinessRequiresWritableRawStorage(t *testing.T) {
+	handler := testHandler(t)
+	store := canonical.NewDemoStore()
+	manifests := memoryraw.New(store)
+	handler.raw = rawarchive.NewArchive(manifests, rawchunks.NewUnavailable())
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable Raw readiness = %d: %s", response.Code, response.Body.String())
+	}
+	assertProblemEnvelope(t, response, "service_unavailable")
 }
 
 func TestRawSessionAndContentEndpointsAreSeparateAndBounded(t *testing.T) {

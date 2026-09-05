@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"golang.org/x/net/publicsuffix"
 )
@@ -19,6 +20,7 @@ type Config struct {
 	APIOrigin            string
 	CookieDomain         string
 	DevelopmentAllowHTTP bool
+	CutoverMode          authcutover.ServingMode
 
 	// DevelopmentPrincipal is an explicit demo-only Adapter for the existing
 	// in-memory dataset. Production construction must leave it nil.
@@ -35,6 +37,7 @@ type preparedConfig struct {
 	loginCookie    string
 	splitOrigin    bool
 	development    *authentication.Principal
+	cutoverMode    authcutover.ServingMode
 }
 
 // NormalizeConfig validates the public topology and returns its canonical
@@ -50,10 +53,18 @@ func NormalizeConfig(config Config) (Config, error) {
 	config.WebOrigin = prepared.webOrigin
 	config.APIOrigin = prepared.apiOrigin
 	config.CookieDomain = prepared.cookieDomain
+	config.CutoverMode = prepared.cutoverMode
 	return config, nil
 }
 
 func prepareConfig(config Config) (preparedConfig, error) {
+	cutoverMode := config.CutoverMode
+	if cutoverMode == "" {
+		cutoverMode = authcutover.NormalMode
+	}
+	if cutoverMode != authcutover.NormalMode && cutoverMode != authcutover.BootstrapMode {
+		return preparedConfig{}, errors.New("invalid auth cutover serving mode")
+	}
 	instanceOrigin, _, err := normalizeOrigin(config.InstanceOrigin, config.DevelopmentAllowHTTP)
 	if err != nil {
 		return preparedConfig{}, errors.New("invalid Instance Origin")
@@ -108,11 +119,15 @@ func prepareConfig(config Config) (preparedConfig, error) {
 		}
 		development = &copy
 	}
+	if development != nil && cutoverMode != authcutover.NormalMode {
+		return preparedConfig{}, errors.New("development Principal cannot serve auth cutover bootstrap")
+	}
 	return preparedConfig{
 		instanceOrigin: instanceOrigin, webOrigin: webOrigin, apiOrigin: apiOrigin,
 		cookieDomain: cookieDomain, secureCookies: secure,
 		sessionCookie: sessionCookie, loginCookie: loginCookie,
 		splitOrigin: apiOrigin != webOrigin, development: development,
+		cutoverMode: cutoverMode,
 	}, nil
 }
 

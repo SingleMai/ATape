@@ -86,6 +86,7 @@ const authenticationServer = async () => {
           type: "folder",
           name: "support-notes",
           state: "active",
+          repositoryLinkState: "not_applicable",
           createdAt: now,
           updatedAt: now
         }))

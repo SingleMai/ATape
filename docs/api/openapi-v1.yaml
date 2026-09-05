@@ -10,7 +10,7 @@ info:
     Authentication, Team, ingestion, conversation, Raw, and Search Modules;
     this document describes only their HTTP representation.
 servers:
-  - url: https://api.atape.dev
+  - url: https://atape.dev
     description: Official service API origin
 tags:
   - {name: Protocol, description: Public liveness and instance-discovery documents.}
@@ -26,6 +26,23 @@ x-atape-route-classes:
   any_principal: Accepts exactly one valid Web Session or CLI Credential.
   web_only: Accepts a Web Session; unsafe methods also require exact Origin and CSRF proof.
   cli_only: Accepts a CLI Credential in the Authorization header.
+x-atape-auth-cutover-bootstrap-routes:
+  - GET /healthz
+  - GET /readyz
+  - GET /api/v1/instance
+  - GET /api/v1/auth/provider-registrations
+  - POST /api/v1/auth/federated/sign-ins
+  - POST /api/v1/auth/federated/identity-bindings
+  - POST /api/v1/auth/federated/reauthentications
+  - GET /api/v1/auth/github/callback
+  - GET /api/v1/auth/session
+  - POST /api/v1/auth/logout
+  - GET /api/v1/users/me
+  - PATCH /api/v1/users/me
+  - GET /api/v1/users/me/external-identities
+  - GET /api/v1/users/me/web-sessions
+  - DELETE /api/v1/users/me/web-sessions/{sessionId}
+  - POST /api/v1/users/me/web-sessions/revoke-all
 x-atape-authorization-actions:
   - workspace.list_visible
   - team.create
@@ -80,6 +97,17 @@ paths:
       security: []
       responses:
         "200": {$ref: "#/components/responses/Health"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /readyz:
+    get:
+      operationId: getReadiness
+      tags: [Protocol]
+      summary: Report readiness for the configured normal or bootstrap serving mode
+      x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: []
+      responses:
+        "200": {$ref: "#/components/responses/Readiness"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/instance:
@@ -1052,6 +1080,14 @@ components:
             required: [status]
             properties:
               status: {const: ok}
+    Readiness:
+      description: The configured serving mode, durable auth cutover invariants, database, and Raw Chunk Store are ready.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Readiness"}
     Instance:
       description: Canonical instance metadata.
       headers:
@@ -1288,6 +1324,22 @@ components:
     Timestamp:
       type: string
       format: date-time
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [ready, mode]
+      properties:
+        ready: {type: boolean, const: true}
+        mode: {type: string, enum: [normal, bootstrap]}
+        cutover: {$ref: "#/components/schemas/AuthCutoverReadiness"}
+    AuthCutoverReadiness:
+      type: object
+      additionalProperties: false
+      required: [protocol, phase, installation]
+      properties:
+        protocol: {type: string, const: auth-v1}
+        phase: {type: string, enum: [prepared, bootstrap, completed]}
+        installation: {type: string, enum: [fresh, mapped]}
     User:
       type: object
       additionalProperties: false
@@ -1438,13 +1490,14 @@ components:
     Project:
       type: object
       additionalProperties: false
-      required: [id, teamId, type, name, state, createdAt, updatedAt]
+      required: [id, teamId, type, name, state, repositoryLinkState, createdAt, updatedAt]
       properties:
         id: {$ref: "#/components/schemas/OpaqueId"}
         teamId: {$ref: "#/components/schemas/OpaqueId"}
         type: {type: string, enum: [git, folder]}
         name: {type: string}
         state: {type: string, enum: [active, archived]}
+        repositoryLinkState: {type: string, enum: [unknown, linked, not_applicable]}
         repositoryIdentity: {type: string}
         capturedThrough: {$ref: "#/components/schemas/Timestamp"}
         createdAt: {$ref: "#/components/schemas/Timestamp"}
@@ -1676,6 +1729,7 @@ components:
             - internal_error
             - provider_unavailable
             - service_unavailable
+            - cutover_incomplete
         detail: {type: string}
         instance: {type: string, format: uri, pattern: "^urn:atape:request:"}
         requestId: {type: string, format: uuid}
