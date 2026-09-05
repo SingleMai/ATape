@@ -207,14 +207,19 @@ DELETE FROM team_join_code_attempt_windows
 WHERE user_id = $1 AND window_start = $2;
 
 -- name: InsertProject :one
-INSERT INTO canonical_projects (id, team_id, name, project_type, state)
-VALUES ($1, $2, $3, $4, 'active')
-RETURNING id, team_id, name, project_type, state, captured_through,
+INSERT INTO canonical_projects (
+    id, team_id, name, project_type, state, repository_link_state
+)
+VALUES (
+    $1, $2, $3, $4, 'active',
+    CASE WHEN $4::text = 'git' THEN 'linked' ELSE 'not_applicable' END
+)
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at;
 
 -- name: GetProject :one
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -224,7 +229,7 @@ WHERE projects.id = $1;
 
 -- name: GetProjectForUpdate :one
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -235,7 +240,7 @@ FOR UPDATE OF projects;
 
 -- name: ListVisibleProjects :many
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -250,7 +255,7 @@ ORDER BY projects.team_id, lower(projects.name), projects.id;
 
 -- name: ListProjectsForTeam :many
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -280,7 +285,7 @@ WHERE project_id = $1 AND remote_identity = $2;
 
 -- name: FindProjectByRepositoryIdentity :one
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        current_alias.remote_identity
 FROM team_project_repository_aliases matched_alias
@@ -289,18 +294,19 @@ LEFT JOIN team_project_repository_aliases current_alias
        ON current_alias.project_id = projects.id AND current_alias.current
 WHERE matched_alias.team_id = $1
   AND matched_alias.remote_identity = $2
+  AND projects.repository_link_state = 'linked'
   AND projects.state = 'active';
 
 -- name: RenameFolderProject :one
 UPDATE canonical_projects
 SET name = $2, updated_at = clock_timestamp()
 WHERE id = $1 AND project_type = 'directory' AND state <> 'deleted'
-RETURNING id, team_id, name, project_type, state, captured_through,
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at;
 
 -- name: RenameGitProject :exec
 UPDATE canonical_projects
-SET name = $2, updated_at = clock_timestamp()
+SET name = $2, repository_link_state = 'linked', updated_at = clock_timestamp()
 WHERE id = $1 AND project_type = 'git' AND state <> 'deleted';
 
 -- name: ArchiveProject :one
@@ -308,7 +314,7 @@ UPDATE canonical_projects
 SET state = 'archived', archived_at = COALESCE(archived_at, clock_timestamp()),
     updated_at = CASE WHEN state = 'active' THEN clock_timestamp() ELSE updated_at END
 WHERE id = $1 AND state IN ('active', 'archived')
-RETURNING id, team_id, name, project_type, state, captured_through,
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at;
 
 -- name: SoftDeleteProject :one
@@ -316,7 +322,7 @@ UPDATE canonical_projects
 SET state = 'deleted', deleted_at = COALESCE(deleted_at, clock_timestamp()),
     updated_at = CASE WHEN state <> 'deleted' THEN clock_timestamp() ELSE updated_at END
 WHERE id = $1
-RETURNING id, team_id, name, project_type, state, captured_through,
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at;
 
 -- name: InsertSecurityAuditEvent :exec

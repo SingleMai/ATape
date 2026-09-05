@@ -8,6 +8,7 @@ import { Clock, Context, Effect, Schema } from "effect"
 import { inspectClient } from "./clientManagement.ts"
 import {
   CollectorConfigurationError,
+  hasUnauthenticatedFailure,
   runCollectionCycle,
   type CollectionCycleReport
 } from "./collector.ts"
@@ -66,6 +67,7 @@ export type ManagedCollectorJobStatus = {
   readonly lastFailureAt?: string
   readonly failureMessage?: string
   readonly retryable?: boolean
+  readonly failureReason?: "unauthenticated" | "transport" | "adapter" | "state" | "contract"
   readonly pages?: number
   readonly observations?: number
   readonly canonicalBatches?: number
@@ -145,7 +147,13 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")(function*(
             failures: report.failures.length,
             observations: report.jobs.reduce((sum, job) => sum + job.observations, 0),
             rawChunks: report.jobs.reduce((sum, job) => sum + job.rawChunks, 0)
-          }))
+          })),
+          Effect.flatMap(() => hasUnauthenticatedFailure(report)
+            ? Effect.fail(new CollectorConfigurationError({
+                reason: "unauthenticated",
+                message: "The ATape Collector stopped because a CLI credential is missing, invalid, or expired. Run `atape login`."
+              }))
+            : Effect.void)
         )
       })
     )
@@ -172,11 +180,6 @@ const resolveDaemonOptions = (
 }
 
 const validateManagedConfig = (config: ClientConfig): Effect.Effect<void, CollectorConfigurationError> => {
-  if (!config.userId) {
-    return Effect.fail(new CollectorConfigurationError({
-      reason: "identity", message: "This client has no Team user ID. Run `atape setup --user-id <id>` first."
-    }))
-  }
   const jobs = configuredJobs(config)
   if (jobs.length === 0) {
     return Effect.fail(new CollectorConfigurationError({
@@ -212,6 +215,7 @@ const presentJob = (
       ...(recorded.lastFailureAt === undefined ? {} : { lastFailureAt: recorded.lastFailureAt }),
       ...(recorded.failureMessage === undefined ? {} : { failureMessage: recorded.failureMessage }),
       ...(recorded.retryable === undefined ? {} : { retryable: recorded.retryable }),
+      ...(recorded.failureReason === undefined ? {} : { failureReason: recorded.failureReason }),
       ...(recorded.pages === undefined ? {} : { pages: recorded.pages }),
       ...(recorded.observations === undefined ? {} : { observations: recorded.observations }),
       ...(recorded.canonicalBatches === undefined ? {} : { canonicalBatches: recorded.canonicalBatches }),

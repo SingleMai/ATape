@@ -134,10 +134,10 @@ export const CLIAuthorizationView = ({
             value={code}
             autoComplete="one-time-code"
             autoCapitalize="characters"
-            placeholder="Q7KM-4WDP"
-            maxLength={9}
+            placeholder="Q7KM4W"
+            maxLength={6}
             required
-            onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 9))}
+            onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))}
           />
           <Button type="submit" variant="primary">Review request</Button>
         </form>

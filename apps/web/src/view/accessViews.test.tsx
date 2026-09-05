@@ -25,7 +25,7 @@ const options: LoadView<SignInOptions> = {
 
 const grant: CLIDeviceGrantView = {
   grantViewId: "private-grant-view-id",
-  userCode: "Q7KM-4WDP",
+  userCode: "Q7KM4W",
   instanceOrigin: "https://atape.dev",
   clientLabel: "atape-cli",
   capabilityVersion: "atape-cli.v1",
@@ -55,14 +55,14 @@ describe("access views", () => {
   it("shows a review before CLI approval without rendering internal or secret values", () => {
     const html = renderToStaticMarkup(<CLIAuthorizationView
       user={user}
-      requestedCode="Q7KM-4WDP"
+      requestedCode="Q7KM4W"
       resolution={{ _tag: "Succeeded", value: grant }}
       decision={idle}
       onResolve={() => undefined}
       onDecide={() => undefined}
     />)
 
-    expect(html).toContain("Q7KM-4WDP")
+    expect(html).toContain("Q7KM4W")
     expect(html).toContain("https://atape.dev")
     expect(html).toContain("Signed in as")
     expect(html).toContain("Authorize CLI")
@@ -75,7 +75,7 @@ describe("access views", () => {
   it("renders approved and expired CLI terminal states without another approval control", () => {
     const approved = renderToStaticMarkup(<CLIAuthorizationView
       user={user}
-      requestedCode="Q7KM-4WDP"
+      requestedCode="Q7KM4W"
       resolution={{ _tag: "Succeeded", value: { ...grant, status: "approved_unclaimed" } }}
       decision={idle}
       onResolve={() => undefined}
@@ -86,7 +86,7 @@ describe("access views", () => {
 
     const expired = renderToStaticMarkup(<CLIAuthorizationView
       user={user}
-      requestedCode="Q7KM-4WDP"
+      requestedCode="Q7KM4W"
       resolution={{
         _tag: "Failed",
         failure: {

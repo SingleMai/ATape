@@ -5,8 +5,10 @@
 
 > Authentication statements in this ADR describe the v0.1 topology. The v0.2
 > HTTP security boundary is defined by
-> [ADR-0017](0017-http-interface-and-route-security.md); its deployable
-> configuration and data cutover are intentionally handled separately.
+> [ADR-0017](0017-http-interface-and-route-security.md). Its deployable
+> configuration, data cutover, and rollback boundary are defined by
+> [ADR-0018](0018-auth-cutover-and-deployable-self-hosting.md), which supersedes
+> the unauthenticated deployment statements below.
 
 ## Context
 

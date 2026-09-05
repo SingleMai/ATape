@@ -7,6 +7,7 @@ export const WorkspaceProject = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   type: ProjectType,
+  repositoryLinkState: Schema.Literals(["unknown", "linked", "not_applicable"]),
   capturedThrough: Schema.optionalKey(Schema.String),
   sessionCount: Schema.Number,
   activeSessionCount: Schema.Number

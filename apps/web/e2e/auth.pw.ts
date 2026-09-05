@@ -50,7 +50,7 @@ test("keeps ordinary and CLI-return sign-in minimal at 390px", async ({ page }) 
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0)
   await expectNoBrowserSecrets(page)
 
-  await page.goto("/cli/authorize?user_code=Q7KM-4WDP")
+  await page.goto("/cli/authorize?user_code=Q7KM4W")
   await expect(page.getByText("CLI sign-in in progress")).toBeVisible()
   await expect(page.getByRole("button", { name: "Continue with GitHub" })).toBeVisible()
   expect((await fixtureState(page)).cliResolveCount).toBe(0)
@@ -58,10 +58,10 @@ test("keeps ordinary and CLI-return sign-in minimal at 390px", async ({ page }) 
 
 test("requires an explicit CLI decision and renders terminal outcomes", async ({ context, page, request }) => {
   await authenticate(context)
-  await page.goto("/cli/authorize?user_code=Q7KM-4WDP")
+  await page.goto("/cli/authorize?user_code=Q7KM4W")
 
   await expect(page.getByRole("heading", { name: /Allow atape-cli/ })).toBeVisible()
-  await expect(page.getByText("Q7KM-4WDP")).toBeVisible()
+  await expect(page.getByText("Q7KM4W")).toBeVisible()
   await expect(page.getByText(appOrigin)).toBeVisible()
   await expect(page.locator(".request-facts dd").filter({ hasText: "Mai" })).toBeVisible()
   expect((await fixtureState(page)).cliDecision).toBe("none")
@@ -74,11 +74,11 @@ test("requires an explicit CLI decision and renders terminal outcomes", async ({
   await expectNoBrowserSecrets(page)
 
   await request.post(`${fixtureOrigin}/__fixture/reset`)
-  await clientNavigate(page, "/cli/authorize?user_code=AAAA-AAAA")
+  await clientNavigate(page, "/cli/authorize?user_code=AAAAAA")
   await expect(page.getByRole("heading", { name: "This code is no longer valid" })).toBeVisible()
 
   await request.post(`${fixtureOrigin}/__fixture/reset`)
-  await clientNavigate(page, "/cli/authorize?user_code=Q7KM-4WDP")
+  await clientNavigate(page, "/cli/authorize?user_code=Q7KM4W")
   await expect(page.getByRole("heading", { name: /Allow atape-cli/ })).toBeVisible()
   await page.getByRole("button", { name: "Deny" }).click()
   await expect(page.getByRole("heading", { name: "The CLI was not connected" })).toBeVisible()

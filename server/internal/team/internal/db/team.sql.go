@@ -26,21 +26,22 @@ UPDATE canonical_projects
 SET state = 'archived', archived_at = COALESCE(archived_at, clock_timestamp()),
     updated_at = CASE WHEN state = 'active' THEN clock_timestamp() ELSE updated_at END
 WHERE id = $1 AND state IN ('active', 'archived')
-RETURNING id, team_id, name, project_type, state, captured_through,
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at
 `
 
 type ArchiveProjectRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
 }
 
 func (q *Queries) ArchiveProject(ctx context.Context, id string) (ArchiveProjectRow, error) {
@@ -52,6 +53,7 @@ func (q *Queries) ArchiveProject(ctx context.Context, id string) (ArchiveProject
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -205,7 +207,7 @@ func (q *Queries) FindEnabledJoinCode(ctx context.Context, arg FindEnabledJoinCo
 
 const findProjectByRepositoryIdentity = `-- name: FindProjectByRepositoryIdentity :one
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        current_alias.remote_identity
 FROM team_project_repository_aliases matched_alias
@@ -214,6 +216,7 @@ LEFT JOIN team_project_repository_aliases current_alias
        ON current_alias.project_id = projects.id AND current_alias.current
 WHERE matched_alias.team_id = $1
   AND matched_alias.remote_identity = $2
+  AND projects.repository_link_state = 'linked'
   AND projects.state = 'active'
 `
 
@@ -223,17 +226,18 @@ type FindProjectByRepositoryIdentityParams struct {
 }
 
 type FindProjectByRepositoryIdentityRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
-	RemoteIdentity  *string
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	RemoteIdentity      *string
 }
 
 func (q *Queries) FindProjectByRepositoryIdentity(ctx context.Context, arg FindProjectByRepositoryIdentityParams) (FindProjectByRepositoryIdentityRow, error) {
@@ -245,6 +249,7 @@ func (q *Queries) FindProjectByRepositoryIdentity(ctx context.Context, arg FindP
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -416,7 +421,7 @@ func (q *Queries) GetPrincipalUserForShare(ctx context.Context, id pgtype.UUID) 
 
 const getProject = `-- name: GetProject :one
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -426,17 +431,18 @@ WHERE projects.id = $1
 `
 
 type GetProjectRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
-	RemoteIdentity  *string
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	RemoteIdentity      *string
 }
 
 func (q *Queries) GetProject(ctx context.Context, id string) (GetProjectRow, error) {
@@ -448,6 +454,7 @@ func (q *Queries) GetProject(ctx context.Context, id string) (GetProjectRow, err
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -460,7 +467,7 @@ func (q *Queries) GetProject(ctx context.Context, id string) (GetProjectRow, err
 
 const getProjectForUpdate = `-- name: GetProjectForUpdate :one
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -471,17 +478,18 @@ FOR UPDATE OF projects
 `
 
 type GetProjectForUpdateRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
-	RemoteIdentity  *string
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	RemoteIdentity      *string
 }
 
 func (q *Queries) GetProjectForUpdate(ctx context.Context, id string) (GetProjectForUpdateRow, error) {
@@ -493,6 +501,7 @@ func (q *Queries) GetProjectForUpdate(ctx context.Context, id string) (GetProjec
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -747,9 +756,14 @@ func (q *Queries) InsertOwnerMembership(ctx context.Context, arg InsertOwnerMemb
 }
 
 const insertProject = `-- name: InsertProject :one
-INSERT INTO canonical_projects (id, team_id, name, project_type, state)
-VALUES ($1, $2, $3, $4, 'active')
-RETURNING id, team_id, name, project_type, state, captured_through,
+INSERT INTO canonical_projects (
+    id, team_id, name, project_type, state, repository_link_state
+)
+VALUES (
+    $1, $2, $3, $4, 'active',
+    CASE WHEN $4::text = 'git' THEN 'linked' ELSE 'not_applicable' END
+)
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at
 `
 
@@ -761,16 +775,17 @@ type InsertProjectParams struct {
 }
 
 type InsertProjectRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
 }
 
 func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (InsertProjectRow, error) {
@@ -787,6 +802,7 @@ func (q *Queries) InsertProject(ctx context.Context, arg InsertProjectParams) (I
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -953,7 +969,7 @@ func (q *Queries) LatestJoinCodeForTeam(ctx context.Context, teamID string) (Lat
 
 const listProjectsForTeam = `-- name: ListProjectsForTeam :many
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -964,17 +980,18 @@ ORDER BY lower(projects.name), projects.id
 `
 
 type ListProjectsForTeamRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
-	RemoteIdentity  *string
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	RemoteIdentity      *string
 }
 
 func (q *Queries) ListProjectsForTeam(ctx context.Context, teamID string) ([]ListProjectsForTeamRow, error) {
@@ -992,6 +1009,7 @@ func (q *Queries) ListProjectsForTeam(ctx context.Context, teamID string) ([]Lis
 			&i.Name,
 			&i.ProjectType,
 			&i.State,
+			&i.RepositoryLinkState,
 			&i.CapturedThrough,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1061,7 +1079,7 @@ func (q *Queries) ListTeamMembers(ctx context.Context, teamID string) ([]ListTea
 
 const listVisibleProjects = `-- name: ListVisibleProjects :many
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
-       projects.state, projects.captured_through, projects.created_at,
+       projects.state, projects.repository_link_state, projects.captured_through, projects.created_at,
        projects.updated_at, projects.archived_at, projects.deleted_at,
        aliases.remote_identity
 FROM canonical_projects projects
@@ -1076,17 +1094,18 @@ ORDER BY projects.team_id, lower(projects.name), projects.id
 `
 
 type ListVisibleProjectsRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
-	RemoteIdentity  *string
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
+	RemoteIdentity      *string
 }
 
 func (q *Queries) ListVisibleProjects(ctx context.Context, userID pgtype.UUID) ([]ListVisibleProjectsRow, error) {
@@ -1104,6 +1123,7 @@ func (q *Queries) ListVisibleProjects(ctx context.Context, userID pgtype.UUID) (
 			&i.Name,
 			&i.ProjectType,
 			&i.State,
+			&i.RepositoryLinkState,
 			&i.CapturedThrough,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1300,7 +1320,7 @@ const renameFolderProject = `-- name: RenameFolderProject :one
 UPDATE canonical_projects
 SET name = $2, updated_at = clock_timestamp()
 WHERE id = $1 AND project_type = 'directory' AND state <> 'deleted'
-RETURNING id, team_id, name, project_type, state, captured_through,
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at
 `
 
@@ -1310,16 +1330,17 @@ type RenameFolderProjectParams struct {
 }
 
 type RenameFolderProjectRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
 }
 
 func (q *Queries) RenameFolderProject(ctx context.Context, arg RenameFolderProjectParams) (RenameFolderProjectRow, error) {
@@ -1331,6 +1352,7 @@ func (q *Queries) RenameFolderProject(ctx context.Context, arg RenameFolderProje
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -1342,7 +1364,7 @@ func (q *Queries) RenameFolderProject(ctx context.Context, arg RenameFolderProje
 
 const renameGitProject = `-- name: RenameGitProject :exec
 UPDATE canonical_projects
-SET name = $2, updated_at = clock_timestamp()
+SET name = $2, repository_link_state = 'linked', updated_at = clock_timestamp()
 WHERE id = $1 AND project_type = 'git' AND state <> 'deleted'
 `
 
@@ -1403,21 +1425,22 @@ UPDATE canonical_projects
 SET state = 'deleted', deleted_at = COALESCE(deleted_at, clock_timestamp()),
     updated_at = CASE WHEN state <> 'deleted' THEN clock_timestamp() ELSE updated_at END
 WHERE id = $1
-RETURNING id, team_id, name, project_type, state, captured_through,
+RETURNING id, team_id, name, project_type, state, repository_link_state, captured_through,
           created_at, updated_at, archived_at, deleted_at
 `
 
 type SoftDeleteProjectRow struct {
-	ID              string
-	TeamID          string
-	Name            string
-	ProjectType     string
-	State           string
-	CapturedThrough time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ArchivedAt      pgtype.Timestamptz
-	DeletedAt       pgtype.Timestamptz
+	ID                  string
+	TeamID              string
+	Name                string
+	ProjectType         string
+	State               string
+	RepositoryLinkState string
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ArchivedAt          pgtype.Timestamptz
+	DeletedAt           pgtype.Timestamptz
 }
 
 func (q *Queries) SoftDeleteProject(ctx context.Context, id string) (SoftDeleteProjectRow, error) {
@@ -1429,6 +1452,7 @@ func (q *Queries) SoftDeleteProject(ctx context.Context, id string) (SoftDeleteP
 		&i.Name,
 		&i.ProjectType,
 		&i.State,
+		&i.RepositoryLinkState,
 		&i.CapturedThrough,
 		&i.CreatedAt,
 		&i.UpdatedAt,

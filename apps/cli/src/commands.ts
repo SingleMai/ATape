@@ -4,24 +4,39 @@ import {
   CollectorRunStatusStore,
   CollectorStateStore,
   CollectorTransport,
+  CLIAuthenticationGateway,
+  CLIAuthenticationInteraction,
+  CLICredentialStore,
+  ClientMigration,
+  ProjectSetupGateway,
+  adoptClientCheckpoint,
+  applyClientMigration,
+  applyProjectSetup,
   SecretRedactor,
   inspectClient,
   inspectManagedCollector,
   installAdapter,
+  loginCLI,
+  logoutCLI,
+  planProjectSetup,
+  planClientMigration,
   removeProject,
   runCollector,
   runManagedCollector,
   setProjectAdapter,
+  setActiveInstance,
+  selectInstanceOrigin,
   startManagedCollector,
   stopManagedCollector,
-  setupProject,
   upgradeAdapters,
   type AdapterPackages,
   type ClientConfigStore,
   type CollectionCycleReport,
   type ManagedCollectorStatus,
   type ProjectLocator,
-  type SetupProjectInput
+  type ProjectSetupPlan,
+  type ProjectSetupSelection,
+  type SetupTeam
 } from "@atape/application"
 import type { ClientConfig } from "@atape/domain"
 import { createInterface } from "node:readline/promises"
@@ -33,13 +48,17 @@ type CLIOptions = {
   readonly help?: boolean
   readonly version?: boolean
   readonly json?: boolean
-  readonly userId?: string
-  readonly teamId?: string
-  readonly teamName?: string
-  readonly projectId?: string
+  readonly instance?: string
+  readonly noBrowser?: boolean
+  readonly team?: string
+  readonly create?: boolean
+  readonly apply?: boolean
+  readonly adoptCheckpoint?: boolean
+  readonly from?: string
+  readonly sourceProject?: string
+  readonly sourceAdapter?: string
   readonly name?: string
   readonly type?: string
-  readonly server?: string
   readonly adapter?: ReadonlyArray<string>
   readonly project?: string
   readonly all?: boolean
@@ -65,13 +84,17 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
       json: { type: "boolean" },
-      "user-id": { type: "string" },
-      "team-id": { type: "string" },
-      "team-name": { type: "string" },
-      "project-id": { type: "string" },
+      instance: { type: "string" },
+      "no-browser": { type: "boolean" },
+      team: { type: "string" },
+      create: { type: "boolean" },
+      apply: { type: "boolean" },
+      "adopt-checkpoint": { type: "boolean" },
+      from: { type: "string" },
+      "source-project": { type: "string" },
+      "source-adapter": { type: "string" },
       name: { type: "string" },
       type: { type: "string" },
-      server: { type: "string" },
       adapter: { type: "string", multiple: true },
       project: { type: "string" },
       all: { type: "boolean" },
@@ -87,13 +110,17 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
       ...(parsed.values.help === true ? { help: true } : {}),
       ...(parsed.values.version === true ? { version: true } : {}),
       ...(parsed.values.json === true ? { json: true } : {}),
-      ...(parsed.values["user-id"] ? { userId: parsed.values["user-id"] } : {}),
-      ...(parsed.values["team-id"] ? { teamId: parsed.values["team-id"] } : {}),
-      ...(parsed.values["team-name"] ? { teamName: parsed.values["team-name"] } : {}),
-      ...(parsed.values["project-id"] ? { projectId: parsed.values["project-id"] } : {}),
+      ...(parsed.values.instance ? { instance: parsed.values.instance } : {}),
+      ...(parsed.values["no-browser"] === true ? { noBrowser: true } : {}),
+      ...(parsed.values.team ? { team: parsed.values.team } : {}),
+      ...(parsed.values.create === true ? { create: true } : {}),
+      ...(parsed.values.apply === true ? { apply: true } : {}),
+      ...(parsed.values["adopt-checkpoint"] === true ? { adoptCheckpoint: true } : {}),
+      ...(parsed.values.from ? { from: parsed.values.from } : {}),
+      ...(parsed.values["source-project"] ? { sourceProject: parsed.values["source-project"] } : {}),
+      ...(parsed.values["source-adapter"] ? { sourceAdapter: parsed.values["source-adapter"] } : {}),
       ...(parsed.values.name ? { name: parsed.values.name } : {}),
       ...(parsed.values.type ? { type: parsed.values.type } : {}),
-      ...(parsed.values.server ? { server: parsed.values.server } : {}),
       ...(parsed.values.adapter ? { adapter: parsed.values.adapter } : {}),
       ...(parsed.values.project ? { project: parsed.values.project } : {}),
       ...(parsed.values.all === true ? { all: true } : {}),
@@ -110,7 +137,9 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
   unknown,
   ClientConfigStore | ProjectLocator | AdapterPackages |
     CollectorStateStore | AdapterRuntimes | CollectorTransport | SecretRedactor |
-    CollectorDaemonProcess | CollectorRunStatusStore
+    CollectorDaemonProcess | CollectorRunStatusStore |
+    CLIAuthenticationGateway | CLICredentialStore | CLIAuthenticationInteraction | ProjectSetupGateway |
+    ClientMigration
 > => {
   const [command, action, argument, extra] = cli.positionals
   if (cli.options.version) {
@@ -123,9 +152,18 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
   if (extra !== undefined) return failUsage("Too many positional arguments.")
 
   switch (command) {
+    case "login":
+      if (action !== undefined) return failUsage("login accepts no positional arguments.")
+      return loginCommand(cli.options)
+    case "logout":
+      if (action !== undefined) return failUsage("logout accepts no positional arguments.")
+      return logoutCommand(cli.options)
     case "setup":
       if (argument !== undefined) return failUsage("setup accepts at most one directory.")
       return setupCommand(action, cli.options)
+    case "migrate-local-v0.1":
+      if (action !== undefined) return failUsage("migrate-local-v0.1 accepts no positional arguments.")
+      return migrateCommand(cli.options)
     case "projects":
       if (action === "list" && argument === undefined) return listProjects(cli.options.json === true)
       if (action === "remove" && argument !== undefined) return removeProjectCommand(argument, cli.options.json === true)
@@ -156,59 +194,213 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
 
 const setupCommand = (path: string | undefined, options: CLIOptions) => Effect.gen(function*() {
   const current = yield* inspectClient()
-  const resolved = yield* resolveSetupInput(path, options, current)
-  const result = yield* setupProject(resolved)
+  const instanceOrigin = yield* resolveInstance(options, current)
+  const type = yield* setupType(options.type)
+  const plan = yield* planProjectSetup({
+    instanceOrigin,
+    path: path ?? process.cwd(),
+    ...(type === undefined ? {} : { type })
+  })
+  const selection = yield* resolveProjectSetupSelection(plan, options)
+  const result = yield* applyProjectSetup(plan, selection)
   if (options.json) {
     yield* printJSON(result)
     return
   }
   yield* print([
-    result.created ? "Configured local capture Project." : "Project was already configured; nothing changed.",
+    result.createdLocally ? "Configured local capture Project." : "Project was already configured; nothing changed.",
     `  ${result.project.id} · ${result.project.type}`,
     `  ${result.project.path}`,
-    `  Team: ${result.project.teamName} (${result.project.teamId})`,
-    `  User: ${result.userId ?? "not configured"}`,
-    `  Server: ${result.serverUrl}`,
+    `  Team: ${result.project.teamName} (${result.project.teamSlug})`,
+    `  Instance: ${result.project.instanceOrigin}`,
+    result.createdRemotely ? "  Created the matching server Project." : "  Attached the existing server Project.",
     `  Adapters: ${result.project.adapterIds.length === 0 ? "none yet" : result.project.adapterIds.join(", ")}`
   ].join("\n"))
 })
 
-const resolveSetupInput = (
-  path: string | undefined,
-  options: CLIOptions,
-  current: ClientConfig
-): Effect.Effect<SetupProjectInput, CLIInputError> => Effect.tryPromise({
-  try: async () => {
-    const needsPrompt = path === undefined || options.teamId === undefined ||
-      (options.userId === undefined && current.userId === undefined) ||
-      options.teamName === undefined || options.server === undefined
-    if (needsPrompt && (!process.stdin.isTTY || !process.stdout.isTTY)) {
-      if (options.teamId === undefined) {
-        throw new CLIInputError("--team-id is required when setup is not interactive.")
-      }
-      if (options.userId === undefined && current.userId === undefined) {
-        throw new CLIInputError("--user-id is required for the first non-interactive setup.")
-      }
+const loginCommand = (options: CLIOptions) => Effect.gen(function*() {
+  const current = yield* inspectClient()
+  const instanceOrigin = yield* resolveInstance(options, current)
+  const result = yield* loginCLI({
+    instanceOrigin,
+    allowLoopbackHttp: developmentHTTPEnabled(),
+    openBrowser: options.noBrowser !== true
+  })
+  yield* setActiveInstance(instanceOrigin)
+  if (options.json) {
+    yield* printJSON(result)
+    return
+  }
+  yield* print([
+    `Signed in to ${result.instanceOrigin} as ${result.user.displayName}.`,
+    `Credential: ${result.credentialId}`,
+    ...result.warnings.map((warning) => `Warning: ${warning}`)
+  ].join("\n"))
+})
+
+const logoutCommand = (options: CLIOptions) => Effect.gen(function*() {
+  const current = yield* inspectClient()
+  const instanceOrigin = yield* resolveInstance(options, current)
+  const result = yield* logoutCLI({
+    instanceOrigin,
+    allowLoopbackHttp: developmentHTTPEnabled()
+  })
+  if (options.json) {
+    yield* printJSON(result)
+    return
+  }
+  yield* print([
+    result.signedOut
+      ? `Signed out from ${instanceOrigin}; the local credential was removed.`
+      : `No local credential exists for ${instanceOrigin}.`,
+    ...result.warnings.map((warning) => `Warning: ${warning}`)
+  ].join("\n"))
+})
+
+const migrateCommand = (options: CLIOptions) => Effect.gen(function*() {
+  if (options.adoptCheckpoint === true) {
+    if (options.apply === true) return yield* failUsage("--adopt-checkpoint and --apply are separate operations.")
+    if (options.from === undefined || options.project === undefined || options.adapter?.length !== 1) {
+      return yield* failUsage(
+        "Checkpoint adoption requires --from <import-id>, --project <project-id>, and one --adapter <adapter-id>."
+      )
     }
-    if (!needsPrompt || (!process.stdin.isTTY || !process.stdout.isTTY)) {
-      return setupInput(path ?? process.cwd(), options, current.serverUrl, current.userId)
+    const adapterId = options.adapter[0]
+    if (adapterId === undefined) return yield* failUsage("Checkpoint adoption requires one Adapter ID.")
+    const result = yield* adoptClientCheckpoint({
+      importId: options.from,
+      projectId: options.project,
+      adapterId,
+      ...(options.sourceProject === undefined ? {} : { sourceProjectId: options.sourceProject }),
+      ...(options.sourceAdapter === undefined ? {} : { sourceAdapterId: options.sourceAdapter })
+    })
+    yield* options.json
+      ? printJSON(result)
+      : print([
+        `Adopted checkpoint ${result.source.projectId}/${result.source.adapterId}.`,
+        `Target: ${result.target.instanceOrigin} · User ${result.target.userId} · ${result.target.projectId}/${result.target.adapterId}`,
+        `Local checkpoint revision: ${result.revision} (archived source revision ${result.sourceRevision}).`
+      ].join("\n"))
+    return
+  }
+  if (options.apply === true) {
+    const result = yield* applyClientMigration()
+    if (options.json) {
+      yield* printJSON(result)
+      return
+    }
+    yield* print([
+      `Archived v0.1 data in ${result.importDirectory}.`,
+      `Created an empty v0.2 configuration at ${result.createdConfig}.`,
+      "The original files were not removed.",
+      ...result.unresolved.map((item) => `- ${item}`)
+    ].join("\n"))
+    return
+  }
+  const result = yield* planClientMigration()
+  if (options.json) {
+    yield* printJSON(result)
+    return
+  }
+  yield* print([
+    "v0.1 → v0.2 migration plan",
+    `Destination: ${result.destinationRoot}`,
+    ...result.sources.map((source) => `- Archive ${source.kind}: ${source.path}`),
+    ...result.discardedAuthority.map((item) => `- Discard authority: ${item}`),
+    ...result.blockers.map((item) => `Blocker: ${item}`),
+    result.canApply ? "Run `atape migrate-local-v0.1 --apply` to apply this plan." : "Resolve the blockers before applying."
+  ].join("\n"))
+})
+
+const resolveInstance = (options: CLIOptions, config: ClientConfig) => selectInstanceOrigin({
+  ...(options.instance === undefined ? {} : { commandLine: options.instance }),
+  ...(process.env.ATAPE_INSTANCE_URL === undefined ? {} : { environment: process.env.ATAPE_INSTANCE_URL }),
+  ...(config.activeInstanceOrigin === undefined ? {} : { savedActive: config.activeInstanceOrigin }),
+  allowLoopbackHttp: developmentHTTPEnabled()
+})
+
+const developmentHTTPEnabled = () => process.env.ATAPE_DEVELOPMENT_ALLOW_HTTP === "true"
+
+const setupType = (
+  value: string | undefined
+): Effect.Effect<"auto" | "git" | "directory" | undefined, CLIInputError> => {
+  if (value === undefined) return Effect.succeed(undefined)
+  return value === "auto" || value === "git" || value === "directory"
+    ? Effect.succeed(value)
+    : Effect.fail(new CLIInputError("--type must be auto, git, or directory."))
+}
+
+const resolveProjectSetupSelection = (
+  plan: ProjectSetupPlan,
+  options: CLIOptions
+): Effect.Effect<ProjectSetupSelection, CLIInputError> => Effect.tryPromise({
+  try: async () => {
+    const interactive = process.stdin.isTTY && process.stdout.isTTY && options.json !== true
+    let team = options.team === undefined ? undefined : findTeam(plan.teams, options.team)
+    if (options.team !== undefined && team === undefined) {
+      throw new CLIInputError(`Team ${options.team} is not available to the signed-in account.`)
     }
 
-    const prompt = createInterface({ input: process.stdin, output: process.stdout })
-    try {
-      const selectedPath = path ?? await ask(prompt, "Project directory", process.cwd())
-      const userId = options.userId ?? current.userId ?? await ask(prompt, "Team user ID")
-      const teamId = options.teamId ?? await ask(prompt, "Team ID")
-      const teamName = options.teamName ?? await ask(prompt, "Team name", teamId)
-      const server = options.server ?? await ask(prompt, "ATape server", current.serverUrl)
-      return setupInput(
-        selectedPath,
-        { ...options, userId, teamId, teamName, server },
-        current.serverUrl,
-        current.userId
-      )
-    } finally {
-      prompt.close()
+    if (team === undefined && options.create !== true && plan.exactMatches.length === 1) {
+      const exact = plan.exactMatches[0]
+      if (exact === undefined) throw new CLIInputError("The exact Project match disappeared.")
+      return {
+        mode: "exact",
+        teamId: exact.team.id,
+        projectId: exact.project.id,
+        ...(options.adapter === undefined ? {} : { adapterIds: options.adapter })
+      }
+    }
+
+    if (team === undefined) {
+      if (plan.teams.length === 1) {
+        team = plan.teams[0]
+      } else if (!interactive) {
+        throw new CLIInputError("--team <slug> is required when more than one Team is available.")
+      } else {
+        const prompt = createInterface({ input: process.stdin, output: process.stdout })
+        try {
+          process.stdout.write(["Choose a Team:", ...plan.teams.map((item) =>
+            `  ${item.slug} · ${item.displayName}`)].join("\n") + "\n")
+          team = findTeam(plan.teams, await ask(prompt, "Team slug"))
+        } finally {
+          prompt.close()
+        }
+        if (team === undefined) throw new CLIInputError("The selected Team is not available.")
+      }
+    }
+    if (team === undefined) throw new CLIInputError("No Team is available to the signed-in account.")
+
+    const exact = plan.exactMatches.find((match) => match.team.id === team.id)
+    if (exact !== undefined) {
+      if (options.create === true) {
+        throw new CLIInputError("This repository already has an exact Project match; omit --create to attach it.")
+      }
+      return {
+        mode: "exact",
+        teamId: team.id,
+        projectId: exact.project.id,
+        ...(options.adapter === undefined ? {} : { adapterIds: options.adapter })
+      }
+    }
+
+    if (options.create !== true) {
+      if (!interactive) {
+        throw new CLIInputError("No exact Project match exists; pass --create to create one explicitly.")
+      }
+      const prompt = createInterface({ input: process.stdin, output: process.stdout })
+      try {
+        const approved = await confirm(prompt, `Create a Project in ${team.displayName}?`)
+        if (!approved) throw new CLIInputError("Setup cancelled before creating a server Project.")
+      } finally {
+        prompt.close()
+      }
+    }
+    return {
+      mode: "create",
+      teamId: team.id,
+      ...(options.name === undefined ? {} : { name: options.name }),
+      ...(options.adapter === undefined ? {} : { adapterIds: options.adapter })
     }
   },
   catch: (cause) => cause instanceof CLIInputError
@@ -216,45 +408,24 @@ const resolveSetupInput = (
     : new CLIInputError(cause instanceof Error ? cause.message : String(cause))
 })
 
-const setupInput = (
-  path: string,
-  options: CLIOptions,
-  defaultServer: string,
-  currentUserId?: string
-): SetupProjectInput => {
-  if (options.teamId === undefined) throw new CLIInputError("Team ID is required.")
-  const userId = options.userId ?? currentUserId
-  if (userId === undefined) throw new CLIInputError("Team user ID is required.")
-  const type = options.type ?? "auto"
-  if (type !== "auto" && type !== "git" && type !== "directory") {
-    throw new CLIInputError("--type must be auto, git, or directory.")
-  }
-  return {
-    path,
-    userId,
-    teamId: options.teamId,
-    teamName: options.teamName ?? options.teamId,
-    type,
-    serverUrl: options.server ?? defaultServer,
-    ...(options.projectId ? { projectId: options.projectId } : {}),
-    ...(options.name ? { name: options.name } : {}),
-    ...(options.adapter ? { adapterIds: options.adapter } : {})
-  }
+const findTeam = (teams: ReadonlyArray<SetupTeam>, selection: string) => {
+  const matches = teams.filter((team) => team.id === selection || team.slug === selection)
+  return matches.length === 1 ? matches[0] : undefined
 }
 
 const listProjects = (json: boolean) => inspectClient().pipe(
   Effect.flatMap((config) => json
-    ? printJSON({ serverUrl: config.serverUrl, userId: config.userId, projects: config.projects })
+    ? printJSON({ activeInstanceOrigin: config.activeInstanceOrigin, projects: config.projects })
     : printProjects(config))
 )
 
 const printProjects = (config: ClientConfig) => {
   if (config.projects.length === 0) return print("No local capture Projects. Run `atape setup`.")
   return print([
-    `Local capture Projects · ${config.serverUrl} · User ${config.userId ?? "not configured"}`,
+    `Local capture Projects${config.activeInstanceOrigin ? ` · active ${config.activeInstanceOrigin}` : ""}`,
     ...config.projects.map((project) => [
       `- ${project.id} · ${project.type} · ${project.teamName}`,
-      `  ${project.path}`,
+      `  ${project.path} · ${project.instanceOrigin}`,
       `  Adapters: ${project.adapterIds.length === 0 ? "none" : project.adapterIds.join(", ")}`
     ].join("\n"))
   ].join("\n"))
@@ -420,7 +591,8 @@ const printCollectorStatus = (status: ManagedCollectorStatus) => {
     }
     if (job.state === "failed") {
       lines.push(
-        `- ${job.projectId}/${job.adapterId} · failed ${formatAge(job.lastFailureAt)}${job.retryable ? " · retryable" : ""}`,
+        `- ${job.projectId}/${job.adapterId} · failed ${formatAge(job.lastFailureAt)}` +
+          `${job.failureReason === "unauthenticated" ? " · unauthenticated" : job.retryable ? " · retryable" : ""}`,
         `  ${job.failureMessage}`,
         ...(job.lastSuccessAt ? [`  Last success ${formatAge(job.lastSuccessAt)}`] : [])
       )
@@ -478,6 +650,11 @@ const ask = async (
   return value
 }
 
+const confirm = async (prompt: ReturnType<typeof createInterface>, label: string) => {
+  const answer = (await prompt.question(`${label} [y/N]: `)).trim().toLowerCase()
+  return answer === "y" || answer === "yes"
+}
+
 const print = (value: string) => Effect.sync(() => { process.stdout.write(`${value}\n`) })
 const printJSON = (value: unknown) => print(JSON.stringify(value, null, 2))
 const failUsage = (message: string): Effect.Effect<never, CLIInputError> =>
@@ -487,7 +664,12 @@ const helpText = `ATape CLI
 
 Usage:
   atape --version
-  atape setup [directory] --team-id <id> [options]
+  atape login [--instance <origin>] [--no-browser]
+  atape logout [--instance <origin>]
+  atape setup [directory] [--team <slug>] [--create] [options]
+  atape migrate-local-v0.1 [--apply] [--json]
+  atape migrate-local-v0.1 --adopt-checkpoint --from <import-id>
+        --project <id> --adapter <id> [--source-project <id>] [--source-adapter <id>]
   atape projects list [--json]
   atape projects remove <project-id> [--json]
   atape adapters list [--json]
@@ -502,14 +684,15 @@ Usage:
   atape status [--json]
 
 Setup options:
-  --user-id <id>        Stable Team member identity for captured sessions
-  --team-id <id>        Team identity used by server ingestion
-  --team-name <name>    Team display name (defaults to Team ID)
-  --project-id <id>     Stable global Project ID (defaults to folder name)
-  --name <name>         Project display name
+  --instance <origin>   Instance for login/setup/logout
+  --team <slug>         Select one of the signed-in account's Teams
+  --create              Explicitly create when no exact Project match exists
+  --name <name>         Name for a newly created directory Project
   --type <mode>         auto, git, or directory (default: auto)
-  --server <url>        ATape server (default: http://127.0.0.1:8080)
   --adapter <id>        Attach an installed Adapter; may be repeated
+
+Login options:
+  --no-browser          Print the URL and code without opening a browser
 
 Collector options:
   --once                Run one bounded collection cycle and exit
@@ -523,6 +706,10 @@ Background Collector:
   status                   Show each Project/Adapter's latest result
 
 Environment:
+  ATAPE_HOME                 Local ATape root (default: ~/.atape)
+  ATAPE_INSTANCE_URL         Instance used when --instance is absent
+  ATAPE_DEVELOPMENT_ALLOW_HTTP=true
+                             Allow an all-loopback HTTP development topology
   ATAPE_CONFIG_FILE          Override the local client configuration file
   ATAPE_COLLECTOR_STATE_FILE Override opaque cursors and Raw progress state
   ATAPE_COLLECTOR_PROCESS_FILE Override managed process metadata

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 )
 
@@ -21,6 +22,10 @@ func (h *Handler) dispatch(registered route) http.Handler {
 		}
 		if registered.pragmaNoCache {
 			response.Header().Set("Pragma", "no-cache")
+		}
+		if h.config.cutoverMode == authcutover.BootstrapMode && !registered.bootstrapAllowed {
+			writeProblem(response, request, problemCutoverIncomplete, 0, nil)
+			return
 		}
 		if registered.requireOrigin && !h.hasExactWebOrigin(request) {
 			writeProblem(response, request, problemOriginRejected, 0, nil)
@@ -299,6 +304,10 @@ func (h *Handler) preflight(response http.ResponseWriter, request *http.Request)
 		writeProblem(response, request, problemNotFound, 0, nil)
 		return
 	}
+	if h.config.cutoverMode == authcutover.BootstrapMode && !h.bootstrapRouteAllowed(method, pattern) {
+		writeProblem(response, request, problemCutoverIncomplete, 0, nil)
+		return
+	}
 	headers, ok := allowedPreflightHeaders(request.Header.Values("Access-Control-Request-Headers"))
 	if !ok {
 		writeProblem(response, request, problemOriginRejected, 0, nil)
@@ -314,6 +323,15 @@ func (h *Handler) preflight(response http.ResponseWriter, request *http.Request)
 		response.Header().Set("Access-Control-Max-Age", "600")
 	}
 	response.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) bootstrapRouteAllowed(method string, pattern string) bool {
+	for _, registered := range h.routes {
+		if registered.Method == method && registered.Pattern == pattern {
+			return registered.bootstrapAllowed
+		}
+	}
+	return false
 }
 
 func allowedPreflightHeaders(values []string) ([]string, bool) {

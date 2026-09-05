@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
+import { startCLIAuthFixture } from "./cli-auth-fixture.mjs"
 import { loadReleaseContract } from "./release-contract.mjs"
 
 const execute = promisify(execFile)
@@ -30,15 +31,15 @@ const binary = join(
 )
 const environment = {
   ...process.env,
-  ATAPE_CONFIG_FILE: join(stateDirectory, "config.json"),
-  ATAPE_COLLECTOR_STATE_FILE: join(stateDirectory, "collector.json"),
-  ATAPE_COLLECTOR_PROCESS_FILE: join(stateDirectory, "collector-process.json"),
-  ATAPE_COLLECTOR_STATUS_FILE: join(stateDirectory, "collector-status.json"),
-  ATAPE_COLLECTOR_LOG_FILE: join(stateDirectory, "collector.log"),
-  ATAPE_ADAPTER_DIRECTORY: join(stateDirectory, "adapters"),
+  ATAPE_HOME: stateDirectory,
+  ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
+  XDG_CONFIG_HOME: join(temporaryRoot, "xdg-config"),
+  XDG_DATA_HOME: join(temporaryRoot, "xdg-data"),
+  XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
   ATAPE_CODEX_HOME: codexHome,
   ATAPE_REDACT_VALUES: "[]"
 }
+let remote
 
 try {
   await run("node", ["scripts/pack-release.mjs"], repositoryRoot)
@@ -51,6 +52,21 @@ try {
   await run("npm", [
     "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installDirectory, cliArtifact
   ], temporaryRoot)
+  remote = await startCLIAuthFixture({
+    userId: "release-user",
+    userName: "Release User",
+    teamId: "release-team-id",
+    teamSlug: "release-team",
+    teamName: "Release Team",
+    projectId: "release-project",
+    projectName: "Release Project",
+    credential: "atc_v1_release-secret",
+    credentialId: "release-credential"
+  })
+  environment.ATAPE_INSTANCE_URL = remote.origin
+  const login = JSON.parse((await atape(["login", "--no-browser", "--json"])).stdout)
+  assert.equal(login.user.id, "release-user")
+  assert.equal(login.instanceOrigin, remote.origin)
 
   const installed = JSON.parse((await atape(["adapters", "install", adapterArtifact, "--json"])).stdout)
   assert.equal(installed.created, true)
@@ -60,17 +76,10 @@ try {
   assert.equal(installed.adapter.version, adapterPackage.version)
   assert.equal(installed.adapter.displayName, "Codex")
   await atape([
-    "setup", projectDirectory,
-    "--user-id", "release-user",
-    "--team-id", "release-team",
-    "--team-name", "Release Team",
-    "--project-id", "release-project",
-    "--name", "Release Project",
-    "--type", "directory",
-    "--server", "http://127.0.0.1:9",
-    "--adapter", "codex",
-    "--json"
+    "setup", projectDirectory, "--team", "release-team", "--create",
+    "--name", "Release Project", "--type", "directory", "--adapter", "codex", "--json"
   ])
+  assert.ok(!JSON.stringify(remote.requests).includes(projectDirectory), "setup uploaded a local filesystem path")
   const collected = JSON.parse((await atape([
     "collect", "--once", "--project", "release-project", "--json"
   ])).stdout)
@@ -83,6 +92,7 @@ try {
 
   process.stdout.write("Verified packaged CLI loading and collecting with the packaged Codex Adapter.\n")
 } finally {
+  await remote?.close().catch(() => undefined)
   await rm(temporaryRoot, { recursive: true, force: true })
 }
 

@@ -9,7 +9,7 @@ export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
 export const CanonicalProfileVersion = "atape.acp-centered.v1" as const
 export const RawIngestionProtocolVersion = "atape.raw.v1" as const
 export const RawTransportChunkBytes = 256 * 1024
-export const CollectorStateVersion = 1 as const
+export const CollectorStateVersion = 2 as const
 export const CollectorRunStateVersion = 1 as const
 
 export type AdapterCollectionLimitValues = {
@@ -241,9 +241,6 @@ export type AdapterOpenContext = {
     readonly id: string
     readonly version: string
   }
-  readonly user: {
-    readonly id: string
-  }
   readonly project: {
     readonly id: string
     readonly type: "git" | "directory"
@@ -293,6 +290,8 @@ export const CollectorRawObjectProgress = Schema.Struct({
 export type CollectorRawObjectProgress = typeof CollectorRawObjectProgress.Type
 
 export const CollectorCheckpoint = Schema.Struct({
+  instanceOrigin: Schema.String,
+  userId: Schema.String,
   projectId: Schema.String,
   projectCreatedAt: Schema.String,
   adapterId: Schema.String,
@@ -325,6 +324,9 @@ export const CollectorJobRunStatus = Schema.Struct({
   lastFailureAt: Schema.optionalKey(Schema.String),
   failureMessage: Schema.optionalKey(Schema.String),
   retryable: Schema.optionalKey(Schema.Boolean),
+  failureReason: Schema.optionalKey(Schema.Literals([
+    "unauthenticated", "transport", "adapter", "state", "contract"
+  ])),
   pages: Schema.optionalKey(Schema.Number),
   observations: Schema.optionalKey(Schema.Number),
   canonicalBatches: Schema.optionalKey(Schema.Number),

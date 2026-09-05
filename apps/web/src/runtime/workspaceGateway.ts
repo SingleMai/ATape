@@ -18,6 +18,7 @@ const WireProject = Schema.Struct({
   type: Schema.Literals(["git", "folder"]),
   name: Schema.String,
   state: Schema.Literals(["active", "archived"]),
+  repositoryLinkState: Schema.Literals(["unknown", "linked", "not_applicable"]),
   repositoryIdentity: Schema.optionalKey(Schema.String),
   capturedThrough: Schema.optionalKey(Schema.String),
   createdAt: Schema.String,
@@ -55,6 +56,7 @@ const open = browserRequest("/api/v1/workspace").pipe(
           id: project.id,
           name: project.name,
           type: project.type === "folder" ? "directory" : "git",
+          repositoryLinkState: project.repositoryLinkState,
           ...(project.capturedThrough === undefined ? {} : { capturedThrough: project.capturedThrough }),
           sessionCount: 0,
           activeSessionCount: 0

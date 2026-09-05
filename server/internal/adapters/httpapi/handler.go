@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
@@ -27,6 +28,7 @@ type Modules struct {
 	Searcher       *projectsearch.Searcher
 	Directory      *workspace.Directory
 	Raw            *rawarchive.Archive
+	Cutover        *authcutover.Module
 }
 
 type Handler struct {
@@ -37,6 +39,7 @@ type Handler struct {
 	searcher  *projectsearch.Searcher
 	directory *workspace.Directory
 	raw       *rawarchive.Archive
+	cutover   *authcutover.Module
 	config    preparedConfig
 	mux       *http.ServeMux
 	routes    []route
@@ -55,10 +58,13 @@ func NewHandler(config Config, modules Modules) (*Handler, error) {
 	if prepared.development == nil && (modules.Authentication == nil || modules.Teams == nil) {
 		return nil, errors.New("HTTP Adapter requires Authentication and Team Modules")
 	}
+	if prepared.development == nil && modules.Cutover == nil {
+		return nil, errors.New("HTTP Adapter requires the Auth Cutover Module")
+	}
 	handler := &Handler{
 		auth: modules.Authentication, teams: modules.Teams,
 		memory: modules.Memory, ingestor: modules.Ingestor, searcher: modules.Searcher,
-		directory: modules.Directory, raw: modules.Raw, config: prepared,
+		directory: modules.Directory, raw: modules.Raw, cutover: modules.Cutover, config: prepared,
 		mux: http.NewServeMux(), routeKeys: make(map[string]struct{}),
 	}
 	if err := handler.registerRoutes(); err != nil {
@@ -95,6 +101,45 @@ func canonicalRequestPath(request *http.Request) bool {
 
 func (h *Handler) health(response http.ResponseWriter, request *http.Request) {
 	writeJSON(response, request, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type readinessDTO struct {
+	Ready   bool                    `json:"ready"`
+	Mode    authcutover.ServingMode `json:"mode"`
+	Cutover *cutoverReadinessDTO    `json:"cutover,omitempty"`
+}
+
+type cutoverReadinessDTO struct {
+	Protocol     string                       `json:"protocol"`
+	Phase        authcutover.Phase            `json:"phase"`
+	Installation authcutover.InstallationKind `json:"installation"`
+}
+
+func (h *Handler) ready(response http.ResponseWriter, request *http.Request) {
+	if err := h.raw.CheckStorage(request.Context()); err != nil {
+		writeProblem(response, request, problemServiceUnavailable, 0, nil)
+		return
+	}
+	if h.cutover == nil {
+		writeJSON(response, request, http.StatusOK, readinessDTO{Ready: true, Mode: authcutover.NormalMode})
+		return
+	}
+	readiness, err := h.cutover.Readiness(request.Context(), h.config.cutoverMode)
+	if err != nil {
+		writeProblem(response, request, problemServiceUnavailable, 0, nil)
+		return
+	}
+	if !readiness.Ready {
+		writeProblem(response, request, problemCutoverIncomplete, 0, nil)
+		return
+	}
+	writeJSON(response, request, http.StatusOK, readinessDTO{
+		Ready: readiness.Ready, Mode: readiness.Mode,
+		Cutover: &cutoverReadinessDTO{
+			Protocol: readiness.Status.Protocol, Phase: readiness.Status.Phase,
+			Installation: readiness.Status.Installation,
+		},
+	})
 }
 
 type instanceDocument struct {

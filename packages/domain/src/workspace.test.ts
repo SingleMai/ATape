@@ -20,6 +20,7 @@ describe("Workspace entry selection", () => {
           id: "older",
           name: "Older",
           type: "git",
+          repositoryLinkState: "linked",
           capturedThrough: "2026-09-04T12:00:00Z",
           sessionCount: 3,
           activeSessionCount: 0
@@ -33,6 +34,7 @@ describe("Workspace entry selection", () => {
           id: "newer",
           name: "Newer",
           type: "directory",
+          repositoryLinkState: "not_applicable",
           capturedThrough: "2026-09-05T12:00:00Z",
           sessionCount: 1,
           activeSessionCount: 1
@@ -54,6 +56,7 @@ describe("Workspace entry selection", () => {
           id: "project-z",
           name: "Project Z",
           type: "git",
+          repositoryLinkState: "linked",
           capturedThrough: "not-a-date",
           sessionCount: 0,
           activeSessionCount: 0
@@ -67,6 +70,7 @@ describe("Workspace entry selection", () => {
           id: "project-a",
           name: "Project A",
           type: "git",
+          repositoryLinkState: "unknown",
           sessionCount: 0,
           activeSessionCount: 0
         }]

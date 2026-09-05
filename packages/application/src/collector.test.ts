@@ -16,6 +16,7 @@ import {
   CollectorTransport,
   SecretRedactor,
   makeSecretRedactorLayer,
+  runCollector,
   runCollectionCycle,
   type CanonicalSubmission,
   type RawSubmission
@@ -145,10 +146,13 @@ const twoSegmentCollectionPage = (): AdapterCollectionPage => {
 
 const clientConfig = (): ClientConfig => ({
   ...emptyClientConfig(),
-  userId: "liying",
+  activeInstanceOrigin: "https://atape.dev",
   projects: [{
     id: "payments",
+    instanceOrigin: "https://atape.dev",
+    userId: "user-1",
     teamId: "acme",
+    teamSlug: "acme",
     teamName: "Acme",
     name: "Payments",
     type: "git",
@@ -311,6 +315,29 @@ describe("Collector Module", () => {
     expect(capture.commits()).toBe(0)
     expect(capture.checkpoint()).toBeUndefined()
     expect(capture.canonical).toHaveLength(1)
+  })
+
+  it("surfaces unauthenticated explicitly and stops continuous collection without retrying", async () => {
+    const capture = fixture({
+      rawFailure: new CollectionTransportError({
+        reason: "unauthenticated",
+        operation: "raw",
+        status: 401,
+        retryable: false,
+        message: "The CLI credential is no longer valid."
+      })
+    })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures).toEqual([expect.objectContaining({
+      reason: "unauthenticated",
+      retryable: false
+    })])
+    expect(capture.rawAttempts()).toBe(1)
+
+    await expect(capture.run(runCollector({ intervalMs: 10_000 }))).rejects.toMatchObject({
+      reason: "unauthenticated"
+    })
+    expect(capture.rawAttempts()).toBe(2)
   })
 
   it("keeps its own Raw offset when a replay receipt reports a later server position", async () => {

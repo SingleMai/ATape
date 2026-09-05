@@ -49,6 +49,10 @@ func New(access SessionAccess) *Store {
 	}
 }
 
+func (s *Store) Check(ctx context.Context) error {
+	return ctx.Err()
+}
+
 func (s *Store) Put(ctx context.Context, key string, content []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err

@@ -29,6 +29,7 @@ Accept: application/json
       "type": "git",
       "name": "acme/payments-api",
       "state": "active",
+      "repositoryLinkState": "linked",
       "repositoryIdentity": "github.com/acme/payments-api",
       "capturedThrough": "2026-09-04T02:52:18Z",
       "createdAt": "2026-09-04T02:41:00Z",
@@ -40,7 +41,9 @@ Accept: application/json
 
 Teams and Projects are separate arrays so callers can index them without
 nesting or duplicating Team metadata. `git` identifies a normalized repository
-remote; `folder` identifies an explicitly created ordinary-folder Project.
+remote; `folder` identifies an explicitly created ordinary-folder Project. A
+migrated Git Project reports `repositoryLinkState: "unknown"` until a fresh
+Owner relink or an explicit CLI selection establishes a trusted remote.
 A local filesystem path is CLI configuration and never enters this response.
 
 Membership removal, User disable, and Project deletion affect the next read

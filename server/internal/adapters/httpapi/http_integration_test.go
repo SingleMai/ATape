@@ -15,6 +15,7 @@ import (
 
 	postgresadapter "github.com/SingleMai/ATape/server/internal/adapters/postgres"
 	"github.com/SingleMai/ATape/server/internal/adapters/rawchunks"
+	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
@@ -77,18 +78,36 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("construct Team Module: %v", err)
 	}
+	cutoverModule, err := authcutover.New(pool)
+	if err != nil {
+		t.Fatalf("construct Auth Cutover Module: %v", err)
+	}
 	store := postgresadapter.NewStore(pool)
-	archive := rawarchive.NewArchive(store, rawchunks.NewUnavailable())
+	chunkStore, err := rawchunks.NewFilesystem(t.TempDir())
+	if err != nil {
+		t.Fatalf("construct Raw chunk store: %v", err)
+	}
+	archive := rawarchive.NewArchive(store, chunkStore)
 	handler, err := NewHandler(Config{
 		InstanceOrigin: "https://web.example.test", WebOrigin: "https://web.example.test",
 		APIOrigin: "https://api.example.test", CookieDomain: "example.test",
 	}, Modules{
-		Authentication: authenticationModule, Teams: teamModule,
+		Authentication: authenticationModule, Teams: teamModule, Cutover: cutoverModule,
 		Memory: conversation.NewMemory(store), Ingestor: ingestion.NewIngestor(store),
 		Searcher: projectsearch.NewSearcher(store), Directory: workspace.NewDirectory(store), Raw: archive,
 	})
 	if err != nil {
 		t.Fatalf("construct HTTP Adapter: %v", err)
+	}
+	readinessRequest := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	readinessResponse := httptest.NewRecorder()
+	handler.ServeHTTP(readinessResponse, readinessRequest)
+	if readinessResponse.Code != http.StatusOK ||
+		!strings.Contains(readinessResponse.Body.String(), `"phase":"completed"`) ||
+		!strings.Contains(readinessResponse.Body.String(), `"installation":"fresh"`) ||
+		strings.Contains(readinessResponse.Body.String(), "preparedAt") ||
+		strings.Contains(readinessResponse.Body.String(), "Digest") {
+		t.Fatalf("fresh readiness = %d: %s", readinessResponse.Code, readinessResponse.Body.String())
 	}
 	registrationsRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/provider-registrations", nil)
 	registrationsResponse := httptest.NewRecorder()

@@ -9,6 +9,7 @@ sql:
       - "internal/adapters/postgres/migrations/000005_authentication.sql"
       - "internal/adapters/postgres/migrations/000006_team_authorization.sql"
       - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
+      - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
@@ -32,6 +33,7 @@ sql:
       - "internal/adapters/postgres/migrations/000005_authentication.sql"
       - "internal/adapters/postgres/migrations/000006_team_authorization.sql"
       - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
+      - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
     queries: "internal/authentication/queries"
     gen:
       go:
@@ -55,6 +57,7 @@ sql:
       - "internal/adapters/postgres/migrations/000005_authentication.sql"
       - "internal/adapters/postgres/migrations/000006_team_authorization.sql"
       - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
+      - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
     queries: "internal/team/queries"
     gen:
       go:

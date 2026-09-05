@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,15 +24,15 @@ const binary = join(
 )
 const environment = {
   ...process.env,
-  ATAPE_CONFIG_FILE: join(stateDirectory, "config.json"),
-  ATAPE_COLLECTOR_STATE_FILE: join(stateDirectory, "collector.json"),
-  ATAPE_COLLECTOR_PROCESS_FILE: join(stateDirectory, "collector-process.json"),
-  ATAPE_COLLECTOR_STATUS_FILE: join(stateDirectory, "collector-status.json"),
-  ATAPE_COLLECTOR_LOG_FILE: join(stateDirectory, "collector.log"),
-  ATAPE_ADAPTER_DIRECTORY: join(stateDirectory, "adapters"),
+  ATAPE_HOME: stateDirectory,
+  ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
+  XDG_CONFIG_HOME: join(temporaryRoot, "xdg-config"),
+  XDG_DATA_HOME: join(temporaryRoot, "xdg-data"),
+  XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
   ATAPE_REDACT_VALUES: "[]"
 }
 let collectorStarted = false
+let fixtureServer
 
 try {
   await Promise.all([
@@ -62,20 +63,32 @@ try {
   })
 
   if (process.platform !== "win32") {
+    const remote = await startFixtureServer()
+    fixtureServer = remote.server
+    environment.ATAPE_INSTANCE_URL = remote.origin
+    const login = await atape(["login", "--no-browser", "--json"])
+    assert.deepEqual(JSON.parse(login.stdout), {
+      instanceOrigin: remote.origin,
+      apiOrigin: remote.origin,
+      user: { id: "package-user", displayName: "Package User" },
+      credentialId: "package-credential",
+      createdAt: "2026-09-06T00:00:00Z",
+      browserOpened: false,
+      warnings: []
+    })
+    assert.ok(!login.stdout.includes("atc_v1_"), "login stdout disclosed the bearer Credential")
+    assert.match(login.stderr, /Q7KM4W/)
+
     await writeSmokeAdapter()
     await atape(["adapters", "install", adapterSource, "--json"])
-    await atape([
-      "setup", projectDirectory,
-      "--user-id", "package-user",
-      "--team-id", "package-team",
-      "--team-name", "Package Team",
-      "--project-id", "package-project",
-      "--name", "Package Project",
-      "--type", "directory",
-      "--server", "http://127.0.0.1:9",
-      "--adapter", "smoke",
-      "--json"
-    ])
+    const setup = JSON.parse((await atape([
+      "setup", projectDirectory, "--team", "package-team", "--create",
+      "--name", "Package Project", "--type", "directory", "--adapter", "smoke", "--json"
+    ])).stdout)
+    assert.equal(setup.createdRemotely, true)
+    assert.equal(setup.project.userId, "package-user")
+    assert.equal(setup.project.teamId, "package-team-id")
+    assert.equal(setup.project.instanceOrigin, remote.origin)
     const started = JSON.parse((await atape([
       "start", "--interval", "10", "--concurrency", "1", "--json"
     ])).stdout)
@@ -85,12 +98,109 @@ try {
     assert.deepEqual(JSON.parse((await atape(["stop", "--json"])).stdout), { stopped: true })
     collectorStarted = false
     assert.equal(JSON.parse((await atape(["status", "--json"])).stdout).running, false)
+
+    await closeServer(fixtureServer)
+    fixtureServer = undefined
+    const logout = JSON.parse((await atape(["logout", "--json"])).stdout)
+    assert.equal(logout.signedOut, true)
+    assert.equal(logout.warnings.length, 1)
   }
 
   process.stdout.write(`Verified installable CLI tarball ${manifest.filename}\n`)
 } finally {
   if (collectorStarted) await atape(["stop", "--json"]).catch(() => undefined)
+  await closeServer(fixtureServer)
   await rm(temporaryRoot, { recursive: true, force: true })
+}
+
+async function startFixtureServer() {
+  let origin = ""
+  const server = createServer(async (request, response) => {
+    const chunks = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    response.setHeader("Content-Type", "application/json")
+    const send = (status, body) => {
+      response.statusCode = status
+      if (body === undefined) response.end()
+      else response.end(JSON.stringify(body))
+    }
+    switch (`${request.method} ${request.url}`) {
+      case "GET /api/v1/instance":
+        send(200, {
+          protocol: "atape.instance.v1",
+          instance_origin: origin,
+          web_origin: origin,
+          api_origin: origin,
+          protocols: ["atape.cli-authorization.v1", "atape.canonical.v1", "atape.raw.v1"]
+        })
+        return
+      case "POST /api/v1/auth/cli/device-grants":
+        send(201, {
+          protocol: "atape.cli-authorization.v1",
+          device_code: "atd_v1_package-device",
+          user_code: "Q7KM4W",
+          verification_uri: `${origin}/cli/authorize`,
+          verification_uri_complete: `${origin}/cli/authorize?user_code=Q7KM4W`,
+          expires_in: 60,
+          interval: 1
+        })
+        return
+      case "POST /api/v1/auth/cli/token":
+        send(200, {
+          token_type: "Bearer",
+          credential: "atc_v1_package-secret",
+          credential_id: "package-credential",
+          capability_version: "atape-cli.v1",
+          created_at: "2026-09-06T00:00:00Z",
+          user: { id: "package-user", display_name: "Package User" }
+        })
+        return
+      case "GET /api/v1/users/me":
+        send(200, { id: "package-user", displayName: "Package User", avatarUrl: "" })
+        return
+      case "GET /api/v1/workspace":
+        send(200, {
+          teams: [{
+            id: "package-team-id",
+            slug: "package-team",
+            displayName: "Package Team",
+            membership: { role: "owner" },
+            createdAt: "2026-09-06T00:00:00Z",
+            updatedAt: "2026-09-06T00:00:00Z"
+          }],
+          projects: []
+        })
+        return
+      case "POST /api/v1/teams/package-team/projects":
+        assert.equal(request.headers.authorization, "Bearer atc_v1_package-secret")
+        send(201, {
+          id: "package-project",
+          teamId: "package-team-id",
+          type: "folder",
+          name: "Package Project",
+          state: "active",
+          repositoryLinkState: "not_applicable",
+          createdAt: "2026-09-06T00:00:00Z",
+          updatedAt: "2026-09-06T00:00:00Z"
+        })
+        return
+      case "DELETE /api/v1/auth/cli/credentials/current":
+        send(204)
+        return
+      default:
+        send(404, { status: 404, code: "not_found" })
+    }
+  })
+  await new Promise((resolveListen) => server.listen(0, "127.0.0.1", resolveListen))
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("fixture server did not bind")
+  origin = `http://127.0.0.1:${address.port}`
+  return { server, origin }
+}
+
+async function closeServer(server) {
+  if (server === undefined) return
+  await new Promise((resolveClose, reject) => server.close((error) => error ? reject(error) : resolveClose()))
 }
 
 async function writeSmokeAdapter() {

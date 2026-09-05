@@ -21,6 +21,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/adapters/memorysearch"
 	postgresadapter "github.com/SingleMai/ATape/server/internal/adapters/postgres"
 	"github.com/SingleMai/ATape/server/internal/adapters/rawchunks"
+	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	githubauth "github.com/SingleMai/ATape/server/internal/authentication/github"
 	"github.com/SingleMai/ATape/server/internal/canonical"
@@ -44,6 +45,7 @@ type serverConfig struct {
 	privateKeys   authentication.KeyRing
 	github        githubauth.Config
 	githubEnabled bool
+	cutoverMode   authcutover.ServingMode
 }
 
 func (serverConfig) String() string          { return "main.serverConfig{secrets:redacted}" }
@@ -62,14 +64,28 @@ func loadConfig() (serverConfig, error) {
 		}
 		demoMode = parsed
 	}
+	databaseURL, _, err := readSecretSetting("ATAPE_DATABASE_URL")
+	if err != nil {
+		return serverConfig{}, err
+	}
 	config := serverConfig{
-		address: address, databaseURL: os.Getenv("ATAPE_DATABASE_URL"),
+		address: address, databaseURL: databaseURL,
 		rawDirectory: os.Getenv("ATAPE_RAW_DIRECTORY"), demoMode: demoMode,
+		cutoverMode: authcutover.NormalMode,
+	}
+	if configuredMode := os.Getenv("ATAPE_AUTH_CUTOVER_MODE"); configuredMode != "" {
+		config.cutoverMode = authcutover.ServingMode(configuredMode)
+	}
+	if config.cutoverMode != authcutover.NormalMode && config.cutoverMode != authcutover.BootstrapMode {
+		return serverConfig{}, errors.New("ATAPE_AUTH_CUTOVER_MODE must be normal or bootstrap")
 	}
 	if config.databaseURL == "" && !config.demoMode {
 		return serverConfig{}, errors.New("ATAPE_DATABASE_URL is required unless ATAPE_DEMO_MODE=true")
 	}
 	if config.demoMode {
+		if config.cutoverMode != authcutover.NormalMode {
+			return serverConfig{}, errors.New("ATAPE_DEMO_MODE cannot use auth cutover bootstrap")
+		}
 		if config.databaseURL != "" {
 			return serverConfig{}, errors.New("ATAPE_DEMO_MODE cannot be combined with ATAPE_DATABASE_URL")
 		}
@@ -82,7 +98,6 @@ func loadConfig() (serverConfig, error) {
 		config.http = demoHTTP
 		return config, nil
 	}
-
 	publicURL := os.Getenv("ATAPE_PUBLIC_URL")
 	if publicURL == "" {
 		return serverConfig{}, errors.New("ATAPE_PUBLIC_URL is required outside demo mode")
@@ -98,6 +113,7 @@ func loadConfig() (serverConfig, error) {
 	configuredHTTP := httpapi.Config{
 		InstanceOrigin: publicURL, WebOrigin: publicURL, APIOrigin: apiPublicURL,
 		CookieDomain: os.Getenv("ATAPE_COOKIE_DOMAIN"), DevelopmentAllowHTTP: allowHTTP,
+		CutoverMode: config.cutoverMode,
 	}
 	config.http, err = httpapi.NormalizeConfig(configuredHTTP)
 	if err != nil {
@@ -120,12 +136,16 @@ func loadConfig() (serverConfig, error) {
 	if clientIDSet != clientSecretSet {
 		return serverConfig{}, errors.New("GitHub Provider requires both client id and client secret")
 	}
-	if clientIDSet {
-		if clientID == "" || strings.TrimSpace(clientID) != clientID || strings.ContainsAny(clientID, "\x00\r\n") {
-			return serverConfig{}, errors.New("ATAPE_GITHUB_CLIENT_ID is invalid")
-		}
-		config.github = githubauth.Config{ClientID: clientID, ClientSecret: clientSecret}
-		config.githubEnabled = true
+	if !clientIDSet {
+		return serverConfig{}, errors.New("at least one active Provider registration is required; configure the GitHub Provider")
+	}
+	if clientID == "" || strings.TrimSpace(clientID) != clientID || strings.ContainsAny(clientID, "\x00\r\n") {
+		return serverConfig{}, errors.New("ATAPE_GITHUB_CLIENT_ID is invalid")
+	}
+	config.github = githubauth.Config{ClientID: clientID, ClientSecret: clientSecret}
+	config.githubEnabled = true
+	if config.rawDirectory == "" {
+		return serverConfig{}, errors.New("ATAPE_RAW_DIRECTORY is required outside demo mode")
 	}
 	return config, nil
 }
@@ -160,6 +180,12 @@ func optionalBoolean(name string) (bool, error) {
 
 func readSecretSetting(name string) (string, bool, error) {
 	direct, hasDirect := os.LookupEnv(name)
+	// An explicitly empty direct value is equivalent to an unset optional
+	// setting. This preserves conventional .env and child-process behavior while
+	// file paths and configured secret-file contents remain strict.
+	if hasDirect && direct == "" {
+		hasDirect = false
+	}
 	path, hasFile := os.LookupEnv(name + "_FILE")
 	if hasDirect && hasFile {
 		return "", false, fmt.Errorf("%s and %s_FILE are mutually exclusive", name, name)
@@ -168,9 +194,6 @@ func readSecretSetting(name string) (string, bool, error) {
 		return "", false, nil
 	}
 	if hasDirect {
-		if direct == "" {
-			return "", false, fmt.Errorf("%s must not be empty", name)
-		}
 		return direct, true, nil
 	}
 	if path == "" {
@@ -313,6 +336,7 @@ type securityModules struct {
 
 	Authentication *authentication.Module
 	Teams          *team.Module
+	Cutover        *authcutover.Module
 }
 
 func provideSecurityModules(
@@ -339,6 +363,7 @@ func provideSecurityModules(
 	authenticationModule, err := authentication.New(pool, authentication.Config{
 		ProviderRegistrations: registrations, PepperKeys: config.pepperKeys,
 		PrivateStateKeys: config.privateKeys, Policy: authentication.DefaultPolicy(),
+		RequireCompletedCutover: config.cutoverMode == authcutover.NormalMode,
 	})
 	if err != nil {
 		return securityModules{}, err
@@ -349,14 +374,37 @@ func provideSecurityModules(
 	if err != nil {
 		return securityModules{}, err
 	}
-	lifecycle.Append(fx.Hook{OnStart: authenticationModule.Prepare})
-	return securityModules{Authentication: authenticationModule, Teams: teamModule}, nil
+	cutoverModule, err := authcutover.New(pool)
+	if err != nil {
+		return securityModules{}, err
+	}
+	lifecycle.Append(fx.Hook{OnStart: func(ctx context.Context) error {
+		switch config.cutoverMode {
+		case authcutover.BootstrapMode:
+			if _, err := cutoverModule.PrepareBootstrap(ctx); err != nil {
+				return err
+			}
+			return authenticationModule.Prepare(ctx)
+		case authcutover.NormalMode:
+			if err := authenticationModule.Prepare(ctx); err != nil {
+				return err
+			}
+			_, err := cutoverModule.PrepareNormal(ctx)
+			return err
+		default:
+			return errors.New("unsupported auth cutover serving mode")
+		}
+	}})
+	return securityModules{
+		Authentication: authenticationModule, Teams: teamModule, Cutover: cutoverModule,
+	}, nil
 }
 
 func provideHTTPHandler(
 	config serverConfig,
 	authenticationModule *authentication.Module,
 	teamModule *team.Module,
+	cutoverModule *authcutover.Module,
 	memory *conversation.Memory,
 	ingestor *ingestion.Ingestor,
 	searcher *projectsearch.Searcher,
@@ -366,14 +414,19 @@ func provideHTTPHandler(
 	return httpapi.NewHandler(config.http, httpapi.Modules{
 		Authentication: authenticationModule, Teams: teamModule, Memory: memory,
 		Ingestor: ingestor, Searcher: searcher, Directory: directory, Raw: raw,
+		Cutover: cutoverModule,
 	})
 }
 
-func ownProjectorLifetime(lifecycle fx.Lifecycle, projector *projectsearch.Projector) {
+func ownProjectorLifetime(lifecycle fx.Lifecycle, config serverConfig, projector *projectsearch.Projector) {
 	var cancel context.CancelFunc
 	var workers sync.WaitGroup
 	lifecycle.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
+			if config.cutoverMode == authcutover.BootstrapMode {
+				slog.Info("Search projector disabled during auth cutover bootstrap")
+				return nil
+			}
 			for {
 				count, err := projector.ProjectOnce(ctx)
 				if err != nil {
@@ -451,6 +504,13 @@ func ownServerLifetime(
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "auth-cutover" {
+		if err := runAuthCutoverCommand(context.Background(), os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "auth cutover failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	fx.New(
 		fx.Provide(
 			loadConfig,

@@ -7,7 +7,7 @@ import type {
 import { Clock, Context, Effect, Schema } from "effect"
 
 export class ClientConfigStoreError extends Schema.TaggedError<ClientConfigStoreError>()("ClientConfigStoreError", {
-  reason: Schema.Literals(["io", "decode"]),
+  reason: Schema.Literals(["io", "decode", "migration_required"]),
   message: Schema.String
 }) {}
 
@@ -33,6 +33,7 @@ export type LocatedProject = {
   readonly path: string
   readonly name: string
   readonly type: "git" | "directory"
+  readonly repositoryRemote?: string
 }
 
 export type InstalledAdapterPackage = {
@@ -66,20 +67,20 @@ export class AdapterPackages extends Context.Service<AdapterPackages, {
 
 export type SetupProjectInput = {
   readonly path: string
-  readonly userId?: string
+  readonly instanceOrigin: string
+  readonly userId: string
   readonly teamId: string
+  readonly teamSlug: string
   readonly teamName: string
-  readonly projectId?: string
-  readonly name?: string
+  readonly projectId: string
+  readonly name: string
+  readonly createdAt: string
   readonly type?: "auto" | "git" | "directory"
-  readonly serverUrl?: string
   readonly adapterIds?: ReadonlyArray<string>
 }
 
 export type SetupProjectResult = {
   readonly project: LocalProject
-  readonly serverUrl: string
-  readonly userId?: string
   readonly created: boolean
 }
 
@@ -93,41 +94,33 @@ export const inspectClient = Effect.fn("Client.inspect")(function*() {
   return yield* store.transact<ClientConfig, never, never>((config) => Effect.succeed({ value: config }))
 })
 
+export const setActiveInstance = Effect.fn("Client.setActiveInstance")(function*(instanceOrigin: string) {
+  const store = yield* ClientConfigStore
+  return yield* store.transact<string, never, never>((config) => Effect.succeed(
+    config.activeInstanceOrigin === instanceOrigin
+      ? { value: instanceOrigin }
+      : { value: instanceOrigin, config: { ...config, activeInstanceOrigin: instanceOrigin } }
+  ))
+})
+
 export const setupProject = Effect.fn("Client.setupProject")(function*(input: SetupProjectInput) {
-  if (input.userId !== undefined) yield* validateIdentifier("user", input.userId)
+  yield* validateText("instance", input.instanceOrigin)
+  yield* validateText("user", input.userId)
   yield* validateText("team", input.teamId)
+  yield* validateText("team", input.teamSlug)
   yield* validateText("team", input.teamName)
-  if (input.name !== undefined) yield* validateText("project", input.name)
-  if (input.projectId !== undefined) yield* validateIdentifier("project", input.projectId)
+  yield* validateText("project", input.name)
+  yield* validateText("project", input.projectId)
 
   const store = yield* ClientConfigStore
   const locator = yield* ProjectLocator
   const located = yield* locator.locate(input.path, input.type ?? "auto")
-  const projectName = input.name?.trim() || located.name
-  const projectId = input.projectId?.trim() || slugify(located.name)
+  const projectName = input.name.trim()
+  const projectId = input.projectId.trim()
   yield* validateText("project", projectName)
-  yield* validateIdentifier("project", projectId)
-  const requestedServerUrl = input.serverUrl === undefined ? undefined : yield* normalizeServerUrl(input.serverUrl)
 
   const adapterIds = [...new Set(input.adapterIds ?? [])].sort()
-  const now = new Date(yield* Clock.currentTimeMillis).toISOString()
   return yield* store.transact<SetupProjectResult, ClientManagementError, never>((config) => Effect.gen(function*() {
-    const serverUrl = requestedServerUrl ?? config.serverUrl
-    const userId = input.userId?.trim() ?? config.userId
-    if (config.userId !== undefined && input.userId !== undefined && config.userId !== input.userId.trim()) {
-      return yield* new ClientManagementError({
-        reason: "conflict",
-        resource: "user",
-        message: `This client is already identified as ${config.userId}.`
-      })
-    }
-    if (requestedServerUrl !== undefined && config.projects.length > 0 && config.serverUrl !== serverUrl) {
-      return yield* new ClientManagementError({
-        reason: "conflict",
-        resource: "server",
-        message: `This client already manages Projects on ${config.serverUrl}.`
-      })
-    }
     for (const adapterId of adapterIds) {
       if (!config.adapters.some((adapter) => adapter.adapterId === adapterId)) {
         return yield* new ClientManagementError({
@@ -138,11 +131,13 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
       }
     }
 
-    const existing = config.projects.find((project) => project.id === projectId)
+    const existing = config.projects.find((project) =>
+      project.instanceOrigin === input.instanceOrigin && project.id === projectId)
     if (existing) {
-      const same = existing.teamId === input.teamId.trim() && existing.teamName === input.teamName.trim() &&
+      const same = existing.userId === input.userId.trim() && existing.teamId === input.teamId.trim() &&
+        existing.teamSlug === input.teamSlug.trim() && existing.teamName === input.teamName.trim() &&
         existing.name === projectName && existing.type === located.type && existing.path === located.path &&
-        sameStrings(existing.adapterIds, adapterIds) && config.serverUrl === serverUrl
+        existing.repositoryRemote === located.repositoryRemote && sameStrings(existing.adapterIds, adapterIds)
       if (!same) {
         return yield* new ClientManagementError({
           reason: "conflict",
@@ -151,15 +146,10 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
         })
       }
       return {
-        value: {
-          project: existing,
-          serverUrl,
-          ...(userId === undefined ? {} : { userId }),
-          created: false
-        } satisfies SetupProjectResult,
-        ...(config.userId === undefined && userId !== undefined
-          ? { config: { ...config, userId } }
-          : {})
+        value: { project: existing, created: false } satisfies SetupProjectResult,
+        ...(config.activeInstanceOrigin === input.instanceOrigin
+          ? {}
+          : { config: { ...config, activeInstanceOrigin: input.instanceOrigin } })
       }
     }
     const pathOwner = config.projects.find((project) => project.path === located.path)
@@ -173,26 +163,25 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
 
     const project: LocalProject = {
       id: projectId,
+      instanceOrigin: input.instanceOrigin,
+      userId: input.userId.trim(),
       teamId: input.teamId.trim(),
+      teamSlug: input.teamSlug.trim(),
       teamName: input.teamName.trim(),
       name: projectName,
       type: located.type,
       path: located.path,
+      ...(located.repositoryRemote === undefined ? {} : { repositoryRemote: located.repositoryRemote }),
       adapterIds,
-      createdAt: now
+      createdAt: input.createdAt
     }
     return {
-      value: {
-        project,
-        serverUrl,
-        ...(userId === undefined ? {} : { userId }),
-        created: true
-      } satisfies SetupProjectResult,
+      value: { project, created: true } satisfies SetupProjectResult,
       config: {
         ...config,
-        serverUrl,
-        ...(userId === undefined ? {} : { userId }),
-        projects: [...config.projects, project].sort((left, right) => left.id.localeCompare(right.id))
+        activeInstanceOrigin: input.instanceOrigin,
+        projects: [...config.projects, project].sort((left, right) =>
+          `${left.instanceOrigin}\0${left.id}`.localeCompare(`${right.instanceOrigin}\0${right.id}`))
       }
     }
   })
@@ -202,14 +191,22 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
 export const removeProject = Effect.fn("Client.removeProject")(function*(projectId: string) {
   const store = yield* ClientConfigStore
   return yield* store.transact<void, ClientManagementError, never>((config) => Effect.gen(function*() {
-    if (!config.projects.some((project) => project.id === projectId)) {
+    const matches = config.projects.filter((project) => project.id === projectId)
+    if (matches.length === 0) {
       return yield* new ClientManagementError({
         reason: "not_found", resource: "project", message: `Project ${projectId} is not configured locally.`
       })
     }
+    if (matches.length > 1) {
+      return yield* new ClientManagementError({
+        reason: "conflict", resource: "project",
+        message: `Project ${projectId} exists on more than one Instance; select an Instance explicitly.`
+      })
+    }
+    const selected = matches[0]
     return {
       value: undefined,
-      config: { ...config, projects: config.projects.filter((project) => project.id !== projectId) }
+      config: { ...config, projects: config.projects.filter((project) => project !== selected) }
     }
   }))
 })
@@ -261,7 +258,14 @@ export const setProjectAdapter = Effect.fn("Client.setProjectAdapter")(function*
         reason: "not_found", resource: "adapter", message: `Adapter ${input.adapterId} is not installed.`
       })
     }
-    const project = config.projects.find((item) => item.id === input.projectId)
+    const matches = config.projects.filter((item) => item.id === input.projectId)
+    if (matches.length > 1) {
+      return yield* new ClientManagementError({
+        reason: "conflict", resource: "project",
+        message: `Project ${input.projectId} exists on more than one Instance; select an Instance explicitly.`
+      })
+    }
+    const project = matches[0]
     if (!project) {
       return yield* new ClientManagementError({
         reason: "not_found", resource: "project", message: `Project ${input.projectId} is not configured locally.`
@@ -352,23 +356,6 @@ function validateText(resource: string, value: string): Effect.Effect<void, Clie
     : Effect.fail(new ClientManagementError({
       reason: "invalid", resource, message: `${resource} must be between 1 and 200 characters.`
     }))
-}
-
-function normalizeServerUrl(value: string): Effect.Effect<string, ClientManagementError> {
-  return Effect.try({
-    try: () => {
-      const parsed = new URL(value)
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("unsupported protocol")
-      return parsed.href.replace(/\/$/, "")
-    },
-    catch: () => new ClientManagementError({
-      reason: "invalid", resource: "server", message: "Server URL must be an absolute HTTP or HTTPS URL."
-    })
-  })
-}
-
-function slugify(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
 }
 
 function sameStrings(left: ReadonlyArray<string>, right: ReadonlyArray<string>) {

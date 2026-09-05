@@ -204,7 +204,7 @@ export const revokeAllCLICredentials = Effect.fn("Authentication.revokeAllCLICre
 export const resolveCLIDeviceGrant = Effect.fn("Authentication.resolveCLIDeviceGrant")(function*(input: string) {
   const userCode = normalizeDeviceUserCode(input)
   if (userCode === undefined) {
-    return yield* invalidInput("Enter the eight-character code shown by the CLI.")
+    return yield* invalidInput("Enter the six-character code shown by the CLI.")
   }
   const gateway = yield* AuthenticationGateway
   return yield* gateway.resolveCLIDeviceGrant(userCode)

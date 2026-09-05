@@ -25,14 +25,17 @@ Checksummed `.tgz` files attached to each GitHub Release provide the equivalent 
 ## First Project
 
 ```sh
-atape setup /path/to/project --user-id <your-name> --team-id <team-id>
+atape login
 atape adapters install <adapter-package>
+atape setup /path/to/project --team <team-slug> --create --adapter <adapter-id>
 atape adapters enable <adapter-id> --project <project-id>
 atape start
 atape status
 ```
 
-Local paths, Adapter configuration, checkpoints, and Collector health remain on this machine. Canonical and Raw conversation data are uploaded only for explicitly configured Projects.
+`login` opens the selected Instance in a browser and prints the same six-character, case-insensitive code for manual use. The default Instance is `https://atape.dev`; self-hosted users pass `--instance https://atape.example`. Credentials, local paths, Adapter configuration, checkpoints, and Collector health remain under `~/.atape` on this machine. Canonical and Raw conversation data are uploaded only for explicitly configured Projects.
+
+For a Git worktree, setup detects `origin` and attaches a unique exact Project match. Creating a new server Project always requires `--create`; local paths are never sent as Project identity. Run `atape migrate-local-v0.1` before using an existing v0.1 XDG layout, then add `--apply` only after reviewing the plan.
 
 ## Build and verify from the repository
 

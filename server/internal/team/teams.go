@@ -192,7 +192,7 @@ func (m *Module) OpenWorkspace(ctx context.Context, principal authentication.Pri
 		for _, row := range projectRows {
 			result.Projects = append(result.Projects, projectFromFields(
 				row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-				row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt,
+				row.RepositoryLinkState, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt,
 			))
 		}
 		return result, nil
