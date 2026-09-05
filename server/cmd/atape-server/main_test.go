@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 )
 
 var serverConfigEnvironment = []string{
@@ -28,6 +31,31 @@ var serverConfigEnvironment = []string{
 	"ATAPE_GITHUB_CLIENT_SECRET",
 	"ATAPE_GITHUB_CLIENT_SECRET_FILE",
 	"ATAPE_AUTH_CUTOVER_MODE",
+}
+
+func TestVersionCommandReportsArtifactIdentity(t *testing.T) {
+	var output strings.Builder
+	if err := runVersionCommand([]string{"--json"}, &output); err != nil {
+		t.Fatalf("run version command: %v", err)
+	}
+	var got releaseinfo.Info
+	if err := json.Unmarshal([]byte(output.String()), &got); err != nil {
+		t.Fatalf("decode version output: %v", err)
+	}
+	if got != releaseinfo.Current() {
+		t.Fatalf("version output = %+v, want %+v", got, releaseinfo.Current())
+	}
+
+	output.Reset()
+	if err := runVersionCommand(nil, &output); err != nil {
+		t.Fatalf("run text version command: %v", err)
+	}
+	if !strings.Contains(output.String(), releaseinfo.Version) || !strings.Contains(output.String(), releaseinfo.AuthEpoch) {
+		t.Fatalf("text version output omits artifact identity: %q", output.String())
+	}
+	if err := runVersionCommand([]string{"--unknown"}, &output); err == nil {
+		t.Fatal("version command accepted an unknown argument")
+	}
 }
 
 func TestLoadConfigRequiresDurableStorageOutsideDemoMode(t *testing.T) {

@@ -113,7 +113,10 @@ const server = http.createServer(async (request, response) => {
       instance_origin: "http://127.0.0.1:4187",
       web_origin: "http://127.0.0.1:4187",
       api_origin: "http://127.0.0.1:4187",
-      protocols: ["atape.cli-authorization.v1"]
+      protocols: ["atape.cli-authorization.v1"],
+      release_version: "0.2.0",
+      auth_epoch: "auth-v1",
+      minimum_cli_version: "0.2.0"
     })
   }
   if (path === "/api/v1/auth/provider-registrations" && request.method === "GET") {

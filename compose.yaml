@@ -23,6 +23,10 @@ services:
     build:
       context: .
       dockerfile: deploy/server.Dockerfile
+      args:
+        ATAPE_RELEASE_VERSION: 0.2.0
+        ATAPE_RELEASE_EPOCH: auth-v1
+        ATAPE_MINIMUM_CLI_VERSION: 0.2.0
     restart: unless-stopped
     init: true
     security_opt:
@@ -65,6 +69,9 @@ services:
       context: .
       dockerfile: deploy/web.Dockerfile
       args:
+        ATAPE_RELEASE_VERSION: 0.2.0
+        ATAPE_RELEASE_EPOCH: auth-v1
+        ATAPE_MINIMUM_CLI_VERSION: 0.2.0
         VITE_ATAPE_API_ORIGIN: ${ATAPE_API_PUBLIC_URL:-}
     restart: unless-stopped
     ports:

@@ -74,7 +74,10 @@ const listen = async () => {
         instance_origin: origin,
         web_origin: origin,
         api_origin: origin,
-        protocols: ["atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"]
+        protocols: ["atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"],
+        release_version: "0.2.0",
+        auth_epoch: "auth-v1",
+        minimum_cli_version: "0.2.0"
       }))
       return
     }

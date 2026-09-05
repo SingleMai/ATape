@@ -17,7 +17,10 @@ const options: LoadView<SignInOptions> = {
       instanceOrigin: "https://atape.dev",
       webOrigin: "https://atape.dev",
       apiOrigin: "https://api.atape.dev",
-      protocols: ["atape.cli-authorization.v1"]
+      protocols: ["atape.cli-authorization.v1"],
+      releaseVersion: "0.2.0",
+      authEpoch: "auth-v1",
+      minimumCliVersion: "0.2.0"
     },
     providers: [{ id: "provider-registration-a", label: "GitHub" }]
   }

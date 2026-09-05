@@ -1,0 +1,133 @@
+{
+  "protocol": "atape.auth-release-gates.v1",
+  "releaseVersion": "0.2.0",
+  "authEpoch": "auth-v1",
+  "attestation": "docs/releases/evidence/v0.2.0-staging.json",
+  "gates": [
+    {
+      "id": 1,
+      "name": "module",
+      "kind": "automated",
+      "commands": ["test:go", "test:go:integration", "test:go:race"],
+      "evidence": [
+        {"path": "server/internal/authentication/module_integration_test.go", "contains": "func TestAuthenticationPostgresContract"},
+        {"path": "server/internal/team/module_integration_test.go", "contains": "func TestTeamPostgresContract"},
+        {"path": "server/internal/authorization/policy_test.go", "contains": "auth-v1-authorization-matrix.json"}
+      ],
+      "manualRequirements": []
+    },
+    {
+      "id": 2,
+      "name": "http",
+      "kind": "automated",
+      "commands": ["test:go", "test:go:integration"],
+      "evidence": [
+        {"path": "server/internal/adapters/httpapi/openapi_contract_test.go", "contains": "AuthorizationActions"},
+        {"path": "server/internal/adapters/httpapi/security_test.go", "contains": "TestCredentialParsingRejectsDuplicates"},
+        {"path": "server/internal/adapters/httpapi/http_integration_test.go", "contains": "func TestHTTPAuthenticationAndAuthorizationContract"},
+        {"path": "docs/api/openapi-v1.yaml", "contains": "x-atape-authorization-actions"}
+      ],
+      "manualRequirements": []
+    },
+    {
+      "id": 3,
+      "name": "cli",
+      "kind": "automated",
+      "commands": ["check", "test:e2e", "test:release"],
+      "evidence": [
+        {"path": "apps/cli/src/runtime/authenticationLayers.test.ts", "contains": "Node CLI Credential store Adapter"},
+        {"path": "apps/cli/src/runtime/clientMigrationLayers.test.ts", "contains": "v0.1 local migration Adapter"},
+        {"path": "apps/cli/src/collectorServer.e2e.test.ts", "contains": "real Go APIs"},
+        {"path": "scripts/verify-release.mjs", "contains": "Verified packaged CLI"}
+      ],
+      "manualRequirements": []
+    },
+    {
+      "id": 4,
+      "name": "web",
+      "kind": "automated",
+      "commands": ["check"],
+      "evidence": [
+        {"path": "apps/web/e2e/auth.pw.ts", "contains": "requires an explicit CLI decision"},
+        {"path": "apps/web/e2e/auth.pw.ts", "contains": "recovers account sections independently"},
+        {"path": "apps/web/src/view/accessViews.test.tsx", "contains": "keeps owner-only Team controls out"},
+        {"path": "apps/web/src/runtime/http.test.ts", "contains": "invalidates established authentication"}
+      ],
+      "manualRequirements": []
+    },
+    {
+      "id": 5,
+      "name": "adapter",
+      "kind": "mixed",
+      "commands": ["check", "test:go:integration"],
+      "evidence": [
+        {"path": "server/internal/authentication/github/adapter_test.go", "contains": "func TestAdapterConformance"},
+        {"path": "server/internal/testsupport/federatedidentitycontract/contract.go", "contains": "authorization-code-contract-canary"},
+        {"path": "apps/cli/src/runtime/collectorLayers.test.ts", "contains": "credential|token|userId|teamId|instanceOrigin|apiOrigin"}
+      ],
+      "manualRequirements": ["github-provider-staging-smoke"]
+    },
+    {
+      "id": 6,
+      "name": "migration",
+      "kind": "automated",
+      "commands": ["test:go:integration", "test:self-hosting:restore"],
+      "evidence": [
+        {"path": "server/internal/authcutover/module_test.go", "contains": "func TestMappedCutoverWorkflow"},
+        {"path": "docs/operations/auth-cutover.md", "contains": "Rollback boundary"},
+        {"path": "scripts/rehearse-self-hosted-restore.sh", "contains": "paired-restore-proof-v1"}
+      ],
+      "manualRequirements": []
+    },
+    {
+      "id": 7,
+      "name": "self-host",
+      "kind": "mixed",
+      "commands": ["test:self-hosting:config", "test:self-hosting:restore"],
+      "evidence": [
+        {"path": "scripts/verify-self-hosted-config.sh", "contains": "validated loopback, same-origin HTTPS, and split-origin HTTPS"},
+        {"path": "docs/operations/self-hosting.md", "contains": "No request in the core login"},
+        {"path": "compose.split-origin.yaml", "contains": "nginx.split-origin.conf"}
+      ],
+      "manualRequirements": ["official-domain-egress-deny-smoke"]
+    },
+    {
+      "id": 8,
+      "name": "security",
+      "kind": "automated",
+      "commands": ["test:go:race", "test:go:fuzz", "test:security:dependencies"],
+      "evidence": [
+        {"path": "server/internal/authentication/parser_fuzz_test.go", "contains": "FuzzNormalizeDeviceUserCode"},
+        {"path": "server/internal/adapters/httpapi/parser_fuzz_test.go", "contains": "FuzzCanonicalRequestPath"},
+        {"path": ".github/workflows/security.yml", "contains": "aquasecurity/trivy-action"}
+      ],
+      "manualRequirements": []
+    },
+    {
+      "id": 9,
+      "name": "operational",
+      "kind": "manual",
+      "commands": ["test:self-hosting:config", "test:self-hosting:restore"],
+      "evidence": [
+        {"path": "docs/operations/auth-v1-release-checklist.md", "contains": "TLS / callback / WAF"},
+        {"path": "docs/operations/backup-and-restore.md", "contains": "restore"},
+        {"path": "docs/releases/evidence/v0.2.0-staging.json", "contains": "official-topology"}
+      ],
+      "manualRequirements": ["official-topology", "waf-tls-callback", "backup-restore", "observability-secret-sample", "rollback"]
+    },
+    {
+      "id": 10,
+      "name": "release",
+      "kind": "mixed",
+      "commands": ["build:release:images", "test:release", "test:release:gates"],
+      "evidence": [
+        {"path": "specs/auth-v1-release.json", "contains": "atape.auth-release.v1"},
+        {"path": "scripts/build-release-images.mjs", "contains": "ATAPE_MINIMUM_CLI_VERSION"},
+        {"path": "scripts/release-contract.mjs", "contains": "MinimumCLIVersion"},
+        {"path": "docs/releases/v0.2.0.md", "contains": "180 days"},
+        {"path": "docs/releases/evidence/v0.2.0-staging.json", "contains": "two-user-two-team"}
+      ],
+      "manualRequirements": ["candidate-artifacts", "two-user-two-team", "release-signoff"]
+    }
+  ]
+}

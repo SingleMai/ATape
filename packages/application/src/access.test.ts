@@ -40,7 +40,10 @@ const instance: InstanceMetadata = {
   instanceOrigin: "https://atape.dev",
   webOrigin: "https://atape.dev",
   apiOrigin: "https://atape.dev",
-  protocols: ["atape.cli-authorization.v1"]
+  protocols: ["atape.cli-authorization.v1"],
+  releaseVersion: "0.2.0",
+  authEpoch: "auth-v1",
+  minimumCliVersion: "0.2.0"
 }
 const providers: ReadonlyArray<ProviderRegistration> = [{ id: "provider-a", label: "Provider A" }]
 const identity: ExternalIdentity = {

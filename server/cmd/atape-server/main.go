@@ -29,6 +29,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -511,6 +512,14 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "version" {
+		if err := runVersionCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "version failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	slog.Info("starting ATape server", "version", releaseinfo.Version, "auth_epoch", releaseinfo.AuthEpoch)
 	fx.New(
 		fx.Provide(
 			loadConfig,

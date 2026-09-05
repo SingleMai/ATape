@@ -31,7 +31,10 @@ export const InstanceMetadata = Schema.Struct({
   instanceOrigin: URIText,
   webOrigin: URIText,
   apiOrigin: URIText,
-  protocols: Schema.Array(OpaqueIdentifier)
+  protocols: Schema.Array(OpaqueIdentifier),
+  releaseVersion: OpaqueIdentifier,
+  authEpoch: Schema.Literal("auth-v1"),
+  minimumCliVersion: OpaqueIdentifier
 })
 export type InstanceMetadata = typeof InstanceMetadata.Type
 

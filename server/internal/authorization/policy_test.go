@@ -1,7 +1,11 @@
 package authorization
 
 import (
-	"fmt"
+	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
@@ -31,114 +35,178 @@ func TestCatalogIsClosedAndEveryActionHasARule(t *testing.T) {
 }
 
 func TestCompletePermissionMatrix(t *testing.T) {
-	type expectation struct {
-		resource  ResourceKind
-		web       bool
-		cli       bool
-		onlyOwner bool
-		fresh     bool
+	matrix := readAuthorizationMatrix(t)
+	if matrix.Protocol != "atape.authorization-matrix.v1" || matrix.AuthEpoch != "auth-v1" {
+		t.Fatalf("authorization matrix identity = %q/%q", matrix.Protocol, matrix.AuthEpoch)
 	}
-	matrix := map[Action]expectation{
-		WorkspaceListVisible:       {resource: InstanceResource, web: true, cli: true},
-		TeamCreate:                 {resource: InstanceResource, web: true},
-		UserReadSelf:               {resource: UserResource, web: true, cli: true},
-		UserUpdateProfile:          {resource: UserResource, web: true},
-		ExternalIdentityList:       {resource: UserResource, web: true},
-		ExternalIdentityBind:       {resource: UserResource, web: true, fresh: true},
-		WebSessionList:             {resource: UserResource, web: true},
-		WebSessionRevokeOne:        {resource: UserResource, web: true},
-		WebSessionRevokeAll:        {resource: UserResource, web: true},
-		CLICredentialList:          {resource: UserResource, web: true},
-		CLICredentialRevokeOne:     {resource: UserResource, web: true},
-		CLICredentialRevokeAll:     {resource: UserResource, web: true},
-		CLICredentialReadCurrent:   {resource: UserResource, cli: true},
-		CLICredentialRevokeCurrent: {resource: UserResource, cli: true},
-		TeamJoinWithCode:           {resource: InstanceResource, web: true},
-		TeamReadMetadata:           {resource: TeamResource, web: true, cli: true},
-		ProjectListMetadata:        {resource: TeamResource, web: true, cli: true},
-		ProjectReadMetadata:        {resource: ProjectResource, web: true, cli: true},
-		ProjectMatch:               {resource: TeamResource, cli: true},
-		MembershipList:             {resource: TeamResource, web: true},
-		TeamUpdateDisplayProfile:   {resource: TeamResource, web: true, onlyOwner: true},
-		MembershipPromoteToOwner:   {resource: MembershipResource, web: true, onlyOwner: true, fresh: true},
-		MembershipDemoteOwner:      {resource: MembershipResource, web: true, onlyOwner: true, fresh: true},
-		MembershipRemoveMember:     {resource: MembershipResource, web: true, onlyOwner: true},
-		MembershipRemoveOwner:      {resource: MembershipResource, web: true, onlyOwner: true, fresh: true},
-		MembershipLeaveSelf:        {resource: MembershipResource, web: true},
-		TeamJoinCodeReadStatus:     {resource: TeamJoinCodeResource, web: true, onlyOwner: true},
-		TeamJoinCodeRotate:         {resource: TeamJoinCodeResource, web: true, onlyOwner: true, fresh: true},
-		TeamJoinCodeDisable:        {resource: TeamJoinCodeResource, web: true, onlyOwner: true},
-		ProjectCreate:              {resource: TeamResource, web: true, cli: true},
-		FolderProjectRename:        {resource: ProjectResource, web: true, onlyOwner: true},
-		GitProjectRelinkRepository: {resource: ProjectResource, web: true, onlyOwner: true, fresh: true},
-		ProjectArchive:             {resource: ProjectResource, web: true, onlyOwner: true},
-		ProjectDelete:              {resource: ProjectResource, web: true, onlyOwner: true, fresh: true},
-		ProjectMemoryRead:          {resource: ProjectResource, web: true},
-		ConversationRead:           {resource: ConversationResource, web: true},
-		ProjectSearchQuery:         {resource: ProjectResource, web: true},
-		RawSessionList:             {resource: ConversationResource, web: true},
-		RawObjectRead:              {resource: RawObjectResource, web: true},
-		CanonicalIngest:            {resource: ProjectResource, cli: true},
-		RawIngest:                  {resource: ConversationResource, cli: true},
-		CapturedSessionDeleteOwn:   {resource: CapturedSessionResource, web: true},
-		CapturedSessionDeleteAny:   {resource: CapturedSessionResource, web: true, onlyOwner: true, fresh: true},
+	expectedPersonas := []string{
+		"alice_web_member_stale", "alice_web_member_fresh",
+		"alice_web_owner_stale", "alice_web_owner_fresh",
+		"alice_cli_member", "alice_cli_owner", "eve_web_fresh",
 	}
-	if got, want := len(matrix), len(Actions()); got != want {
-		t.Fatalf("permission matrix contains %d actions, want %d", got, want)
-	}
+	assertStringList(t, "personas", matrix.Personas, expectedPersonas)
+
+	actionsByName := make(map[string]Action, len(Actions()))
 	for _, action := range Actions() {
-		expected, ok := matrix[action]
+		actionsByName[action.String()] = action
+	}
+	seenActions := make(map[Action]struct{}, len(matrix.Actions))
+	usedProfiles := make(map[string]struct{}, len(matrix.Profiles))
+	for _, entry := range matrix.Actions {
+		action, ok := actionsByName[entry.Action]
 		if !ok {
-			t.Fatalf("action %d is missing from the permission matrix", action)
+			t.Fatalf("matrix declares unknown action %q", entry.Action)
 		}
-		for _, medium := range []struct {
-			name    string
-			method  authentication.AuthenticationMethod
-			allowed bool
-		}{
-			{name: "Web", method: authentication.WebAuthentication, allowed: expected.web},
-			{name: "CLI", method: authentication.CLIAuthentication, allowed: expected.cli},
-		} {
-			for _, role := range []MembershipRole{MemberRole, OwnerRole} {
-				principal := authentication.Principal{UserID: "user-a", Method: medium.method, Fresh: true}
-				resource, membership := authorizedMatrixFacts(expected.resource, role)
-				decision, denial := Allow, NoDenial
-				switch {
-				case !medium.allowed:
-					decision, denial = Forbid, CredentialCapabilityDenied
-				case expected.onlyOwner && role != OwnerRole:
-					decision, denial = Forbid, MembershipRoleDenied
+		if _, duplicate := seenActions[action]; duplicate {
+			t.Fatalf("matrix repeats action %q", entry.Action)
+		}
+		seenActions[action] = struct{}{}
+		resource := matrixResourceKind(t, entry.Resource)
+		if catalog[action].resource != resource {
+			t.Fatalf("matrix resource for %q = %q, policy uses %d", entry.Action, entry.Resource, catalog[action].resource)
+		}
+		profile, ok := matrix.Profiles[entry.Profile]
+		if !ok {
+			t.Fatalf("action %q references unknown profile %q", entry.Action, entry.Profile)
+		}
+		usedProfiles[entry.Profile] = struct{}{}
+		assertProfilePersonas(t, entry.Profile, profile, expectedPersonas)
+		for _, persona := range expectedPersonas {
+			t.Run(entry.Action+"/"+persona, func(t *testing.T) {
+				input := matrixPolicyInput(t, persona, resource)
+				input.Action = action
+				if got, want := matrixOutcome(Policy{}.Evaluate(input)), profile[persona]; got != want {
+					t.Fatalf("policy outcome = %q, matrix requires %q", got, want)
 				}
-				t.Run(matrixCaseName(action, medium.name, role), func(t *testing.T) {
-					assertOutcome(t, Policy{}.Evaluate(Input{
-						Principal: principal, Action: action, Resource: resource, Membership: membership,
-					}), decision, denial)
-				})
-			}
+			})
 		}
-		if expected.fresh {
-			resource, membership := authorizedMatrixFacts(expected.resource, OwnerRole)
-			assertOutcome(t, Policy{}.Evaluate(Input{
-				Principal: authentication.Principal{UserID: "user-a", Method: authentication.WebAuthentication},
-				Action:    action, Resource: resource, Membership: membership,
-			}), Forbid, FreshAuthenticationRequired)
-		}
-		if expected.resource >= TeamResource {
-			resource, membership := authorizedMatrixFacts(expected.resource, OwnerRole)
-			resource.TeamID = "team-b"
-			assertOutcome(t, Policy{}.Evaluate(Input{
-				Principal: webPrincipal(true), Action: action, Resource: resource, Membership: membership,
-			}), Conceal, ResourceConcealed)
-			membership.Active = false
-			resource.TeamID = "team-a"
-			assertOutcome(t, Policy{}.Evaluate(Input{
-				Principal: webPrincipal(true), Action: action, Resource: resource, Membership: membership,
-			}), Conceal, ResourceConcealed)
+	}
+	if len(seenActions) != len(actionsByName) {
+		t.Fatalf("matrix covers %d actions, closed catalog contains %d", len(seenActions), len(actionsByName))
+	}
+	if len(usedProfiles) != len(matrix.Profiles) {
+		t.Fatalf("matrix uses %d profiles, declares %d", len(usedProfiles), len(matrix.Profiles))
+	}
+}
+
+type authorizationMatrix struct {
+	Protocol  string                       `json:"protocol"`
+	AuthEpoch string                       `json:"authEpoch"`
+	Personas  []string                     `json:"personas"`
+	Profiles  map[string]map[string]string `json:"profiles"`
+	Actions   []authorizationMatrixAction  `json:"actions"`
+}
+
+type authorizationMatrixAction struct {
+	Action   string `json:"action"`
+	Resource string `json:"resource"`
+	Profile  string `json:"profile"`
+}
+
+func readAuthorizationMatrix(t *testing.T) authorizationMatrix {
+	t.Helper()
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve authorization matrix test source")
+	}
+	file, err := os.Open(filepath.Join(filepath.Dir(source), "..", "..", "..", "specs", "auth-v1-authorization-matrix.json"))
+	if err != nil {
+		t.Fatalf("open authorization matrix: %v", err)
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+	var matrix authorizationMatrix
+	if err := decoder.Decode(&matrix); err != nil {
+		t.Fatalf("decode authorization matrix: %v", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		t.Fatalf("authorization matrix has trailing content: %v", err)
+	}
+	return matrix
+}
+
+func assertStringList(t *testing.T, label string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("%s length = %d, want %d", label, len(got), len(want))
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("%s[%d] = %q, want %q", label, index, got[index], want[index])
 		}
 	}
 }
 
-func authorizedMatrixFacts(kind ResourceKind, role MembershipRole) (ResourceFacts, MembershipFacts) {
+func assertProfilePersonas(t *testing.T, name string, profile map[string]string, personas []string) {
+	t.Helper()
+	if len(profile) != len(personas) {
+		t.Fatalf("profile %q contains %d personas, want %d", name, len(profile), len(personas))
+	}
+	for _, persona := range personas {
+		outcome, ok := profile[persona]
+		if !ok {
+			t.Fatalf("profile %q omits persona %q", name, persona)
+		}
+		switch outcome {
+		case "allow", "conceal", "forbid_policy", "forbid_capability", "forbid_role", "forbid_fresh":
+		default:
+			t.Fatalf("profile %q has unknown outcome %q for %q", name, outcome, persona)
+		}
+	}
+}
+
+func matrixResourceKind(t *testing.T, name string) ResourceKind {
+	t.Helper()
+	switch name {
+	case "instance":
+		return InstanceResource
+	case "user":
+		return UserResource
+	case "team":
+		return TeamResource
+	case "membership":
+		return MembershipResource
+	case "team_join_code":
+		return TeamJoinCodeResource
+	case "project":
+		return ProjectResource
+	case "conversation":
+		return ConversationResource
+	case "raw_object":
+		return RawObjectResource
+	case "captured_session":
+		return CapturedSessionResource
+	default:
+		t.Fatalf("matrix declares unknown resource %q", name)
+		return UnknownResource
+	}
+}
+
+func matrixPolicyInput(t *testing.T, persona string, kind ResourceKind) Input {
+	t.Helper()
+	principal := authentication.Principal{UserID: "user-a", Method: authentication.WebAuthentication}
+	role := MemberRole
+	switch persona {
+	case "alice_web_member_stale":
+	case "alice_web_member_fresh":
+		principal.Fresh = true
+	case "alice_web_owner_stale":
+		role = OwnerRole
+	case "alice_web_owner_fresh":
+		principal.Fresh = true
+		role = OwnerRole
+	case "alice_cli_member":
+		principal.Method = authentication.CLIAuthentication
+	case "alice_cli_owner":
+		principal.Method = authentication.CLIAuthentication
+		role = OwnerRole
+	case "eve_web_fresh":
+		principal.UserID = "user-eve"
+		principal.Fresh = true
+	default:
+		t.Fatalf("unknown matrix persona %q", persona)
+	}
 	resource := ResourceFacts{Kind: kind}
 	membership := MembershipFacts{}
 	switch kind {
@@ -148,15 +216,32 @@ func authorizedMatrixFacts(kind ResourceKind, role MembershipRole) (ResourceFact
 		ConversationResource, RawObjectResource, CapturedSessionResource:
 		resource.TeamID = "team-a"
 		resource.CapturedByUserID = "user-a"
-		membership = MembershipFacts{
-			TeamID: "team-a", UserID: "user-a", Role: role, Active: true,
+		if principal.UserID == "user-a" {
+			membership = MembershipFacts{TeamID: "team-a", UserID: "user-a", Role: role, Active: true}
 		}
 	}
-	return resource, membership
+	return Input{Principal: principal, Resource: resource, Membership: membership}
 }
 
-func matrixCaseName(action Action, medium string, role MembershipRole) string {
-	return fmt.Sprintf("%s/action-%d/role-%d", medium, action, role)
+func matrixOutcome(outcome Outcome) string {
+	if outcome.Decision == Allow {
+		return "allow"
+	}
+	if outcome.Decision == Conceal {
+		return "conceal"
+	}
+	switch outcome.Denial {
+	case PolicyDenied:
+		return "forbid_policy"
+	case CredentialCapabilityDenied:
+		return "forbid_capability"
+	case MembershipRoleDenied:
+		return "forbid_role"
+	case FreshAuthenticationRequired:
+		return "forbid_fresh"
+	default:
+		return "unknown"
+	}
 }
 
 func TestInstanceAndUserResourcePolicy(t *testing.T) {
