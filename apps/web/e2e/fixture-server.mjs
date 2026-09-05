@@ -165,6 +165,7 @@ const server = http.createServer(async (request, response) => {
         type: "git",
         name: "ATape",
         state: "active",
+        repositoryLinkState: "linked",
         repositoryIdentity: "github.com/SingleMai/ATape",
         capturedThrough: now,
         createdAt: now,

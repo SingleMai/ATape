@@ -110,6 +110,7 @@ export async function startCLIAuthFixture(options = {}) {
           type: "folder",
           name: projectName,
           state: "active",
+          repositoryLinkState: "not_applicable",
           createdAt: now,
           updatedAt: now
         })
