@@ -60,6 +60,14 @@ CREATE INDEX auth_web_sessions_user_active_idx
     ON auth_web_sessions (user_id, created_at DESC, id)
     WHERE status = 'active';
 
+CREATE INDEX auth_web_sessions_absolute_expiry_idx
+    ON auth_web_sessions (absolute_expires_at, id)
+    WHERE status = 'active';
+
+CREATE INDEX auth_web_sessions_idle_expiry_idx
+    ON auth_web_sessions (last_used_at, id)
+    WHERE status = 'active';
+
 CREATE TABLE auth_web_session_secrets (
     session_id UUID NOT NULL REFERENCES auth_web_sessions(id) ON DELETE RESTRICT,
     generation BIGINT NOT NULL CHECK (generation >= 1),

@@ -3,11 +3,13 @@ package authentication_test
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -19,6 +21,7 @@ import (
 
 	postgresadapter "github.com/SingleMai/ATape/server/internal/adapters/postgres"
 	"github.com/SingleMai/ATape/server/internal/authentication"
+	authgithub "github.com/SingleMai/ATape/server/internal/authentication/github"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
@@ -140,6 +143,25 @@ WHERE protocol_version = 'auth-v1'`); err != nil {
 		if err != nil || authenticated.Principal.UserID != grants[0].User.ID || authenticated.CSRFToken != grants[0].CSRFToken {
 			t.Fatalf("authenticate Web Session = %+v, %v", authenticated, err)
 		}
+		sessions, err := moduleB.ListWebSessions(ctx, authenticated.Principal)
+		if err != nil {
+			t.Fatalf("list Web Sessions: %v", err)
+		}
+		if len(sessions) != 2 {
+			t.Fatalf("listed Web Sessions = %+v, want two", sessions)
+		}
+		current := 0
+		for _, session := range sessions {
+			if session.Current {
+				current++
+				if session.ID != grants[0].Session.ID {
+					t.Fatalf("current Session = %q, want %q", session.ID, grants[0].Session.ID)
+				}
+			}
+		}
+		if current != 1 {
+			t.Fatalf("current Session markers = %d, want one", current)
+		}
 		if _, err := completeFederated(moduleA, first, "person-a"); authentication.ErrorCodeOf(err) != authentication.CodeLoginAlreadyConsumed {
 			t.Fatalf("callback replay error = %v, want login_already_consumed", err)
 		}
@@ -171,6 +193,14 @@ WHERE protocol_version = 'auth-v1'`); err != nil {
 		if _, err := moduleB.AuthenticateWeb(ctx, grants[1].SessionSecret); err != nil {
 			t.Fatalf("revoking one Session affected another: %v", err)
 		}
+		remainingAuthentication, err := moduleA.AuthenticateWeb(ctx, grants[1].SessionSecret)
+		if err != nil {
+			t.Fatalf("authenticate remaining Session: %v", err)
+		}
+		remaining, err := moduleA.ListWebSessions(ctx, remainingAuthentication.Principal)
+		if err != nil || len(remaining) != 1 || remaining[0].ID != grants[1].Session.ID || !remaining[0].Current {
+			t.Fatalf("remaining Web Sessions = %+v, %v", remaining, err)
+		}
 
 		assertNoRawSecrets(t, poolA, trace, []string{
 			first.state, first.challenge.BrowserBinding,
@@ -179,6 +209,240 @@ WHERE protocol_version = 'auth-v1'`); err != nil {
 			grants[1].SessionSecret, grants[1].CSRFToken,
 			rotated.SessionSecret, rotated.CSRFToken, providerPrivateStateCanary,
 		})
+	})
+
+	t.Run("federated callback proofs and terminal failures fail closed", func(t *testing.T) {
+		resetAuthentication(t, poolA)
+		adapter := &contractIdentityAdapter{}
+		module := newContractModule(t, poolA, adapter, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		attempt := beginFederated(t, module, authentication.SignInIntent, "", "/")
+		validInput := authentication.CompleteFederatedLoginInput{
+			ProviderRegistrationID: "contract", State: attempt.state,
+			BrowserBinding:    attempt.challenge.BrowserBinding,
+			AuthorizationCode: "proof-identity", RequestID: "request-proof",
+		}
+
+		wrongState := validInput
+		wrongState.State = contractOpaqueSecret("atf_v1_", 91)
+		if _, err := module.CompleteFederatedLogin(ctx, wrongState); authentication.ErrorCodeOf(err) != authentication.CodeLoginStateMismatch {
+			t.Fatalf("wrong state error = %v, want login_state_mismatch", err)
+		}
+		wrongBinding := validInput
+		wrongBinding.BrowserBinding = contractOpaqueSecret("atb_v1_", 92)
+		if _, err := module.CompleteFederatedLogin(ctx, wrongBinding); authentication.ErrorCodeOf(err) != authentication.CodeLoginStateMismatch {
+			t.Fatalf("wrong browser binding error = %v, want login_state_mismatch", err)
+		}
+		wrongProvider := validInput
+		wrongProvider.ProviderRegistrationID = "other-provider"
+		if _, err := module.CompleteFederatedLogin(ctx, wrongProvider); authentication.ErrorCodeOf(err) != authentication.CodeLoginStateMismatch {
+			t.Fatalf("wrong Provider error = %v, want login_state_mismatch", err)
+		}
+		if adapter.completeCalls.Load() != 0 {
+			t.Fatalf("invalid callback proof reached Provider Adapter %d times", adapter.completeCalls.Load())
+		}
+
+		callbackMismatch := newModuleWithRegistration(t, poolB, authentication.ProviderRegistration{
+			ID: "contract", Revision: "contract-r1", ExpectedIssuer: "https://identity.example",
+			CallbackURI: "https://api.example.test/api/v1/auth/providers/contract/other-callback",
+			Active:      true, Adapter: adapter,
+		})
+		if _, err := callbackMismatch.CompleteFederatedLogin(ctx, validInput); authentication.ErrorCodeOf(err) != authentication.CodeMisconfigured {
+			t.Fatalf("callback registration mismatch error = %v, want misconfigured", err)
+		}
+		revisionMismatch := newModuleWithRegistration(t, poolB, authentication.ProviderRegistration{
+			ID: "contract", Revision: "contract-r2", ExpectedIssuer: "https://identity.example",
+			CallbackURI: "https://api.example.test/api/v1/auth/providers/contract/callback",
+			Active:      true, Adapter: adapter,
+		})
+		if _, err := revisionMismatch.CompleteFederatedLogin(ctx, validInput); authentication.ErrorCodeOf(err) != authentication.CodeMisconfigured {
+			t.Fatalf("registration revision mismatch error = %v, want misconfigured", err)
+		}
+
+		denied := validInput
+		denied.AuthorizationCode = ""
+		denied.AuthorizationError = "access_denied"
+		if _, err := module.CompleteFederatedLogin(ctx, denied); authentication.ErrorCodeOf(err) != authentication.CodeProviderAccessDenied {
+			t.Fatalf("Provider denial error = %v, want provider_access_denied", err)
+		}
+		if _, err := module.CompleteFederatedLogin(ctx, denied); authentication.ErrorCodeOf(err) != authentication.CodeLoginAlreadyConsumed {
+			t.Fatalf("denied callback replay error = %v, want login_already_consumed", err)
+		}
+
+		resetAuthentication(t, poolA)
+		wrongIssuerAdapter := &contractIdentityAdapter{issuer: "https://attacker.example"}
+		wrongIssuerModule := newContractModule(t, poolA, wrongIssuerAdapter, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		wrongIssuerAttempt := beginFederated(t, wrongIssuerModule, authentication.SignInIntent, "", "/")
+		if _, err := completeFederated(wrongIssuerModule, wrongIssuerAttempt, "wrong-issuer"); authentication.ErrorCodeOf(err) != authentication.CodeProviderInvalidResponse {
+			t.Fatalf("wrong issuer error = %v, want provider_invalid_response", err)
+		}
+
+		resetAuthentication(t, poolA)
+		disabledAdapter := &contractIdentityAdapter{}
+		disabledModule := newContractModule(t, poolA, disabledAdapter, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		first := beginFederated(t, disabledModule, authentication.SignInIntent, "", "/")
+		grant, err := completeFederated(disabledModule, first, "disabled-user")
+		if err != nil {
+			t.Fatalf("establish User before disable: %v", err)
+		}
+		if _, err := poolA.Exec(ctx, `
+UPDATE auth_users SET status = 'disabled', disabled_at = clock_timestamp(), updated_at = clock_timestamp()
+WHERE id = $1`, grant.User.ID); err != nil {
+			t.Fatalf("disable test User: %v", err)
+		}
+		if _, err := disabledModule.AuthenticateWeb(ctx, grant.SessionSecret); authentication.ErrorCodeOf(err) != authentication.CodeUserDisabled {
+			t.Fatalf("disabled User Session error = %v, want user_disabled", err)
+		}
+		signInAgain := beginFederated(t, disabledModule, authentication.SignInIntent, "", "/")
+		if _, err := completeFederated(disabledModule, signInAgain, "disabled-user"); authentication.ErrorCodeOf(err) != authentication.CodeUserDisabled {
+			t.Fatalf("disabled User sign-in error = %v, want user_disabled", err)
+		}
+
+		resetAuthentication(t, poolA)
+		crashAdapter := &contractIdentityAdapter{}
+		crashModule := newContractModule(t, poolA, crashAdapter, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		crashed := beginFederated(t, crashModule, authentication.SignInIntent, "", "/")
+		if _, err := poolA.Exec(ctx, `UPDATE auth_federated_login_transactions SET status = 'completing' WHERE id = $1`, crashed.challenge.LoginTransactionID); err != nil {
+			t.Fatalf("simulate post-claim process crash: %v", err)
+		}
+		if _, err := completeFederated(crashModule, crashed, "must-not-redeem"); authentication.ErrorCodeOf(err) != authentication.CodeLoginAlreadyConsumed {
+			t.Fatalf("post-crash callback error = %v, want login_already_consumed", err)
+		}
+		if crashAdapter.completeCalls.Load() != 0 {
+			t.Fatalf("post-crash callback called Provider Adapter %d times", crashAdapter.completeCalls.Load())
+		}
+	})
+
+	t.Run("GitHub Adapter crosses the Module only as verified identity", func(t *testing.T) {
+		resetAuthentication(t, poolA)
+		trace.Reset()
+		const (
+			clientSecret  = "github-client-secret-sql-canary"
+			providerToken = "gho_provider-token-sql-canary"
+			refreshToken  = "ghr_provider-refresh-sql-canary"
+			rawEmail      = "raw-claim-sql-canary@example.test"
+			code          = "github-code-sql-canary"
+		)
+		var tokenCalls atomic.Int32
+		var userCalls atomic.Int32
+		client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			var body string
+			switch request.URL.String() {
+			case "https://github.com/login/oauth/access_token":
+				tokenCalls.Add(1)
+				encoded, err := io.ReadAll(request.Body)
+				if err != nil {
+					t.Errorf("read GitHub token request: %v", err)
+				}
+				form, err := url.ParseQuery(string(encoded))
+				if err != nil || form.Get("client_secret") != clientSecret || form.Get("code") != code || form.Get("code_verifier") == "" {
+					t.Errorf("unexpected GitHub token request")
+				}
+				body = `{"access_token":"` + providerToken + `","token_type":"bearer","refresh_token":"` + refreshToken + `"}`
+			case "https://api.github.com/user":
+				userCalls.Add(1)
+				if request.Header.Get("Authorization") != "Bearer "+providerToken {
+					t.Errorf("GitHub profile request omitted ephemeral token")
+				}
+				body = `{"id":424242,"login":"singlemai","name":"Single Mai","avatar_url":"https://avatars.githubusercontent.com/u/424242?v=4","email":"` + rawEmail + `"}`
+			default:
+				t.Errorf("unexpected GitHub request: %s", request.URL.String())
+				return &http.Response{
+					StatusCode: http.StatusNotFound, Header: make(http.Header),
+					Body: io.NopCloser(strings.NewReader("")), Request: request,
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(body)), Request: request,
+			}, nil
+		})}
+		githubAdapter, err := authgithub.New(authgithub.Config{
+			ClientID: "Iv1.integration-client", ClientSecret: clientSecret, HTTPClient: client,
+		})
+		if err != nil {
+			t.Fatalf("construct GitHub Adapter: %v", err)
+		}
+		module := newModule(t, poolA, authentication.Config{
+			ProviderRegistrations: []authentication.ProviderRegistration{{
+				ID: authgithub.RegistrationID, Revision: authgithub.RegistrationRevision,
+				ExpectedIssuer: authgithub.Issuer,
+				CallbackURI:    "https://api.example.test/api/v1/auth/providers/github/callback",
+				Active:         true, Adapter: githubAdapter,
+			}},
+			PepperKeys:       buildKeyRing(t, defaultPepper()),
+			PrivateStateKeys: buildKeyRing(t, defaultPrivate()),
+			Policy:           authentication.DefaultPolicy(),
+		})
+		challenge, err := module.BeginFederatedLogin(ctx, authentication.BeginFederatedLoginInput{
+			Intent: authentication.SignInIntent, ProviderRegistrationID: authgithub.RegistrationID,
+			ReturnTo: "/projects", RequestID: "request-github-begin",
+		})
+		if err != nil {
+			t.Fatalf("begin GitHub login: %v", err)
+		}
+		authorization, err := url.Parse(challenge.AuthorizationURI)
+		if err != nil || authorization.Host != "github.com" {
+			t.Fatalf("GitHub authorization URI = %q, %v", challenge.AuthorizationURI, err)
+		}
+		state := authorization.Query().Get("state")
+		grant, err := module.CompleteFederatedLogin(ctx, authentication.CompleteFederatedLoginInput{
+			ProviderRegistrationID: authgithub.RegistrationID,
+			State:                  state, BrowserBinding: challenge.BrowserBinding,
+			AuthorizationCode: code, RequestID: "request-github-complete",
+		})
+		if err != nil {
+			t.Fatalf("complete GitHub login: %s", errorChain(err))
+		}
+		if grant.User.DisplayName != "Single Mai" || grant.ReturnTo != "/projects" {
+			t.Fatalf("GitHub login grant = %+v", grant)
+		}
+		var issuer, subject string
+		if err := poolA.QueryRow(ctx, `SELECT issuer, subject FROM auth_external_identities`).Scan(&issuer, &subject); err != nil {
+			t.Fatalf("read normalized GitHub identity: %v", err)
+		}
+		if issuer != authgithub.Issuer || subject != "424242" || tokenCalls.Load() != 1 || userCalls.Load() != 1 {
+			t.Fatalf("normalized identity = %q/%q, calls token=%d user=%d", issuer, subject, tokenCalls.Load(), userCalls.Load())
+		}
+		assertNoRawSecrets(t, poolA, trace, []string{
+			clientSecret, providerToken, refreshToken, rawEmail, code, state,
+			challenge.BrowserBinding, grant.SessionSecret, grant.CSRFToken,
+		})
+	})
+
+	t.Run("Provider outage or disable leaves existing Sessions authoritative", func(t *testing.T) {
+		resetAuthentication(t, poolA)
+		adapter := &contractIdentityAdapter{}
+		module := newContractModule(t, poolA, adapter, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		login := beginFederated(t, module, authentication.SignInIntent, "", "/")
+		grant, err := completeFederated(module, login, "provider-outage-user")
+		if err != nil {
+			t.Fatalf("establish Session before Provider outage: %v", err)
+		}
+
+		adapter.failure = authentication.ProviderUnavailable
+		outage := beginFederated(t, module, authentication.SignInIntent, "", "/")
+		if _, err := completeFederated(module, outage, "provider-outage-user"); authentication.ErrorCodeOf(err) != authentication.CodeProviderUnavailable {
+			t.Fatalf("Provider outage error = %v, want provider_unavailable", err)
+		}
+		if _, err := module.AuthenticateWeb(ctx, grant.SessionSecret); err != nil {
+			t.Fatalf("Provider outage invalidated existing Session: %v", err)
+		}
+
+		disabledModule := newModuleWithRegistration(t, poolB, authentication.ProviderRegistration{
+			ID: "contract", Revision: "contract-r1", ExpectedIssuer: "https://identity.example",
+			CallbackURI: "https://api.example.test/api/v1/auth/providers/contract/callback",
+			Active:      false, Adapter: adapter,
+		})
+		if _, err := disabledModule.BeginFederatedLogin(ctx, authentication.BeginFederatedLoginInput{
+			Intent: authentication.SignInIntent, ProviderRegistrationID: "contract",
+			ReturnTo: "/", RequestID: "request-disabled-provider",
+		}); authentication.ErrorCodeOf(err) != authentication.CodeMisconfigured {
+			t.Fatalf("disabled Provider begin error = %v, want misconfigured", err)
+		}
+		if _, err := disabledModule.AuthenticateWeb(ctx, grant.SessionSecret); err != nil {
+			t.Fatalf("disabled Provider invalidated existing Session: %v", err)
+		}
 	})
 
 	t.Run("short User Code collisions retry under a cross-replica lock", func(t *testing.T) {
@@ -623,6 +887,32 @@ WHERE protocol_version = 'auth-v1'`); err != nil {
 		}
 
 		resetAuthentication(t, poolA)
+		sessionPolicy := policy
+		sessionPolicy.WebSessionIdleTTL = 500 * time.Millisecond
+		sessionPolicy.LastUsedWriteInterval = 500 * time.Millisecond
+		sessionPolicy.FreshAuthenticationTTL = 100 * time.Millisecond
+		sessionPolicy.WebSessionAbsoluteTTL = 10 * time.Second
+		sessionModule := newContractModule(t, poolA, adapter, sessionPolicy, defaultPepper(), defaultPrivate(), false)
+		expiringLogin := beginFederated(t, sessionModule, authentication.SignInIntent, "", "/")
+		expiringSession, err := completeFederated(sessionModule, expiringLogin, "maintenance-expiry-user")
+		if err != nil {
+			t.Fatalf("establish maintenance-expiry Session: %v", err)
+		}
+		time.Sleep(1250 * time.Millisecond)
+		sessionExpiry, err := sessionModule.Maintain(ctx)
+		if err != nil || sessionExpiry.ExpiredWebSessions != 1 {
+			t.Fatalf("expire abandoned Web Session = %+v, %v", sessionExpiry, err)
+		}
+		if _, err := sessionModule.AuthenticateWeb(ctx, expiringSession.SessionSecret); authentication.ErrorCodeOf(err) != authentication.CodeSessionIdleExpired {
+			t.Fatalf("maintained idle Session error = %v, want session_idle_expired", err)
+		}
+		time.Sleep(1250 * time.Millisecond)
+		sessionCleanup, err := sessionModule.Maintain(ctx)
+		if err != nil || sessionCleanup.DeletedWebSessionSecrets != 1 || sessionCleanup.DeletedWebSessions != 1 {
+			t.Fatalf("clean maintained Web Session = %+v, %v", sessionCleanup, err)
+		}
+
+		resetAuthentication(t, poolA)
 		login := beginFederated(t, module, authentication.SignInIntent, "", "/")
 		webGrant, err := completeFederated(module, login, "cleanup-user")
 		if err != nil {
@@ -689,6 +979,14 @@ const providerPrivateStateCanary = "provider-private-state-CANARY"
 
 type contractIdentityAdapter struct {
 	completeCalls atomic.Int64
+	issuer        string
+	failure       authentication.ProviderFailureCode
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
 }
 
 func (a *contractIdentityAdapter) Begin(
@@ -707,14 +1005,21 @@ func (a *contractIdentityAdapter) Complete(
 	request authentication.ProviderCompleteRequest,
 ) (authentication.VerifiedExternalIdentity, error) {
 	a.completeCalls.Add(1)
+	if a.failure != "" {
+		return authentication.VerifiedExternalIdentity{}, &authentication.ProviderFailure{Code: a.failure}
+	}
 	if request.AuthorizationError == "access_denied" {
 		return authentication.VerifiedExternalIdentity{}, &authentication.ProviderFailure{Code: authentication.ProviderAccessDenied}
 	}
 	if string(request.PrivateState) != providerPrivateStateCanary || request.PrivateStateSchema != "contract.v1" || request.AuthorizationCode == "" {
 		return authentication.VerifiedExternalIdentity{}, &authentication.ProviderFailure{Code: authentication.ProviderProtocolViolation}
 	}
+	issuer := a.issuer
+	if issuer == "" {
+		issuer = "https://identity.example"
+	}
 	return authentication.VerifiedExternalIdentity{
-		Issuer: "https://identity.example", Subject: request.AuthorizationCode,
+		Issuer: issuer, Subject: request.AuthorizationCode,
 		DisplayName: "Person " + request.AuthorizationCode,
 		AvatarURL:   "https://identity.example/avatar.png",
 	}, nil
@@ -786,7 +1091,7 @@ func newContractModule(
 	requireCutover bool,
 ) *authentication.Module {
 	t.Helper()
-	module, err := authentication.New(pool, authentication.Config{
+	return newModule(t, pool, authentication.Config{
 		ProviderRegistrations: []authentication.ProviderRegistration{{
 			ID: "contract", Revision: "contract-r1", ExpectedIssuer: "https://identity.example",
 			CallbackURI: "https://api.example.test/api/v1/auth/providers/contract/callback",
@@ -795,10 +1100,33 @@ func newContractModule(
 		PepperKeys: buildKeyRing(t, pepper), PrivateStateKeys: buildKeyRing(t, private),
 		Policy: policy, RequireCompletedCutover: requireCutover,
 	})
+}
+
+func newModuleWithRegistration(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	registration authentication.ProviderRegistration,
+) *authentication.Module {
+	t.Helper()
+	return newModule(t, pool, authentication.Config{
+		ProviderRegistrations: []authentication.ProviderRegistration{registration},
+		PepperKeys:            buildKeyRing(t, defaultPepper()),
+		PrivateStateKeys:      buildKeyRing(t, defaultPrivate()),
+		Policy:                authentication.DefaultPolicy(),
+	})
+}
+
+func newModule(t *testing.T, pool *pgxpool.Pool, config authentication.Config) *authentication.Module {
+	t.Helper()
+	module, err := authentication.New(pool, config)
 	if err != nil {
 		t.Fatalf("construct Authentication Module: %v", err)
 	}
 	return module
+}
+
+func contractOpaqueSecret(prefix string, fill byte) string {
+	return prefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{fill}, 32))
 }
 
 func buildKeyRing(t *testing.T, spec keySpec) authentication.KeyRing {

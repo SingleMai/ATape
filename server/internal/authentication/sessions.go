@@ -358,6 +358,51 @@ func (m *Module) RevokeWebSessions(ctx context.Context, input RevokeWebSessionsI
 	return nil
 }
 
+// ListWebSessions returns every currently usable Session for the authenticated
+// User. Expired rows are excluded synchronously; maintenance only reclaims
+// their storage and is never part of the authorization boundary.
+func (m *Module) ListWebSessions(ctx context.Context, principal Principal) ([]WebSessionView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	views, err := withTransaction(ctx, m.pool, func(tx pgx.Tx) ([]WebSessionView, error) {
+		queries := authdb.New(tx)
+		validated, _, err := m.validateWebPrincipalInTransaction(ctx, queries, principal)
+		if err != nil {
+			return nil, err
+		}
+		idleDeadline, err := durationSeconds(m.policy.WebSessionIdleTTL + m.policy.LastUsedWriteInterval)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := queries.ListActiveWebSessionsForUser(ctx, authdb.ListActiveWebSessionsForUserParams{
+			UserID: validated.UserID, IdleDeadlineSeconds: idleDeadline,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result := make([]WebSessionView, 0, len(rows))
+		for _, row := range rows {
+			id := domainUUID(row.ID)
+			result = append(result, WebSessionView{
+				ID: id, CreatedAt: row.CreatedAt, LastUsedAt: row.LastUsedAt,
+				ReauthenticatedAt: row.ReauthenticatedAt,
+				AbsoluteExpiresAt: row.AbsoluteExpiresAt,
+				Current:           id == principal.WebSessionID,
+			})
+		}
+		return result, nil
+	})
+	if err != nil {
+		var domain *Error
+		if errors.As(err, &domain) {
+			return nil, err
+		}
+		return nil, unavailable("list Web Sessions", err)
+	}
+	return views, nil
+}
+
 func boundedReason(value, fallback string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
