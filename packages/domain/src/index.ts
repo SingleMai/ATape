@@ -1,4 +1,5 @@
 export * from "./client.ts"
+export * from "./cliAuthentication.ts"
 export * from "./collector.ts"
 export * from "./authentication.ts"
 export * from "./memory.ts"

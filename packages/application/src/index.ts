@@ -1,4 +1,5 @@
 export * from "./access.ts"
+export * from "./cliAuthentication.ts"
 export * from "./clientManagement.ts"
 export * from "./collector.ts"
 export * from "./collectorDaemon.ts"
