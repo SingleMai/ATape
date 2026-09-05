@@ -23,6 +23,6 @@
     "test:cli-package": "pnpm --filter @atape/cli verify:package",
     "test:release": "pnpm test:cli-package && pnpm test:adapter-package && node scripts/verify-release.mjs",
     "test:go": "cd server && go test ./...",
-    "test:go:integration": "cd server && ATAPE_INTEGRATION_TESTS=1 TESTCONTAINERS_RYUK_DISABLED=true go test ./internal/adapters/postgres -count=1"
+    "test:go:integration": "cd server && ATAPE_INTEGRATION_TESTS=1 TESTCONTAINERS_RYUK_DISABLED=true go test ./internal/adapters/postgres ./internal/authentication -count=1"
   }
 }
