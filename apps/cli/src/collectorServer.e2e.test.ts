@@ -3,6 +3,7 @@ import {
   appendFile,
   mkdir,
   mkdtemp,
+  readFile,
   rename,
   rm,
   symlink,
@@ -261,14 +262,25 @@ const collectorStatus = async (fixture: Fixture, serverUrl: string) => JSON.pars
 )) as ManagedCollectorStatus
 
 const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
-  for (let attempt = 0; attempt < 100; attempt++) {
+  const deadline = Date.now() + 120_000
+  let lastStatus: ManagedCollectorStatus | undefined
+  while (Date.now() < deadline) {
     const status = await collectorStatus(fixture, serverUrl)
+    lastStatus = status
     const job = status.jobs.find((candidate) =>
       candidate.projectId === "e2e-project" && candidate.adapterId === "codex")
     if (job?.state === "healthy") return job
-    await delay(50)
+    if (!status.running || status.collectorFailure !== undefined || job?.state === "failed") break
+    await delay(250)
   }
-  throw new Error(`Managed Collector did not report success. Log: ${fixture.collectorLogFile}`)
+  const log = await readFile(fixture.collectorLogFile, "utf8")
+    .catch((cause) => `Could not read Collector log: ${cause instanceof Error ? cause.message : String(cause)}`)
+  throw new Error([
+    "Managed Collector did not report success.",
+    `Status: ${JSON.stringify(lastStatus)}`,
+    `Collector log (${fixture.collectorLogFile}):`,
+    log
+  ].join("\n"))
 }
 
 const clientEnvironment = (fixture: Fixture, serverUrl: string): NodeJS.ProcessEnv => ({
@@ -470,6 +482,7 @@ type CollectionReport = {
 
 type ManagedCollectorStatus = {
   readonly running: boolean
+  readonly collectorFailure?: { readonly message: string }
   readonly jobs: ReadonlyArray<{
     readonly projectId: string
     readonly adapterId: string
