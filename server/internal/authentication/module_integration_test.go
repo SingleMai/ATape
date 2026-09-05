@@ -551,7 +551,13 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if err != nil {
 			t.Fatalf("establish idle-boundary Session: %v", err)
 		}
-		time.Sleep(700 * time.Millisecond)
+		if _, err := poolA.Exec(ctx, `
+UPDATE auth_web_sessions
+SET last_used_at = clock_timestamp() - interval '2 seconds'
+WHERE id = $1
+`, idleSession.Session.ID); err != nil {
+			t.Fatalf("move Session beyond idle deadline: %v", err)
+		}
 		if _, err := idleModule.AuthenticateWeb(ctx, idleSession.SessionSecret); authentication.ErrorCodeOf(err) != authentication.CodeSessionIdleExpired {
 			t.Fatalf("idle deadline error = %v, want session_idle_expired", err)
 		}
@@ -568,9 +574,16 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if err != nil {
 			t.Fatalf("establish absolute-boundary Session: %v", err)
 		}
-		// Keep enough margin for the PostgreSQL VM clock and host clock to
-		// converge around the one-second boundary under a loaded test run.
-		time.Sleep(1500 * time.Millisecond)
+		if _, err := poolA.Exec(ctx, `
+UPDATE auth_web_sessions
+SET created_at = clock_timestamp() - interval '2 seconds',
+    last_used_at = clock_timestamp() - interval '2 seconds',
+    reauthenticated_at = clock_timestamp() - interval '2 seconds',
+    absolute_expires_at = clock_timestamp() - interval '1 second'
+WHERE id = $1
+`, absoluteSession.Session.ID); err != nil {
+			t.Fatalf("move Session beyond absolute deadline: %v", err)
+		}
 		if _, err := absoluteModule.AuthenticateWeb(ctx, absoluteSession.SessionSecret); authentication.ErrorCodeOf(err) != authentication.CodeSessionAbsoluteExpired {
 			t.Fatalf("absolute deadline error = %v, want session_absolute_expired", err)
 		}
@@ -1019,7 +1032,7 @@ WHERE id = $1`, web.Principal.UserID); err != nil {
 		if err := lockTx.Rollback(ctx); err != nil {
 			t.Fatalf("release maintenance lock: %v", err)
 		}
-		time.Sleep(1250 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		first, err := module.Maintain(ctx)
 		if err != nil {
 			t.Fatalf("first maintenance pass: %v", err)
@@ -1027,7 +1040,7 @@ WHERE id = $1`, web.Principal.UserID); err != nil {
 		if !first.Acquired || first.ExpiredFederatedLogins != 1 || first.ExpiredCLIAuthorizations != 1 {
 			t.Fatalf("first maintenance result = %+v", first)
 		}
-		time.Sleep(1250 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		second, err := module.Maintain(ctx)
 		if err != nil {
 			t.Fatalf("second maintenance pass: %v", err)
@@ -1056,7 +1069,7 @@ WHERE id = $1`, web.Principal.UserID); err != nil {
 		if err != nil {
 			t.Fatalf("establish maintenance-expiry Session: %v", err)
 		}
-		time.Sleep(1250 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		sessionExpiry, err := sessionModule.Maintain(ctx)
 		if err != nil || sessionExpiry.ExpiredWebSessions != 1 {
 			t.Fatalf("expire abandoned Web Session = %+v, %v", sessionExpiry, err)
@@ -1064,7 +1077,7 @@ WHERE id = $1`, web.Principal.UserID); err != nil {
 		if _, err := sessionModule.AuthenticateWeb(ctx, expiringSession.SessionSecret); authentication.ErrorCodeOf(err) != authentication.CodeSessionIdleExpired {
 			t.Fatalf("maintained idle Session error = %v, want session_idle_expired", err)
 		}
-		time.Sleep(1250 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		sessionCleanup, err := sessionModule.Maintain(ctx)
 		if err != nil || sessionCleanup.DeletedWebSessionSecrets != 1 || sessionCleanup.DeletedWebSessions != 1 {
 			t.Fatalf("clean maintained Web Session = %+v, %v", sessionCleanup, err)
@@ -1111,7 +1124,7 @@ WHERE id = $1`, web.Principal.UserID); err != nil {
 		}); err != nil {
 			t.Fatalf("revoke cleanup Web Session: %v", err)
 		}
-		time.Sleep(1250 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		terminalCleanup, err := module.Maintain(ctx)
 		if err != nil {
 			t.Fatalf("terminal credential cleanup: %v", err)
@@ -1311,10 +1324,13 @@ func buildKeyRing(t *testing.T, spec keySpec) authentication.KeyRing {
 func resetAuthentication(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), `
-TRUNCATE security_audit_events, auth_user_code_attempt_windows,
+TRUNCATE security_audit_events,
+         team_operation_receipts, team_join_code_attempt_windows,
+         team_join_codes, team_memberships,
+         auth_user_code_attempt_windows,
          auth_cli_credentials, auth_cli_device_authorizations,
          auth_federated_login_transactions, auth_web_session_secrets,
-         auth_web_sessions, auth_external_identities, auth_users;
+         auth_web_sessions, auth_external_identities, auth_users CASCADE;
 UPDATE auth_cutover_ledger
 SET status = 'pending', completed_at = NULL, updated_at = clock_timestamp()
 WHERE protocol_version = 'auth-v1'`); err != nil {

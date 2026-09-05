@@ -4,6 +4,9 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 )
 
 type batchReceipt struct {
@@ -28,6 +31,7 @@ type MemoryStore struct {
 	teams                    map[string]TeamRecord
 	projects                 map[string]ProjectRecord
 	projectCapture           map[string]time.Time
+	memberships              map[string]authorization.MembershipFacts
 	sessions                 map[string]SessionRecord
 	sessionIDsByProject      map[string]map[string]struct{}
 	threads                  map[string]ThreadRecord
@@ -42,13 +46,27 @@ type MemoryStore struct {
 	nextIngestSeq            uint64
 	projectionChanges        []projectionChangeState
 	nextProjectionChangeID   int64
+	authorizer               authorization.Policy
+}
+
+// MemoryControlPlane is explicit fixture state for the development Adapter.
+// Production control-plane mutations remain owned by the Team Module.
+type MemoryControlPlane struct {
+	Teams       []TeamRecord
+	Projects    []ProjectRecord
+	Memberships []authorization.MembershipFacts
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{
+	return NewMemoryStoreWithControlPlane(MemoryControlPlane{})
+}
+
+func NewMemoryStoreWithControlPlane(controlPlane MemoryControlPlane) *MemoryStore {
+	store := &MemoryStore{
 		teams:                    make(map[string]TeamRecord),
 		projects:                 make(map[string]ProjectRecord),
 		projectCapture:           make(map[string]time.Time),
+		memberships:              make(map[string]authorization.MembershipFacts),
 		sessions:                 make(map[string]SessionRecord),
 		sessionIDsByProject:      make(map[string]map[string]struct{}),
 		threads:                  make(map[string]ThreadRecord),
@@ -62,15 +80,42 @@ func NewMemoryStore() *MemoryStore {
 		batchReceipts:            make(map[string]batchReceipt),
 		projectionChanges:        make([]projectionChangeState, 0),
 	}
+	for _, team := range controlPlane.Teams {
+		store.teams[team.ID] = team
+	}
+	for _, project := range controlPlane.Projects {
+		if project.State == "" {
+			project.State = "active"
+		}
+		store.projects[project.ID] = project
+	}
+	for _, membership := range controlPlane.Memberships {
+		store.memberships[membershipKey(membership.TeamID, membership.UserID)] = membership
+	}
+	return store
 }
 
-func (s *MemoryStore) ApplyBatch(ctx context.Context, batch WriteBatch) (ApplyResult, error) {
+func (s *MemoryStore) ApplyBatch(
+	ctx context.Context,
+	principal authentication.Principal,
+	batch WriteBatch,
+) (ApplyResult, error) {
 	if err := ctx.Err(); err != nil {
 		return ApplyResult{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	project, err := s.authorizeProjectLocked(principal, batch.ProjectID, authorization.CanonicalIngest)
+	if err != nil {
+		return ApplyResult{}, err
+	}
+	if project.State != "active" {
+		return ApplyResult{}, &ProjectStateError{State: project.State}
+	}
+	if batch.Session.ProjectID != batch.ProjectID || batch.Session.CapturedByUserID != principal.UserID {
+		return ApplyResult{}, &ConflictError{Identity: batch.Session.ID, Reason: "server capture scope is inconsistent"}
+	}
 
 	if receipt, ok := s.batchReceipts[batch.Key]; ok {
 		if receipt.digest != batch.Digest {
@@ -81,13 +126,6 @@ func (s *MemoryStore) ApplyBatch(ctx context.Context, batch WriteBatch) (ApplyRe
 		return result, nil
 	}
 
-	if team, ok := s.teams[batch.Team.ID]; ok && team != batch.Team {
-		return ApplyResult{}, &ConflictError{Identity: batch.Team.ID, Reason: "team identity is immutable"}
-	}
-	if project, ok := s.projects[batch.Project.ID]; ok && project != batch.Project {
-		return ApplyResult{}, &ConflictError{Identity: batch.Project.ID, Reason: "project identity is immutable"}
-	}
-
 	result := ApplyResult{SessionID: batch.Session.ID}
 	existingSession, sessionExists := s.sessions[batch.Session.ID]
 	if sessionExists && existingSession.SourceKey != batch.Session.SourceKey {
@@ -95,6 +133,9 @@ func (s *MemoryStore) ApplyBatch(ctx context.Context, batch WriteBatch) (ApplyRe
 	}
 	if sessionExists && existingSession.ProjectID != batch.Session.ProjectID {
 		return ApplyResult{}, &ConflictError{Identity: batch.Session.SourceKey, Reason: "session project is immutable"}
+	}
+	if sessionExists && existingSession.CapturedByUserID != principal.UserID {
+		return ApplyResult{}, &ConflictError{Identity: batch.Session.SourceKey, Reason: "capturing User is immutable"}
 	}
 	if sessionExists && existingSession.Revision == batch.Session.Revision && existingSession.Digest != batch.Session.Digest {
 		return ApplyResult{}, &ConflictError{Identity: batch.Session.SourceKey, Reason: "session revision has different content"}
@@ -152,13 +193,11 @@ func (s *MemoryStore) ApplyBatch(ctx context.Context, batch WriteBatch) (ApplyRe
 		}
 	}
 
-	s.teams[batch.Team.ID] = batch.Team
-	s.projects[batch.Project.ID] = batch.Project
 	if !sessionExists || batch.Session.Revision > existingSession.Revision {
 		s.sessions[batch.Session.ID] = batch.Session
 	}
 	if !sessionExists {
-		addToIndex(s.sessionIDsByProject, batch.Project.ID, batch.Session.ID)
+		addToIndex(s.sessionIDsByProject, batch.ProjectID, batch.Session.ID)
 	}
 	for _, thread := range batch.Threads {
 		key := recordKey(thread.SessionID, thread.ID)
@@ -195,29 +234,52 @@ func (s *MemoryStore) ApplyBatch(ctx context.Context, batch WriteBatch) (ApplyRe
 		}
 	}
 
-	if current, ok := s.projectCapture[batch.Project.ID]; !ok || batch.ObservedAt.After(current) {
-		s.projectCapture[batch.Project.ID] = batch.ObservedAt
+	if current, ok := s.projectCapture[batch.ProjectID]; !ok || batch.ObservedAt.After(current) {
+		s.projectCapture[batch.ProjectID] = batch.ObservedAt
 	}
 	s.batchReceipts[batch.Key] = batchReceipt{digest: batch.Digest, result: result}
 
 	return result, nil
 }
 
-func (s *MemoryStore) Workspace(ctx context.Context, activeSince time.Time) (WorkspaceSnapshot, error) {
+func (s *MemoryStore) Workspace(
+	ctx context.Context,
+	principal authentication.Principal,
+	activeSince time.Time,
+) (WorkspaceSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return WorkspaceSnapshot{}, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if err := authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+		Principal: principal, Action: authorization.WorkspaceListVisible,
+		Resource: authorization.ResourceFacts{Kind: authorization.InstanceResource},
+	})); err != nil {
+		return WorkspaceSnapshot{}, err
+	}
 
 	snapshot := WorkspaceSnapshot{
 		Teams:    make([]TeamRecord, 0, len(s.teams)),
 		Projects: make([]WorkspaceProjectSnapshot, 0, len(s.projects)),
 	}
 	for _, team := range s.teams {
-		snapshot.Teams = append(snapshot.Teams, team)
+		membership := s.memberships[membershipKey(team.ID, principal.UserID)]
+		if authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+			Principal: principal, Action: authorization.TeamReadMetadata,
+			Resource:   authorization.ResourceFacts{Kind: authorization.TeamResource, TeamID: team.ID},
+			Membership: membership,
+		})) == nil {
+			snapshot.Teams = append(snapshot.Teams, team)
+		}
 	}
 	for projectID, project := range s.projects {
+		if project.State == "deleted" {
+			continue
+		}
+		if _, err := s.authorizeProjectLocked(principal, projectID, authorization.ProjectReadMetadata); err != nil {
+			continue
+		}
 		entry := WorkspaceProjectSnapshot{
 			Project:         project,
 			CapturedThrough: s.projectCapture[projectID],
@@ -341,7 +403,11 @@ func (s *MemoryStore) eventProjection(eventID string) (EventProjection, bool) {
 	}, true
 }
 
-func (s *MemoryStore) Project(ctx context.Context, projectID string) (ProjectSnapshot, bool, error) {
+func (s *MemoryStore) Project(
+	ctx context.Context,
+	principal authentication.Principal,
+	projectID string,
+) (ProjectSnapshot, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return ProjectSnapshot{}, false, err
 	}
@@ -349,9 +415,12 @@ func (s *MemoryStore) Project(ctx context.Context, projectID string) (ProjectSna
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	project, ok := s.projects[projectID]
-	if !ok {
-		return ProjectSnapshot{}, false, nil
+	project, err := s.authorizeProjectLocked(principal, projectID, authorization.ProjectMemoryRead)
+	if err != nil {
+		if concealed(err) {
+			return ProjectSnapshot{}, false, nil
+		}
+		return ProjectSnapshot{}, false, err
 	}
 
 	snapshot := ProjectSnapshot{Project: project}
@@ -376,6 +445,7 @@ func (s *MemoryStore) Project(ctx context.Context, projectID string) (ProjectSna
 
 func (s *MemoryStore) Conversation(
 	ctx context.Context,
+	principal authentication.Principal,
 	sessionID string,
 	threadID string,
 ) (ConversationSnapshot, bool, error) {
@@ -389,6 +459,23 @@ func (s *MemoryStore) Conversation(
 	session, ok := s.sessions[sessionID]
 	if !ok {
 		return ConversationSnapshot{}, false, nil
+	}
+	project, ok := s.projects[session.ProjectID]
+	if !ok || project.State == "deleted" {
+		return ConversationSnapshot{}, false, nil
+	}
+	membership := s.memberships[membershipKey(project.TeamID, principal.UserID)]
+	err := authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+		Principal: principal, Action: authorization.ConversationRead,
+		Resource: authorization.ResourceFacts{Kind: authorization.ConversationResource, TeamID: project.TeamID,
+			CapturedByUserID: session.CapturedByUserID},
+		Membership: membership,
+	}))
+	if err != nil {
+		if concealed(err) {
+			return ConversationSnapshot{}, false, nil
+		}
+		return ConversationSnapshot{}, false, err
 	}
 	thread, ok := s.threads[recordKey(sessionID, threadID)]
 	if !ok {
@@ -409,6 +496,81 @@ func (s *MemoryStore) Conversation(
 		snapshot.Events = append(snapshot.Events, cloneEvent(s.events[eventID]))
 	}
 	return snapshot, true, nil
+}
+
+// AuthorizeProject lets a development read-model Adapter consult the current
+// control-plane fixture without copying Membership into the Search index.
+func (s *MemoryStore) AuthorizeProject(
+	ctx context.Context,
+	principal authentication.Principal,
+	projectID string,
+	action authorization.Action,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, err := s.authorizeProjectLocked(principal, projectID, action)
+	return err
+}
+
+// CurrentSessionAccess supplies current facts to the separate in-memory Raw
+// Adapter. The Raw Module remains the owner of its action decision.
+func (s *MemoryStore) CurrentSessionAccess(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+) (authorization.SessionAccessFacts, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return authorization.SessionAccessFacts{}, false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return authorization.SessionAccessFacts{}, false, nil
+	}
+	project, ok := s.projects[session.ProjectID]
+	if !ok || project.State == "deleted" {
+		return authorization.SessionAccessFacts{}, false, nil
+	}
+	return authorization.SessionAccessFacts{
+		ProjectID: session.ProjectID, ProjectState: project.State,
+		Resource: authorization.ResourceFacts{
+			Kind: authorization.ConversationResource, TeamID: project.TeamID,
+			CapturedByUserID: session.CapturedByUserID,
+		},
+		Membership: s.memberships[membershipKey(project.TeamID, principal.UserID)],
+	}, true, nil
+}
+
+func (s *MemoryStore) authorizeProjectLocked(
+	principal authentication.Principal,
+	projectID string,
+	action authorization.Action,
+) (ProjectRecord, error) {
+	project, ok := s.projects[projectID]
+	if !ok || project.State == "deleted" {
+		return ProjectRecord{}, authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+			Principal: principal, Action: action,
+			Resource: authorization.ResourceFacts{Kind: authorization.ProjectResource},
+		}))
+	}
+	membership := s.memberships[membershipKey(project.TeamID, principal.UserID)]
+	err := authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+		Principal: principal, Action: action,
+		Resource:   authorization.ResourceFacts{Kind: authorization.ProjectResource, TeamID: project.TeamID},
+		Membership: membership,
+	}))
+	return project, err
+}
+
+func membershipKey(teamID, userID string) string { return teamID + "\x00" + userID }
+
+func concealed(err error) bool {
+	access, ok := err.(*authorization.AccessError)
+	return ok && access.Decision == authorization.Conceal
 }
 
 func recordKey(sessionID string, recordID string) string {

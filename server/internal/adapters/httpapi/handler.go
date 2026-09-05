@@ -54,7 +54,9 @@ func NewHandler(
 }
 
 func (h *Handler) rawSession(response http.ResponseWriter, request *http.Request) {
-	archive, err := h.raw.OpenSession(request.Context(), request.PathValue("sessionID"))
+	archive, err := h.raw.OpenSession(
+		request.Context(), principalFromContext(request.Context()), request.PathValue("sessionID"),
+	)
 	if err != nil {
 		writeError(response, err)
 		return
@@ -74,7 +76,7 @@ func (h *Handler) rawContent(response http.ResponseWriter, request *http.Request
 		return
 	}
 	page, err := h.raw.Read(
-		request.Context(), request.PathValue("objectID"), generation,
+		request.Context(), principalFromContext(request.Context()), request.PathValue("objectID"), generation,
 		request.URL.Query().Get("cursor"), limit,
 	)
 	if err != nil {
@@ -99,7 +101,7 @@ func (h *Handler) rawChunk(response http.ResponseWriter, request *http.Request) 
 		})
 		return
 	}
-	result, err := h.raw.Append(request.Context(), chunk)
+	result, err := h.raw.Append(request.Context(), principalFromContext(request.Context()), chunk)
 	if err != nil {
 		writeError(response, err)
 		return
@@ -112,7 +114,7 @@ func (h *Handler) rawChunk(response http.ResponseWriter, request *http.Request) 
 }
 
 func (h *Handler) workspace(response http.ResponseWriter, request *http.Request) {
-	directory, err := h.directory.Open(request.Context())
+	directory, err := h.directory.Open(request.Context(), principalFromContext(request.Context()))
 	if err != nil {
 		writeError(response, err)
 		return
@@ -132,6 +134,7 @@ func (h *Handler) projectSearch(response http.ResponseWriter, request *http.Requ
 	}
 	page, err := h.searcher.Search(
 		request.Context(),
+		principalFromContext(request.Context()),
 		request.PathValue("projectID"),
 		request.URL.Query().Get("q"),
 		request.URL.Query().Get("cursor"),
@@ -162,7 +165,9 @@ func (h *Handler) canonicalBatch(response http.ResponseWriter, request *http.Req
 		return
 	}
 
-	result, err := h.ingestor.ApplyBatch(request.Context(), batch)
+	result, err := h.ingestor.ApplyBatch(
+		request.Context(), principalFromContext(request.Context()), batch,
+	)
 	if err != nil {
 		writeError(response, err)
 		return
@@ -183,7 +188,9 @@ func (h *Handler) health(response http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) projectMemory(response http.ResponseWriter, request *http.Request) {
-	memory, err := h.memory.OpenProject(request.Context(), request.PathValue("projectID"))
+	memory, err := h.memory.OpenProject(
+		request.Context(), principalFromContext(request.Context()), request.PathValue("projectID"),
+	)
 	if err != nil {
 		writeError(response, err)
 		return
@@ -194,6 +201,7 @@ func (h *Handler) projectMemory(response http.ResponseWriter, request *http.Requ
 func (h *Handler) conversation(response http.ResponseWriter, request *http.Request) {
 	result, err := h.memory.OpenConversation(
 		request.Context(),
+		principalFromContext(request.Context()),
 		request.PathValue("sessionID"),
 		request.URL.Query().Get("thread"),
 	)

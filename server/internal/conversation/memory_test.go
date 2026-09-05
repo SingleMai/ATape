@@ -6,14 +6,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
+
+func demoPrincipal() authentication.Principal {
+	return authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication}
+}
 
 func TestMemoryOpensProjectAndProtectsStoredSlices(t *testing.T) {
 	memory := NewMemory(canonical.NewDemoStore())
 	memory.now = func() time.Time { return mustTestTime(t, "2026-09-04T10:50:00+08:00") }
 
-	project, err := memory.OpenProject(context.Background(), "payments-api")
+	project, err := memory.OpenProject(context.Background(), demoPrincipal(), "payments-api")
 	if err != nil {
 		t.Fatalf("open project: %v", err)
 	}
@@ -22,7 +27,7 @@ func TestMemoryOpensProjectAndProtectsStoredSlices(t *testing.T) {
 	}
 
 	project.Active[0].Title = "mutated by caller"
-	again, err := memory.OpenProject(context.Background(), "payments-api")
+	again, err := memory.OpenProject(context.Background(), demoPrincipal(), "payments-api")
 	if err != nil {
 		t.Fatalf("open project again: %v", err)
 	}
@@ -35,7 +40,7 @@ func TestMemoryAgesOpenSessionsToIdleAndKeepsEndedSessionsEnded(t *testing.T) {
 	memory := NewMemory(canonical.NewDemoStore())
 	memory.now = func() time.Time { return mustTestTime(t, "2026-09-04T11:00:00+08:00") }
 
-	project, err := memory.OpenProject(context.Background(), "payments-api")
+	project, err := memory.OpenProject(context.Background(), demoPrincipal(), "payments-api")
 	if err != nil {
 		t.Fatalf("open project: %v", err)
 	}
@@ -50,7 +55,7 @@ func TestMemoryAgesOpenSessionsToIdleAndKeepsEndedSessionsEnded(t *testing.T) {
 		t.Fatalf("unexpected effective statuses: %+v", statuses)
 	}
 
-	conversation, err := memory.OpenConversation(context.Background(), "checkout", "root")
+	conversation, err := memory.OpenConversation(context.Background(), demoPrincipal(), "checkout", "root")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}
@@ -62,7 +67,7 @@ func TestMemoryAgesOpenSessionsToIdleAndKeepsEndedSessionsEnded(t *testing.T) {
 func TestMemoryReturnsArraysForAnEmptyProject(t *testing.T) {
 	memory := NewMemory(canonical.NewDemoStore())
 
-	project, err := memory.OpenProject(context.Background(), "support-notes")
+	project, err := memory.OpenProject(context.Background(), demoPrincipal(), "support-notes")
 	if err != nil {
 		t.Fatalf("open empty project: %v", err)
 	}
@@ -77,7 +82,7 @@ func TestMemoryReturnsArraysForAnEmptyProject(t *testing.T) {
 func TestMemoryOpensChildThread(t *testing.T) {
 	memory := NewMemory(canonical.NewDemoStore())
 
-	conversation, err := memory.OpenConversation(context.Background(), "checkout", "schema-review")
+	conversation, err := memory.OpenConversation(context.Background(), demoPrincipal(), "checkout", "schema-review")
 	if err != nil {
 		t.Fatalf("open child conversation: %v", err)
 	}
@@ -92,7 +97,7 @@ func TestMemoryOpensChildThread(t *testing.T) {
 func TestMemoryReturnsTypedNotFound(t *testing.T) {
 	memory := NewMemory(canonical.NewDemoStore())
 
-	_, err := memory.OpenConversation(context.Background(), "unknown", "root")
+	_, err := memory.OpenConversation(context.Background(), demoPrincipal(), "unknown", "root")
 	var notFound *NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("error = %v, want *NotFoundError", err)
@@ -104,7 +109,7 @@ func TestMemoryHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := memory.OpenProject(ctx, "payments-api")
+	_, err := memory.OpenProject(ctx, demoPrincipal(), "payments-api")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}

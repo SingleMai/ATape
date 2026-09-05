@@ -7,11 +7,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
 
 type DirectoryStore interface {
-	Workspace(context.Context, time.Time) (canonical.WorkspaceSnapshot, error)
+	Workspace(context.Context, authentication.Principal, time.Time) (canonical.WorkspaceSnapshot, error)
 }
 
 type Project struct {
@@ -42,8 +43,8 @@ func NewDirectory(store DirectoryStore) *Directory {
 	return &Directory{store: store, now: time.Now}
 }
 
-func (d *Directory) Open(ctx context.Context) (Workspace, error) {
-	snapshot, err := d.store.Workspace(ctx, canonical.ActiveSessionCutoff(d.now()))
+func (d *Directory) Open(ctx context.Context, principal authentication.Principal) (Workspace, error) {
+	snapshot, err := d.store.Workspace(ctx, principal, canonical.ActiveSessionCutoff(d.now()))
 	if err != nil {
 		return Workspace{}, err
 	}

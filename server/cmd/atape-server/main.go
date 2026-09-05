@@ -17,6 +17,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/adapters/memorysearch"
 	postgresadapter "github.com/SingleMai/ATape/server/internal/adapters/postgres"
 	"github.com/SingleMai/ATape/server/internal/adapters/rawchunks"
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
@@ -71,8 +72,8 @@ type persistenceAdapters struct {
 func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (persistenceAdapters, error) {
 	if config.databaseURL == "" {
 		store := canonical.NewDemoStore()
-		index := memorysearch.New()
-		raw, err := memoryraw.NewDemoArchive()
+		index := memorysearch.New(store)
+		raw, err := memoryraw.NewDemoArchive(store)
 		if err != nil {
 			return persistenceAdapters{}, err
 		}
@@ -156,9 +157,20 @@ func ownProjectorLifetime(lifecycle fx.Lifecycle, projector *projectsearch.Proje
 }
 
 func newHTTPServer(config serverConfig, handler *httpapi.Handler) *http.Server {
+	var root http.Handler = handler
+	if config.demoMode {
+		root = http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			method := authentication.WebAuthentication
+			if request.Method == http.MethodPost {
+				method = authentication.CLIAuthentication
+			}
+			principal := authentication.Principal{UserID: canonical.DemoUserID, Method: method}
+			handler.ServeHTTP(response, request.WithContext(httpapi.WithPrincipal(request.Context(), principal)))
+		})
+	}
 	return &http.Server{
 		Addr:              config.address,
-		Handler:           handler,
+		Handler:           root,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 }

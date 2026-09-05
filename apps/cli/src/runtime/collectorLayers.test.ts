@@ -81,7 +81,7 @@ const listen = async () => {
       raw.push(body)
       response.statusCode = 201
       response.end(JSON.stringify({
-        objectId: body.objectId,
+        objectId: `r_server_${String(body.sourceObjectId)}`,
         generation: body.generation,
         sizeBytes: Number(body.offset) + bytes.byteLength,
         finalized: body.final,
@@ -264,15 +264,28 @@ describe("Node Collector Layers", () => {
     expect(JSON.stringify(remote.canonical)).not.toContain("ultrasecretvalue")
     expect(Buffer.from(String(remote.raw[0]?.contentBase64), "base64").toString("utf8"))
       .toBe("{\"value\":\"[REDACTED]\"}\n")
-    expect(remote.canonical[0]?.project).not.toHaveProperty("path")
+    expect(remote.canonical[0]).toMatchObject({ projectId: "payments" })
+    expect(remote.canonical[0]).not.toHaveProperty("project")
+    expect(remote.canonical[0]?.source).not.toHaveProperty("userId")
+    expect(remote.canonical[0]).not.toHaveProperty("teamId")
+    expect(remote.raw[0]).toMatchObject({
+      sourceChunkId: "g1-o0",
+      sourceObjectId: "transcript",
+      installationId: state.installationId
+    })
+    expect(remote.raw[0]).not.toHaveProperty("userId")
+    expect(remote.raw[0]).not.toHaveProperty("teamId")
+    expect(remote.raw[0]).not.toHaveProperty("projectId")
+    expect(remote.raw[0]).not.toHaveProperty("objectId")
+    expect(remote.raw[0]).not.toHaveProperty("chunkId")
     expect((remote.canonical[0]?.threads as Array<Record<string, unknown>>)[1]).toMatchObject({
       sourceThreadId: "child", parentSourceThreadId: "root"
     })
     expect((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]).toMatchObject({
       childSourceThreadId: "child"
     })
-    expect(String((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]?.rawRef))
-      .toBe(`${String(remote.raw[0]?.objectId)}#line:1`)
+    expect((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]?.rawRef)
+      .toEqual({ type: "object", sourceObjectId: "transcript", fragment: "#line:1" })
     expect(state.installationId).toMatch(/^i_/)
     expect(state.checkpoints).toEqual([expect.objectContaining({ revision: 2, cursor: "cursor-1" })])
     expect(adapterCalls[0]).toMatchObject({ user: { id: "liying" }, cursor: null, rawProgress: [] })

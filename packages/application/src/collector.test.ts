@@ -279,6 +279,7 @@ describe("Collector Module", () => {
     expect(capture.canonical[0]?.observation.events[0]).toMatchObject({
       update: { sessionUpdate: "tool_call" }, childSourceThreadId: "child"
     })
+    expect(capture.canonical[0]?.observation).not.toHaveProperty("rawSegments")
     expect(capture.commits()).toBe(2)
     expect(capture.checkpoint()).toMatchObject({
       revision: 2,
@@ -378,7 +379,9 @@ describe("Collector Module", () => {
     expect(capture.raw.every((submission) => utf8Length(submission.content) <= RawTransportChunkBytes)).toBe(true)
     expect(capture.raw.map((submission) => submission.content).join("")).toBe(redactedContent)
     expect(capture.raw.map((submission) => submission.final)).toEqual([false, true])
-    expect(capture.raw.map((submission) => submission.transportChunkIndex)).toEqual([0, 1])
+    expect(capture.raw[0]?.sourceChunkId).toBe("g1-o0")
+    expect(capture.raw[1]?.sourceChunkId)
+      .toBe(`g1-o${utf8Length(capture.raw[0]?.content ?? "")}`)
     expect(capture.checkpoint()?.rawObjects[0]).toMatchObject({
       sourceOffset: utf8Length(sourceContent),
       serverOffset: utf8Length(redactedContent),
@@ -406,7 +409,7 @@ describe("Collector Module", () => {
     expect(report.jobs).toEqual([])
     expect(report.failures[0]).toMatchObject({ retryable: true, message: "Raw is temporarily unavailable" })
     expect(capture.raw).toHaveLength(1)
-    expect(capture.raw[0]).toMatchObject({ serverOffset: 0, transportChunkIndex: 0, final: false })
+    expect(capture.raw[0]).toMatchObject({ serverOffset: 0, sourceChunkId: "g1-o0", final: false })
     expect(capture.rawAttempts()).toBe(4)
     expect(capture.checkpoint()).toBeUndefined()
   })

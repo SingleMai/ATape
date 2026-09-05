@@ -124,6 +124,12 @@ type User struct {
 	CreatedAt   time.Time
 }
 
+type DisableUserInput struct {
+	UserID    string
+	Reason    string
+	RequestID string
+}
+
 type AuthenticationMethod string
 
 const (
@@ -139,6 +145,7 @@ type Principal struct {
 	WebSessionID    string
 	CLICredentialID string
 	AuthenticatedAt time.Time
+	Fresh           bool
 }
 
 type WebSession struct {

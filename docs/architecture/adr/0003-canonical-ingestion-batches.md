@@ -28,9 +28,9 @@ One `ApplyBatch` operation validates and atomically applies a bounded Session/Th
 ATape uses the idempotent Canonical batch Interface.
 
 - HTTP Adapter: `POST /api/v1/ingestion/canonical/batches`.
-- Module Interface: `Ingestor.ApplyBatch(ctx, batch)`.
+- Module Interface: `Ingestor.ApplyBatch(ctx, principal, batch)`.
 - Each batch is limited to 4 MiB, 100 Threads, and 500 Events.
-- A source Session identity includes `project + user + collector installation + adapter family + native session/source session key`.
+- A source Session identity includes `project + authenticated Principal User + collector installation + adapter family + native session/source session key`.
 - `adapterVersion` is provenance and does not participate in Session identity.
 - A Canonical Event identity includes its Session, Thread, and stable source Event key.
 - Reusing `batchId` with identical content is a replay; different content is an idempotency conflict.
@@ -41,7 +41,10 @@ ATape uses the idempotent Canonical batch Interface.
 - The alpha Interface accepts only the shared event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`, `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol carries an explicit extension schema and version.
 - Project Memory and Session Reader query only current Canonical snapshots. Search remains an independent derived read model.
 
-The `atape.canonical.v1alpha1` HTTP representation is currently an internal alpha covering the reader's text projection. It is not yet the public Adapter SDK schema. Expanding semantic payloads must reuse pinned ACP ContentBlock/Message and the accepted AG-UI/A2A profiles rather than adding another ATape content taxonomy.
+The `atape.canonical.v1` HTTP representation uses the pinned
+`atape.acp-centered.v1` projection. The payload names a target `projectId`, but
+it does not declare User, Team, Membership, or Project ownership. ADR-0016
+defines the authoritative Principal and resource-authorization amendment.
 
 ## Storage Adapters
 

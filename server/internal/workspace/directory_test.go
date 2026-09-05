@@ -5,14 +5,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
+
+func directoryPrincipal() authentication.Principal {
+	return authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication}
+}
 
 func TestDirectoryUsesSharedActiveSessionWindow(t *testing.T) {
 	directory := NewDirectory(canonical.NewDemoStore())
 	directory.now = func() time.Time { return mustDirectoryTime(t, "2026-09-04T10:50:00+08:00") }
 
-	recent, err := directory.Open(context.Background())
+	recent, err := directory.Open(context.Background(), directoryPrincipal())
 	if err != nil {
 		t.Fatalf("open recent directory: %v", err)
 	}
@@ -22,7 +27,7 @@ func TestDirectoryUsesSharedActiveSessionWindow(t *testing.T) {
 	}
 
 	directory.now = func() time.Time { return mustDirectoryTime(t, "2026-09-04T11:00:00+08:00") }
-	stale, err := directory.Open(context.Background())
+	stale, err := directory.Open(context.Background(), directoryPrincipal())
 	if err != nil {
 		t.Fatalf("open stale directory: %v", err)
 	}

@@ -6,26 +6,29 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 )
 
 // NewDemoArchive seeds representative, already-redacted Raw source for the
 // local executable. Raw remains absent from Canonical and Search fixtures.
-func NewDemoArchive() (*rawarchive.Archive, error) {
-	store := New()
+func NewDemoArchive(access SessionAccess) (*rawarchive.Archive, error) {
+	store := New(access)
 	archive := rawarchive.NewArchive(store, store)
+	principal := authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.CLIAuthentication}
 	content := []byte(
 		`{"type":"user","message":"Retries occasionally charge a customer twice."}` + "\n" +
 			`{"type":"assistant","message":"I found two retry layers.","request":{"authorization":"[REDACTED]"}}` + "\n" +
 			`{"type":"tool_result","tool":"read_file","path":"internal/payments/retry.go"}` + "\n",
 	)
 	digest := sha256.Sum256(content)
-	_, err := archive.Append(context.Background(), rawarchive.UploadChunk{
+	_, err := archive.Append(context.Background(), principal, rawarchive.UploadChunk{
 		ProtocolVersion: rawarchive.ProtocolVersion,
-		ChunkID:         "demo-checkout-raw-g1-c1",
-		ObjectID:        "demo-checkout-codex-jsonl",
-		ProjectID:       "payments-api",
+		SourceChunkID:   "demo-checkout-raw-g1-c1",
+		SourceObjectID:  "demo-checkout-codex-jsonl",
 		SessionID:       "checkout",
+		InstallationID:  "demo-installation",
 		Generation:      1,
 		Offset:          0,
 		SourceName:      "codex-session.jsonl",

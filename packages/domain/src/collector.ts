@@ -5,9 +5,9 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { AdapterProtocolVersion } from "./client.ts"
 
-export const CanonicalIngestionProtocolVersion = "atape.canonical.v1alpha1" as const
-export const CanonicalProfileVersion = "atape.acp-centered.v1alpha1" as const
-export const RawIngestionProtocolVersion = "atape.raw.v1alpha1" as const
+export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
+export const CanonicalProfileVersion = "atape.acp-centered.v1" as const
+export const RawIngestionProtocolVersion = "atape.raw.v1" as const
 export const RawTransportChunkBytes = 256 * 1024
 export const CollectorStateVersion = 1 as const
 export const CollectorRunStateVersion = 1 as const
@@ -357,17 +357,20 @@ export const emptyCollectorRunState = (): CollectorRunState => ({
 export const CanonicalSource = Schema.Struct({
   adapterId: Schema.String,
   adapterVersion: Schema.String,
-  userId: Schema.String,
   installationId: Schema.String
 })
 
-export const CanonicalProject = Schema.Struct({
-  id: Schema.String,
-  teamId: Schema.String,
-  teamName: Schema.String,
-  name: Schema.String,
-  type: Schema.Literals(["git", "directory"])
-})
+export const CanonicalRawReference = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("object"),
+    sourceObjectId: Schema.String,
+    fragment: Schema.optionalKey(Schema.String)
+  }),
+  Schema.Struct({
+    type: Schema.Literal("unavailable"),
+    reason: Schema.String
+  })
+])
 
 export const CanonicalIngestionEvent = Schema.Struct({
   sourceEventId: Schema.String,
@@ -378,7 +381,7 @@ export const CanonicalIngestionEvent = Schema.Struct({
   eventIndex: Schema.Number,
   orderFidelity: Schema.Literals(["native", "derived"]),
   fidelity: Schema.Literals(["native", "derived", "partial", "redacted"]),
-  rawRef: Schema.String,
+  rawRef: CanonicalRawReference,
   kind: Schema.Literals(["message", "thought", "tool_call", "tool_result", "artifact", "spawn", "lifecycle"]),
   author: Schema.String,
   occurredAt: Schema.String,
@@ -393,7 +396,7 @@ export const CanonicalBatch = Schema.Struct({
   batchId: Schema.String,
   observedAt: Schema.String,
   source: CanonicalSource,
-  project: CanonicalProject,
+  projectId: Schema.String,
   session: AdapterSession,
   threads: Schema.Array(AdapterThread),
   events: Schema.Array(CanonicalIngestionEvent)
@@ -413,10 +416,10 @@ export type CanonicalApplyReceipt = typeof CanonicalApplyReceipt.Type
 
 export const RawUploadChunk = Schema.Struct({
   protocolVersion: Schema.Literal(RawIngestionProtocolVersion),
-  chunkId: Schema.String,
-  objectId: Schema.String,
-  projectId: Schema.String,
+  sourceChunkId: Schema.String,
+  sourceObjectId: Schema.String,
   sessionId: Schema.String,
+  installationId: Schema.String,
   generation: Schema.Number,
   offset: Schema.Number,
   sourceName: Schema.String,

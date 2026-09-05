@@ -42,11 +42,11 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     expect((await collectorStatus(fixture, serverUrl)).running).toBe(false)
 
     const workspace = await getJSON<Workspace>(serverUrl, "/api/v1/workspace")
-    const project = workspace.teams.find((team) => team.id === "e2e-team")
-      ?.projects.find((candidate) => candidate.id === "e2e-project")
+    const project = workspace.teams.find((team) => team.id === "acme-engineering")
+      ?.projects.find((candidate) => candidate.id === "support-notes")
     expect(project).toMatchObject({ sessionCount: 1, activeSessionCount: 1 })
 
-    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/e2e-project/memory")
+    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
     expect(memory.trail).toHaveLength(1)
     expect(memory.active).toHaveLength(1)
     expect(memory.trail[0]).toMatchObject({
@@ -113,7 +113,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     ])
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 2 })
 
-    const ended = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/e2e-project/memory")
+    const ended = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
     expect(ended.active).toHaveLength(0)
     expect(ended.trail[0]?.status).toBe("ended")
     const finalized = await getJSON<RawArchive>(
@@ -210,9 +210,9 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
     serverUrl,
     userId: "e2e-user",
     projects: [{
-      id: "e2e-project",
-      teamId: "e2e-team",
-      teamName: "E2E Team",
+      id: "support-notes",
+      teamId: "acme-engineering",
+      teamName: "Acme Engineering",
       name: "E2E Project",
       type: "directory",
       path: fixture.projectDirectory,
@@ -237,7 +237,7 @@ const collect = async (fixture: Fixture, serverUrl: string) => {
     "collect",
     "--once",
     "--project",
-    "e2e-project",
+    "support-notes",
     "--json"
   ], repositoryRoot, clientEnvironment(fixture, serverUrl))
   return JSON.parse(output) as CollectionReport
@@ -271,7 +271,7 @@ const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
     const status = await collectorStatus(fixture, serverUrl)
     lastStatus = status
     const job = status.jobs.find((candidate) =>
-      candidate.projectId === "e2e-project" && candidate.adapterId === "codex")
+      candidate.projectId === "support-notes" && candidate.adapterId === "codex")
     if (job?.state === "healthy") return job
     if (!status.running || status.collectorFailure !== undefined || job?.state === "failed") break
     await delay(250)
@@ -394,7 +394,7 @@ const waitForSearch = async (serverUrl: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     const page = await getJSON<SearchPage>(
       serverUrl,
-      "/api/v1/projects/e2e-project/search?q=e2e-search-needle"
+      "/api/v1/projects/support-notes/search?q=e2e-search-needle"
     )
     last = page
     const texts = new Set(page.results.map((result) => result.text))

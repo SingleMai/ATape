@@ -9,6 +9,7 @@ type ErrorCode string
 
 const (
 	CodeInvalidRequest              ErrorCode = "invalid_request"
+	CodeNotFound                    ErrorCode = "not_found"
 	CodeMisconfigured               ErrorCode = "misconfigured"
 	CodeServiceUnavailable          ErrorCode = "service_unavailable"
 	CodeLoginExpired                ErrorCode = "login_expired"
@@ -34,6 +35,7 @@ const (
 	CodeInvalidDeviceCode           ErrorCode = "invalid_device_code"
 	CodeGrantConsumed               ErrorCode = "grant_consumed"
 	CodeCredentialRevoked           ErrorCode = "credential_revoked"
+	CodeLastOwnerRequired           ErrorCode = "last_owner_required"
 	CodeOutcomeUnknown              ErrorCode = "outcome_unknown"
 )
 
@@ -50,6 +52,8 @@ func (e *Error) Error() string {
 	switch e.Code {
 	case CodeInvalidRequest:
 		return "authentication request is invalid"
+	case CodeNotFound:
+		return "authentication resource was not found"
 	case CodeMisconfigured:
 		return "authentication is misconfigured"
 	case CodeServiceUnavailable:
@@ -100,6 +104,8 @@ func (e *Error) Error() string {
 		return "CLI authorization was already claimed"
 	case CodeCredentialRevoked:
 		return "CLI credential was revoked"
+	case CodeLastOwnerRequired:
+		return "user is the last active owner of a team"
 	case CodeOutcomeUnknown:
 		return "authentication commit outcome is unknown"
 	default:

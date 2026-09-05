@@ -112,6 +112,29 @@ func (q *Queries) ClaimFederatedLogin(ctx context.Context, id pgtype.UUID) (Clai
 	return i, err
 }
 
+const countOtherActiveOwnersForUserDisable = `-- name: CountOtherActiveOwnersForUserDisable :one
+SELECT COUNT(*)::bigint
+FROM team_memberships memberships
+JOIN auth_users users ON users.id = memberships.user_id
+WHERE memberships.team_id = $1
+  AND memberships.status = 'active'
+  AND memberships.role = 'owner'
+  AND users.status = 'active'
+  AND memberships.user_id <> $2
+`
+
+type CountOtherActiveOwnersForUserDisableParams struct {
+	TeamID string
+	UserID pgtype.UUID
+}
+
+func (q *Queries) CountOtherActiveOwnersForUserDisable(ctx context.Context, arg CountOtherActiveOwnersForUserDisableParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveOwnersForUserDisable, arg.TeamID, arg.UserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const databaseTime = `-- name: DatabaseTime :one
 SELECT clock_timestamp()::timestamptz AS now
 `
@@ -289,6 +312,34 @@ func (q *Queries) DenyCLIAuthorization(ctx context.Context, arg DenyCLIAuthoriza
 	return err
 }
 
+const disableUser = `-- name: DisableUser :execrows
+UPDATE auth_users
+SET status = 'disabled', disabled_at = clock_timestamp(), updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active'
+`
+
+func (q *Queries) DisableUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, disableUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const expireApprovedCLIAuthorizationsForUser = `-- name: ExpireApprovedCLIAuthorizationsForUser :execrows
+UPDATE auth_cli_device_authorizations
+SET status = 'expired', terminal_at = clock_timestamp()
+WHERE approving_user_id = $1 AND status = 'approved_unclaimed'
+`
+
+func (q *Queries) ExpireApprovedCLIAuthorizationsForUser(ctx context.Context, approvingUserID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, expireApprovedCLIAuthorizationsForUser, approvingUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const expireCLIAuthorization = `-- name: ExpireCLIAuthorization :exec
 UPDATE auth_cli_device_authorizations
 SET status = 'expired', terminal_at = clock_timestamp()
@@ -406,6 +457,21 @@ func (q *Queries) ExpireWebSessionBatch(ctx context.Context, arg ExpireWebSessio
 		return nil, err
 	}
 	return items, nil
+}
+
+const failFederatedLoginsForUser = `-- name: FailFederatedLoginsForUser :execrows
+UPDATE auth_federated_login_transactions
+SET status = 'failed', terminal_at = clock_timestamp(), failure_code = 'user_disabled',
+    private_state_key_id = NULL, private_state_nonce = NULL, private_state_ciphertext = NULL
+WHERE initiating_user_id = $1 AND status IN ('pending', 'completing')
+`
+
+func (q *Queries) FailFederatedLoginsForUser(ctx context.Context, initiatingUserID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, failFederatedLoginsForUser, initiatingUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const finishFederatedLogin = `-- name: FinishFederatedLogin :exec
@@ -1186,6 +1252,33 @@ func (q *Queries) ListActiveCLICredentialsForUser(ctx context.Context, userID pg
 	return items, nil
 }
 
+const listActiveOwnerTeamIDsForUser = `-- name: ListActiveOwnerTeamIDsForUser :many
+SELECT team_id
+FROM team_memberships
+WHERE user_id = $1 AND status = 'active' AND role = 'owner'
+ORDER BY team_id
+`
+
+func (q *Queries) ListActiveOwnerTeamIDsForUser(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listActiveOwnerTeamIDsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var team_id string
+		if err := rows.Scan(&team_id); err != nil {
+			return nil, err
+		}
+		items = append(items, team_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listActiveWebSessionsForUser = `-- name: ListActiveWebSessionsForUser :many
 SELECT id, created_at, last_used_at, reauthenticated_at, absolute_expires_at
 FROM auth_web_sessions
@@ -1348,6 +1441,18 @@ func (q *Queries) LiveCLICodeExists(ctx context.Context, arg LiveCLICodeExistsPa
 	var found bool
 	err := row.Scan(&found)
 	return found, err
+}
+
+const lockTeamForUserDisable = `-- name: LockTeamForUserDisable :exec
+SELECT id
+FROM workspace_teams
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockTeamForUserDisable(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, lockTeamForUserDisable, id)
+	return err
 }
 
 const reauthenticateWebSession = `-- name: ReauthenticateWebSession :one

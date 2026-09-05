@@ -13,11 +13,13 @@ import (
 
 	"github.com/SingleMai/ATape/server/internal/adapters/memoryraw"
 	"github.com/SingleMai/ATape/server/internal/adapters/memorysearch"
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/sourceidentity"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 )
 
@@ -26,8 +28,8 @@ func TestRawChunkEndpointIsIdempotent(t *testing.T) {
 	content := []byte("{\"token\":\"[REDACTED]\"}\n")
 	digest := sha256.Sum256(content)
 	upload := rawarchive.UploadChunk{
-		ProtocolVersion: rawarchive.ProtocolVersion, ChunkID: "http-raw-chunk-1", ObjectID: "http-raw-object",
-		ProjectID: "payments-api", SessionID: "checkout", Generation: 1, Offset: 0,
+		ProtocolVersion: rawarchive.ProtocolVersion, SourceChunkID: "http-raw-chunk-1", SourceObjectID: "http-raw-object",
+		SessionID: "checkout", InstallationID: "http-installation", Generation: 1, Offset: 0,
 		SourceName: "http-session.jsonl", MediaType: "application/x-ndjson", AdapterID: "atape-adapter-test",
 		AdapterVersion: "0.1.0", CapturedAt: "2026-09-04T11:30:00+08:00", ClientRedacted: true,
 		Final: true, ContentBase64: base64.StdEncoding.EncodeToString(content), SHA256: hex.EncodeToString(digest[:]),
@@ -43,6 +45,48 @@ func TestRawChunkEndpointIsIdempotent(t *testing.T) {
 		if response.Code != want {
 			t.Fatalf("attempt %d status = %d, want %d: %s", attempt+1, response.Code, want, response.Body.String())
 		}
+	}
+}
+
+func TestIngestionEndpointsRejectClientDeclaredAuthority(t *testing.T) {
+	handler := testHandler(t)
+	for _, test := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{
+			name: "Canonical source User",
+			path: "/api/v1/ingestion/canonical/batches",
+			body: `{"protocolVersion":"atape.canonical.v1","source":{"userId":"spoofed-user"}}`,
+		},
+		{
+			name: "Canonical Team",
+			path: "/api/v1/ingestion/canonical/batches",
+			body: `{"protocolVersion":"atape.canonical.v1","teamId":"spoofed-team"}`,
+		},
+		{
+			name: "Raw Project",
+			path: "/api/v1/ingestion/raw/chunks",
+			body: `{"protocolVersion":"atape.raw.v1","projectId":"spoofed-project"}`,
+		},
+		{
+			name: "Raw object identity",
+			path: "/api/v1/ingestion/raw/chunks",
+			body: `{"protocolVersion":"atape.raw.v1","objectId":"spoofed-object","chunkId":"spoofed-chunk"}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+				t.Fatalf("response does not contain a data-poor decode error: %s", response.Body.String())
+			}
+		})
 	}
 }
 
@@ -78,11 +122,11 @@ func TestProjectSearchEndpointRejectsEmptyQuery(t *testing.T) {
 	}
 }
 
-func testHandler(t *testing.T) *Handler {
+func testHandler(t *testing.T) http.Handler {
 	t.Helper()
 	store := canonical.NewDemoStore()
-	index := memorysearch.New()
-	raw, err := memoryraw.NewDemoArchive()
+	index := memorysearch.New(store)
+	raw, err := memoryraw.NewDemoArchive(store)
 	if err != nil {
 		t.Fatalf("seed demo Raw archive: %v", err)
 	}
@@ -90,10 +134,18 @@ func testHandler(t *testing.T) *Handler {
 	if _, err := projector.ProjectOnce(t.Context()); err != nil {
 		t.Fatalf("project demo Search index: %v", err)
 	}
-	return NewHandler(
+	handler := NewHandler(
 		conversation.NewMemory(store), ingestion.NewIngestor(store),
 		projectsearch.NewSearcher(index), workspace.NewDirectory(store), raw,
 	)
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		method := authentication.WebAuthentication
+		if request.Method == http.MethodPost {
+			method = authentication.CLIAuthentication
+		}
+		principal := authentication.Principal{UserID: canonical.DemoUserID, Method: method}
+		handler.ServeHTTP(response, request.WithContext(WithPrincipal(request.Context(), principal)))
+	})
 }
 
 func TestRawSessionAndContentEndpointsAreSeparateAndBounded(t *testing.T) {
@@ -104,7 +156,10 @@ func TestRawSessionAndContentEndpointsAreSeparateAndBounded(t *testing.T) {
 	if got, want := listingResponse.Code, http.StatusOK; got != want {
 		t.Fatalf("listing status = %d, want %d: %s", got, want, listingResponse.Body.String())
 	}
-	for _, expected := range []string{`"objectId":"demo-checkout-codex-jsonl"`, `"clientRedacted":true`, `"contentBase64"`} {
+	demoObjectID := sourceidentity.RawObjectID(
+		canonical.DemoUserID, "checkout", "demo-installation", "atape-adapter-codex", "demo-checkout-codex-jsonl",
+	)
+	for _, expected := range []string{`"objectId":"` + demoObjectID + `"`, `"clientRedacted":true`, `"contentBase64"`} {
 		contains := strings.Contains(listingResponse.Body.String(), expected)
 		if expected == `"contentBase64"` {
 			contains = !contains
@@ -114,7 +169,7 @@ func TestRawSessionAndContentEndpointsAreSeparateAndBounded(t *testing.T) {
 		}
 	}
 
-	contentRequest := httptest.NewRequest(http.MethodGet, "/api/v1/raw-objects/demo-checkout-codex-jsonl/content?limit=1", nil)
+	contentRequest := httptest.NewRequest(http.MethodGet, "/api/v1/raw-objects/"+demoObjectID+"/content?limit=1", nil)
 	contentResponse := httptest.NewRecorder()
 	handler.ServeHTTP(contentResponse, contentRequest)
 	if got, want := contentResponse.Code, http.StatusOK; got != want {
@@ -179,8 +234,8 @@ func TestCanonicalBatchEndpointIsReadableAndReplaySafe(t *testing.T) {
 		CanonicalProfileVersion: ingestion.CanonicalProfileVersion,
 		BatchID:                 "http-batch-1",
 		ObservedAt:              "2026-09-04T11:30:00+08:00",
-		Source:                  ingestion.Source{AdapterID: "atape-adapter-test", AdapterVersion: "0.1.0", UserID: "test-user", InstallationID: "test-host"},
-		Project:                 ingestion.Project{ID: "payments-api", TeamID: "acme-engineering", TeamName: "Acme Engineering", Name: "payments-api", Type: "git"},
+		Source:                  ingestion.Source{AdapterID: "atape-adapter-test", AdapterVersion: "0.1.0", InstallationID: "test-host"},
+		ProjectID:               "payments-api",
 		Session: ingestion.Session{
 			SourceSessionID: "http-session", Revision: 1, Title: "Captured through HTTP",
 			Summary: "A real ingestion request.", Insight: "The reader sees the committed batch.",
@@ -190,7 +245,7 @@ func TestCanonicalBatchEndpointIsReadableAndReplaySafe(t *testing.T) {
 		Threads: []ingestion.Thread{{SourceThreadID: "root-source", Revision: 1, Label: "Root thread", CaptureStatus: "healthy"}},
 		Events: []ingestion.Event{{
 			SourceEventID: "event-1", SourceThreadID: "root-source", Revision: 1, ProjectionRevision: 1,
-			SourceOrder: 1, EventIndex: 0, OrderFidelity: "native", Fidelity: "native", RawRef: "raw://test/http-session#event-1",
+			SourceOrder: 1, EventIndex: 0, OrderFidelity: "native", Fidelity: "native", RawRef: ingestion.RawReference{Type: "object", SourceObjectID: "http-session", Fragment: "#event-1"},
 			Kind: "message", Author: "Test user", OccurredAt: "2026-09-04T11:29:00+08:00", Text: "The batch arrived.",
 		}},
 	}

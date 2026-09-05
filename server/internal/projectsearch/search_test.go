@@ -5,13 +5,18 @@ import (
 	"testing"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/memorysearch"
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 )
 
+func searchPrincipal() authentication.Principal {
+	return authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication}
+}
+
 func TestProjectorBuildsSearchableChildThreadDocuments(t *testing.T) {
 	store := canonical.NewDemoStore()
-	index := memorysearch.New()
+	index := memorysearch.New(store)
 	projector := projectsearch.NewProjector(store, index)
 
 	projected, err := projector.ProjectOnce(t.Context())
@@ -22,7 +27,7 @@ func TestProjectorBuildsSearchableChildThreadDocuments(t *testing.T) {
 		t.Fatalf("projected changes = %d, want %d", got, want)
 	}
 	page, err := projectsearch.NewSearcher(index).Search(
-		context.Background(), "payments-api", "merchant_id", "", 20,
+		context.Background(), searchPrincipal(), "payments-api", "merchant_id", "", 20,
 	)
 	if err != nil {
 		t.Fatalf("search child Thread: %v", err)
@@ -52,31 +57,31 @@ func TestProjectorBuildsSearchableChildThreadDocuments(t *testing.T) {
 
 func TestSearcherValidatesAndPaginatesBehindOpaqueCursor(t *testing.T) {
 	store := canonical.NewDemoStore()
-	index := memorysearch.New()
+	index := memorysearch.New(store)
 	projector := projectsearch.NewProjector(store, index)
 	if _, err := projector.ProjectOnce(t.Context()); err != nil {
 		t.Fatalf("project demo changes: %v", err)
 	}
 	searcher := projectsearch.NewSearcher(index)
 
-	first, err := searcher.Search(t.Context(), "payments-api", "idempotency key", "", 1)
+	first, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", "idempotency key", "", 1)
 	if err != nil {
 		t.Fatalf("search first page: %v", err)
 	}
 	if len(first.Results) != 1 || first.NextCursor == "" {
 		t.Fatalf("first page does not expose one result and cursor: %+v", first)
 	}
-	second, err := searcher.Search(t.Context(), "payments-api", "idempotency key", first.NextCursor, 1)
+	second, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", "idempotency key", first.NextCursor, 1)
 	if err != nil {
 		t.Fatalf("search second page: %v", err)
 	}
 	if len(second.Results) != 1 || second.Results[0].EventID == first.Results[0].EventID {
 		t.Fatalf("second page did not advance: first=%+v second=%+v", first.Results, second.Results)
 	}
-	if _, err := searcher.Search(t.Context(), "payments-api", " ", "", 20); err == nil {
+	if _, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", " ", "", 20); err == nil {
 		t.Fatal("empty search query was accepted")
 	}
-	if _, err := searcher.Search(t.Context(), "payments-api", "retry", "not-a-cursor", 20); err == nil {
+	if _, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", "retry", "not-a-cursor", 20); err == nil {
 		t.Fatal("invalid cursor was accepted")
 	}
 }

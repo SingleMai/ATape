@@ -8,10 +8,12 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const listWorkspaceProjects = `-- name: ListWorkspaceProjects :many
-SELECT projects.id, projects.team_id, projects.name, projects.project_type,
+SELECT projects.id, projects.team_id, projects.name, projects.project_type, projects.state,
        projects.captured_through,
        COUNT(sessions.id)::bigint AS session_count,
        COUNT(sessions.id) FILTER (
@@ -19,23 +21,33 @@ SELECT projects.id, projects.team_id, projects.name, projects.project_type,
              AND sessions.updated_at >= $1::timestamptz
        )::bigint AS active_session_count
 FROM canonical_projects projects
+JOIN team_memberships membership ON membership.team_id = projects.team_id
 LEFT JOIN canonical_sessions sessions ON sessions.project_id = projects.id
+WHERE membership.user_id = $2
+  AND membership.status = 'active'
+  AND projects.state <> 'deleted'
 GROUP BY projects.id
 ORDER BY projects.team_id, lower(projects.name), projects.id
 `
+
+type ListWorkspaceProjectsParams struct {
+	ActiveSince time.Time
+	UserID      pgtype.UUID
+}
 
 type ListWorkspaceProjectsRow struct {
 	ID                 string
 	TeamID             string
 	Name               string
 	ProjectType        string
+	State              string
 	CapturedThrough    time.Time
 	SessionCount       int64
 	ActiveSessionCount int64
 }
 
-func (q *Queries) ListWorkspaceProjects(ctx context.Context, activeSince time.Time) ([]ListWorkspaceProjectsRow, error) {
-	rows, err := q.db.Query(ctx, listWorkspaceProjects, activeSince)
+func (q *Queries) ListWorkspaceProjects(ctx context.Context, arg ListWorkspaceProjectsParams) ([]ListWorkspaceProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceProjects, arg.ActiveSince, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +60,7 @@ func (q *Queries) ListWorkspaceProjects(ctx context.Context, activeSince time.Ti
 			&i.TeamID,
 			&i.Name,
 			&i.ProjectType,
+			&i.State,
 			&i.CapturedThrough,
 			&i.SessionCount,
 			&i.ActiveSessionCount,
@@ -63,9 +76,12 @@ func (q *Queries) ListWorkspaceProjects(ctx context.Context, activeSince time.Ti
 }
 
 const listWorkspaceTeams = `-- name: ListWorkspaceTeams :many
-SELECT id, name
-FROM workspace_teams
-ORDER BY lower(name), id
+SELECT teams.id, teams.name
+FROM workspace_teams teams
+JOIN team_memberships membership ON membership.team_id = teams.id
+WHERE membership.user_id = $1
+  AND membership.status = 'active'
+ORDER BY lower(teams.name), teams.id
 `
 
 type ListWorkspaceTeamsRow struct {
@@ -73,8 +89,8 @@ type ListWorkspaceTeamsRow struct {
 	Name string
 }
 
-func (q *Queries) ListWorkspaceTeams(ctx context.Context) ([]ListWorkspaceTeamsRow, error) {
-	rows, err := q.db.Query(ctx, listWorkspaceTeams)
+func (q *Queries) ListWorkspaceTeams(ctx context.Context, userID pgtype.UUID) ([]ListWorkspaceTeamsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceTeams, userID)
 	if err != nil {
 		return nil, err
 	}

@@ -33,7 +33,14 @@ ATape uses a deep `rawarchive.Archive` Module backed by two consumer-owned Seams
 - `ChunkStore` owns immutable bytes by an opaque storage key. Filesystem, in-memory, and future object-storage Adapters implement this real production variance.
 - `Archive.Append`, `Archive.OpenSession`, and `Archive.Read` are the public operations. HTTP handlers only translate requests and typed failures.
 
-The alpha upload protocol is `atape.raw.v1alpha1`. Each upload declares a stable `chunkId` and `objectId`, the Canonical `projectId` and `sessionId`, source and Adapter metadata, a generation, byte offset, finalization flag, client-redaction acknowledgement, Base64 content, and SHA-256 digest.
+The upload protocol is `atape.raw.v1`. Each upload declares source-local
+`sourceChunkId` and `sourceObjectId`, the Canonical `sessionId`, collector
+installation and Adapter metadata, a generation, byte offset, finalization
+flag, client-redaction acknowledgement, Base64 content, and SHA-256 digest.
+The authenticated Principal and current Canonical Session facts determine the
+capturing User, Project, Team, and server-owned object/chunk IDs; the client
+cannot declare those authority fields. ADR-0016 defines this authorization
+amendment.
 
 - Decoded chunks are at most 256 KiB. HTTP request bodies are at most 512 KiB.
 - The server decodes one bounded chunk and verifies its SHA-256 before writing any state.
