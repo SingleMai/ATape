@@ -169,35 +169,31 @@
     .auth-page {
       min-height: calc(100vh - 64px);
       padding: clamp(20px, 5vw, 62px);
-      background:
-        radial-gradient(circle at 8% 88%, rgba(84, 200, 173, .2) 0 120px, transparent 121px),
-        radial-gradient(circle at 92% 12%, rgba(244, 204, 97, .25) 0 155px, transparent 156px),
-        var(--canvas);
+      display: grid;
+      place-items: center;
+      background: var(--canvas);
     }
-    .auth-header { width: min(1120px, 100%); margin: 0 auto 44px; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
     .account-chip { min-height: 48px; padding: 4px 7px 4px 5px; border: 2px solid var(--border-soft); border-radius: 999px; display: flex; align-items: center; gap: 9px; background: rgba(255, 253, 247, .8); }
     .account-chip .avatar { width: 34px; height: 34px; }
     .account-chip span:last-child { padding-right: 8px; font-size: 13px; font-weight: 800; }
-    .auth-grid { width: min(1040px, 100%); margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(360px, .8fr); align-items: center; gap: clamp(32px, 8vw, 92px); }
-    .auth-story { padding: 20px 0; }
-    .auth-story p { max-width: 590px; color: var(--muted); font-size: 1.08rem; }
-    .story-points { margin: 28px 0 0; padding: 0; list-style: none; display: grid; gap: 15px; }
-    .story-points li { display: flex; align-items: flex-start; gap: 11px; font-weight: 720; }
-    .story-points li::before { content: "✓"; width: 25px; height: 25px; flex: 0 0 auto; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; font-weight: 950; }
+    .login-panel { width: min(420px, 100%); }
+    .login-brand { margin-bottom: 24px; display: flex; justify-content: center; }
     .auth-card, .decision-card {
-      padding: clamp(24px, 4vw, 38px);
+      padding: clamp(25px, 4vw, 34px);
       border: 2px solid var(--border);
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-md);
       background: var(--paper);
-      box-shadow: var(--shadow-raised);
+      box-shadow: var(--shadow-resting);
     }
+    .auth-card { text-align: center; }
+    .auth-card h1 { margin-bottom: 8px; font-size: 1.8rem; letter-spacing: -.03em; }
     .auth-card > p { color: var(--muted); }
-    .auth-card-footer { margin: 22px -4px -8px; padding-top: 18px; border-top: 1px dashed var(--border); color: var(--muted); font-size: 13px; }
+    .login-copy { margin-bottom: 23px; }
+    .login-instance { margin: 17px 0 0; font-size: 12px; }
+    .login-instance code { color: var(--accent-strong); }
     .github-mark { width: 22px; height: 22px; }
-    .return-context { margin: 0 0 22px; padding: 14px 15px; border: 2px solid var(--navigation-border); border-radius: var(--radius-sm); background: var(--accent-soft); }
-    .return-context strong { display: block; margin-bottom: 3px; }
-    .instance-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .instance-line code { color: var(--accent-strong); font-size: 12px; }
+    .return-context { margin: 0 0 22px; padding: 12px 13px; border-radius: 12px; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; text-align: left; }
+    .return-context strong { display: block; margin-bottom: 2px; }
     .success-strip, .error-strip, .warning-strip {
       margin: 0 0 22px;
       padding: 14px 16px;
@@ -332,10 +328,6 @@
       .prototype-controls { min-width: 0; }
       .prototype-controls label { display: none; }
       .prototype-controls select { min-width: 0; max-width: 58vw; }
-      .auth-grid { grid-template-columns: 1fr; gap: 24px; }
-      .auth-story { padding-bottom: 0; text-align: center; }
-      .story-points { display: none; }
-      .auth-card { width: min(520px, 100%); margin: 0 auto; }
       .choice-grid { grid-template-columns: 1fr; }
       .choice-card { min-height: 235px; }
       .workspace-shell { display: block; }
@@ -354,10 +346,8 @@
       .prototype-controls { width: 100%; }
       .prototype-controls select { min-width: 0; max-width: none; flex: 1; padding-right: 24px; font-size: 13px; }
       .auth-page, .onboarding-page, .cli-page { min-height: calc(100vh - 64px); padding: 18px 14px 36px; }
-      .auth-header, .onboarding-header, .cli-header { margin-bottom: 30px; }
+      .onboarding-header, .cli-header { margin-bottom: 30px; }
       .account-chip span:last-child { display: none; }
-      .auth-story { text-align: left; }
-      .auth-story h1 { font-size: 2.35rem; }
       .auth-card, .decision-card, .form-card { padding: 23px 19px; border-radius: var(--radius-md); }
       .choice-card { padding: 23px 20px; }
       .choice-icon { margin-bottom: 18px; }
@@ -517,35 +507,21 @@
       const cliReturn = state.returnTo === "cli"
       return `
         <div class="auth-page">
-          <header class="auth-header">${brand()}</header>
-          <main class="auth-grid" id="main-content" tabindex="-1">
-            <section class="auth-story" aria-labelledby="login-story-title">
-              <p class="eyebrow">Shared agent memory</p>
-              <h1 id="login-story-title" tabindex="-1">Keep the thread.<br />Own the context.</h1>
-              <p>ATape turns conversations from your local tools into searchable memory for the Teams and Projects you choose.</p>
-              <ul class="story-points">
-                <li>Your account works across the Web and CLI.</li>
-                <li>Local folders stay local until you explicitly set one up.</li>
-                <li>Self-hosted instances own their complete login stack.</li>
-              </ul>
-            </section>
+          <main class="login-panel" id="main-content" tabindex="-1">
+            <div class="login-brand">${brand()}</div>
             <section class="auth-card" aria-labelledby="sign-in-title">
               ${state.flash ? `<div class="success-strip"><p>${escapeHtml(state.flash)}</p></div>` : ""}
               ${cliReturn ? `
                 <div class="return-context">
                   <strong>CLI sign-in in progress</strong>
-                  <span>Sign in first, then review the request from <code>atape-cli</code>. Nothing will be approved automatically.</span>
+                  <span>After signing in, you will review the request from <code>atape-cli</code>.</span>
                 </div>` : ""}
-              <p class="eyebrow">Welcome${cliReturn ? " back" : ""}</p>
-              <h2 id="sign-in-title">Sign in to ATape</h2>
-              <p>Continue with your GitHub identity. New accounts are created automatically.</p>
+              <h1 id="sign-in-title" tabindex="-1">Sign in to ATape</h1>
+              <p class="login-copy">Use your GitHub account to continue.</p>
               <button class="button button-primary button-block" type="button" data-action="github-login">
                 ${githubIcon()} Continue with GitHub
               </button>
-              <div class="auth-card-footer">
-                <div class="instance-line"><span>Signing in to</span> <code>https://atape.dev</code></div>
-                <p>By continuing, you agree to this instance’s terms and privacy policy.</p>
-              </div>
+              <p class="login-instance">Instance <code>https://atape.dev</code></p>
             </section>
           </main>
         </div>`
