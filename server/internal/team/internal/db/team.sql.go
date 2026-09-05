@@ -1438,6 +1438,17 @@ func (q *Queries) SoftDeleteProject(ctx context.Context, id string) (SoftDeleteP
 	return i, err
 }
 
+const tryAcquireTeamAdvisoryLock = `-- name: TryAcquireTeamAdvisoryLock :one
+SELECT pg_try_advisory_xact_lock(hashtextextended($1::text, 0))
+`
+
+func (q *Queries) TryAcquireTeamAdvisoryLock(ctx context.Context, lockKey string) (bool, error) {
+	row := q.db.QueryRow(ctx, tryAcquireTeamAdvisoryLock, lockKey)
+	var pg_try_advisory_xact_lock bool
+	err := row.Scan(&pg_try_advisory_xact_lock)
+	return pg_try_advisory_xact_lock, err
+}
+
 const updateTeamDisplayName = `-- name: UpdateTeamDisplayName :one
 UPDATE workspace_teams
 SET name = $2, updated_at = clock_timestamp()

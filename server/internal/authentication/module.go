@@ -159,6 +159,11 @@ func validateRegistration(registration ProviderRegistration) error {
 		len(registration.Revision) > 200 || strings.ContainsAny(registration.Revision, "\x00\r\n") {
 		return errors.New("provider registration identity is invalid")
 	}
+	if registration.Label != "" && (!utf8.ValidString(registration.Label) ||
+		len(registration.Label) > 100 || strings.TrimSpace(registration.Label) != registration.Label ||
+		strings.ContainsAny(registration.Label, "\x00\r\n")) {
+		return errors.New("provider registration label is invalid")
+	}
 	if registration.Adapter == nil {
 		return fmt.Errorf("provider registration %q has no Adapter", registration.ID)
 	}
@@ -260,7 +265,7 @@ func validateOpaqueSecret(secret, prefix string) bool {
 
 func normalizeReturnTo(value string) (string, error) {
 	if value == "" {
-		return "/", nil
+		return "", domainError(CodeInvalidRequest)
 	}
 	if !utf8.ValidString(value) || len(value) > 2048 || !strings.HasPrefix(value, "/") ||
 		strings.HasPrefix(value, "//") || strings.Contains(value, "\\") || strings.ContainsAny(value, "\r\n\x00") {
@@ -268,7 +273,8 @@ func normalizeReturnTo(value string) (string, error) {
 	}
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.User != nil || parsed.Fragment != "" ||
-		parsed.Path == "" || strings.HasPrefix(parsed.Path, "//") || strings.Contains(parsed.Path, "\\") {
+		parsed.Path == "" || strings.HasPrefix(parsed.Path, "//") || strings.Contains(parsed.Path, "\\") ||
+		strings.ContainsAny(parsed.Path, "\r\n\x00") {
 		return "", domainError(CodeInvalidRequest)
 	}
 	return parsed.RequestURI(), nil

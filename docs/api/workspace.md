@@ -1,9 +1,12 @@
 # Workspace API
 
-The Workspace Directory is the navigation read model for all Teams and Projects visible to the current user. v0.1 exposes all Projects to every Team member; the response shape does not imply future authorization policy.
+The Workspace endpoint is the query-time-filtered navigation view for every
+Team and Project visible to the current User. It is `AnyPrincipal`: callers
+send exactly one valid Web Session Cookie or CLI Credential, never both.
 
 ```http
 GET /api/v1/workspace
+Authorization: Bearer atc_v1_...
 Accept: application/json
 ```
 
@@ -11,30 +14,35 @@ Accept: application/json
 {
   "teams": [
     {
-      "id": "acme-engineering",
-      "name": "Acme Engineering",
-      "projects": [
-        {
-          "id": "payments-api",
-          "name": "payments-api",
-          "type": "git",
-          "capturedThrough": "2026-09-04T02:52:18Z",
-          "sessionCount": 3,
-          "activeSessionCount": 2
-        },
-        {
-          "id": "support-notes",
-          "name": "support-notes",
-          "type": "directory",
-          "sessionCount": 0,
-          "activeSessionCount": 0
-        }
-      ]
+      "id": "019...",
+      "slug": "acme-engineering",
+      "displayName": "Acme Engineering",
+      "membership": { "role": "owner" },
+      "createdAt": "2026-09-04T02:40:00Z",
+      "updatedAt": "2026-09-04T02:40:00Z"
+    }
+  ],
+  "projects": [
+    {
+      "id": "019...",
+      "teamId": "019...",
+      "type": "git",
+      "name": "acme/payments-api",
+      "state": "active",
+      "repositoryIdentity": "github.com/acme/payments-api",
+      "capturedThrough": "2026-09-04T02:52:18Z",
+      "createdAt": "2026-09-04T02:41:00Z",
+      "updatedAt": "2026-09-04T02:52:18Z"
     }
   ]
 }
 ```
 
-Teams and Projects are ordered for display by the Workspace Module. Counts and capture watermarks are navigation hints; Session and Event payloads remain in the Project Memory and conversation APIs.
+Teams and Projects are separate arrays so callers can index them without
+nesting or duplicating Team metadata. `git` identifies a normalized repository
+remote; `folder` identifies an explicitly created ordinary-folder Project.
+A local filesystem path is CLI configuration and never enters this response.
 
-`git` identifies a configured Git repository and `directory` identifies an explicitly configured ordinary folder. A local path is never included in this response.
+Membership removal, User disable, and Project deletion affect the next read
+without an ACL cache invalidation protocol. Every success and Problem response
+uses `Cache-Control: no-store` and carries a server-generated `X-Request-ID`.

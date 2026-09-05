@@ -132,27 +132,27 @@ func (m *Module) DisableJoinCode(ctx context.Context, input TeamActionInput) err
 	return mapOperationError("disable Team Join Code", err)
 }
 
-func (m *Module) JoinTeam(ctx context.Context, input JoinTeamInput) (TeamView, error) {
+func (m *Module) JoinTeam(ctx context.Context, input JoinTeamInput) (JoinTeamResult, error) {
 	if err := ctx.Err(); err != nil {
-		return TeamView{}, err
+		return JoinTeamResult{}, err
 	}
 	if !validateRequestID(input.RequestID) {
-		return TeamView{}, domainError(CodeInvalidRequest)
+		return JoinTeamResult{}, domainError(CodeInvalidRequest)
 	}
-	view, err := withTransaction(ctx, m.pool, func(tx pgx.Tx) (TeamView, error) {
+	result, err := withTransaction(ctx, m.pool, func(tx pgx.Tx) (JoinTeamResult, error) {
 		queries := teamdb.New(tx)
 		userID, err := m.lockPrincipalUser(ctx, queries, input.Principal)
 		if err != nil {
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		if err := m.authorize(input.Principal, authorization.TeamJoinWithCode,
 			authorization.ResourceFacts{Kind: authorization.InstanceResource},
 			authorization.MembershipFacts{}); err != nil {
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		now, err := queries.DatabaseTime(ctx)
 		if err != nil {
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		windowStart := now.Truncate(m.policy.JoinCodeAttemptWindow)
 		windowEnd := windowStart.Add(m.policy.JoinCodeAttemptWindow)
@@ -161,10 +161,10 @@ func (m *Module) JoinTeam(ctx context.Context, input JoinTeamInput) (TeamView, e
 		})
 		if windowErr == nil && (window.FailureCount >= int32(m.policy.MaximumCodeFailures) ||
 			(window.BlockedUntil.Valid && now.Before(window.BlockedUntil.Time))) {
-			return TeamView{}, retryError(CodeTooManyJoinCodeAttempts, positiveCeilingSeconds(windowEnd.Sub(now)))
+			return JoinTeamResult{}, retryError(CodeTooManyJoinCodeAttempts, positiveCeilingSeconds(windowEnd.Sub(now)))
 		}
 		if windowErr != nil && !errors.Is(windowErr, pgx.ErrNoRows) {
-			return TeamView{}, windowErr
+			return JoinTeamResult{}, windowErr
 		}
 		normalized, valid := normalizeJoinCode(input.JoinCode)
 		matches := make([]teamdb.FindEnabledJoinCodeRow, 0, 1)
@@ -172,7 +172,7 @@ func (m *Module) JoinTeam(ctx context.Context, input JoinTeamInput) (TeamView, e
 			for _, keyID := range m.pepperKeys.KeyIDs() {
 				digest, found, err := m.pepperKeys.ShortCodeDigest(keyID, joinCodePurpose, normalized)
 				if err != nil || !found {
-					return TeamView{}, domainError(CodeMisconfigured)
+					return JoinTeamResult{}, domainError(CodeMisconfigured)
 				}
 				match, err := queries.FindEnabledJoinCode(ctx, teamdb.FindEnabledJoinCodeParams{
 					PepperKeyID: keyID, CodeDigest: digest[:],
@@ -180,71 +180,76 @@ func (m *Module) JoinTeam(ctx context.Context, input JoinTeamInput) (TeamView, e
 				if err == nil {
 					matches = append(matches, match)
 				} else if !errors.Is(err, pgx.ErrNoRows) {
-					return TeamView{}, err
+					return JoinTeamResult{}, err
 				}
 			}
 		}
 		if len(matches) != 1 {
 			if len(matches) > 1 {
-				return TeamView{}, domainError(CodeMisconfigured)
+				return JoinTeamResult{}, domainError(CodeMisconfigured)
 			}
-			return TeamView{}, m.recordJoinCodeFailure(ctx, queries, input.Principal,
+			return JoinTeamResult{}, m.recordJoinCodeFailure(ctx, queries, input.Principal,
 				userID, now, windowStart, windowEnd, input.RequestID)
 		}
 		match := matches[0]
 		teamRow, err := queries.GetTeamByIDForUpdate(ctx, match.TeamID)
 		if err != nil {
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		lockedCode, err := queries.GetJoinCodeByIDForUpdate(ctx, match.ID)
 		if err != nil || lockedCode.Status != "enabled" ||
 			!hmac.Equal(lockedCode.CodeDigest, match.CodeDigest) {
 			if errors.Is(err, pgx.ErrNoRows) || err == nil {
-				return TeamView{}, m.recordJoinCodeFailure(ctx, queries, input.Principal,
+				return JoinTeamResult{}, m.recordJoinCodeFailure(ctx, queries, input.Principal,
 					userID, now, windowStart, windowEnd, input.RequestID)
 			}
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		membership, membershipErr := queries.GetMembershipForUpdate(ctx, teamdb.GetMembershipForUpdateParams{
 			TeamID: match.TeamID, UserID: userID,
 		})
 		changed := false
+		created := false
 		switch {
 		case errors.Is(membershipErr, pgx.ErrNoRows):
 			membership, err = queries.InsertMemberMembership(ctx, teamdb.InsertMemberMembershipParams{
 				TeamID: match.TeamID, UserID: userID,
 			})
 			changed = true
+			created = true
 		case membershipErr != nil:
-			return TeamView{}, membershipErr
+			return JoinTeamResult{}, membershipErr
 		case membership.Status == "removed":
 			membership, err = queries.ReactivateMemberMembership(ctx, teamdb.ReactivateMemberMembershipParams{
 				TeamID: match.TeamID, UserID: userID,
 			})
 			changed = true
 		case membership.Status != "active":
-			return TeamView{}, domainError(CodeMisconfigured)
+			return JoinTeamResult{}, domainError(CodeMisconfigured)
 		}
 		if err != nil {
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		if err := queries.ClearJoinCodeAttemptWindow(ctx, teamdb.ClearJoinCodeAttemptWindowParams{
 			UserID: userID, WindowStart: windowStart,
 		}); err != nil {
-			return TeamView{}, err
+			return JoinTeamResult{}, err
 		}
 		if changed {
 			if err := appendAudit(ctx, queries, auditRecord{
 				principal: input.Principal, action: "team_membership.join",
 				targetKind: "team", targetID: match.TeamID, requestID: input.RequestID,
 			}); err != nil {
-				return TeamView{}, err
+				return JoinTeamResult{}, err
 			}
 		}
-		return teamView(teamRow.ID, teamRow.Slug, teamRow.Name, teamRow.CreatedAt,
-			teamRow.UpdatedAt, membership), nil
+		return JoinTeamResult{
+			TeamView: teamView(teamRow.ID, teamRow.Slug, teamRow.Name, teamRow.CreatedAt,
+				teamRow.UpdatedAt, membership),
+			MembershipCreated: created,
+		}, nil
 	})
-	return view, mapOperationError("join Team", err)
+	return result, mapOperationError("join Team", err)
 }
 
 func (m *Module) unusedJoinCode(

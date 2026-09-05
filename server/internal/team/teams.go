@@ -40,8 +40,12 @@ func (m *Module) CreateTeam(ctx context.Context, input CreateTeamInput) (TeamVie
 			return TeamView{}, err
 		}
 		lockKey := "team-operation:" + input.Principal.UserID + ":team.create:" + input.OperationKey
-		if err := queries.AcquireTeamAdvisoryLock(ctx, lockKey); err != nil {
+		locked, err := queries.TryAcquireTeamAdvisoryLock(ctx, lockKey)
+		if err != nil {
 			return TeamView{}, err
+		}
+		if !locked {
+			return TeamView{}, retryError(CodeIdempotencyInProgress, 1)
 		}
 		receipt, receiptErr := queries.GetOperationReceiptForUpdate(ctx, teamdb.GetOperationReceiptForUpdateParams{
 			UserID: userID, Action: "team.create", OperationKey: input.OperationKey,

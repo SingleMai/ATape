@@ -46,8 +46,12 @@ func (m *Module) CreateProject(ctx context.Context, input CreateProjectInput) (P
 			return Project{}, domainError(CodeInvalidRequest)
 		}
 		lockKey := "team-operation:" + input.Principal.UserID + ":project.create:" + input.OperationKey
-		if err := queries.AcquireTeamAdvisoryLock(ctx, lockKey); err != nil {
+		locked, err := queries.TryAcquireTeamAdvisoryLock(ctx, lockKey)
+		if err != nil {
 			return Project{}, err
+		}
+		if !locked {
+			return Project{}, retryError(CodeIdempotencyInProgress, 1)
 		}
 		receipt, receiptErr := queries.GetOperationReceiptForUpdate(ctx, teamdb.GetOperationReceiptForUpdateParams{
 			UserID: userID, Action: "project.create", OperationKey: input.OperationKey,

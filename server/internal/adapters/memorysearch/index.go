@@ -26,6 +26,7 @@ type Index struct {
 // state. The current control-plane Adapter remains authoritative.
 type ProjectAccess interface {
 	AuthorizeProject(context.Context, authentication.Principal, string, authorization.Action) error
+	SessionVisible(context.Context, string, string) (bool, error)
 }
 
 func New(access ProjectAccess) *Index {
@@ -73,15 +74,27 @@ func (i *Index) SearchProjectionDocuments(
 		return projectsearch.IndexPage{}, err
 	}
 	i.mu.RLock()
-	defer i.mu.RUnlock()
-
 	term := strings.ToLower(query.Term)
-	documents := make([]canonical.EventProjection, 0)
+	candidates := make([]canonical.EventProjection, 0)
 	for _, document := range i.documents {
 		if document.ProjectID != query.ProjectID || !strings.Contains(searchable(document), term) {
 			continue
 		}
 		document.ThreadPath = append([]canonical.ProjectionThread(nil), document.ThreadPath...)
+		candidates = append(candidates, document)
+	}
+	indexedThrough := i.checkpoints[query.ProjectID]
+	i.mu.RUnlock()
+
+	documents := make([]canonical.EventProjection, 0, len(candidates))
+	for _, document := range candidates {
+		visible, err := i.access.SessionVisible(ctx, document.ProjectID, document.SessionID)
+		if err != nil {
+			return projectsearch.IndexPage{}, err
+		}
+		if !visible {
+			continue
+		}
 		documents = append(documents, document)
 	}
 	sort.Slice(documents, func(left, right int) bool {
@@ -96,7 +109,7 @@ func (i *Index) SearchProjectionDocuments(
 	return projectsearch.IndexPage{
 		Documents:      documents[start:end],
 		Total:          total,
-		IndexedThrough: i.checkpoints[query.ProjectID],
+		IndexedThrough: indexedThrough,
 	}, nil
 }
 

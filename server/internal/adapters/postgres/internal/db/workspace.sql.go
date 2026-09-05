@@ -22,7 +22,8 @@ SELECT projects.id, projects.team_id, projects.name, projects.project_type, proj
        )::bigint AS active_session_count
 FROM canonical_projects projects
 JOIN team_memberships membership ON membership.team_id = projects.team_id
-LEFT JOIN canonical_sessions sessions ON sessions.project_id = projects.id
+LEFT JOIN canonical_sessions sessions
+  ON sessions.project_id = projects.id AND sessions.record_state = 'active'
 WHERE membership.user_id = $2
   AND membership.status = 'active'
   AND projects.state <> 'deleted'

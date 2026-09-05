@@ -16,6 +16,12 @@ func TestCatalogIsClosedAndEveryActionHasARule(t *testing.T) {
 		if rule.resource == UnknownResource || rule.media == 0 {
 			t.Fatalf("action %d has an incomplete rule: %+v", action, rule)
 		}
+		if action.String() == "unknown" {
+			t.Fatalf("action %d has no stable inventory name", action)
+		}
+	}
+	if got, want := len(ActionInventory()), len(Actions()); got != want {
+		t.Fatalf("named action inventory contains %d actions, want %d", got, want)
 	}
 	unknown := Policy{}.Evaluate(Input{
 		Principal: webPrincipal(true), Action: Action(255),

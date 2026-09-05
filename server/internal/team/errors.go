@@ -18,6 +18,7 @@ const (
 	CodeLastOwnerRequired           ErrorCode = "last_owner_required"
 	CodeResourceStateConflict       ErrorCode = "resource_state_conflict"
 	CodeIdempotencyConflict         ErrorCode = "idempotency_conflict"
+	CodeIdempotencyInProgress       ErrorCode = "idempotency_in_progress"
 	CodeUserDisabled                ErrorCode = "user_disabled"
 	CodeMisconfigured               ErrorCode = "misconfigured"
 	CodeServiceUnavailable          ErrorCode = "service_unavailable"
@@ -54,6 +55,8 @@ func (e *Error) Error() string {
 		return "resource state conflicts with this action"
 	case CodeIdempotencyConflict:
 		return "operation key was reused with different input"
+	case CodeIdempotencyInProgress:
+		return "operation with this key is still in progress"
 	case CodeUserDisabled:
 		return "user is disabled"
 	case CodeMisconfigured:

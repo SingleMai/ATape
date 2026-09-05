@@ -144,6 +144,29 @@ WHERE protocol_version = 'auth-v1'`); err != nil {
 		if err != nil || authenticated.Principal.UserID != grants[0].User.ID || authenticated.CSRFToken != grants[0].CSRFToken {
 			t.Fatalf("authenticate Web Session = %+v, %v", authenticated, err)
 		}
+		registrations := moduleA.EnabledProviderRegistrations()
+		if len(registrations) != 1 || registrations[0].ID != "contract" || registrations[0].Label != "contract" {
+			t.Fatalf("enabled Provider registrations = %+v", registrations)
+		}
+		identities, err := moduleB.ListExternalIdentities(ctx, authenticated.Principal)
+		if err != nil {
+			t.Fatalf("list External Identities: %v", err)
+		}
+		if len(identities) != 1 || identities[0].ProviderRegistrationID != "contract" ||
+			identities[0].DisplayName != "Person person-a" || identities[0].ID == "" ||
+			identities[0].CreatedAt.IsZero() || identities[0].LastVerifiedAt.IsZero() {
+			t.Fatalf("normalized External Identity views = %+v", identities)
+		}
+		updatedUser, err := moduleA.UpdateUserProfile(ctx, authentication.UpdateUserProfileInput{
+			Principal: authenticated.Principal, DisplayName: "Renamed Person", RequestID: "request-profile-update",
+		})
+		if err != nil || updatedUser.ID != authenticated.Principal.UserID || updatedUser.DisplayName != "Renamed Person" {
+			t.Fatalf("update User profile = %+v, %v", updatedUser, err)
+		}
+		afterProfileUpdate, err := moduleB.AuthenticateWeb(ctx, grants[0].SessionSecret)
+		if err != nil || afterProfileUpdate.User.DisplayName != "Renamed Person" {
+			t.Fatalf("replica profile read = %+v, %v", afterProfileUpdate.User, err)
+		}
 		sessions, err := moduleB.ListWebSessions(ctx, authenticated.Principal)
 		if err != nil {
 			t.Fatalf("list Web Sessions: %v", err)
@@ -438,8 +461,8 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if _, err := disabledModule.BeginFederatedLogin(ctx, authentication.BeginFederatedLoginInput{
 			Intent: authentication.SignInIntent, ProviderRegistrationID: "contract",
 			ReturnTo: "/", RequestID: "request-disabled-provider",
-		}); authentication.ErrorCodeOf(err) != authentication.CodeMisconfigured {
-			t.Fatalf("disabled Provider begin error = %v, want misconfigured", err)
+		}); authentication.ErrorCodeOf(err) != authentication.CodeInvalidRequest {
+			t.Fatalf("disabled Provider begin error = %v, want invalid_request", err)
 		}
 		if _, err := disabledModule.AuthenticateWeb(ctx, grant.SessionSecret); err != nil {
 			t.Fatalf("disabled Provider invalidated existing Session: %v", err)

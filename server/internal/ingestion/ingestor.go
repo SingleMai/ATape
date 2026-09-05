@@ -27,6 +27,27 @@ type Ingestor struct {
 	store BatchStore
 }
 
+// DeleteSession applies the captured-session ownership/Owner policy and makes
+// Canonical, Search, and Raw read paths stop exposing the Session atomically at
+// the durable metadata boundary. Physical Raw byte reclamation is deliberately
+// decoupled from the authorization outcome.
+func (i *Ingestor) DeleteSession(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+	requestID string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if sessionID == "" || len(sessionID) > 200 || requestID == "" || len(requestID) > 200 ||
+		!utf8.ValidString(sessionID) || !utf8.ValidString(requestID) ||
+		strings.ContainsAny(sessionID, "\x00\r\n") || strings.ContainsAny(requestID, "\x00\r\n") {
+		return invalid("sessionId", "is invalid")
+	}
+	return i.store.DeleteSession(ctx, principal, sessionID, requestID)
+}
+
 func NewIngestor(store BatchStore) *Ingestor {
 	return &Ingestor{store: store}
 }

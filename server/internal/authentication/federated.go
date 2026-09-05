@@ -29,7 +29,7 @@ func (m *Module) BeginFederatedLogin(
 	}
 	registration, ok := m.active[input.ProviderRegistrationID]
 	if !ok {
-		return FederatedLoginChallenge{}, domainError(CodeMisconfigured)
+		return FederatedLoginChallenge{}, domainError(CodeInvalidRequest)
 	}
 	returnTo, err := normalizeReturnTo(input.ReturnTo)
 	if err != nil {

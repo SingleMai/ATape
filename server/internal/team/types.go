@@ -137,6 +137,11 @@ type JoinTeamInput struct {
 	RequestID string
 }
 
+type JoinTeamResult struct {
+	TeamView
+	MembershipCreated bool
+}
+
 type ProjectSpec struct {
 	Type   ProjectType
 	Name   string

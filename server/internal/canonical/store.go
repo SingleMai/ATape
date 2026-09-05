@@ -33,6 +33,7 @@ type MemoryStore struct {
 	projectCapture           map[string]time.Time
 	memberships              map[string]authorization.MembershipFacts
 	sessions                 map[string]SessionRecord
+	deletedSessions          map[string]SessionRecord
 	sessionIDsByProject      map[string]map[string]struct{}
 	threads                  map[string]ThreadRecord
 	threadIDsBySession       map[string]map[string]struct{}
@@ -68,6 +69,7 @@ func NewMemoryStoreWithControlPlane(controlPlane MemoryControlPlane) *MemoryStor
 		projectCapture:           make(map[string]time.Time),
 		memberships:              make(map[string]authorization.MembershipFacts),
 		sessions:                 make(map[string]SessionRecord),
+		deletedSessions:          make(map[string]SessionRecord),
 		sessionIDsByProject:      make(map[string]map[string]struct{}),
 		threads:                  make(map[string]ThreadRecord),
 		threadIDsBySession:       make(map[string]map[string]struct{}),
@@ -115,6 +117,9 @@ func (s *MemoryStore) ApplyBatch(
 	}
 	if batch.Session.ProjectID != batch.ProjectID || batch.Session.CapturedByUserID != principal.UserID {
 		return ApplyResult{}, &ConflictError{Identity: batch.Session.ID, Reason: "server capture scope is inconsistent"}
+	}
+	if _, deleted := s.deletedSessions[batch.Session.ID]; deleted {
+		return ApplyResult{}, &ProjectStateError{State: "session_deleted"}
 	}
 
 	if receipt, ok := s.batchReceipts[batch.Key]; ok {
@@ -428,7 +433,10 @@ func (s *MemoryStore) Project(
 		snapshot.CapturedThrough = capture
 	}
 	for sessionID := range s.sessionIDsByProject[projectID] {
-		session := s.sessions[sessionID]
+		session, exists := s.sessions[sessionID]
+		if !exists {
+			continue
+		}
 		eventCount := session.ReportedEventCount
 		actualEventCount := s.sessionEventCounts[session.ID]
 		if actualEventCount > eventCount {
@@ -441,6 +449,98 @@ func (s *MemoryStore) Project(
 		})
 	}
 	return snapshot, true, nil
+}
+
+func (s *MemoryStore) DeleteSession(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+	_ string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[sessionID]
+	deleted := false
+	if !ok {
+		session, ok = s.deletedSessions[sessionID]
+		deleted = ok
+		if !ok {
+			return authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+				Principal: principal, Action: authorization.CapturedSessionDeleteAny,
+				Resource: authorization.ResourceFacts{Kind: authorization.CapturedSessionResource},
+			}))
+		}
+	}
+	project, ok := s.projects[session.ProjectID]
+	if !ok || project.State == "deleted" {
+		return authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+			Principal: principal, Action: authorization.CapturedSessionDeleteAny,
+			Resource: authorization.ResourceFacts{Kind: authorization.CapturedSessionResource},
+		}))
+	}
+	action := authorization.CapturedSessionDeleteAny
+	if session.CapturedByUserID == principal.UserID {
+		action = authorization.CapturedSessionDeleteOwn
+	}
+	if err := authorization.Enforce(s.authorizer.Evaluate(authorization.Input{
+		Principal: principal, Action: action,
+		Resource: authorization.ResourceFacts{
+			Kind: authorization.CapturedSessionResource, TeamID: project.TeamID,
+			CapturedByUserID: session.CapturedByUserID,
+		},
+		Membership: s.memberships[membershipKey(project.TeamID, principal.UserID)],
+	})); err != nil {
+		return err
+	}
+	if deleted {
+		return nil
+	}
+	delete(s.sessions, sessionID)
+	s.deletedSessions[sessionID] = session
+	delete(s.sessionIDsByProject[session.ProjectID], sessionID)
+	delete(s.sessionEventCounts, sessionID)
+	delete(s.sessionChildThreadCounts, sessionID)
+	for key, receipt := range s.batchReceipts {
+		if receipt.result.SessionID == sessionID {
+			delete(s.batchReceipts, key)
+		}
+	}
+	eventIDs := make(map[string]struct{})
+	for threadID := range s.threadIDsBySession[sessionID] {
+		threadKey := recordKey(sessionID, threadID)
+		for eventID := range s.eventIDsByThread[threadKey] {
+			eventIDs[eventID] = struct{}{}
+			if event, exists := s.events[eventID]; exists {
+				delete(s.eventBySource, event.SourceKey)
+				delete(s.eventVersions, event.SourceKey)
+			}
+			delete(s.events, eventID)
+		}
+		delete(s.eventIDsByThread, threadKey)
+		delete(s.threads, threadKey)
+	}
+	delete(s.threadIDsBySession, sessionID)
+	retainedChanges := s.projectionChanges[:0]
+	for _, change := range s.projectionChanges {
+		if _, deleted := eventIDs[change.eventID]; !deleted {
+			retainedChanges = append(retainedChanges, change)
+		}
+	}
+	s.projectionChanges = retainedChanges
+	return nil
+}
+
+func (s *MemoryStore) SessionVisible(ctx context.Context, projectID string, sessionID string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	session, ok := s.sessions[sessionID]
+	return ok && session.ProjectID == projectID, nil
 }
 
 func (s *MemoryStore) Conversation(

@@ -5,6 +5,12 @@ one bounded Canonical observation batch. A successful response means the batch
 is visible to Canonical readers; it does not mean Raw has been stored or Search
 has been projected.
 
+```http
+POST /api/v1/ingestion/canonical/batches
+Authorization: Bearer atc_v1_...
+Content-Type: application/json
+```
+
 The request is authenticated with a CLI Credential. Its server-established
 Principal supplies the capture User. The payload cannot declare a User, Team,
 Membership, or Project ownership. `projectId` is only the target Resource
@@ -115,6 +121,11 @@ User, `installationId`, Adapter ID, and source-local identifiers. It also maps
 an object Raw reference to the corresponding server-owned Raw object ID. A
 client cannot select another User's capture namespace.
 
+An explicit captured-Session deletion leaves a durable tombstone. Replaying or
+re-uploading the same derived Session identity then returns
+`409 resource_state_conflict`; an Adapter cannot accidentally resurrect data
+the User deliberately removed.
+
 Local filesystem paths, Team metadata, Memberships, and display names remain
 outside this envelope. Git or Folder Project creation and local-directory
 matching use the Team Module before collection begins.
@@ -123,3 +134,6 @@ The request body is limited to 4 MiB, 100 Threads, and 500 Events. When
 PostgreSQL is configured, the Session, Threads, Events, projection changes, and
 batch receipt commit in one transaction, so a successful response remains
 replay-safe after a server restart.
+
+The complete HTTP contract, route classes, body ceilings, and shared RFC 9457
+Problem registry are machine-readable in [OpenAPI v1](openapi-v1.yaml).

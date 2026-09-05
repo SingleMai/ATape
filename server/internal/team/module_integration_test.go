@@ -76,17 +76,40 @@ func TestTeamPostgresContract(t *testing.T) {
 		resetTeamState(t, poolA)
 		insertUsers(t, poolA)
 		alice := webPrincipal(aliceID, false)
-		created := createTeam(t, moduleA, alice, "platform", "Platform", operationKey(1))
+		key := operationKey(1)
+		lockTx, err := poolA.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin competing idempotency transaction: %v", err)
+		}
+		lockKey := "team-operation:" + aliceID + ":team.create:" + key
+		if _, err := lockTx.Exec(ctx,
+			"SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", lockKey); err != nil {
+			_ = lockTx.Rollback(context.Background())
+			t.Fatalf("hold competing idempotency lock: %v", err)
+		}
+		_, contendedErr := moduleB.CreateTeam(ctx, team.CreateTeamInput{
+			Principal: alice, Slug: "platform", DisplayName: "Platform",
+			OperationKey: key, RequestID: "team-create-contended",
+		})
+		var contended *team.Error
+		if !errors.As(contendedErr, &contended) || contended.Code != team.CodeIdempotencyInProgress ||
+			contended.RetryAfter != 1 {
+			t.Fatalf("contended idempotent create error = %#v", contendedErr)
+		}
+		if err := lockTx.Rollback(ctx); err != nil {
+			t.Fatalf("release competing idempotency lock: %v", err)
+		}
+		created := createTeam(t, moduleA, alice, "platform", "Platform", key)
 		replayed, err := moduleB.CreateTeam(ctx, team.CreateTeamInput{
 			Principal: alice, Slug: "PLATFORM", DisplayName: "Platform",
-			OperationKey: operationKey(1), RequestID: "team-create-replay",
+			OperationKey: key, RequestID: "team-create-replay",
 		})
 		if err != nil || replayed.Team.ID != created.Team.ID || replayed.Membership.Role != team.OwnerRole {
 			t.Fatalf("idempotent Team replay = %+v, %v", replayed, err)
 		}
 		if _, err := moduleB.CreateTeam(ctx, team.CreateTeamInput{
 			Principal: alice, Slug: "platform", DisplayName: "Different",
-			OperationKey: operationKey(1), RequestID: "team-create-conflict",
+			OperationKey: key, RequestID: "team-create-conflict",
 		}); team.ErrorCodeOf(err) != team.CodeIdempotencyConflict {
 			t.Fatalf("changed idempotent request error = %v", err)
 		}
@@ -131,7 +154,7 @@ func TestTeamPostgresContract(t *testing.T) {
 		joined, err := moduleB.JoinTeam(ctx, team.JoinTeamInput{
 			Principal: webPrincipal(bobID, false), JoinCode: strings.ToLower(grant.Code), RequestID: "bob-join",
 		})
-		if err != nil || joined.Team.ID != created.Team.ID || joined.Membership.Role != team.MemberRole {
+		if err != nil || !joined.MembershipCreated || joined.Team.ID != created.Team.ID || joined.Membership.Role != team.MemberRole {
 			t.Fatalf("Bob join = %+v, %v", joined, err)
 		}
 		if _, err := moduleA.ChangeMembershipRole(ctx, team.ChangeMembershipRoleInput{
@@ -186,7 +209,7 @@ func TestTeamPostgresContract(t *testing.T) {
 		rejoined, err := moduleA.JoinTeam(ctx, team.JoinTeamInput{
 			Principal: webPrincipal(removedUserID, false), JoinCode: grant.Code, RequestID: "owner-rejoin",
 		})
-		if err != nil || rejoined.Membership.Role != team.MemberRole {
+		if err != nil || rejoined.MembershipCreated || rejoined.Membership.Role != team.MemberRole {
 			t.Fatalf("removed Owner rejoin = %+v, %v", rejoined, err)
 		}
 		if _, err := moduleB.RotateJoinCode(ctx, team.TeamActionInput{
@@ -247,7 +270,7 @@ func TestTeamPostgresContract(t *testing.T) {
 		}
 
 		start := make(chan struct{})
-		var joinResult team.TeamView
+		var joinResult team.JoinTeamResult
 		var joinErr, rotateErr error
 		var second team.JoinCodeGrant
 		var workers sync.WaitGroup
@@ -610,7 +633,7 @@ func rotateAndJoin(
 	if err != nil {
 		t.Fatalf("join Team %s: %v", slug, err)
 	}
-	return joined
+	return joined.TeamView
 }
 
 func resetTeamState(t *testing.T, pool *pgxpool.Pool) {

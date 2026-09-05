@@ -100,7 +100,7 @@ func insertEventVersionParams(record canonical.EventRecord) db.InsertEventVersio
 	}
 }
 
-func canonicalSession(row db.CanonicalSession) canonical.SessionRecord {
+func canonicalSession(row db.GetSessionForReadRow) canonical.SessionRecord {
 	return sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount)
 }
 
