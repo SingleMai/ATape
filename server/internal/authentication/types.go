@@ -150,6 +150,17 @@ type WebSession struct {
 	AbsoluteExpiresAt time.Time
 }
 
+// WebSessionView is the non-secret shape exposed by the Session management
+// use case. ATape deliberately does not infer or persist a browser/device name.
+type WebSessionView struct {
+	ID                string
+	CreatedAt         time.Time
+	LastUsedAt        time.Time
+	ReauthenticatedAt time.Time
+	AbsoluteExpiresAt time.Time
+	Current           bool
+}
+
 type WebSessionGrant struct {
 	User          User
 	Session       WebSession
@@ -224,6 +235,7 @@ type RevokeCLICredentialsInput struct {
 type MaintenanceResult struct {
 	Acquired                  bool
 	ExpiredFederatedLogins    int64
+	ExpiredWebSessions        int64
 	ExpiredCLIAuthorizations  int64
 	DeletedFederatedLogins    int64
 	DeletedCLIAuthorizations  int64

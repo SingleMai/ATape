@@ -353,6 +353,61 @@ func (q *Queries) ExpireFederatedLoginBatch(ctx context.Context, batchSize int32
 	return result.RowsAffected(), nil
 }
 
+const expireWebSessionBatch = `-- name: ExpireWebSessionBatch :many
+WITH candidates AS (
+    SELECT id,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_expired' ELSE 'idle_expired' END AS expired_status,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_lifetime' ELSE 'idle_timeout' END AS expired_reason
+    FROM auth_web_sessions
+    WHERE status = 'active'
+      AND (absolute_expires_at <= clock_timestamp()
+           OR last_used_at + $1::integer * interval '1 second' <= clock_timestamp())
+    ORDER BY LEAST(
+        absolute_expires_at,
+        last_used_at + $1::integer * interval '1 second'
+    ), id
+    LIMIT $2::integer
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE auth_web_sessions s
+SET status = c.expired_status, terminal_at = clock_timestamp(), terminal_reason = c.expired_reason
+FROM candidates c WHERE s.id = c.id
+RETURNING s.id, s.status, s.terminal_reason
+`
+
+type ExpireWebSessionBatchParams struct {
+	IdleDeadlineSeconds int32
+	BatchSize           int32
+}
+
+type ExpireWebSessionBatchRow struct {
+	ID             pgtype.UUID
+	Status         string
+	TerminalReason string
+}
+
+func (q *Queries) ExpireWebSessionBatch(ctx context.Context, arg ExpireWebSessionBatchParams) ([]ExpireWebSessionBatchRow, error) {
+	rows, err := q.db.Query(ctx, expireWebSessionBatch, arg.IdleDeadlineSeconds, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExpireWebSessionBatchRow{}
+	for rows.Next() {
+		var i ExpireWebSessionBatchRow
+		if err := rows.Scan(&i.ID, &i.Status, &i.TerminalReason); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const finishFederatedLogin = `-- name: FinishFederatedLogin :exec
 UPDATE auth_federated_login_transactions
 SET status = $1, terminal_at = clock_timestamp(), failure_code = $2,
@@ -1070,6 +1125,55 @@ func (q *Queries) InsertWebSessionSecret(ctx context.Context, arg InsertWebSessi
 	var issued_at time.Time
 	err := row.Scan(&issued_at)
 	return issued_at, err
+}
+
+const listActiveWebSessionsForUser = `-- name: ListActiveWebSessionsForUser :many
+SELECT id, created_at, last_used_at, reauthenticated_at, absolute_expires_at
+FROM auth_web_sessions
+WHERE user_id = $1
+  AND status = 'active'
+  AND absolute_expires_at > clock_timestamp()
+  AND last_used_at + $2::integer * interval '1 second' > clock_timestamp()
+ORDER BY last_used_at DESC, created_at DESC, id DESC
+`
+
+type ListActiveWebSessionsForUserParams struct {
+	UserID              pgtype.UUID
+	IdleDeadlineSeconds int32
+}
+
+type ListActiveWebSessionsForUserRow struct {
+	ID                pgtype.UUID
+	CreatedAt         time.Time
+	LastUsedAt        time.Time
+	ReauthenticatedAt time.Time
+	AbsoluteExpiresAt time.Time
+}
+
+func (q *Queries) ListActiveWebSessionsForUser(ctx context.Context, arg ListActiveWebSessionsForUserParams) ([]ListActiveWebSessionsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveWebSessionsForUser, arg.UserID, arg.IdleDeadlineSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveWebSessionsForUserRow{}
+	for rows.Next() {
+		var i ListActiveWebSessionsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.ReauthenticatedAt,
+			&i.AbsoluteExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLivePrivateStateKeyIDs = `-- name: ListLivePrivateStateKeyIDs :many

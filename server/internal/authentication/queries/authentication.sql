@@ -174,6 +174,15 @@ UPDATE auth_web_sessions
 SET status = 'revoked', terminal_at = clock_timestamp(), terminal_reason = $2
 WHERE user_id = $1 AND status = 'active';
 
+-- name: ListActiveWebSessionsForUser :many
+SELECT id, created_at, last_used_at, reauthenticated_at, absolute_expires_at
+FROM auth_web_sessions
+WHERE user_id = sqlc.arg(user_id)
+  AND status = 'active'
+  AND absolute_expires_at > clock_timestamp()
+  AND last_used_at + sqlc.arg(idle_deadline_seconds)::integer * interval '1 second' > clock_timestamp()
+ORDER BY last_used_at DESC, created_at DESC, id DESC;
+
 -- name: InsertCLIDeviceAuthorization :one
 INSERT INTO auth_cli_device_authorizations (
     id, device_code_digest, user_code_key_id, user_code_digest, digest_version,
@@ -351,6 +360,29 @@ WITH candidates AS (
 UPDATE auth_cli_device_authorizations a
 SET status = 'expired', terminal_at = clock_timestamp()
 FROM candidates c WHERE a.id = c.id;
+
+-- name: ExpireWebSessionBatch :many
+WITH candidates AS (
+    SELECT id,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_expired' ELSE 'idle_expired' END AS expired_status,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_lifetime' ELSE 'idle_timeout' END AS expired_reason
+    FROM auth_web_sessions
+    WHERE status = 'active'
+      AND (absolute_expires_at <= clock_timestamp()
+           OR last_used_at + sqlc.arg(idle_deadline_seconds)::integer * interval '1 second' <= clock_timestamp())
+    ORDER BY LEAST(
+        absolute_expires_at,
+        last_used_at + sqlc.arg(idle_deadline_seconds)::integer * interval '1 second'
+    ), id
+    LIMIT sqlc.arg(batch_size)::integer
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE auth_web_sessions s
+SET status = c.expired_status, terminal_at = clock_timestamp(), terminal_reason = c.expired_reason
+FROM candidates c WHERE s.id = c.id
+RETURNING s.id, s.status, s.terminal_reason;
 
 -- name: DeleteFederatedLoginBatch :execrows
 WITH candidates AS (
