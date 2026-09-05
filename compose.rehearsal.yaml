@@ -1,0 +1,12 @@
+services:
+  database:
+    volumes:
+      - type: bind
+        source: ${ATAPE_REHEARSAL_POSTGRES_DIRECTORY:?set ATAPE_REHEARSAL_POSTGRES_DIRECTORY}
+        target: /var/lib/postgresql/data
+
+  server:
+    volumes:
+      - type: bind
+        source: ${ATAPE_REHEARSAL_RAW_DIRECTORY:?set ATAPE_REHEARSAL_RAW_DIRECTORY}
+        target: /var/lib/atape/raw

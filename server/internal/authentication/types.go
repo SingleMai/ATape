@@ -78,11 +78,20 @@ func (e *ProviderFailure) Error() string {
 
 type ProviderRegistration struct {
 	ID             string
+	Label          string
 	Revision       string
 	ExpectedIssuer string
 	CallbackURI    string
 	Active         bool
 	Adapter        FederatedIdentityAdapter
+}
+
+// ProviderRegistrationView is the public, non-secret login entry exposed by
+// instance HTTP metadata. Provider endpoints, Client IDs, revisions, and
+// Adapter kinds deliberately remain private.
+type ProviderRegistrationView struct {
+	ID    string
+	Label string
 }
 
 type LoginIntent string
@@ -124,6 +133,29 @@ type User struct {
 	CreatedAt   time.Time
 }
 
+type UpdateUserProfileInput struct {
+	Principal   Principal
+	DisplayName string
+	RequestID   string
+}
+
+// ExternalIdentityView is a normalized account-security snapshot. Provider
+// subjects, tokens, and raw claims never cross the Authentication Interface.
+type ExternalIdentityView struct {
+	ID                     string
+	ProviderRegistrationID string
+	DisplayName            string
+	AvatarURL              string
+	CreatedAt              time.Time
+	LastVerifiedAt         time.Time
+}
+
+type DisableUserInput struct {
+	UserID    string
+	Reason    string
+	RequestID string
+}
+
 type AuthenticationMethod string
 
 const (
@@ -139,6 +171,7 @@ type Principal struct {
 	WebSessionID    string
 	CLICredentialID string
 	AuthenticatedAt time.Time
+	Fresh           bool
 }
 
 type WebSession struct {
@@ -148,6 +181,17 @@ type WebSession struct {
 	LastUsedAt        time.Time
 	ReauthenticatedAt time.Time
 	AbsoluteExpiresAt time.Time
+}
+
+// WebSessionView is the non-secret shape exposed by the Session management
+// use case. ATape deliberately does not infer or persist a browser/device name.
+type WebSessionView struct {
+	ID                string
+	CreatedAt         time.Time
+	LastUsedAt        time.Time
+	ReauthenticatedAt time.Time
+	AbsoluteExpiresAt time.Time
+	Current           bool
 }
 
 type WebSessionGrant struct {
@@ -186,7 +230,7 @@ type CLIAuthorizationView struct {
 	UserCode    string
 	ExpiresAt   time.Time
 	ClientLabel string
-	Permission  string
+	Capability  string
 	Status      string
 }
 
@@ -203,6 +247,13 @@ type CLICredentialGrant struct {
 	Capability       string
 	CreatedAt        time.Time
 	User             User
+}
+
+type CLICredentialView struct {
+	ID         string
+	Capability string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
 }
 
 type AuthenticatedCLICredential struct {
@@ -224,6 +275,7 @@ type RevokeCLICredentialsInput struct {
 type MaintenanceResult struct {
 	Acquired                  bool
 	ExpiredFederatedLogins    int64
+	ExpiredWebSessions        int64
 	ExpiredCLIAuthorizations  int64
 	DeletedFederatedLogins    int64
 	DeletedCLIAuthorizations  int64

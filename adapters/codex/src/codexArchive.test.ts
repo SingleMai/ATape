@@ -34,7 +34,7 @@ describe("Codex Adapter", () => {
     expect(observation?.session).toMatchObject({
       sourceSessionId: "session-root",
       title: "Why were there two charges?",
-      actor: { name: "user-7", harness: "Codex" },
+      actor: { name: "User", harness: "Codex" },
       branch: "main",
       status: "active"
     })
@@ -336,7 +336,6 @@ const makeEmptyFixture = async () => {
 const openAdapter = (project: string, type: "git" | "directory") => createAtapeAdapter({
   protocolVersion: AdapterProtocolVersion,
   adapter: { id: "codex", version: "0.1.0" },
-  user: { id: "user-7" },
   project: { id: "project-1", type, path: project },
   signal: AbortSignal.timeout(5_000)
 })

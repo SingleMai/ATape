@@ -10,7 +10,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
+	"github.com/SingleMai/ATape/server/internal/sourceidentity"
 )
 
 const (
@@ -25,22 +27,43 @@ type Ingestor struct {
 	store BatchStore
 }
 
+// DeleteSession applies the captured-session ownership/Owner policy and makes
+// Canonical, Search, and Raw read paths stop exposing the Session atomically at
+// the durable metadata boundary. Physical Raw byte reclamation is deliberately
+// decoupled from the authorization outcome.
+func (i *Ingestor) DeleteSession(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+	requestID string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if sessionID == "" || len(sessionID) > 200 || requestID == "" || len(requestID) > 200 ||
+		!utf8.ValidString(sessionID) || !utf8.ValidString(requestID) ||
+		strings.ContainsAny(sessionID, "\x00\r\n") || strings.ContainsAny(requestID, "\x00\r\n") {
+		return invalid("sessionId", "is invalid")
+	}
+	return i.store.DeleteSession(ctx, principal, sessionID, requestID)
+}
+
 func NewIngestor(store BatchStore) *Ingestor {
 	return &Ingestor{store: store}
 }
 
-func (i *Ingestor) ApplyBatch(ctx context.Context, batch Batch) (canonical.ApplyResult, error) {
+func (i *Ingestor) ApplyBatch(ctx context.Context, principal authentication.Principal, batch Batch) (canonical.ApplyResult, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.ApplyResult{}, err
 	}
-	writeBatch, err := normalizeBatch(batch)
+	writeBatch, err := normalizeBatch(principal, batch)
 	if err != nil {
 		return canonical.ApplyResult{}, err
 	}
-	return i.store.ApplyBatch(ctx, writeBatch)
+	return i.store.ApplyBatch(ctx, principal, writeBatch)
 }
 
-func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
+func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.WriteBatch, error) {
 	if batch.ProtocolVersion != ProtocolVersion {
 		return canonical.WriteBatch{}, invalid("protocolVersion", "must be "+ProtocolVersion)
 	}
@@ -60,26 +83,14 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 	if err := required("source.adapterVersion", batch.Source.AdapterVersion, 100); err != nil {
 		return canonical.WriteBatch{}, err
 	}
-	if err := required("source.userId", batch.Source.UserID, 200); err != nil {
-		return canonical.WriteBatch{}, err
-	}
 	if err := required("source.installationId", batch.Source.InstallationID, 200); err != nil {
 		return canonical.WriteBatch{}, err
 	}
-	if err := required("project.id", batch.Project.ID, 200); err != nil {
+	if err := required("projectId", batch.ProjectID, 200); err != nil {
 		return canonical.WriteBatch{}, err
 	}
-	if err := required("project.teamId", batch.Project.TeamID, 200); err != nil {
+	if err := required("principal.userId", principal.UserID, 200); err != nil {
 		return canonical.WriteBatch{}, err
-	}
-	if err := required("project.teamName", batch.Project.TeamName, 200); err != nil {
-		return canonical.WriteBatch{}, err
-	}
-	if err := required("project.name", batch.Project.Name, 200); err != nil {
-		return canonical.WriteBatch{}, err
-	}
-	if !oneOf(batch.Project.Type, "git", "directory") {
-		return canonical.WriteBatch{}, invalid("project.type", "must be git or directory")
 	}
 	if err := required("session.sourceSessionId", batch.Session.SourceSessionID, 500); err != nil {
 		return canonical.WriteBatch{}, err
@@ -126,8 +137,8 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 	}
 
 	scope := sourceKey(
-		batch.Project.ID,
-		batch.Source.UserID,
+		batch.ProjectID,
+		principal.UserID,
 		batch.Source.InstallationID,
 		batch.Source.AdapterID,
 		batch.Session.SourceSessionID,
@@ -210,7 +221,8 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 		if !oneOf(input.Fidelity, "native", "derived", "partial", "redacted") {
 			return canonical.WriteBatch{}, invalid(field+".fidelity", "is not supported")
 		}
-		if err := required(field+".rawRef", input.RawRef, 2_000); err != nil {
+		rawRef, err := normalizeRawReference(principal, batch, sessionID, field+".rawRef", input.RawRef)
+		if err != nil {
 			return canonical.WriteBatch{}, err
 		}
 		if !canonicalKind(input.Kind) {
@@ -249,7 +261,7 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 			EventIndex:         input.EventIndex,
 			OrderFidelity:      input.OrderFidelity,
 			Fidelity:           input.Fidelity,
-			RawRef:             input.RawRef,
+			RawRef:             rawRef,
 			AdapterVersion:     batch.Source.AdapterVersion,
 			SchemaVersion:      batch.CanonicalProfileVersion,
 			Kind:               input.Kind,
@@ -267,7 +279,8 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 	sessionSourceKey := sourceKey(scope, "session")
 	session := canonical.SessionRecord{
 		ID:                 sessionID,
-		ProjectID:          batch.Project.ID,
+		ProjectID:          batch.ProjectID,
+		CapturedByUserID:   principal.UserID,
 		SourceKey:          sessionSourceKey,
 		Revision:           batch.Session.Revision,
 		Title:              title,
@@ -284,8 +297,8 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 
 	return canonical.WriteBatch{
 		Key: sourceKey(
-			batch.Project.ID,
-			batch.Source.UserID,
+			batch.ProjectID,
+			principal.UserID,
 			batch.Source.InstallationID,
 			batch.Source.AdapterID,
 			"batch",
@@ -293,17 +306,46 @@ func normalizeBatch(batch Batch) (canonical.WriteBatch, error) {
 		),
 		Digest:     digest(batch),
 		ObservedAt: observedAt,
-		Team: canonical.TeamRecord{
-			ID: batch.Project.TeamID, Name: strings.TrimSpace(batch.Project.TeamName),
-		},
-		Project: canonical.ProjectRecord{
-			ID: batch.Project.ID, TeamID: batch.Project.TeamID,
-			Name: strings.TrimSpace(batch.Project.Name), Type: batch.Project.Type,
-		},
-		Session: session,
-		Threads: threads,
-		Events:  events,
+		ProjectID:  batch.ProjectID,
+		Session:    session,
+		Threads:    threads,
+		Events:     events,
 	}, nil
+}
+
+func normalizeRawReference(
+	principal authentication.Principal,
+	batch Batch,
+	sessionID string,
+	field string,
+	reference RawReference,
+) (string, error) {
+	switch reference.Type {
+	case "object":
+		if err := required(field+".sourceObjectId", reference.SourceObjectID, 512); err != nil {
+			return "", err
+		}
+		if err := optional(field+".fragment", reference.Fragment, 1_024); err != nil {
+			return "", err
+		}
+		if reference.UnavailableReason != "" {
+			return "", invalid(field+".reason", "must be omitted for an object reference")
+		}
+		return sourceidentity.RawObjectID(
+			principal.UserID, sessionID, batch.Source.InstallationID,
+			batch.Source.AdapterID, reference.SourceObjectID,
+		) + reference.Fragment, nil
+	case "unavailable":
+		if err := required(field+".reason", reference.UnavailableReason, 1_024); err != nil {
+			return "", err
+		}
+		if reference.SourceObjectID != "" || reference.Fragment != "" {
+			return "", invalid(field, "unavailable references cannot identify an object")
+		}
+		return "unavailable:" + reference.UnavailableReason, nil
+	default:
+		return "", invalid(field+".type", "must be object or unavailable")
+	}
 }
 
 func normalizeThreadIDs(scope string, threads []Thread) (map[string]string, error) {

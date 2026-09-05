@@ -34,6 +34,24 @@ func (m *Module) Maintain(ctx context.Context) (MaintenanceResult, error) {
 		if result.ExpiredCLIAuthorizations, err = queries.ExpireCLIAuthorizationBatch(ctx, batchSize); err != nil {
 			return MaintenanceResult{}, err
 		}
+		idleDeadlineSeconds := mustDurationSeconds(m.policy.WebSessionIdleTTL + m.policy.LastUsedWriteInterval)
+		expiredSessions, err := queries.ExpireWebSessionBatch(ctx, authdb.ExpireWebSessionBatchParams{
+			IdleDeadlineSeconds: idleDeadlineSeconds, BatchSize: batchSize,
+		})
+		if err != nil {
+			return MaintenanceResult{}, err
+		}
+		result.ExpiredWebSessions = int64(len(expiredSessions))
+		for _, session := range expiredSessions {
+			if err := appendAudit(ctx, queries, auditRecord{
+				initiatorKind: "system", action: "web_session.expire",
+				targetKind: "web_session", targetID: domainUUID(session.ID),
+				outcome: "succeeded", reason: session.TerminalReason,
+				webSessionID: domainUUID(session.ID),
+			}); err != nil {
+				return MaintenanceResult{}, err
+			}
+		}
 		if result.DeletedCodeAttemptWindows, err = queries.DeleteCodeAttemptWindowBatch(
 			ctx, authdb.DeleteCodeAttemptWindowBatchParams{
 				RetentionSeconds: windowRetentionSeconds, BatchSize: batchSize,

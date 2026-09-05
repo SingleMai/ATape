@@ -8,6 +8,8 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const acquireCanonicalLock = `-- name: AcquireCanonicalLock :exec
@@ -157,9 +159,17 @@ FROM canonical_projects
 WHERE id = $1
 `
 
-func (q *Queries) GetProject(ctx context.Context, id string) (CanonicalProject, error) {
+type GetProjectRow struct {
+	ID              string
+	TeamID          string
+	Name            string
+	CapturedThrough time.Time
+	ProjectType     string
+}
+
+func (q *Queries) GetProject(ctx context.Context, id string) (GetProjectRow, error) {
 	row := q.db.QueryRow(ctx, getProject, id)
-	var i CanonicalProject
+	var i GetProjectRow
 	err := row.Scan(
 		&i.ID,
 		&i.TeamID,
@@ -171,20 +181,30 @@ func (q *Queries) GetProject(ctx context.Context, id string) (CanonicalProject, 
 }
 
 const getProjectForRead = `-- name: GetProjectForRead :one
-SELECT id, team_id, name, captured_through, project_type
+SELECT id, team_id, name, captured_through, project_type, state
 FROM canonical_projects
 WHERE id = $1
 `
 
-func (q *Queries) GetProjectForRead(ctx context.Context, id string) (CanonicalProject, error) {
+type GetProjectForReadRow struct {
+	ID              string
+	TeamID          string
+	Name            string
+	CapturedThrough time.Time
+	ProjectType     string
+	State           string
+}
+
+func (q *Queries) GetProjectForRead(ctx context.Context, id string) (GetProjectForReadRow, error) {
 	row := q.db.QueryRow(ctx, getProjectForRead, id)
-	var i CanonicalProject
+	var i GetProjectForReadRow
 	err := row.Scan(
 		&i.ID,
 		&i.TeamID,
 		&i.Name,
 		&i.CapturedThrough,
 		&i.ProjectType,
+		&i.State,
 	)
 	return i, err
 }
@@ -192,14 +212,33 @@ func (q *Queries) GetProjectForRead(ctx context.Context, id string) (CanonicalPr
 const getSessionForRead = `-- name: GetSessionForRead :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count
+       reported_event_count, captured_by_user_id
 FROM canonical_sessions
-WHERE id = $1
+WHERE id = $1 AND record_state = 'active'
 `
 
-func (q *Queries) GetSessionForRead(ctx context.Context, id string) (CanonicalSession, error) {
+type GetSessionForReadRow struct {
+	ID                 string
+	ProjectID          string
+	SourceKey          string
+	Revision           int64
+	Digest             string
+	Title              string
+	Summary            string
+	Insight            string
+	ActorName          string
+	ActorHarness       string
+	Branch             string
+	Status             string
+	CaptureStatus      string
+	UpdatedAt          time.Time
+	ReportedEventCount int64
+	CapturedByUserID   pgtype.UUID
+}
+
+func (q *Queries) GetSessionForRead(ctx context.Context, id string) (GetSessionForReadRow, error) {
 	row := q.db.QueryRow(ctx, getSessionForRead, id)
-	var i CanonicalSession
+	var i GetSessionForReadRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -216,6 +255,7 @@ func (q *Queries) GetSessionForRead(ctx context.Context, id string) (CanonicalSe
 		&i.CaptureStatus,
 		&i.UpdatedAt,
 		&i.ReportedEventCount,
+		&i.CapturedByUserID,
 	)
 	return i, err
 }
@@ -223,15 +263,35 @@ func (q *Queries) GetSessionForRead(ctx context.Context, id string) (CanonicalSe
 const getSessionForUpdate = `-- name: GetSessionForUpdate :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count
+       reported_event_count, captured_by_user_id, record_state
 FROM canonical_sessions
 WHERE id = $1
 FOR UPDATE
 `
 
-func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (CanonicalSession, error) {
+type GetSessionForUpdateRow struct {
+	ID                 string
+	ProjectID          string
+	SourceKey          string
+	Revision           int64
+	Digest             string
+	Title              string
+	Summary            string
+	Insight            string
+	ActorName          string
+	ActorHarness       string
+	Branch             string
+	Status             string
+	CaptureStatus      string
+	UpdatedAt          time.Time
+	ReportedEventCount int64
+	CapturedByUserID   pgtype.UUID
+	RecordState        string
+}
+
+func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (GetSessionForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getSessionForUpdate, id)
-	var i CanonicalSession
+	var i GetSessionForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
@@ -248,6 +308,8 @@ func (q *Queries) GetSessionForUpdate(ctx context.Context, id string) (Canonical
 		&i.CaptureStatus,
 		&i.UpdatedAt,
 		&i.ReportedEventCount,
+		&i.CapturedByUserID,
+		&i.RecordState,
 	)
 	return i, err
 }
@@ -500,8 +562,13 @@ func (q *Queries) InsertEventVersion(ctx context.Context, arg InsertEventVersion
 }
 
 const insertProject = `-- name: InsertProject :exec
-INSERT INTO canonical_projects (id, team_id, name, project_type)
-VALUES ($1, $2, $3, $4)
+INSERT INTO canonical_projects (
+    id, team_id, name, project_type, repository_link_state
+)
+VALUES (
+    $1, $2, $3, $4,
+    CASE WHEN $4::text = 'git' THEN 'unknown' ELSE 'not_applicable' END
+)
 ON CONFLICT (id) DO NOTHING
 `
 
@@ -542,10 +609,10 @@ const insertSession = `-- name: InsertSession :exec
 INSERT INTO canonical_sessions (
     id, project_id, source_key, revision, digest, title, summary, insight,
     actor_name, actor_harness, branch, status, capture_status, updated_at,
-    reported_event_count
+    reported_event_count, captured_by_user_id, capture_lineage
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15
+    $9, $10, $11, $12, $13, $14, $15, $16, 'authenticated'
 )
 `
 
@@ -565,6 +632,7 @@ type InsertSessionParams struct {
 	CaptureStatus      string
 	UpdatedAt          time.Time
 	ReportedEventCount int64
+	CapturedByUserID   pgtype.UUID
 }
 
 func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) error {
@@ -584,6 +652,7 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 		arg.CaptureStatus,
 		arg.UpdatedAt,
 		arg.ReportedEventCount,
+		arg.CapturedByUserID,
 	)
 	return err
 }
@@ -626,6 +695,7 @@ const listProjectSessions = `-- name: ListProjectSessions :many
 SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        s.summary, s.insight, s.actor_name, s.actor_harness, s.branch,
        s.status, s.capture_status, s.updated_at, s.reported_event_count,
+       s.captured_by_user_id,
        GREATEST(
            s.reported_event_count,
            (SELECT COUNT(*) FROM canonical_events e WHERE e.session_id = s.id)
@@ -636,7 +706,7 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
            WHERE child.session_id = s.id AND child.parent_thread_id IS NOT NULL
        )::bigint AS child_thread_count
 FROM canonical_sessions s
-WHERE s.project_id = $1
+WHERE s.project_id = $1 AND s.record_state = 'active'
 ORDER BY s.updated_at DESC, s.id
 `
 
@@ -656,6 +726,7 @@ type ListProjectSessionsRow struct {
 	CaptureStatus      string
 	UpdatedAt          time.Time
 	ReportedEventCount int64
+	CapturedByUserID   pgtype.UUID
 	EventCount         int64
 	ChildThreadCount   int64
 }
@@ -685,6 +756,7 @@ func (q *Queries) ListProjectSessions(ctx context.Context, projectID string) ([]
 			&i.CaptureStatus,
 			&i.UpdatedAt,
 			&i.ReportedEventCount,
+			&i.CapturedByUserID,
 			&i.EventCount,
 			&i.ChildThreadCount,
 		); err != nil {
@@ -936,7 +1008,7 @@ SET revision = $2,
     capture_status = $11,
     updated_at = $12,
     reported_event_count = $13
-WHERE id = $1 AND revision < $2
+WHERE id = $1 AND revision < $2 AND record_state = 'active'
 `
 
 type UpdateSessionParams struct {

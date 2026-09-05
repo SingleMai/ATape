@@ -5,18 +5,27 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
+	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 )
 
+func cliPrincipal() authentication.Principal { return canonicalcontract.CLIPrincipal() }
+func webPrincipal() authentication.Principal { return canonicalcontract.WebPrincipal() }
+
+func testStore() *canonical.MemoryStore {
+	return canonical.NewMemoryStoreWithControlPlane(canonicalcontract.MemoryControlPlane())
+}
+
 func TestApplyBatchCreatesReadableCanonicalConversation(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	reader := conversation.NewMemory(store)
 	batch := validBatch()
 
-	result, err := ingestor.ApplyBatch(context.Background(), batch)
+	result, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), batch)
 	if err != nil {
 		t.Fatalf("apply batch: %v", err)
 	}
@@ -24,7 +33,7 @@ func TestApplyBatchCreatesReadableCanonicalConversation(t *testing.T) {
 		t.Fatalf("unexpected apply result: %+v", result)
 	}
 
-	project, err := reader.OpenProject(context.Background(), "payments-api")
+	project, err := reader.OpenProject(context.Background(), webPrincipal(), "payments-api")
 	if err != nil {
 		t.Fatalf("open project: %v", err)
 	}
@@ -35,7 +44,7 @@ func TestApplyBatchCreatesReadableCanonicalConversation(t *testing.T) {
 		t.Fatalf("session id = %q, want %q", got, want)
 	}
 
-	opened, err := reader.OpenConversation(context.Background(), result.SessionID, "root")
+	opened, err := reader.OpenConversation(context.Background(), webPrincipal(), result.SessionID, "root")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}
@@ -48,16 +57,16 @@ func TestApplyBatchCreatesReadableCanonicalConversation(t *testing.T) {
 }
 
 func TestApplyBatchReplayHasExactlyOnceEffect(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	reader := conversation.NewMemory(store)
 	batch := validBatch()
 
-	first, err := ingestor.ApplyBatch(context.Background(), batch)
+	first, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), batch)
 	if err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
-	replayed, err := ingestor.ApplyBatch(context.Background(), batch)
+	replayed, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), batch)
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -65,7 +74,7 @@ func TestApplyBatchReplayHasExactlyOnceEffect(t *testing.T) {
 		t.Fatalf("unexpected replay result: %+v", replayed)
 	}
 
-	opened, err := reader.OpenConversation(context.Background(), first.SessionID, "root")
+	opened, err := reader.OpenConversation(context.Background(), webPrincipal(), first.SessionID, "root")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}
@@ -75,11 +84,11 @@ func TestApplyBatchReplayHasExactlyOnceEffect(t *testing.T) {
 }
 
 func TestHigherEventRevisionUpdatesOneRecord(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	reader := conversation.NewMemory(store)
 	first := validBatch()
-	created, err := ingestor.ApplyBatch(context.Background(), first)
+	created, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), first)
 	if err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
@@ -100,14 +109,14 @@ func TestHigherEventRevisionUpdatesOneRecord(t *testing.T) {
 		EventIndex:         0,
 		OrderFidelity:      "native",
 		Fidelity:           "native",
-		RawRef:             "raw://test/session-42#assistant-1",
+		RawRef:             objectRef("session-42", "#assistant-1"),
 		Kind:               "message",
 		Author:             "Codex",
 		OccurredAt:         "2026-09-04T10:59:12+08:00",
 		Text:               "The retry needs one durable key, persisted before the first provider call.",
 	}}
 
-	updated, err := ingestor.ApplyBatch(context.Background(), second)
+	updated, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), second)
 	if err != nil {
 		t.Fatalf("second apply: %v", err)
 	}
@@ -118,7 +127,7 @@ func TestHigherEventRevisionUpdatesOneRecord(t *testing.T) {
 		t.Fatalf("adapter upgrade changed session id to %q, want %q", got, want)
 	}
 
-	opened, err := reader.OpenConversation(context.Background(), created.SessionID, "root")
+	opened, err := reader.OpenConversation(context.Background(), webPrincipal(), created.SessionID, "root")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}
@@ -131,17 +140,17 @@ func TestHigherEventRevisionUpdatesOneRecord(t *testing.T) {
 }
 
 func TestSameEventRevisionWithDifferentContentConflicts(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	first := validBatch()
-	if _, err := ingestor.ApplyBatch(context.Background(), first); err != nil {
+	if _, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), first); err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
 
 	conflicting := validBatch()
 	conflicting.BatchID = "batch-conflict"
 	conflicting.Events[0].Text = "Different content at the same revision."
-	_, err := ingestor.ApplyBatch(context.Background(), conflicting)
+	_, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), conflicting)
 	var conflict *canonical.ConflictError
 	if !errors.As(err, &conflict) {
 		t.Fatalf("error = %v, want *canonical.ConflictError", err)
@@ -149,18 +158,18 @@ func TestSameEventRevisionWithDifferentContentConflicts(t *testing.T) {
 }
 
 func TestConversationUsesSourceOrderInsteadOfTimestamps(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	reader := conversation.NewMemory(store)
 	batch := validBatch()
 	batch.Events[0].OccurredAt = "2026-09-04T11:05:00+08:00"
 	batch.Events[1].OccurredAt = "2026-09-04T10:55:00+08:00"
 
-	result, err := ingestor.ApplyBatch(context.Background(), batch)
+	result, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), batch)
 	if err != nil {
 		t.Fatalf("apply batch: %v", err)
 	}
-	opened, err := reader.OpenConversation(context.Background(), result.SessionID, "root")
+	opened, err := reader.OpenConversation(context.Background(), webPrincipal(), result.SessionID, "root")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}
@@ -170,11 +179,11 @@ func TestConversationUsesSourceOrderInsteadOfTimestamps(t *testing.T) {
 }
 
 func TestNewProjectionRevisionReplacesActiveSnapshotWithoutDuplication(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	reader := conversation.NewMemory(store)
 	first := validBatch()
-	created, err := ingestor.ApplyBatch(context.Background(), first)
+	created, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), first)
 	if err != nil {
 		t.Fatalf("first apply: %v", err)
 	}
@@ -186,7 +195,7 @@ func TestNewProjectionRevisionReplacesActiveSnapshotWithoutDuplication(t *testin
 	reprojected.Events = []ingestion.Event{first.Events[1]}
 	reprojected.Events[0].ProjectionRevision = 2
 	reprojected.Events[0].Text = "Reprojected with the corrected adapter mapping."
-	result, err := ingestor.ApplyBatch(context.Background(), reprojected)
+	result, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), reprojected)
 	if err != nil {
 		t.Fatalf("apply new projection: %v", err)
 	}
@@ -194,7 +203,7 @@ func TestNewProjectionRevisionReplacesActiveSnapshotWithoutDuplication(t *testin
 		t.Fatalf("updated events = %d, want %d", got, want)
 	}
 
-	opened, err := reader.OpenConversation(context.Background(), created.SessionID, "root")
+	opened, err := reader.OpenConversation(context.Background(), webPrincipal(), created.SessionID, "root")
 	if err != nil {
 		t.Fatalf("open conversation: %v", err)
 	}
@@ -207,7 +216,7 @@ func TestNewProjectionRevisionReplacesActiveSnapshotWithoutDuplication(t *testin
 }
 
 func TestApplyBatchRejectsThreadCycle(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	batch := validBatch()
 	childA := "child-b"
@@ -217,7 +226,7 @@ func TestApplyBatchRejectsThreadCycle(t *testing.T) {
 		ingestion.Thread{SourceThreadID: "child-b", ParentSourceThreadID: &childB, Revision: 1, Label: "child-b", CaptureStatus: "partial"},
 	)
 
-	_, err := ingestor.ApplyBatch(context.Background(), batch)
+	_, err := ingestor.ApplyBatch(context.Background(), cliPrincipal(), batch)
 	var validation *ingestion.ValidationError
 	if !errors.As(err, &validation) || validation.Field != "threads" {
 		t.Fatalf("error = %v, want thread ValidationError", err)
@@ -225,12 +234,12 @@ func TestApplyBatchRejectsThreadCycle(t *testing.T) {
 }
 
 func TestApplyBatchHonorsCancellation(t *testing.T) {
-	store := canonical.NewMemoryStore()
+	store := testStore()
 	ingestor := ingestion.NewIngestor(store)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := ingestor.ApplyBatch(ctx, validBatch())
+	_, err := ingestor.ApplyBatch(ctx, cliPrincipal(), validBatch())
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
@@ -245,10 +254,9 @@ func validBatch() ingestion.Batch {
 		Source: ingestion.Source{
 			AdapterID:      "atape-adapter-codex",
 			AdapterVersion: "0.1.0",
-			UserID:         "user-liying",
 			InstallationID: "liying-macbook",
 		},
-		Project: ingestion.Project{ID: "payments-api", TeamID: "acme-engineering", TeamName: "Acme Engineering", Name: "payments-api", Type: "git"},
+		ProjectID: canonicalcontract.TestProjectID,
 		Session: ingestion.Session{
 			SourceSessionID:    "provider-session-42",
 			Revision:           1,
@@ -278,7 +286,7 @@ func validBatch() ingestion.Batch {
 				EventIndex:         0,
 				OrderFidelity:      "native",
 				Fidelity:           "native",
-				RawRef:             "raw://test/session-42#user-1",
+				RawRef:             objectRef("session-42", "#user-1"),
 				Kind:               "message",
 				Author:             "Liying",
 				OccurredAt:         "2026-09-04T10:58:02+08:00",
@@ -293,7 +301,7 @@ func validBatch() ingestion.Batch {
 				EventIndex:         0,
 				OrderFidelity:      "native",
 				Fidelity:           "native",
-				RawRef:             "raw://test/session-42#assistant-1",
+				RawRef:             objectRef("session-42", "#assistant-1"),
 				Kind:               "message",
 				Author:             "Codex",
 				OccurredAt:         "2026-09-04T10:59:12+08:00",
@@ -301,4 +309,8 @@ func validBatch() ingestion.Batch {
 			},
 		},
 	}
+}
+
+func objectRef(sourceObjectID, fragment string) ingestion.RawReference {
+	return ingestion.RawReference{Type: "object", SourceObjectID: sourceObjectID, Fragment: fragment}
 }

@@ -112,6 +112,29 @@ func (q *Queries) ClaimFederatedLogin(ctx context.Context, id pgtype.UUID) (Clai
 	return i, err
 }
 
+const countOtherActiveOwnersForUserDisable = `-- name: CountOtherActiveOwnersForUserDisable :one
+SELECT COUNT(*)::bigint
+FROM team_memberships memberships
+JOIN auth_users users ON users.id = memberships.user_id
+WHERE memberships.team_id = $1
+  AND memberships.status = 'active'
+  AND memberships.role = 'owner'
+  AND users.status = 'active'
+  AND memberships.user_id <> $2
+`
+
+type CountOtherActiveOwnersForUserDisableParams struct {
+	TeamID string
+	UserID pgtype.UUID
+}
+
+func (q *Queries) CountOtherActiveOwnersForUserDisable(ctx context.Context, arg CountOtherActiveOwnersForUserDisableParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOtherActiveOwnersForUserDisable, arg.TeamID, arg.UserID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const databaseTime = `-- name: DatabaseTime :one
 SELECT clock_timestamp()::timestamptz AS now
 `
@@ -289,6 +312,34 @@ func (q *Queries) DenyCLIAuthorization(ctx context.Context, arg DenyCLIAuthoriza
 	return err
 }
 
+const disableUser = `-- name: DisableUser :execrows
+UPDATE auth_users
+SET status = 'disabled', disabled_at = clock_timestamp(), updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active'
+`
+
+func (q *Queries) DisableUser(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, disableUser, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const expireApprovedCLIAuthorizationsForUser = `-- name: ExpireApprovedCLIAuthorizationsForUser :execrows
+UPDATE auth_cli_device_authorizations
+SET status = 'expired', terminal_at = clock_timestamp()
+WHERE approving_user_id = $1 AND status = 'approved_unclaimed'
+`
+
+func (q *Queries) ExpireApprovedCLIAuthorizationsForUser(ctx context.Context, approvingUserID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, expireApprovedCLIAuthorizationsForUser, approvingUserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const expireCLIAuthorization = `-- name: ExpireCLIAuthorization :exec
 UPDATE auth_cli_device_authorizations
 SET status = 'expired', terminal_at = clock_timestamp()
@@ -347,6 +398,76 @@ FROM candidates c WHERE f.id = c.id
 
 func (q *Queries) ExpireFederatedLoginBatch(ctx context.Context, batchSize int32) (int64, error) {
 	result, err := q.db.Exec(ctx, expireFederatedLoginBatch, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const expireWebSessionBatch = `-- name: ExpireWebSessionBatch :many
+WITH candidates AS (
+    SELECT id,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_expired' ELSE 'idle_expired' END AS expired_status,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_lifetime' ELSE 'idle_timeout' END AS expired_reason
+    FROM auth_web_sessions
+    WHERE status = 'active'
+      AND (absolute_expires_at <= clock_timestamp()
+           OR last_used_at + $1::integer * interval '1 second' <= clock_timestamp())
+    ORDER BY LEAST(
+        absolute_expires_at,
+        last_used_at + $1::integer * interval '1 second'
+    ), id
+    LIMIT $2::integer
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE auth_web_sessions s
+SET status = c.expired_status, terminal_at = clock_timestamp(), terminal_reason = c.expired_reason
+FROM candidates c WHERE s.id = c.id
+RETURNING s.id, s.status, s.terminal_reason
+`
+
+type ExpireWebSessionBatchParams struct {
+	IdleDeadlineSeconds int32
+	BatchSize           int32
+}
+
+type ExpireWebSessionBatchRow struct {
+	ID             pgtype.UUID
+	Status         string
+	TerminalReason string
+}
+
+func (q *Queries) ExpireWebSessionBatch(ctx context.Context, arg ExpireWebSessionBatchParams) ([]ExpireWebSessionBatchRow, error) {
+	rows, err := q.db.Query(ctx, expireWebSessionBatch, arg.IdleDeadlineSeconds, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExpireWebSessionBatchRow{}
+	for rows.Next() {
+		var i ExpireWebSessionBatchRow
+		if err := rows.Scan(&i.ID, &i.Status, &i.TerminalReason); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const failFederatedLoginsForUser = `-- name: FailFederatedLoginsForUser :execrows
+UPDATE auth_federated_login_transactions
+SET status = 'failed', terminal_at = clock_timestamp(), failure_code = 'user_disabled',
+    private_state_key_id = NULL, private_state_nonce = NULL, private_state_ciphertext = NULL
+WHERE initiating_user_id = $1 AND status IN ('pending', 'completing')
+`
+
+func (q *Queries) FailFederatedLoginsForUser(ctx context.Context, initiatingUserID pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, failFederatedLoginsForUser, initiatingUserID)
 	if err != nil {
 		return 0, err
 	}
@@ -524,6 +645,26 @@ func (q *Queries) GetCLIAuthorizationForDecision(ctx context.Context, id pgtype.
 		&i.ReviewWebSessionID,
 		&i.ApprovingUserID,
 	)
+	return i, err
+}
+
+const getCLICredentialBySecretForRevoke = `-- name: GetCLICredentialBySecretForRevoke :one
+SELECT id, user_id, status
+FROM auth_cli_credentials
+WHERE secret_digest = $1
+FOR UPDATE
+`
+
+type GetCLICredentialBySecretForRevokeRow struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+	Status string
+}
+
+func (q *Queries) GetCLICredentialBySecretForRevoke(ctx context.Context, secretDigest []byte) (GetCLICredentialBySecretForRevokeRow, error) {
+	row := q.db.QueryRow(ctx, getCLICredentialBySecretForRevoke, secretDigest)
+	var i GetCLICredentialBySecretForRevokeRow
+	err := row.Scan(&i.ID, &i.UserID, &i.Status)
 	return i, err
 }
 
@@ -1072,6 +1213,164 @@ func (q *Queries) InsertWebSessionSecret(ctx context.Context, arg InsertWebSessi
 	return issued_at, err
 }
 
+const listActiveCLICredentialsForUser = `-- name: ListActiveCLICredentialsForUser :many
+SELECT id, capability_version, created_at, last_used_at
+FROM auth_cli_credentials
+WHERE user_id = $1 AND status = 'active'
+ORDER BY last_used_at DESC, created_at DESC, id DESC
+`
+
+type ListActiveCLICredentialsForUserRow struct {
+	ID                pgtype.UUID
+	CapabilityVersion string
+	CreatedAt         time.Time
+	LastUsedAt        time.Time
+}
+
+func (q *Queries) ListActiveCLICredentialsForUser(ctx context.Context, userID pgtype.UUID) ([]ListActiveCLICredentialsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveCLICredentialsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveCLICredentialsForUserRow{}
+	for rows.Next() {
+		var i ListActiveCLICredentialsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CapabilityVersion,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveExternalIdentitiesForUser = `-- name: ListActiveExternalIdentitiesForUser :many
+SELECT id, issuer, display_name, avatar_url, created_at, last_verified_at
+FROM auth_external_identities
+WHERE user_id = $1 AND status = 'active'
+ORDER BY created_at, id
+`
+
+type ListActiveExternalIdentitiesForUserRow struct {
+	ID             pgtype.UUID
+	Issuer         string
+	DisplayName    string
+	AvatarUrl      string
+	CreatedAt      time.Time
+	LastVerifiedAt time.Time
+}
+
+func (q *Queries) ListActiveExternalIdentitiesForUser(ctx context.Context, userID pgtype.UUID) ([]ListActiveExternalIdentitiesForUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveExternalIdentitiesForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveExternalIdentitiesForUserRow{}
+	for rows.Next() {
+		var i ListActiveExternalIdentitiesForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Issuer,
+			&i.DisplayName,
+			&i.AvatarUrl,
+			&i.CreatedAt,
+			&i.LastVerifiedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveOwnerTeamIDsForUser = `-- name: ListActiveOwnerTeamIDsForUser :many
+SELECT team_id
+FROM team_memberships
+WHERE user_id = $1 AND status = 'active' AND role = 'owner'
+ORDER BY team_id
+`
+
+func (q *Queries) ListActiveOwnerTeamIDsForUser(ctx context.Context, userID pgtype.UUID) ([]string, error) {
+	rows, err := q.db.Query(ctx, listActiveOwnerTeamIDsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var team_id string
+		if err := rows.Scan(&team_id); err != nil {
+			return nil, err
+		}
+		items = append(items, team_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listActiveWebSessionsForUser = `-- name: ListActiveWebSessionsForUser :many
+SELECT id, created_at, last_used_at, reauthenticated_at, absolute_expires_at
+FROM auth_web_sessions
+WHERE user_id = $1
+  AND status = 'active'
+  AND absolute_expires_at > clock_timestamp()
+  AND last_used_at + $2::integer * interval '1 second' > clock_timestamp()
+ORDER BY last_used_at DESC, created_at DESC, id DESC
+`
+
+type ListActiveWebSessionsForUserParams struct {
+	UserID              pgtype.UUID
+	IdleDeadlineSeconds int32
+}
+
+type ListActiveWebSessionsForUserRow struct {
+	ID                pgtype.UUID
+	CreatedAt         time.Time
+	LastUsedAt        time.Time
+	ReauthenticatedAt time.Time
+	AbsoluteExpiresAt time.Time
+}
+
+func (q *Queries) ListActiveWebSessionsForUser(ctx context.Context, arg ListActiveWebSessionsForUserParams) ([]ListActiveWebSessionsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveWebSessionsForUser, arg.UserID, arg.IdleDeadlineSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveWebSessionsForUserRow{}
+	for rows.Next() {
+		var i ListActiveWebSessionsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.ReauthenticatedAt,
+			&i.AbsoluteExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLivePrivateStateKeyIDs = `-- name: ListLivePrivateStateKeyIDs :many
 SELECT DISTINCT private_state_key_id
 FROM auth_federated_login_transactions
@@ -1185,6 +1484,18 @@ func (q *Queries) LiveCLICodeExists(ctx context.Context, arg LiveCLICodeExistsPa
 	var found bool
 	err := row.Scan(&found)
 	return found, err
+}
+
+const lockTeamForUserDisable = `-- name: LockTeamForUserDisable :exec
+SELECT id
+FROM workspace_teams
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockTeamForUserDisable(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, lockTeamForUserDisable, id)
+	return err
 }
 
 const reauthenticateWebSession = `-- name: ReauthenticateWebSession :one
@@ -1435,6 +1746,31 @@ func (q *Queries) TryMaintenanceLock(ctx context.Context, lockID int64) (bool, e
 	var acquired bool
 	err := row.Scan(&acquired)
 	return acquired, err
+}
+
+const updateActiveUserProfile = `-- name: UpdateActiveUserProfile :one
+UPDATE auth_users
+SET display_name = $2, updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active'
+RETURNING display_name, avatar_url, created_at
+`
+
+type UpdateActiveUserProfileParams struct {
+	ID          pgtype.UUID
+	DisplayName string
+}
+
+type UpdateActiveUserProfileRow struct {
+	DisplayName string
+	AvatarUrl   string
+	CreatedAt   time.Time
+}
+
+func (q *Queries) UpdateActiveUserProfile(ctx context.Context, arg UpdateActiveUserProfileParams) (UpdateActiveUserProfileRow, error) {
+	row := q.db.QueryRow(ctx, updateActiveUserProfile, arg.ID, arg.DisplayName)
+	var i UpdateActiveUserProfileRow
+	err := row.Scan(&i.DisplayName, &i.AvatarUrl, &i.CreatedAt)
+	return i, err
 }
 
 const upsertCodeAttemptFailure = `-- name: UpsertCodeAttemptFailure :one

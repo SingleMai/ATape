@@ -79,7 +79,7 @@ func (q *Queries) CommitRawObject(ctx context.Context, arg CommitRawObjectParams
 const getRawCanonicalSessionProject = `-- name: GetRawCanonicalSessionProject :one
 SELECT project_id
 FROM canonical_sessions
-WHERE id = $1
+WHERE id = $1 AND record_state = 'active'
 `
 
 func (q *Queries) GetRawCanonicalSessionProject(ctx context.Context, id string) (string, error) {

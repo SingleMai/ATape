@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
 
@@ -10,6 +11,6 @@ import (
 // Ordinary reads expose only active Canonical snapshots and never join Raw or
 // historical projection records.
 type SnapshotStore interface {
-	Project(context.Context, string) (canonical.ProjectSnapshot, bool, error)
-	Conversation(context.Context, string, string) (canonical.ConversationSnapshot, bool, error)
+	Project(context.Context, authentication.Principal, string) (canonical.ProjectSnapshot, bool, error)
+	Conversation(context.Context, authentication.Principal, string, string) (canonical.ConversationSnapshot, bool, error)
 }

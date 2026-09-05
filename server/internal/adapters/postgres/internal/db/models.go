@@ -6,21 +6,7 @@ package db
 
 import (
 	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
-
-type CanonicalBatchReceipt struct {
-	BatchKey        string
-	Digest          string
-	SessionID       string
-	SessionCreated  bool
-	InsertedEvents  int32
-	UpdatedEvents   int32
-	UnchangedEvents int32
-	StaleEvents     int32
-	CreatedAt       time.Time
-}
 
 type CanonicalEvent struct {
 	ID                 string
@@ -48,69 +34,6 @@ type CanonicalEvent struct {
 	ChildThreadID      *string
 }
 
-type CanonicalEventVersion struct {
-	SourceKey          string
-	ProjectionRevision int64
-	Revision           int64
-	EventID            string
-	SessionID          string
-	ThreadID           string
-	Digest             string
-	SourceOrder        int64
-	EventIndex         int64
-	OrderFidelity      string
-	Fidelity           string
-	RawRef             string
-	AdapterVersion     string
-	SchemaVersion      string
-	ObservedAt         time.Time
-	ReceivedAt         time.Time
-	IngestSeq          int64
-	Kind               string
-	Author             string
-	OccurredAt         time.Time
-	Text               string
-	ToolLabel          string
-	ChildThreadID      *string
-}
-
-type CanonicalProject struct {
-	ID              string
-	TeamID          string
-	Name            string
-	CapturedThrough time.Time
-	ProjectType     string
-}
-
-type CanonicalProjectionChange struct {
-	ID             int64
-	EventID        string
-	EventIngestSeq int64
-	ObservedAt     time.Time
-	LeaseOwner     *string
-	LeaseUntil     pgtype.Timestamptz
-	Attempts       int32
-	ProcessedAt    pgtype.Timestamptz
-}
-
-type CanonicalSession struct {
-	ID                 string
-	ProjectID          string
-	SourceKey          string
-	Revision           int64
-	Digest             string
-	Title              string
-	Summary            string
-	Insight            string
-	ActorName          string
-	ActorHarness       string
-	Branch             string
-	Status             string
-	CaptureStatus      string
-	UpdatedAt          time.Time
-	ReportedEventCount int64
-}
-
 type CanonicalThread struct {
 	SessionID      string
 	ID             string
@@ -121,76 +44,4 @@ type CanonicalThread struct {
 	Summary        string
 	ParentThreadID *string
 	CaptureStatus  string
-}
-
-type ProjectSearchCheckpoint struct {
-	ProjectID      string
-	IndexedThrough time.Time
-}
-
-type ProjectSearchDocument struct {
-	EventID          string
-	ProjectID        string
-	SessionID        string
-	SessionTitle     string
-	ThreadID         string
-	ThreadPathIds    []string
-	ThreadPathLabels []string
-	Author           string
-	Harness          string
-	OccurredAt       time.Time
-	Text             string
-	ToolLabel        string
-	IngestSeq        int64
-	ObservedAt       time.Time
-	IndexedAt        time.Time
-	SearchText       string
-	SearchVector     interface{}
-}
-
-type RawChunk struct {
-	ChunkID        string
-	ObjectID       string
-	Generation     int64
-	Ordinal        int64
-	ByteOffset     int64
-	SizeBytes      int64
-	AdapterVersion string
-	CapturedAt     time.Time
-	Final          bool
-	Sha256         string
-	StorageKey     string
-	CreatedAt      time.Time
-}
-
-type RawGeneration struct {
-	ObjectID   string
-	Generation int64
-	SizeBytes  int64
-	ChunkCount int64
-	Finalized  bool
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-}
-
-type RawObject struct {
-	ID                string
-	ProjectID         string
-	SessionID         string
-	SourceName        string
-	MediaType         string
-	AdapterID         string
-	AdapterVersion    string
-	CapturedAt        time.Time
-	ClientRedacted    bool
-	CurrentGeneration int64
-	GenerationCount   int64
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-}
-
-type WorkspaceTeam struct {
-	ID           string
-	Name         string
-	NameReported bool
 }

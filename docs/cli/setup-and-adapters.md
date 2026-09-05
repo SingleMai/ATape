@@ -13,29 +13,41 @@ atape --version
 
 The checksummed GitHub Release tarball remains an equivalent offline installation source. Repository maintainers create the complete CLI + Codex Adapter release set with `pnpm pack:release`, verify the clean installation boundary with `pnpm test:release`, and follow [`docs/releasing.md`](../releasing.md) for publication.
 
+## Sign in
+
+The CLI uses the Instance's browser login. It opens a short-lived approval page and also prints a six-character code so a headless terminal can finish the same flow:
+
+```sh
+pnpm atape login
+pnpm atape login --instance https://atape.example
+pnpm atape login --no-browser
+```
+
+Instance selection is `--instance`, then `ATAPE_INSTANCE_URL`, then the last successfully selected Instance, then `https://atape.dev`. Production credentials are sent only to a freshly rediscovered, exactly pinned HTTPS API origin; redirects and discovery drift fail closed. Plain HTTP requires `ATAPE_DEVELOPMENT_ALLOW_HTTP=true` and an all-loopback topology.
+
+Credentials are isolated by Instance. `pnpm atape logout [--instance ...]` removes the selected local credential even when remote revocation cannot be confirmed. Re-login durably stores the replacement before revoking the old credential.
+
 ## Configure a Project
 
 Run setup from a Project directory:
 
 ```sh
-pnpm atape setup --user-id liying --team-id acme-engineering
+pnpm atape setup --team acme-engineering --create
 ```
 
-Or provide the directory and complete identity explicitly:
+Or provide a directory, Instance, and installed Adapter explicitly:
 
 ```sh
 pnpm atape setup ../payments-api \
-  --user-id liying \
-  --team-id acme-engineering \
-  --team-name "Acme Engineering" \
-  --project-id payments-api \
-  --name "Payments API" \
-  --server http://127.0.0.1:8080
+  --instance https://atape.example \
+  --team acme-engineering \
+  --create \
+  --adapter codex
 ```
 
-The default `--type auto` behavior promotes a path inside a Git worktree to the repository root and records a `git` Project. Use `--type directory` when the selected folder itself is the intended boundary, even when it sits inside a Git repository. `--type git` rejects paths outside a Git worktree.
+The User, Team, and Project authority always comes from the authenticated server; the CLI has no flags that let callers assert those identities. The default `--type auto` behavior promotes a path inside a Git worktree to the repository root, reads its `origin`, and searches every visible Team for an exact repository match. One exact match is attached automatically. No match requires an explicit Team and `--create`; ambiguous matches require an explicit selection. Use `--type directory` when the selected folder itself is the intended boundary, even when it sits inside a Git repository. `--type git` rejects paths outside a Git worktree or without an origin remote.
 
-The Team user ID is client-wide and immutable. Project ID, Team, name, type, and resolved path form the local capture identity. Repeating an identical setup is idempotent. To change Project identity, remove the local Project and set it up again:
+Each local Project stores its verified Instance, User, Team, server Project, type, and resolved path. The path never crosses the HTTP boundary as identity. Repeating an identical setup is idempotent. To change Project identity, remove the local Project and set it up again:
 
 ```sh
 pnpm atape projects list
@@ -121,18 +133,26 @@ Each page follows this commit order:
 
 If Raw fails after Canonical succeeds, the cursor remains unchanged. The next cycle replays the Canonical batch, skips Raw source bytes already recorded in the local progress checkpoint, and resumes at the first unacknowledged segment. If the server accepted a segment immediately before the client lost power, its deterministic identity makes that final replay safe. Source deletion never sends a delete to ATape.
 
-## Local state
+## Local state and v0.1 migration
 
-The default locations follow XDG conventions:
+All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 
-- Configuration: `$XDG_CONFIG_HOME/atape/config.json`, or `~/.config/atape/config.json`
-- Collector checkpoints: `$XDG_STATE_HOME/atape/collector.json`, or `~/.local/state/atape/collector.json`
-- Managed process metadata: `$XDG_STATE_HOME/atape/collector-process.json`
-- Project/Adapter run status: `$XDG_STATE_HOME/atape/collector-status.json`
-- Background logs: `$XDG_STATE_HOME/atape/collector.log`
-- Adapter packages: `$XDG_DATA_HOME/atape/adapters`, or `~/.local/share/atape/adapters`
+- Credentials: `~/.atape/credentials/`
+- Configuration: `~/.atape/config/client.json`
+- Collector checkpoints, process metadata, and status: `~/.atape/state/`
+- Background logs: `~/.atape/logs/collector.log`
+- Adapter packages: `~/.atape/adapters/`
 
-`ATAPE_CONFIG_FILE`, `ATAPE_COLLECTOR_STATE_FILE`, `ATAPE_COLLECTOR_PROCESS_FILE`, `ATAPE_COLLECTOR_STATUS_FILE`, `ATAPE_COLLECTOR_LOG_FILE`, and `ATAPE_ADAPTER_DIRECTORY` override those paths for development and deployment. Configuration, checkpoint, process, and status writes are atomic and owner-only. Local filesystem paths remain client state and are not part of server Project, Canonical, Raw, or Search payloads.
+`ATAPE_HOME` relocates the whole layout. Individual `ATAPE_CONFIG_FILE`, `ATAPE_COLLECTOR_STATE_FILE`, `ATAPE_COLLECTOR_PROCESS_FILE`, `ATAPE_COLLECTOR_STATUS_FILE`, `ATAPE_COLLECTOR_LOG_FILE`, and `ATAPE_ADAPTER_DIRECTORY` overrides remain available for development. Credentials use opaque per-Instance filenames, owner-only directories/files, no-follow reads, compare-and-swap updates, and fsynced atomic replacement. Local filesystem paths remain client state and are not part of server Project, Canonical, Raw, or Search payloads.
+
+v0.2 never silently adopts v0.1 XDG data. Preview and explicitly archive it while retaining every original:
+
+```sh
+pnpm atape migrate-local-v0.1
+pnpm atape migrate-local-v0.1 --apply
+```
+
+The import deliberately discards old client-asserted server/User/Team/Project authority. An old checkpoint can be adopted only later, after authenticated setup has bound exactly one new Instance/User/Project/Adapter tuple, with the explicit `--adopt-checkpoint` command shown by `atape --help`.
 
 The checkpoint file stores only an installation ID, opaque cursors, and per-Raw-object offsets; it never queues conversation bodies. Raw content is re-read from the Harness through an unadvanced cursor after a failed upload, while acknowledged source ranges are skipped.
 

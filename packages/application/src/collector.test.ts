@@ -16,6 +16,7 @@ import {
   CollectorTransport,
   SecretRedactor,
   makeSecretRedactorLayer,
+  runCollector,
   runCollectionCycle,
   type CanonicalSubmission,
   type RawSubmission
@@ -145,10 +146,13 @@ const twoSegmentCollectionPage = (): AdapterCollectionPage => {
 
 const clientConfig = (): ClientConfig => ({
   ...emptyClientConfig(),
-  userId: "liying",
+  activeInstanceOrigin: "https://atape.dev",
   projects: [{
     id: "payments",
+    instanceOrigin: "https://atape.dev",
+    userId: "user-1",
     teamId: "acme",
+    teamSlug: "acme",
     teamName: "Acme",
     name: "Payments",
     type: "git",
@@ -279,6 +283,7 @@ describe("Collector Module", () => {
     expect(capture.canonical[0]?.observation.events[0]).toMatchObject({
       update: { sessionUpdate: "tool_call" }, childSourceThreadId: "child"
     })
+    expect(capture.canonical[0]?.observation).not.toHaveProperty("rawSegments")
     expect(capture.commits()).toBe(2)
     expect(capture.checkpoint()).toMatchObject({
       revision: 2,
@@ -310,6 +315,29 @@ describe("Collector Module", () => {
     expect(capture.commits()).toBe(0)
     expect(capture.checkpoint()).toBeUndefined()
     expect(capture.canonical).toHaveLength(1)
+  })
+
+  it("surfaces unauthenticated explicitly and stops continuous collection without retrying", async () => {
+    const capture = fixture({
+      rawFailure: new CollectionTransportError({
+        reason: "unauthenticated",
+        operation: "raw",
+        status: 401,
+        retryable: false,
+        message: "The CLI credential is no longer valid."
+      })
+    })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures).toEqual([expect.objectContaining({
+      reason: "unauthenticated",
+      retryable: false
+    })])
+    expect(capture.rawAttempts()).toBe(1)
+
+    await expect(capture.run(runCollector({ intervalMs: 10_000 }))).rejects.toMatchObject({
+      reason: "unauthenticated"
+    })
+    expect(capture.rawAttempts()).toBe(2)
   })
 
   it("keeps its own Raw offset when a replay receipt reports a later server position", async () => {
@@ -378,7 +406,9 @@ describe("Collector Module", () => {
     expect(capture.raw.every((submission) => utf8Length(submission.content) <= RawTransportChunkBytes)).toBe(true)
     expect(capture.raw.map((submission) => submission.content).join("")).toBe(redactedContent)
     expect(capture.raw.map((submission) => submission.final)).toEqual([false, true])
-    expect(capture.raw.map((submission) => submission.transportChunkIndex)).toEqual([0, 1])
+    expect(capture.raw[0]?.sourceChunkId).toBe("g1-o0")
+    expect(capture.raw[1]?.sourceChunkId)
+      .toBe(`g1-o${utf8Length(capture.raw[0]?.content ?? "")}`)
     expect(capture.checkpoint()?.rawObjects[0]).toMatchObject({
       sourceOffset: utf8Length(sourceContent),
       serverOffset: utf8Length(redactedContent),
@@ -406,7 +436,7 @@ describe("Collector Module", () => {
     expect(report.jobs).toEqual([])
     expect(report.failures[0]).toMatchObject({ retryable: true, message: "Raw is temporarily unavailable" })
     expect(capture.raw).toHaveLength(1)
-    expect(capture.raw[0]).toMatchObject({ serverOffset: 0, transportChunkIndex: 0, final: false })
+    expect(capture.raw[0]).toMatchObject({ serverOffset: 0, sourceChunkId: "g1-o0", final: false })
     expect(capture.rawAttempts()).toBe(4)
     expect(capture.checkpoint()).toBeUndefined()
   })

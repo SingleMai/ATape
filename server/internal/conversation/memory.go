@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
 
@@ -113,8 +114,12 @@ func NewMemory(store SnapshotStore) *Memory {
 	return &Memory{store: store, now: time.Now}
 }
 
-func (m *Memory) OpenProject(ctx context.Context, projectID string) (ProjectMemory, error) {
-	snapshot, ok, err := m.store.Project(ctx, projectID)
+func (m *Memory) OpenProject(
+	ctx context.Context,
+	principal authentication.Principal,
+	projectID string,
+) (ProjectMemory, error) {
+	snapshot, ok, err := m.store.Project(ctx, principal, projectID)
 	if err != nil {
 		return ProjectMemory{}, err
 	}
@@ -150,6 +155,7 @@ func (m *Memory) OpenProject(ctx context.Context, projectID string) (ProjectMemo
 
 func (m *Memory) OpenConversation(
 	ctx context.Context,
+	principal authentication.Principal,
 	sessionID string,
 	threadID string,
 ) (Conversation, error) {
@@ -157,7 +163,7 @@ func (m *Memory) OpenConversation(
 		threadID = rootThreadID
 	}
 
-	snapshot, ok, err := m.store.Conversation(ctx, sessionID, threadID)
+	snapshot, ok, err := m.store.Conversation(ctx, principal, sessionID, threadID)
 	if err != nil {
 		return Conversation{}, err
 	}

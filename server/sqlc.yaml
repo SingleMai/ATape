@@ -6,6 +6,10 @@ sql:
       - "internal/adapters/postgres/migrations/000002_project_search.sql"
       - "internal/adapters/postgres/migrations/000003_workspace_directory.sql"
       - "internal/adapters/postgres/migrations/000004_raw_archive.sql"
+      - "internal/adapters/postgres/migrations/000005_authentication.sql"
+      - "internal/adapters/postgres/migrations/000006_team_authorization.sql"
+      - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
+      - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
@@ -14,13 +18,22 @@ sql:
         sql_package: "pgx/v5"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        omit_unused_structs: true
         overrides:
           - db_type: "timestamptz"
             go_type:
               import: "time"
               type: "Time"
   - engine: "postgresql"
-    schema: "internal/adapters/postgres/migrations/000005_authentication.sql"
+    schema:
+      - "internal/adapters/postgres/migrations/000001_canonical.sql"
+      - "internal/adapters/postgres/migrations/000002_project_search.sql"
+      - "internal/adapters/postgres/migrations/000003_workspace_directory.sql"
+      - "internal/adapters/postgres/migrations/000004_raw_archive.sql"
+      - "internal/adapters/postgres/migrations/000005_authentication.sql"
+      - "internal/adapters/postgres/migrations/000006_team_authorization.sql"
+      - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
+      - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
     queries: "internal/authentication/queries"
     gen:
       go:
@@ -29,6 +42,31 @@ sql:
         sql_package: "pgx/v5"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        omit_unused_structs: true
+        overrides:
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+  - engine: "postgresql"
+    schema:
+      - "internal/adapters/postgres/migrations/000001_canonical.sql"
+      - "internal/adapters/postgres/migrations/000002_project_search.sql"
+      - "internal/adapters/postgres/migrations/000003_workspace_directory.sql"
+      - "internal/adapters/postgres/migrations/000004_raw_archive.sql"
+      - "internal/adapters/postgres/migrations/000005_authentication.sql"
+      - "internal/adapters/postgres/migrations/000006_team_authorization.sql"
+      - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
+      - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
+    queries: "internal/team/queries"
+    gen:
+      go:
+        package: "db"
+        out: "internal/team/internal/db"
+        sql_package: "pgx/v5"
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true
         overrides:
           - db_type: "timestamptz"
             go_type:

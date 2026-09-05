@@ -40,6 +40,10 @@ import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "no
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect, Layer, Schema } from "effect"
+import {
+  AuthenticatedHTTPClient,
+  AuthenticatedHTTPError
+} from "./authenticatedHTTPClient.ts"
 
 export type NodeCollectorPaths = {
   readonly collectorStateFile: string
@@ -80,9 +84,10 @@ export const environmentSecretValues = (environment: NodeJS.ProcessEnv) => {
 export const makeCollectorStateLayer = (stateFile: string) => Layer.succeed(
   CollectorStateStore,
   CollectorStateStore.of({
-    snapshot: (projectId, adapterId) => withCollectorState(stateFile, (state) => ({
+    snapshot: (instanceOrigin, userId, projectId, adapterId) => withCollectorState(stateFile, (state) => ({
       value: (() => {
         const checkpoint = state.checkpoints.find((item) =>
+          item.instanceOrigin === instanceOrigin && item.userId === userId &&
           item.projectId === projectId && item.adapterId === adapterId)
         return {
           installationId: state.installationId,
@@ -90,12 +95,14 @@ export const makeCollectorStateLayer = (stateFile: string) => Layer.succeed(
         } satisfies CollectorStateSnapshot
       })()
     })),
-    commit: ({ projectId, adapterId, expectedRevision, checkpoint }) =>
+    commit: ({ instanceOrigin, userId, projectId, adapterId, expectedRevision, checkpoint }) =>
       withCollectorState(stateFile, (state) => {
         const current = state.checkpoints.find((item) =>
+          item.instanceOrigin === instanceOrigin && item.userId === userId &&
           item.projectId === projectId && item.adapterId === adapterId)
         const currentRevision = current?.revision ?? 0
         if (currentRevision !== expectedRevision || checkpoint.revision !== expectedRevision + 1 ||
+          checkpoint.instanceOrigin !== instanceOrigin || checkpoint.userId !== userId ||
           checkpoint.projectId !== projectId || checkpoint.adapterId !== adapterId) {
           throw new CollectorStateError({
             reason: "conflict",
@@ -108,10 +115,11 @@ export const makeCollectorStateLayer = (stateFile: string) => Layer.succeed(
             ...state,
             checkpoints: [
               ...state.checkpoints.filter((item) =>
+                item.instanceOrigin !== instanceOrigin || item.userId !== userId ||
                 item.projectId !== projectId || item.adapterId !== adapterId),
               checkpoint
             ].sort((left, right) =>
-              `${left.projectId}\0${left.adapterId}`.localeCompare(`${right.projectId}\0${right.adapterId}`))
+              checkpointKey(left).localeCompare(checkpointKey(right)))
           }
         }
       })
@@ -236,8 +244,8 @@ const writeCollectorState = (stateFile: string, state: CollectorState): Effect.E
 export const makeAdapterRuntimeLayer = (adapterDirectory: string) => Layer.succeed(
   AdapterRuntimes,
   AdapterRuntimes.of({
-    open: (project, adapter, userId) => Effect.acquireRelease(
-      loadAdapterRuntime(adapterDirectory, project, adapter, userId),
+    open: (project, adapter) => Effect.acquireRelease(
+      loadAdapterRuntime(adapterDirectory, project, adapter),
       ({ foreign, lifetime }) => Effect.sync(() => lifetime.abort()).pipe(
         Effect.flatMap(() => foreign.close === undefined
           ? Effect.void
@@ -261,8 +269,7 @@ export const makeAdapterRuntimeLayer = (adapterDirectory: string) => Layer.succe
 const loadAdapterRuntime = (
   adapterDirectory: string,
   project: Parameters<AdapterRuntimes["Service"]["open"]>[0],
-  adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1],
-  userId: string
+  adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1]
 ) => Effect.gen(function*() {
   const packageRoot = join(adapterDirectory, "node_modules", ...adapter.packageName.split("/"))
   const packageJSON = yield* Effect.tryPromise({
@@ -302,7 +309,6 @@ const loadAdapterRuntime = (
     try: (signal) => Promise.resolve(module.createAtapeAdapter?.({
       protocolVersion: AdapterProtocolVersion,
       adapter: { id: adapter.adapterId, version: adapter.version },
-      user: { id: userId },
       project: { id: project.id, type: project.type, path: project.path },
       signal: AbortSignal.any([signal, lifetime.signal])
     })) as Promise<AtapeAdapterRuntime>,
@@ -356,13 +362,17 @@ const resolveAdapterEntry = (
   )
 })
 
-export const makeCollectorTransportLayer = () => Layer.succeed(
+export const makeCollectorTransportLayer = () => Layer.effect(
   CollectorTransport,
-  CollectorTransport.of({
+  Effect.gen(function*() {
+    const client = yield* AuthenticatedHTTPClient
+    return CollectorTransport.of({
     submitCanonical: (submission) => {
       const batch = canonicalBatch(submission)
       return postJSON(
-        `${submission.serverUrl}/api/v1/ingestion/canonical/batches`,
+        client,
+        submission.instanceOrigin,
+        "/api/v1/ingestion/canonical/batches",
         batch,
         "canonical",
         CanonicalApplyReceiptSchema
@@ -371,28 +381,23 @@ export const makeCollectorTransportLayer = () => Layer.succeed(
     appendRaw: (submission) => {
       const chunk = rawChunk(submission)
       return postJSON(
-        `${submission.serverUrl}/api/v1/ingestion/raw/chunks`,
+        client,
+        submission.instanceOrigin,
+        "/api/v1/ingestion/raw/chunks",
         chunk,
         "raw",
         RawAppendReceiptSchema
       )
     }
+    })
   })
 )
 
 const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
   const source = {
-    adapterId: submission.adapter.adapterId,
-    adapterVersion: submission.adapter.version,
-    userId: submission.userId,
+    adapterId: submission.adapterId,
+    adapterVersion: submission.adapterVersion,
     installationId: submission.installationId
-  }
-  const project = {
-    id: submission.project.id,
-    teamId: submission.project.teamId,
-    teamName: submission.project.teamName,
-    name: submission.project.name,
-    type: submission.project.type
   }
   const events = submission.observation.events.map((event) => {
     const projection = projectAcpUpdate(event.update, submission.observation.session.actor)
@@ -406,8 +411,12 @@ const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
       orderFidelity: event.orderFidelity,
       fidelity: event.fidelity,
       rawRef: event.rawRef._tag === "object"
-        ? `${rawObjectId(submission, event.rawRef.sourceObjectId)}${event.rawRef.fragment ?? ""}`
-        : `unavailable:${event.rawRef.reason}`,
+        ? {
+            type: "object" as const,
+            sourceObjectId: event.rawRef.sourceObjectId,
+            ...(event.rawRef.fragment === undefined ? {} : { fragment: event.rawRef.fragment })
+          }
+        : { type: "unavailable" as const, reason: event.rawRef.reason },
       kind: event.childSourceThreadId === undefined ? projection.kind : "spawn" as const,
       author: projection.author,
       occurredAt: event.occurredAt,
@@ -421,7 +430,7 @@ const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
     canonicalProfileVersion: CanonicalProfileVersion,
     observedAt: submission.observation.observedAt,
     source,
-    project,
+    projectId: submission.projectId,
     session: submission.observation.session,
     threads: submission.observation.threads,
     events
@@ -478,96 +487,53 @@ const projectAcpContent = (content: AcpContentBlock): string => {
 const rawChunk = (submission: RawSubmission): RawUploadChunk => {
   const content = Buffer.from(submission.content, "utf8")
   const sha256 = digest(content)
-  const objectId = rawObjectId(submission, submission.sourceObjectId)
   const base = {
     protocolVersion: RawIngestionProtocolVersion,
-    objectId,
-    projectId: submission.project.id,
+    sourceObjectId: submission.sourceObjectId,
     sessionId: submission.serverSessionId,
+    installationId: submission.installationId,
     generation: submission.serverGeneration,
     offset: submission.serverOffset,
     sourceName: submission.sourceName,
     mediaType: submission.mediaType,
-    adapterId: submission.adapter.adapterId,
-    adapterVersion: submission.adapter.version,
+    adapterId: submission.adapterId,
+    adapterVersion: submission.adapterVersion,
     capturedAt: submission.observedAt,
     clientRedacted: true as const,
     final: submission.final,
     contentBase64: content.toString("base64"),
     sha256
   }
-  return {
-    ...base,
-    chunkId: `c_${digest(JSON.stringify({
-      ...base,
-      observationId: submission.observationId,
-      adapterSegmentIndex: submission.adapterSegmentIndex,
-      transportChunkIndex: submission.transportChunkIndex
-    }))}`
-  }
-}
-
-const rawObjectId = (
-  submission: Pick<CanonicalSubmission, "userId" | "installationId" | "project" | "adapter" | "observation"> |
-    Pick<RawSubmission, "userId" | "installationId" | "project" | "adapter" | "sourceSessionId">,
-  sourceObjectId: string
-) => {
-  const sourceSessionId = "observation" in submission
-    ? submission.observation.session.sourceSessionId
-    : submission.sourceSessionId
-  return `r_${digest(JSON.stringify({
-    projectId: submission.project.id,
-    userId: submission.userId,
-    installationId: submission.installationId,
-    adapterId: submission.adapter.adapterId,
-    sourceSessionId,
-    sourceObjectId
-  }))}`
+  return { ...base, sourceChunkId: submission.sourceChunkId }
 }
 
 const postJSON = <A, I>(
-  url: string,
+  client: AuthenticatedHTTPClient["Service"],
+  instanceOrigin: string,
+  path: `/${string}`,
   body: unknown,
   operation: "canonical" | "raw",
   schema: Schema.Codec<A, I>
-): Effect.Effect<A, CollectionTransportError> => Effect.tryPromise({
-  try: async (signal) => {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)])
-    })
-    const text = await response.text()
-    return { status: response.status, ok: response.ok, text: text.slice(0, 1_048_576) }
-  },
-  catch: (cause) => new CollectionTransportError({
-    reason: "network",
-    operation,
-    retryable: true,
-    message: errorMessage(`Could not reach the ATape ${operation} endpoint`, cause)
-  })
+): Effect.Effect<A, CollectionTransportError> => client.request({
+  instanceOrigin,
+  path,
+  method: "POST",
+  body
 }).pipe(
-  Effect.flatMap((response) => response.ok
+  Effect.mapError((error) => transportError(operation, error)),
+  Effect.flatMap((response) => response.status >= 200 && response.status < 300
     ? Effect.succeed(response)
     : Effect.fail(new CollectionTransportError({
-      reason: "rejected",
+      reason: response.status === 401 ? "unauthenticated" : "rejected",
       operation,
       status: response.status,
-      retryable: response.status === 408 || response.status === 429 || response.status >= 500,
-      message: `ATape ${operation} endpoint returned ${response.status}: ${response.text.slice(0, 1_000)}`
+      retryable: response.status !== 401 &&
+        (response.status === 408 || response.status === 429 || response.status >= 500),
+      message: response.status === 401
+        ? `ATape ${operation} authentication failed; run \`atape login\` again.`
+        : `ATape ${operation} endpoint returned ${response.status}.`
     }))),
-  Effect.flatMap((response) => Effect.try({
-    try: () => JSON.parse(response.text) as unknown,
-    catch: (cause) => new CollectionTransportError({
-      reason: "invalid_response",
-      operation,
-      status: response.status,
-      retryable: false,
-      message: errorMessage(`ATape ${operation} endpoint returned invalid JSON`, cause)
-    })
-  })),
-  Effect.flatMap((value) => Schema.decodeUnknownEffect(schema)(value)),
+  Effect.flatMap((response) => Schema.decodeUnknownEffect(schema)(response.body)),
   Effect.mapError((error) => error instanceof CollectionTransportError
     ? error
     : new CollectionTransportError({
@@ -577,6 +543,22 @@ const postJSON = <A, I>(
       message: `ATape ${operation} endpoint returned an invalid receipt: ${String(error)}`
     }))
 )
+
+const transportError = (
+  operation: "canonical" | "raw",
+  error: AuthenticatedHTTPError
+) => new CollectionTransportError({
+  reason: error.reason === "unauthenticated" || error.reason === "identity_changed"
+    ? "unauthenticated"
+    : error.reason === "network" ? "network" : "invalid_response",
+  operation,
+  ...(error.status === undefined ? {} : { status: error.status }),
+  retryable: error.reason === "network",
+  message: error.message
+})
+
+const checkpointKey = (checkpoint: CollectorCheckpoint) =>
+  `${checkpoint.instanceOrigin}\0${checkpoint.userId}\0${checkpoint.projectId}\0${checkpoint.adapterId}`
 
 const staleLock = async (lockPath: string) => {
   try {

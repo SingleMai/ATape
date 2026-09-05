@@ -3,6 +3,13 @@
 - Status: Accepted
 - Date: 2026-09-05
 
+> Authentication statements in this ADR describe the v0.1 topology. The v0.2
+> HTTP security boundary is defined by
+> [ADR-0017](0017-http-interface-and-route-security.md). Its deployable
+> configuration, data cutover, and rollback boundary are defined by
+> [ADR-0018](0018-auth-cutover-and-deployable-self-hosting.md), which supersedes
+> the unauthenticated deployment statements below.
+
 ## Context
 
 ATape's first vertical slices work across the Web application, Go API, PostgreSQL persistence, filesystem Raw chunks, and the Node Collector. A team still has to assemble and route those pieces manually before it can dogfood the product. The v0.1 self-hosting path needs one command, durable defaults, same-origin browser API calls, and a clear boundary between development demo data and retained team history.

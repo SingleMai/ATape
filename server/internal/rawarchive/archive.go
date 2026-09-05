@@ -8,14 +8,19 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
+	"github.com/SingleMai/ATape/server/internal/sourceidentity"
 )
 
 const (
-	ProtocolVersion = "atape.raw.v1alpha1"
+	ProtocolVersion = "atape.raw.v1"
 	MaxChunkBytes   = 256 << 10
 	DefaultPageSize = 4
 	MaxPageSize     = 8
@@ -23,10 +28,10 @@ const (
 
 type UploadChunk struct {
 	ProtocolVersion string `json:"protocolVersion"`
-	ChunkID         string `json:"chunkId"`
-	ObjectID        string `json:"objectId"`
-	ProjectID       string `json:"projectId"`
+	SourceChunkID   string `json:"sourceChunkId"`
+	SourceObjectID  string `json:"sourceObjectId"`
 	SessionID       string `json:"sessionId"`
+	InstallationID  string `json:"installationId"`
 	Generation      int64  `json:"generation"`
 	Offset          int64  `json:"offset"`
 	SourceName      string `json:"sourceName"`
@@ -41,23 +46,27 @@ type UploadChunk struct {
 }
 
 type ChunkRecord struct {
-	ChunkID        string
-	ObjectID       string
-	ProjectID      string
-	SessionID      string
-	Generation     int64
-	Ordinal        int64
-	Offset         int64
-	SizeBytes      int64
-	SourceName     string
-	MediaType      string
-	AdapterID      string
-	AdapterVersion string
-	CapturedAt     time.Time
-	ClientRedacted bool
-	Final          bool
-	SHA256         string
-	StorageKey     string
+	ChunkID          string
+	ObjectID         string
+	SourceChunkID    string
+	SourceObjectID   string
+	ProjectID        string
+	SessionID        string
+	CapturedByUserID string
+	InstallationID   string
+	Generation       int64
+	Ordinal          int64
+	Offset           int64
+	SizeBytes        int64
+	SourceName       string
+	MediaType        string
+	AdapterID        string
+	AdapterVersion   string
+	CapturedAt       time.Time
+	ClientRedacted   bool
+	Final            bool
+	SHA256           string
+	StorageKey       string
 }
 
 type GenerationRecord struct {
@@ -100,14 +109,18 @@ type ContentPlan struct {
 // Implementations own append ordering, generation transitions, and replay
 // identity; callers never coordinate these invariants themselves.
 type ManifestStore interface {
-	CommitChunk(context.Context, ChunkRecord) (CommitResult, error)
-	ListSessionObjects(context.Context, string) ([]ObjectRecord, error)
-	PlanContent(context.Context, string, int64, int64, int) (ContentPlan, error)
+	AuthorizeChunk(context.Context, authentication.Principal, ChunkRecord) error
+	CommitChunk(context.Context, authentication.Principal, ChunkRecord) (CommitResult, error)
+	ListSessionObjects(context.Context, authentication.Principal, string) ([]ObjectRecord, error)
+	PlanContent(context.Context, authentication.Principal, string, int64, int64, int) (ContentPlan, error)
 }
 
 // ChunkStore is the immutable byte Seam consumed by Archive. Put must be
 // replay-safe for the same key and bytes; Read returns one bounded chunk.
+// Check proves that the configured Adapter can currently accept durable
+// writes without exposing its storage layout to the application or transport.
 type ChunkStore interface {
+	Check(context.Context) error
 	Put(context.Context, string, []byte) error
 	Read(context.Context, string) ([]byte, error)
 }
@@ -119,6 +132,13 @@ type Archive struct {
 
 func NewArchive(manifests ManifestStore, chunks ChunkStore) *Archive {
 	return &Archive{manifests: manifests, chunks: chunks}
+}
+
+// CheckStorage is the narrow operational health surface of Raw Archive. The
+// concrete Adapter owns the probe because only it can prove its durability
+// preconditions without leaking implementation details through this Module.
+func (a *Archive) CheckStorage(ctx context.Context) error {
+	return a.chunks.Check(ctx)
 }
 
 type AppendResult struct {
@@ -166,17 +186,24 @@ type ContentPage struct {
 	NextCursor string         `json:"nextCursor,omitempty"`
 }
 
-func (a *Archive) Append(ctx context.Context, upload UploadChunk) (AppendResult, error) {
-	record, content, err := validateUpload(upload)
+func (a *Archive) Append(
+	ctx context.Context,
+	principal authentication.Principal,
+	upload UploadChunk,
+) (AppendResult, error) {
+	record, content, err := validateUpload(principal, upload)
 	if err != nil {
 		return AppendResult{}, err
+	}
+	if err := a.manifests.AuthorizeChunk(ctx, principal, record); err != nil {
+		return AppendResult{}, concealedAsNotFound(err, "session", upload.SessionID)
 	}
 	if err := a.chunks.Put(ctx, record.StorageKey, content); err != nil {
 		return AppendResult{}, err
 	}
-	committed, err := a.manifests.CommitChunk(ctx, record)
+	committed, err := a.manifests.CommitChunk(ctx, principal, record)
 	if err != nil {
-		return AppendResult{}, err
+		return AppendResult{}, concealedAsNotFound(err, "session", upload.SessionID)
 	}
 	return AppendResult{
 		ObjectID:   committed.Object.ObjectID,
@@ -187,13 +214,17 @@ func (a *Archive) Append(ctx context.Context, upload UploadChunk) (AppendResult,
 	}, nil
 }
 
-func (a *Archive) OpenSession(ctx context.Context, sessionID string) (SessionArchive, error) {
+func (a *Archive) OpenSession(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+) (SessionArchive, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return SessionArchive{}, &ValidationError{Field: "sessionId", Reason: "must not be empty"}
 	}
-	objects, err := a.manifests.ListSessionObjects(ctx, sessionID)
+	objects, err := a.manifests.ListSessionObjects(ctx, principal, sessionID)
 	if err != nil {
-		return SessionArchive{}, err
+		return SessionArchive{}, concealedAsNotFound(err, "session", sessionID)
 	}
 	result := SessionArchive{SessionID: sessionID, Objects: make([]ObjectSummary, 0, len(objects))}
 	for _, object := range objects {
@@ -204,6 +235,7 @@ func (a *Archive) OpenSession(ctx context.Context, sessionID string) (SessionArc
 
 func (a *Archive) Read(
 	ctx context.Context,
+	principal authentication.Principal,
 	objectID string,
 	generation int64,
 	cursor string,
@@ -228,9 +260,9 @@ func (a *Archive) Read(
 	if generation == 0 && cursorGeneration != 0 {
 		generation = cursorGeneration
 	}
-	plan, err := a.manifests.PlanContent(ctx, objectID, generation, afterOrdinal, limit)
+	plan, err := a.manifests.PlanContent(ctx, principal, objectID, generation, afterOrdinal, limit)
 	if err != nil {
-		return ContentPage{}, err
+		return ContentPage{}, concealedAsNotFound(err, "object", objectID)
 	}
 	page := ContentPage{
 		ObjectID:   plan.Object.ObjectID,
@@ -261,13 +293,22 @@ func (a *Archive) Read(
 	return page, nil
 }
 
-func validateUpload(upload UploadChunk) (ChunkRecord, []byte, error) {
+func concealedAsNotFound(err error, resource, id string) error {
+	var access *authorization.AccessError
+	if errors.As(err, &access) && access.Decision == authorization.Conceal {
+		return &NotFoundError{Resource: resource, ID: id}
+	}
+	return err
+}
+
+func validateUpload(principal authentication.Principal, upload UploadChunk) (ChunkRecord, []byte, error) {
 	required := []struct {
 		field string
 		value string
 	}{
-		{"chunkId", upload.ChunkID}, {"objectId", upload.ObjectID}, {"projectId", upload.ProjectID},
-		{"sessionId", upload.SessionID}, {"sourceName", upload.SourceName}, {"mediaType", upload.MediaType},
+		{"sourceChunkId", upload.SourceChunkID}, {"sourceObjectId", upload.SourceObjectID},
+		{"sessionId", upload.SessionID}, {"installationId", upload.InstallationID},
+		{"sourceName", upload.SourceName}, {"mediaType", upload.MediaType},
 		{"adapterId", upload.AdapterID}, {"adapterVersion", upload.AdapterVersion}, {"capturedAt", upload.CapturedAt},
 	}
 	if upload.ProtocolVersion != ProtocolVersion {
@@ -317,8 +358,14 @@ func validateUpload(upload UploadChunk) (ChunkRecord, []byte, error) {
 	if err != nil {
 		return ChunkRecord{}, nil, &ValidationError{Field: "capturedAt", Reason: "must be RFC3339"}
 	}
+	objectID := sourceidentity.RawObjectID(
+		principal.UserID, upload.SessionID, upload.InstallationID,
+		upload.AdapterID, upload.SourceObjectID,
+	)
 	return ChunkRecord{
-		ChunkID: upload.ChunkID, ObjectID: upload.ObjectID, ProjectID: upload.ProjectID, SessionID: upload.SessionID,
+		ChunkID: sourceidentity.RawChunkID(objectID, upload.SourceChunkID), ObjectID: objectID,
+		SourceChunkID: upload.SourceChunkID, SourceObjectID: upload.SourceObjectID,
+		SessionID: upload.SessionID, CapturedByUserID: principal.UserID, InstallationID: upload.InstallationID,
 		Generation: upload.Generation, Offset: upload.Offset, SizeBytes: int64(len(content)), SourceName: upload.SourceName,
 		MediaType: upload.MediaType, AdapterID: upload.AdapterID, AdapterVersion: upload.AdapterVersion,
 		CapturedAt: capturedAt.UTC(), ClientRedacted: upload.ClientRedacted, Final: upload.Final,
@@ -381,6 +428,12 @@ func (e *ValidationError) Error() string { return e.Field + " " + e.Reason }
 type ConflictError struct {
 	Identity string
 	Reason   string
+}
+
+type ProjectStateError struct{ State string }
+
+func (e *ProjectStateError) Error() string {
+	return "Raw ingestion is unavailable while the Project is " + strconv.Quote(e.State)
 }
 
 func (e *ConflictError) Error() string {

@@ -1,4 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process"
+import { createHash } from "node:crypto"
 import {
   appendFile,
   mkdir,
@@ -42,11 +43,11 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     expect((await collectorStatus(fixture, serverUrl)).running).toBe(false)
 
     const workspace = await getJSON<Workspace>(serverUrl, "/api/v1/workspace")
-    const project = workspace.teams.find((team) => team.id === "e2e-team")
-      ?.projects.find((candidate) => candidate.id === "e2e-project")
+    const project = workspace.teams.find((team) => team.id === "acme-engineering")
+      ?.projects.find((candidate) => candidate.id === "support-notes")
     expect(project).toMatchObject({ sessionCount: 1, activeSessionCount: 1 })
 
-    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/e2e-project/memory")
+    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
     expect(memory.trail).toHaveLength(1)
     expect(memory.active).toHaveLength(1)
     expect(memory.trail[0]).toMatchObject({
@@ -113,7 +114,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     ])
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 2 })
 
-    const ended = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/e2e-project/memory")
+    const ended = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
     expect(ended.active).toHaveLength(0)
     expect(ended.trail[0]?.status).toBe("ended")
     const finalized = await getJSON<RawArchive>(
@@ -206,13 +207,15 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
   }
   const now = new Date().toISOString()
   await writeFile(fixture.configFile, `${JSON.stringify({
-    version: 1,
-    serverUrl,
-    userId: "e2e-user",
+    version: 2,
+    activeInstanceOrigin: serverUrl,
     projects: [{
-      id: "e2e-project",
-      teamId: "e2e-team",
-      teamName: "E2E Team",
+      id: "support-notes",
+      instanceOrigin: serverUrl,
+      userId: "e2e-user",
+      teamId: "acme-engineering",
+      teamSlug: "acme-engineering",
+      teamName: "Acme Engineering",
       name: "E2E Project",
       type: "directory",
       path: fixture.projectDirectory,
@@ -229,6 +232,22 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
       updatedAt: now
     }]
   }, null, 2)}\n`)
+  const credentialDirectory = join(fixture.root, "credentials")
+  await mkdir(credentialDirectory, { mode: 0o700 })
+  const credentialFile = join(
+    credentialDirectory,
+    `${createHash("sha256").update(serverUrl).digest("hex")}.json`
+  )
+  await writeFile(credentialFile, `${JSON.stringify({
+    version: 1,
+    instanceOrigin: serverUrl,
+    apiOrigin: serverUrl,
+    credential: "atc_v1_e2e-development",
+    credentialId: "credential-e2e",
+    capabilityVersion: "atape-cli.v1",
+    createdAt: now,
+    user: { id: "e2e-user", displayName: "E2E User" }
+  }, null, 2)}\n`, { mode: 0o600 })
 }
 
 const collect = async (fixture: Fixture, serverUrl: string) => {
@@ -237,7 +256,7 @@ const collect = async (fixture: Fixture, serverUrl: string) => {
     "collect",
     "--once",
     "--project",
-    "e2e-project",
+    "support-notes",
     "--json"
   ], repositoryRoot, clientEnvironment(fixture, serverUrl))
   return JSON.parse(output) as CollectionReport
@@ -271,7 +290,7 @@ const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
     const status = await collectorStatus(fixture, serverUrl)
     lastStatus = status
     const job = status.jobs.find((candidate) =>
-      candidate.projectId === "e2e-project" && candidate.adapterId === "codex")
+      candidate.projectId === "support-notes" && candidate.adapterId === "codex")
     if (job?.state === "healthy") return job
     if (!status.running || status.collectorFailure !== undefined || job?.state === "failed") break
     await delay(250)
@@ -288,6 +307,9 @@ const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
 
 const clientEnvironment = (fixture: Fixture, serverUrl: string): NodeJS.ProcessEnv => ({
   ...process.env,
+  ATAPE_HOME: fixture.root,
+  ATAPE_INSTANCE_URL: serverUrl,
+  ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
   ATAPE_CONFIG_FILE: fixture.configFile,
   ATAPE_COLLECTOR_STATE_FILE: fixture.collectorStateFile,
   ATAPE_COLLECTOR_PROCESS_FILE: fixture.collectorProcessFile,
@@ -394,7 +416,7 @@ const waitForSearch = async (serverUrl: string) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     const page = await getJSON<SearchPage>(
       serverUrl,
-      "/api/v1/projects/e2e-project/search?q=e2e-search-needle"
+      "/api/v1/projects/support-notes/search?q=e2e-search-needle"
     )
     last = page
     const texts = new Set(page.results.map((result) => result.text))

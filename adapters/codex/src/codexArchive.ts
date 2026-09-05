@@ -238,7 +238,7 @@ const collectActiveSession = async (
     title,
     summary: childCount === 0 ? "" : `${childCount} subagent Thread${childCount === 1 ? "" : "s"}`,
     insight: "",
-    actor: { name: archive.context.user.id, harness: "Codex" },
+    actor: { name: "User", harness: "Codex" },
     branch: currentSession.files.find((file) => file.metadata.branch)?.metadata.branch ?? "",
     status: active.files.every((file) => file.archived) ? "ended" : "active",
     captureStatus: active.files.every((file) => file.archived) ? "complete" : "healthy",

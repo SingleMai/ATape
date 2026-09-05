@@ -87,6 +87,56 @@ FROM auth_users
 WHERE id = $1
 FOR UPDATE;
 
+-- name: UpdateActiveUserProfile :one
+UPDATE auth_users
+SET display_name = $2, updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active'
+RETURNING display_name, avatar_url, created_at;
+
+-- name: ListActiveExternalIdentitiesForUser :many
+SELECT id, issuer, display_name, avatar_url, created_at, last_verified_at
+FROM auth_external_identities
+WHERE user_id = $1 AND status = 'active'
+ORDER BY created_at, id;
+
+-- name: ListActiveOwnerTeamIDsForUser :many
+SELECT team_id
+FROM team_memberships
+WHERE user_id = $1 AND status = 'active' AND role = 'owner'
+ORDER BY team_id;
+
+-- name: LockTeamForUserDisable :exec
+SELECT id
+FROM workspace_teams
+WHERE id = $1
+FOR UPDATE;
+
+-- name: CountOtherActiveOwnersForUserDisable :one
+SELECT COUNT(*)::bigint
+FROM team_memberships memberships
+JOIN auth_users users ON users.id = memberships.user_id
+WHERE memberships.team_id = $1
+  AND memberships.status = 'active'
+  AND memberships.role = 'owner'
+  AND users.status = 'active'
+  AND memberships.user_id <> $2;
+
+-- name: DisableUser :execrows
+UPDATE auth_users
+SET status = 'disabled', disabled_at = clock_timestamp(), updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active';
+
+-- name: FailFederatedLoginsForUser :execrows
+UPDATE auth_federated_login_transactions
+SET status = 'failed', terminal_at = clock_timestamp(), failure_code = 'user_disabled',
+    private_state_key_id = NULL, private_state_nonce = NULL, private_state_ciphertext = NULL
+WHERE initiating_user_id = $1 AND status IN ('pending', 'completing');
+
+-- name: ExpireApprovedCLIAuthorizationsForUser :execrows
+UPDATE auth_cli_device_authorizations
+SET status = 'expired', terminal_at = clock_timestamp()
+WHERE approving_user_id = $1 AND status = 'approved_unclaimed';
+
 -- name: InsertExternalIdentity :exec
 INSERT INTO auth_external_identities (
     id, user_id, issuer, subject, status, display_name, avatar_url
@@ -173,6 +223,15 @@ WHERE id = $1 AND user_id = $2 AND status = 'active';
 UPDATE auth_web_sessions
 SET status = 'revoked', terminal_at = clock_timestamp(), terminal_reason = $2
 WHERE user_id = $1 AND status = 'active';
+
+-- name: ListActiveWebSessionsForUser :many
+SELECT id, created_at, last_used_at, reauthenticated_at, absolute_expires_at
+FROM auth_web_sessions
+WHERE user_id = sqlc.arg(user_id)
+  AND status = 'active'
+  AND absolute_expires_at > clock_timestamp()
+  AND last_used_at + sqlc.arg(idle_deadline_seconds)::integer * interval '1 second' > clock_timestamp()
+ORDER BY last_used_at DESC, created_at DESC, id DESC;
 
 -- name: InsertCLIDeviceAuthorization :one
 INSERT INTO auth_cli_device_authorizations (
@@ -302,6 +361,18 @@ FROM auth_cli_credentials
 WHERE id = $1
 FOR UPDATE;
 
+-- name: GetCLICredentialBySecretForRevoke :one
+SELECT id, user_id, status
+FROM auth_cli_credentials
+WHERE secret_digest = $1
+FOR UPDATE;
+
+-- name: ListActiveCLICredentialsForUser :many
+SELECT id, capability_version, created_at, last_used_at
+FROM auth_cli_credentials
+WHERE user_id = $1 AND status = 'active'
+ORDER BY last_used_at DESC, created_at DESC, id DESC;
+
 -- name: TouchCLICredential :one
 UPDATE auth_cli_credentials
 SET last_used_at = clock_timestamp()
@@ -351,6 +422,29 @@ WITH candidates AS (
 UPDATE auth_cli_device_authorizations a
 SET status = 'expired', terminal_at = clock_timestamp()
 FROM candidates c WHERE a.id = c.id;
+
+-- name: ExpireWebSessionBatch :many
+WITH candidates AS (
+    SELECT id,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_expired' ELSE 'idle_expired' END AS expired_status,
+           CASE WHEN absolute_expires_at <= clock_timestamp()
+                THEN 'absolute_lifetime' ELSE 'idle_timeout' END AS expired_reason
+    FROM auth_web_sessions
+    WHERE status = 'active'
+      AND (absolute_expires_at <= clock_timestamp()
+           OR last_used_at + sqlc.arg(idle_deadline_seconds)::integer * interval '1 second' <= clock_timestamp())
+    ORDER BY LEAST(
+        absolute_expires_at,
+        last_used_at + sqlc.arg(idle_deadline_seconds)::integer * interval '1 second'
+    ), id
+    LIMIT sqlc.arg(batch_size)::integer
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE auth_web_sessions s
+SET status = c.expired_status, terminal_at = clock_timestamp(), terminal_reason = c.expired_reason
+FROM candidates c WHERE s.id = c.id
+RETURNING s.id, s.status, s.terminal_reason;
 
 -- name: DeleteFederatedLoginBatch :execrows
 WITH candidates AS (

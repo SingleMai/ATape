@@ -6,11 +6,45 @@ import (
 	"fmt"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/postgres/internal/db"
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) CommitChunk(ctx context.Context, chunk rawarchive.ChunkRecord) (rawarchive.CommitResult, error) {
+func (s *Store) AuthorizeChunk(
+	ctx context.Context,
+	principal authentication.Principal,
+	chunk rawarchive.ChunkRecord,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return rawPersist("begin chunk authorization", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	access, err := resolveSessionAccess(
+		ctx, s.queries.WithTx(tx), principal, chunk.SessionID, authorization.RawIngest, false,
+	)
+	if err != nil {
+		return err
+	}
+	if access.projectState != "active" {
+		return &rawarchive.ProjectStateError{State: access.projectState}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return rawPersist("commit chunk authorization", err)
+	}
+	return nil
+}
+
+func (s *Store) CommitChunk(
+	ctx context.Context,
+	principal authentication.Principal,
+	chunk rawarchive.ChunkRecord,
+) (rawarchive.CommitResult, error) {
 	if err := ctx.Err(); err != nil {
 		return rawarchive.CommitResult{}, err
 	}
@@ -20,6 +54,16 @@ func (s *Store) CommitChunk(ctx context.Context, chunk rawarchive.ChunkRecord) (
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
+	access, err := resolveSessionAccess(
+		ctx, queries, principal, chunk.SessionID, authorization.RawIngest, true,
+	)
+	if err != nil {
+		return rawarchive.CommitResult{}, err
+	}
+	if access.projectState != "active" {
+		return rawarchive.CommitResult{}, &rawarchive.ProjectStateError{State: access.projectState}
+	}
+	chunk.ProjectID = access.projectID
 
 	if err := queries.AcquireRawLock(ctx, "chunk:"+chunk.ChunkID); err != nil {
 		return rawarchive.CommitResult{}, rawPersist("lock chunk", err)
@@ -52,16 +96,6 @@ func (s *Store) CommitChunk(ctx context.Context, chunk rawarchive.ChunkRecord) (
 	if !objectExists {
 		if chunk.Generation != 1 || chunk.Offset != 0 {
 			return rawarchive.CommitResult{}, rawConflict(chunk.ObjectID, "a new Raw object must start at generation 1 offset 0")
-		}
-		canonicalProjectID, err := queries.GetRawCanonicalSessionProject(ctx, chunk.SessionID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return rawarchive.CommitResult{}, &rawarchive.NotFoundError{Resource: "session", ID: chunk.SessionID}
-		}
-		if err != nil {
-			return rawarchive.CommitResult{}, rawPersist("validate Canonical session", err)
-		}
-		if canonicalProjectID != chunk.ProjectID {
-			return rawarchive.CommitResult{}, rawConflict(chunk.ObjectID, "project does not own the Canonical session")
 		}
 		if err := queries.InsertRawObject(ctx, db.InsertRawObjectParams{
 			ID: chunk.ObjectID, ProjectID: chunk.ProjectID, SessionID: chunk.SessionID,
@@ -155,8 +189,23 @@ func (s *Store) CommitChunk(ctx context.Context, chunk rawarchive.ChunkRecord) (
 	return rawarchive.CommitResult{Object: object, Generation: generation}, nil
 }
 
-func (s *Store) ListSessionObjects(ctx context.Context, sessionID string) ([]rawarchive.ObjectRecord, error) {
-	rows, err := s.queries.ListRawSessionObjects(ctx, sessionID)
+func (s *Store) ListSessionObjects(
+	ctx context.Context,
+	principal authentication.Principal,
+	sessionID string,
+) ([]rawarchive.ObjectRecord, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, rawPersist("begin Session object read", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	queries := s.queries.WithTx(tx)
+	if _, err := resolveSessionAccess(
+		ctx, queries, principal, sessionID, authorization.RawSessionList, false,
+	); err != nil {
+		return nil, err
+	}
+	rows, err := queries.ListRawSessionObjects(ctx, sessionID)
 	if err != nil {
 		return nil, rawPersist("list Session objects", err)
 	}
@@ -170,11 +219,15 @@ func (s *Store) ListSessionObjects(ctx context.Context, sessionID string) ([]raw
 			CurrentSizeBytes: row.CurrentSizeBytes, CurrentFinalized: row.CurrentFinalized,
 		})
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, rawPersist("commit Session object read", err)
+	}
 	return objects, nil
 }
 
 func (s *Store) PlanContent(
 	ctx context.Context,
+	principal authentication.Principal,
 	objectID string,
 	generationNumber int64,
 	afterOrdinal int64,
@@ -186,6 +239,9 @@ func (s *Store) PlanContent(
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
+	if _, err := resolveRawObjectAccess(ctx, queries, principal, objectID); err != nil {
+		return rawarchive.ContentPlan{}, err
+	}
 	storedObject, err := queries.GetRawObjectForRead(ctx, objectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return rawarchive.ContentPlan{}, &rawarchive.NotFoundError{Resource: "object", ID: objectID}

@@ -14,8 +14,13 @@ INSERT INTO canonical_batch_receipts (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: InsertProject :exec
-INSERT INTO canonical_projects (id, team_id, name, project_type)
-VALUES ($1, $2, $3, $4)
+INSERT INTO canonical_projects (
+    id, team_id, name, project_type, repository_link_state
+)
+VALUES (
+    $1, $2, $3, $4,
+    CASE WHEN $4::text = 'git' THEN 'unknown' ELSE 'not_applicable' END
+)
 ON CONFLICT (id) DO NOTHING;
 
 -- name: RegisterTeam :exec
@@ -44,7 +49,7 @@ WHERE id = sqlc.arg(project_id);
 -- name: GetSessionForUpdate :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count
+       reported_event_count, captured_by_user_id, record_state
 FROM canonical_sessions
 WHERE id = $1
 FOR UPDATE;
@@ -53,10 +58,10 @@ FOR UPDATE;
 INSERT INTO canonical_sessions (
     id, project_id, source_key, revision, digest, title, summary, insight,
     actor_name, actor_harness, branch, status, capture_status, updated_at,
-    reported_event_count
+    reported_event_count, captured_by_user_id, capture_lineage
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8,
-    $9, $10, $11, $12, $13, $14, $15
+    $9, $10, $11, $12, $13, $14, $15, $16, 'authenticated'
 );
 
 -- name: UpdateSession :exec
@@ -73,7 +78,7 @@ SET revision = $2,
     capture_status = $11,
     updated_at = $12,
     reported_event_count = $13
-WHERE id = $1 AND revision < $2;
+WHERE id = $1 AND revision < $2 AND record_state = 'active';
 
 -- name: GetThreadForUpdate :one
 SELECT session_id, id, source_key, revision, digest, label, summary,
@@ -173,7 +178,7 @@ INSERT INTO canonical_projection_changes (event_id, event_ingest_seq, observed_a
 VALUES ($1, $2, $3);
 
 -- name: GetProjectForRead :one
-SELECT id, team_id, name, captured_through, project_type
+SELECT id, team_id, name, captured_through, project_type, state
 FROM canonical_projects
 WHERE id = $1;
 
@@ -181,6 +186,7 @@ WHERE id = $1;
 SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        s.summary, s.insight, s.actor_name, s.actor_harness, s.branch,
        s.status, s.capture_status, s.updated_at, s.reported_event_count,
+       s.captured_by_user_id,
        GREATEST(
            s.reported_event_count,
            (SELECT COUNT(*) FROM canonical_events e WHERE e.session_id = s.id)
@@ -191,15 +197,15 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
            WHERE child.session_id = s.id AND child.parent_thread_id IS NOT NULL
        )::bigint AS child_thread_count
 FROM canonical_sessions s
-WHERE s.project_id = $1
+WHERE s.project_id = $1 AND s.record_state = 'active'
 ORDER BY s.updated_at DESC, s.id;
 
 -- name: GetSessionForRead :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,
        actor_name, actor_harness, branch, status, capture_status, updated_at,
-       reported_event_count
+       reported_event_count, captured_by_user_id
 FROM canonical_sessions
-WHERE id = $1;
+WHERE id = $1 AND record_state = 'active';
 
 -- name: GetThreadForRead :one
 SELECT session_id, id, source_key, revision, digest, label, summary,

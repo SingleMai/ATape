@@ -1,6 +1,7 @@
 import {
   AdapterPackages,
   AdapterRuntimes,
+  CLICredentialStore,
   ClientConfigStore,
   CollectorStateStore,
   CollectorTransport,
@@ -31,20 +32,31 @@ const fixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "atape-collector-test-"))
   temporaryDirectories.push(root)
   const paths: NodeClientPaths = {
+    atapeHome: root,
+    credentialDirectory: join(root, "credentials"),
     configFile: join(root, "config", "config.json"),
     collectorStateFile: join(root, "state", "collector.json"),
     collectorProcessFile: join(root, "state", "collector-process.json"),
     collectorStatusFile: join(root, "state", "collector-status.json"),
     collectorLogFile: join(root, "state", "collector.log"),
-    adapterDirectory: join(root, "data", "adapters")
+    adapterDirectory: join(root, "data", "adapters"),
+    legacy: {
+      configFile: join(root, "legacy", "config.json"),
+      collectorStateFile: join(root, "legacy", "collector.json"),
+      collectorProcessFile: join(root, "legacy", "collector-process.json"),
+      collectorStatusFile: join(root, "legacy", "collector-status.json"),
+      collectorLogFile: join(root, "legacy", "collector.log"),
+      adapterDirectory: join(root, "legacy", "adapters")
+    }
   }
   const layer = makeNodeClientLayer(paths, {
     ...process.env,
+    ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
     ATAPE_REDACT_VALUES: JSON.stringify(["ultrasecretvalue"])
   })
   const run = <A, E>(effect: Effect.Effect<A, E,
     ClientConfigStore | ProjectLocator | AdapterPackages | CollectorStateStore |
-    AdapterRuntimes | CollectorTransport | SecretRedactor>) =>
+    AdapterRuntimes | CollectorTransport | SecretRedactor | CLICredentialStore>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
   return { root, paths, run }
 }
@@ -52,10 +64,24 @@ const fixture = async () => {
 const listen = async () => {
   const canonical: Array<Record<string, unknown>> = []
   const raw: Array<Record<string, unknown>> = []
+  const authorizations: Array<string | undefined> = []
+  let origin = ""
   const server = createServer(async (request, response) => {
+    if (request.method === "GET" && request.url === "/api/v1/instance") {
+      response.setHeader("Content-Type", "application/json")
+      response.end(JSON.stringify({
+        protocol: "atape.instance.v1",
+        instance_origin: origin,
+        web_origin: origin,
+        api_origin: origin,
+        protocols: ["atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"]
+      }))
+      return
+    }
     const chunks: Array<Buffer> = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>
+    authorizations.push(request.headers.authorization)
     response.setHeader("Content-Type", "application/json")
     if (request.url === "/api/v1/ingestion/canonical/batches") {
       canonical.push(body)
@@ -81,7 +107,7 @@ const listen = async () => {
       raw.push(body)
       response.statusCode = 201
       response.end(JSON.stringify({
-        objectId: body.objectId,
+        objectId: `r_server_${String(body.sourceObjectId)}`,
         generation: body.generation,
         sizeBytes: Number(body.offset) + bytes.byteLength,
         finalized: body.final,
@@ -96,8 +122,25 @@ const listen = async () => {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("test server did not bind TCP")
-  return { url: `http://127.0.0.1:${address.port}`, canonical, raw }
+  origin = `http://127.0.0.1:${address.port}`
+  return { url: origin, canonical, raw, authorizations }
 }
+
+const authorize = <A extends { readonly run: <T, E>(effect: Effect.Effect<T, E, CLICredentialStore>) => Promise<T> }>(
+  client: A,
+  instanceOrigin: string
+) => client.run(CLICredentialStore.use((store) => store.replace({
+  credential: {
+    version: 1,
+    instanceOrigin,
+    apiOrigin: instanceOrigin,
+    credential: "atc_v1_collector-fixture",
+    credentialId: "credential-collector",
+    capabilityVersion: "atape-cli.v1",
+    createdAt: "2026-09-06T00:00:00Z",
+    user: { id: "user-1", displayName: "Mai" }
+  }
+})))
 
 const writeAdapter = async (root: string, rawContent?: string) => {
   const adapter = join(root, "adapter")
@@ -195,12 +238,12 @@ const writeAdapter = async (root: string, rawContent?: string) => {
     segment.content = rawContent
     segment.final = true
   }
-  const source = `import { appendFile, writeFile } from "node:fs/promises"
+const source = `import { appendFile, writeFile } from "node:fs/promises"
 export async function createAtapeAdapter(context) {
+  await writeFile(context.project.path + "/adapter-context.json", JSON.stringify(context))
   return {
     async collect(request) {
       await appendFile(context.project.path + "/adapter-calls.jsonl", JSON.stringify({
-        user: context.user,
         cursor: request.cursor,
         rawProgress: request.rawProgress
       }) + "\\n")
@@ -233,17 +276,22 @@ describe("Node Collector Layers", () => {
   it("loads only the enabled package, posts separate redacted payloads, and resumes from its cursor", async () => {
     const client = await fixture()
     const remote = await listen()
+    await authorize(client, remote.url)
     const project = join(client.root, "payments")
     await mkdir(project)
     const adapter = await writeAdapter(client.root)
     await client.run(installAdapter(adapter))
     await client.run(setupProject({
       path: project,
-      userId: "liying",
-      teamId: "acme",
+      instanceOrigin: remote.url,
+      userId: "user-1",
+      teamId: "team-1",
+      teamSlug: "acme",
       teamName: "Acme",
+      projectId: "payments",
+      name: "Payments",
+      createdAt: "2026-09-06T00:00:00Z",
       type: "directory",
-      serverUrl: remote.url,
       adapterIds: ["collector-fixture"]
     }))
 
@@ -255,6 +303,9 @@ describe("Node Collector Layers", () => {
     }
     const adapterCalls = (await readFile(join(project, "adapter-calls.jsonl"), "utf8"))
       .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>)
+    const adapterContext = JSON.parse(await readFile(join(project, "adapter-context.json"), "utf8")) as
+      Record<string, unknown>
+    const canonicalProject = await realpath(project)
 
     expect(first.failures).toEqual([])
     expect(first.jobs[0]).toMatchObject({ observations: 1, canonicalBatches: 1, rawChunks: 1 })
@@ -264,31 +315,58 @@ describe("Node Collector Layers", () => {
     expect(JSON.stringify(remote.canonical)).not.toContain("ultrasecretvalue")
     expect(Buffer.from(String(remote.raw[0]?.contentBase64), "base64").toString("utf8"))
       .toBe("{\"value\":\"[REDACTED]\"}\n")
-    expect(remote.canonical[0]?.project).not.toHaveProperty("path")
+    expect(remote.canonical[0]).toMatchObject({ projectId: "payments" })
+    expect(remote.canonical[0]).not.toHaveProperty("project")
+    expect(remote.canonical[0]?.source).not.toHaveProperty("userId")
+    expect(remote.canonical[0]).not.toHaveProperty("teamId")
+    expect(remote.raw[0]).toMatchObject({
+      sourceChunkId: "g1-o0",
+      sourceObjectId: "transcript",
+      installationId: state.installationId
+    })
+    expect(remote.raw[0]).not.toHaveProperty("userId")
+    expect(remote.raw[0]).not.toHaveProperty("teamId")
+    expect(remote.raw[0]).not.toHaveProperty("projectId")
+    expect(remote.raw[0]).not.toHaveProperty("objectId")
+    expect(remote.raw[0]).not.toHaveProperty("chunkId")
     expect((remote.canonical[0]?.threads as Array<Record<string, unknown>>)[1]).toMatchObject({
       sourceThreadId: "child", parentSourceThreadId: "root"
     })
     expect((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]).toMatchObject({
       childSourceThreadId: "child"
     })
-    expect(String((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]?.rawRef))
-      .toBe(`${String(remote.raw[0]?.objectId)}#line:1`)
+    expect((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]?.rawRef)
+      .toEqual({ type: "object", sourceObjectId: "transcript", fragment: "#line:1" })
     expect(state.installationId).toMatch(/^i_/)
     expect(state.checkpoints).toEqual([expect.objectContaining({ revision: 2, cursor: "cursor-1" })])
-    expect(adapterCalls[0]).toMatchObject({ user: { id: "liying" }, cursor: null, rawProgress: [] })
+    expect(adapterCalls[0]).toMatchObject({ cursor: null, rawProgress: [] })
+    expect(adapterCalls[0]).not.toHaveProperty("user")
+    expect(adapterContext).toMatchObject({
+      protocolVersion: AdapterProtocolVersion,
+      adapter: { id: "collector-fixture", version: "1.0.0" },
+      project: { id: "payments", type: "directory", path: canonicalProject }
+    })
+    expect(JSON.stringify(adapterContext)).not.toMatch(/credential|token|userId|teamId|instanceOrigin|apiOrigin/i)
     expect(adapterCalls[1]).toMatchObject({
-      user: { id: "liying" },
       cursor: "cursor-1",
       rawProgress: [expect.objectContaining({ sourceObjectId: "transcript", finalized: false })]
     })
+    expect(remote.authorizations).toEqual([
+      "Bearer atc_v1_collector-fixture",
+      "Bearer atc_v1_collector-fixture"
+    ])
     expect((await stat(client.paths.collectorStateFile)).mode & 0o777).toBe(0o600)
     expect(await readFile(join(project, "adapter-closed"), "utf8")).toBe("yes")
   })
 
   it("rejects a stale compare-and-set checkpoint", async () => {
     const client = await fixture()
-    const first = await client.run(CollectorStateStore.use((store) => store.snapshot("payments", "fixture")))
+    const first = await client.run(CollectorStateStore.use((store) => store.snapshot(
+      "https://atape.dev", "user-1", "payments", "fixture"
+    )))
     const checkpoint: CollectorCheckpoint = {
+      instanceOrigin: "https://atape.dev",
+      userId: "user-1",
       projectId: "payments",
       projectCreatedAt: "2026-09-05T00:30:00+08:00",
       adapterId: "fixture",
@@ -299,10 +377,12 @@ describe("Node Collector Layers", () => {
       updatedAt: "2026-09-05T00:30:00+08:00"
     }
     await client.run(CollectorStateStore.use((store) => store.commit({
+      instanceOrigin: "https://atape.dev", userId: "user-1",
       projectId: "payments", adapterId: "fixture", expectedRevision: 0, checkpoint
     })))
 
     await expect(client.run(CollectorStateStore.use((store) => store.commit({
+      instanceOrigin: "https://atape.dev", userId: "user-1",
       projectId: "payments", adapterId: "fixture", expectedRevision: 0, checkpoint
     })))).rejects.toMatchObject({ reason: "conflict" })
     expect(first.installationId).toMatch(/^i_/)
@@ -311,6 +391,7 @@ describe("Node Collector Layers", () => {
   it("sends a large Adapter Raw segment as bounded HTTP chunks", async () => {
     const client = await fixture()
     const remote = await listen()
+    await authorize(client, remote.url)
     const project = join(client.root, "large-raw")
     await mkdir(project)
     const content = `${JSON.stringify({ text: "界".repeat(100_000) })}\n`
@@ -318,12 +399,15 @@ describe("Node Collector Layers", () => {
     await client.run(installAdapter(adapter))
     await client.run(setupProject({
       path: project,
-      userId: "liying",
-      teamId: "acme",
+      instanceOrigin: remote.url,
+      userId: "user-1",
+      teamId: "team-1",
+      teamSlug: "acme",
       teamName: "Acme",
       projectId: "large-raw",
+      name: "Large Raw",
+      createdAt: "2026-09-06T00:00:00Z",
       type: "directory",
-      serverUrl: remote.url,
       adapterIds: ["collector-fixture"]
     }))
 

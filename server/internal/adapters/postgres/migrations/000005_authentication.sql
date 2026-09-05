@@ -60,6 +60,14 @@ CREATE INDEX auth_web_sessions_user_active_idx
     ON auth_web_sessions (user_id, created_at DESC, id)
     WHERE status = 'active';
 
+CREATE INDEX auth_web_sessions_absolute_expiry_idx
+    ON auth_web_sessions (absolute_expires_at, id)
+    WHERE status = 'active';
+
+CREATE INDEX auth_web_sessions_idle_expiry_idx
+    ON auth_web_sessions (last_used_at, id)
+    WHERE status = 'active';
+
 CREATE TABLE auth_web_session_secrets (
     session_id UUID NOT NULL REFERENCES auth_web_sessions(id) ON DELETE RESTRICT,
     generation BIGINT NOT NULL CHECK (generation >= 1),
@@ -160,7 +168,7 @@ CREATE TABLE auth_cli_credentials (
     authorization_id UUID NOT NULL UNIQUE,
     secret_digest BYTEA NOT NULL UNIQUE CHECK (octet_length(secret_digest) = 32),
     digest_version TEXT NOT NULL CHECK (digest_version = 'sha256-v1'),
-    capability_version TEXT NOT NULL CHECK (octet_length(capability_version) BETWEEN 1 AND 100),
+    capability_version TEXT NOT NULL CHECK (capability_version = 'atape-cli.v1'),
     status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     last_used_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),

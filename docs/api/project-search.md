@@ -6,6 +6,7 @@ ATape Search retrieves current Canonical conversation Events from an independent
 
 ```http
 GET /api/v1/projects/{projectId}/search?q=idempotency%20key&cursor=&limit=20
+Cookie: __Secure-atape_session=...
 Accept: application/json
 ```
 
@@ -44,4 +45,8 @@ The initial PostgreSQL Adapter combines literal substring retrieval with the bui
 
 `sessionId`, `threadId`, and `eventId` form the replay anchor. A client opens that Thread and positions the reader at the exact Event. `indexedThrough` is the Canonical observation watermark reached by Search; a successful ingestion response does not imply immediate search visibility.
 
-Invalid queries return `400` with `code: "invalid_search"`. Dependency failures return the generic `500` presentation error and are logged by the server.
+The route is `WebOnly`; Search loads current Project and Membership authority
+instead of trusting indexed ACL data. Invalid queries return RFC 9457 `422`
+Problems with `code: "validation_failed"`. Concealed Projects return the same
+`404 not_found` shape as missing Projects. Dependency failures use the fixed
+`500 internal_error` Problem and are correlated only by `X-Request-ID`.

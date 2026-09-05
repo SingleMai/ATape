@@ -2,6 +2,8 @@ node_modules/
 dist/
 .vite/
 coverage/
+test-results/
+playwright-report/
 release/
 *.log
 .DS_Store
@@ -9,6 +11,8 @@ release/
 # Local process configuration
 .env
 .env.local
+/secrets/
+/.atape-restore-rehearsal.*
 
 # Go build and test artifacts
 server/bin/

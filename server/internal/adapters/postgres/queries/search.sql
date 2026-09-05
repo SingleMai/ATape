@@ -132,6 +132,8 @@ WITH terms AS (
            (strpos(documents.search_text, terms.literal) > 0) AS literal_match,
            ts_rank_cd(documents.search_vector, terms.parsed) AS text_rank
     FROM project_search_documents documents
+    JOIN canonical_sessions sessions
+      ON sessions.id = documents.session_id AND sessions.record_state = 'active'
     CROSS JOIN terms
     WHERE documents.project_id = sqlc.arg(project_id)
       AND (

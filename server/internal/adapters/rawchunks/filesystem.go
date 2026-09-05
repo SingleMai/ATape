@@ -30,7 +30,46 @@ func NewFilesystem(root string) (*Filesystem, error) {
 	if err := os.MkdirAll(absolute, 0o750); err != nil {
 		return nil, fmt.Errorf("create Raw chunk directory: %w", err)
 	}
-	return &Filesystem{root: absolute}, nil
+	store := &Filesystem{root: absolute}
+	if err := store.Check(context.Background()); err != nil {
+		return nil, fmt.Errorf("validate Raw chunk directory: %w", err)
+	}
+	return store, nil
+}
+
+func (s *Filesystem) Check(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	probe, err := os.CreateTemp(s.root, ".atape-readiness-*")
+	if err != nil {
+		return fmt.Errorf("create Raw chunk readiness probe: %w", err)
+	}
+	probePath := probe.Name()
+	closed := false
+	defer func() {
+		if !closed {
+			_ = probe.Close()
+		}
+		_ = os.Remove(probePath)
+	}()
+	if err := probe.Chmod(0o600); err != nil {
+		return fmt.Errorf("set Raw chunk readiness probe permissions: %w", err)
+	}
+	if _, err := probe.Write([]byte("atape-raw-readiness\n")); err != nil {
+		return fmt.Errorf("write Raw chunk readiness probe: %w", err)
+	}
+	if err := probe.Sync(); err != nil {
+		return fmt.Errorf("sync Raw chunk readiness probe: %w", err)
+	}
+	if err := probe.Close(); err != nil {
+		return fmt.Errorf("close Raw chunk readiness probe: %w", err)
+	}
+	closed = true
+	if err := os.Remove(probePath); err != nil {
+		return fmt.Errorf("remove Raw chunk readiness probe: %w", err)
+	}
+	return ctx.Err()
 }
 
 func (s *Filesystem) Put(ctx context.Context, key string, content []byte) error {
@@ -132,6 +171,10 @@ func digest(content []byte) string {
 type Unavailable struct{}
 
 func NewUnavailable() *Unavailable { return &Unavailable{} }
+
+func (*Unavailable) Check(context.Context) error {
+	return &rawarchive.UnavailableError{Operation: "readiness; configure ATAPE_RAW_DIRECTORY"}
+}
 
 func (*Unavailable) Put(context.Context, string, []byte) error {
 	return &rawarchive.UnavailableError{Operation: "upload; configure ATAPE_RAW_DIRECTORY"}

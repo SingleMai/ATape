@@ -3,22 +3,20 @@ package ingestion
 
 import "fmt"
 
-const ProtocolVersion = "atape.canonical.v1alpha1"
-const CanonicalProfileVersion = "atape.acp-centered.v1alpha1"
+const ProtocolVersion = "atape.canonical.v1"
+const CanonicalProfileVersion = "atape.acp-centered.v1"
 
 type Source struct {
 	AdapterID      string `json:"adapterId"`
 	AdapterVersion string `json:"adapterVersion"`
-	UserID         string `json:"userId"`
 	InstallationID string `json:"installationId"`
 }
 
-type Project struct {
-	ID       string `json:"id"`
-	TeamID   string `json:"teamId"`
-	TeamName string `json:"teamName"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
+type RawReference struct {
+	Type              string `json:"type"`
+	SourceObjectID    string `json:"sourceObjectId,omitempty"`
+	Fragment          string `json:"fragment,omitempty"`
+	UnavailableReason string `json:"reason,omitempty"`
 }
 
 type Actor struct {
@@ -50,21 +48,21 @@ type Thread struct {
 }
 
 type Event struct {
-	SourceEventID       string  `json:"sourceEventId"`
-	SourceThreadID      string  `json:"sourceThreadId"`
-	Revision            int64   `json:"revision"`
-	ProjectionRevision  int64   `json:"projectionRevision"`
-	SourceOrder         int64   `json:"sourceOrder"`
-	EventIndex          int     `json:"eventIndex"`
-	OrderFidelity       string  `json:"orderFidelity"`
-	Fidelity            string  `json:"fidelity"`
-	RawRef              string  `json:"rawRef"`
-	Kind                string  `json:"kind"`
-	Author              string  `json:"author"`
-	OccurredAt          string  `json:"occurredAt"`
-	Text                string  `json:"text"`
-	ToolLabel           string  `json:"toolLabel,omitempty"`
-	ChildSourceThreadID *string `json:"childSourceThreadId,omitempty"`
+	SourceEventID       string       `json:"sourceEventId"`
+	SourceThreadID      string       `json:"sourceThreadId"`
+	Revision            int64        `json:"revision"`
+	ProjectionRevision  int64        `json:"projectionRevision"`
+	SourceOrder         int64        `json:"sourceOrder"`
+	EventIndex          int          `json:"eventIndex"`
+	OrderFidelity       string       `json:"orderFidelity"`
+	Fidelity            string       `json:"fidelity"`
+	RawRef              RawReference `json:"rawRef"`
+	Kind                string       `json:"kind"`
+	Author              string       `json:"author"`
+	OccurredAt          string       `json:"occurredAt"`
+	Text                string       `json:"text"`
+	ToolLabel           string       `json:"toolLabel,omitempty"`
+	ChildSourceThreadID *string      `json:"childSourceThreadId,omitempty"`
 }
 
 type Batch struct {
@@ -73,7 +71,7 @@ type Batch struct {
 	BatchID                 string   `json:"batchId"`
 	ObservedAt              string   `json:"observedAt"`
 	Source                  Source   `json:"source"`
-	Project                 Project  `json:"project"`
+	ProjectID               string   `json:"projectId"`
 	Session                 Session  `json:"session"`
 	Threads                 []Thread `json:"threads"`
 	Events                  []Event  `json:"events"`

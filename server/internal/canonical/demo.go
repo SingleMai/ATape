@@ -1,6 +1,12 @@
 package canonical
 
-import "time"
+import (
+	"time"
+
+	"github.com/SingleMai/ATape/server/internal/authorization"
+)
+
+const DemoUserID = "demo-user"
 
 // NewDemoStore seeds the local executable with representative Canonical data.
 // It is a development Adapter, not a source-provider fixture or Raw archive.
@@ -10,28 +16,34 @@ func NewDemoStore() *MemoryStore {
 	openSource := TeamRecord{ID: "open-source-lab", Name: "Open Source Lab"}
 	store.teams[acme.ID] = acme
 	store.teams[openSource.ID] = openSource
-	project := ProjectRecord{ID: "payments-api", TeamID: acme.ID, Name: "payments-api", Type: "git"}
+	store.memberships[membershipKey(acme.ID, DemoUserID)] = authorization.MembershipFacts{
+		TeamID: acme.ID, UserID: DemoUserID, Role: authorization.OwnerRole, Active: true,
+	}
+	store.memberships[membershipKey(openSource.ID, DemoUserID)] = authorization.MembershipFacts{
+		TeamID: openSource.ID, UserID: DemoUserID, Role: authorization.MemberRole, Active: true,
+	}
+	project := ProjectRecord{ID: "payments-api", TeamID: acme.ID, Name: "payments-api", Type: "git", State: "active"}
 	store.projects[project.ID] = project
 	store.projectCapture[project.ID] = mustTime("2026-09-04T10:52:18+08:00")
-	store.projects["support-notes"] = ProjectRecord{ID: "support-notes", TeamID: acme.ID, Name: "support-notes", Type: "directory"}
+	store.projects["support-notes"] = ProjectRecord{ID: "support-notes", TeamID: acme.ID, Name: "support-notes", Type: "directory", State: "active"}
 	store.projectCapture["support-notes"] = mustTime("2026-09-03T15:20:00+08:00")
-	store.projects["adapter-sdk"] = ProjectRecord{ID: "adapter-sdk", TeamID: openSource.ID, Name: "adapter-sdk", Type: "git"}
+	store.projects["adapter-sdk"] = ProjectRecord{ID: "adapter-sdk", TeamID: openSource.ID, Name: "adapter-sdk", Type: "git", State: "active"}
 	store.projectCapture["adapter-sdk"] = mustTime("2026-09-02T09:15:00+08:00")
 
 	checkout := SessionRecord{
-		ID: "checkout", ProjectID: project.ID, SourceKey: "demo/checkout", Revision: 1, Digest: "demo/checkout/1",
+		ID: "checkout", ProjectID: project.ID, CapturedByUserID: DemoUserID, SourceKey: "demo/checkout", Revision: 1, Digest: "demo/checkout/1",
 		Title: "Fix duplicate checkout charge on retry", Summary: "Retries occasionally charge a customer twice.",
 		Insight: "Two retry layers did not share a durable key.", Actor: Actor{Name: "Liying", Harness: "Codex CLI"},
 		Branch: "main", Status: "active", CaptureStatus: "healthy", UpdatedAt: mustTime("2026-09-04T10:52:00+08:00"), ReportedEventCount: 23,
 	}
 	webhooks := SessionRecord{
-		ID: "webhooks", ProjectID: project.ID, SourceKey: "demo/webhooks", Revision: 1, Digest: "demo/webhooks/1",
+		ID: "webhooks", ProjectID: project.ID, CapturedByUserID: DemoUserID, SourceKey: "demo/webhooks", Revision: 1, Digest: "demo/webhooks/1",
 		Title: "Trace missing webhook deliveries", Summary: "Why did valid webhook events disappear?",
 		Insight: "The queue visibility timeout overlaps deploy drain.", Actor: Actor{Name: "Mika", Harness: "Claude Code"},
 		Branch: "fix/webhooks", Status: "active", CaptureStatus: "healthy", UpdatedAt: mustTime("2026-09-04T10:46:00+08:00"), ReportedEventCount: 41,
 	}
 	ledger := SessionRecord{
-		ID: "ledger", ProjectID: project.ID, SourceKey: "demo/ledger", Revision: 1, Digest: "demo/ledger/1",
+		ID: "ledger", ProjectID: project.ID, CapturedByUserID: DemoUserID, SourceKey: "demo/ledger", Revision: 1, Digest: "demo/ledger/1",
 		Title: "Plan ledger schema migration", Summary: "Compare rollback paths for the ledger-v2 migration.",
 		Insight: "Shadow writes keep backfill replay safe.", Actor: Actor{Name: "Qian", Harness: "OpenCode"},
 		Branch: "design/ledger-v2", Status: "ended", CaptureStatus: "complete", UpdatedAt: mustTime("2026-09-03T17:24:00+08:00"), ReportedEventCount: 18,

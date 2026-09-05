@@ -17,6 +17,19 @@ import {
   upgradeAdapters
 } from "./clientManagement"
 
+const setupInput = (overrides: Partial<Parameters<typeof setupProject>[0]> = {}): Parameters<typeof setupProject>[0] => ({
+  path: "/work/payments/src",
+  instanceOrigin: "https://atape.dev",
+  userId: "user-1",
+  teamId: "team-1",
+  teamSlug: "acme",
+  teamName: "Acme",
+  projectId: "project-1",
+  name: "Payments",
+  createdAt: "2026-09-05T00:00:00Z",
+  ...overrides
+})
+
 const fixture = (fixedUpgradeSpec?: string) => {
   let config: ClientConfig = emptyClientConfig()
   let version = "1.0.0"
@@ -65,50 +78,45 @@ const fixture = (fixedUpgradeSpec?: string) => {
 describe("Client management Module", () => {
   it("sets up an auto-detected Git Project idempotently", async () => {
     const client = fixture()
-    const input = { path: "/work/payments/src", teamId: "acme", teamName: "Acme" }
+    const input = setupInput()
     const created = await client.run(setupProject(input))
     const replayed = await client.run(setupProject(input))
 
     expect(created.created).toBe(true)
-    expect(created.project).toMatchObject({ id: "payments", type: "git", path: "/work/payments" })
+    expect(created.project).toMatchObject({ id: "project-1", type: "git", path: "/work/payments" })
     expect(replayed.created).toBe(false)
     expect(client.read().projects).toHaveLength(1)
   })
 
   it("preserves an explicitly selected ordinary directory", async () => {
     const client = fixture()
-    const result = await client.run(setupProject({
-      path: "/work/payments/src",
-      teamId: "acme",
-      teamName: "Acme",
-      type: "directory"
-    }))
-    expect(result.project).toMatchObject({ id: "src", type: "directory", path: "/work/payments/src" })
+    const result = await client.run(setupProject(setupInput({ type: "directory" })))
+    expect(result.project).toMatchObject({ id: "project-1", type: "directory", path: "/work/payments/src" })
   })
 
-  it("persists one immutable Team user identity across local Projects", async () => {
+  it("persists only server-verified Instance, User, Team, and Project identity", async () => {
     const client = fixture()
-    const input = {
-      path: "/work/payments",
-      userId: "liying",
-      teamId: "acme",
-      teamName: "Acme"
-    }
+    const input = setupInput()
     const created = await client.run(setupProject(input))
     const replayed = await client.run(setupProject(input))
 
-    expect(created.userId).toBe("liying")
+    expect(created.project).toMatchObject({
+      instanceOrigin: "https://atape.dev",
+      userId: "user-1",
+      teamId: "team-1",
+      teamSlug: "acme"
+    })
     expect(replayed.created).toBe(false)
-    expect(client.read().userId).toBe("liying")
+    expect(client.read().activeInstanceOrigin).toBe("https://atape.dev")
     await expect(client.run(setupProject({ ...input, userId: "someone-else" })))
-      .rejects.toMatchObject({ reason: "conflict", resource: "user" })
+      .rejects.toMatchObject({ reason: "conflict", resource: "project" })
   })
 
   it("installs, enables, and upgrades an Adapter without starting a sidecar", async () => {
     const client = fixture()
-    await client.run(setupProject({ path: "/work/payments", teamId: "acme", teamName: "Acme" }))
+    await client.run(setupProject(setupInput()))
     const installed = await client.run(installAdapter("@atape/adapter-codex@1.0.0"))
-    const enabled = await client.run(setProjectAdapter({ projectId: "payments", adapterId: "codex", enabled: true }))
+    const enabled = await client.run(setProjectAdapter({ projectId: "project-1", adapterId: "codex", enabled: true }))
     const upgraded = await client.run(upgradeAdapters("all"))
 
     expect(installed.adapter.version).toBe("1.0.0")
@@ -129,8 +137,8 @@ describe("Client management Module", () => {
 
   it("removes only local Project configuration", async () => {
     const client = fixture()
-    await client.run(setupProject({ path: "/work/payments", teamId: "acme", teamName: "Acme" }))
-    await client.run(removeProject("payments"))
+    await client.run(setupProject(setupInput()))
+    await client.run(removeProject("project-1"))
     expect(client.read().projects).toEqual([])
   })
 })

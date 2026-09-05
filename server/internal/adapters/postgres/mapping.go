@@ -7,7 +7,11 @@ import (
 	"github.com/SingleMai/ATape/server/internal/canonical"
 )
 
-func insertSessionParams(record canonical.SessionRecord) db.InsertSessionParams {
+func insertSessionParams(record canonical.SessionRecord) (db.InsertSessionParams, error) {
+	capturedBy, err := databaseUUID(record.CapturedByUserID)
+	if err != nil {
+		return db.InsertSessionParams{}, err
+	}
 	return db.InsertSessionParams{
 		ID: record.ID, ProjectID: record.ProjectID, SourceKey: record.SourceKey,
 		Revision: record.Revision, Digest: record.Digest, Title: record.Title,
@@ -15,7 +19,8 @@ func insertSessionParams(record canonical.SessionRecord) db.InsertSessionParams 
 		ActorHarness: record.Actor.Harness, Branch: record.Branch, Status: record.Status,
 		CaptureStatus: record.CaptureStatus, UpdatedAt: record.UpdatedAt,
 		ReportedEventCount: int64(record.ReportedEventCount),
-	}
+		CapturedByUserID:   capturedBy,
+	}, nil
 }
 
 func updateSessionParams(record canonical.SessionRecord) db.UpdateSessionParams {
@@ -95,13 +100,13 @@ func insertEventVersionParams(record canonical.EventRecord) db.InsertEventVersio
 	}
 }
 
-func canonicalSession(row db.CanonicalSession) canonical.SessionRecord {
-	return sessionRecord(row.ID, row.ProjectID, row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount)
+func canonicalSession(row db.GetSessionForReadRow) canonical.SessionRecord {
+	return sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount)
 }
 
-func sessionRecord(id, projectID, sourceKey string, revision int64, digest, title, summary, insight, actorName, actorHarness, branch, status, captureStatus string, updatedAt time.Time, reportedEventCount int64) canonical.SessionRecord {
+func sessionRecord(id, projectID, capturedByUserID, sourceKey string, revision int64, digest, title, summary, insight, actorName, actorHarness, branch, status, captureStatus string, updatedAt time.Time, reportedEventCount int64) canonical.SessionRecord {
 	return canonical.SessionRecord{
-		ID: id, ProjectID: projectID, SourceKey: sourceKey, Revision: revision,
+		ID: id, ProjectID: projectID, CapturedByUserID: capturedByUserID, SourceKey: sourceKey, Revision: revision,
 		Digest: digest, Title: title, Summary: summary, Insight: insight,
 		Actor: canonical.Actor{Name: actorName, Harness: actorHarness}, Branch: branch,
 		Status: status, CaptureStatus: captureStatus, UpdatedAt: updatedAt,
