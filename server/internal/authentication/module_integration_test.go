@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -567,7 +568,9 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if err != nil {
 			t.Fatalf("establish absolute-boundary Session: %v", err)
 		}
-		time.Sleep(1100 * time.Millisecond)
+		// Keep enough margin for the PostgreSQL VM clock and host clock to
+		// converge around the one-second boundary under a loaded test run.
+		time.Sleep(1500 * time.Millisecond)
 		if _, err := absoluteModule.AuthenticateWeb(ctx, absoluteSession.SessionSecret); authentication.ErrorCodeOf(err) != authentication.CodeSessionAbsoluteExpired {
 			t.Fatalf("absolute deadline error = %v, want session_absolute_expired", err)
 		}
@@ -600,11 +603,33 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if err != nil || view.ID != authorization.ID || view.UserCode != authorization.UserCode {
 			t.Fatalf("resolve case-insensitive User Code = %+v, %v", view, err)
 		}
+		if view.ClientLabel != authentication.CLIClientLabel || view.Capability != authentication.CLICapabilityVersion {
+			t.Fatalf("grant view capability = %+v", view)
+		}
+		viewType := reflect.TypeOf(view)
+		for _, forbidden := range []string{"DeviceCode", "Credential", "CredentialSecret"} {
+			if _, exposed := viewType.FieldByName(forbidden); exposed {
+				t.Fatalf("browser grant view exposes %s", forbidden)
+			}
+		}
+		var credentialsBeforeApproval int
+		if err := poolA.QueryRow(ctx, "SELECT COUNT(*) FROM auth_cli_credentials WHERE authorization_id = $1", authorization.ID).Scan(&credentialsBeforeApproval); err != nil {
+			t.Fatalf("count Credentials before approval: %v", err)
+		}
+		if credentialsBeforeApproval != 0 {
+			t.Fatalf("pending grant created %d Credentials", credentialsBeforeApproval)
+		}
 		if err := moduleA.DecideCLIDeviceAuthorization(ctx, web.Principal, view.ID, authentication.ApproveCLI, "request-approve"); err != nil {
 			t.Fatalf("approve CLI Device Authorization: %v", err)
 		}
 		if err := moduleB.DecideCLIDeviceAuthorization(ctx, web.Principal, view.ID, authentication.ApproveCLI, "request-approve-replay"); err != nil {
 			t.Fatalf("same approval was not idempotent: %v", err)
+		}
+		if err := poolA.QueryRow(ctx, "SELECT COUNT(*) FROM auth_cli_credentials WHERE authorization_id = $1", authorization.ID).Scan(&credentialsBeforeApproval); err != nil {
+			t.Fatalf("count Credentials after approval: %v", err)
+		}
+		if credentialsBeforeApproval != 0 {
+			t.Fatalf("browser approval created %d Credentials", credentialsBeforeApproval)
 		}
 
 		var credentials [2]authentication.CLICredentialGrant
@@ -641,6 +666,11 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if err != nil || cli.Principal.UserID != web.Principal.UserID {
 			t.Fatalf("authenticate CLI Credential = %+v, %v", cli, err)
 		}
+		listedCredentials, err := moduleA.ListCLICredentials(ctx, web.Principal)
+		if err != nil || len(listedCredentials) != 1 || listedCredentials[0].ID != credential.CredentialID ||
+			listedCredentials[0].Capability != authentication.CLICapabilityVersion {
+			t.Fatalf("listed CLI Credentials = %+v, %v", listedCredentials, err)
+		}
 		if err := moduleA.RevokeCLICredentials(ctx, authentication.RevokeCLICredentialsInput{
 			Principal: cli.Principal, CredentialID: credential.CredentialID,
 			Reason: "test_revoke", RequestID: "request-cli-revoke",
@@ -649,6 +679,10 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		}
 		if _, err := moduleB.AuthenticateCLI(ctx, credential.CredentialSecret); authentication.ErrorCodeOf(err) != authentication.CodeCredentialRevoked {
 			t.Fatalf("revoked CLI Credential error = %v, want credential_revoked", err)
+		}
+		listedCredentials, err = moduleA.ListCLICredentials(ctx, web.Principal)
+		if err != nil || len(listedCredentials) != 0 {
+			t.Fatalf("revoked CLI Credential remained listed: %+v, %v", listedCredentials, err)
 		}
 
 		uncertainAuthorization, err := moduleA.CreateCLIDeviceAuthorization(ctx)
@@ -689,14 +723,37 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		if uncertainCredentialCount != 1 {
 			t.Fatalf("commit-uncertain claim created %d Credentials, want 1", uncertainCredentialCount)
 		}
+		if err := moduleA.RevokeCurrentCLICredential(ctx, uncertainCredential.CredentialSecret, "request-current-revoke"); err != nil {
+			t.Fatalf("revoke current CLI Credential: %v", err)
+		}
+		if err := moduleB.RevokeCurrentCLICredential(ctx, uncertainCredential.CredentialSecret, "request-current-revoke-replay"); err != nil {
+			t.Fatalf("repeat current CLI Credential revoke: %v", err)
+		}
+		if err := moduleB.RevokeCurrentCLICredential(ctx, contractOpaqueSecret("atc_v1_", 93), "request-current-revoke-unknown"); err != nil {
+			t.Fatalf("unknown current CLI Credential revoke: %v", err)
+		}
+		if err := moduleB.RevokeCurrentCLICredential(ctx, "", "request-current-revoke-missing"); err != nil {
+			t.Fatalf("missing current CLI Credential revoke: %v", err)
+		}
+		if _, err := moduleB.AuthenticateCLI(ctx, uncertainCredential.CredentialSecret); authentication.ErrorCodeOf(err) != authentication.CodeCredentialRevoked {
+			t.Fatalf("current-revoked Credential error = %v, want credential_revoked", err)
+		}
 
 		pending, err := moduleA.CreateCLIDeviceAuthorization(ctx)
 		if err != nil {
 			t.Fatalf("create pending authorization: %v", err)
 		}
-		if _, err := moduleB.PollCLIDeviceAuthorization(ctx, pending.DeviceCode, "request-too-fast"); authentication.ErrorCodeOf(err) != authentication.CodeSlowDown {
-			t.Fatalf("early poll error = %v, want slow_down", err)
+		_, firstSlowDown := moduleB.PollCLIDeviceAuthorization(ctx, pending.DeviceCode, "request-too-fast-1")
+		assertRetryOutcome(t, firstSlowDown, authentication.CodeSlowDown, 10)
+		_, secondSlowDown := moduleA.PollCLIDeviceAuthorization(ctx, pending.DeviceCode, "request-too-fast-2")
+		assertRetryOutcome(t, secondSlowDown, authentication.CodeSlowDown, 15)
+		if _, err := poolA.Exec(ctx, `UPDATE auth_cli_device_authorizations SET next_poll_at = clock_timestamp() - interval '1 second' WHERE id = $1`, pending.ID); err != nil {
+			t.Fatalf("advance pending poll clock: %v", err)
 		}
+		_, pendingOutcome := moduleB.PollCLIDeviceAuthorization(ctx, pending.DeviceCode, "request-pending-on-time")
+		assertRetryOutcome(t, pendingOutcome, authentication.CodeAuthorizationPending, 15)
+		_, thirdSlowDown := moduleA.PollCLIDeviceAuthorization(ctx, pending.DeviceCode, "request-too-fast-3")
+		assertRetryOutcome(t, thirdSlowDown, authentication.CodeSlowDown, 20)
 
 		race, err := moduleA.CreateCLIDeviceAuthorization(ctx)
 		if err != nil {
@@ -755,6 +812,107 @@ WHERE id = $1`, grant.User.ID); err != nil {
 			uncertainAuthorization.DeviceCode, uncertainAuthorization.UserCode,
 			uncertainCredential.CredentialSecret,
 			race.DeviceCode, race.UserCode, providerPrivateStateCanary,
+		})
+	})
+
+	t.Run("CLI denied expired and inactive-User grants are terminal", func(t *testing.T) {
+		resetAuthentication(t, poolA)
+		trace.Reset()
+		moduleA := newContractModule(t, poolA, &contractIdentityAdapter{}, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		moduleB := newContractModule(t, poolB, &contractIdentityAdapter{}, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		login := beginFederated(t, moduleA, authentication.SignInIntent, "", "/")
+		webGrant, err := completeFederated(moduleB, login, "cli-terminal-user")
+		if err != nil {
+			t.Fatalf("establish CLI terminal-test User: %v", err)
+		}
+		web, err := moduleA.AuthenticateWeb(ctx, webGrant.SessionSecret)
+		if err != nil {
+			t.Fatalf("authenticate terminal-test User: %v", err)
+		}
+
+		denied, err := moduleA.CreateCLIDeviceAuthorization(ctx)
+		if err != nil {
+			t.Fatalf("create denied authorization: %v", err)
+		}
+		deniedView, err := moduleB.ResolveCLIDeviceAuthorization(ctx, web.Principal, denied.UserCode, "request-denied-resolve")
+		if err != nil {
+			t.Fatalf("resolve denied authorization: %v", err)
+		}
+		if err := moduleA.DecideCLIDeviceAuthorization(ctx, web.Principal, deniedView.ID, authentication.DenyCLI, "request-deny"); err != nil {
+			t.Fatalf("deny authorization: %v", err)
+		}
+		if err := moduleB.DecideCLIDeviceAuthorization(ctx, web.Principal, deniedView.ID, authentication.DenyCLI, "request-deny-replay"); err != nil {
+			t.Fatalf("same deny was not idempotent: %v", err)
+		}
+		if err := moduleB.DecideCLIDeviceAuthorization(ctx, web.Principal, deniedView.ID, authentication.ApproveCLI, "request-deny-reverse"); authentication.ErrorCodeOf(err) != authentication.CodeGrantAlreadyDecided {
+			t.Fatalf("reverse denied decision error = %v, want grant_already_decided", err)
+		}
+		if _, err := moduleB.PollCLIDeviceAuthorization(ctx, denied.DeviceCode, "request-denied-poll"); authentication.ErrorCodeOf(err) != authentication.CodeAccessDenied {
+			t.Fatalf("denied poll error = %v, want access_denied", err)
+		}
+
+		expired, err := moduleA.CreateCLIDeviceAuthorization(ctx)
+		if err != nil {
+			t.Fatalf("create expiring authorization: %v", err)
+		}
+		if _, err := poolA.Exec(ctx, `
+UPDATE auth_cli_device_authorizations
+SET created_at = clock_timestamp() - interval '2 seconds',
+    expires_at = clock_timestamp() - interval '1 second'
+WHERE id = $1`, expired.ID); err != nil {
+			t.Fatalf("expire authorization clock: %v", err)
+		}
+		if _, err := moduleB.PollCLIDeviceAuthorization(ctx, expired.DeviceCode, "request-expired-poll"); authentication.ErrorCodeOf(err) != authentication.CodeExpiredToken {
+			t.Fatalf("expired poll error = %v, want expired_token", err)
+		}
+		if _, err := moduleA.PollCLIDeviceAuthorization(ctx, expired.DeviceCode, "request-expired-replay"); authentication.ErrorCodeOf(err) != authentication.CodeExpiredToken {
+			t.Fatalf("expired poll replay error = %v, want expired_token", err)
+		}
+
+		inactive, err := moduleA.CreateCLIDeviceAuthorization(ctx)
+		if err != nil {
+			t.Fatalf("create inactive-User authorization: %v", err)
+		}
+		inactiveView, err := moduleB.ResolveCLIDeviceAuthorization(ctx, web.Principal, inactive.UserCode, "request-inactive-resolve")
+		if err != nil {
+			t.Fatalf("resolve inactive-User authorization: %v", err)
+		}
+		if err := moduleA.DecideCLIDeviceAuthorization(ctx, web.Principal, inactiveView.ID, authentication.ApproveCLI, "request-inactive-approve"); err != nil {
+			t.Fatalf("approve inactive-User authorization: %v", err)
+		}
+		var credentialCount int
+		if err := poolA.QueryRow(ctx, "SELECT COUNT(*) FROM auth_cli_credentials WHERE authorization_id = $1", inactive.ID).Scan(&credentialCount); err != nil {
+			t.Fatalf("count pre-disable Credentials: %v", err)
+		}
+		if credentialCount != 0 {
+			t.Fatalf("approval generated %d Credentials before poll", credentialCount)
+		}
+		if _, err := poolA.Exec(ctx, `
+UPDATE auth_users SET status = 'disabled', disabled_at = clock_timestamp(), updated_at = clock_timestamp()
+WHERE id = $1`, web.Principal.UserID); err != nil {
+			t.Fatalf("disable approving User: %v", err)
+		}
+		if _, err := moduleB.PollCLIDeviceAuthorization(ctx, inactive.DeviceCode, "request-inactive-poll"); authentication.ErrorCodeOf(err) != authentication.CodeAccessDenied {
+			t.Fatalf("inactive-User poll error = %v, want access_denied", err)
+		}
+		if err := poolA.QueryRow(ctx, "SELECT COUNT(*) FROM auth_cli_credentials WHERE authorization_id = $1", inactive.ID).Scan(&credentialCount); err != nil {
+			t.Fatalf("count post-disable Credentials: %v", err)
+		}
+		if credentialCount != 0 {
+			t.Fatalf("inactive approving User received %d Credentials", credentialCount)
+		}
+		var status string
+		if err := poolA.QueryRow(ctx, "SELECT status FROM auth_cli_device_authorizations WHERE id = $1", inactive.ID).Scan(&status); err != nil {
+			t.Fatalf("read inactive authorization status: %v", err)
+		}
+		if status != "expired" {
+			t.Fatalf("inactive authorization status = %q, want expired", status)
+		}
+		assertNoRawSecrets(t, poolA, trace, []string{
+			webGrant.SessionSecret, webGrant.CSRFToken,
+			denied.DeviceCode, denied.UserCode,
+			expired.DeviceCode, expired.UserCode,
+			inactive.DeviceCode, inactive.UserCode,
 		})
 	})
 
@@ -1127,6 +1285,14 @@ func newModule(t *testing.T, pool *pgxpool.Pool, config authentication.Config) *
 
 func contractOpaqueSecret(prefix string, fill byte) string {
 	return prefix + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{fill}, 32))
+}
+
+func assertRetryOutcome(t *testing.T, err error, code authentication.ErrorCode, retryAfter int) {
+	t.Helper()
+	var outcome *authentication.Error
+	if !errors.As(err, &outcome) || outcome.Code != code || outcome.RetryAfter != retryAfter {
+		t.Fatalf("retry outcome = %#v (%v), want %s after %d seconds", outcome, err, code, retryAfter)
+	}
 }
 
 func buildKeyRing(t *testing.T, spec keySpec) authentication.KeyRing {

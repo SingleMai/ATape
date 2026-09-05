@@ -197,7 +197,7 @@ type CLIAuthorizationView struct {
 	UserCode    string
 	ExpiresAt   time.Time
 	ClientLabel string
-	Permission  string
+	Capability  string
 	Status      string
 }
 
@@ -214,6 +214,13 @@ type CLICredentialGrant struct {
 	Capability       string
 	CreatedAt        time.Time
 	User             User
+}
+
+type CLICredentialView struct {
+	ID         string
+	Capability string
+	CreatedAt  time.Time
+	LastUsedAt time.Time
 }
 
 type AuthenticatedCLICredential struct {

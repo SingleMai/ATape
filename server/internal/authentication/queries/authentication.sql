@@ -311,6 +311,18 @@ FROM auth_cli_credentials
 WHERE id = $1
 FOR UPDATE;
 
+-- name: GetCLICredentialBySecretForRevoke :one
+SELECT id, user_id, status
+FROM auth_cli_credentials
+WHERE secret_digest = $1
+FOR UPDATE;
+
+-- name: ListActiveCLICredentialsForUser :many
+SELECT id, capability_version, created_at, last_used_at
+FROM auth_cli_credentials
+WHERE user_id = $1 AND status = 'active'
+ORDER BY last_used_at DESC, created_at DESC, id DESC;
+
 -- name: TouchCLICredential :one
 UPDATE auth_cli_credentials
 SET last_used_at = clock_timestamp()

@@ -582,6 +582,26 @@ func (q *Queries) GetCLIAuthorizationForDecision(ctx context.Context, id pgtype.
 	return i, err
 }
 
+const getCLICredentialBySecretForRevoke = `-- name: GetCLICredentialBySecretForRevoke :one
+SELECT id, user_id, status
+FROM auth_cli_credentials
+WHERE secret_digest = $1
+FOR UPDATE
+`
+
+type GetCLICredentialBySecretForRevokeRow struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+	Status string
+}
+
+func (q *Queries) GetCLICredentialBySecretForRevoke(ctx context.Context, secretDigest []byte) (GetCLICredentialBySecretForRevokeRow, error) {
+	row := q.db.QueryRow(ctx, getCLICredentialBySecretForRevoke, secretDigest)
+	var i GetCLICredentialBySecretForRevokeRow
+	err := row.Scan(&i.ID, &i.UserID, &i.Status)
+	return i, err
+}
+
 const getCLICredentialForPrincipal = `-- name: GetCLICredentialForPrincipal :one
 SELECT id, user_id, status
 FROM auth_cli_credentials
@@ -1125,6 +1145,45 @@ func (q *Queries) InsertWebSessionSecret(ctx context.Context, arg InsertWebSessi
 	var issued_at time.Time
 	err := row.Scan(&issued_at)
 	return issued_at, err
+}
+
+const listActiveCLICredentialsForUser = `-- name: ListActiveCLICredentialsForUser :many
+SELECT id, capability_version, created_at, last_used_at
+FROM auth_cli_credentials
+WHERE user_id = $1 AND status = 'active'
+ORDER BY last_used_at DESC, created_at DESC, id DESC
+`
+
+type ListActiveCLICredentialsForUserRow struct {
+	ID                pgtype.UUID
+	CapabilityVersion string
+	CreatedAt         time.Time
+	LastUsedAt        time.Time
+}
+
+func (q *Queries) ListActiveCLICredentialsForUser(ctx context.Context, userID pgtype.UUID) ([]ListActiveCLICredentialsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listActiveCLICredentialsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveCLICredentialsForUserRow{}
+	for rows.Next() {
+		var i ListActiveCLICredentialsForUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CapabilityVersion,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listActiveWebSessionsForUser = `-- name: ListActiveWebSessionsForUser :many
