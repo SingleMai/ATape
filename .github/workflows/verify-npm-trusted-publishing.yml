@@ -1,0 +1,29 @@
+name: Verify npm Trusted Publishing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'SingleMai/ATape'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node.js for npm metadata verification
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org/"
+          package-manager-cache: false
+
+      - name: Read the CLI Trusted Publisher configuration
+        run: npm trust list @atape/cli --json
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Read the Codex Adapter Trusted Publisher configuration
+        run: npm trust list @atape/adapter-codex --json
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
