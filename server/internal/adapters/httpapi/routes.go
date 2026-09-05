@@ -76,6 +76,7 @@ type route struct {
 	cliProofOnly        bool
 	body                requestBodyPolicy
 	requiresIdempotency bool
+	bootstrapAllowed    bool
 	cache               cachePolicy
 }
 
@@ -112,23 +113,24 @@ func (h *Handler) register(candidate route) error {
 
 func (h *Handler) registerRoutes() error {
 	routes := []route{
-		{RouteSpec: RouteSpec{http.MethodGet, "/healthz", PublicProtocol}, handler: h.health, body: noRequestBody, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/instance", PublicProtocol}, handler: h.instance, body: noRequestBody, cache: publicMetadata},
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/auth/provider-registrations", PublicProtocol}, handler: h.providerRegistrations, body: noRequestBody, cache: publicMetadata},
+		{RouteSpec: RouteSpec{http.MethodGet, "/healthz", PublicProtocol}, handler: h.health, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/readyz", PublicProtocol}, handler: h.ready, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/instance", PublicProtocol}, handler: h.instance, bootstrapAllowed: true, body: noRequestBody, cache: publicMetadata},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/auth/provider-registrations", PublicProtocol}, handler: h.providerRegistrations, bootstrapAllowed: true, body: noRequestBody, cache: publicMetadata},
 
-		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/federated/sign-ins", PublicProtocol}, handler: h.federatedSignIn, requireOrigin: true, pragmaNoCache: true, body: authJSONRequest, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/federated/identity-bindings", WebOnly}, handler: h.federatedIdentityBinding, fresh: true, pragmaNoCache: true, body: authJSONRequest, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/federated/reauthentications", WebOnly}, handler: h.federatedReauthentication, pragmaNoCache: true, body: authJSONRequest, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/auth/github/callback", PublicProtocol}, handler: h.federatedCallback("github"), pragmaNoCache: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/federated/sign-ins", PublicProtocol}, handler: h.federatedSignIn, bootstrapAllowed: true, requireOrigin: true, pragmaNoCache: true, body: authJSONRequest, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/federated/identity-bindings", WebOnly}, handler: h.federatedIdentityBinding, bootstrapAllowed: true, fresh: true, pragmaNoCache: true, body: authJSONRequest, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/federated/reauthentications", WebOnly}, handler: h.federatedReauthentication, bootstrapAllowed: true, pragmaNoCache: true, body: authJSONRequest, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/auth/github/callback", PublicProtocol}, handler: h.federatedCallback("github"), bootstrapAllowed: true, pragmaNoCache: true, body: noRequestBody, cache: noStore},
 
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/auth/session", WebOnly}, handler: h.session, body: noRequestBody, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/logout", WebOnly}, handler: h.logout, idempotentWebLogout: true, body: authJSONRequest, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me", AnyPrincipal}, handler: h.currentUser, body: noRequestBody, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodPatch, "/api/v1/users/me", WebOnly}, handler: h.updateCurrentUser, body: authJSONRequest, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me/external-identities", WebOnly}, handler: h.externalIdentities, body: noRequestBody, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me/web-sessions", WebOnly}, handler: h.webSessions, body: noRequestBody, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodDelete, "/api/v1/users/me/web-sessions/{sessionId}", WebOnly}, handler: h.revokeWebSession, body: noRequestBody, cache: noStore},
-		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/users/me/web-sessions/revoke-all", WebOnly}, handler: h.revokeAllWebSessions, body: authJSONRequest, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/auth/session", WebOnly}, handler: h.session, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/auth/logout", WebOnly}, handler: h.logout, bootstrapAllowed: true, idempotentWebLogout: true, body: authJSONRequest, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me", AnyPrincipal}, handler: h.currentUser, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPatch, "/api/v1/users/me", WebOnly}, handler: h.updateCurrentUser, bootstrapAllowed: true, body: authJSONRequest, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me/external-identities", WebOnly}, handler: h.externalIdentities, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me/web-sessions", WebOnly}, handler: h.webSessions, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodDelete, "/api/v1/users/me/web-sessions/{sessionId}", WebOnly}, handler: h.revokeWebSession, bootstrapAllowed: true, body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/users/me/web-sessions/revoke-all", WebOnly}, handler: h.revokeAllWebSessions, bootstrapAllowed: true, body: authJSONRequest, cache: noStore},
 		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/users/me/cli-credentials", WebOnly}, handler: h.cliCredentials, body: noRequestBody, cache: noStore},
 		{RouteSpec: RouteSpec{http.MethodDelete, "/api/v1/users/me/cli-credentials/{credentialId}", WebOnly}, handler: h.revokeCLICredential, body: noRequestBody, cache: noStore},
 		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/users/me/cli-credentials/revoke-all", WebOnly}, handler: h.revokeAllCLICredentials, body: authJSONRequest, cache: noStore},

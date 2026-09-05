@@ -29,6 +29,7 @@ describe("browser Workspace Gateway Adapter", () => {
         type: "folder",
         name: "Notes",
         state: "active",
+        repositoryLinkState: "not_applicable",
         capturedThrough: "2026-09-05T02:00:00Z",
         createdAt: "2026-09-05T00:00:00Z",
         updatedAt: "2026-09-05T00:00:00Z"
@@ -38,6 +39,7 @@ describe("browser Workspace Gateway Adapter", () => {
         type: "git",
         name: "Old",
         state: "archived",
+        repositoryLinkState: "linked",
         createdAt: "2026-09-05T00:00:00Z",
         updatedAt: "2026-09-05T00:00:00Z"
       }]
@@ -58,6 +60,7 @@ describe("browser Workspace Gateway Adapter", () => {
           id: "project-active",
           name: "Notes",
           type: "directory",
+          repositoryLinkState: "not_applicable",
           capturedThrough: "2026-09-05T02:00:00Z",
           sessionCount: 0,
           activeSessionCount: 0

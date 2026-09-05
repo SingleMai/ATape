@@ -78,16 +78,25 @@ const (
 	DeletedProject  ProjectState = "deleted"
 )
 
+type RepositoryLinkState string
+
+const (
+	RepositoryUnknown       RepositoryLinkState = "unknown"
+	RepositoryLinked        RepositoryLinkState = "linked"
+	RepositoryNotApplicable RepositoryLinkState = "not_applicable"
+)
+
 type Project struct {
-	ID                 string
-	TeamID             string
-	Name               string
-	Type               ProjectType
-	State              ProjectState
-	RepositoryIdentity string
-	CapturedThrough    time.Time
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ID                  string
+	TeamID              string
+	Name                string
+	Type                ProjectType
+	State               ProjectState
+	RepositoryIdentity  string
+	RepositoryLinkState RepositoryLinkState
+	CapturedThrough     time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 type Workspace struct {

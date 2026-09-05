@@ -33,6 +33,7 @@ const WireProject = Schema.Struct({
   type: Schema.Literals(["git", "folder"]),
   name: Schema.String,
   state: Schema.Literals(["active", "archived"]),
+  repositoryLinkState: Schema.Literals(["unknown", "linked", "not_applicable"]),
   repositoryIdentity: Schema.optionalKey(Schema.String),
   capturedThrough: Schema.optionalKey(Schema.String),
   createdAt: Schema.String,
@@ -116,6 +117,7 @@ const projectFromWire = (project: typeof WireProject.Type): SetupRemoteProject =
   type: project.type,
   name: project.name,
   state: project.state,
+  repositoryLinkState: project.repositoryLinkState,
   ...(project.repositoryIdentity === undefined ? {} : { repositoryIdentity: project.repositoryIdentity }),
   createdAt: project.createdAt,
   updatedAt: project.updatedAt

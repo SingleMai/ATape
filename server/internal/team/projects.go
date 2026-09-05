@@ -68,7 +68,7 @@ func (m *Module) CreateProject(ctx context.Context, input CreateProjectInput) (P
 				return Project{}, domainError(CodeNotFound)
 			}
 			return projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-				row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
+				row.RepositoryLinkState, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
 		}
 		if !errors.Is(receiptErr, pgx.ErrNoRows) {
 			return Project{}, receiptErr
@@ -111,7 +111,7 @@ func (m *Module) CreateProject(ctx context.Context, input CreateProjectInput) (P
 			remote = &remoteIdentity
 		}
 		return projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-			remote, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
+			row.RepositoryLinkState, remote, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
 	})
 	return project, mapOperationError("create Project", err)
 }
@@ -157,7 +157,7 @@ func (m *Module) MatchProject(ctx context.Context, input MatchProjectInput) (*Pr
 			return nil, err
 		}
 		project := projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-			row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt)
+			row.RepositoryLinkState, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt)
 		return &project, nil
 	})
 	return matched, mapOperationError("match Project repository", err)
@@ -194,7 +194,7 @@ func (m *Module) OpenProject(ctx context.Context, principal authentication.Princ
 			return Project{}, err
 		}
 		return projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-			row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
+			row.RepositoryLinkState, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
 	})
 	return project, mapOperationError("open Project", err)
 }
@@ -222,7 +222,7 @@ func (m *Module) ListProjects(ctx context.Context, input TeamActionInput) ([]Pro
 		result := make([]Project, 0, len(rows))
 		for _, row := range rows {
 			result = append(result, projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType,
-				row.State, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt))
+				row.State, row.RepositoryLinkState, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt))
 		}
 		return result, nil
 	})
@@ -265,7 +265,7 @@ func (m *Module) RenameFolderProject(ctx context.Context, input RenameFolderProj
 			return Project{}, err
 		}
 		return projectFromFields(updated.ID, updated.TeamID, updated.Name, updated.ProjectType,
-			updated.State, nil, updated.CapturedThrough, updated.CreatedAt, updated.UpdatedAt), nil
+			updated.State, updated.RepositoryLinkState, nil, updated.CapturedThrough, updated.CreatedAt, updated.UpdatedAt), nil
 	})
 	return project, mapOperationError("rename Folder Project", err)
 }
@@ -292,7 +292,8 @@ func (m *Module) RelinkGitProject(ctx context.Context, input RelinkGitProjectInp
 		if access.project.ProjectType != "git" {
 			return Project{}, domainError(CodeResourceStateConflict)
 		}
-		if access.project.RemoteIdentity != nil && *access.project.RemoteIdentity == remoteIdentity {
+		if access.project.RepositoryLinkState == string(RepositoryLinked) &&
+			access.project.RemoteIdentity != nil && *access.project.RemoteIdentity == remoteIdentity {
 			return projectFromGetProjectForUpdate(access.project), nil
 		}
 		if err := queries.MarkRepositoryAliasesNonCurrent(ctx, input.ProjectID); err != nil {
@@ -365,7 +366,7 @@ func (m *Module) ArchiveProject(ctx context.Context, input ProjectActionInput) (
 			}
 		}
 		return projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-			access.project.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
+			row.RepositoryLinkState, access.project.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt), nil
 	})
 	return project, mapOperationError("archive Project", err)
 }
@@ -522,6 +523,7 @@ func projectFromFields(
 	name string,
 	projectType string,
 	state string,
+	repositoryLinkState string,
 	remoteIdentity *string,
 	capturedThrough time.Time,
 	createdAt time.Time,
@@ -537,12 +539,13 @@ func projectFromFields(
 	}
 	return Project{
 		ID: id, TeamID: teamID, Name: name, Type: normalizedType, State: ProjectState(state),
-		RepositoryIdentity: remote, CapturedThrough: capturedThrough,
-		CreatedAt: createdAt, UpdatedAt: updatedAt,
+		RepositoryIdentity: remote, RepositoryLinkState: RepositoryLinkState(repositoryLinkState),
+		CapturedThrough: capturedThrough,
+		CreatedAt:       createdAt, UpdatedAt: updatedAt,
 	}
 }
 
 func projectFromGetProjectForUpdate(row teamdb.GetProjectForUpdateRow) Project {
 	return projectFromFields(row.ID, row.TeamID, row.Name, row.ProjectType, row.State,
-		row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt)
+		row.RepositoryLinkState, row.RemoteIdentity, row.CapturedThrough, row.CreatedAt, row.UpdatedAt)
 }

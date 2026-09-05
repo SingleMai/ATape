@@ -13,6 +13,7 @@ const workspace: Workspace = {
       id: "payments-api",
       name: "payments-api",
       type: "git",
+      repositoryLinkState: "linked",
       sessionCount: 3,
       activeSessionCount: 2
     }]

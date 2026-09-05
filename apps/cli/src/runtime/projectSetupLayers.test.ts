@@ -25,6 +25,7 @@ const project = {
   type: "git",
   name: "Payments",
   state: "active",
+  repositoryLinkState: "linked",
   repositoryIdentity: "github.com/acme/payments",
   createdAt: now,
   updatedAt: now

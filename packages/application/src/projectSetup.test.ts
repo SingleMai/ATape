@@ -24,6 +24,7 @@ const fixture = (options: { readonly exact?: boolean; readonly remote?: string }
     type: "git" as const,
     name: "Payments",
     state: "active" as const,
+    repositoryLinkState: "linked" as const,
     repositoryIdentity: "github.com/acme/payments",
     createdAt: now,
     updatedAt: now

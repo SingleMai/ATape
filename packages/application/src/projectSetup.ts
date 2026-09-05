@@ -47,6 +47,7 @@ export type SetupRemoteProject = {
   readonly type: "git" | "folder"
   readonly name: string
   readonly state: "active" | "archived"
+  readonly repositoryLinkState: "unknown" | "linked" | "not_applicable"
   readonly repositoryIdentity?: string
   readonly createdAt: string
   readonly updatedAt: string

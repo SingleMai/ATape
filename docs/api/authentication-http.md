@@ -90,19 +90,22 @@ Cookies, or callback URIs.
 
 Required outside explicit demo mode:
 
-- `ATAPE_DATABASE_URL`;
+- `ATAPE_DATABASE_URL` or `_FILE`;
+- `ATAPE_RAW_DIRECTORY`;
 - `ATAPE_PUBLIC_URL`, the canonical Web and Instance origin;
 - `ATAPE_AUTH_PEPPER_KEY_RING` or `_FILE`;
-- `ATAPE_AUTH_PRIVATE_STATE_KEY_RING` or `_FILE`.
+- `ATAPE_AUTH_PRIVATE_STATE_KEY_RING` or `_FILE`;
+- at least one active Provider registration. v0.2 requires the GitHub Client ID
+  and Client Secret while GitHub is the shipped Adapter.
 
 Demo mode is an in-memory development Adapter, not an authentication setting:
 startup rejects it when a durable database is configured or the listener is
 not an explicit loopback address.
 
 `ATAPE_API_PUBLIC_URL` defaults to `ATAPE_PUBLIC_URL`. Split subdomains also
-require `ATAPE_COOKIE_DOMAIN`. GitHub is enabled only when both
+require `ATAPE_COOKIE_DOMAIN`. GitHub requires both
 `ATAPE_GITHUB_CLIENT_ID` and `ATAPE_GITHUB_CLIENT_SECRET` (or the secret's
-`_FILE` form) are present; omitting both leaves the registration disabled.
+`_FILE` form); missing or partial configuration fails startup.
 The callback registered in that self-hosted GitHub OAuth App must be the
 canonical `${ATAPE_API_PUBLIC_URL}/api/v1/auth/github/callback` (or the
 `ATAPE_PUBLIC_URL` equivalent when both origins are the same).
@@ -124,6 +127,11 @@ can reference it:
 Secret files are bounded to 64 KiB. Direct and `_FILE` forms are mutually
 exclusive, and startup fails closed for missing, malformed, unsafe-origin, or
 partial Provider configuration.
+
+`ATAPE_AUTH_CUTOVER_MODE` defaults to `normal`. Only an operator performing the
+reviewed v0.1.1 ownership transition sets it to `bootstrap`; see the
+[cutover runbook](../operations/auth-cutover.md). Production readiness also
+checks the durable cutover state and Raw Chunk Store availability.
 
 ## Idempotent creation
 

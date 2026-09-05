@@ -13,6 +13,7 @@ import (
 var serverConfigEnvironment = []string{
 	"ATAPE_SERVER_ADDRESS",
 	"ATAPE_DATABASE_URL",
+	"ATAPE_DATABASE_URL_FILE",
 	"ATAPE_RAW_DIRECTORY",
 	"ATAPE_DEMO_MODE",
 	"ATAPE_PUBLIC_URL",
@@ -26,12 +27,12 @@ var serverConfigEnvironment = []string{
 	"ATAPE_GITHUB_CLIENT_ID",
 	"ATAPE_GITHUB_CLIENT_SECRET",
 	"ATAPE_GITHUB_CLIENT_SECRET_FILE",
+	"ATAPE_AUTH_CUTOVER_MODE",
 }
 
 func TestLoadConfigRequiresDurableStorageOutsideDemoMode(t *testing.T) {
 	clearServerConfigEnvironment(t)
 	t.Setenv("ATAPE_SERVER_ADDRESS", "")
-	t.Setenv("ATAPE_DATABASE_URL", "")
 	t.Setenv("ATAPE_RAW_DIRECTORY", "")
 	t.Setenv("ATAPE_DEMO_MODE", "")
 
@@ -44,7 +45,6 @@ func TestLoadConfigRequiresDurableStorageOutsideDemoMode(t *testing.T) {
 func TestLoadConfigAllowsExplicitDemoMode(t *testing.T) {
 	clearServerConfigEnvironment(t)
 	t.Setenv("ATAPE_SERVER_ADDRESS", "")
-	t.Setenv("ATAPE_DATABASE_URL", "")
 	t.Setenv("ATAPE_RAW_DIRECTORY", "")
 	t.Setenv("ATAPE_DEMO_MODE", "true")
 
@@ -102,6 +102,8 @@ func TestLoadConfigUsesPostgresWithoutDemoMode(t *testing.T) {
 	t.Setenv("ATAPE_COOKIE_DOMAIN", "")
 	t.Setenv("ATAPE_AUTH_PEPPER_KEY_RING", testKeyRing('p'))
 	t.Setenv("ATAPE_AUTH_PRIVATE_STATE_KEY_RING", testKeyRing('e'))
+	t.Setenv("ATAPE_GITHUB_CLIENT_ID", "github-client-id")
+	t.Setenv("ATAPE_GITHUB_CLIENT_SECRET", "github-client-secret")
 
 	config, err := loadConfig()
 	if err != nil {
@@ -114,9 +116,85 @@ func TestLoadConfigUsesPostgresWithoutDemoMode(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRequiresExplicitCutoverModeAndRawStorage(t *testing.T) {
+	base := func(t *testing.T) {
+		clearServerConfigEnvironment(t)
+		t.Setenv("ATAPE_DATABASE_URL", "postgres://atape@database/atape")
+		t.Setenv("ATAPE_PUBLIC_URL", "https://atape.example.com")
+		t.Setenv("ATAPE_AUTH_PEPPER_KEY_RING", testKeyRing('p'))
+		t.Setenv("ATAPE_AUTH_PRIVATE_STATE_KEY_RING", testKeyRing('e'))
+		t.Setenv("ATAPE_GITHUB_CLIENT_ID", "github-client-id")
+		t.Setenv("ATAPE_GITHUB_CLIENT_SECRET", "github-client-secret")
+	}
+
+	t.Run("bootstrap", func(t *testing.T) {
+		base(t)
+		t.Setenv("ATAPE_RAW_DIRECTORY", "/var/lib/atape/raw")
+		t.Setenv("ATAPE_AUTH_CUTOVER_MODE", "bootstrap")
+		config, err := loadConfig()
+		if err != nil || config.cutoverMode != "bootstrap" || config.http.CutoverMode != "bootstrap" {
+			t.Fatalf("bootstrap config = %+v, %v", config, err)
+		}
+	})
+
+	t.Run("invalid mode", func(t *testing.T) {
+		base(t)
+		t.Setenv("ATAPE_AUTH_CUTOVER_MODE", "automatic")
+		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "normal or bootstrap") {
+			t.Fatalf("invalid mode error = %v", err)
+		}
+	})
+
+	t.Run("missing Raw", func(t *testing.T) {
+		base(t)
+		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "ATAPE_RAW_DIRECTORY") {
+			t.Fatalf("missing Raw error = %v", err)
+		}
+	})
+
+	t.Run("demo bootstrap", func(t *testing.T) {
+		clearServerConfigEnvironment(t)
+		t.Setenv("ATAPE_DEMO_MODE", "true")
+		t.Setenv("ATAPE_AUTH_CUTOVER_MODE", "bootstrap")
+		if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "cannot use auth cutover bootstrap") {
+			t.Fatalf("demo bootstrap error = %v", err)
+		}
+	})
+}
+
+func TestReadCutoverDocumentIsStrictAndBounded(t *testing.T) {
+	directory := t.TempDir()
+	validPath := filepath.Join(directory, "mapping.json")
+	if err := os.WriteFile(validPath, []byte(`{"protocol":"atape.auth-cutover.v1","teams":[]}`), 0o600); err != nil {
+		t.Fatalf("write valid mapping: %v", err)
+	}
+	document, err := readCutoverDocument[map[string]any](validPath)
+	if err != nil || document["protocol"] != "atape.auth-cutover.v1" {
+		t.Fatalf("read valid mapping = %+v, %v", document, err)
+	}
+	for name, content := range map[string]string{
+		"trailing": `{} {}`,
+		"unknown":  `{"unknown":true}`,
+		"oversize": `{"protocol":"` + strings.Repeat("a", cutoverDocumentLimit) + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(directory, name+".json")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatalf("write document: %v", err)
+			}
+			if _, err := readCutoverDocument[struct {
+				Protocol string `json:"protocol"`
+			}](path); err == nil {
+				t.Fatal("invalid document was accepted")
+			}
+		})
+	}
+}
+
 func TestLoadConfigCanonicalizesOriginsBeforeDerivingProviderCallback(t *testing.T) {
 	clearServerConfigEnvironment(t)
 	t.Setenv("ATAPE_DATABASE_URL", "postgres://atape@database/atape")
+	t.Setenv("ATAPE_RAW_DIRECTORY", "/var/lib/atape/raw")
 	t.Setenv("ATAPE_PUBLIC_URL", "https://ATAPE.EXAMPLE.COM:443/")
 	t.Setenv("ATAPE_API_PUBLIC_URL", "https://API.ATAPE.EXAMPLE.COM:443/")
 	t.Setenv("ATAPE_COOKIE_DOMAIN", "ATAPE.EXAMPLE.COM")
@@ -147,7 +225,6 @@ func testKeyRing(fill byte) string {
 
 func TestLoadConfigRejectsInvalidDemoMode(t *testing.T) {
 	clearServerConfigEnvironment(t)
-	t.Setenv("ATAPE_DATABASE_URL", "")
 	t.Setenv("ATAPE_DEMO_MODE", "sometimes")
 
 	_, err := loadConfig()
@@ -170,24 +247,36 @@ func TestLoadConfigRequiresExplicitSecureAuthenticationConfiguration(t *testing.
 	if err == nil || !strings.Contains(err.Error(), "ATAPE_AUTH_PEPPER_KEY_RING") {
 		t.Fatalf("loadConfig error = %v, want missing key ring failure", err)
 	}
+
+	t.Setenv("ATAPE_AUTH_PEPPER_KEY_RING", testKeyRing('p'))
+	t.Setenv("ATAPE_AUTH_PRIVATE_STATE_KEY_RING", testKeyRing('e'))
+	t.Setenv("ATAPE_RAW_DIRECTORY", "/var/lib/atape/raw")
+	_, err = loadConfig()
+	if err == nil || !strings.Contains(err.Error(), "active Provider registration") {
+		t.Fatalf("loadConfig error = %v, want missing Provider failure", err)
+	}
 }
 
 func TestLoadConfigReadsSecretFilesAndEnablesGitHub(t *testing.T) {
 	clearServerConfigEnvironment(t)
 	directory := t.TempDir()
+	databasePath := filepath.Join(directory, "database-url")
 	pepperPath := filepath.Join(directory, "pepper.json")
 	privatePath := filepath.Join(directory, "private.json")
 	githubPath := filepath.Join(directory, "github-secret")
 	for path, value := range map[string]string{
-		pepperPath:  testKeyRing('p') + "\n",
-		privatePath: testKeyRing('e') + "\r\n",
-		githubPath:  "github-secret-value\n",
+		databasePath: "postgres://atape@database/atape\n",
+		pepperPath:   testKeyRing('p') + "\n",
+		privatePath:  testKeyRing('e') + "\r\n",
+		githubPath:   "github-secret-value\n",
 	} {
 		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 			t.Fatalf("write test secret file: %v", err)
 		}
 	}
-	t.Setenv("ATAPE_DATABASE_URL", "postgres://atape@database/atape")
+	t.Setenv("ATAPE_DATABASE_URL", "")
+	t.Setenv("ATAPE_DATABASE_URL_FILE", databasePath)
+	t.Setenv("ATAPE_RAW_DIRECTORY", "/var/lib/atape/raw")
 	t.Setenv("ATAPE_PUBLIC_URL", "https://atape.example.com")
 	t.Setenv("ATAPE_AUTH_PEPPER_KEY_RING_FILE", pepperPath)
 	t.Setenv("ATAPE_AUTH_PRIVATE_STATE_KEY_RING_FILE", privatePath)
@@ -198,7 +287,7 @@ func TestLoadConfigReadsSecretFilesAndEnablesGitHub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadConfig: %v", err)
 	}
-	if !config.githubEnabled || config.github.ClientID != "github-client-id" ||
+	if config.databaseURL != "postgres://atape@database/atape" || !config.githubEnabled || config.github.ClientID != "github-client-id" ||
 		config.github.ClientSecret != "github-secret-value" {
 		t.Fatal("GitHub Provider configuration was not loaded from the explicit secret file")
 	}

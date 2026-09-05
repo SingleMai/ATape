@@ -7,7 +7,9 @@ services:
     environment:
       POSTGRES_DB: atape
       POSTGRES_USER: atape
-      POSTGRES_PASSWORD: ${ATAPE_POSTGRES_PASSWORD:-atape}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -22,18 +24,37 @@ services:
       context: .
       dockerfile: deploy/server.Dockerfile
     restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       ATAPE_SERVER_ADDRESS: 0.0.0.0:8080
-      ATAPE_DATABASE_URL: postgres://atape:${ATAPE_POSTGRES_PASSWORD:-atape}@database:5432/atape?sslmode=disable
+      ATAPE_DATABASE_URL_FILE: /run/secrets/database_url
       ATAPE_RAW_DIRECTORY: /var/lib/atape/raw
       ATAPE_DEMO_MODE: "false"
+      ATAPE_PUBLIC_URL: ${ATAPE_PUBLIC_URL:?set ATAPE_PUBLIC_URL in .env}
+      ATAPE_API_PUBLIC_URL: ${ATAPE_API_PUBLIC_URL:-}
+      ATAPE_COOKIE_DOMAIN: ${ATAPE_COOKIE_DOMAIN:-}
+      ATAPE_DEVELOPMENT_ALLOW_HTTP: ${ATAPE_DEVELOPMENT_ALLOW_HTTP:-false}
+      ATAPE_AUTH_CUTOVER_MODE: ${ATAPE_AUTH_CUTOVER_MODE:-normal}
+      ATAPE_AUTH_PEPPER_KEY_RING_FILE: /run/secrets/auth_pepper_key_ring
+      ATAPE_AUTH_PRIVATE_STATE_KEY_RING_FILE: /run/secrets/auth_private_state_key_ring
+      ATAPE_GITHUB_CLIENT_ID: ${ATAPE_GITHUB_CLIENT_ID:?set ATAPE_GITHUB_CLIENT_ID in .env}
+      ATAPE_GITHUB_CLIENT_SECRET_FILE: /run/secrets/github_client_secret
+    secrets:
+      - database_url
+      - auth_pepper_key_ring
+      - auth_private_state_key_ring
+      - github_client_secret
     volumes:
       - raw-data:/var/lib/atape/raw
     depends_on:
       database:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -43,6 +64,8 @@ services:
     build:
       context: .
       dockerfile: deploy/web.Dockerfile
+      args:
+        VITE_ATAPE_API_ORIGIN: ${ATAPE_API_PUBLIC_URL:-}
     restart: unless-stopped
     ports:
       - "${ATAPE_BIND_ADDRESS:-127.0.0.1}:${ATAPE_PORT:-8080}:8080"
@@ -59,3 +82,15 @@ services:
 volumes:
   postgres-data:
   raw-data:
+
+secrets:
+  postgres_password:
+    file: ${ATAPE_POSTGRES_PASSWORD_SECRET_FILE:-./secrets/postgres_password}
+  database_url:
+    file: ${ATAPE_DATABASE_URL_SECRET_FILE:-./secrets/database_url}
+  auth_pepper_key_ring:
+    file: ${ATAPE_AUTH_PEPPER_KEY_RING_SECRET_FILE:-./secrets/auth_pepper_key_ring.json}
+  auth_private_state_key_ring:
+    file: ${ATAPE_AUTH_PRIVATE_STATE_KEY_RING_SECRET_FILE:-./secrets/auth_private_state_key_ring.json}
+  github_client_secret:
+    file: ${ATAPE_GITHUB_CLIENT_SECRET_FILE:-./secrets/github_client_secret}

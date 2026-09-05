@@ -179,6 +179,7 @@ async function startFixtureServer() {
           type: "folder",
           name: "Package Project",
           state: "active",
+          repositoryLinkState: "not_applicable",
           createdAt: "2026-09-06T00:00:00Z",
           updatedAt: "2026-09-06T00:00:00Z"
         })

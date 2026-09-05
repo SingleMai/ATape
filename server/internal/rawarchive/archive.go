@@ -117,7 +117,10 @@ type ManifestStore interface {
 
 // ChunkStore is the immutable byte Seam consumed by Archive. Put must be
 // replay-safe for the same key and bytes; Read returns one bounded chunk.
+// Check proves that the configured Adapter can currently accept durable
+// writes without exposing its storage layout to the application or transport.
 type ChunkStore interface {
+	Check(context.Context) error
 	Put(context.Context, string, []byte) error
 	Read(context.Context, string) ([]byte, error)
 }
@@ -129,6 +132,13 @@ type Archive struct {
 
 func NewArchive(manifests ManifestStore, chunks ChunkStore) *Archive {
 	return &Archive{manifests: manifests, chunks: chunks}
+}
+
+// CheckStorage is the narrow operational health surface of Raw Archive. The
+// concrete Adapter owns the probe because only it can prove its durability
+// preconditions without leaking implementation details through this Module.
+func (a *Archive) CheckStorage(ctx context.Context) error {
+	return a.chunks.Check(ctx)
 }
 
 type AppendResult struct {

@@ -113,8 +113,8 @@ VALUES ('other-team', 'other-team', 'Other Team', TRUE)`); err != nil {
 			t.Fatalf("seed Eve Team: %v", err)
 		}
 		if _, err := pool.Exec(context.Background(), `
-INSERT INTO canonical_projects (id, team_id, name, project_type)
-VALUES ('other-project', 'other-team', 'other-project', 'directory')`); err != nil {
+INSERT INTO canonical_projects (id, team_id, name, project_type, repository_link_state)
+VALUES ('other-project', 'other-team', 'other-project', 'directory', 'not_applicable')`); err != nil {
 			t.Fatalf("seed Eve Project: %v", err)
 		}
 		if _, err := pool.Exec(context.Background(), `
@@ -439,7 +439,7 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 7; got != want {
+	if got, want := migrationCount, 8; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 }
@@ -474,8 +474,8 @@ VALUES ($1, 'acme-engineering', 'Acme Engineering', TRUE)
 		t.Fatalf("seed authorization Team: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
-INSERT INTO canonical_projects (id, team_id, name, project_type)
-VALUES ($1, $2, 'payments-api', 'git')
+INSERT INTO canonical_projects (id, team_id, name, project_type, repository_link_state)
+VALUES ($1, $2, 'payments-api', 'git', 'linked')
 `, canonicalcontract.TestProjectID, canonicalcontract.TestTeamID); err != nil {
 		t.Fatalf("seed authorization Project: %v", err)
 	}
