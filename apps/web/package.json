@@ -7,6 +7,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "dev": "vite",
     "test": "vitest run --passWithNoTests",
+    "test:browser": "playwright test",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:build",
     "@types/react": "catalog:build",
     "@types/react-dom": "catalog:build",
     "@vitejs/plugin-react": "catalog:build",

@@ -1,7 +1,8 @@
-import type { Workspace, WorkspaceProject } from "@atape/domain"
+import type { User, Workspace, WorkspaceProject } from "@atape/domain"
 import { Button, Eyebrow } from "@atape/ui"
 import { useEffect, useState, type ReactNode } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
+import { AccountChip } from "./AccessPrimitives"
 
 const TapeMark = () => (
   <svg aria-hidden="true" className="brand-mark" viewBox="0 0 48 38">
@@ -22,6 +23,7 @@ const ProjectTypeMark = ({ project }: { readonly project: WorkspaceProject }) =>
 type Props = {
   readonly children: ReactNode
   readonly workspace: LoadableView<Workspace>
+  readonly currentUser: User
   readonly currentTeamId: string | undefined
   readonly currentProjectId: string | undefined
   readonly onOpenSearch?: () => void
@@ -32,6 +34,7 @@ type Props = {
 export const AppShell = ({
   children,
   workspace,
+  currentUser,
   currentTeamId,
   currentProjectId,
   onOpenSearch,
@@ -158,6 +161,10 @@ export const AppShell = ({
         </>
       )}
 
+      <nav className="sidebar-settings" aria-label="Settings">
+        <a href="/settings/account">Account security</a>
+        {currentTeam !== undefined && <a href={`/teams/${encodeURIComponent(currentTeam.slug)}/settings/access`}>Team &amp; access</a>}
+      </nav>
       <div className="collector-status">
         <span className="pulse" />
         Team memory refreshes automatically
@@ -180,6 +187,9 @@ export const AppShell = ({
           <span>{onOpenSearch === undefined ? "Choose a project to search" : "Search conversations"}</span>
           {onOpenSearch !== undefined && <kbd>⌘ K</kbd>}
         </button>
+        <a className="topbar-account" href="/settings/account" aria-label="Open account security">
+          <AccountChip displayName={currentUser.displayName} />
+        </a>
       </header>
       <main id="main-content" className="main-content">{children}</main>
     </div>

@@ -5,7 +5,7 @@ describe("Workspace entry selection", () => {
   it("returns no target before the first Project is captured", () => {
     expect(selectDefaultWorkspaceProject({ teams: [] })).toBeUndefined()
     expect(selectDefaultWorkspaceProject({
-      teams: [{ id: "team-a", name: "Team A", projects: [] }]
+      teams: [{ id: "team-a", slug: "team-a", name: "Team A", role: "owner", projects: [] }]
     })).toBeUndefined()
   })
 
@@ -13,7 +13,9 @@ describe("Workspace entry selection", () => {
     const workspace: Workspace = {
       teams: [{
         id: "team-a",
+        slug: "team-a",
         name: "Team A",
+        role: "owner",
         projects: [{
           id: "older",
           name: "Older",
@@ -24,7 +26,9 @@ describe("Workspace entry selection", () => {
         }]
       }, {
         id: "team-b",
+        slug: "team-b",
         name: "Team B",
+        role: "member",
         projects: [{
           id: "newer",
           name: "Newer",
@@ -43,7 +47,9 @@ describe("Workspace entry selection", () => {
     const workspace: Workspace = {
       teams: [{
         id: "team-z",
+        slug: "team-z",
         name: "Team Z",
+        role: "owner",
         projects: [{
           id: "project-z",
           name: "Project Z",
@@ -54,7 +60,9 @@ describe("Workspace entry selection", () => {
         }]
       }, {
         id: "team-a",
+        slug: "team-a",
         name: "Team A",
+        role: "member",
         projects: [{
           id: "project-a",
           name: "Project A",

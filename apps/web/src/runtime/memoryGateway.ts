@@ -4,42 +4,14 @@ import {
   ProjectMemory as ProjectMemorySchema
 } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
-
-class HttpFailure extends Error {
-  constructor(
-    readonly status: number,
-    message: string
-  ) {
-    super(message)
-  }
-}
+import { BrowserHTTPError, browserRequest } from "./http"
 
 const requestJSON = (path: string): Effect.Effect<unknown, MemoryGatewayError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const response = await fetch(path, {
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10_000)
-      })
-      if (!response.ok) {
-        throw new HttpFailure(response.status, `ATape server returned ${response.status}.`)
-      }
-      return response.json() as Promise<unknown>
-    },
-    catch: (cause) => {
-      if (cause instanceof HttpFailure) {
-        return new MemoryGatewayError({
-          reason: "http",
-          message: cause.message,
-          status: cause.status
-        })
-      }
-      return new MemoryGatewayError({
-        reason: "transport",
-        message: cause instanceof Error ? cause.message : "The ATape server is unavailable."
-      })
-    }
-  })
+  browserRequest(path).pipe(Effect.mapError((cause: BrowserHTTPError) => new MemoryGatewayError({
+    reason: cause.reason === "transport" ? "transport" : cause.reason === "decode" ? "decode" : "http",
+    message: cause.message,
+    ...(cause.status === undefined ? {} : { status: cause.status })
+  })))
 
 const decodeProjectMemory = (payload: unknown) =>
   Schema.decodeUnknownEffect(ProjectMemorySchema)(payload).pipe(

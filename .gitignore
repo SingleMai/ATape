@@ -2,6 +2,8 @@ node_modules/
 dist/
 .vite/
 coverage/
+test-results/
+playwright-report/
 release/
 *.log
 .DS_Store

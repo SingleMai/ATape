@@ -15,7 +15,9 @@ export type WorkspaceProject = typeof WorkspaceProject.Type
 
 export const WorkspaceTeam = Schema.Struct({
   id: Schema.String,
+  slug: Schema.String,
   name: Schema.String,
+  role: Schema.Literals(["owner", "member"]),
   projects: Schema.Array(WorkspaceProject)
 })
 export type WorkspaceTeam = typeof WorkspaceTeam.Type
