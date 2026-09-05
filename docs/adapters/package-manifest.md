@@ -27,6 +27,10 @@ The fields mean:
 
 The package itself must also have valid `name` and `version` fields. Its installed name must match the requested package. npm lifecycle scripts are disabled, so build artifacts must already be present in the published or local package.
 
+The CLI accepts a registry package specifier, local package directory, local npm `.tgz`/`.tar.gz` archive, or HTTPS archive URL. Local and remote archives must use npm's `package/package.json` layout. Before npm sees an archive, ATape performs a bounded streaming scan (32 MiB compressed, 64 MiB expanded, and 256 KiB for the manifest), validates TAR checksums, and decodes the Adapter manifest. HTTPS downloads use a private staging directory that is removed after installation. Registry packages cannot be preflighted locally, so their manifest is validated immediately after installation and still before any Adapter entry is imported.
+
+These checks make installation inert; they do not sandbox Adapter execution. An enabled Adapter is trusted code loaded into the Collector Host and receives only its selected Project context.
+
 ## Runtime export
 
 The entry module exports one factory:

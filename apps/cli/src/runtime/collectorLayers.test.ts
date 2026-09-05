@@ -33,6 +33,9 @@ const fixture = async () => {
   const paths: NodeClientPaths = {
     configFile: join(root, "config", "config.json"),
     collectorStateFile: join(root, "state", "collector.json"),
+    collectorProcessFile: join(root, "state", "collector-process.json"),
+    collectorStatusFile: join(root, "state", "collector-status.json"),
+    collectorLogFile: join(root, "state", "collector.log"),
     adapterDirectory: join(root, "data", "adapters")
   }
   const layer = makeNodeClientLayer(paths, {

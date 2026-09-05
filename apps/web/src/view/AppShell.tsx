@@ -22,9 +22,9 @@ const ProjectTypeMark = ({ project }: { readonly project: WorkspaceProject }) =>
 type Props = {
   readonly children: ReactNode
   readonly workspace: LoadableView<Workspace>
-  readonly currentTeamId: string
-  readonly currentProjectId: string
-  readonly onOpenSearch: () => void
+  readonly currentTeamId: string | undefined
+  readonly currentProjectId: string | undefined
+  readonly onOpenSearch?: () => void
   readonly onOpenProject: (teamId: string, projectId: string) => void
   readonly onRetryWorkspace: () => void
 }
@@ -42,12 +42,12 @@ export const AppShell = ({
   const directory = workspace._tag === "Ready" ? workspace.value : undefined
   const currentTeam = directory?.teams.find((team) => team.id === currentTeamId)
   const currentProject = currentTeam?.projects.find((project) => project.id === currentProjectId)
-  const teamName = currentTeam?.name ?? currentTeamId
-  const projectName = currentProject?.name ?? currentProjectId
+  const teamName = currentTeam?.name ?? currentTeamId ?? "Your workspace"
+  const projectName = currentProject?.name ?? currentProjectId ?? "No project selected"
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
+      if (onOpenSearch !== undefined && (event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
         event.preventDefault()
         onOpenSearch()
       }
@@ -115,6 +115,9 @@ export const AppShell = ({
                 {workspace.retryable && <Button onClick={onRetryWorkspace}>Try again</Button>}
               </div>
             )}
+            {directory?.teams.length === 0 && (
+              <p className="workspace-no-projects">No captured Projects yet</p>
+            )}
             {directory?.teams.map((team) => (
               <section className="workspace-team" key={team.id} aria-labelledby={`team-${team.id}`}>
                 <h2 id={`team-${team.id}`}>{team.name}</h2>
@@ -157,7 +160,7 @@ export const AppShell = ({
 
       <div className="collector-status">
         <span className="pulse" />
-        Collector healthy
+        Team memory refreshes automatically
       </div>
     </aside>
     <div className="workspace">
@@ -167,10 +170,15 @@ export const AppShell = ({
           <span aria-hidden="true">/</span>
           <strong>{projectName}</strong>
         </div>
-        <button className="search-launcher" type="button" onClick={onOpenSearch}>
+        <button
+          className="search-launcher"
+          type="button"
+          disabled={onOpenSearch === undefined}
+          onClick={onOpenSearch}
+        >
           <span aria-hidden="true">⌕</span>
-          <span>Search conversations</span>
-          <kbd>⌘ K</kbd>
+          <span>{onOpenSearch === undefined ? "Choose a project to search" : "Search conversations"}</span>
+          {onOpenSearch !== undefined && <kbd>⌘ K</kbd>}
         </button>
       </header>
       <main id="main-content" className="main-content">{children}</main>

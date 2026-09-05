@@ -18,6 +18,8 @@ docker compose up --build -d
 
 Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). The same URL is the Server address passed to `atape setup`. PostgreSQL metadata and Raw source bytes live in separate named volumes and survive ordinary container recreation.
 
+The Web root opens the most recently captured Project. Before the first successful collection, it presents the CLI-first setup flow instead of redirecting to demo data.
+
 The defaults bind only to localhost and use a development database password. Copy [`.env.example`](.env.example) to `.env` before changing the port, bind address, or password. ATape v0.1 does not yet provide authentication or TLS; do not bind it publicly unless an authenticating TLS reverse proxy or equivalent trusted-network boundary protects it.
 
 Inspect startup and migration progress with `docker compose logs -f server`, and stop the deployment without deleting retained volumes with:
@@ -66,10 +68,30 @@ Configure local capture Projects and independently installed Harness Adapters wi
 pnpm atape setup --user-id liying --team-id acme-engineering
 pnpm atape adapters install ./adapters/codex
 pnpm atape adapters enable codex --project payments-api
-pnpm atape collect --once
+pnpm atape start
+pnpm atape status
 ```
 
-`collect` dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and advances local cursors only after both succeed. Omit `--once` to run every 30 seconds. See the [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+`start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and advances local cursors only after both succeed. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+
+Build and verify the installable, zero-runtime-dependency CLI and Codex Adapter tarballs with:
+
+```sh
+pnpm test:release
+pnpm pack:release
+npm install --global ./release/atape-cli-0.1.0.tgz
+atape adapters install ./release/atape-adapter-codex-0.1.0.tgz
+atape --version
+```
+
+The public npm packages use the `@atape` scope:
+
+```sh
+npm install --global @atape/cli
+atape adapters install @atape/adapter-codex
+```
+
+The release directory also contains `SHA256SUMS`. Tag-driven publication is documented in [`docs/releasing.md`](docs/releasing.md).
 
 ## Verify
 
@@ -101,3 +123,7 @@ pnpm generate:sqlc
 Read [`docs/architecture/README.md`](docs/architecture/README.md) before changing production code. The Web runtime decision is recorded in [`ADR-0001`](docs/architecture/adr/0001-web-runtime-and-view-stack.md).
 
 The current internal ingestion envelopes are documented in [`docs/api/canonical-ingestion.md`](docs/api/canonical-ingestion.md) and [`docs/api/raw-archive.md`](docs/api/raw-archive.md). Read APIs are documented in [`docs/api/workspace.md`](docs/api/workspace.md) and [`docs/api/project-search.md`](docs/api/project-search.md). Client runtime decisions are recorded in [`ADR-0008`](docs/architecture/adr/0008-node-cli-and-on-demand-adapters.md) and [`ADR-0009`](docs/architecture/adr/0009-pull-adapter-runtime-and-checkpointed-collector.md).
+
+## License
+
+ATape is available under the [MIT License](LICENSE).

@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    if: github.repository == 'SingleMai/ATape'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js for npm publication
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org/"
+          package-manager-cache: false
+
+      - name: Install the pinned pnpm workspace
+        uses: pnpm/setup@v2
+        with:
+          require-lockfile: true
+          cache: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: false
+
+      - name: Verify tag and package metadata
+        run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
+
+      - name: Run repository checks
+        run: pnpm check
+
+      - name: Build production artifacts
+        run: pnpm build
+
+      - name: Verify the exact release tarballs
+        run: pnpm test:release
+
+      - name: Run PostgreSQL integration tests
+        run: pnpm test:go:integration
+
+      - name: Publish public npm packages
+        run: node scripts/publish-npm-release.mjs
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create the GitHub Release
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release/atape-cli-*.tgz
+          release/atape-adapter-codex-*.tgz
+          release/SHA256SUMS
+          --verify-tag
+          --generate-notes
+          --title "ATape $GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -86,6 +86,8 @@ This version accepts the shared event kinds `message`, `thought`, `tool_call`, `
 
 The first successful observation returns `201 Created`. Replaying the exact batch returns `200 OK` with `replayed: true`. Reusing a batch or entity revision with different content returns `409 Conflict`.
 
+`session.status` records provider lifecycle. `ended` is explicit and terminal for that revision; `idle` is explicitly inactive; `active` means the source remains open. Readers apply ATape's shared presence rule to an open Session: an update within the last five minutes is shown as `active`, while an older open Session is shown as `idle`. This read-time aging keeps Workspace counts, Project Memory, and Session Reader consistent without manufacturing ingestion revisions.
+
 `project.type` is either `git` or `directory`. A Git repository is preferred when client setup detects one; a user may explicitly configure an ordinary directory instead. Team identity and Project ID, Team, name, and type become immutable after the first accepted observation. Local filesystem paths remain client-side configuration and are not uploaded in this envelope.
 
 An Event update keeps the same `sourceEventId` and `sourceThreadId`, increments `revision`, and uses a new `batchId`. A new normalization pass increments `projectionRevision`; it does not create a duplicate active Event.

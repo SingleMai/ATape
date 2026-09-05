@@ -203,7 +203,7 @@ func (s *MemoryStore) ApplyBatch(ctx context.Context, batch WriteBatch) (ApplyRe
 	return result, nil
 }
 
-func (s *MemoryStore) Workspace(ctx context.Context) (WorkspaceSnapshot, error) {
+func (s *MemoryStore) Workspace(ctx context.Context, activeSince time.Time) (WorkspaceSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return WorkspaceSnapshot{}, err
 	}
@@ -224,7 +224,8 @@ func (s *MemoryStore) Workspace(ctx context.Context) (WorkspaceSnapshot, error) 
 			SessionCount:    len(s.sessionIDsByProject[projectID]),
 		}
 		for sessionID := range s.sessionIDsByProject[projectID] {
-			if s.sessions[sessionID].Status == "active" {
+			session := s.sessions[sessionID]
+			if session.Status == "active" && !session.UpdatedAt.Before(activeSince) {
 				entry.ActiveSessionCount++
 			}
 		}

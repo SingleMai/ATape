@@ -1,13 +1,14 @@
-# `@atape/adapter-codex`
+# ATape Codex Adapter
 
-Project-scoped Codex rollout collection for ATape. It discovers local root and subagent sessions, projects completed items to ATape's ACP-centered Canonical protocol, and streams the original JSONL separately as Raw.
-
-From the ATape repository:
+This package lets the ATape Collector read Codex rollout archives that belong to a configured local Project. It is installed independently from the base CLI and loaded only while an enabled Project is collected.
 
 ```sh
-pnpm atape adapters install ./adapters/codex
-pnpm atape adapters enable codex --project <project-id>
-pnpm atape collect --once --project <project-id>
+atape adapters install @atape/adapter-codex
+atape adapters enable codex --project <project-id>
 ```
 
-This Adapter is a version-sensitive compatibility layer because the Codex local rollout format is not a documented stable API. See [`docs/adapters/codex.md`](../../docs/adapters/codex.md) for discovery, projection, subagent, Raw, and compatibility behavior.
+The Adapter reads from `ATAPE_CODEX_HOME`, then `CODEX_HOME`, and otherwise `~/.codex`. It only reports sessions whose recorded working directory or Git repository matches the configured Project. Provider files remain untouched when ATape captures or removes local Project configuration.
+
+Installation does not run npm lifecycle scripts. The release tarball therefore contains a ready-to-run `dist/index.js` bundle and requires Node.js 24 or newer.
+
+This package is available under the MIT License.

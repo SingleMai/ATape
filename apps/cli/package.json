@@ -1,24 +1,56 @@
 {
   "name": "@atape/cli",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "CLI and background Collector for ATape shared agent conversation history",
+  "license": "MIT",
   "type": "module",
-  "bin": {
-    "atape": "./src/main.ts"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SingleMai/ATape.git",
+    "directory": "apps/cli"
   },
+  "homepage": "https://github.com/SingleMai/ATape#readme",
+  "bugs": {
+    "url": "https://github.com/SingleMai/ATape/issues"
+  },
+  "keywords": [
+    "agent",
+    "conversation",
+    "harness",
+    "team",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "atape": "dist/atape.js"
+  },
+  "files": [
+    "dist/atape.js",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "node scripts/build.mjs",
     "dev": "node src/main.ts",
+    "pack:release": "node scripts/pack.mjs",
+    "prepack": "node scripts/build.mjs",
     "test": "vitest run",
     "test:e2e": "vitest run src/collectorServer.e2e.test.ts",
-    "typecheck": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "@atape/application": "workspace:*",
-    "@atape/domain": "workspace:*",
-    "effect": "catalog:"
+    "typecheck": "tsc -p tsconfig.json",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
+    "@atape/application": "workspace:*",
+    "@atape/domain": "workspace:*",
     "@types/node": "^24.0.0",
+    "esbuild": "catalog:build",
+    "effect": "catalog:",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   }

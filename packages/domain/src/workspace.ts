@@ -24,3 +24,28 @@ export const Workspace = Schema.Struct({
   teams: Schema.Array(WorkspaceTeam)
 })
 export type Workspace = typeof Workspace.Type
+
+export type WorkspaceProjectTarget = {
+  readonly teamId: string
+  readonly projectId: string
+}
+
+// The Workspace landing route uses the most recently captured Project rather
+// than coupling first entry to demo data or server ordering.
+export const selectDefaultWorkspaceProject = (
+  workspace: Workspace
+): WorkspaceProjectTarget | undefined => {
+  let selected: (WorkspaceProjectTarget & { readonly capturedAt: number; readonly key: string }) | undefined
+  for (const team of workspace.teams) {
+    for (const project of team.projects) {
+      const parsed = project.capturedThrough === undefined ? Number.NEGATIVE_INFINITY : Date.parse(project.capturedThrough)
+      const capturedAt = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+      const key = `${team.id}\0${project.id}`
+      if (selected === undefined || capturedAt > selected.capturedAt ||
+        (capturedAt === selected.capturedAt && key.localeCompare(selected.key) < 0)) {
+        selected = { teamId: team.id, projectId: project.id, capturedAt, key }
+      }
+    }
+  }
+  return selected === undefined ? undefined : { teamId: selected.teamId, projectId: selected.projectId }
+}

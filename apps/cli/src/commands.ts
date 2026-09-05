@@ -1,18 +1,25 @@
 import {
   AdapterRuntimes,
+  CollectorDaemonProcess,
+  CollectorRunStatusStore,
   CollectorStateStore,
   CollectorTransport,
   SecretRedactor,
   inspectClient,
+  inspectManagedCollector,
   installAdapter,
   removeProject,
   runCollector,
+  runManagedCollector,
   setProjectAdapter,
+  startManagedCollector,
+  stopManagedCollector,
   setupProject,
   upgradeAdapters,
   type AdapterPackages,
   type ClientConfigStore,
   type CollectionCycleReport,
+  type ManagedCollectorStatus,
   type ProjectLocator,
   type SetupProjectInput
 } from "@atape/application"
@@ -20,9 +27,11 @@ import type { ClientConfig } from "@atape/domain"
 import { createInterface } from "node:readline/promises"
 import { parseArgs } from "node:util"
 import { Effect } from "effect"
+import { cliVersion } from "./version.ts"
 
 type CLIOptions = {
   readonly help?: boolean
+  readonly version?: boolean
   readonly json?: boolean
   readonly userId?: string
   readonly teamId?: string
@@ -37,6 +46,7 @@ type CLIOptions = {
   readonly once?: boolean
   readonly interval?: string
   readonly concurrency?: string
+  readonly daemonToken?: string
 }
 
 export type ParsedCLI = {
@@ -53,6 +63,7 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
     strict: true,
     options: {
       help: { type: "boolean", short: "h" },
+      version: { type: "boolean", short: "v" },
       json: { type: "boolean" },
       "user-id": { type: "string" },
       "team-id": { type: "string" },
@@ -66,13 +77,15 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
       all: { type: "boolean" },
       once: { type: "boolean" },
       interval: { type: "string" },
-      concurrency: { type: "string" }
+      concurrency: { type: "string" },
+      "daemon-token": { type: "string" }
     }
   })
   return {
     positionals: parsed.positionals,
     options: {
       ...(parsed.values.help === true ? { help: true } : {}),
+      ...(parsed.values.version === true ? { version: true } : {}),
       ...(parsed.values.json === true ? { json: true } : {}),
       ...(parsed.values["user-id"] ? { userId: parsed.values["user-id"] } : {}),
       ...(parsed.values["team-id"] ? { teamId: parsed.values["team-id"] } : {}),
@@ -86,7 +99,8 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
       ...(parsed.values.all === true ? { all: true } : {}),
       ...(parsed.values.once === true ? { once: true } : {}),
       ...(parsed.values.interval ? { interval: parsed.values.interval } : {}),
-      ...(parsed.values.concurrency ? { concurrency: parsed.values.concurrency } : {})
+      ...(parsed.values.concurrency ? { concurrency: parsed.values.concurrency } : {}),
+      ...(parsed.values["daemon-token"] ? { daemonToken: parsed.values["daemon-token"] } : {})
     }
   }
 }
@@ -95,9 +109,13 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
   void,
   unknown,
   ClientConfigStore | ProjectLocator | AdapterPackages |
-    CollectorStateStore | AdapterRuntimes | CollectorTransport | SecretRedactor
+    CollectorStateStore | AdapterRuntimes | CollectorTransport | SecretRedactor |
+    CollectorDaemonProcess | CollectorRunStatusStore
 > => {
   const [command, action, argument, extra] = cli.positionals
+  if (cli.options.version) {
+    return cli.positionals.length === 0 ? print(`ATape ${cliVersion}`) : failUsage("--version accepts no command.")
+  }
   if (cli.options.help || command === undefined || command === "help") {
     if (action !== undefined && command !== "help") return failUsage("Too many arguments for help.")
     return print(helpText)
@@ -117,6 +135,20 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
     case "collect":
       if (action !== undefined) return failUsage("collect accepts no positional arguments.")
       return collectCommand(cli.options)
+    case "start":
+      if (action !== undefined) return failUsage("start accepts no positional arguments.")
+      return startCommand(cli.options)
+    case "stop":
+      if (action !== undefined) return failUsage("stop accepts no positional arguments.")
+      return stopCommand(cli.options.json === true)
+    case "status":
+      if (action !== undefined) return failUsage("status accepts no positional arguments.")
+      return statusCommand(cli.options.json === true)
+    case "__collector-daemon":
+      if (action !== undefined || cli.options.daemonToken === undefined) {
+        return failUsage("Invalid internal Collector invocation.")
+      }
+      return daemonCommand(cli.options)
     default:
       return failUsage(`Unknown command: ${command}`)
   }
@@ -244,7 +276,7 @@ const adapterCommand = (
       if (argument !== undefined) return failUsage("adapters list accepts no Adapter ID.")
       return listAdapters(options.json === true)
     case "install":
-      if (argument === undefined) return failUsage("adapters install requires a package name or local directory.")
+      if (argument === undefined) return failUsage("adapters install requires a package name, local source, or HTTPS archive URL.")
       return installAdapter(argument).pipe(Effect.flatMap((result) => options.json
         ? printJSON(result)
         : print([
@@ -324,6 +356,98 @@ const collectCommand = (options: CLIOptions) => Effect.gen(function*() {
   }
 })
 
+const startCommand = (options: CLIOptions) => Effect.gen(function*() {
+  const concurrency = yield* parseIntegerOption(options.concurrency, "--concurrency")
+  const intervalSeconds = yield* parseIntegerOption(options.interval, "--interval")
+  const started = yield* startManagedCollector({
+    ...(concurrency === undefined ? {} : { concurrency }),
+    ...(intervalSeconds === undefined ? {} : { intervalMs: intervalSeconds * 1_000 })
+  })
+  if (options.json) {
+    yield* printJSON(started)
+    return
+  }
+  yield* print([
+    started.created ? "ATape Collector started." : "ATape Collector is already running.",
+    `  PID: ${started.pid}`,
+    `  Every ${started.intervalMs / 1_000}s · concurrency ${started.concurrency}`,
+    `  Logs: ${started.logFile}`
+  ].join("\n"))
+})
+
+const stopCommand = (json: boolean) => stopManagedCollector().pipe(
+  Effect.flatMap((stopped) => json
+    ? printJSON({ stopped })
+    : print(stopped
+      ? "ATape Collector stopped. Its last Project/Adapter status was retained."
+      : "ATape Collector is not running."))
+)
+
+const statusCommand = (json: boolean) => inspectManagedCollector().pipe(
+  Effect.flatMap((status) => json ? printJSON(status) : printCollectorStatus(status))
+)
+
+const daemonCommand = (options: CLIOptions) => Effect.gen(function*() {
+  const concurrency = yield* parseIntegerOption(options.concurrency, "--concurrency")
+  const intervalSeconds = yield* parseIntegerOption(options.interval, "--interval")
+  yield* runManagedCollector({
+    ...(concurrency === undefined ? {} : { concurrency }),
+    ...(intervalSeconds === undefined ? {} : { intervalMs: intervalSeconds * 1_000 })
+  })
+})
+
+const printCollectorStatus = (status: ManagedCollectorStatus) => {
+  const lines = [
+    status.running
+      ? `ATape Collector is running · PID ${status.pid} · started ${formatAge(status.startedAt)}`
+      : "ATape Collector is stopped.",
+    ...(status.running
+      ? [`Every ${(status.intervalMs ?? 0) / 1_000}s · concurrency ${status.concurrency}`, `Logs: ${status.logFile}`]
+      : []),
+    ...(status.collectorFailure === undefined
+      ? []
+      : [`Collector failure ${formatAge(status.collectorFailure.occurredAt)}: ${status.collectorFailure.message}`])
+  ]
+  if (status.jobs.length === 0) {
+    lines.push("No configured Project/Adapter jobs.")
+    return print(lines.join("\n"))
+  }
+  lines.push("Project/Adapter status")
+  for (const job of status.jobs) {
+    if (job.state === "pending") {
+      lines.push(`- ${job.projectId}/${job.adapterId} · waiting for first cycle`)
+      continue
+    }
+    if (job.state === "failed") {
+      lines.push(
+        `- ${job.projectId}/${job.adapterId} · failed ${formatAge(job.lastFailureAt)}${job.retryable ? " · retryable" : ""}`,
+        `  ${job.failureMessage}`,
+        ...(job.lastSuccessAt ? [`  Last success ${formatAge(job.lastSuccessAt)}`] : [])
+      )
+      continue
+    }
+    lines.push(
+      `- ${job.projectId}/${job.adapterId} · healthy · last success ${formatAge(job.lastSuccessAt)}`,
+      `  ${job.observations ?? 0} observations · ${job.rawChunks ?? 0} Raw chunks · ${job.redactions ?? 0} redactions`
+    )
+  }
+  return print(lines.join("\n"))
+}
+
+const formatAge = (value: string | undefined) => {
+  if (value === undefined) return "at an unknown time"
+  const elapsed = Math.max(0, Date.now() - Date.parse(value))
+  if (!Number.isFinite(elapsed)) return value
+  if (elapsed < 5_000) return "just now"
+  const seconds = Math.floor(elapsed / 1_000)
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
 const printCollectionReport = (report: CollectionCycleReport) => print([
   `Collection cycle completed · ${report.jobs.length} succeeded · ${report.failures.length} failed`,
   ...report.jobs.map((job) =>
@@ -362,16 +486,20 @@ const failUsage = (message: string): Effect.Effect<never, CLIInputError> =>
 const helpText = `ATape CLI
 
 Usage:
+  atape --version
   atape setup [directory] --team-id <id> [options]
   atape projects list [--json]
   atape projects remove <project-id> [--json]
   atape adapters list [--json]
-  atape adapters install <package-or-directory> [--json]
+  atape adapters install <package-or-source> [--json]
   atape adapters enable <adapter-id> --project <project-id>
   atape adapters disable <adapter-id> --project <project-id>
   atape adapters upgrade <adapter-id>
   atape adapters upgrade --all
   atape collect [--once] [--project <project-id>] [options]
+  atape start [--interval <seconds>] [--concurrency <count>]
+  atape stop
+  atape status [--json]
 
 Setup options:
   --user-id <id>        Stable Team member identity for captured sessions
@@ -389,8 +517,16 @@ Collector options:
   --interval <seconds>  Continuous interval from 10 to 3600 (default: 30)
   --concurrency <count> Project/Adapter jobs from 1 to 8 (default: 4)
 
+Background Collector:
+  start                    Run collection after this terminal closes
+  stop                     Gracefully stop the managed Collector
+  status                   Show each Project/Adapter's latest result
+
 Environment:
   ATAPE_CONFIG_FILE          Override the local client configuration file
   ATAPE_COLLECTOR_STATE_FILE Override opaque cursors and Raw progress state
+  ATAPE_COLLECTOR_PROCESS_FILE Override managed process metadata
+  ATAPE_COLLECTOR_STATUS_FILE  Override Project/Adapter run status
+  ATAPE_COLLECTOR_LOG_FILE     Override background Collector logs
   ATAPE_ADAPTER_DIRECTORY    Override the isolated Adapter npm directory
   ATAPE_REDACT_VALUES        JSON array of exact secret values to redact`

@@ -33,6 +33,7 @@ describe("Codex Adapter", () => {
     const observation = first.observations[0]
     expect(observation?.session).toMatchObject({
       sourceSessionId: "session-root",
+      title: "Why were there two charges?",
       actor: { name: "user-7", harness: "Codex" },
       branch: "main",
       status: "active"
@@ -143,6 +144,22 @@ describe("Codex Adapter", () => {
     const page = await collect(runtime)
 
     expect(requiredObservation(page).session.sourceSessionId).toBe("remote-session")
+  })
+
+  it("uses a stable untitled label when the root Thread has no user message", async () => {
+    const root = await makeEmptyFixture()
+    const file = join(root.sessionsDirectory, "assistant-only.jsonl")
+    await writeJsonl(file, [
+      sessionMeta({ id: "assistant-only", cwd: root.project }),
+      itemCompleted("2026-09-05T01:10:01.000Z", "assistant-only", {
+        type: "AgentMessage",
+        id: "assistant-answer",
+        content: [{ type: "output_text", text: "No user prompt was recorded" }]
+      })
+    ])
+
+    const runtime = await openAdapter(root.project, "directory")
+    expect(requiredObservation(await collect(runtime)).session.title).toBe("Untitled Codex conversation")
   })
 
   it("waits for an active file's trailing JSONL record to become complete", async () => {

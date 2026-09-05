@@ -23,15 +23,22 @@ const rawTransportChunkBytes = 256 * 1024
 it("collects Codex into the real Go APIs and retains finalized history", async () => {
   const fixture = await createFixture()
   let server: ChildProcess | undefined
+  let serverUrl: string | undefined
   try {
     const port = await availablePort()
-    const serverUrl = `http://127.0.0.1:${port}`
+    serverUrl = `http://127.0.0.1:${port}`
     await configureClient(fixture, serverUrl)
     server = startServer(port)
     await waitUntilHealthy(serverUrl, server)
 
-    const first = onlyJob(await collect(fixture, serverUrl))
+    const started = await startCollector(fixture, serverUrl)
+    expect(started).toMatchObject({ created: true, intervalMs: 10_000, concurrency: 2 })
+    expect(await startCollector(fixture, serverUrl)).toMatchObject({ created: false, pid: started.pid })
+    const first = await waitForCollectorSuccess(fixture, serverUrl)
     expect(first).toMatchObject({ observations: 1, rawChunks: 3 })
+    expect((await collectorStatus(fixture, serverUrl)).running).toBe(true)
+    expect(await stopCollector(fixture, serverUrl)).toEqual({ stopped: true })
+    expect((await collectorStatus(fixture, serverUrl)).running).toBe(false)
 
     const workspace = await getJSON<Workspace>(serverUrl, "/api/v1/workspace")
     const project = workspace.teams.find((team) => team.id === "e2e-team")
@@ -41,7 +48,11 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/e2e-project/memory")
     expect(memory.trail).toHaveLength(1)
     expect(memory.active).toHaveLength(1)
-    expect(memory.trail[0]).toMatchObject({ childThreadCount: 1, status: "active" })
+    expect(memory.trail[0]).toMatchObject({
+      title: "Find e2e-search-needle",
+      childThreadCount: 1,
+      status: "active"
+    })
     const sessionId = required(memory.trail[0], "captured Session").id
 
     const rootBefore = await getJSON<Conversation>(
@@ -61,7 +72,10 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     expect(child.events.map((event) => event.text)).toEqual(["child-e2e-result"])
 
     const search = await waitForSearch(serverUrl)
-    expect(search.results).toHaveLength(2)
+    expect(search.results.map((result) => result.text)).toEqual(expect.arrayContaining([
+      "Find e2e-search-needle",
+      "Use one idempotency key for e2e-search-needle"
+    ]))
 
     const archive = await getJSON<RawArchive>(
       serverUrl,
@@ -117,6 +131,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     expect(retained.session.status).toBe("ended")
     expect(retained.events).toHaveLength(4)
   } finally {
+    if (serverUrl !== undefined) await stopCollector(fixture, serverUrl).catch(() => undefined)
     await stopServer(server)
     await rm(fixture.root, { recursive: true, force: true })
   }
@@ -133,6 +148,9 @@ const createFixture = async () => {
   const adapterDirectory = join(root, "adapter-runtime")
   const configFile = join(root, "config.json")
   const collectorStateFile = join(root, "collector.json")
+  const collectorProcessFile = join(root, "collector-process.json")
+  const collectorStatusFile = join(root, "collector-status.json")
+  const collectorLogFile = join(root, "collector.log")
   const rootFile = join(sessionsDirectory, "root.jsonl")
   const childFile = join(sessionsDirectory, "child.jsonl")
   const rootSessionId = "e2e-root-session"
@@ -168,6 +186,9 @@ const createFixture = async () => {
     adapterDirectory,
     configFile,
     collectorStateFile,
+    collectorProcessFile,
+    collectorStatusFile,
+    collectorLogFile,
     rootFile,
     childFile,
     rootSessionId,
@@ -214,17 +235,54 @@ const collect = async (fixture: Fixture, serverUrl: string) => {
     "--project",
     "e2e-project",
     "--json"
-  ], repositoryRoot, {
-    ...process.env,
-    ATAPE_CONFIG_FILE: fixture.configFile,
-    ATAPE_COLLECTOR_STATE_FILE: fixture.collectorStateFile,
-    ATAPE_ADAPTER_DIRECTORY: fixture.adapterDirectory,
-    ATAPE_CODEX_HOME: fixture.codexHome,
-    ATAPE_REDACT_VALUES: JSON.stringify([fixture.secret]),
-    ATAPE_SERVER_URL: serverUrl
-  })
+  ], repositoryRoot, clientEnvironment(fixture, serverUrl))
   return JSON.parse(output) as CollectionReport
 }
+
+const startCollector = async (fixture: Fixture, serverUrl: string) => JSON.parse(await execute(
+  process.execPath,
+  [cliEntry, "start", "--interval", "10", "--concurrency", "2", "--json"],
+  repositoryRoot,
+  clientEnvironment(fixture, serverUrl)
+)) as { readonly created: boolean; readonly pid: number; readonly intervalMs: number; readonly concurrency: number }
+
+const stopCollector = async (fixture: Fixture, serverUrl: string) => JSON.parse(await execute(
+  process.execPath,
+  [cliEntry, "stop", "--json"],
+  repositoryRoot,
+  clientEnvironment(fixture, serverUrl)
+)) as { readonly stopped: boolean }
+
+const collectorStatus = async (fixture: Fixture, serverUrl: string) => JSON.parse(await execute(
+  process.execPath,
+  [cliEntry, "status", "--json"],
+  repositoryRoot,
+  clientEnvironment(fixture, serverUrl)
+)) as ManagedCollectorStatus
+
+const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const status = await collectorStatus(fixture, serverUrl)
+    const job = status.jobs.find((candidate) =>
+      candidate.projectId === "e2e-project" && candidate.adapterId === "codex")
+    if (job?.state === "healthy") return job
+    await delay(50)
+  }
+  throw new Error(`Managed Collector did not report success. Log: ${fixture.collectorLogFile}`)
+}
+
+const clientEnvironment = (fixture: Fixture, serverUrl: string): NodeJS.ProcessEnv => ({
+  ...process.env,
+  ATAPE_CONFIG_FILE: fixture.configFile,
+  ATAPE_COLLECTOR_STATE_FILE: fixture.collectorStateFile,
+  ATAPE_COLLECTOR_PROCESS_FILE: fixture.collectorProcessFile,
+  ATAPE_COLLECTOR_STATUS_FILE: fixture.collectorStatusFile,
+  ATAPE_COLLECTOR_LOG_FILE: fixture.collectorLogFile,
+  ATAPE_ADAPTER_DIRECTORY: fixture.adapterDirectory,
+  ATAPE_CODEX_HOME: fixture.codexHome,
+  ATAPE_REDACT_VALUES: JSON.stringify([fixture.secret]),
+  ATAPE_SERVER_URL: serverUrl
+})
 
 const onlyJob = (report: CollectionReport) => {
   expect(report.failures).toEqual([])
@@ -317,15 +375,19 @@ const getJSON = async <A>(serverUrl: string, path: string): Promise<A> => {
 }
 
 const waitForSearch = async (serverUrl: string) => {
+  let last: SearchPage | undefined
   for (let attempt = 0; attempt < 100; attempt++) {
     const page = await getJSON<SearchPage>(
       serverUrl,
       "/api/v1/projects/e2e-project/search?q=e2e-search-needle"
     )
-    if (page.results.length === 2) return page
+    last = page
+    const texts = new Set(page.results.map((result) => result.text))
+    if (texts.has("Find e2e-search-needle") &&
+      texts.has("Use one idempotency key for e2e-search-needle")) return page
     await delay(100)
   }
-  throw new Error("Search did not project the two E2E Events in time.")
+  throw new Error(`Search did not project the two E2E Events in time: ${JSON.stringify(last)}`)
 }
 
 const readRaw = async (serverUrl: string, archive: RawArchive) => {
@@ -406,6 +468,17 @@ type CollectionReport = {
   readonly failures: ReadonlyArray<unknown>
 }
 
+type ManagedCollectorStatus = {
+  readonly running: boolean
+  readonly jobs: ReadonlyArray<{
+    readonly projectId: string
+    readonly adapterId: string
+    readonly state: string
+    readonly observations?: number
+    readonly rawChunks?: number
+  }>
+}
+
 type Workspace = {
   readonly teams: ReadonlyArray<{
     readonly id: string
@@ -424,6 +497,7 @@ type ProjectMemory = {
 
 type SessionSummary = {
   readonly id: string
+  readonly title: string
   readonly status: string
   readonly childThreadCount: number
 }
@@ -437,7 +511,7 @@ type Conversation = {
   }>
 }
 
-type SearchPage = { readonly results: ReadonlyArray<unknown> }
+type SearchPage = { readonly results: ReadonlyArray<{ readonly text: string }> }
 
 type RawArchive = {
   readonly objects: ReadonlyArray<{

@@ -17,9 +17,10 @@ import {
   upgradeAdapters
 } from "./clientManagement"
 
-const fixture = () => {
+const fixture = (fixedUpgradeSpec?: string) => {
   let config: ClientConfig = emptyClientConfig()
   let version = "1.0.0"
+  const packageRequests: Array<string> = []
   const layer = Layer.mergeAll(
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({
       transact: (change) => change(structuredClone(config)).pipe(
@@ -37,25 +38,28 @@ const fixture = () => {
       })
     })),
     Layer.succeed(AdapterPackages, AdapterPackages.of({
-      install: (packageSpec) => Effect.sync(() => ({
-        packageName: "@atape/adapter-codex",
-        upgradeSpec: "@atape/adapter-codex",
-        version,
-        manifest: {
-          protocolVersion: AdapterProtocolVersion,
-          adapterId: "codex",
-          displayName: "Codex CLI",
-          entry: "./dist/index.js",
-          harnesses: ["codex"]
+      install: (packageSpec) => Effect.sync(() => {
+        packageRequests.push(packageSpec)
+        return {
+          packageName: "@atape/adapter-codex",
+          upgradeSpec: fixedUpgradeSpec ?? "@atape/adapter-codex",
+          version,
+          manifest: {
+            protocolVersion: AdapterProtocolVersion,
+            adapterId: "codex",
+            displayName: "Codex CLI",
+            entry: "./dist/index.js",
+            harnesses: ["codex"]
+          }
         }
-      })).pipe(Effect.tap(() => Effect.sync(() => {
+      }).pipe(Effect.tap(() => Effect.sync(() => {
         if (packageSpec.endsWith("@latest")) version = "1.1.0"
       })), Effect.map((installed) => ({ ...installed, version })))
     }))
   )
   const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore | ProjectLocator | AdapterPackages>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
-  return { run, read: () => config }
+  return { run, read: () => config, packageRequests }
 }
 
 describe("Client management Module", () => {
@@ -111,6 +115,16 @@ describe("Client management Module", () => {
     expect(enabled.adapterIds).toEqual(["codex"])
     expect(upgraded[0]?.version).toBe("1.1.0")
     expect((await client.run(inspectClient())).projects[0]?.adapterIds).toEqual(["codex"])
+  })
+
+  it("reuses an HTTPS package source during an explicit Adapter upgrade", async () => {
+    const packageURL = "https://github.example/releases/atape-adapter-codex-1.0.0.tgz"
+    const client = fixture(packageURL)
+    await client.run(installAdapter(packageURL))
+
+    await client.run(upgradeAdapters("codex"))
+
+    expect(client.packageRequests).toEqual([packageURL, packageURL])
   })
 
   it("removes only local Project configuration", async () => {

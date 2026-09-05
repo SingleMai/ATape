@@ -1,5 +1,5 @@
-import { Schema } from "effect"
-import { Option } from "effect"
+import { selectDefaultWorkspaceProject } from "@atape/domain"
+import { Option, Schema } from "effect"
 import {
   Navigate,
   Outlet,
@@ -18,6 +18,7 @@ import { ProjectMemoryView } from "./view/ProjectMemoryView"
 import { SessionReaderView } from "./view/SessionReaderView"
 import { RawDrawer } from "./view/RawDrawer"
 import { SearchView } from "./view/SearchView"
+import { WorkspaceHomeView } from "./view/WorkspaceHomeView"
 
 const SessionSearch = Schema.Struct({
   thread: Schema.optionalKey(Schema.String),
@@ -62,9 +63,24 @@ const RootLayout = () => {
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const match = pathname.match(/^\/teams\/([^/]+)\/projects\/([^/]+)/)
-  const teamId = match?.[1] ?? "acme-engineering"
-  const projectId = match?.[2] ?? "payments-api"
+  const teamId = match?.[1]
+  const projectId = match?.[2]
   const workspace = useWorkspacePresenter()
+  const openSearch = teamId === undefined || projectId === undefined ? undefined : () => {
+    if (pathname.endsWith("/search")) {
+      const input = document.getElementById("project-search")
+      if (input instanceof HTMLInputElement) {
+        input.focus()
+        input.select()
+      }
+      return
+    }
+    void navigate({
+      to: "/teams/$teamId/projects/$projectId/search",
+      params: { teamId, projectId },
+      search: { q: "", cursor: "" }
+    })
+  }
   return (
     <AppShell
       workspace={workspace.state}
@@ -77,21 +93,7 @@ const RootLayout = () => {
           params: { teamId: nextTeamId, projectId: nextProjectId }
         })
       }}
-      onOpenSearch={() => {
-        if (pathname.endsWith("/search")) {
-          const input = document.getElementById("project-search")
-          if (input instanceof HTMLInputElement) {
-            input.focus()
-            input.select()
-          }
-          return
-        }
-        void navigate({
-          to: "/teams/$teamId/projects/$projectId/search",
-          params: { teamId, projectId },
-          search: { q: "", cursor: "" }
-        })
-      }}
+      {...(openSearch === undefined ? {} : { onOpenSearch: openSearch })}
     >
       <Outlet />
     </AppShell>
@@ -103,14 +105,25 @@ const rootRoute = createRootRoute({ component: RootLayout })
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: () => (
-    <Navigate
-      to="/teams/$teamId/projects/$projectId"
-      params={{ teamId: "acme-engineering", projectId: "payments-api" }}
-      replace
-    />
-  )
+  component: WorkspaceHomeRoute
 })
+
+function WorkspaceHomeRoute() {
+  const workspace = useWorkspacePresenter()
+  if (workspace.state._tag === "Ready") {
+    const target = selectDefaultWorkspaceProject(workspace.state.value)
+    if (target !== undefined) {
+      return (
+        <Navigate
+          to="/teams/$teamId/projects/$projectId"
+          params={target}
+          replace
+        />
+      )
+    }
+  }
+  return <WorkspaceHomeView state={workspace.state} onRetry={workspace.reload} />
+}
 
 const projectRoute = createRoute({
   getParentRoute: () => rootRoute,

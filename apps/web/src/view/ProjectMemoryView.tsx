@@ -8,8 +8,25 @@ type Props = {
   readonly onRetry: () => void
 }
 
-const formatTime = (value: string) =>
-  new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+const formatAbsoluteTime = (value: string) =>
+  new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+
+const formatRelativeTime = (value: string) => {
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 1_000))
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 10) return "just now"
+  if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`
+  const minutes = Math.floor(elapsedSeconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return formatAbsoluteTime(value)
+}
+
+const PresenceTime = ({ value }: { readonly value: string }) => (
+  <time dateTime={value} title={formatAbsoluteTime(value)}>{formatRelativeTime(value)}</time>
+)
 
 const SessionCard = ({
   session,
@@ -22,19 +39,19 @@ const SessionCard = ({
     <div className="session-card-meta">
       <Avatar name={session.actor.name} />
       <span>
-        <strong>{session.actor.name} · {session.actor.harness}</strong>
-        <small>{session.branch} · {formatTime(session.updatedAt)}</small>
+        <strong>{session.actor.name} is working with {session.actor.harness}</strong>
+        <small>{session.branch || "No branch"} · updated <PresenceTime value={session.updatedAt} /></small>
       </span>
       <Badge
         className="session-status"
         tone={session.status === "active" ? "success" : "neutral"}
       >
-        {session.status}
+        Active now
       </Badge>
     </div>
     <h3>{session.title}</h3>
-    <p>{session.summary}</p>
-    <blockquote>{session.insight}</blockquote>
+    {session.summary && <p>{session.summary}</p>}
+    {session.insight && <blockquote>{session.insight}</blockquote>}
     <footer>
       <span>{session.eventCount} events{session.childThreadCount > 0 ? ` · ${session.childThreadCount} child thread` : ""}</span>
       <strong>Open conversation</strong>
@@ -53,12 +70,12 @@ const TrailItem = ({
     <Avatar name={session.actor.name} size="small" />
     <span className="trail-copy">
       <strong>{session.title}</strong>
-      <small>{session.insight}</small>
+      <small>{session.actor.name} · {session.actor.harness}{session.insight ? ` · ${session.insight}` : ""}</small>
     </span>
     <span className="trail-tags">
-      <Badge>{session.actor.harness}</Badge>
-      <Badge>{session.branch}</Badge>
-      <time>{formatTime(session.updatedAt)}</time>
+      <Badge tone={session.status === "active" ? "success" : "neutral"}>{session.status}</Badge>
+      {session.branch && <Badge>{session.branch}</Badge>}
+      <PresenceTime value={session.updatedAt} />
     </span>
   </button>
 )
@@ -88,7 +105,7 @@ export const ProjectMemoryView = ({ state, onOpenSession, onRetry }: Props) => {
           <p>Follow active work or retrace an earlier decision without asking someone to reconstruct the conversation.</p>
         </div>
         <span className="capture-status" aria-live="polite">
-          {state.refreshing ? "Syncing new events…" : `Auto-sync · Captured through ${formatTime(memory.capturedThrough)}`}
+          {state.refreshing ? "Syncing new events…" : <>Auto-sync · updated <PresenceTime value={memory.capturedThrough} /></>}
         </span>
       </div>
 
@@ -96,7 +113,7 @@ export const ProjectMemoryView = ({ state, onOpenSession, onRetry }: Props) => {
         <header className="section-heading">
           <div>
             <h2 id="happening-title">Happening now</h2>
-            <p>{memory.active.length} conversations recently updated</p>
+            <p>{memory.active.length} conversations updated in the last 5 minutes</p>
           </div>
         </header>
         <div className="active-grid">

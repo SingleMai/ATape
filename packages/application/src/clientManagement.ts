@@ -304,9 +304,9 @@ export const upgradeAdapters = Effect.fn("Client.upgradeAdapters")(function*(tar
           reason: "not_found", resource: "adapter", message: `Adapter ${adapterId} is no longer installed.`
         })
       }
-      const packageSpec = current.upgradeSpec.startsWith("file:")
-        ? current.upgradeSpec
-        : `${current.packageName}@latest`
+      const packageSpec = current.upgradeSpec === current.packageName
+        ? `${current.packageName}@latest`
+        : current.upgradeSpec
       const installed = yield* packages.install(packageSpec)
       if (installed.packageName !== current.packageName || installed.manifest.adapterId !== current.adapterId) {
         return yield* new ClientManagementError({

@@ -24,15 +24,18 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
 
-const fixture = async () => {
+const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => {
   const root = await mkdtemp(join(tmpdir(), "atape-cli-test-"))
   temporaryDirectories.push(root)
   const paths = {
     configFile: join(root, "config", "config.json"),
     collectorStateFile: join(root, "state", "collector.json"),
+    collectorProcessFile: join(root, "state", "collector-process.json"),
+    collectorStatusFile: join(root, "state", "collector-status.json"),
+    collectorLogFile: join(root, "state", "collector.log"),
     adapterDirectory: join(root, "data", "adapters")
   }
-  const layer = makeNodeClientLayer(paths)
+  const layer = makeNodeClientLayer(paths, process.env, fetchAdapterPackage)
   const run = <A, E>(effect: Effect.Effect<
     A,
     E,
@@ -147,4 +150,91 @@ describe("Node client Layers", () => {
       "lifecycle-ran"
     ))).rejects.toMatchObject({ code: "ENOENT" })
   })
+
+  it("preflights and installs an npm Adapter archive without running lifecycle scripts", async () => {
+    const client = await fixture()
+    const adapter = await packedAdapterFixture(client.root, "archive-fixture")
+
+    const installed = await client.run(installAdapter(adapter.tarball))
+
+    expect(installed.adapter).toMatchObject({
+      adapterId: "archive-fixture",
+      packageName: "@atape/adapter-archive-fixture",
+      version: "1.0.0",
+      upgradeSpec: `file:${await realpath(adapter.tarball)}`
+    })
+    await expect(stat(join(adapter.source, "lifecycle-ran"))).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(stat(join(
+      client.paths.adapterDirectory,
+      "node_modules",
+      "@atape",
+      "adapter-archive-fixture",
+      "lifecycle-ran"
+    ))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("rejects a malformed Adapter archive before creating the npm installation tree", async () => {
+    const client = await fixture()
+    const archive = join(client.root, "malformed-adapter.tgz")
+    await writeFile(archive, "this is not a gzip stream")
+
+    await expect(client.run(installAdapter(archive))).rejects.toMatchObject({ reason: "invalid_spec" })
+    await expect(stat(client.paths.adapterDirectory)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it("downloads an HTTPS Adapter archive into bounded staging and preserves its upgrade URL", async () => {
+    const packageRoot = await mkdtemp(join(tmpdir(), "atape-adapter-source-"))
+    temporaryDirectories.push(packageRoot)
+    const adapter = await packedAdapterFixture(packageRoot, "remote-fixture")
+    const archive = await readFile(adapter.tarball)
+    const requested: Array<string> = []
+    const fetchAdapterPackage = (async (input: string | URL | Request) => {
+      requested.push(String(input))
+      return new Response(new Uint8Array(archive), {
+        status: 200,
+        headers: { "content-length": String(archive.byteLength) }
+      })
+    }) as typeof fetch
+    const client = await fixture(fetchAdapterPackage)
+    const packageURL = "https://github.example/releases/download/v1/atape-adapter-remote-fixture-1.0.0.tgz"
+
+    const installed = await client.run(installAdapter(packageURL))
+
+    expect(requested).toEqual([packageURL])
+    expect(installed.adapter).toMatchObject({
+      adapterId: "remote-fixture",
+      packageName: "@atape/adapter-remote-fixture",
+      upgradeSpec: packageURL
+    })
+    const adapterDirectory = await stat(client.paths.adapterDirectory)
+    expect(adapterDirectory.isDirectory()).toBe(true)
+    const stagingEntries = await import("node:fs/promises").then(({ readdir }) => readdir(client.paths.adapterDirectory))
+    expect(stagingEntries.some((name) => name.startsWith(".download-"))).toBe(false)
+  })
 })
+
+const packedAdapterFixture = async (root: string, adapterId: string) => {
+  const source = join(root, `${adapterId}-source`)
+  const artifacts = join(root, `${adapterId}-artifacts`)
+  await Promise.all([mkdir(source, { recursive: true }), mkdir(artifacts, { recursive: true })])
+  await writeFile(join(source, "index.js"), "export const adapter = {}\n")
+  await writeFile(join(source, "package.json"), JSON.stringify({
+    name: `@atape/adapter-${adapterId}`,
+    version: "1.0.0",
+    type: "module",
+    scripts: { install: "node -e \"require('fs').writeFileSync('lifecycle-ran', 'yes')\"" },
+    atapeAdapter: {
+      protocolVersion: "atape.adapter.v1alpha1",
+      adapterId,
+      displayName: `${adapterId} Harness`,
+      entry: "./index.js",
+      harnesses: [adapterId]
+    }
+  }))
+  const packed = JSON.parse((await exec("npm", [
+    "pack", "--json", "--ignore-scripts", "--pack-destination", artifacts
+  ], { cwd: source })).stdout) as ReadonlyArray<{ filename: string }>
+  const filename = packed[0]?.filename
+  if (filename === undefined) throw new Error("npm pack did not produce an Adapter archive")
+  return { source, tarball: join(artifacts, filename) }
+}

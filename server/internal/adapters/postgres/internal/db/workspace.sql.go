@@ -14,7 +14,10 @@ const listWorkspaceProjects = `-- name: ListWorkspaceProjects :many
 SELECT projects.id, projects.team_id, projects.name, projects.project_type,
        projects.captured_through,
        COUNT(sessions.id)::bigint AS session_count,
-       COUNT(sessions.id) FILTER (WHERE sessions.status = 'active')::bigint AS active_session_count
+       COUNT(sessions.id) FILTER (
+           WHERE sessions.status = 'active'
+             AND sessions.updated_at >= $1::timestamptz
+       )::bigint AS active_session_count
 FROM canonical_projects projects
 LEFT JOIN canonical_sessions sessions ON sessions.project_id = projects.id
 GROUP BY projects.id
@@ -31,8 +34,8 @@ type ListWorkspaceProjectsRow struct {
 	ActiveSessionCount int64
 }
 
-func (q *Queries) ListWorkspaceProjects(ctx context.Context) ([]ListWorkspaceProjectsRow, error) {
-	rows, err := q.db.Query(ctx, listWorkspaceProjects)
+func (q *Queries) ListWorkspaceProjects(ctx context.Context, activeSince time.Time) ([]ListWorkspaceProjectsRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceProjects, activeSince)
 	if err != nil {
 		return nil, err
 	}

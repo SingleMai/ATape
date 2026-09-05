@@ -20,6 +20,8 @@ const CursorVersion = 1 as const
 const MaxCursorBytes = 16_000
 const MaxMetadataBytes = 1024 * 1024
 const MaxJsonlRecordBytes = 4 * 1024 * 1024
+const MaxTitleScanBytes = 4 * 1024 * 1024
+const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
 const MaxFilesPerSession = 100
 
@@ -229,10 +231,11 @@ const collectActiveSession = async (
 
   const observedAt = new Date(active.selectedModifiedMs).toISOString()
   const childCount = threads.length - 1
+  const title = await deriveSessionTitle(active, currentFiles, request.signal)
   const session: AdapterObservation["session"] = {
     sourceSessionId: active.sessionId,
     revision: active.revision,
-    title: `Codex session ${active.sessionId.slice(0, 8)}`,
+    title,
     summary: childCount === 0 ? "" : `${childCount} subagent Thread${childCount === 1 ? "" : "s"}`,
     insight: "",
     actor: { name: archive.context.user.id, harness: "Codex" },
@@ -603,6 +606,37 @@ const mapCompletedItem = (
     occurredAt: validTimestamp(envelope.timestamp) ? envelope.timestamp : new Date(0).toISOString(),
     update
   }
+}
+
+const deriveSessionTitle = async (
+  active: ActiveCursor,
+  currentFiles: ReadonlyMap<string, RolloutFile>,
+  signal: AbortSignal
+) => {
+  let remaining = MaxTitleScanBytes
+  for (const snapshot of active.files) {
+    if (snapshot.threadId !== active.sessionId || remaining <= 0) continue
+    const current = currentFiles.get(snapshot.sourceObjectId)
+    if (current === undefined || current.generation !== snapshot.generation) continue
+    const end = Math.min(snapshot.size, remaining)
+    for await (const line of readLines(current.path, 0, end, signal)) {
+      const decoded = Schema.decodeUnknownOption(CompletedItemEnvelopeSchema)(parseJSON(line.content))
+      if (Option.isNone(decoded) || decoded.value.payload.thread_id !== active.sessionId) continue
+      const item = record(decoded.value.payload.item)
+      if (stringValue(item?.type) !== "UserMessage") continue
+      const title = normalizeTitle(itemText(item?.content))
+      if (title !== "") return title
+    }
+    remaining -= end
+  }
+  return "Untitled Codex conversation"
+}
+
+const normalizeTitle = (value: string) => {
+  const normalized = value.replace(/\s+/gu, " ").trim()
+  const characters = [...normalized]
+  if (characters.length <= MaxTitleCharacters) return normalized
+  return `${characters.slice(0, MaxTitleCharacters - 1).join("")}…`
 }
 
 const mapItemUpdate = (item: Record<string, unknown>, fallbackId: string): AcpSessionUpdate | undefined => {

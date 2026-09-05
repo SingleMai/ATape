@@ -12,5 +12,9 @@
 | [0008](0008-node-cli-and-on-demand-adapters.md) | Accepted | Effect-powered Node CLI with atomic local config and on-demand npm Adapter packages |
 | [0009](0009-pull-adapter-runtime-and-checkpointed-collector.md) | Accepted | Bounded pull Adapter runtime with redaction, separate Canonical/Raw commits, and CAS checkpoints |
 | [0010](0010-compose-self-hosting-topology.md) | Accepted | Same-origin Compose self-hosting with Nginx, Go, PostgreSQL, and separate durable Raw storage |
+| [0011](0011-managed-local-collector-and-session-presence.md) | Accepted | CLI-managed background collection, observable Project/Adapter status, and shared Session presence semantics |
+| [0012](0012-single-bundle-cli-distribution.md) | Accepted | One installable CLI bundle with independently loaded Adapter packages and tarball-level release verification |
+| [0013](0013-bounded-adapter-artifact-distribution.md) | Accepted | Bounded inert `.tgz`/HTTPS Adapter acquisition and separate checksummed CLI/Adapter release artifacts |
+| [0014](0014-mit-and-tag-driven-package-publication.md) | Accepted | MIT licensing and recoverable tag-driven npm/GitHub publication from one verified artifact set |
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.

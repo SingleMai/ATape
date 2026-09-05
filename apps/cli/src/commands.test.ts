@@ -15,6 +15,11 @@ afterEach(async () => {
 })
 
 describe("atape CLI", () => {
+  it("reports a development version when run from TypeScript source", async () => {
+    const result = await exec(process.execPath, [cli, "--version"])
+    expect(result.stdout.trim()).toBe("ATape development")
+  })
+
   it("completes non-interactive Project setup and listing", async () => {
     const root = await mkdtemp(join(tmpdir(), "atape-cli-command-"))
     temporaryDirectories.push(root)

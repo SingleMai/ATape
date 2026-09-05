@@ -21,11 +21,20 @@ import { access, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } 
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Layer, Schema } from "effect"
+import {
+  downloadAdapterPackage,
+  inspectLocalAdapterPackage,
+  type AdapterPackageFetch
+} from "./adapterPackageSource.ts"
 import { makeNodeCollectorLayer } from "./collectorLayers.ts"
+import { makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
 
 export type NodeClientPaths = {
   readonly configFile: string
   readonly collectorStateFile: string
+  readonly collectorProcessFile: string
+  readonly collectorStatusFile: string
+  readonly collectorLogFile: string
   readonly adapterDirectory: string
 }
 
@@ -36,18 +45,23 @@ export const defaultNodeClientPaths = (environment: NodeJS.ProcessEnv = process.
   return {
     configFile: environment.ATAPE_CONFIG_FILE || join(configRoot, "atape", "config.json"),
     collectorStateFile: environment.ATAPE_COLLECTOR_STATE_FILE || join(stateRoot, "atape", "collector.json"),
+    collectorProcessFile: environment.ATAPE_COLLECTOR_PROCESS_FILE || join(stateRoot, "atape", "collector-process.json"),
+    collectorStatusFile: environment.ATAPE_COLLECTOR_STATUS_FILE || join(stateRoot, "atape", "collector-status.json"),
+    collectorLogFile: environment.ATAPE_COLLECTOR_LOG_FILE || join(stateRoot, "atape", "collector.log"),
     adapterDirectory: environment.ATAPE_ADAPTER_DIRECTORY || join(dataRoot, "atape", "adapters")
   }
 }
 
 export const makeNodeClientLayer = (
   paths: NodeClientPaths,
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch
 ) => Layer.mergeAll(
   makeConfigStoreLayer(paths.configFile),
   makeProjectLocatorLayer(),
-  makeAdapterPackagesLayer(paths.adapterDirectory),
-  makeNodeCollectorLayer(paths, environment)
+  makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
+  makeNodeCollectorLayer(paths, environment),
+  makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "", environment)
 )
 
 export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
@@ -227,18 +241,40 @@ const findGitRoot = (path: string): Promise<string | undefined> => new Promise((
   })
 })
 
-export const makeAdapterPackagesLayer = (adapterDirectory: string) => Layer.succeed(
+export const makeAdapterPackagesLayer = (
+  adapterDirectory: string,
+  fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch
+) => Layer.succeed(
   AdapterPackages,
   AdapterPackages.of({
-    install: (packageSpec) => installAdapterPackage(adapterDirectory, packageSpec)
+    install: (packageSpec) => installAdapterPackage(adapterDirectory, packageSpec, fetchAdapterPackage)
   })
 )
 
 const installAdapterPackage = (
   adapterDirectory: string,
-  packageSpec: string
+  packageSpec: string,
+  fetchAdapterPackage: AdapterPackageFetch
+): Effect.Effect<InstalledAdapterPackage, AdapterPackageError> => Effect.acquireUseRelease(
+  acquirePackageSource(adapterDirectory, packageSpec, fetchAdapterPackage),
+  (source) => installAcquiredAdapterPackage(adapterDirectory, packageSpec, source),
+  (source) => Effect.promise(() => source.release().catch(() => undefined))
+)
+
+const installAcquiredAdapterPackage = (
+  adapterDirectory: string,
+  packageSpec: string,
+  source: PackageSource
 ): Effect.Effect<InstalledAdapterPackage, AdapterPackageError> => Effect.gen(function*() {
-  const request = yield* resolvePackageRequest(packageSpec)
+  const preflight = source.packageJSON === undefined
+    ? undefined
+    : yield* decodePackageManifest(packageSpec, source.packageJSON)
+  const packageName = source.packageName ?? preflight?.name
+  if (packageName === undefined) {
+    return yield* new AdapterPackageError({
+      reason: "manifest", packageSpec, message: "Could not determine the Adapter package name."
+    })
+  }
   yield* Effect.tryPromise({
     try: async () => {
       await mkdir(adapterDirectory, { recursive: true, mode: 0o700 })
@@ -250,7 +286,7 @@ const installAdapterPackage = (
       }
       await execFilePromise("npm", [
         "install", "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund",
-        "--prefix", adapterDirectory, request.installSpec
+        "--prefix", adapterDirectory, source.installSpec
       ], 120_000)
     },
     catch: (cause) => new AdapterPackageError({
@@ -258,17 +294,17 @@ const installAdapterPackage = (
     })
   })
 
-  const packageRoot = join(adapterDirectory, "node_modules", ...request.packageName.split("/"))
+  const packageRoot = join(adapterDirectory, "node_modules", ...packageName.split("/"))
   const packageJSON = yield* Effect.tryPromise({
     try: async () => JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as unknown,
     catch: (cause) => new AdapterPackageError({
-      reason: "io", packageSpec, message: errorMessage(`Could not read ${request.packageName} metadata`, cause)
+      reason: "io", packageSpec, message: errorMessage(`Could not read ${packageName} metadata`, cause)
     })
   })
   const decoded = yield* decodePackageManifest(packageSpec, packageJSON)
-  if (decoded.name !== request.packageName) {
+  if (decoded.name !== packageName) {
     return yield* new AdapterPackageError({
-      reason: "manifest", packageSpec, message: `Installed package name ${decoded.name} does not match ${request.packageName}.`
+      reason: "manifest", packageSpec, message: `Installed package name ${decoded.name} does not match ${packageName}.`
     })
   }
   const entryPath = resolve(packageRoot, decoded.manifest.entry)
@@ -289,25 +325,52 @@ const installAdapterPackage = (
   })
   return {
     packageName: decoded.name,
-    upgradeSpec: request.upgradeSpec,
+    upgradeSpec: source.upgradeSpec,
     version: decoded.version,
     manifest: decoded.manifest
   }
 })
 
-type PackageRequest = {
-  readonly packageName: string
+type PackageSource = {
+  readonly packageName?: string
+  readonly packageJSON?: unknown
   readonly installSpec: string
   readonly upgradeSpec: string
+  readonly release: () => Promise<void>
 }
 
 const packageNamePattern = /^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/
 
-const resolvePackageRequest = (packageSpec: string): Effect.Effect<PackageRequest, AdapterPackageError> => {
+const acquirePackageSource = (
+  adapterDirectory: string,
+  packageSpec: string,
+  fetchAdapterPackage: AdapterPackageFetch
+): Effect.Effect<PackageSource, AdapterPackageError> => {
   const registry = packageSpec.match(/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)(?:@[^\s/]+)?$/)
   if (registry?.[1]) {
     return Effect.succeed({
-      packageName: registry[1], installSpec: packageSpec, upgradeSpec: registry[1]
+      packageName: registry[1],
+      installSpec: packageSpec,
+      upgradeSpec: registry[1],
+      release: noRelease
+    })
+  }
+  if (packageSpec.startsWith("https://")) {
+    return Effect.tryPromise({
+      try: async () => {
+        const downloaded = await downloadAdapterPackage(packageSpec, adapterDirectory, fetchAdapterPackage)
+        return {
+          packageJSON: downloaded.packageJSON,
+          installSpec: `file:${downloaded.path}`,
+          upgradeSpec: packageSpec,
+          release: downloaded.release
+        }
+      },
+      catch: (cause) => new AdapterPackageError({
+        reason: "invalid_spec",
+        packageSpec,
+        message: errorMessage("Could not acquire the remote Adapter package", cause)
+      })
     })
   }
   const isFile = packageSpec.startsWith("file:") || packageSpec.startsWith(".") || isAbsolute(packageSpec)
@@ -315,7 +378,7 @@ const resolvePackageRequest = (packageSpec: string): Effect.Effect<PackageReques
     return Effect.fail(new AdapterPackageError({
       reason: "invalid_spec",
       packageSpec,
-      message: "Adapter package must be an npm package name or a local package directory."
+      message: "Adapter package must be an npm package name, a local package directory/archive, or an HTTPS archive URL."
     }))
   }
   const requestedPath = packageSpec.startsWith("file:") ? packageSpec.slice("file:".length) : packageSpec
@@ -323,15 +386,21 @@ const resolvePackageRequest = (packageSpec: string): Effect.Effect<PackageReques
     try: async () => {
       const packagePath = await realpath(resolve(requestedPath))
       const metadata = await stat(packagePath)
-      if (!metadata.isDirectory()) throw new Error("local Adapter package is not a directory")
-      const value = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8")) as Record<string, unknown>
-      if (typeof value.name !== "string" || !packageNamePattern.test(value.name)) {
-        throw new Error("local Adapter package has an invalid name")
+      if (metadata.isDirectory()) {
+        const packageJSON = JSON.parse(await readFile(join(packagePath, "package.json"), "utf8")) as unknown
+        return {
+          packageJSON,
+          installSpec: `file:${packagePath}`,
+          upgradeSpec: `file:${packagePath}`,
+          release: noRelease
+        }
       }
+      const archive = await inspectLocalAdapterPackage(packagePath)
       return {
-        packageName: value.name,
-        installSpec: `file:${packagePath}`,
-        upgradeSpec: `file:${packagePath}`
+        packageJSON: archive.packageJSON,
+        installSpec: `file:${archive.path}`,
+        upgradeSpec: `file:${archive.path}`,
+        release: noRelease
       }
     },
     catch: (cause) => new AdapterPackageError({
@@ -352,6 +421,11 @@ const decodePackageManifest = (packageSpec: string, value: unknown) => Effect.ge
       reason: "manifest", packageSpec, message: "Adapter package.json requires name and version."
     })
   }
+  if (!packageNamePattern.test(record.name)) {
+    return yield* new AdapterPackageError({
+      reason: "manifest", packageSpec, message: "Adapter package.json has an invalid package name."
+    })
+  }
   const manifest = yield* Schema.decodeUnknownEffect(AdapterManifestSchema)(record.atapeAdapter).pipe(
     Effect.mapError((error) => new AdapterPackageError({
       reason: "manifest", packageSpec, message: `Invalid atapeAdapter manifest: ${String(error)}`
@@ -364,6 +438,8 @@ const decodePackageManifest = (packageSpec: string, value: unknown) => Effect.ge
   }
   return { name: record.name, version: record.version, manifest }
 })
+
+const noRelease = async () => undefined
 
 const execFilePromise = (file: string, args: ReadonlyArray<string>, timeout: number) => new Promise<void>((resolveResult, reject) => {
   execFile(file, [...args], { timeout, maxBuffer: 4 * 1024 * 1024 }, (error) => {

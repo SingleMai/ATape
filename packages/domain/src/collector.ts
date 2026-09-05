@@ -10,6 +10,7 @@ export const CanonicalProfileVersion = "atape.acp-centered.v1alpha1" as const
 export const RawIngestionProtocolVersion = "atape.raw.v1alpha1" as const
 export const RawTransportChunkBytes = 256 * 1024
 export const CollectorStateVersion = 1 as const
+export const CollectorRunStateVersion = 1 as const
 
 export type AdapterCollectionLimitValues = {
   readonly observations: number
@@ -314,6 +315,43 @@ export const emptyCollectorState = (installationId: string): CollectorState => (
   version: CollectorStateVersion,
   installationId,
   checkpoints: []
+})
+
+export const CollectorJobRunStatus = Schema.Struct({
+  projectId: Schema.String,
+  adapterId: Schema.String,
+  lastAttemptAt: Schema.String,
+  lastSuccessAt: Schema.optionalKey(Schema.String),
+  lastFailureAt: Schema.optionalKey(Schema.String),
+  failureMessage: Schema.optionalKey(Schema.String),
+  retryable: Schema.optionalKey(Schema.Boolean),
+  pages: Schema.optionalKey(Schema.Number),
+  observations: Schema.optionalKey(Schema.Number),
+  canonicalBatches: Schema.optionalKey(Schema.Number),
+  rawChunks: Schema.optionalKey(Schema.Number),
+  redactions: Schema.optionalKey(Schema.Number),
+  hasMore: Schema.optionalKey(Schema.Boolean)
+})
+export type CollectorJobRunStatus = typeof CollectorJobRunStatus.Type
+
+export const CollectorRunFailure = Schema.Struct({
+  occurredAt: Schema.String,
+  message: Schema.String
+})
+export type CollectorRunFailure = typeof CollectorRunFailure.Type
+
+export const CollectorRunState = Schema.Struct({
+  version: Schema.Literal(CollectorRunStateVersion),
+  lastCycleStartedAt: Schema.optionalKey(Schema.String),
+  lastCycleCompletedAt: Schema.optionalKey(Schema.String),
+  collectorFailure: Schema.optionalKey(CollectorRunFailure),
+  jobs: Schema.Array(CollectorJobRunStatus)
+})
+export type CollectorRunState = typeof CollectorRunState.Type
+
+export const emptyCollectorRunState = (): CollectorRunState => ({
+  version: CollectorRunStateVersion,
+  jobs: []
 })
 
 export const CanonicalSource = Schema.Struct({

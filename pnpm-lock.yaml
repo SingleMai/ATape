@@ -15,6 +15,9 @@ catalogs:
     '@vitejs/plugin-react':
       specifier: 6.1.1
       version: 6.1.1
+    esbuild:
+      specifier: 0.28.2
+      version: 0.28.2
     typescript:
       specifier: 7.0.2
       version: 7.0.2
@@ -46,10 +49,6 @@ importers:
   .: {}
 
   adapters/codex:
-    dependencies:
-      effect:
-        specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112
     devDependencies:
       '@atape/domain':
         specifier: workspace:*
@@ -57,6 +56,12 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.112
+      esbuild:
+        specifier: catalog:build
+        version: 0.28.2
       typescript:
         specifier: catalog:build
         version: 7.0.2
@@ -65,20 +70,22 @@ importers:
         version: 5.0.0(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.13))
 
   apps/cli:
-    dependencies:
+    devDependencies:
       '@atape/application':
         specifier: workspace:*
         version: link:../../packages/application
       '@atape/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      effect:
-        specifier: 'catalog:'
-        version: 4.0.0-rc.112
-    devDependencies:
       '@types/node':
         specifier: ^24.0.0
         version: 24.13.3
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-rc.112
+      esbuild:
+        specifier: catalog:build
+        version: 0.28.2
       typescript:
         specifier: catalog:build
         version: 7.0.2
@@ -1358,7 +1365,6 @@ snapshots:
       '@esbuild/win32-arm64': 0.28.2
       '@esbuild/win32-ia32': 0.28.2
       '@esbuild/win32-x64': 0.28.2
-    optional: true
 
   estree-walker@3.0.3:
     dependencies:

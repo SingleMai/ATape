@@ -11,7 +11,7 @@ import (
 )
 
 type DirectoryStore interface {
-	Workspace(context.Context) (canonical.WorkspaceSnapshot, error)
+	Workspace(context.Context, time.Time) (canonical.WorkspaceSnapshot, error)
 }
 
 type Project struct {
@@ -35,14 +35,15 @@ type Workspace struct {
 
 type Directory struct {
 	store DirectoryStore
+	now   func() time.Time
 }
 
 func NewDirectory(store DirectoryStore) *Directory {
-	return &Directory{store: store}
+	return &Directory{store: store, now: time.Now}
 }
 
 func (d *Directory) Open(ctx context.Context) (Workspace, error) {
-	snapshot, err := d.store.Workspace(ctx)
+	snapshot, err := d.store.Workspace(ctx, canonical.ActiveSessionCutoff(d.now()))
 	if err != nil {
 		return Workspace{}, err
 	}

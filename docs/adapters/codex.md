@@ -6,15 +6,22 @@ Unknown or newly introduced Codex records therefore remain available in Raw whil
 
 ## Install and enable
 
-From this repository, install the ready-to-run local package and enable it for a configured Project:
+From this repository, build and install the ready-to-run local package, then enable it for a configured Project:
 
 ```sh
+pnpm --filter @atape/adapter-codex build
 pnpm atape adapters install ./adapters/codex
 pnpm atape adapters enable codex --project payments-api
-pnpm atape collect --once --project payments-api
+pnpm atape start
 ```
 
-The package uses Node.js 24's type stripping and does not require a separate build step. Installing it does not start a process. The Collector Host imports it only while collecting a Project for which `codex` is enabled.
+For a packaged release, install the independently bundled Adapter instead:
+
+```sh
+atape adapters install ./atape-adapter-codex-0.1.0.tgz
+```
+
+Maintainers can build and smoke-test that artifact with `pnpm test:adapter-package`, or verify it together with the packaged CLI using `pnpm test:release`. Installing it does not start a process. The Collector Host imports it only while collecting a Project for which `codex` is enabled.
 
 ## Source discovery and Project boundary
 
@@ -30,11 +37,13 @@ For an ordinary-directory Project, the metadata `cwd` must resolve to the Projec
 
 ## Session and subagent projection
 
+- The Session title is a whitespace-normalized, bounded projection of the first root-thread `UserMessage`. A bounded scan that finds no user message produces `Untitled Codex conversation`; provider Session IDs are never used as display titles.
 - `session_meta.payload.session_id` identifies the logical ATape Session. When absent on a root rollout, `payload.id` is used.
 - `session_meta.payload.id` identifies the Thread represented by that physical rollout file.
 - Codex `thread_spawn.parent_thread_id` and `agent_nickname` establish the subagent parent and label.
 - The Adapter emits one derived parent `tool_call` with `childSourceThreadId` for each discovered subagent Thread.
 - A subagent rollout may contain copied parent history. Only `item_completed` events whose `thread_id` equals that rollout's own Thread ID become Canonical events, preventing copied history from appearing twice.
+- A Session whose files are all under `archived_sessions/` is reported as `ended`; an unarchived Session is reported as open. ATape's read Modules present an open Session as `active` only for five minutes after its latest update and then age it to `idle` without rewriting Canonical history.
 
 Completed Codex items map as follows:
 

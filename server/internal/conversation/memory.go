@@ -106,10 +106,11 @@ func (e *NotFoundError) Error() string {
 // and capture-status semantics behind two read operations.
 type Memory struct {
 	store SnapshotStore
+	now   func() time.Time
 }
 
 func NewMemory(store SnapshotStore) *Memory {
-	return &Memory{store: store}
+	return &Memory{store: store, now: time.Now}
 }
 
 func (m *Memory) OpenProject(ctx context.Context, projectID string) (ProjectMemory, error) {
@@ -135,8 +136,9 @@ func (m *Memory) OpenProject(ctx context.Context, projectID string) (ProjectMemo
 	sort.Slice(snapshot.Sessions, func(left, right int) bool {
 		return snapshot.Sessions[left].Session.UpdatedAt.After(snapshot.Sessions[right].Session.UpdatedAt)
 	})
+	now := m.now()
 	for _, stored := range snapshot.Sessions {
-		summary := sessionSummary(stored)
+		summary := sessionSummary(stored, now)
 		memory.Trail = append(memory.Trail, summary)
 		if summary.Status == "active" {
 			memory.Active = append(memory.Active, summary)
@@ -210,7 +212,7 @@ func (m *Memory) OpenConversation(
 			Title:         snapshot.Session.Title,
 			Actor:         actor(snapshot.Session.Actor),
 			Branch:        snapshot.Session.Branch,
-			Status:        snapshot.Session.Status,
+			Status:        canonical.EffectiveSessionStatus(snapshot.Session.Status, snapshot.Session.UpdatedAt, m.now()),
 			CaptureStatus: snapshot.Session.CaptureStatus,
 			UpdatedAt:     formatTime(snapshot.Session.UpdatedAt),
 		},
@@ -225,7 +227,7 @@ func (m *Memory) OpenConversation(
 	}, nil
 }
 
-func sessionSummary(stored canonical.ProjectSessionSnapshot) SessionSummary {
+func sessionSummary(stored canonical.ProjectSessionSnapshot, now time.Time) SessionSummary {
 	return SessionSummary{
 		ID:               stored.Session.ID,
 		Title:            stored.Session.Title,
@@ -233,7 +235,7 @@ func sessionSummary(stored canonical.ProjectSessionSnapshot) SessionSummary {
 		Insight:          stored.Session.Insight,
 		Actor:            actor(stored.Session.Actor),
 		Branch:           stored.Session.Branch,
-		Status:           stored.Session.Status,
+		Status:           canonical.EffectiveSessionStatus(stored.Session.Status, stored.Session.UpdatedAt, now),
 		UpdatedAt:        formatTime(stored.Session.UpdatedAt),
 		EventCount:       stored.EventCount,
 		ChildThreadCount: stored.ChildThreadCount,

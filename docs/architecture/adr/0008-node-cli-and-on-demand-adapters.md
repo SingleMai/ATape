@@ -39,6 +39,7 @@ ATape v0.1 uses a TypeScript/Node CLI powered by Effect and independently instal
 - `atape adapters enable/disable` changes one Project's configured Adapter IDs. It does not start or stop a daemon.
 - `atape adapters upgrade --all` upgrades installed packages sequentially. npm mutates one shared installation tree, so concurrent package-manager writes are intentionally avoided.
 - Disabled or unrelated Adapters are not imported. There is no persistent process per Adapter.
+- `atape start`, `stop`, and `status` manage one detached Collector Host as specified by ADR-0011. The Host remains separate from Adapter lifetime; enabled Adapter packages are still loaded only inside bounded collection jobs.
 
 The first slice implements the management plane. The following Collector Host slice will define the executable Adapter Interface, dynamically load only enabled packages, bound collection concurrency, redact secrets, and submit Canonical and Raw observations every 10–30 seconds.
 

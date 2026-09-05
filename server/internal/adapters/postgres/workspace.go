@@ -2,12 +2,13 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) Workspace(ctx context.Context) (canonical.WorkspaceSnapshot, error) {
+func (s *Store) Workspace(ctx context.Context, activeSince time.Time) (canonical.WorkspaceSnapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.WorkspaceSnapshot{}, err
 	}
@@ -21,7 +22,7 @@ func (s *Store) Workspace(ctx context.Context) (canonical.WorkspaceSnapshot, err
 	if err != nil {
 		return canonical.WorkspaceSnapshot{}, persist("list Workspace teams", err)
 	}
-	projectRows, err := queries.ListWorkspaceProjects(ctx)
+	projectRows, err := queries.ListWorkspaceProjects(ctx, activeSince)
 	if err != nil {
 		return canonical.WorkspaceSnapshot{}, persist("list Workspace projects", err)
 	}

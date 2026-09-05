@@ -40,6 +40,7 @@ ATape v0.1 uses a Host-owned, in-process, bounded pull Interface.
 - The Host runs at most four Project/Adapter jobs concurrently by default, never more than eight, drains at most twenty pages per job per cycle, and owns cancellation and interval scheduling.
 - Client identity contains an explicit stable Team user ID plus a locally generated installation ID. Local paths, cursors, and Raw progress are never uploaded as Project fields.
 - A continuous collector defaults to a 30-second interval. Ten seconds is the minimum supported interval; `--once` performs one bounded cycle for automation and diagnosis.
+- One CLI-managed detached Host may own those cycles as specified by ADR-0011. Project/Adapter run status is persisted separately from checkpoints and contains no conversation content.
 
 ## Consequences
 

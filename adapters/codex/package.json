@@ -2,27 +2,52 @@
   "name": "@atape/adapter-codex",
   "version": "0.1.0",
   "description": "ATape Adapter for local Codex rollout archives",
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SingleMai/ATape.git",
+    "directory": "adapters/codex"
+  },
+  "homepage": "https://github.com/SingleMai/ATape#readme",
+  "bugs": {
+    "url": "https://github.com/SingleMai/ATape/issues"
+  },
+  "keywords": [
+    "atape",
+    "adapter",
+    "codex",
+    "agent",
+    "conversation"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "engines": {
     "node": ">=24"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./dist/index.js"
   },
   "files": [
-    "src/index.ts",
-    "src/codexArchive.ts"
+    "dist/index.js",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "pack:release": "node scripts/pack.mjs",
+    "prepack": "node scripts/build.mjs",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "effect": "4.0.0-rc.112"
+    "typecheck": "tsc -p tsconfig.json",
+    "verify:package": "node scripts/verify-package.mjs"
   },
   "devDependencies": {
     "@atape/domain": "workspace:*",
     "@types/node": "^24.0.0",
+    "esbuild": "catalog:build",
+    "effect": "catalog:",
     "typescript": "catalog:build",
     "vitest": "catalog:build"
   },
@@ -30,7 +55,7 @@
     "protocolVersion": "atape.adapter.v1alpha1",
     "adapterId": "codex",
     "displayName": "Codex",
-    "entry": "./src/index.ts",
+    "entry": "./dist/index.js",
     "harnesses": [
       "codex"
     ]

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install the pinned pnpm workspace
+        uses: pnpm/setup@v2
+        with:
+          require-lockfile: true
+          cache: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache: true
+
+      - name: Run repository checks
+        run: pnpm check
+
+      - name: Build production artifacts
+        run: pnpm build
+
+      - name: Verify the exact release tarballs
+        run: pnpm test:release
+
+      - name: Run PostgreSQL integration tests
+        run: pnpm test:go:integration
