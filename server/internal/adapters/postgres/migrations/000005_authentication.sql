@@ -168,7 +168,7 @@ CREATE TABLE auth_cli_credentials (
     authorization_id UUID NOT NULL UNIQUE,
     secret_digest BYTEA NOT NULL UNIQUE CHECK (octet_length(secret_digest) = 32),
     digest_version TEXT NOT NULL CHECK (digest_version = 'sha256-v1'),
-    capability_version TEXT NOT NULL CHECK (octet_length(capability_version) BETWEEN 1 AND 100),
+    capability_version TEXT NOT NULL CHECK (capability_version = 'atape-cli.v1'),
     status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     last_used_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),

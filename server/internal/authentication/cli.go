@@ -17,8 +17,13 @@ import (
 const (
 	deviceUserCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	deviceUserCodeLength   = 8
-	cliCapabilityVersion   = "atape-cli.v1"
 )
+
+// CLIClientLabel is the stable client identity shown on browser approval views.
+const CLIClientLabel = "atape-cli"
+
+// CLICapabilityVersion is the maximum authority carried by a CLI Credential.
+const CLICapabilityVersion = "atape-cli.v1"
 
 func (m *Module) CreateCLIDeviceAuthorization(ctx context.Context) (CLIDeviceAuthorization, error) {
 	if err := ctx.Err(); err != nil {
@@ -258,9 +263,8 @@ func (m *Module) ResolveCLIDeviceAuthorization(
 		}
 		return resolveCLIResult{view: CLIAuthorizationView{
 			ID: domainUUID(grant.ID), UserCode: displayDeviceUserCode(normalized),
-			ExpiresAt: grant.ExpiresAt, ClientLabel: "atape-cli",
-			Permission: "Capture and read ATape data as your User",
-			Status:     grant.Status,
+			ExpiresAt: grant.ExpiresAt, ClientLabel: CLIClientLabel,
+			Capability: CLICapabilityVersion, Status: grant.Status,
 		}}, nil
 	})
 	if err != nil {
@@ -483,7 +487,7 @@ func (m *Module) PollCLIDeviceAuthorization(
 		created, err := queries.InsertCLICredential(ctx, authdb.InsertCLICredentialParams{
 			ID: mustDatabaseUUID(credentialID), UserID: user.ID,
 			AuthorizationID: authorization.ID, SecretDigest: credentialDigest[:],
-			CapabilityVersion: cliCapabilityVersion,
+			CapabilityVersion: CLICapabilityVersion,
 		})
 		if err != nil {
 			return CLICredentialGrant{}, err
@@ -495,7 +499,7 @@ func (m *Module) PollCLIDeviceAuthorization(
 		}
 		result := CLICredentialGrant{
 			CredentialID: credentialID, CredentialSecret: credentialSecret,
-			Capability: cliCapabilityVersion, CreatedAt: created.CreatedAt,
+			Capability: CLICapabilityVersion, CreatedAt: created.CreatedAt,
 			User: userFromRow(user),
 		}
 		issued = issuedCredentialAttempt{
@@ -535,7 +539,7 @@ func (m *Module) reconcileCLICredentialClaim(
 	row, err := authdb.New(m.pool).ReconcileCLICredentialClaim(ctx, authdb.ReconcileCLICredentialClaimParams{
 		ID: mustDatabaseUUID(issued.authorizationID), ID_2: mustDatabaseUUID(issued.credentialID),
 	})
-	if err != nil || !hmac.Equal(row.SecretDigest, issued.digest[:]) || row.CapabilityVersion != cliCapabilityVersion {
+	if err != nil || !hmac.Equal(row.SecretDigest, issued.digest[:]) || row.CapabilityVersion != CLICapabilityVersion {
 		return CLICredentialGrant{}, false
 	}
 	result := issued.grant
@@ -569,6 +573,9 @@ func (m *Module) AuthenticateCLI(
 		}
 		if row.CredentialStatus != "active" {
 			return AuthenticatedCLICredential{}, domainError(CodeCredentialRevoked)
+		}
+		if row.CapabilityVersion != CLICapabilityVersion {
+			return AuthenticatedCLICredential{}, domainError(CodeMisconfigured)
 		}
 		now, err := queries.DatabaseTime(ctx)
 		if err != nil {
@@ -604,6 +611,103 @@ func (m *Module) AuthenticateCLI(
 		return AuthenticatedCLICredential{}, unavailable("authenticate CLI Credential", err)
 	}
 	return result, nil
+}
+
+func (m *Module) ListCLICredentials(ctx context.Context, principal Principal) ([]CLICredentialView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	views, err := withTransaction(ctx, m.pool, func(tx pgx.Tx) ([]CLICredentialView, error) {
+		queries := authdb.New(tx)
+		validated, _, err := m.validateWebPrincipalInTransaction(ctx, queries, principal)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := queries.ListActiveCLICredentialsForUser(ctx, validated.UserID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]CLICredentialView, 0, len(rows))
+		for _, row := range rows {
+			if row.CapabilityVersion != CLICapabilityVersion {
+				return nil, domainError(CodeMisconfigured)
+			}
+			result = append(result, CLICredentialView{
+				ID: domainUUID(row.ID), Capability: row.CapabilityVersion,
+				CreatedAt: row.CreatedAt, LastUsedAt: row.LastUsedAt,
+			})
+		}
+		return result, nil
+	})
+	if err != nil {
+		var domain *Error
+		if errors.As(err, &domain) {
+			return nil, err
+		}
+		return nil, unavailable("list CLI Credentials", err)
+	}
+	return views, nil
+}
+
+// RevokeCurrentCLICredential combines proof lookup and revocation for the
+// dedicated CLI logout operation. Unknown, malformed, and already-revoked
+// values are intentionally indistinguishable successful no-ops.
+func (m *Module) RevokeCurrentCLICredential(
+	ctx context.Context,
+	credentialSecret string,
+	requestID string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !validateRequestID(requestID) {
+		return domainError(CodeInvalidRequest)
+	}
+	if !validateOpaqueSecret(credentialSecret, "atc_v1_") {
+		return nil
+	}
+	digest := highEntropyDigest("cli-credential-secret", credentialSecret)
+	_, err := withTransaction(ctx, m.pool, func(tx pgx.Tx) (struct{}, error) {
+		queries := authdb.New(tx)
+		credential, err := queries.GetCLICredentialBySecretForRevoke(ctx, digest[:])
+		if errors.Is(err, pgx.ErrNoRows) {
+			return struct{}{}, nil
+		}
+		if err != nil {
+			return struct{}{}, err
+		}
+		switch credential.Status {
+		case "revoked":
+			return struct{}{}, nil
+		case "active":
+		default:
+			return struct{}{}, domainError(CodeMisconfigured)
+		}
+		affected, err := queries.RevokeCLICredentialForUser(ctx, authdb.RevokeCLICredentialForUserParams{
+			ID: credential.ID, UserID: credential.UserID, RevokeReason: "cli_logout",
+		})
+		if err != nil {
+			return struct{}{}, err
+		}
+		if affected != 1 {
+			return struct{}{}, domainError(CodeMisconfigured)
+		}
+		credentialID := domainUUID(credential.ID)
+		return struct{}{}, appendAudit(ctx, queries, auditRecord{
+			initiatorKind: "principal", initiatorID: domainUUID(credential.UserID),
+			action: "cli_credential.revoke", targetKind: "cli_credential",
+			targetID: credentialID, outcome: "succeeded", reason: "cli_logout",
+			requestID: requestID, cliCredentialID: credentialID,
+		})
+	})
+	if err != nil {
+		var domain *Error
+		if errors.As(err, &domain) {
+			return err
+		}
+		return unavailable("revoke current CLI Credential", err)
+	}
+	return nil
 }
 
 func (m *Module) RevokeCLICredentials(ctx context.Context, input RevokeCLICredentialsInput) error {
