@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestNormalizeReturnToRejectsOversizedEncodedResult(t *testing.T) {
+	candidate := "/" + strings.Repeat("<", 683)
+	if len(candidate) > 2048 {
+		t.Fatalf("regression candidate must fit the input bound: %d", len(candidate))
+	}
+	if normalized, err := normalizeReturnTo(candidate); err == nil {
+		t.Fatalf("accepted encoded return path with %d bytes: %q", len(normalized), normalized)
+	}
+}
+
 func FuzzNormalizeReturnTo(f *testing.F) {
 	for _, seed := range []string{
 		"/", "/teams/acme", "/cli/authorize?user_code=ABC123",
