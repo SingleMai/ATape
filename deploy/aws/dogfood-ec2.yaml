@@ -153,7 +153,7 @@ Resources:
           curl -fsSLo /tmp/buildx-checksums.txt ${!buildx_base}/checksums.txt
           (
             cd /tmp
-            grep " ${!buildx_asset}$" buildx-checksums.txt | sha256sum -c -
+            grep " \*${!buildx_asset}$" buildx-checksums.txt | sha256sum -c -
           )
           install -m 0755 /tmp/${!buildx_asset} /usr/local/lib/docker/cli-plugins/docker-buildx
           rm -f /tmp/${!buildx_asset} /tmp/buildx-checksums.txt
