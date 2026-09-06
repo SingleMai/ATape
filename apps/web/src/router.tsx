@@ -139,11 +139,22 @@ const authenticatedRoute = createRoute({
 
 function AuthenticatedBoundary() {
   const session = useSessionPresenter()
-  const href = useRouterState({ select: (state) => state.location.href })
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (session.state._tag !== "Unauthenticated") return
+    const returnTo = safeLocalReturnTo(
+      window.location.pathname + window.location.search + window.location.hash
+    )
+    void navigate({
+      to: "/auth/sign-in",
+      search: { returnTo, reason: "session_ended" },
+      replace: true
+    })
+  }, [navigate, session.state._tag])
   if (session.state._tag === "Loading") return <FullPageState role="status">Restoring your ATape session…</FullPageState>
   if (session.state._tag === "Failed") return <SessionFailure failure={session.state.failure} onRetry={session.reload} />
   if (session.state._tag === "Unauthenticated") {
-    return <Navigate to="/auth/sign-in" search={{ returnTo: safeLocalReturnTo(href), reason: "session_ended" }} replace />
+    return <FullPageState role="status">Taking you to sign in…</FullPageState>
   }
   return (
     <AuthenticatedSessionContext.Provider value={session.state.value}>

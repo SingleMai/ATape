@@ -37,6 +37,17 @@ test.beforeEach(async ({ context, request }) => {
   await context.clearCookies()
 })
 
+test("redirects a signed-out landing visit with a bounded return path", async ({ page }) => {
+  await page.goto("/")
+
+  await expect(page.getByRole("heading", { name: "Sign in to ATape" })).toBeVisible()
+  await expect(page.getByText("Your previous session ended. Sign in again to continue.")).toBeVisible()
+  const location = new URL(page.url())
+  expect(location.pathname).toBe("/auth/sign-in")
+  expect(location.searchParams.get("returnTo")).toBe("/")
+  expect(location.searchParams.get("reason")).toBe("session_ended")
+})
+
 test("keeps ordinary and CLI-return sign-in minimal at 390px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/auth/sign-in")
