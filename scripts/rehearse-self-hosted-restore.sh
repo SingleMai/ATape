@@ -6,8 +6,7 @@ temporary=$(mktemp -d "$repository/.atape-restore-rehearsal.XXXXXX")
 temporary=$(CDPATH= cd -- "$temporary" && pwd -P)
 export COMPOSE_PROJECT_NAME=atape_rehearsal_$$
 export ATAPE_COMPOSE_ENV_FILE=$temporary/rehearsal.env
-export ATAPE_COMPOSE_OVERRIDE_FILE=$repository/compose.rehearsal.yaml
-compose_files=$repository/compose.yaml:$ATAPE_COMPOSE_OVERRIDE_FILE
+compose_files=$repository/compose.yaml
 
 compose() {
   COMPOSE_FILE=$compose_files docker compose --project-directory "$repository" \
@@ -30,7 +29,6 @@ trap cleanup EXIT HUP INT TERM
 "$repository/scripts/generate-self-hosted-secrets.sh" "$temporary/secrets" >/dev/null
 printf '%s\n' "github-rehearsal-secret" > "$temporary/secrets/github_client_secret"
 chmod 600 "$temporary/secrets/github_client_secret"
-mkdir "$temporary/postgres-data" "$temporary/raw-data"
 port=$((30000 + ($$ % 20000)))
 {
   printf 'ATAPE_PUBLIC_URL=http://127.0.0.1:%s\n' "$port"
@@ -46,8 +44,7 @@ port=$((30000 + ($$ % 20000)))
   printf 'ATAPE_AUTH_PEPPER_KEY_RING_SECRET_FILE=%s\n' "$temporary/secrets/auth_pepper_key_ring.json"
   printf 'ATAPE_AUTH_PRIVATE_STATE_KEY_RING_SECRET_FILE=%s\n' "$temporary/secrets/auth_private_state_key_ring.json"
   printf 'ATAPE_GITHUB_CLIENT_SECRET_FILE=%s\n' "$temporary/secrets/github_client_secret"
-  printf 'ATAPE_REHEARSAL_POSTGRES_DIRECTORY=%s\n' "$temporary/postgres-data"
-  printf 'ATAPE_REHEARSAL_RAW_DIRECTORY=%s\n' "$temporary/raw-data"
+  printf 'ATAPE_SERVER_IMAGE=%s-server:latest\n' "$COMPOSE_PROJECT_NAME"
 } > "$ATAPE_COMPOSE_ENV_FILE"
 
 compose up --build --detach database server

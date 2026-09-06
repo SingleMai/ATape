@@ -1,5 +1,8 @@
 name: atape
 
+x-atape-server-image: &atape-server-image
+  image: ${ATAPE_SERVER_IMAGE:-atape-server:0.2.0}
+
 services:
   database:
     image: postgres:17-alpine
@@ -19,7 +22,48 @@ services:
       retries: 20
       start_period: 5s
 
+  # Compose file secrets retain their host UID on Linux. This one-shot,
+  # networkless process prepares only the Server-readable copies and Raw root;
+  # the long-running Server remains unprivileged and mounts them read-only.
+  server-init:
+    <<: *atape-server-image
+    pull_policy: never
+    restart: "no"
+    init: true
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+    entrypoint: ["/bin/sh", "-eu", "-c"]
+    command:
+      - |
+        umask 077
+        chmod 0700 /run/atape-secrets
+        chown atape:atape /run/atape-secrets /var/lib/atape/raw
+        for secret in database_url auth_pepper_key_ring auth_private_state_key_ring github_client_secret; do
+          test -f "/run/secrets/$$secret"
+          cp "/run/secrets/$$secret" "/run/atape-secrets/.$$secret.tmp"
+          chmod 0400 "/run/atape-secrets/.$$secret.tmp"
+          chown atape:atape "/run/atape-secrets/.$$secret.tmp"
+          mv -f "/run/atape-secrets/.$$secret.tmp" "/run/atape-secrets/$$secret"
+        done
+    secrets:
+      - database_url
+      - auth_pepper_key_ring
+      - auth_private_state_key_ring
+      - github_client_secret
+    volumes:
+      - server-secrets:/run/atape-secrets
+      - raw-data:/var/lib/atape/raw
+
   server:
+    <<: *atape-server-image
     build:
       context: .
       dockerfile: deploy/server.Dockerfile
@@ -47,16 +91,14 @@ services:
       ATAPE_AUTH_PRIVATE_STATE_KEY_RING_FILE: /run/secrets/auth_private_state_key_ring
       ATAPE_GITHUB_CLIENT_ID: ${ATAPE_GITHUB_CLIENT_ID:?set ATAPE_GITHUB_CLIENT_ID in .env}
       ATAPE_GITHUB_CLIENT_SECRET_FILE: /run/secrets/github_client_secret
-    secrets:
-      - database_url
-      - auth_pepper_key_ring
-      - auth_private_state_key_ring
-      - github_client_secret
     volumes:
+      - server-secrets:/run/secrets:ro
       - raw-data:/var/lib/atape/raw
     depends_on:
       database:
         condition: service_healthy
+      server-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 5s
@@ -89,6 +131,7 @@ services:
 volumes:
   postgres-data:
   raw-data:
+  server-secrets:
 
 secrets:
   postgres_password:

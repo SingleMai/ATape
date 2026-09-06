@@ -44,6 +44,11 @@ docker compose --project-directory "$repository" --env-file "$temporary/loopback
 loopback_rendered=$(docker compose --project-directory "$repository" --env-file "$temporary/loopback.env" \
   -f "$repository/compose.yaml" config)
 printf '%s\n' "$loopback_rendered" | grep -Fq 'ATAPE_DATABASE_URL_FILE: /run/secrets/database_url'
+printf '%s\n' "$loopback_rendered" | grep -Fq 'condition: service_completed_successfully'
+printf '%s\n' "$loopback_rendered" | grep -Fq 'network_mode: none'
+printf '%s\n' "$loopback_rendered" | grep -Fq 'source: server-secrets'
+printf '%s\n' "$loopback_rendered" | grep -Fq 'target: /run/atape-secrets'
+printf '%s\n' "$loopback_rendered" | grep -Fq 'target: /run/secrets'
 if printf '%s\n' "$loopback_rendered" | grep -Eq '^[[:space:]]+ATAPE_DATABASE_URL:'; then
   printf '%s\n' "database credential leaked into the Compose environment" >&2
   exit 1

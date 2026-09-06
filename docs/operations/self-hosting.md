@@ -84,7 +84,12 @@ readiness, not merely liveness.
 
 ## Secrets and rotation
 
-Compose mounts five files:
+Compose mounts five host files. PostgreSQL consumes its password through its
+normal root-owned entrypoint. A network-isolated, read-only `server-init`
+service copies the other four into a private named volume with mode `0400` and
+ownership matching the non-root Server process. The long-running Server mounts
+only that prepared volume read-only; it never gains permission to read other
+host files.
 
 - a PostgreSQL password and the matching internal database URL;
 - the authentication pepper key ring;
@@ -98,9 +103,18 @@ Sessions, authorization codes, or login transactions have expired or been
 revoked. Startup fails if the database still references a key or Provider
 revision that the process cannot serve.
 
-Secret files are intentionally absent from PostgreSQL + Raw backups. Preserve
-them separately in encrypted off-host storage. `generate-self-hosted-secrets.sh`
-refuses to overwrite an existing target.
+Secret files and the prepared `server-secrets` volume are intentionally absent
+from PostgreSQL + Raw backups. Preserve the source files separately in
+encrypted off-host storage. `generate-self-hosted-secrets.sh` refuses to
+overwrite an existing target.
+
+After rotating a source secret or key ring, refresh the prepared volume before
+restarting Server replicas:
+
+```sh
+docker compose run --rm --no-deps server-init
+docker compose up -d --force-recreate server
+```
 
 ## Network boundary
 
