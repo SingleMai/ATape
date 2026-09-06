@@ -5,6 +5,7 @@
 **/dist
 **/.vite
 **/coverage
+release
 *.log
 .DS_Store
 .env

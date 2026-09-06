@@ -37,7 +37,10 @@ const WireInstanceMetadata = Schema.Struct({
   instance_origin: Schema.String,
   web_origin: Schema.String,
   api_origin: Schema.String,
-  protocols: Schema.Array(Schema.String)
+  protocols: Schema.Array(Schema.String),
+  release_version: Schema.String,
+  auth_epoch: Schema.Literal("auth-v1"),
+  minimum_cli_version: Schema.String
 })
 const WireSessionBootstrap = Schema.Struct({
   user: AuthenticatedSession.fields.user,
@@ -165,7 +168,10 @@ const authenticationGateway = AuthenticationGateway.of({
       instanceOrigin: metadata.instance_origin,
       webOrigin: metadata.web_origin,
       apiOrigin: metadata.api_origin,
-      protocols: metadata.protocols
+      protocols: metadata.protocols,
+      releaseVersion: metadata.release_version,
+      authEpoch: metadata.auth_epoch,
+      minimumCliVersion: metadata.minimum_cli_version
     })),
     Effect.flatMap((metadata) => decode(InstanceMetadata, metadata))
   ),

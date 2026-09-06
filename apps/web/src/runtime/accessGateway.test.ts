@@ -51,7 +51,10 @@ describe("browser access Gateway Adapter", () => {
       instance_origin: "https://atape.dev",
       web_origin: "https://atape.dev",
       api_origin: "https://api.atape.dev",
-      protocols: ["atape.cli-authorization.v1"]
+      protocols: ["atape.cli-authorization.v1"],
+      release_version: "0.2.0",
+      auth_epoch: "auth-v1",
+      minimum_cli_version: "0.2.0"
     }), { status: 200 }))
 
     const metadata = await run(Effect.flatMap(AuthenticationGateway, (gateway) => gateway.loadInstance()))
@@ -61,7 +64,10 @@ describe("browser access Gateway Adapter", () => {
       instanceOrigin: "https://atape.dev",
       webOrigin: "https://atape.dev",
       apiOrigin: "https://api.atape.dev",
-      protocols: ["atape.cli-authorization.v1"]
+      protocols: ["atape.cli-authorization.v1"],
+      releaseVersion: "0.2.0",
+      authEpoch: "auth-v1",
+      minimumCliVersion: "0.2.0"
     })
   })
 

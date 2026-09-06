@@ -131,7 +131,10 @@ async function startFixtureServer() {
           instance_origin: origin,
           web_origin: origin,
           api_origin: origin,
-          protocols: ["atape.cli-authorization.v1", "atape.canonical.v1", "atape.raw.v1"]
+          protocols: ["atape.cli-authorization.v1", "atape.canonical.v1", "atape.raw.v1"],
+          release_version: "0.2.0",
+          auth_epoch: "auth-v1",
+          minimum_cli_version: "0.2.0"
         })
         return
       case "POST /api/v1/auth/cli/device-grants":

@@ -24,11 +24,12 @@ type openAPIRouteExtension struct {
 }
 
 type openAPIOperation struct {
-	OperationID string                    `yaml:"operationId"`
-	Route       openAPIRouteExtension     `yaml:"x-atape-route"`
-	Security    []map[string][]string     `yaml:"security"`
-	RequestBody map[string]any            `yaml:"requestBody"`
-	Responses   map[string]map[string]any `yaml:"responses"`
+	OperationID          string                    `yaml:"operationId"`
+	Route                openAPIRouteExtension     `yaml:"x-atape-route"`
+	AuthorizationActions *[]string                 `yaml:"x-atape-authorization-actions"`
+	Security             []map[string][]string     `yaml:"security"`
+	RequestBody          map[string]any            `yaml:"requestBody"`
+	Responses            map[string]map[string]any `yaml:"responses"`
 }
 
 type openAPIPathItem struct {
@@ -74,6 +75,11 @@ func TestOpenAPIMatchesExecutableRouteInventory(t *testing.T) {
 	}
 
 	seenOperations := make(map[string]string)
+	knownActions := make(map[string]struct{}, len(authorization.ActionInventory()))
+	for _, action := range authorization.ActionInventory() {
+		knownActions[action] = struct{}{}
+	}
+	coveredActions := make(map[string]struct{}, len(knownActions))
 	for path, item := range document.Paths {
 		for method, operation := range item.operations() {
 			if operation == nil {
@@ -107,6 +113,27 @@ func TestOpenAPIMatchesExecutableRouteInventory(t *testing.T) {
 			if len(operation.Responses) < 2 || operation.Responses["default"] == nil {
 				t.Fatalf("route %s must document success and the shared Problem response", key)
 			}
+			if operation.AuthorizationActions == nil {
+				t.Fatalf("route %s must explicitly declare its authorization actions", key)
+			}
+			if strings.Join(*operation.AuthorizationActions, "\n") != strings.Join(contract.AuthorizationActions, "\n") {
+				t.Fatalf("route %s authorization actions = %v, registry declares %v", key,
+					*operation.AuthorizationActions, contract.AuthorizationActions)
+			}
+			seenRouteActions := make(map[string]struct{}, len(*operation.AuthorizationActions))
+			for _, action := range *operation.AuthorizationActions {
+				if _, known := knownActions[action]; !known {
+					t.Fatalf("route %s declares unknown authorization action %q", key, action)
+				}
+				if _, duplicate := seenRouteActions[action]; duplicate {
+					t.Fatalf("route %s repeats authorization action %q", key, action)
+				}
+				seenRouteActions[action] = struct{}{}
+				coveredActions[action] = struct{}{}
+			}
+			if contract.Class == PublicProtocol && len(*operation.AuthorizationActions) != 0 {
+				t.Fatalf("public route %s declares resource authorization actions", key)
+			}
 			assertOpenAPISecurity(t, key, contract.Class, operation.Security)
 		}
 	}
@@ -117,6 +144,16 @@ func TestOpenAPIMatchesExecutableRouteInventory(t *testing.T) {
 		}
 		sort.Strings(missing)
 		t.Fatalf("OpenAPI is missing executable routes: %s", strings.Join(missing, ", "))
+	}
+	if len(coveredActions) != len(knownActions) {
+		missing := make([]string, 0, len(knownActions)-len(coveredActions))
+		for action := range knownActions {
+			if _, covered := coveredActions[action]; !covered {
+				missing = append(missing, action)
+			}
+		}
+		sort.Strings(missing)
+		t.Fatalf("OpenAPI routes do not reference every closed authorization action: %s", strings.Join(missing, ", "))
 	}
 }
 

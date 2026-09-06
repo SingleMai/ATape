@@ -5,7 +5,10 @@ ATape publishes two public MIT-licensed npm packages from one versioned release:
 - `@atape/cli`
 - `@atape/adapter-codex`
 
-The root and both package manifests must carry the same explicit SemVer version. A tag must be exactly `v<version>`; the release workflow refuses mismatches.
+The root, both public package manifests, private Web artifact, Server metadata,
+container labels, and Compose build contract carry the same explicit SemVer and
+Authentication epoch. A tag must be exactly `v<version>`; the release workflow
+refuses version/epoch drift or an incomplete staging attestation.
 
 ## Local release verification
 
@@ -14,14 +17,29 @@ Before creating a tag, run:
 ```sh
 pnpm check
 pnpm build
+pnpm build:release:images candidate
 pnpm test:release
 pnpm test:go:integration
-node scripts/check-release-tag.mjs v0.1.1
+pnpm test:go:race
+pnpm test:go:fuzz
+pnpm test:security:dependencies
+pnpm test:self-hosting:config
+pnpm test:self-hosting:restore
+pnpm test:release:gates
+node scripts/check-release-tag.mjs v0.2.0
 ```
 
 `test:release` builds checksummed npm tarballs, installs the CLI into a clean prefix, installs the packaged Codex Adapter through that CLI, and executes a bounded collection. The workflow publishes those exact tarballs to npm and attaches them plus `SHA256SUMS` to the GitHub Release.
 
 Pull requests and pushes to `main` run the same repository checks, production build, release-tarball verification, and PostgreSQL integration suite in an unprivileged CI workflow. That workflow has read-only repository permissions and no npm publication credentials.
+
+For v0.2.0, follow the [auth-v1 release checklist](operations/auth-v1-release-checklist.md).
+The checked-in staging attestation intentionally starts as `pending`; this lets
+CI validate the evidence shape without pretending that the official GitHub,
+TLS/WAF, backup, smoke, and rollback exercises happened. After those exercises,
+the final evidence-only commit completes the attestation. Release mode verifies
+that the tested commit is an ancestor and that no file except that attestation
+changed afterward.
 
 ## First publication bootstrap
 

@@ -16,6 +16,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 )
@@ -143,18 +144,24 @@ func (h *Handler) ready(response http.ResponseWriter, request *http.Request) {
 }
 
 type instanceDocument struct {
-	Protocol       string   `json:"protocol"`
-	InstanceOrigin string   `json:"instance_origin"`
-	WebOrigin      string   `json:"web_origin"`
-	APIOrigin      string   `json:"api_origin"`
-	Protocols      []string `json:"protocols"`
+	Protocol          string   `json:"protocol"`
+	InstanceOrigin    string   `json:"instance_origin"`
+	WebOrigin         string   `json:"web_origin"`
+	APIOrigin         string   `json:"api_origin"`
+	Protocols         []string `json:"protocols"`
+	ReleaseVersion    string   `json:"release_version"`
+	AuthEpoch         string   `json:"auth_epoch"`
+	MinimumCLIVersion string   `json:"minimum_cli_version"`
 }
 
 func (h *Handler) instance(response http.ResponseWriter, request *http.Request) {
 	writePublicMetadata(response, request, instanceDocument{
 		Protocol: "atape.instance.v1", InstanceOrigin: h.config.instanceOrigin,
 		WebOrigin: h.config.webOrigin, APIOrigin: h.config.apiOrigin,
-		Protocols: []string{"atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"},
+		Protocols:         []string{"atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"},
+		ReleaseVersion:    releaseinfo.Version,
+		AuthEpoch:         releaseinfo.AuthEpoch,
+		MinimumCLIVersion: releaseinfo.MinimumCLIVersion,
 	})
 }
 

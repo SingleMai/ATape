@@ -17,24 +17,27 @@ jobs:
   release:
     if: github.repository == 'SingleMai/ATape'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Check out the release commit
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js for npm publication
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org/"
           package-manager-cache: false
 
       - name: Install the pinned pnpm workspace
-        uses: pnpm/setup@v2
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2
         with:
           cache: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: server/go.mod
           cache: false
@@ -53,6 +56,46 @@ jobs:
 
       - name: Run PostgreSQL integration tests
         run: pnpm test:go:integration
+
+      - name: Scan npm and reachable Go dependencies
+        run: pnpm test:security:dependencies
+
+      - name: Run the Go race detector
+        run: pnpm test:go:race
+
+      - name: Fuzz authentication and HTTP parsers
+        run: pnpm test:go:fuzz
+        env:
+          ATAPE_FUZZ_TIME: 10s
+
+      - name: Revalidate supported self-host topologies
+        run: pnpm test:self-hosting:config
+
+      - name: Rehearse paired PostgreSQL and Raw restore
+        run: pnpm test:self-hosting:restore
+
+      - name: Build the exact release image contracts
+        run: pnpm build:release:images release
+
+      - name: Scan the Server release image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: atape-server:release
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
+          version: v0.74.0
+
+      - name: Scan the Web release image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: atape-web:release
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
+          version: v0.74.0
 
       - name: Publish public npm packages
         run: node scripts/publish-npm-release.mjs

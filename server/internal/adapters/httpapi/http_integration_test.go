@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Fatalf("public Provider registrations = %d %#v: %s",
 			registrationsResponse.Code, registrationsResponse.Header(), registrationsResponse.Body.String())
 	}
+	assertProtectedRouteCredentialMatrix(t, handler, "", "")
 
 	unauthenticatedBatch := httptest.NewRequest(
 		http.MethodPost, "/api/v1/ingestion/canonical/batches", strings.NewReader("not-json"),
@@ -510,6 +512,7 @@ WHERE action = 'captured_session.delete'
 	if revokedCLIResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked CLI Credential = %d: %s", revokedCLIResponse.Code, revokedCLIResponse.Body.String())
 	}
+	assertProtectedRouteCredentialMatrix(t, handler, "", token.Credential)
 
 	logout := jsonRequest(t, http.MethodPost, "/api/v1/auth/logout", struct{}{})
 	addWebProof(logout, sessionCookie, session.CSRFToken)
@@ -518,6 +521,7 @@ WHERE action = 'captured_session.delete'
 	if logoutResponse.Code != http.StatusNoContent {
 		t.Fatalf("Web logout = %d: %s", logoutResponse.Code, logoutResponse.Body.String())
 	}
+	assertProtectedRouteCredentialMatrix(t, handler, sessionCookie.Value, "")
 	repeatedLogout := jsonRequest(t, http.MethodPost, "/api/v1/auth/logout", struct{}{})
 	repeatedLogout.Header.Set("Origin", "https://web.example.test")
 	repeatedLogoutResponse := httptest.NewRecorder()
@@ -525,6 +529,99 @@ WHERE action = 'captured_session.delete'
 	if repeatedLogoutResponse.Code != http.StatusNoContent {
 		t.Fatalf("idempotent Web logout = %d: %s", repeatedLogoutResponse.Code, repeatedLogoutResponse.Body.String())
 	}
+}
+
+var routeParameter = regexp.MustCompile(`\{[^/{}]+\}`)
+
+func assertProtectedRouteCredentialMatrix(
+	t *testing.T,
+	handler *Handler,
+	revokedWebSecret string,
+	revokedCLISecret string,
+) {
+	t.Helper()
+	for _, registered := range handler.routes {
+		if registered.Class == PublicProtocol {
+			continue
+		}
+		label := registered.Method + " " + registered.Pattern
+		t.Run("route credentials/"+label, func(t *testing.T) {
+			if revokedWebSecret == "" && revokedCLISecret == "" {
+				assertRouteCredentialOutcome(t, handler, registered, "anonymous", "", "", expectedCredentialStatus(registered, "", ""))
+				if registered.Class == WebOnly || registered.Class == AnyPrincipal {
+					assertRouteCredentialOutcome(t, handler, registered, "invalid web", "ats_v1_invalid", "", expectedCredentialStatus(registered, "ats_v1_invalid", ""))
+				}
+				if registered.Class == CLIOnly || registered.Class == AnyPrincipal {
+					assertRouteCredentialOutcome(t, handler, registered, "invalid CLI", "", "atc_v1_invalid", expectedCredentialStatus(registered, "", "atc_v1_invalid"))
+				}
+				assertRouteCredentialOutcome(t, handler, registered, "ambiguous", "ats_v1_invalid", "atc_v1_invalid", http.StatusBadRequest)
+				return
+			}
+			if revokedWebSecret != "" && (registered.Class == WebOnly || registered.Class == AnyPrincipal) {
+				assertRouteCredentialOutcome(t, handler, registered, "revoked web", revokedWebSecret, "", expectedCredentialStatus(registered, revokedWebSecret, ""))
+			}
+			if revokedCLISecret != "" && (registered.Class == CLIOnly || registered.Class == AnyPrincipal) {
+				assertRouteCredentialOutcome(t, handler, registered, "revoked CLI", "", revokedCLISecret, expectedCredentialStatus(registered, "", revokedCLISecret))
+			}
+		})
+	}
+}
+
+func assertRouteCredentialOutcome(
+	t *testing.T,
+	handler *Handler,
+	registered route,
+	caseName string,
+	webSecret string,
+	cliSecret string,
+	want int,
+) {
+	t.Helper()
+	var body *strings.Reader
+	if registered.body == noRequestBody {
+		body = strings.NewReader("")
+	} else {
+		body = strings.NewReader("{}")
+	}
+	target := routeParameter.ReplaceAllString(registered.Pattern, "fixture")
+	request := httptest.NewRequest(registered.Method, target, body)
+	if registered.body != noRequestBody {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	if isUnsafeMethod(registered.Method) && (registered.Class == WebOnly || registered.Class == AnyPrincipal) {
+		request.Header.Set("Origin", "https://web.example.test")
+	}
+	if webSecret != "" {
+		request.AddCookie(&http.Cookie{Name: handler.config.sessionCookie, Value: webSecret})
+	}
+	if cliSecret != "" {
+		request.Header.Set("Authorization", "Bearer "+cliSecret)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != want {
+		t.Fatalf("%s status = %d, want %d: %s", caseName, response.Code, want, response.Body.String())
+	}
+	if want == http.StatusUnauthorized {
+		problem := "unauthenticated"
+		if strings.HasPrefix(caseName, "revoked ") {
+			problem = "session_revoked"
+		}
+		assertProblemEnvelope(t, response, problem)
+	}
+	if want == http.StatusBadRequest {
+		assertProblemEnvelope(t, response, "ambiguous_credentials")
+	}
+}
+
+func expectedCredentialStatus(registered route, webSecret string, cliSecret string) int {
+	if registered.idempotentWebLogout && cliSecret == "" {
+		return http.StatusNoContent
+	}
+	if registered.cliProofOnly && cliSecret != "" && webSecret == "" {
+		return http.StatusNoContent
+	}
+	return http.StatusUnauthorized
 }
 
 type httpIdentityAdapter struct{}

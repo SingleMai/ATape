@@ -91,6 +91,7 @@ paths:
   /healthz:
     get:
       operationId: getHealth
+      x-atape-authorization-actions: []
       tags: [Protocol]
       summary: Report process liveness
       x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -102,6 +103,7 @@ paths:
   /readyz:
     get:
       operationId: getReadiness
+      x-atape-authorization-actions: []
       tags: [Protocol]
       summary: Report readiness for the configured normal or bootstrap serving mode
       x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -113,6 +115,7 @@ paths:
   /api/v1/instance:
     get:
       operationId: getInstance
+      x-atape-authorization-actions: []
       tags: [Protocol]
       summary: Discover canonical public origins and protocol versions
       x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: public-300, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -125,6 +128,7 @@ paths:
   /api/v1/auth/provider-registrations:
     get:
       operationId: listProviderRegistrations
+      x-atape-authorization-actions: []
       tags: [Authentication]
       summary: List enabled sign-in entries
       x-atape-route: {class: public_protocol, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: public-300, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -137,6 +141,7 @@ paths:
   /api/v1/auth/federated/sign-ins:
     post:
       operationId: beginFederatedSignIn
+      x-atape-authorization-actions: []
       tags: [Authentication]
       summary: Begin a browser sign-in transaction
       x-atape-route: {class: public_protocol, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -151,6 +156,7 @@ paths:
   /api/v1/auth/federated/identity-bindings:
     post:
       operationId: beginFederatedIdentityBinding
+      x-atape-authorization-actions: [external_identity.bind]
       tags: [Authentication]
       summary: Begin binding another external identity
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
@@ -166,6 +172,7 @@ paths:
   /api/v1/auth/federated/reauthentications:
     post:
       operationId: beginFederatedReauthentication
+      x-atape-authorization-actions: []
       tags: [Authentication]
       summary: Begin refreshing the current Web Session
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -181,6 +188,7 @@ paths:
   /api/v1/auth/github/callback:
     get:
       operationId: completeGitHubFederatedLogin
+      x-atape-authorization-actions: []
       tags: [Authentication]
       summary: Complete the exact GitHub callback transaction
       description: The only API operation that redirects. Provider error descriptions are never forwarded.
@@ -197,6 +205,7 @@ paths:
   /api/v1/auth/session:
     get:
       operationId: getCurrentWebSession
+      x-atape-authorization-actions: [user.read_self]
       tags: [Authentication]
       summary: Bootstrap the current User, Session, and CSRF proof
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -208,6 +217,7 @@ paths:
   /api/v1/auth/logout:
     post:
       operationId: logoutWebSession
+      x-atape-authorization-actions: [web_session.revoke_one]
       tags: [Authentication]
       summary: Revoke and clear the current Web Session
       description: Missing or already-revoked session state remains an idempotent success.
@@ -224,6 +234,7 @@ paths:
   /api/v1/users/me:
     get:
       operationId: getCurrentUser
+      x-atape-authorization-actions: [user.read_self]
       tags: [Account]
       summary: Read the current User profile
       x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -234,6 +245,7 @@ paths:
         default: {$ref: "#/components/responses/Problem"}
     patch:
       operationId: updateCurrentUser
+      x-atape-authorization-actions: [user.update_profile]
       tags: [Account]
       summary: Update the local User profile
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -249,6 +261,7 @@ paths:
   /api/v1/users/me/external-identities:
     get:
       operationId: listExternalIdentities
+      x-atape-authorization-actions: [external_identity.list]
       tags: [Account]
       summary: List normalized external identities without provider secrets
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -260,6 +273,7 @@ paths:
   /api/v1/users/me/web-sessions:
     get:
       operationId: listWebSessions
+      x-atape-authorization-actions: [web_session.list]
       tags: [Account]
       summary: List active non-secret Web Session records
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -273,6 +287,7 @@ paths:
       - {$ref: "#/components/parameters/SessionId"}
     delete:
       operationId: revokeWebSession
+      x-atape-authorization-actions: [web_session.revoke_one]
       tags: [Account]
       summary: Revoke one Web Session
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -287,6 +302,7 @@ paths:
   /api/v1/users/me/web-sessions/revoke-all:
     post:
       operationId: revokeAllWebSessions
+      x-atape-authorization-actions: [web_session.revoke_all]
       tags: [Account]
       summary: Revoke all Web Sessions for the current User
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -302,6 +318,7 @@ paths:
   /api/v1/users/me/cli-credentials:
     get:
       operationId: listCliCredentials
+      x-atape-authorization-actions: [cli_credential.list]
       tags: [Account]
       summary: List active non-secret CLI Credential records
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -315,6 +332,7 @@ paths:
       - {$ref: "#/components/parameters/CredentialId"}
     delete:
       operationId: revokeCliCredential
+      x-atape-authorization-actions: [cli_credential.revoke_one]
       tags: [Account]
       summary: Revoke one CLI Credential
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -329,6 +347,7 @@ paths:
   /api/v1/users/me/cli-credentials/revoke-all:
     post:
       operationId: revokeAllCliCredentials
+      x-atape-authorization-actions: [cli_credential.revoke_all]
       tags: [Account]
       summary: Revoke all CLI Credentials for the current User
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -344,6 +363,7 @@ paths:
   /api/v1/auth/cli/device-grants:
     post:
       operationId: createCliDeviceGrant
+      x-atape-authorization-actions: []
       tags: [CLI authorization]
       summary: Create a CLI Device Authorization
       x-atape-route: {class: public_protocol, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -356,6 +376,7 @@ paths:
   /api/v1/auth/cli/token:
     post:
       operationId: pollCliDeviceGrant
+      x-atape-authorization-actions: []
       tags: [CLI authorization]
       summary: Poll and claim a CLI Credential once
       x-atape-route: {class: public_protocol, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -369,6 +390,7 @@ paths:
   /api/v1/auth/cli/device-grants/resolve:
     post:
       operationId: resolveCliDeviceGrant
+      x-atape-authorization-actions: []
       tags: [CLI authorization]
       summary: Resolve a human-entered User Code to a non-secret review view
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -386,6 +408,7 @@ paths:
       - {$ref: "#/components/parameters/GrantViewId"}
     post:
       operationId: approveCliDeviceGrant
+      x-atape-authorization-actions: []
       tags: [CLI authorization]
       summary: Approve a CLI Device Authorization
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -403,6 +426,7 @@ paths:
       - {$ref: "#/components/parameters/GrantViewId"}
     post:
       operationId: denyCliDeviceGrant
+      x-atape-authorization-actions: []
       tags: [CLI authorization]
       summary: Deny a CLI Device Authorization
       x-atape-route: {class: web_only, requestBodyPolicy: json-auth, requestBodyLimit: 16384, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -418,6 +442,7 @@ paths:
   /api/v1/auth/cli/credentials/current:
     delete:
       operationId: revokeCurrentCliCredential
+      x-atape-authorization-actions: [cli_credential.read_current, cli_credential.revoke_current]
       tags: [CLI authorization]
       summary: Revoke the presented CLI Credential
       description: Unknown, malformed, and already-revoked bearer values are indistinguishable successful no-ops.
@@ -430,6 +455,7 @@ paths:
   /api/v1/workspace:
     get:
       operationId: getWorkspace
+      x-atape-authorization-actions: [workspace.list_visible, team.read_metadata, project.list_metadata]
       tags: [Teams]
       summary: List Team and Project metadata visible to the current User
       x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -441,6 +467,7 @@ paths:
   /api/v1/teams:
     post:
       operationId: createTeam
+      x-atape-authorization-actions: [team.create]
       tags: [Teams]
       summary: Create a Team with the current User as Owner
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: true}
@@ -459,6 +486,7 @@ paths:
       - {$ref: "#/components/parameters/TeamSlug"}
     get:
       operationId: getTeam
+      x-atape-authorization-actions: [team.read_metadata]
       tags: [Teams]
       summary: Read visible Team metadata
       x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -469,6 +497,7 @@ paths:
         default: {$ref: "#/components/responses/Problem"}
     patch:
       operationId: updateTeam
+      x-atape-authorization-actions: [team.update_display_profile]
       tags: [Teams]
       summary: Update a Team display profile as Owner
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -486,6 +515,7 @@ paths:
       - {$ref: "#/components/parameters/TeamSlug"}
     get:
       operationId: listTeamMembers
+      x-atape-authorization-actions: [membership.list]
       tags: [Teams]
       summary: List active Team Memberships
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -500,6 +530,7 @@ paths:
       - {$ref: "#/components/parameters/UserId"}
     put:
       operationId: setTeamMemberRole
+      x-atape-authorization-actions: [membership.promote_to_owner, membership.demote_owner]
       tags: [Teams]
       summary: Set a Team Membership role
       description: Promoting or demoting an Owner is subject to fresh authentication and last-Owner policy.
@@ -519,6 +550,7 @@ paths:
       - {$ref: "#/components/parameters/UserId"}
     delete:
       operationId: removeTeamMember
+      x-atape-authorization-actions: [membership.remove_member, membership.remove_owner]
       tags: [Teams]
       summary: Remove a Team Membership
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -535,6 +567,7 @@ paths:
       - {$ref: "#/components/parameters/TeamSlug"}
     post:
       operationId: leaveTeam
+      x-atape-authorization-actions: [membership.leave_self]
       tags: [Teams]
       summary: Remove the current User's Team Membership
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -552,6 +585,7 @@ paths:
       - {$ref: "#/components/parameters/TeamSlug"}
     get:
       operationId: getTeamJoinCodeStatus
+      x-atape-authorization-actions: [team_join_code.read_status]
       tags: [Teams]
       summary: Read Join Code state without plaintext
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -562,6 +596,7 @@ paths:
         default: {$ref: "#/components/responses/Problem"}
     delete:
       operationId: disableTeamJoinCode
+      x-atape-authorization-actions: [team_join_code.disable]
       tags: [Teams]
       summary: Idempotently disable the current Join Code
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -578,6 +613,7 @@ paths:
       - {$ref: "#/components/parameters/TeamSlug"}
     post:
       operationId: rotateTeamJoinCode
+      x-atape-authorization-actions: [team_join_code.rotate]
       tags: [Teams]
       summary: Rotate and disclose a Join Code once
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
@@ -593,6 +629,7 @@ paths:
   /api/v1/team-memberships:
     post:
       operationId: joinTeam
+      x-atape-authorization-actions: [team.join_with_code]
       tags: [Teams]
       summary: Join or restore Membership using a Join Code
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -609,6 +646,7 @@ paths:
   /api/v1/project-matches:
     post:
       operationId: matchProject
+      x-atape-authorization-actions: [project.match]
       tags: [Projects]
       summary: Match a normalized Git remote within one visible Team
       x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -623,6 +661,7 @@ paths:
       - {$ref: "#/components/parameters/TeamSlug"}
     post:
       operationId: createProject
+      x-atape-authorization-actions: [project.create]
       tags: [Projects]
       summary: Create a Git or Folder Project
       x-atape-route: {class: any_principal, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web-when-cookie, freshAuthentication: false, requiresIdempotencyKey: true}
@@ -641,6 +680,7 @@ paths:
       - {$ref: "#/components/parameters/ProjectId"}
     get:
       operationId: getProject
+      x-atape-authorization-actions: [project.read_metadata]
       tags: [Projects]
       summary: Read visible Project metadata
       x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -651,6 +691,7 @@ paths:
         default: {$ref: "#/components/responses/Problem"}
     patch:
       operationId: renameFolderProject
+      x-atape-authorization-actions: [folder_project.rename]
       tags: [Projects]
       summary: Rename a Folder Project as Owner
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -665,6 +706,7 @@ paths:
         default: {$ref: "#/components/responses/Problem"}
     delete:
       operationId: deleteProject
+      x-atape-authorization-actions: [project.delete]
       tags: [Projects]
       summary: Delete a Project and its captured data as fresh Owner
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
@@ -681,6 +723,7 @@ paths:
       - {$ref: "#/components/parameters/ProjectId"}
     post:
       operationId: relinkGitProject
+      x-atape-authorization-actions: [git_project.relink_repository]
       tags: [Projects]
       summary: Relink a Git Project remote as fresh Owner
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: true, requiresIdempotencyKey: false}
@@ -698,6 +741,7 @@ paths:
       - {$ref: "#/components/parameters/ProjectId"}
     post:
       operationId: archiveProject
+      x-atape-authorization-actions: [project.archive]
       tags: [Projects]
       summary: Idempotently archive a Project as Owner
       x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -715,6 +759,7 @@ paths:
       - {$ref: "#/components/parameters/ProjectId"}
     get:
       operationId: getProjectMemory
+      x-atape-authorization-actions: [project_memory.read]
       tags: [Captured sessions]
       summary: Read Canonical Project memory
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -728,6 +773,7 @@ paths:
       - {$ref: "#/components/parameters/ProjectId"}
     get:
       operationId: searchProject
+      x-atape-authorization-actions: [project_search.query]
       tags: [Captured sessions]
       summary: Search the Canonical-derived Project read model
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -745,6 +791,7 @@ paths:
       - {$ref: "#/components/parameters/SessionId"}
     get:
       operationId: getCapturedSession
+      x-atape-authorization-actions: [conversation.read]
       tags: [Captured sessions]
       summary: Read a Canonical conversation
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -757,6 +804,7 @@ paths:
         default: {$ref: "#/components/responses/Problem"}
     delete:
       operationId: deleteCapturedSession
+      x-atape-authorization-actions: [captured_session.delete_own, captured_session.delete_any]
       tags: [Captured sessions]
       summary: Delete a captured Session
       description: The capturing User may delete their own Session; deleting another User's Session requires a fresh Owner session.
@@ -774,6 +822,7 @@ paths:
       - {$ref: "#/components/parameters/SessionId"}
     get:
       operationId: listCapturedSessionRawObjects
+      x-atape-authorization-actions: [raw_session.list]
       tags: [Captured sessions]
       summary: List Raw manifests without content bytes
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -787,6 +836,7 @@ paths:
       - {$ref: "#/components/parameters/ObjectId"}
     get:
       operationId: getRawObjectContent
+      x-atape-authorization-actions: [raw_object.read]
       tags: [Captured sessions]
       summary: Read one bounded Raw content page
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -802,6 +852,7 @@ paths:
   /api/v1/ingestion/canonical/batches:
     post:
       operationId: ingestCanonicalBatch
+      x-atape-authorization-actions: [canonical.ingest]
       tags: [Ingestion]
       summary: Atomically apply a bounded Canonical v1 batch
       x-atape-route: {class: cli_only, requestBodyPolicy: json-canonical, requestBodyLimit: 4194304, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -815,6 +866,7 @@ paths:
   /api/v1/ingestion/raw/chunks:
     post:
       operationId: ingestRawChunk
+      x-atape-authorization-actions: [raw.ingest]
       tags: [Ingestion]
       summary: Idempotently append one bounded Raw v1 chunk
       x-atape-route: {class: cli_only, requestBodyPolicy: json-raw, requestBodyLimit: 524288, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -1351,12 +1403,15 @@ components:
     Instance:
       type: object
       additionalProperties: false
-      required: [protocol, instance_origin, web_origin, api_origin, protocols]
+      required: [protocol, instance_origin, web_origin, api_origin, protocols, release_version, auth_epoch, minimum_cli_version]
       properties:
         protocol: {const: atape.instance.v1}
         instance_origin: {type: string, format: uri}
         web_origin: {type: string, format: uri}
         api_origin: {type: string, format: uri}
+        release_version: {type: string, pattern: '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$'}
+        auth_epoch: {type: string, const: auth-v1}
+        minimum_cli_version: {type: string, pattern: '^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$'}
         protocols:
           type: array
           uniqueItems: true

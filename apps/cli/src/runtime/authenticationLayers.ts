@@ -41,7 +41,10 @@ const WireInstanceMetadata = Schema.Struct({
   instance_origin: Schema.String,
   web_origin: Schema.String,
   api_origin: Schema.String,
-  protocols: Schema.Array(Schema.String)
+  protocols: Schema.Array(Schema.String),
+  release_version: Schema.String,
+  auth_epoch: Schema.Literal("auth-v1"),
+  minimum_cli_version: Schema.String
 })
 
 const WireDeviceAuthorization = Schema.Struct({
@@ -101,7 +104,10 @@ export const makeHTTPAuthenticationGatewayLayer = (fetchImplementation: typeof g
         instanceOrigin: wire.instance_origin,
         webOrigin: wire.web_origin,
         apiOrigin: wire.api_origin,
-        protocols: wire.protocols
+        protocols: wire.protocols,
+        releaseVersion: wire.release_version,
+        authEpoch: wire.auth_epoch,
+        minimumCliVersion: wire.minimum_cli_version
       }))
     ),
     createDeviceAuthorization: (metadata) => request(fetchImplementation, `${metadata.apiOrigin}/api/v1/auth/cli/device-grants`, {

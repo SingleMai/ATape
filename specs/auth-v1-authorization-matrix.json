@@ -1,0 +1,159 @@
+{
+  "protocol": "atape.authorization-matrix.v1",
+  "authEpoch": "auth-v1",
+  "personas": [
+    "alice_web_member_stale",
+    "alice_web_member_fresh",
+    "alice_web_owner_stale",
+    "alice_web_owner_fresh",
+    "alice_cli_member",
+    "alice_cli_owner",
+    "eve_web_fresh"
+  ],
+  "profiles": {
+    "any_principal_instance": {
+      "alice_web_member_stale": "allow",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "allow",
+      "alice_cli_owner": "allow",
+      "eve_web_fresh": "allow"
+    },
+    "web_instance": {
+      "alice_web_member_stale": "allow",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "forbid_capability",
+      "alice_cli_owner": "forbid_capability",
+      "eve_web_fresh": "allow"
+    },
+    "any_self": {
+      "alice_web_member_stale": "allow",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "allow",
+      "alice_cli_owner": "allow",
+      "eve_web_fresh": "conceal"
+    },
+    "web_self": {
+      "alice_web_member_stale": "allow",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "forbid_capability",
+      "alice_cli_owner": "forbid_capability",
+      "eve_web_fresh": "conceal"
+    },
+    "web_self_fresh": {
+      "alice_web_member_stale": "forbid_fresh",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "forbid_fresh",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "forbid_capability",
+      "alice_cli_owner": "forbid_capability",
+      "eve_web_fresh": "conceal"
+    },
+    "cli_self": {
+      "alice_web_member_stale": "forbid_capability",
+      "alice_web_member_fresh": "forbid_capability",
+      "alice_web_owner_stale": "forbid_capability",
+      "alice_web_owner_fresh": "forbid_capability",
+      "alice_cli_member": "allow",
+      "alice_cli_owner": "allow",
+      "eve_web_fresh": "conceal"
+    },
+    "any_member": {
+      "alice_web_member_stale": "allow",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "allow",
+      "alice_cli_owner": "allow",
+      "eve_web_fresh": "conceal"
+    },
+    "cli_member": {
+      "alice_web_member_stale": "forbid_capability",
+      "alice_web_member_fresh": "forbid_capability",
+      "alice_web_owner_stale": "forbid_capability",
+      "alice_web_owner_fresh": "forbid_capability",
+      "alice_cli_member": "allow",
+      "alice_cli_owner": "allow",
+      "eve_web_fresh": "conceal"
+    },
+    "web_member": {
+      "alice_web_member_stale": "allow",
+      "alice_web_member_fresh": "allow",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "forbid_capability",
+      "alice_cli_owner": "forbid_capability",
+      "eve_web_fresh": "conceal"
+    },
+    "web_owner": {
+      "alice_web_member_stale": "forbid_role",
+      "alice_web_member_fresh": "forbid_role",
+      "alice_web_owner_stale": "allow",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "forbid_capability",
+      "alice_cli_owner": "forbid_capability",
+      "eve_web_fresh": "conceal"
+    },
+    "web_owner_fresh": {
+      "alice_web_member_stale": "forbid_role",
+      "alice_web_member_fresh": "forbid_role",
+      "alice_web_owner_stale": "forbid_fresh",
+      "alice_web_owner_fresh": "allow",
+      "alice_cli_member": "forbid_capability",
+      "alice_cli_owner": "forbid_capability",
+      "eve_web_fresh": "conceal"
+    }
+  },
+  "actions": [
+    {"action": "workspace.list_visible", "resource": "instance", "profile": "any_principal_instance"},
+    {"action": "team.create", "resource": "instance", "profile": "web_instance"},
+    {"action": "user.read_self", "resource": "user", "profile": "any_self"},
+    {"action": "user.update_profile", "resource": "user", "profile": "web_self"},
+    {"action": "external_identity.list", "resource": "user", "profile": "web_self"},
+    {"action": "external_identity.bind", "resource": "user", "profile": "web_self_fresh"},
+    {"action": "web_session.list", "resource": "user", "profile": "web_self"},
+    {"action": "web_session.revoke_one", "resource": "user", "profile": "web_self"},
+    {"action": "web_session.revoke_all", "resource": "user", "profile": "web_self"},
+    {"action": "cli_credential.list", "resource": "user", "profile": "web_self"},
+    {"action": "cli_credential.revoke_one", "resource": "user", "profile": "web_self"},
+    {"action": "cli_credential.revoke_all", "resource": "user", "profile": "web_self"},
+    {"action": "cli_credential.read_current", "resource": "user", "profile": "cli_self"},
+    {"action": "cli_credential.revoke_current", "resource": "user", "profile": "cli_self"},
+    {"action": "team.join_with_code", "resource": "instance", "profile": "web_instance"},
+    {"action": "team.read_metadata", "resource": "team", "profile": "any_member"},
+    {"action": "project.list_metadata", "resource": "team", "profile": "any_member"},
+    {"action": "project.read_metadata", "resource": "project", "profile": "any_member"},
+    {"action": "project.match", "resource": "team", "profile": "cli_member"},
+    {"action": "membership.list", "resource": "team", "profile": "web_member"},
+    {"action": "team.update_display_profile", "resource": "team", "profile": "web_owner"},
+    {"action": "membership.promote_to_owner", "resource": "membership", "profile": "web_owner_fresh"},
+    {"action": "membership.demote_owner", "resource": "membership", "profile": "web_owner_fresh"},
+    {"action": "membership.remove_member", "resource": "membership", "profile": "web_owner"},
+    {"action": "membership.remove_owner", "resource": "membership", "profile": "web_owner_fresh"},
+    {"action": "membership.leave_self", "resource": "membership", "profile": "web_member"},
+    {"action": "team_join_code.read_status", "resource": "team_join_code", "profile": "web_owner"},
+    {"action": "team_join_code.rotate", "resource": "team_join_code", "profile": "web_owner_fresh"},
+    {"action": "team_join_code.disable", "resource": "team_join_code", "profile": "web_owner"},
+    {"action": "project.create", "resource": "team", "profile": "any_member"},
+    {"action": "folder_project.rename", "resource": "project", "profile": "web_owner"},
+    {"action": "git_project.relink_repository", "resource": "project", "profile": "web_owner_fresh"},
+    {"action": "project.archive", "resource": "project", "profile": "web_owner"},
+    {"action": "project.delete", "resource": "project", "profile": "web_owner_fresh"},
+    {"action": "project_memory.read", "resource": "project", "profile": "web_member"},
+    {"action": "conversation.read", "resource": "conversation", "profile": "web_member"},
+    {"action": "project_search.query", "resource": "project", "profile": "web_member"},
+    {"action": "raw_session.list", "resource": "conversation", "profile": "web_member"},
+    {"action": "raw_object.read", "resource": "raw_object", "profile": "web_member"},
+    {"action": "canonical.ingest", "resource": "project", "profile": "cli_member"},
+    {"action": "raw.ingest", "resource": "conversation", "profile": "cli_member"},
+    {"action": "captured_session.delete_own", "resource": "captured_session", "profile": "web_member"},
+    {"action": "captured_session.delete_any", "resource": "captured_session", "profile": "web_owner_fresh"}
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "atape",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@11.7.0",
@@ -10,6 +10,7 @@
   "scripts": {
     "atape": "node apps/cli/src/main.ts",
     "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
+    "build:release:images": "node scripts/build-release-images.mjs",
     "check": "pnpm -r typecheck && pnpm -r test && pnpm --filter @atape/web test:browser && pnpm test:e2e && pnpm test:go",
     "dev:server": "cd server && ATAPE_DEMO_MODE=true go run ./cmd/atape-server",
     "dev:web": "pnpm --filter @atape/web dev",
@@ -22,8 +23,12 @@
     "test:e2e": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/cli test:e2e",
     "test:cli-package": "pnpm --filter @atape/cli verify:package",
     "test:release": "pnpm test:cli-package && pnpm test:adapter-package && node scripts/verify-release.mjs",
+    "test:release:gates": "node scripts/verify-auth-release-gates.mjs --mode ci",
     "test:go": "cd server && go test ./...",
+    "test:go:fuzz": "./scripts/run-go-fuzz.sh",
     "test:go:integration": "cd server && ATAPE_INTEGRATION_TESTS=1 TESTCONTAINERS_RYUK_DISABLED=true go test ./internal/adapters/postgres ./internal/adapters/httpapi ./internal/authentication ./internal/authcutover ./internal/team -count=1",
+    "test:go:race": "cd server && go test -race ./...",
+    "test:security:dependencies": "pnpm audit --prod --audit-level high && cd server && GOTOOLCHAIN=go1.25.14 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...",
     "test:self-hosting:config": "./scripts/verify-self-hosted-config.sh",
     "test:self-hosting:restore": "./scripts/rehearse-self-hosted-restore.sh"
   }

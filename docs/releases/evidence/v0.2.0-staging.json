@@ -1,0 +1,26 @@
+{
+  "protocol": "atape.auth-staging-attestation.v1",
+  "releaseVersion": "0.2.0",
+  "authEpoch": "auth-v1",
+  "status": "pending",
+  "testedCommit": null,
+  "completedAt": null,
+  "operator": null,
+  "imageDigests": {
+    "server": null,
+    "web": null
+  },
+  "backupRestoreId": null,
+  "checks": [
+    {"id": "candidate-artifacts", "status": "pending", "evidenceUrl": null},
+    {"id": "official-topology", "status": "pending", "evidenceUrl": null},
+    {"id": "github-provider-staging-smoke", "status": "pending", "evidenceUrl": null},
+    {"id": "official-domain-egress-deny-smoke", "status": "pending", "evidenceUrl": null},
+    {"id": "two-user-two-team", "status": "pending", "evidenceUrl": null},
+    {"id": "waf-tls-callback", "status": "pending", "evidenceUrl": null},
+    {"id": "backup-restore", "status": "pending", "evidenceUrl": null},
+    {"id": "observability-secret-sample", "status": "pending", "evidenceUrl": null},
+    {"id": "rollback", "status": "pending", "evidenceUrl": null},
+    {"id": "release-signoff", "status": "pending", "evidenceUrl": null}
+  ]
+}

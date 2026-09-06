@@ -45,6 +45,10 @@ func (h *Handler) dispatch(registered route) http.Handler {
 				writeProblem(response, request, problem, 0, nil)
 				return
 			}
+			if credentials.hasCookie && credentials.hasAuthorization {
+				writeProblem(response, request, problemAmbiguousCredentials, 0, nil)
+				return
+			}
 			if credentials.hasCookie || !credentials.hasAuthorization || !credentials.validBearer {
 				h.setAuthenticationChallenge(response.Header(), registered.Class, nil)
 				writeProblem(response, request, problemUnauthenticated, 0, nil)

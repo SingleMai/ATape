@@ -9,7 +9,9 @@ import (
 
 	"github.com/SingleMai/ATape/server/internal/authcutover"
 	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/canonical"
+	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 )
 
 func TestRouteInventoryIsClosedAndUnique(t *testing.T) {
@@ -63,6 +65,27 @@ func TestRouteInventoryIsClosedAndUnique(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("route without a request body policy unexpectedly succeeded")
+	}
+	for name, candidate := range map[string]route{
+		"public action": {
+			RouteSpec: RouteSpec{Method: http.MethodGet, Pattern: "/public-action", Class: PublicProtocol},
+			handler:   func(http.ResponseWriter, *http.Request) {}, body: noRequestBody, cache: noStore,
+			actions: []authorization.Action{authorization.UserReadSelf},
+		},
+		"unknown action": {
+			RouteSpec: RouteSpec{Method: http.MethodGet, Pattern: "/unknown-action", Class: WebOnly},
+			handler:   func(http.ResponseWriter, *http.Request) {}, body: noRequestBody, cache: noStore,
+			actions: []authorization.Action{authorization.UnknownAction},
+		},
+		"duplicate action": {
+			RouteSpec: RouteSpec{Method: http.MethodGet, Pattern: "/duplicate-action", Class: WebOnly},
+			handler:   func(http.ResponseWriter, *http.Request) {}, body: noRequestBody, cache: noStore,
+			actions: []authorization.Action{authorization.UserReadSelf, authorization.UserReadSelf},
+		},
+	} {
+		if err := bare.register(candidate); err == nil {
+			t.Fatalf("route with %s unexpectedly succeeded", name)
+		}
 	}
 }
 
@@ -187,7 +210,11 @@ func TestPublicProtocolIgnoresAmbientCredentials(t *testing.T) {
 
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"protocol":"atape.instance.v1"`) {
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"protocol":"atape.instance.v1"`) ||
+		!strings.Contains(response.Body.String(), `"release_version":"`+releaseinfo.Version+`"`) ||
+		!strings.Contains(response.Body.String(), `"auth_epoch":"`+releaseinfo.AuthEpoch+`"`) ||
+		!strings.Contains(response.Body.String(), `"minimum_cli_version":"`+releaseinfo.MinimumCLIVersion+`"`) {
 		t.Fatalf("public metadata changed by credentials: %d %s", response.Code, response.Body.String())
 	}
 	if got := response.Header().Get("Cache-Control"); got != "public, max-age=300" {
@@ -485,6 +512,21 @@ func TestCredentialParsingRejectsDuplicates(t *testing.T) {
 	if _, problem := readCredentials(request, "session"); problem != problemAmbiguousCredentials {
 		t.Fatalf("duplicate Authorization problem = %q", problem)
 	}
+}
+
+func TestCLIProofOnlyRejectsMixedCredentialMedia(t *testing.T) {
+	handler := testHandler(t)
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/auth/cli/credentials/current", nil)
+	request.AddCookie(&http.Cookie{Name: handler.config.sessionCookie, Value: "web-secret"})
+	request.Header.Set("Authorization", "Bearer cli-secret")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("mixed credential status = %d: %s", response.Code, response.Body.String())
+	}
+	assertProblemEnvelope(t, response, "ambiguous_credentials")
 }
 
 func TestRequiredIdempotencyKeyRejectsMissingOrDuplicateHeaders(t *testing.T) {

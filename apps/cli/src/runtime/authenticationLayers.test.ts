@@ -56,7 +56,10 @@ describe("Node CLI authentication HTTP Adapter", () => {
         instance_origin: "https://atape.dev",
         web_origin: "https://atape.dev",
         api_origin: "https://api.atape.dev",
-        protocols: ["atape.cli-authorization.v1"]
+        protocols: ["atape.cli-authorization.v1"],
+        release_version: "0.2.0",
+        auth_epoch: "auth-v1",
+        minimum_cli_version: "0.2.0"
       }),
       json({
         protocol: "atape.cli-authorization.v1",
@@ -121,7 +124,10 @@ describe("Node CLI authentication HTTP Adapter", () => {
       instanceOrigin: "https://atape.dev",
       webOrigin: "https://atape.dev",
       apiOrigin: "https://api.atape.dev",
-      protocols: ["atape.cli-authorization.v1"]
+      protocols: ["atape.cli-authorization.v1"],
+      releaseVersion: "0.2.0",
+      authEpoch: "auth-v1" as const,
+      minimumCliVersion: "0.2.0"
     }
     const failure = await Effect.gen(function*() {
       return yield* (yield* CLIAuthenticationGateway)
