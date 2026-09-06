@@ -5,6 +5,10 @@ the static Web application, Go server, PostgreSQL, and filesystem Raw storage.
 No request in the core login, CLI, Workspace, capture, read, Search, backup, or
 restore flow depends on `atape.net` or another ATape-operated service.
 
+The official low-cost EC2 dogfood profile is documented in
+[AWS dogfood deployment](aws-dogfood.md). It intentionally remains distinct
+from the production release gate.
+
 ## Choose one public topology
 
 The default and recommended topology is same-origin:

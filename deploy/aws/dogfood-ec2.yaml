@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Low-cost single-node ATape dogfood host. The application remains private on
+  loopback and is intended to be published through Cloudflare Tunnel.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    AllowedValues:
+      - t4g.small
+      - t4g.medium
+  RootVolumeSizeGiB:
+    Type: Number
+    Default: 60
+    MinValue: 30
+    MaxValue: 16384
+  AmazonLinuxAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  DockerComposeVersion:
+    Type: String
+    Default: v5.5.1
+    AllowedPattern: ^v[0-9]+\.[0-9]+\.[0-9]+$
+
+Resources:
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub atape-dogfood-${AWS::Region}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: ReadDogfoodParameters
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/atape/dogfood/*
+      Tags:
+        - Key: atape:environment
+          Value: dogfood
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ATape dogfood host with no inbound network access
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0 # trivy:ignore:AWS-0104:exp:2026-12-31
+          Description: HTTPS for packages, SSM, GitHub, registries, and Tunnel fallback
+        - IpProtocol: tcp
+          FromPort: 7844
+          ToPort: 7844
+          CidrIp: 0.0.0.0/0 # trivy:ignore:AWS-0104:exp:2026-12-31
+          Description: Cloudflare Tunnel HTTP2 transport
+        - IpProtocol: udp
+          FromPort: 7844
+          ToPort: 7844
+          CidrIp: 0.0.0.0/0 # trivy:ignore:AWS-0104:exp:2026-12-31
+          Description: Cloudflare Tunnel QUIC transport
+      Tags:
+        - Key: Name
+          Value: atape-dogfood
+        - Key: atape:environment
+          Value: dogfood
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      Monitoring: false
+      PropagateTagsToVolumeOnCreation: true
+      CreditSpecification:
+        CPUCredits: standard
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+        InstanceMetadataTags: disabled
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref SecurityGroup
+          SubnetId: !Ref SubnetId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: false
+            Encrypted: true
+            VolumeSize: !Ref RootVolumeSizeGiB
+            VolumeType: gp3
+      Tags:
+        - Key: Name
+          Value: atape-dogfood
+        - Key: atape:environment
+          Value: dogfood
+        - Key: atape:backup-policy
+          Value: disposable-no-automated-backup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          dnf install -y docker git jq openssl
+
+          install -d -m 0755 /usr/local/lib/docker/cli-plugins
+          compose_asset=docker-compose-linux-aarch64
+          compose_base=https://github.com/docker/compose/releases/download/${DockerComposeVersion}
+          curl -fsSLo /tmp/${!compose_asset} ${!compose_base}/${!compose_asset}
+          curl -fsSLo /tmp/${!compose_asset}.sha256 ${!compose_base}/${!compose_asset}.sha256
+          (
+            cd /tmp
+            sha256sum -c ${!compose_asset}.sha256
+          )
+          install -m 0755 /tmp/${!compose_asset} /usr/local/lib/docker/cli-plugins/docker-compose
+          rm -f /tmp/${!compose_asset} /tmp/${!compose_asset}.sha256
+
+          install -d -m 0755 /etc/docker
+          printf '%s\n' \
+            '{' \
+            '  "log-driver": "local",' \
+            '  "log-opts": {' \
+            '    "max-size": "10m",' \
+            '    "max-file": "3"' \
+            '  }' \
+            '}' > /etc/docker/daemon.json
+
+          if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+            dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+            chmod 0600 /swapfile
+            mkswap /swapfile
+            swapon /swapfile
+            printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
+          fi
+
+          install -d -o ec2-user -g ec2-user -m 0750 /opt/atape
+          usermod -aG docker ec2-user
+          systemctl enable --now docker
+          systemctl enable --now amazon-ssm-agent
+          dnf clean all
+          touch /opt/atape/.base-ready
+
+Outputs:
+  InstanceId:
+    Description: Use this identifier with AWS Systems Manager Session Manager.
+    Value: !Ref Instance
+  PublicIpv4:
+    Description: Ephemeral outbound IPv4 address; Cloudflare Tunnel does not depend on it.
+    Value: !GetAtt Instance.PublicIp
+  SecurityGroupId:
+    Value: !Ref SecurityGroup
+  RetentionNotice:
+    Description: The encrypted root volume remains after instance or stack deletion and must be removed explicitly.
+    Value: Root volume DeleteOnTermination is false; this is recovery convenience, not a backup.
