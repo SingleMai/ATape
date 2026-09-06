@@ -26,6 +26,10 @@ Parameters:
     Type: String
     Default: v5.5.1
     AllowedPattern: ^v[0-9]+\.[0-9]+\.[0-9]+$
+  DockerBuildxVersion:
+    Type: String
+    Default: v0.37.0
+    AllowedPattern: ^v[0-9]+\.[0-9]+\.[0-9]+$
 
 Resources:
   InstanceRole:
@@ -142,6 +146,17 @@ Resources:
           )
           install -m 0755 /tmp/${!compose_asset} /usr/local/lib/docker/cli-plugins/docker-compose
           rm -f /tmp/${!compose_asset} /tmp/${!compose_asset}.sha256
+
+          buildx_asset=buildx-${DockerBuildxVersion}.linux-arm64
+          buildx_base=https://github.com/docker/buildx/releases/download/${DockerBuildxVersion}
+          curl -fsSLo /tmp/${!buildx_asset} ${!buildx_base}/${!buildx_asset}
+          curl -fsSLo /tmp/buildx-checksums.txt ${!buildx_base}/checksums.txt
+          (
+            cd /tmp
+            grep " ${!buildx_asset}$" buildx-checksums.txt | sha256sum -c -
+          )
+          install -m 0755 /tmp/${!buildx_asset} /usr/local/lib/docker/cli-plugins/docker-buildx
+          rm -f /tmp/${!buildx_asset} /tmp/buildx-checksums.txt
 
           install -d -m 0755 /etc/docker
           printf '%s\n' \
