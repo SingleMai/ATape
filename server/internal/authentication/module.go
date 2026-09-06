@@ -277,7 +277,11 @@ func normalizeReturnTo(value string) (string, error) {
 		strings.ContainsAny(parsed.Path, "\r\n\x00") {
 		return "", domainError(CodeInvalidRequest)
 	}
-	return parsed.RequestURI(), nil
+	normalized := parsed.RequestURI()
+	if len(normalized) > 2048 {
+		return "", domainError(CodeInvalidRequest)
+	}
+	return normalized, nil
 }
 
 func validateRequestID(value string) bool {
