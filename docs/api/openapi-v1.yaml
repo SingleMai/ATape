@@ -198,6 +198,7 @@ paths:
         - {name: state, in: query, required: true, schema: {type: string, maxLength: 512}}
         - {name: code, in: query, required: false, schema: {type: string, maxLength: 4096}}
         - {name: error, in: query, required: false, schema: {type: string, maxLength: 100}}
+        - {name: iss, in: query, required: true, schema: {type: string, format: uri, maxLength: 2048}}
       responses:
         "303": {$ref: "#/components/responses/FederatedRedirect"}
         "4XX": {$ref: "#/components/responses/Problem"}

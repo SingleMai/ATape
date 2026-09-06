@@ -43,10 +43,12 @@ The Web application reads enabled entries from
 
 The response stores a short-lived host-only login-binding Cookie and returns a
 Provider authorization URI for top-level navigation. The exact GitHub callback
-accepts only bounded `state`, `code`, or `error` values. It clears the binding
-Cookie and redirects to either the transaction's stored local return path or a
-fixed safe error page. Provider descriptions, codes, state, subjects, and
-tokens are never reflected.
+accepts only bounded `state`, `code`, `error`, and RFC 9207 `iss` values. The
+GitHub Adapter compares `iss` exactly with its configured authorization-server
+issuer before exchanging the code. The callback clears the binding Cookie and
+redirects to either the transaction's stored local return path or a fixed safe
+error page. Provider descriptions, codes, state, subjects, and tokens are never
+reflected.
 
 The Session Cookie is topology-derived. A same-host HTTPS deployment uses a
 host-only `__Host-atape_session`; a split Web/API subdomain deployment uses one

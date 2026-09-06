@@ -30,6 +30,7 @@ const (
 	RegistrationID       = "github"
 	RegistrationRevision = "github-oauth-v1"
 	PrivateStateSchema   = "github-pkce-s256-v1"
+	authorizationIssuer  = "https://github.com/login/oauth"
 
 	maximumTokenResponseBytes = 32 << 10
 	maximumUserResponseBytes  = 64 << 10
@@ -39,6 +40,7 @@ const (
 )
 
 var productionEndpoints = endpointSet{
+	issuer:        authorizationIssuer,
 	authorization: "https://github.com/login/oauth/authorize",
 	token:         "https://github.com/login/oauth/access_token",
 	user:          "https://api.github.com/user",
@@ -56,6 +58,7 @@ func (Config) String() string          { return "github.Config{ClientSecret:reda
 func (config Config) GoString() string { return config.String() }
 
 type endpointSet struct {
+	issuer        string
 	authorization string
 	token         string
 	user          string
@@ -65,6 +68,7 @@ type adapter struct {
 	client       *http.Client
 	clientID     string
 	clientSecret string
+	issuer       string
 	endpoints    endpointSet
 	random       io.Reader
 }
@@ -95,7 +99,7 @@ func newAdapter(
 	if random == nil {
 		return nil, errors.New("GitHub OAuth secure random source is required")
 	}
-	for _, endpoint := range []string{endpoints.authorization, endpoints.token, endpoints.user} {
+	for _, endpoint := range []string{endpoints.issuer, endpoints.authorization, endpoints.token, endpoints.user} {
 		if err := validateEndpoint(endpoint, allowLoopbackHTTP); err != nil {
 			return nil, err
 		}
@@ -117,7 +121,7 @@ func newAdapter(
 	client.Jar = nil
 	return &adapter{
 		client: client, clientID: config.ClientID, clientSecret: config.ClientSecret,
-		endpoints: endpoints, random: random,
+		issuer: endpoints.issuer, endpoints: endpoints, random: random,
 	}, nil
 }
 
@@ -191,6 +195,9 @@ func (a *adapter) Complete(
 ) (authentication.VerifiedExternalIdentity, error) {
 	if ctx.Err() != nil {
 		return authentication.VerifiedExternalIdentity{}, providerFailure(authentication.ProviderUnavailable)
+	}
+	if request.AuthorizationServerIssuer != a.issuer {
+		return authentication.VerifiedExternalIdentity{}, providerFailure(authentication.ProviderProtocolViolation)
 	}
 	if request.AuthorizationError != "" {
 		if request.AuthorizationCode != "" {

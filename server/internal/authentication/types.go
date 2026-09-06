@@ -28,11 +28,12 @@ type ProviderBeginResult struct {
 }
 
 type ProviderCompleteRequest struct {
-	CallbackURI        string
-	AuthorizationCode  string
-	AuthorizationError string
-	PrivateState       []byte
-	PrivateStateSchema string
+	CallbackURI               string
+	AuthorizationServerIssuer string
+	AuthorizationCode         string
+	AuthorizationError        string
+	PrivateState              []byte
+	PrivateStateSchema        string
 }
 
 type VerifiedExternalIdentity struct {
@@ -118,12 +119,13 @@ type FederatedLoginChallenge struct {
 }
 
 type CompleteFederatedLoginInput struct {
-	ProviderRegistrationID string
-	State                  string
-	BrowserBinding         string
-	AuthorizationCode      string
-	AuthorizationError     string
-	RequestID              string
+	ProviderRegistrationID    string
+	State                     string
+	BrowserBinding            string
+	AuthorizationServerIssuer string
+	AuthorizationCode         string
+	AuthorizationError        string
+	RequestID                 string
 }
 
 type User struct {
