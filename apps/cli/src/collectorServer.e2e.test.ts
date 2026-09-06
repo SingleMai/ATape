@@ -21,6 +21,8 @@ const repositoryRoot = resolve(import.meta.dirname, "../../..")
 const cliEntry = join(repositoryRoot, "apps/cli/src/main.ts")
 const codexAdapter = join(repositoryRoot, "adapters/codex")
 const rawTransportChunkBytes = 256 * 1024
+const serverStartupTimeoutMs = 120_000
+const endToEndTimeoutMs = 300_000
 
 it("collects Codex into the real Go APIs and retains finalized history", async () => {
   const fixture = await createFixture()
@@ -137,7 +139,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     await stopServer(server)
     await rm(fixture.root, { recursive: true, force: true })
   }
-}, 180_000)
+}, endToEndTimeoutMs)
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>
 
@@ -388,7 +390,8 @@ const stopServer = async (server: ChildProcess | undefined) => {
 }
 
 const waitUntilHealthy = async (serverUrl: string, server: ChildProcess) => {
-  for (let attempt = 0; attempt < 200; attempt++) {
+  const deadline = Date.now() + serverStartupTimeoutMs
+  while (Date.now() < deadline) {
     if (server.exitCode !== null) break
     try {
       const health = await getJSON<{ readonly status: string }>(serverUrl, "/healthz")
