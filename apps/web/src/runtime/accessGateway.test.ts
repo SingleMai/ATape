@@ -48,9 +48,9 @@ describe("browser access Gateway Adapter", () => {
   it("translates the public snake-case Instance document at the Adapter boundary", async () => {
     fetchMock.mockResolvedValue(new Response(JSON.stringify({
       protocol: "atape.instance.v1",
-      instance_origin: "https://atape.dev",
-      web_origin: "https://atape.dev",
-      api_origin: "https://api.atape.dev",
+      instance_origin: "https://atape.net",
+      web_origin: "https://atape.net",
+      api_origin: "https://api.atape.net",
       protocols: ["atape.cli-authorization.v1"],
       release_version: "0.2.0",
       auth_epoch: "auth-v1",
@@ -61,9 +61,9 @@ describe("browser access Gateway Adapter", () => {
 
     expect(metadata).toEqual({
       protocol: "atape.instance.v1",
-      instanceOrigin: "https://atape.dev",
-      webOrigin: "https://atape.dev",
-      apiOrigin: "https://api.atape.dev",
+      instanceOrigin: "https://atape.net",
+      webOrigin: "https://atape.net",
+      apiOrigin: "https://api.atape.net",
       protocols: ["atape.cli-authorization.v1"],
       releaseVersion: "0.2.0",
       authEpoch: "auth-v1",

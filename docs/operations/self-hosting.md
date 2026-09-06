@@ -3,7 +3,7 @@
 The repository contains every runtime component needed for an ATape Instance:
 the static Web application, Go server, PostgreSQL, and filesystem Raw storage.
 No request in the core login, CLI, Workspace, capture, read, Search, backup, or
-restore flow depends on `atape.dev` or another ATape-operated service.
+restore flow depends on `atape.net` or another ATape-operated service.
 
 ## Choose one public topology
 
@@ -13,7 +13,7 @@ The default and recommended topology is same-origin:
 https://atape.example.com ── TLS/WAF ──> 127.0.0.1:8080 (Web + /api proxy)
 ```
 
-The official hosted Instance will use `https://atape.dev` in this shape. For a
+The official hosted Instance will use `https://atape.net` in this shape. For a
 self-hosted domain, replace it with the operator-owned origin. The Go server
 does not trust request `Host`, `Forwarded`, or `X-Forwarded-*` when deriving
 callbacks, redirects, CORS, or Cookies; the configured public origins are the

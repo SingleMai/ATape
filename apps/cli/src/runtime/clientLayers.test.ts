@@ -57,7 +57,7 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
 
 const setupInput = (path: string, type: "auto" | "git" | "directory" = "auto") => ({
   path,
-  instanceOrigin: "https://atape.dev",
+  instanceOrigin: "https://atape.net",
   userId: "user-1",
   teamId: "team-1",
   teamSlug: "acme",

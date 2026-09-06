@@ -10,7 +10,7 @@ info:
     Authentication, Team, ingestion, conversation, Raw, and Search Modules;
     this document describes only their HTTP representation.
 servers:
-  - url: https://atape.dev
+  - url: https://atape.net
     description: Official service API origin
 tags:
   - {name: Protocol, description: Public liveness and instance-discovery documents.}

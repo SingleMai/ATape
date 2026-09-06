@@ -14,10 +14,10 @@ const now = "2026-09-05T02:30:00.000Z"
 
 const configuredClient = (): ClientConfig => ({
   ...emptyClientConfig(),
-  activeInstanceOrigin: "https://atape.dev",
+  activeInstanceOrigin: "https://atape.net",
   projects: [{
     id: "atape",
-    instanceOrigin: "https://atape.dev",
+    instanceOrigin: "https://atape.net",
     userId: "user-1",
     teamId: "team",
     teamSlug: "team",

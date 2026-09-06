@@ -151,7 +151,7 @@ func writeProblem(
 	response.Header().Set("Content-Type", "application/problem+json; charset=utf-8")
 	response.WriteHeader(definition.status)
 	_ = json.NewEncoder(response).Encode(problemDocument{
-		Type: "https://atape.dev/problems/v1/" + string(code), Title: definition.title,
+		Type: "https://atape.net/problems/v1/" + string(code), Title: definition.title,
 		Status: definition.status, Code: code, Detail: definition.detail,
 		Instance: "urn:atape:request:" + requestID, RequestID: requestID, Errors: fields,
 	})

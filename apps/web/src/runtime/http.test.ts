@@ -9,7 +9,7 @@ import {
 } from "./http.ts"
 
 const problem = (status: number, code: string) => new Response(JSON.stringify({
-  type: `https://atape.dev/problems/v1/${code}`,
+  type: `https://atape.net/problems/v1/${code}`,
   title: code,
   status,
   code,

@@ -119,7 +119,7 @@ export type InstanceSelection = {
 }
 
 export const selectInstanceOrigin = (selection: InstanceSelection): Effect.Effect<string, CLIAuthenticationError> => {
-  const candidate = selection.commandLine ?? selection.environment ?? selection.savedActive ?? "https://atape.dev"
+  const candidate = selection.commandLine ?? selection.environment ?? selection.savedActive ?? "https://atape.net"
   const normalized = normalizeInstanceOrigin(candidate, {
     allowLoopbackHttp: selection.allowLoopbackHttp === true
   })

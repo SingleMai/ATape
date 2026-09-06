@@ -19,7 +19,7 @@ import {
 
 const setupInput = (overrides: Partial<Parameters<typeof setupProject>[0]> = {}): Parameters<typeof setupProject>[0] => ({
   path: "/work/payments/src",
-  instanceOrigin: "https://atape.dev",
+  instanceOrigin: "https://atape.net",
   userId: "user-1",
   teamId: "team-1",
   teamSlug: "acme",
@@ -101,13 +101,13 @@ describe("Client management Module", () => {
     const replayed = await client.run(setupProject(input))
 
     expect(created.project).toMatchObject({
-      instanceOrigin: "https://atape.dev",
+      instanceOrigin: "https://atape.net",
       userId: "user-1",
       teamId: "team-1",
       teamSlug: "acme"
     })
     expect(replayed.created).toBe(false)
-    expect(client.read().activeInstanceOrigin).toBe("https://atape.dev")
+    expect(client.read().activeInstanceOrigin).toBe("https://atape.net")
     await expect(client.run(setupProject({ ...input, userId: "someone-else" })))
       .rejects.toMatchObject({ reason: "conflict", resource: "project" })
   })
