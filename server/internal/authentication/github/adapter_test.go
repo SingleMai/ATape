@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	testClientID     = "Iv1.atape-contract-client"
-	testClientSecret = "github-client-secret-contract-canary"
-	testToken        = "gho_provider-token-contract-canary"
+	testClientID            = "Iv1.atape-contract-client"
+	testClientSecret        = "github-client-secret-contract-canary"
+	testToken               = "gho_provider-token-contract-canary"
+	testAuthorizationIssuer = "https://github.example.test/login/oauth"
 )
 
 var expectedIdentity = authentication.VerifiedExternalIdentity{
@@ -33,11 +34,12 @@ var expectedIdentity = authentication.VerifiedExternalIdentity{
 
 func TestAdapterConformance(t *testing.T) {
 	federatedidentitycontract.Run(t, federatedidentitycontract.Contract{
-		Factory:           contractPair,
-		ExpectedIdentity:  expectedIdentity,
-		CallbackURI:       "https://api.example.test/api/v1/auth/providers/github/callback",
-		State:             "atf_contract_state_0123456789abcdefghijklmnop",
-		AuthorizationCode: "github-authorization-code-contract-canary",
+		Factory:                   contractPair,
+		ExpectedIdentity:          expectedIdentity,
+		CallbackURI:               "https://api.example.test/api/v1/auth/providers/github/callback",
+		AuthorizationServerIssuer: testAuthorizationIssuer,
+		State:                     "atf_contract_state_0123456789abcdefghijklmnop",
+		AuthorizationCode:         "github-authorization-code-contract-canary",
 	})
 }
 
@@ -82,6 +84,7 @@ func contractPair(t *testing.T, scenario federatedidentitycontract.Scenario) fed
 	}))
 	t.Cleanup(provider.Close)
 	endpoints := endpointSet{
+		issuer:        testAuthorizationIssuer,
 		authorization: "https://github.example.test/login/oauth/authorize",
 		token:         provider.URL + "/token", user: provider.URL + "/user",
 	}
@@ -160,6 +163,7 @@ func TestAuthorizationCodeProtocol(t *testing.T) {
 	}))
 	t.Cleanup(provider.Close)
 	endpoints := endpointSet{
+		issuer:        testAuthorizationIssuer,
 		authorization: "https://github.example.test/login/oauth/authorize",
 		token:         provider.URL + "/token", user: provider.URL + "/user",
 	}
@@ -203,8 +207,9 @@ func TestAuthorizationCodeProtocol(t *testing.T) {
 	}
 
 	identity, err := adapter.Complete(context.Background(), authentication.ProviderCompleteRequest{
-		CallbackURI: callbackURI, AuthorizationCode: code,
-		PrivateState: begin.PrivateState, PrivateStateSchema: begin.StateSchema,
+		CallbackURI: callbackURI, AuthorizationServerIssuer: testAuthorizationIssuer,
+		AuthorizationCode: code,
+		PrivateState:      begin.PrivateState, PrivateStateSchema: begin.StateSchema,
 	})
 	if err != nil {
 		t.Fatalf("complete: %v", err)
@@ -239,6 +244,7 @@ func TestAdapterRefusesCredentialBearingRedirect(t *testing.T) {
 	value, err := newAdapter(Config{
 		ClientID: testClientID, ClientSecret: testClientSecret,
 	}, endpointSet{
+		issuer:        testAuthorizationIssuer,
 		authorization: "https://github.example.test/authorize",
 		token:         provider.URL + "/token", user: provider.URL + "/user",
 	}, bytes.NewReader(bytes.Repeat([]byte{1}, 32)), true)
@@ -253,8 +259,9 @@ func TestAdapterRefusesCredentialBearingRedirect(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	_, err = value.Complete(context.Background(), authentication.ProviderCompleteRequest{
-		CallbackURI: "https://api.example.test/callback", AuthorizationCode: "redirect-code",
-		PrivateState: begin.PrivateState, PrivateStateSchema: begin.StateSchema,
+		CallbackURI: "https://api.example.test/callback", AuthorizationServerIssuer: testAuthorizationIssuer,
+		AuthorizationCode: "redirect-code",
+		PrivateState:      begin.PrivateState, PrivateStateSchema: begin.StateSchema,
 	})
 	var failure *authentication.ProviderFailure
 	if !errors.As(err, &failure) || failure.Code != authentication.ProviderInvalidResponse {
