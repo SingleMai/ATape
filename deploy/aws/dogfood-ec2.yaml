@@ -67,9 +67,21 @@ Resources:
       GroupDescription: ATape dogfood host with no inbound network access
       VpcId: !Ref VpcId
       SecurityGroupEgress:
-        - IpProtocol: "-1"
-          CidrIp: 0.0.0.0/0
-          Description: Package, SSM, GitHub, and Cloudflare Tunnel egress
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0 # trivy:ignore:AWS-0104:exp:2026-12-31
+          Description: HTTPS for packages, SSM, GitHub, registries, and Tunnel fallback
+        - IpProtocol: tcp
+          FromPort: 7844
+          ToPort: 7844
+          CidrIp: 0.0.0.0/0 # trivy:ignore:AWS-0104:exp:2026-12-31
+          Description: Cloudflare Tunnel HTTP2 transport
+        - IpProtocol: udp
+          FromPort: 7844
+          ToPort: 7844
+          CidrIp: 0.0.0.0/0 # trivy:ignore:AWS-0104:exp:2026-12-31
+          Description: Cloudflare Tunnel QUIC transport
       Tags:
         - Key: Name
           Value: atape-dogfood

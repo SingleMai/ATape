@@ -20,5 +20,6 @@
 | [0016](0016-team-module-and-authoritative-resource-authorization.md) | Accepted | Deep Team control plane plus pure policy and authoritative per-Module resource authorization |
 | [0017](0017-http-interface-and-route-security.md) | Accepted | Closed HTTP route classes, centralized transport security, RFC 9457, and OpenAPI drift checks |
 | [0018](0018-auth-cutover-and-deployable-self-hosting.md) | Accepted | Durable reviewed auth cutover, fail-closed serving modes, secret-file Compose, and paired PostgreSQL + Raw recovery |
+| [0019](0019-low-cost-dogfood-egress.md) | Accepted | Time-bounded HTTPS and Cloudflare Tunnel egress for the disposable AWS dogfood host |
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.

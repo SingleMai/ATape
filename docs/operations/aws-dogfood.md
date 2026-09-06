@@ -14,6 +14,10 @@ by [Backup and restore](backup-and-restore.md).
 - Edge: Cloudflare Tunnel to the loopback Compose listener
 - Runtime: Amazon Linux 2023 ARM64, Docker Engine, Docker Compose v2, and 2 GiB swap
 
+Outbound traffic is restricted to HTTPS plus Cloudflare Tunnel's TCP/UDP 7844
+transport. The public-CIDR exception and its review date are recorded in
+[ADR-0019](../architecture/adr/0019-low-cost-dogfood-egress.md).
+
 The root volume deliberately has `DeleteOnTermination=false`. This reduces the
 chance that an accidental instance or stack deletion destroys the experiment's
 data, but it is not a backup. A retained orphan volume keeps accruing EBS cost
