@@ -163,8 +163,9 @@ test("recovers fresh authentication and scopes one-time Team codes locally", asy
   await expect(page.getByText("K7M4PX")).toHaveCount(0)
 })
 
-test("normalizes first-Team create and join input through the same Web Interface", async ({ context, page }) => {
+test("normalizes first-Team create and join input through the same Web Interface", async ({ context, page, request }) => {
   await authenticate(context)
+  await request.post(`${fixtureOrigin}/__fixture/workspace?value=empty`)
   await page.goto("/onboarding")
   await expect(page.getByRole("link", { name: "Create a Team" })).toBeVisible()
   await expect(page.getByRole("link", { name: "Join a Team" })).toBeVisible()
@@ -185,4 +186,30 @@ test("normalizes first-Team create and join input through the same Web Interface
     displayName: "Tape Makers"
   })
   expect((await fixtureState(page)).teamCreateIdempotencyKey).toMatch(/^[A-Za-z0-9_-]{22}$/)
+})
+
+test("selects a newly created Team and opens its first captured Project", async ({ context, page, request }) => {
+  await authenticate(context)
+  await request.post(`${fixtureOrigin}/__fixture/workspace?value=empty`)
+  await page.goto("/onboarding/create-team")
+
+  await page.getByLabel("Team name").fill("Tape Makers")
+  await page.getByRole("button", { name: "Create Team" }).click()
+
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
+  await expect(page.locator(".team-card strong")).toHaveText("Tape Makers")
+  await expect(page.getByText("atape setup /path/to/project --team tape-makers --create")).toBeVisible()
+
+  await page.locator(".team-card").click()
+  const switcher = page.getByRole("navigation", { name: "Teams and Projects" })
+  const teamSelection = switcher.getByRole("button", { name: /Tape Makers/ })
+  await expect(teamSelection).toBeVisible()
+  await teamSelection.click()
+  await expect(switcher).not.toBeVisible()
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
+
+  await request.post(`${fixtureOrigin}/__fixture/created-project?value=1`)
+  await page.getByRole("button", { name: "Check again" }).click()
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team/projects/created-project`)
+  await expect(page.locator(".project-pill strong")).toHaveText("Captured Project")
 })

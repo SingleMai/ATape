@@ -27,6 +27,7 @@ type Props = {
   readonly currentTeamId: string | undefined
   readonly currentProjectId: string | undefined
   readonly onOpenSearch?: () => void
+  readonly onOpenTeam: (teamId: string) => void
   readonly onOpenProject: (teamId: string, projectId: string) => void
   readonly onRetryWorkspace: () => void
 }
@@ -38,6 +39,7 @@ export const AppShell = ({
   currentTeamId,
   currentProjectId,
   onOpenSearch,
+  onOpenTeam,
   onOpenProject,
   onRetryWorkspace
 }: Props) => {
@@ -107,7 +109,7 @@ export const AppShell = ({
             <header>
               <span>
                 <Eyebrow>Workspace</Eyebrow>
-                <strong>Move to another project</strong>
+                <strong>Choose a Team or Project</strong>
               </span>
               {workspace._tag === "Ready" && workspace.refreshing && <small>Syncing…</small>}
             </header>
@@ -123,7 +125,20 @@ export const AppShell = ({
             )}
             {directory?.teams.map((team) => (
               <section className="workspace-team" key={team.id} aria-labelledby={`team-${team.id}`}>
-                <h2 id={`team-${team.id}`}>{team.name}</h2>
+                <h2 id={`team-${team.id}`}>
+                  <button
+                    className="workspace-team-title"
+                    type="button"
+                    aria-current={team.id === currentTeamId ? "page" : undefined}
+                    onClick={() => {
+                      setSwitcherOpen(false)
+                      onOpenTeam(team.id)
+                    }}
+                  >
+                    <span>{team.name}</span>
+                    {team.id === currentTeamId && <small>Selected Team</small>}
+                  </button>
+                </h2>
                 {team.projects.length === 0 ? (
                   <p className="workspace-no-projects">No captured projects yet</p>
                 ) : (

@@ -15,7 +15,10 @@ const initialState = () => ({
   cliCredentials: ["credential-one"],
   teamCreateBody: null,
   teamCreateIdempotencyKey: null,
-  teamJoinBody: null
+  teamJoinBody: null,
+  workspaceMode: "full",
+  createdTeam: null,
+  createdProjectVisible: false
 })
 
 let state = initialState()
@@ -97,6 +100,16 @@ const routeFixtureControl = (request, response, url) => {
     empty(response)
     return true
   }
+  if (url.pathname === "/__fixture/workspace" && request.method === "POST") {
+    state.workspaceMode = url.searchParams.get("value") === "empty" ? "empty" : "full"
+    empty(response)
+    return true
+  }
+  if (url.pathname === "/__fixture/created-project" && request.method === "POST") {
+    state.createdProjectVisible = url.searchParams.get("value") === "1"
+    empty(response)
+    return true
+  }
   return false
 }
 
@@ -160,20 +173,35 @@ const server = http.createServer(async (request, response) => {
   }
   if (path === "/api/v1/workspace" && request.method === "GET") {
     if (!requireWeb(request, response)) return
+    const teams = state.workspaceMode === "full" ? [team] : []
+    if (state.createdTeam !== null) teams.push(state.createdTeam)
+    const projects = state.workspaceMode === "full" ? [{
+      id: "project-1",
+      teamId: team.id,
+      type: "git",
+      name: "ATape",
+      state: "active",
+      repositoryLinkState: "linked",
+      repositoryIdentity: "github.com/SingleMai/ATape",
+      capturedThrough: now,
+      createdAt: now,
+      updatedAt: now
+    }] : []
+    if (state.createdTeam !== null && state.createdProjectVisible) projects.push({
+      id: "created-project",
+      teamId: state.createdTeam.id,
+      type: "git",
+      name: "Captured Project",
+      state: "active",
+      repositoryLinkState: "linked",
+      repositoryIdentity: "github.com/SingleMai/captured-project",
+      capturedThrough: later,
+      createdAt: now,
+      updatedAt: now
+    })
     return json(response, 200, {
-      teams: [team],
-      projects: [{
-        id: "project-1",
-        teamId: team.id,
-        type: "git",
-        name: "ATape",
-        state: "active",
-        repositoryLinkState: "linked",
-        repositoryIdentity: "github.com/SingleMai/ATape",
-        capturedThrough: now,
-        createdAt: now,
-        updatedAt: now
-      }]
+      teams,
+      projects
     })
   }
   if (path === "/api/v1/users/me/external-identities" && request.method === "GET") {
@@ -296,12 +324,13 @@ const server = http.createServer(async (request, response) => {
     if (!requireCSRF(request, response)) return
     state.teamCreateBody = await readBody(request)
     state.teamCreateIdempotencyKey = request.headers["idempotency-key"] ?? null
-    return json(response, 201, {
+    state.createdTeam = {
       ...team,
       id: "created-team",
       slug: state.teamCreateBody.slug,
       displayName: state.teamCreateBody.displayName
-    })
+    }
+    return json(response, 201, state.createdTeam)
   }
   if (path === "/api/v1/team-memberships" && request.method === "POST") {
     if (!requireCSRF(request, response)) return
