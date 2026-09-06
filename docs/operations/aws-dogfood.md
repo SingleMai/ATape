@@ -12,7 +12,7 @@ by [Backup and restore](backup-and-restore.md).
 - Storage: one encrypted 60 GiB `gp3` root volume
 - Access: Systems Manager only; the security group has no inbound rules
 - Edge: Cloudflare Tunnel to the loopback Compose listener
-- Runtime: Amazon Linux 2023 ARM64, Docker Engine, Docker Compose v2, and 2 GiB swap
+- Runtime: Amazon Linux 2023 ARM64, Docker Engine, Docker Compose, Docker Buildx, and 2 GiB swap
 
 Outbound traffic is restricted to HTTPS plus Cloudflare Tunnel's TCP/UDP 7844
 transport. The public-CIDR exception and its review date are recorded in
