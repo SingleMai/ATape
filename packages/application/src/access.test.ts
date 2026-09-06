@@ -37,9 +37,9 @@ const session: WebSession = {
 const bootstrap: AuthenticatedSession = { user, webSession: session }
 const instance: InstanceMetadata = {
   protocol: "atape.instance.v1",
-  instanceOrigin: "https://atape.dev",
-  webOrigin: "https://atape.dev",
-  apiOrigin: "https://atape.dev",
+  instanceOrigin: "https://atape.net",
+  webOrigin: "https://atape.net",
+  apiOrigin: "https://atape.net",
   protocols: ["atape.cli-authorization.v1"],
   releaseVersion: "0.2.0",
   authEpoch: "auth-v1",
@@ -63,7 +63,7 @@ const credential: CLICredential = {
 const grant: CLIDeviceGrantView = {
   grantViewId: "grant-1",
   userCode: "Q7KM4W",
-  instanceOrigin: "https://atape.dev",
+  instanceOrigin: "https://atape.net",
   clientLabel: "atape-cli",
   capabilityVersion: "atape-cli.v1",
   permissionSummary: "Read and sync this account's ATape projects.",

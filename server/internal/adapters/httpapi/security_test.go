@@ -162,14 +162,14 @@ func TestBootstrapAllowlistIsClosedBeforeAuthenticationAndParsing(t *testing.T) 
 
 func TestTopologyDerivesOneCookieShape(t *testing.T) {
 	prepared, err := prepareConfig(Config{
-		InstanceOrigin: "https://atape.dev", WebOrigin: "https://atape.dev",
-		APIOrigin: "https://api.atape.dev", CookieDomain: "atape.dev",
+		InstanceOrigin: "https://atape.net", WebOrigin: "https://atape.net",
+		APIOrigin: "https://api.atape.net", CookieDomain: "atape.net",
 	})
 	if err != nil {
 		t.Fatalf("prepare official topology: %v", err)
 	}
 	if prepared.sessionCookie != "__Secure-atape_session" ||
-		prepared.loginCookie != "__Host-atape_login" || prepared.cookieDomain != "atape.dev" ||
+		prepared.loginCookie != "__Host-atape_login" || prepared.cookieDomain != "atape.net" ||
 		!prepared.splitOrigin || !prepared.secureCookies {
 		t.Fatalf("unexpected official topology: %+v", prepared)
 	}
@@ -245,8 +245,8 @@ func TestPublicMetadataSupportsWeakAndListedETagRevalidation(t *testing.T) {
 func TestPublicTopologyIgnoresHostAndForwardingHeaders(t *testing.T) {
 	principal := authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication}
 	handler := testHandlerWithConfig(t, Config{
-		InstanceOrigin: "https://atape.dev", WebOrigin: "https://atape.dev",
-		APIOrigin: "https://api.atape.dev", CookieDomain: "atape.dev",
+		InstanceOrigin: "https://atape.net", WebOrigin: "https://atape.net",
+		APIOrigin: "https://api.atape.net", CookieDomain: "atape.net",
 		DevelopmentPrincipal: &principal,
 	})
 	request := httptest.NewRequest(http.MethodGet, "https://attacker.invalid/api/v1/instance", nil)
@@ -259,8 +259,8 @@ func TestPublicTopologyIgnoresHostAndForwardingHeaders(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"instance_origin":"https://atape.dev"`) ||
-		!strings.Contains(response.Body.String(), `"api_origin":"https://api.atape.dev"`) ||
+	if !strings.Contains(response.Body.String(), `"instance_origin":"https://atape.net"`) ||
+		!strings.Contains(response.Body.String(), `"api_origin":"https://api.atape.net"`) ||
 		strings.Contains(response.Body.String(), "attacker.invalid") {
 		t.Fatalf("request authority changed discovery: %s", response.Body.String())
 	}
@@ -560,8 +560,8 @@ func TestRequiredIdempotencyKeyRejectsMissingOrDuplicateHeaders(t *testing.T) {
 func TestCookieAttributesAreTopologyDerived(t *testing.T) {
 	principal := authentication.Principal{UserID: canonical.DemoUserID, Method: authentication.WebAuthentication}
 	handler := testHandlerWithConfig(t, Config{
-		InstanceOrigin: "https://atape.dev", WebOrigin: "https://atape.dev",
-		APIOrigin: "https://api.atape.dev", CookieDomain: "atape.dev",
+		InstanceOrigin: "https://atape.net", WebOrigin: "https://atape.net",
+		APIOrigin: "https://api.atape.net", CookieDomain: "atape.net",
 		DevelopmentPrincipal: &principal,
 	})
 	response := httptest.NewRecorder()
@@ -571,7 +571,7 @@ func TestCookieAttributesAreTopologyDerived(t *testing.T) {
 		t.Fatalf("Set-Cookie count = %d", len(cookies))
 	}
 	cookie := cookies[0]
-	if cookie.Name != "__Secure-atape_session" || cookie.Domain != "atape.dev" ||
+	if cookie.Name != "__Secure-atape_session" || cookie.Domain != "atape.net" ||
 		!cookie.Secure || !cookie.HttpOnly || cookie.Path != "/" || cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("unexpected Session Cookie: %+v", cookie)
 	}
@@ -645,7 +645,7 @@ func assertProblemEnvelope(t *testing.T, response *httptest.ResponseRecorder, co
 	t.Helper()
 	body := response.Body.String()
 	for _, expected := range []string{
-		`"type":"https://atape.dev/problems/v1/` + code + `"`,
+		`"type":"https://atape.net/problems/v1/` + code + `"`,
 		`"code":"` + code + `"`, `"requestId":"`, `"instance":"urn:atape:request:`,
 	} {
 		if !strings.Contains(body, expected) {

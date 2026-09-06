@@ -22,9 +22,9 @@ import {
 
 const metadata: InstanceMetadata = {
   protocol: "atape.instance.v1",
-  instanceOrigin: "https://atape.dev",
-  webOrigin: "https://atape.dev",
-  apiOrigin: "https://api.atape.dev",
+  instanceOrigin: "https://atape.net",
+  webOrigin: "https://atape.net",
+  apiOrigin: "https://api.atape.net",
   protocols: ["atape.cli-authorization.v1"],
   releaseVersion: "0.2.0",
   authEpoch: "auth-v1",
@@ -34,8 +34,8 @@ const authorization: CLIDeviceAuthorization = {
   protocol: "atape.cli-authorization.v1",
   deviceCode: "atd_v1_device-secret",
   userCode: "Q7KM4W",
-  verificationUri: "https://atape.dev/cli/authorize",
-  verificationUriComplete: "https://atape.dev/cli/authorize?user_code=Q7KM4W",
+  verificationUri: "https://atape.net/cli/authorize",
+  verificationUriComplete: "https://atape.net/cli/authorize?user_code=Q7KM4W",
   expiresInSeconds: 60,
   intervalSeconds: 1
 }
@@ -50,8 +50,8 @@ const issued: IssuedCLICredential = {
 
 const oldCredential: StoredCLICredential = {
   version: 1,
-  instanceOrigin: "https://atape.dev",
-  apiOrigin: "https://api.atape.dev",
+  instanceOrigin: "https://atape.net",
+  apiOrigin: "https://api.atape.net",
   credential: "atc_v1_old-secret",
   credentialId: "credential-old",
   capabilityVersion: "atape-cli.v1",
@@ -163,17 +163,17 @@ describe("CLI authentication Module", () => {
       environment: "https://environment.example",
       savedActive: "https://saved.example"
     }))).resolves.toBe("https://flag.example")
-    await expect(Effect.runPromise(selectInstanceOrigin({ environment: "http://atape.dev" })))
+    await expect(Effect.runPromise(selectInstanceOrigin({ environment: "http://atape.net" })))
       .rejects.toMatchObject({ reason: "invalid_instance" })
   })
 
   it("keeps the secret inside the workflow and rotates the previous credential after durable replacement", async () => {
     const client = await fixture({ previous: oldCredential })
-    const result = await client.run(loginCLI({ instanceOrigin: "https://atape.dev" }))
+    const result = await client.run(loginCLI({ instanceOrigin: "https://atape.net" }))
 
     expect(result).toMatchObject({
-      instanceOrigin: "https://atape.dev",
-      apiOrigin: "https://api.atape.dev",
+      instanceOrigin: "https://atape.net",
+      apiOrigin: "https://api.atape.net",
       credentialId: "credential-new",
       replacedCredentialId: "credential-old",
       browserOpened: true
@@ -193,7 +193,7 @@ describe("CLI authentication Module", () => {
     const client = await fixture({ polls: [poll] })
     const failure = await Effect.gen(function*() {
       const fiber = yield* Effect.flip(loginCLI({
-        instanceOrigin: "https://atape.dev", openBrowser: false
+        instanceOrigin: "https://atape.net", openBrowser: false
       })).pipe(Effect.forkChild)
       yield* TestClock.adjust("2 seconds")
       return yield* Fiber.join(fiber)
@@ -209,7 +209,7 @@ describe("CLI authentication Module", () => {
       browserOpened: false
     })
     const result = await Effect.gen(function*() {
-      const fiber = yield* loginCLI({ instanceOrigin: "https://atape.dev" }).pipe(Effect.forkChild)
+      const fiber = yield* loginCLI({ instanceOrigin: "https://atape.net" }).pipe(Effect.forkChild)
       yield* TestClock.adjust("20 seconds")
       return yield* Fiber.join(fiber)
     }).pipe(Effect.provide(client.layer), Effect.provide(TestClock.layer()), Effect.runPromise)
@@ -222,7 +222,7 @@ describe("CLI authentication Module", () => {
     const client = await fixture({ polls: ["pending"] })
     await Effect.gen(function*() {
       const fiber = yield* loginCLI({
-        instanceOrigin: "https://atape.dev", openBrowser: false
+        instanceOrigin: "https://atape.net", openBrowser: false
       }).pipe(Effect.forkChild)
       yield* Effect.yieldNow
       yield* Fiber.interrupt(fiber)
@@ -238,14 +238,14 @@ describe("CLI authentication Module", () => {
       polls: ["authorized"]
     })
     await expect(client.run(loginCLI({
-      instanceOrigin: "https://atape.dev", openBrowser: false
+      instanceOrigin: "https://atape.net", openBrowser: false
     }))).rejects.toMatchObject({ reason: "authorization_expired" })
     expect(client.events.some((event) => Array.isArray(event) && event[0] === "poll")).toBe(false)
   })
 
   it("revokes a newly issued credential when durable storage fails", async () => {
     const client = await fixture({ saveFailure: true })
-    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.dev", openBrowser: false })))
+    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.net", openBrowser: false })))
       .rejects.toMatchObject({ reason: "credential_store" })
     expect(client.events).toContainEqual(["revoke", "credential-new"])
     expect(await Effect.runPromise(Ref.get(client.current))).toBeUndefined()
@@ -253,20 +253,20 @@ describe("CLI authentication Module", () => {
 
   it("refuses an unsafe local store before asking the server to issue authority", async () => {
     const client = await fixture({ readFailure: true })
-    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.dev" })))
+    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.net" })))
       .rejects.toMatchObject({ reason: "credential_store" })
     expect(client.events).toEqual([])
   })
 
   it("reports an orphan without ever returning its bearer when save and cleanup both fail", async () => {
     const client = await fixture({ saveFailure: true, revokeFailureIds: ["credential-new"] })
-    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.dev", openBrowser: false })))
+    await expect(client.run(loginCLI({ instanceOrigin: "https://atape.net", openBrowser: false })))
       .rejects.toMatchObject({ reason: "credential_store", orphanedCredential: true })
   })
 
   it("removes local authority even when offline logout cannot confirm remote revocation", async () => {
     const client = await fixture({ previous: oldCredential, revokeFailureIds: ["credential-old"] })
-    const result = await client.run(logoutCLI({ instanceOrigin: "https://atape.dev" }))
+    const result = await client.run(logoutCLI({ instanceOrigin: "https://atape.net" }))
     expect(result).toMatchObject({ signedOut: true })
     expect(result.warnings).toHaveLength(1)
     expect(await Effect.runPromise(Ref.get(client.current))).toBeUndefined()
@@ -281,7 +281,7 @@ describe("CLI authentication Module", () => {
       pollDeviceAuthorization: () => Effect.succeed({ _tag: "Authorized", credential: issued }),
       revokeCredential: () => Ref.set(client.current, newer)
     }))
-    await expect(logoutCLI({ instanceOrigin: "https://atape.dev" }).pipe(
+    await expect(logoutCLI({ instanceOrigin: "https://atape.net" }).pipe(
       Effect.provide(hostileLayer),
       Effect.provide(Layer.succeed(CLICredentialStore, CLICredentialStore.of({
         read: () => Ref.get(client.current),

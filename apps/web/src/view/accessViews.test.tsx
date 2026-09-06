@@ -14,9 +14,9 @@ const options: LoadView<SignInOptions> = {
   value: {
     instance: {
       protocol: "atape.instance.v1",
-      instanceOrigin: "https://atape.dev",
-      webOrigin: "https://atape.dev",
-      apiOrigin: "https://api.atape.dev",
+      instanceOrigin: "https://atape.net",
+      webOrigin: "https://atape.net",
+      apiOrigin: "https://api.atape.net",
       protocols: ["atape.cli-authorization.v1"],
       releaseVersion: "0.2.0",
       authEpoch: "auth-v1",
@@ -29,7 +29,7 @@ const options: LoadView<SignInOptions> = {
 const grant: CLIDeviceGrantView = {
   grantViewId: "private-grant-view-id",
   userCode: "Q7KM4W",
-  instanceOrigin: "https://atape.dev",
+  instanceOrigin: "https://atape.net",
   clientLabel: "atape-cli",
   capabilityVersion: "atape-cli.v1",
   permissionSummary: "Read and sync this account's ATape projects.",
@@ -49,7 +49,7 @@ describe("access views", () => {
 
     expect(html).toContain("Sign in to ATape")
     expect(html).toContain("Continue with GitHub")
-    expect(html).toContain("https://atape.dev")
+    expect(html).toContain("https://atape.net")
     expect(html).not.toContain("provider-registration-a")
     expect(html).not.toContain("Team permissions")
     expect(html).not.toContain("OAuth")
@@ -66,7 +66,7 @@ describe("access views", () => {
     />)
 
     expect(html).toContain("Q7KM4W")
-    expect(html).toContain("https://atape.dev")
+    expect(html).toContain("https://atape.net")
     expect(html).toContain("Signed in as")
     expect(html).toContain("Authorize CLI")
     expect(html).toContain("Deny")

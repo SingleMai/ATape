@@ -1,7 +1,7 @@
 # auth-v1 release checklist
 
 This is the human half of the v0.2.0 release gate. CI is necessary but cannot
-prove the configured GitHub OAuth App, `atape.dev` edge, backups, or operator
+prove the configured GitHub OAuth App, `atape.net` edge, backups, or operator
 rollback. Run this checklist against one immutable candidate commit and the two
 images built from it. Never paste Cookie, OAuth code/state, bearer credential,
 user code, Provider token, secret file content, or a user's local path into an
@@ -34,7 +34,7 @@ pnpm test:release:gates
 - TLS is valid for the exact public origin; the edge forwards only the intended
   Web/API routes and never PostgreSQL or a private Compose port.
 - The GitHub callback exactly equals
-  `https://atape.dev/api/v1/auth/github/callback` for the official same-origin
+  `https://atape.net/api/v1/auth/github/callback` for the official same-origin
   topology. Host and forwarding headers cannot change it.
 - Cookie scope, Secure/HttpOnly/SameSite attributes, exact Origin/CORS/CSRF,
   body limits, polling limits, short-code attempt budget, and WAF limits match
@@ -50,7 +50,7 @@ Sessions, CLI approval/denial/expiry, login/setup/upload/read, revoke/remove,
 disabled User, Provider outage, and the next request through another Server
 replica. Expected 401/403/404 precedence must match the authorization matrix.
 
-Block egress to `atape.dev` from an independently configured self-host Instance
+Block egress to `atape.net` from an independently configured self-host Instance
 while leaving GitHub reachable, then repeat Web login, CLI login, ingestion, and
 read. This proves self-hosting does not depend on an ATape control plane.
 

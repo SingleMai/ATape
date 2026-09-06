@@ -50,9 +50,9 @@ describe("Node Project setup HTTP Adapter", () => {
     const layer = makeProjectSetupGatewayLayer().pipe(Layer.provide(client))
     const result = await Effect.gen(function*() {
       const gateway = yield* ProjectSetupGateway
-      const workspace = yield* gateway.loadWorkspace("https://atape.dev")
+      const workspace = yield* gateway.loadWorkspace("https://atape.net")
       const match = yield* gateway.matchGitProject(
-        "https://atape.dev", "team-1", "git@github.com:acme/payments.git"
+        "https://atape.net", "team-1", "git@github.com:acme/payments.git"
       )
       return { workspace, match }
     }).pipe(Effect.provide(layer), Effect.runPromise)
@@ -80,7 +80,7 @@ describe("Node Project setup HTTP Adapter", () => {
     }))
     const layer = makeProjectSetupGatewayLayer().pipe(Layer.provide(client))
     const created = await ProjectSetupGateway.use((gateway) => gateway.createProject(
-      "https://atape.dev",
+      "https://atape.net",
       "acme",
       { type: "git", remote: "git@github.com:acme/payments.git" }
     )).pipe(Effect.provide(layer), Effect.runPromise)

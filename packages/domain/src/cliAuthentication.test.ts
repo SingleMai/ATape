@@ -6,12 +6,12 @@ import {
 
 describe("CLI authentication boundary values", () => {
   it("accepts only canonical HTTPS origins in production", () => {
-    expect(normalizeInstanceOrigin("https://atape.dev")).toBe("https://atape.dev")
-    expect(normalizeInstanceOrigin("https://atape.dev:443")).toBe("https://atape.dev")
-    expect(normalizeInstanceOrigin("https://atape.dev/")).toBe("https://atape.dev")
-    expect(normalizeInstanceOrigin("https://atape.dev/path")).toBeUndefined()
-    expect(normalizeInstanceOrigin("https://user:secret@atape.dev")).toBeUndefined()
-    expect(normalizeInstanceOrigin("http://atape.dev")).toBeUndefined()
+    expect(normalizeInstanceOrigin("https://atape.net")).toBe("https://atape.net")
+    expect(normalizeInstanceOrigin("https://atape.net:443")).toBe("https://atape.net")
+    expect(normalizeInstanceOrigin("https://atape.net/")).toBe("https://atape.net")
+    expect(normalizeInstanceOrigin("https://atape.net/path")).toBeUndefined()
+    expect(normalizeInstanceOrigin("https://user:secret@atape.net")).toBeUndefined()
+    expect(normalizeInstanceOrigin("http://atape.net")).toBeUndefined()
   })
 
   it("limits explicitly enabled HTTP development to loopback", () => {
@@ -27,18 +27,18 @@ describe("CLI authentication boundary values", () => {
 
   it("requires the canonical Instance and Web origins to match", () => {
     expect(normalizeInstanceTopology({
-      instanceOrigin: "https://atape.dev",
-      webOrigin: "https://atape.dev",
-      apiOrigin: "https://api.atape.dev"
+      instanceOrigin: "https://atape.net",
+      webOrigin: "https://atape.net",
+      apiOrigin: "https://api.atape.net"
     })).toEqual({
-      instanceOrigin: "https://atape.dev",
-      webOrigin: "https://atape.dev",
-      apiOrigin: "https://api.atape.dev"
+      instanceOrigin: "https://atape.net",
+      webOrigin: "https://atape.net",
+      apiOrigin: "https://api.atape.net"
     })
     expect(normalizeInstanceTopology({
-      instanceOrigin: "https://atape.dev",
-      webOrigin: "https://login.atape.dev",
-      apiOrigin: "https://api.atape.dev"
+      instanceOrigin: "https://atape.net",
+      webOrigin: "https://login.atape.net",
+      apiOrigin: "https://api.atape.net"
     })).toBeUndefined()
   })
 })

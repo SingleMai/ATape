@@ -3,7 +3,7 @@ import { Schema } from "effect"
 export const CLIAuthorizationProtocol = "atape.cli-authorization.v1" as const
 export const CLICapabilityVersion = "atape-cli.v1" as const
 export const CLICredentialFileVersion = 1 as const
-export const DefaultInstanceOrigin = "https://atape.dev" as const
+export const DefaultInstanceOrigin = "https://atape.net" as const
 
 const OpaqueIdentifier = Schema.String.check(
   Schema.isMinLength(1),

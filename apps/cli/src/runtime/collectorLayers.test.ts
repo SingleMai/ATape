@@ -365,10 +365,10 @@ describe("Node Collector Layers", () => {
   it("rejects a stale compare-and-set checkpoint", async () => {
     const client = await fixture()
     const first = await client.run(CollectorStateStore.use((store) => store.snapshot(
-      "https://atape.dev", "user-1", "payments", "fixture"
+      "https://atape.net", "user-1", "payments", "fixture"
     )))
     const checkpoint: CollectorCheckpoint = {
-      instanceOrigin: "https://atape.dev",
+      instanceOrigin: "https://atape.net",
       userId: "user-1",
       projectId: "payments",
       projectCreatedAt: "2026-09-05T00:30:00+08:00",
@@ -380,12 +380,12 @@ describe("Node Collector Layers", () => {
       updatedAt: "2026-09-05T00:30:00+08:00"
     }
     await client.run(CollectorStateStore.use((store) => store.commit({
-      instanceOrigin: "https://atape.dev", userId: "user-1",
+      instanceOrigin: "https://atape.net", userId: "user-1",
       projectId: "payments", adapterId: "fixture", expectedRevision: 0, checkpoint
     })))
 
     await expect(client.run(CollectorStateStore.use((store) => store.commit({
-      instanceOrigin: "https://atape.dev", userId: "user-1",
+      instanceOrigin: "https://atape.net", userId: "user-1",
       projectId: "payments", adapterId: "fixture", expectedRevision: 0, checkpoint
     })))).rejects.toMatchObject({ reason: "conflict" })
     expect(first.installationId).toMatch(/^i_/)

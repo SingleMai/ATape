@@ -33,8 +33,8 @@ afterEach(async () => {
 
 const credential: StoredCLICredential = {
   version: 1,
-  instanceOrigin: "https://atape.dev",
-  apiOrigin: "https://api.atape.dev",
+  instanceOrigin: "https://atape.net",
+  apiOrigin: "https://api.atape.net",
   credential: "atc_v1_fixture-secret",
   credentialId: "credential-1",
   capabilityVersion: "atape-cli.v1",
@@ -53,9 +53,9 @@ describe("Node CLI authentication HTTP Adapter", () => {
     const responses = [
       json({
         protocol: "atape.instance.v1",
-        instance_origin: "https://atape.dev",
-        web_origin: "https://atape.dev",
-        api_origin: "https://api.atape.dev",
+        instance_origin: "https://atape.net",
+        web_origin: "https://atape.net",
+        api_origin: "https://api.atape.net",
         protocols: ["atape.cli-authorization.v1"],
         release_version: "0.2.0",
         auth_epoch: "auth-v1",
@@ -65,8 +65,8 @@ describe("Node CLI authentication HTTP Adapter", () => {
         protocol: "atape.cli-authorization.v1",
         device_code: "atd_v1_device-secret",
         user_code: "Q7KM4W",
-        verification_uri: "https://atape.dev/cli/authorize",
-        verification_uri_complete: "https://atape.dev/cli/authorize?user_code=Q7KM4W",
+        verification_uri: "https://atape.net/cli/authorize",
+        verification_uri_complete: "https://atape.net/cli/authorize?user_code=Q7KM4W",
         expires_in: 900,
         interval: 5
       }, 201),
@@ -90,7 +90,7 @@ describe("Node CLI authentication HTTP Adapter", () => {
     const layer = makeHTTPAuthenticationGatewayLayer(fetchImplementation)
     const result = await Effect.gen(function*() {
       const gateway = yield* CLIAuthenticationGateway
-      const metadata = yield* gateway.discover("https://atape.dev")
+      const metadata = yield* gateway.discover("https://atape.net")
       const grant = yield* gateway.createDeviceAuthorization(metadata)
       const pending = yield* gateway.pollDeviceAuthorization(metadata, grant.deviceCode)
       const authorized = yield* gateway.pollDeviceAuthorization(metadata, grant.deviceCode)
@@ -99,7 +99,7 @@ describe("Node CLI authentication HTTP Adapter", () => {
     }).pipe(Effect.provide(layer), Effect.runPromise)
 
     expect(result.metadata).toMatchObject({
-      instanceOrigin: "https://atape.dev", apiOrigin: "https://api.atape.dev"
+      instanceOrigin: "https://atape.net", apiOrigin: "https://api.atape.net"
     })
     expect(result.grant).toMatchObject({ deviceCode: "atd_v1_device-secret", expiresInSeconds: 900 })
     expect(result.pending).toEqual({ _tag: "Pending", retryAfterSeconds: 5 })
@@ -121,9 +121,9 @@ describe("Node CLI authentication HTTP Adapter", () => {
     const layer = makeHTTPAuthenticationGatewayLayer(fetchImplementation)
     const metadata = {
       protocol: "atape.instance.v1" as const,
-      instanceOrigin: "https://atape.dev",
-      webOrigin: "https://atape.dev",
-      apiOrigin: "https://api.atape.dev",
+      instanceOrigin: "https://atape.net",
+      webOrigin: "https://atape.net",
+      apiOrigin: "https://api.atape.net",
       protocols: ["atape.cli-authorization.v1"],
       releaseVersion: "0.2.0",
       authEpoch: "auth-v1" as const,
@@ -145,7 +145,7 @@ describe("Node CLI authentication HTTP Adapter", () => {
     })) as typeof fetch
     const layer = makeHTTPAuthenticationGatewayLayer(fetchImplementation)
     const failure = await Effect.gen(function*() {
-      return yield* (yield* CLIAuthenticationGateway).discover("https://atape.dev")
+      return yield* (yield* CLIAuthenticationGateway).discover("https://atape.net")
     }).pipe(Effect.provide(layer), Effect.flip, Effect.runPromise)
     expect(failure).toMatchObject({ reason: "decode" })
   })
@@ -170,7 +170,7 @@ describe("Node CLI Credential store Adapter", () => {
       yield* store.replace({ credential })
     }))
 
-    const expectedName = `${createHash("sha256").update("https://atape.dev").digest("hex")}.json`
+    const expectedName = `${createHash("sha256").update("https://atape.net").digest("hex")}.json`
     expect(await readdir(fixture.directory)).toEqual([expectedName])
     expect((await lstat(fixture.home)).mode & 0o777).toBe(0o700)
     expect((await lstat(fixture.directory)).mode & 0o777).toBe(0o700)
@@ -178,7 +178,7 @@ describe("Node CLI Credential store Adapter", () => {
     expect(JSON.parse(await readFile(join(fixture.directory, expectedName), "utf8")))
       .toMatchObject({ credentialId: "credential-1" })
     const restored = await fixture.run(Effect.gen(function*() {
-      return yield* (yield* CLICredentialStore).read("https://atape.dev")
+      return yield* (yield* CLICredentialStore).read("https://atape.net")
     }))
     expect(restored).toEqual(credential)
   })
@@ -214,28 +214,28 @@ describe("Node CLI Credential store Adapter", () => {
   it("rejects symlink, non-regular, and broadly readable credential targets", async () => {
     const fixture = await credentialFixture()
     await fixture.run(Effect.gen(function*() {
-      yield* (yield* CLICredentialStore).read("https://atape.dev")
+      yield* (yield* CLICredentialStore).read("https://atape.net")
     }))
-    const filename = `${createHash("sha256").update("https://atape.dev").digest("hex")}.json`
+    const filename = `${createHash("sha256").update("https://atape.net").digest("hex")}.json`
     const target = join(fixture.directory, filename)
     const outside = join(fixture.parent, "outside.json")
     await writeFile(outside, JSON.stringify(credential), { mode: 0o600 })
     await symlink(outside, target)
     await expect(fixture.run(Effect.gen(function*() {
-      return yield* (yield* CLICredentialStore).read("https://atape.dev")
+      return yield* (yield* CLICredentialStore).read("https://atape.net")
     }))).rejects.toMatchObject({ reason: "unsafe" })
 
     await rm(target)
     await mkdir(target)
     await expect(fixture.run(Effect.gen(function*() {
-      return yield* (yield* CLICredentialStore).read("https://atape.dev")
+      return yield* (yield* CLICredentialStore).read("https://atape.net")
     }))).rejects.toMatchObject({ reason: "unsafe" })
 
     await rm(target, { recursive: true })
     await writeFile(target, JSON.stringify(credential), { mode: 0o600 })
     await chmod(target, 0o644)
     await expect(fixture.run(Effect.gen(function*() {
-      return yield* (yield* CLICredentialStore).read("https://atape.dev")
+      return yield* (yield* CLICredentialStore).read("https://atape.net")
     }))).rejects.toMatchObject({ reason: "unsafe" })
   })
 
@@ -247,7 +247,7 @@ describe("Node CLI Credential store Adapter", () => {
     await symlink(outside, fixture.directory)
 
     await expect(fixture.run(Effect.gen(function*() {
-      return yield* (yield* CLICredentialStore).read("https://atape.dev")
+      return yield* (yield* CLICredentialStore).read("https://atape.net")
     }))).rejects.toMatchObject({ reason: "unsafe" })
   })
 
@@ -263,7 +263,7 @@ describe("Node CLI Credential store Adapter", () => {
 
     const removed = await fixture.run(Effect.gen(function*() {
       return yield* (yield* CLICredentialStore).remove({
-        instanceOrigin: "https://atape.dev", expectedCredentialId: "credential-1"
+        instanceOrigin: "https://atape.net", expectedCredentialId: "credential-1"
       })
     }))
     expect(removed).toBe(true)

@@ -137,10 +137,10 @@ describe("v0.1 local migration Adapter", () => {
     const migrated = await client.run(ClientMigration.use((migration) => migration.apply()))
     await writeFile(client.paths.configFile, JSON.stringify({
       version: 2,
-      activeInstanceOrigin: "https://atape.dev",
+      activeInstanceOrigin: "https://atape.net",
       projects: [{
         id: "project-1",
-        instanceOrigin: "https://atape.dev",
+        instanceOrigin: "https://atape.net",
         userId: "user-1",
         teamId: "team-1",
         teamSlug: "acme",
@@ -179,7 +179,7 @@ describe("v0.1 local migration Adapter", () => {
       sourceRevision: 7,
       revision: 1,
       target: {
-        instanceOrigin: "https://atape.dev",
+        instanceOrigin: "https://atape.net",
         userId: "user-1",
         projectId: "project-1",
         adapterId: "codex"
@@ -188,7 +188,7 @@ describe("v0.1 local migration Adapter", () => {
     expect(JSON.parse(await readFile(stateFile, "utf8"))).toMatchObject({
       version: 2,
       checkpoints: [{
-        instanceOrigin: "https://atape.dev",
+        instanceOrigin: "https://atape.net",
         userId: "user-1",
         projectId: "project-1",
         adapterId: "codex",

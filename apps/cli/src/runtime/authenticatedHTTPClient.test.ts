@@ -13,8 +13,8 @@ import {
 
 const credential: StoredCLICredential = {
   version: 1,
-  instanceOrigin: "https://atape.dev",
-  apiOrigin: "https://api.atape.dev",
+  instanceOrigin: "https://atape.net",
+  apiOrigin: "https://api.atape.net",
   credential: "atc_v1_private-fixture",
   credentialId: "credential-1",
   capabilityVersion: "atape-cli.v1",
@@ -23,9 +23,9 @@ const credential: StoredCLICredential = {
 }
 const metadata: InstanceMetadata = {
   protocol: "atape.instance.v1",
-  instanceOrigin: "https://atape.dev",
-  webOrigin: "https://atape.dev",
-  apiOrigin: "https://api.atape.dev",
+  instanceOrigin: "https://atape.net",
+  webOrigin: "https://atape.net",
+  apiOrigin: "https://api.atape.net",
   protocols: ["atape.cli-authorization.v1", "atape.canonical.v1"],
   releaseVersion: "0.2.0",
   authEpoch: "auth-v1",
@@ -80,13 +80,13 @@ describe("authenticated CLI HTTP boundary", () => {
     await client.run(Effect.gen(function*() {
       const http = yield* AuthenticatedHTTPClient
       yield* http.request({
-        instanceOrigin: "https://atape.dev",
+        instanceOrigin: "https://atape.net",
         expectedUserId: "user-1",
         path: "/api/v1/workspace",
         method: "GET"
       })
       yield* http.request({
-        instanceOrigin: "https://atape.dev",
+        instanceOrigin: "https://atape.net",
         expectedUserId: "user-1",
         path: "/api/v1/workspace",
         method: "GET"
@@ -95,16 +95,16 @@ describe("authenticated CLI HTTP boundary", () => {
 
     expect(client.discoveries()).toBe(1)
     expect(client.fetches).toHaveLength(2)
-    expect(client.fetches[0]?.url).toBe("https://api.atape.dev/api/v1/workspace")
+    expect(client.fetches[0]?.url).toBe("https://api.atape.net/api/v1/workspace")
     expect(new Headers(client.fetches[0]?.init?.headers).get("authorization"))
       .toBe("Bearer atc_v1_private-fixture")
     expect(client.fetches[0]?.init?.redirect).toBe("error")
   })
 
   it("fails before a credentialed request when discovery drifts", async () => {
-    const client = fixture({ metadata: { ...metadata, apiOrigin: "https://new-api.atape.dev" } })
+    const client = fixture({ metadata: { ...metadata, apiOrigin: "https://new-api.atape.net" } })
     await expect(client.run(AuthenticatedHTTPClient.use((http) => http.request({
-      instanceOrigin: "https://atape.dev", path: "/api/v1/workspace", method: "GET"
+      instanceOrigin: "https://atape.net", path: "/api/v1/workspace", method: "GET"
     })))).rejects.toMatchObject({ reason: "metadata_drift" })
     expect(client.fetches).toEqual([])
   })
@@ -112,7 +112,7 @@ describe("authenticated CLI HTTP boundary", () => {
   it("fails before HTTP when the local Project belongs to another User", async () => {
     const client = fixture()
     await expect(client.run(AuthenticatedHTTPClient.use((http) => http.request({
-      instanceOrigin: "https://atape.dev",
+      instanceOrigin: "https://atape.net",
       expectedUserId: "user-2",
       path: "/api/v1/workspace",
       method: "GET"

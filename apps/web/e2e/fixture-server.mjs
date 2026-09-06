@@ -45,7 +45,7 @@ const empty = (response, status = 204, headers = {}) => {
 }
 
 const problem = (response, status, code) => json(response, status, {
-  type: `https://atape.dev/problems/v1/${code}`,
+  type: `https://atape.net/problems/v1/${code}`,
   title: code,
   status,
   code,

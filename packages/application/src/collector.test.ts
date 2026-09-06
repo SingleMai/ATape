@@ -146,10 +146,10 @@ const twoSegmentCollectionPage = (): AdapterCollectionPage => {
 
 const clientConfig = (): ClientConfig => ({
   ...emptyClientConfig(),
-  activeInstanceOrigin: "https://atape.dev",
+  activeInstanceOrigin: "https://atape.net",
   projects: [{
     id: "payments",
-    instanceOrigin: "https://atape.dev",
+    instanceOrigin: "https://atape.net",
     userId: "user-1",
     teamId: "acme",
     teamSlug: "acme",

@@ -72,7 +72,7 @@ proof-bound, idempotent logout; replaying the just-revoked bearer remains `204`.
 ## Errors, caching, and redirects
 
 Every JSON error is an RFC 9457 `application/problem+json` document whose type
-is `https://atape.dev/problems/v1/{code}`. Missing and concealed Resources use
+is `https://atape.net/problems/v1/{code}`. Missing and concealed Resources use
 the same data-poor `404 not_found` representation. Each response has a
 server-generated `X-Request-ID`, which is correlation only and never authority
 or an idempotency key.
