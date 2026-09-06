@@ -129,7 +129,27 @@
 .workspace-switcher > header > span { display: grid; gap: 2px; }
 .workspace-switcher > header small { color: var(--atape-color-text-muted); font-size: 11px; }
 .workspace-team { margin-top: 16px; }
-.workspace-team h2 { margin: 0 5px 8px; color: var(--atape-color-text-muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.workspace-team h2 { margin: 0 0 4px; font-size: inherit; }
+.workspace-team-title {
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 5px;
+  border: 0;
+  border-radius: var(--atape-radius-sm);
+  background: transparent;
+  color: var(--atape-color-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-team-title > span { font-size: 12px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.workspace-team-title small { color: var(--atape-color-accent); font-size: 10px; font-weight: 800; letter-spacing: 0; text-transform: none; }
+.workspace-team-title:hover { background: var(--atape-color-panel); color: var(--atape-color-text); }
+.workspace-team-title[aria-current="page"] { background: var(--atape-color-accent-soft); color: var(--atape-color-accent); }
 .workspace-projects { display: grid; gap: 6px; }
 
 .workspace-projects button {

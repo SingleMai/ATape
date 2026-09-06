@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { selectDefaultWorkspaceProject, type Workspace } from "./workspace.ts"
+import {
+  selectDefaultWorkspaceProject,
+  selectDefaultWorkspaceTeam,
+  type Workspace
+} from "./workspace.ts"
 
 describe("Workspace entry selection", () => {
   it("returns no target before the first Project is captured", () => {
@@ -78,5 +82,24 @@ describe("Workspace entry selection", () => {
     }
 
     expect(selectDefaultWorkspaceProject(workspace)).toEqual({ teamId: "team-a", projectId: "project-a" })
+  })
+
+  it("selects a stable Team before any Project is captured", () => {
+    expect(selectDefaultWorkspaceTeam({ teams: [] })).toBeUndefined()
+    expect(selectDefaultWorkspaceTeam({
+      teams: [{
+        id: "team-z",
+        slug: "team-z",
+        name: "Team Z",
+        role: "owner",
+        projects: []
+      }, {
+        id: "team-a",
+        slug: "team-a",
+        name: "Team A",
+        role: "member",
+        projects: []
+      }]
+    })).toEqual({ teamId: "team-a" })
   })
 })
