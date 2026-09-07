@@ -238,3 +238,50 @@ test("keeps each narrative exchange focused on the prompt and primary response",
   await expect(page.locator("#event-event-04")).toBeVisible()
   await expect(page.locator("#event-event-04")).toHaveClass(/event-highlighted/)
 })
+
+test("refreshes memory only on request and preserves the reading position", async ({ context, page, request }) => {
+  await authenticate(context)
+  await page.goto("/teams/team-id/projects/project-1")
+
+  await expect(page.getByRole("heading", { name: "What changed while you were away?" })).toBeVisible()
+  const projectRefresh = page.getByRole("button", { name: "Refresh", exact: true })
+  const projectCadence = page.getByLabel("Automatic refresh interval")
+  await expect(projectRefresh).toBeVisible()
+  await expect(projectCadence).toHaveValue("manual")
+
+  const initialProjectRequests = (await fixtureState(page)).projectMemoryRequests
+  await page.waitForTimeout(10_500)
+  expect((await fixtureState(page)).projectMemoryRequests).toBe(initialProjectRequests)
+
+  await projectRefresh.click()
+  await expect.poll(async () => (await fixtureState(page)).projectMemoryRequests).toBeGreaterThan(initialProjectRequests)
+  await expect(page.getByText("Conversation hierarchy").first()).toBeVisible()
+
+  await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root")
+
+  await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true })
+  const cadence = page.getByLabel("Automatic refresh interval")
+  await expect(refresh).toBeVisible()
+  await expect(cadence).toHaveValue("manual")
+
+  const initialRequests = (await fixtureState(page)).conversationRequests
+  const activity = page.locator(".narrative-activity").first()
+  await activity.locator("summary").click()
+  await expect(activity).toHaveAttribute("open", "")
+
+  await refresh.click()
+  await expect.poll(async () => (await fixtureState(page)).conversationRequests).toBeGreaterThan(initialRequests)
+  await expect(refresh).toBeEnabled()
+  const requestsAfterManualRefresh = (await fixtureState(page)).conversationRequests
+  await expect(activity).toHaveAttribute("open", "")
+  await expect(page.getByText("The startup issue is fixed")).toBeVisible()
+  await expect(page.getByText("Reconstructing conversation…")).toHaveCount(0)
+
+  await request.post(`${fixtureOrigin}/__fixture/fail-conversation?value=1`)
+  await refresh.click()
+  await expect.poll(async () => (await fixtureState(page)).conversationRequests).toBeGreaterThan(requestsAfterManualRefresh)
+  await expect(page.getByText("Refresh failed · showing previous data")).toBeVisible()
+  await expect(page.getByText("The startup issue is fixed")).toBeVisible()
+  await expect(activity).toHaveAttribute("open", "")
+})

@@ -7,10 +7,12 @@ import {
 import { Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect } from "react"
 import ReactMarkdown from "react-markdown"
-import type { LoadableView } from "../presenters/memoryPresenter"
+import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
+import { RefreshControl } from "./RefreshControl"
 
 type Props = {
   readonly state: LoadableView<Conversation>
+  readonly refresh: RefreshSettingsView
   readonly projectName: string
   readonly onBack: () => void
   readonly onOpenThread: (threadId: string) => void
@@ -194,6 +196,7 @@ const HighlightView = ({ event, onOpenThread, highlightedEventId }: {
 
 export const SessionReaderView = ({
   state,
+  refresh,
   projectName,
   onBack,
   onOpenThread,
@@ -235,7 +238,13 @@ export const SessionReaderView = ({
           {searchOrigin ? "Back to search results" : `Back to ${projectName}`}
         </Button>
         <div className="reader-actions">
-          <span>{state.refreshing ? "Refreshing…" : "Read-only mirror"}</span>
+          <RefreshControl
+            settings={refresh}
+            refreshing={state.refreshing}
+            refreshFailure={state.refreshFailure}
+            status={<>Updated <time dateTime={conversation.session.updatedAt}>{formatTime(conversation.session.updatedAt)}</time></>}
+            onRefresh={onRetry}
+          />
           <Button variant="secondary" onClick={onOpenRaw}>View Raw source</Button>
         </div>
       </nav>
@@ -316,7 +325,7 @@ export const SessionReaderView = ({
         )}
       </div>
 
-      <p className="mirror-note">This is a read-only mirror. New captured events appear automatically.</p>
+      <p className="mirror-note">This is a read-only mirror. Refresh when you want to check for newly captured events.</p>
     </section>
   )
 }

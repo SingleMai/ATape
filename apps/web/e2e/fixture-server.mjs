@@ -8,6 +8,9 @@ const later = "2027-03-04T00:00:00Z"
 const initialState = () => ({
   cliDecision: "none",
   cliResolveCount: 0,
+  conversationRequests: 0,
+  failConversation: false,
+  projectMemoryRequests: 0,
   failSessions: false,
   fresh: false,
   joinCodeEnabled: true,
@@ -92,6 +95,11 @@ const routeFixtureControl = (request, response, url) => {
   }
   if (url.pathname === "/__fixture/fail-sessions" && request.method === "POST") {
     state.failSessions = url.searchParams.get("value") === "1"
+    empty(response)
+    return true
+  }
+  if (url.pathname === "/__fixture/fail-conversation" && request.method === "POST") {
+    state.failConversation = url.searchParams.get("value") === "1"
     empty(response)
     return true
   }
@@ -206,6 +214,8 @@ const server = http.createServer(async (request, response) => {
   }
   if (path === "/api/v1/sessions/session-reader" && request.method === "GET") {
     if (!requireWeb(request, response)) return
+    state.conversationRequests++
+    if (state.failConversation) return problem(response, 503, "service_unavailable")
     return json(response, 200, {
       session: {
         id: "session-reader",
@@ -229,6 +239,28 @@ const server = http.createServer(async (request, response) => {
         { id: "event-07", kind: "tool_result", author: "Codex", occurredAt: "2026-09-05T00:00:07Z", text: "test · completed", toolLabel: "test" },
         { id: "event-08", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:08Z", text: "Verification passed" }
       ]
+    })
+  }
+  if (path === "/api/v1/projects/project-1/memory" && request.method === "GET") {
+    if (!requireWeb(request, response)) return
+    state.projectMemoryRequests++
+    const session = {
+      id: "session-reader",
+      title: "Conversation hierarchy",
+      summary: "Diagnosed and verified the startup issue.",
+      insight: "The environment now starts successfully.",
+      actor: { name: "User", harness: "Codex" },
+      branch: "main",
+      status: "active",
+      updatedAt: "2026-09-05T00:00:09Z",
+      eventCount: 8,
+      childThreadCount: 0
+    }
+    return json(response, 200, {
+      project: { id: "project-1", teamId: "team-id", name: "ATape", type: "git" },
+      capturedThrough: "2026-09-05T00:00:09Z",
+      active: [session],
+      trail: [session]
     })
   }
   if (path === "/api/v1/users/me/external-identities" && request.method === "GET") {

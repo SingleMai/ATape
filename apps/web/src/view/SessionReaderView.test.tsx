@@ -53,6 +53,7 @@ const renderReader = (options: {
       value: options.value ?? value,
       refreshing: false
     } satisfies LoadableView<Conversation>}
+    refresh={{ cadence: "manual", setCadence: () => undefined }}
     projectName="ATape"
     onBack={() => undefined}
     onOpenThread={() => undefined}
@@ -67,6 +68,8 @@ describe("SessionReaderView", () => {
     const html = renderReader()
 
     expect(html).toContain("session-reader-header")
+    expect(html).toContain("Automatic refresh interval")
+    expect(html).toContain('<option value="manual" selected="">Off</option>')
     expect(html).toContain("narrative-prompt")
     expect(html).toContain("Please diagnose this")
     expect(html).toContain("narrative-response")

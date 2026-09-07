@@ -182,7 +182,7 @@ export const AppShell = ({
       </nav>
       <div className="collector-status">
         <span className="pulse" />
-        Team memory refreshes automatically
+        Collector syncs team memory in the background
       </div>
     </aside>
     <div className="workspace">

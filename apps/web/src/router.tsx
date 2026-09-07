@@ -387,7 +387,7 @@ function ProjectRoute() {
   const params = projectRoute.useParams()
   const navigate = useNavigate()
   const presenter = useProjectMemoryPresenter(params.projectId)
-  return <ProjectMemoryView state={presenter.state} onRetry={presenter.reload} onOpenSession={(sessionId) => {
+  return <ProjectMemoryView state={presenter.state} refresh={presenter.refresh} onRetry={presenter.reload} onOpenSession={(sessionId) => {
     void navigate({
       to: "/teams/$teamId/projects/$projectId/sessions/$sessionId",
       params: { ...params, sessionId },
@@ -405,6 +405,7 @@ function SessionRoute() {
     <>
       <SessionReaderView
         state={presenter.state}
+        refresh={presenter.refresh}
         projectName={params.projectId}
         onRetry={presenter.reload}
         onOpenRaw={() => void navigate({
