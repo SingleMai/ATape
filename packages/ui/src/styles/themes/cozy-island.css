@@ -47,6 +47,11 @@
   --atape-color-danger-soft: #f6deda;
   --atape-color-code: #372b23;
   --atape-color-code-text: #f2e6d2;
+  --atape-color-code-comment: #b8aa95;
+  --atape-color-code-keyword: #e5bcf2;
+  --atape-color-code-string: #b6db9d;
+  --atape-color-code-number: #f4cc91;
+  --atape-color-code-function: #9dd5e8;
 
   /* Typography */
   --atape-font-sans: Nunito, "Noto Sans SC", ui-rounded, "Avenir Next", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
