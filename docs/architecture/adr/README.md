@@ -38,3 +38,5 @@ ADRs record consequential implementation decisions. A superseded ADR remains in 
 [ADR-0030](0030-bounded-tool-details-implementation.md) implements bounded shared tool values with a versioned profile, Canonical persistence, Host redaction and common rendering; the remaining ADR-0028 work stays deferred.
 
 [ADR-0031](0031-source-failure-isolation.md) isolates individual Claude sources and adds bounded, redacted local diagnostics to the shared Collector Interface.
+
+[ADR-0032](0032-claude-release-and-recovery.md) adds Claude release artifacts and resumes supported checkpoint formats across package replacement without resetting source progress.

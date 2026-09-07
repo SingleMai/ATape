@@ -45,6 +45,22 @@ export async function startCLIAuthFixture(options = {}) {
     }
 
     switch (`${request.method} ${request.url}`) {
+      case "POST /api/v1/ingestion/canonical/batches":
+      case "POST /api/v1/ingestion/raw/chunks": {
+        if (!options.capture) { send(404, { status: 404, code: "not_found" }); return }
+        if (request.headers.authorization !== `Bearer ${credential}`) {
+          send(401, { status: 401, code: "unauthenticated" }); return
+        }
+        if (request.url.endsWith("/batches")) {
+          send(201, { sessionId: "s_release_fixture", sessionCreated: true,
+            insertedEvents: body.events.length, updatedEvents: 0, unchangedEvents: 0, staleEvents: 0, replayed: false })
+        } else {
+          send(201, { objectId: `r_${body.sourceObjectId}`, generation: body.generation,
+            sizeBytes: body.offset + Buffer.from(body.contentBase64, "base64").byteLength,
+            finalized: body.final, replayed: false })
+        }
+        return
+      }
       case "GET /api/v1/instance":
         send(200, {
           protocol: "atape.instance.v1",

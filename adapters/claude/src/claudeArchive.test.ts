@@ -270,6 +270,18 @@ it("reprojects an old checkpoint once without changing source/session revisions 
   expect((await collect(request(upgraded.nextCursor))).observations).toEqual([])
 })
 
+it("resumes a supported checkpoint across package versions but rejects unknown cursor formats and changed prefixes", async () => {
+  const first = await collect()
+  const upgradedContext = { ...context, adapter: { ...context.adapter, version: "0.2.1" } }
+  const upgradedRequest = { ...request(first.nextCursor), previousAdapterVersion: "0.2.0" }
+  expect(await collect(upgradedRequest, upgradedContext)).toMatchObject({ observations: [], nextCursor: first.nextCursor })
+  await appendAnswer(file)
+  expect((await collect(upgradedRequest, upgradedContext)).observations[0]?.events).toHaveLength(7)
+  await expect(collect({ ...upgradedRequest, cursor: JSON.stringify({ v: 999 }) }, upgradedContext)).rejects.toThrow("checkpoint")
+  await writeFile(file, (await readFile(file, "utf8")).replace("ATAPE_TOOL_DONE", "ATAPE_TOOL_FAIL"))
+  await expect(collect(upgradedRequest, upgradedContext)).rejects.toThrow("prefix changed")
+})
+
 it("keeps oversized tool values in Raw and marks the projection partial", async () => {
   for (const record of records) {
     const message = record.message as { content?: Array<Record<string, unknown>> } | undefined
