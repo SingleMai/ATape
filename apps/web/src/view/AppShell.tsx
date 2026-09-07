@@ -203,7 +203,7 @@ export const AppShell = ({
           {onOpenSearch !== undefined && <kbd>⌘ K</kbd>}
         </button>
         <a className="topbar-account" href="/settings/account" aria-label="Open account security">
-          <AccountChip displayName={currentUser.displayName} />
+          <AccountChip displayName={currentUser.displayName} avatarUrl={currentUser.avatarUrl} />
         </a>
       </header>
       <main id="main-content" className="main-content">{children}</main>

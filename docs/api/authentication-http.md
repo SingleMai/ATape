@@ -142,3 +142,18 @@ the same canonical input returns the original Resource, changed input returns
 `409 idempotency_conflict`, and a concurrent in-flight operation returns
 `409 idempotency_in_progress` with `Retry-After` instead of occupying a server
 request while waiting on another transaction.
+
+## Profile avatars
+
+The Authentication Module initializes a User avatar from the verified Provider
+identity. A subsequent sign-in refreshes it from that signing-in identity when
+it supplies a non-empty avatar URL, preserving the locally edited display name.
+An empty Provider avatar leaves the last User avatar intact; the External Identity
+still records the latest Provider profile. Binding and reauthentication update
+identity metadata without selecting a new User avatar. Existing sessions read the
+updated User profile on their next session request.
+
+Web account chips, linked identities, and Team members render `avatarUrl`, with
+initials when the URL is absent or the image fails to load. Images send no referrer.
+Avatars are loaded from the Provider URL; ATape does not cache or proxy images.
+Provider changes are picked up at the next sign-in, not by background polling.

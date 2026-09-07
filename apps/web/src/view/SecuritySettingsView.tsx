@@ -76,7 +76,7 @@ export const SettingsShell = ({
     <div className="settings-main">
       <header className="settings-topbar">
         <span>{team?.displayName ?? "ATape"} / <strong>Settings</strong></span>
-        <AccountChip displayName={user.displayName} />
+        <AccountChip displayName={user.displayName} avatarUrl={user.avatarUrl} />
       </header>
       {children}
     </div>
@@ -105,7 +105,7 @@ const IdentityRows = ({
   return identities.value.map((identity) => (
     <div className="settings-row" key={identity.id}>
       <div className="row-identity">
-        <Avatar name={identity.displayName} />
+        <Avatar name={identity.displayName} src={identity.avatarUrl} />
         <div className="row-copy">
           <strong>{providerLabel(identity.providerRegistrationId)} <Badge tone="success">Connected</Badge></strong>
           <span>{identity.displayName} · verified {formatTime(identity.lastVerifiedAt)}</span>
@@ -311,7 +311,7 @@ const MemberRow = ({
   return (
     <div className="settings-row">
       <div className="row-identity">
-        <Avatar name={member.displayName} />
+        <Avatar name={member.displayName} src={member.avatarUrl} />
         <div className="row-copy">
           <strong>{member.displayName} {current && <Badge>You</Badge>} <Badge tone="accent">{member.role === "owner" ? "Owner" : "Member"}</Badge></strong>
           <span>Joined {formatTime(member.joinedAt)}</span>

@@ -511,6 +511,48 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		}
 	})
 
+	t.Run("sign-in refreshes provider avatars without replacing the local name", func(t *testing.T) {
+		resetAuthentication(t, poolA)
+		avatar := ""
+		adapter := &contractIdentityAdapter{avatarURL: &avatar}
+		module := newContractModule(t, poolA, adapter, authentication.DefaultPolicy(), defaultPepper(), defaultPrivate(), false)
+		first, err := completeFederated(module, beginFederated(t, module, authentication.SignInIntent, "", "/"), "avatar-person")
+		if err != nil {
+			t.Fatal(err)
+		}
+		session, err := module.AuthenticateWeb(ctx, first.SessionSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := module.UpdateUserProfile(ctx, authentication.UpdateUserProfileInput{
+			Principal: session.Principal, DisplayName: "Local name", RequestID: "avatar-profile",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, next := range []string{"https://identity.example/first.png", "https://identity.example/changed.png", ""} {
+			avatar = next
+			grant, err := completeFederated(module, beginFederated(t, module, authentication.SignInIntent, "", "/"), "avatar-person")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := next
+			if want == "" {
+				want = "https://identity.example/changed.png"
+			}
+			if grant.User.ID != first.User.ID || grant.User.AvatarURL != want || grant.User.DisplayName != "Local name" {
+				t.Fatalf("unexpected login profile: %+v", grant.User)
+			}
+			current, err := module.AuthenticateWeb(ctx, first.SessionSecret)
+			if err != nil || current.User.AvatarURL != want {
+				t.Fatalf("existing session avatar: %+v, %v", current.User, err)
+			}
+			identities, err := module.ListExternalIdentities(ctx, current.Principal)
+			if err != nil || len(identities) != 1 || identities[0].AvatarURL != next {
+				t.Fatalf("identity avatars: %+v, %v", identities, err)
+			}
+		}
+	})
+
 	t.Run("identity binding and reauthentication preserve account boundaries", func(t *testing.T) {
 		resetAuthentication(t, poolA)
 		policy := authentication.DefaultPolicy()
@@ -1188,6 +1230,7 @@ WHERE id = $1`, web.Principal.UserID); err != nil {
 const providerPrivateStateCanary = "provider-private-state-CANARY"
 
 type contractIdentityAdapter struct {
+	avatarURL     *string
 	completeCalls atomic.Int64
 	issuer        string
 	failure       authentication.ProviderFailureCode
@@ -1228,10 +1271,14 @@ func (a *contractIdentityAdapter) Complete(
 	if issuer == "" {
 		issuer = "https://identity.example"
 	}
+	avatarURL := "https://identity.example/avatar.png"
+	if a.avatarURL != nil {
+		avatarURL = *a.avatarURL
+	}
 	return authentication.VerifiedExternalIdentity{
 		Issuer: issuer, Subject: request.AuthorizationCode,
 		DisplayName: "Person " + request.AuthorizationCode,
-		AvatarURL:   "https://identity.example/avatar.png",
+		AvatarURL:   avatarURL,
 	}, nil
 }
 

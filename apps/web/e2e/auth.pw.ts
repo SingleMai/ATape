@@ -285,3 +285,31 @@ test("refreshes memory only on request and preserves the reading position", asyn
   await expect(page.getByText("The startup issue is fixed")).toBeVisible()
   await expect(activity).toHaveAttribute("open", "")
 })
+
+for (const imageLoads of [true, false]) {
+  test(`provider avatar ${imageLoads ? "renders" : "falls back to initials"} after session restore`, async ({ context, page }) => {
+    const avatarUrl = "https://avatars.githubusercontent.com/u/424242?v=4"
+    await authenticate(context)
+    await page.route("**/api/v1/auth/session", async (route) => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.user.avatarUrl = avatarUrl
+      await route.fulfill({ response, json: body })
+    })
+    await page.route(avatarUrl, async (route) => {
+      expect(route.request().headers()["referer"]).toBeUndefined()
+      if (!imageLoads) return route.abort()
+      await route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="blue"/></svg>' })
+    })
+    await page.goto("/cli/authorize?user_code=Q7KM4W")
+    const avatar = page.locator(".account-chip .atape-avatar")
+    await expect(avatar).toBeVisible()
+    if (imageLoads) {
+      await expect(avatar.locator("img")).toHaveAttribute("src", avatarUrl)
+      await expect.poll(() => avatar.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+    } else {
+      await expect(avatar).toHaveText("M")
+      await expect(avatar.locator("img")).toHaveCount(0)
+    }
+  })
+}

@@ -6,7 +6,7 @@ import { CLIAuthorizationView } from "./CLIAuthorizationView.tsx"
 import { SignInView } from "./SignInView.tsx"
 import { TeamAccessView } from "./SecuritySettingsView.tsx"
 
-const user: User = { id: "user-1", displayName: "Mai", avatarUrl: "" }
+const user: User = { id: "user-1", displayName: "Mai", avatarUrl: "https://avatars.githubusercontent.com/u/424242?v=4" }
 const idle = { _tag: "Idle" } as const
 const options: LoadView<SignInOptions> = {
   _tag: "Ready",
@@ -68,6 +68,7 @@ describe("access views", () => {
     expect(html).toContain("Q7KM4W")
     expect(html).toContain("https://atape.net")
     expect(html).toContain("Signed in as")
+    expect(html).toContain(`src="${user.avatarUrl}"`)
     expect(html).toContain("Authorize CLI")
     expect(html).toContain("Deny")
     expect(html).not.toContain("private-grant-view-id")

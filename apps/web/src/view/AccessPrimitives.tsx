@@ -19,17 +19,17 @@ export const AccessBrand = ({ home = "/" }: { readonly home?: string }) => (
   </a>
 )
 
-export const AccountChip = ({ displayName }: { readonly displayName: string }) => (
+export const AccountChip = ({ displayName, avatarUrl }: { readonly displayName: string; readonly avatarUrl?: string | undefined }) => (
   <div className="account-chip" aria-label={`Signed in as ${displayName}`}>
-    <Avatar name={displayName} size="small" />
+    <Avatar name={displayName} src={avatarUrl} size="small" />
     <span>{displayName}</span>
   </div>
 )
 
-export const AccessHeader = ({ displayName }: { readonly displayName?: string }) => (
+export const AccessHeader = ({ displayName, avatarUrl }: { readonly displayName?: string; readonly avatarUrl?: string | undefined }) => (
   <header className="access-header">
     <AccessBrand />
-    {displayName !== undefined && <AccountChip displayName={displayName} />}
+    {displayName !== undefined && <AccountChip displayName={displayName} avatarUrl={avatarUrl} />}
   </header>
 )
 
