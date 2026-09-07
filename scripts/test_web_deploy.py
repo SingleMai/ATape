@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 
@@ -42,6 +43,17 @@ elif args[0] == "compose":
 
 
 class DeployWebContract(unittest.TestCase):
+    def test_ssm_document_accepts_environment_and_legacy_interpolation(self):
+        template = SCRIPT.parent.parent / "deploy/aws/web-deployment.yaml"
+        prefix = template.read_text().split("#!/usr/bin/env bash\n", 1)[1].split("directory=$(mktemp", 1)[0]
+        script = textwrap.dedent(prefix) + 'printf "%s" "$sha"\n'
+        for interpolated in ("$SSM_CommitSha", SHA):
+            with self.subTest(interpolation=interpolated):
+                result = subprocess.run(["bash", "-c", script.replace("{{ CommitSha }}", interpolated)],
+                                        env={**os.environ, "SSM_CommitSha": SHA}, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, SHA)
+
     def run_deployment(self, failure=None, sha=SHA):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
