@@ -173,12 +173,14 @@ const clientConfig = (): ClientConfig => ({
 
 const fixture = (options: {
   readonly page?: AdapterCollectionPage
+  readonly pages?: ReadonlyArray<AdapterCollectionPage>
   readonly rawFailure?: CollectionTransportError
   readonly rawFailureAtServerOffset?: number
   readonly replayedRawAheadBytes?: number
 } = {}) => {
   let checkpoint: CollectorCheckpoint | undefined
   let commits = 0
+  let pageIndex = 0
   let rawAttempts = 0
   let rawBlocked = options.rawFailureAtServerOffset !== undefined
   const canonical: Array<CanonicalSubmission> = []
@@ -199,7 +201,7 @@ const fixture = (options: {
       })
     })),
     Layer.succeed(AdapterRuntimes, AdapterRuntimes.of({
-      open: () => Effect.succeed({ collect: () => Effect.succeed(options.page ?? collectionPage()) })
+      open: () => Effect.succeed({ collect: () => Effect.succeed(options.pages?.[pageIndex++] ?? options.page ?? collectionPage()) })
     })),
     Layer.succeed(CollectorTransport, CollectorTransport.of({
       submitCanonical: (submission) => Effect.sync(() => {
@@ -253,6 +255,49 @@ const fixture = (options: {
 }
 
 describe("Collector Module", () => {
+  it("deduplicates diagnostics across pages and bounds the cycle report without blocking publication", async () => {
+    const sourceFailures = Array.from({ length: 32 }, (_, i) => ({ source: `/history/file-${i}`, reason: "format" as const }))
+    const capture = fixture({ pages: [
+      { ...collectionPage(), hasMore: true, sourceFailures },
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "cursor-1", hasMore: false, observations: [], sourceFailures },
+    ] })
+    const first = await capture.run(runCollectionCycle())
+    expect(first.jobs[0]?.sourceFailures).toEqual(sourceFailures)
+    expect(first.jobs[0]?.sourceFailuresTruncated).toBeUndefined()
+    const overflow = fixture({ pages: [
+      { ...collectionPage(), hasMore: true, sourceFailures },
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "cursor-1", hasMore: false, observations: [],
+        sourceFailures: [{ source: "/history/another-file", reason: "io" }] },
+    ] })
+    expect((await overflow.run(runCollectionCycle())).jobs[0]).toMatchObject({ observations: 1, sourceFailures, sourceFailuresTruncated: true })
+    expect(overflow.checkpoint()?.cursor).toBe("cursor-1")
+  })
+
+  it("reports bounded redacted source failures locally while publishing healthy observations", async () => {
+    const capture = fixture({ page: { ...collectionPage(), sourceFailures: [{ source: "/history/supersecret.jsonl", reason: "unsupported" }], sourceFailuresTruncated: true } })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures).toEqual([])
+    expect(report.jobs[0]).toMatchObject({ observations: 1,
+      sourceFailures: [{ source: "/history/[REDACTED].jsonl", reason: "unsupported" }], sourceFailuresTruncated: true })
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect(JSON.stringify([...capture.canonical, ...capture.raw])).not.toContain("/history/")
+  })
+
+  it("reports a diagnostic-only page without fabricating observations or progress", async () => {
+    const capture = fixture({ page: { protocolVersion: AdapterProtocolVersion, nextCursor: null, hasMore: false, observations: [],
+      sourceFailures: [{ source: "/history/broken.jsonl", reason: "format" }] } })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.jobs[0]).toMatchObject({ observations: 0, sourceFailures: [{ reason: "format" }] })
+    expect(capture.canonical).toEqual([]); expect(capture.raw).toEqual([])
+    expect(capture.checkpoint()?.cursor).toBeNull()
+  })
+
+  it("rejects excessive source diagnostics before any network submission", async () => {
+    const capture = fixture({ page: { ...collectionPage(), sourceFailures: Array.from({ length: 33 }, () => ({ source: "/history/file", reason: "format" as const })) } })
+    expect((await capture.run(runCollectionCycle())).failures[0]?.reason).toBe("contract")
+    expect(capture.canonical).toEqual([]); expect(capture.commits()).toBe(0)
+  })
+
   it("masks nested tool values and credential fields before Canonical submission", async () => {
     const original = collectionPage()
     const page: AdapterCollectionPage = { ...original, observations: original.observations.map(o => ({ ...o,

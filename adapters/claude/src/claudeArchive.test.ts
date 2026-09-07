@@ -1,5 +1,5 @@
 import { AdapterCollectionLimits, type AdapterCollectRequest, type AdapterCollectionPage, type AdapterOpenContext } from "@atape/domain"
-import { appendFile, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { appendFile, mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execFile } from "node:child_process"
@@ -25,7 +25,7 @@ const discoveredFile = async (name: string, content = records, folder = "not-a-p
   await mkdir(directory, { recursive: true })
   const path = join(directory, `${name}.jsonl`)
   await writeFile(path, content.map(r => JSON.stringify(r)).join("\n") + "\n")
-  return path
+  return realpath(path)
 }
 const appendAnswer = async (path: string, text = "Discovered append") => {
   const last = records.filter(r => r.uuid).at(-1)!
@@ -154,19 +154,79 @@ it("retains progress across file moves and source deletion without duplicating h
   await rm(moved)
   expect(await collect(request(appended.nextCursor))).toMatchObject({ observations: [], nextCursor: appended.nextCursor })
   await discoveredFile("moved") // Restoring an older prefix is not a new Session.
-  await expect(collect(request(appended.nextCursor))).rejects.toThrow("prefix changed")
+  expect(await collect(request(appended.nextCursor))).toMatchObject({ observations: [], nextCursor: appended.nextCursor,
+    sourceFailures: [{ source: moved, reason: "changed" }] })
 })
 
 it.each([false, true])("rejects truncation to zero complete lines (discovery=%s)", async discovery => {
   const path = discovery ? await discoveredFile("source") : file
   const first = await collect()
   await writeFile(path, "")
-  await expect(collect(request(first.nextCursor))).rejects.toThrow("prefix changed")
+  if (discovery) expect(await collect(request(first.nextCursor))).toMatchObject({ observations: [], nextCursor: first.nextCursor,
+    sourceFailures: [{ source: path, reason: "changed" }] })
+  else await expect(collect(request(first.nextCursor))).rejects.toThrow("prefix changed")
 })
 
-it("fails on duplicate source identities instead of choosing a path arbitrarily", async () => {
-  await discoveredFile("first"); await discoveredFile("copy", records, "another-folder")
-  await expect(collect()).rejects.toThrow("same session identity")
+it("isolates every duplicate identity while collecting an unrelated healthy session", async () => {
+  const first = await discoveredFile("first"), copy = await discoveredFile("copy", records, "another-folder")
+  await discoveredFile("healthy", records.map(r => r.sessionId ? { ...r, sessionId: "healthy" } : r))
+  const page = await collect()
+  expect(page.observations.map(o => o.session.sourceSessionId)).toEqual(["healthy"])
+  expect(page.sourceFailures).toEqual(expect.arrayContaining([{ source: first, reason: "duplicate" }, { source: copy, reason: "duplicate" }]))
+  expect(JSON.parse(page.nextCursor!).sessions).toHaveLength(1)
+  await rm(copy)
+  expect((await collect(request(page.nextCursor))).observations).toHaveLength(1)
+})
+
+it.each(["format", "unsupported", "limit"] as const)("isolates %s sources and retries them after repair without resetting healthy progress", async reason => {
+  const bad = await discoveredFile("a-bad")
+  const original = await readFile(bad, "utf8")
+  if (reason === "format") await appendFile(bad, "broken-json\n")
+  if (reason === "unsupported") await appendFile(bad, JSON.stringify({ type: "system", subtype: "compact_boundary" }) + "\n")
+  if (reason === "limit") await appendFile(bad, "x".repeat(4 * 1024 * 1024))
+  await discoveredFile("z-healthy", records.map(r => r.sessionId ? { ...r, sessionId: "healthy" } : r))
+  const page = await collect()
+  expect(page.observations.map(o => o.session.sourceSessionId)).toEqual(["healthy"])
+  expect(page.sourceFailures).toEqual([{ source: bad, reason }])
+  expect(JSON.parse(page.nextCursor!).sessions).toHaveLength(1)
+  expect(await collect(request(page.nextCursor))).toMatchObject({ observations: [], nextCursor: page.nextCursor, hasMore: false,
+    sourceFailures: [{ source: bad, reason }] })
+  await writeFile(bad, original)
+  const repaired = await collect(request(page.nextCursor))
+  expect(repaired.observations).toHaveLength(1)
+  expect(repaired.sourceFailures).toBeUndefined()
+  expect(JSON.parse(repaired.nextCursor!).sessions).toHaveLength(2)
+})
+
+it("retains the failed session checkpoint while healthy appends advance, then resumes after exact prefix repair", async () => {
+  const bad = await discoveredFile("a-source"), first = await collect(), original = await readFile(bad, "utf8")
+  await writeFile(bad, original.replace("ATAPE_TOOL_DONE", "ATAPE_TOOL_FAIL"))
+  await discoveredFile("z-healthy", records.map(r => r.sessionId ? { ...r, sessionId: "healthy" } : r))
+  const page = await collect(request(first.nextCursor))
+  const failedCheckpoint = JSON.parse(first.nextCursor!).sessions[0]
+  expect(JSON.parse(page.nextCursor!).sessions).toContainEqual(failedCheckpoint)
+  const exhausted = await collect(request(page.nextCursor))
+  expect(exhausted).toMatchObject({ observations: [], nextCursor: page.nextCursor, sourceFailures: [{ source: bad, reason: "changed" }] })
+  await writeFile(bad, original); await appendAnswer(bad)
+  expect((await collect(request(page.nextCursor))).observations[0]?.events).toHaveLength(7)
+})
+
+it("bounds header diagnostics without acknowledging broken sources or hiding that more failed", async () => {
+  for (let i = 0; i < 35; i++) await writeFile(await discoveredFile(`broken-${i}`), "broken-json\n")
+  const page = await collect()
+  expect(page).toMatchObject({ observations: [], nextCursor: null, hasMore: false, sourceFailuresTruncated: true })
+  expect(page.sourceFailures).toHaveLength(32)
+  expect(page.sourceFailures?.every(f => f.reason === "format")).toBe(true)
+  const controller = new AbortController(); controller.abort()
+  await expect(collect({ ...request(), signal: controller.signal })).rejects.toThrow()
+  await expect(collect(request("{}"))).rejects.toThrow("checkpoint")
+})
+
+it("does not follow a captured source replaced with a symlink", async () => {
+  const path = await discoveredFile("source"), first = await collect()
+  await rm(path); await symlink(file, path)
+  expect(await collect(request(first.nextCursor))).toMatchObject({ observations: [], nextCursor: first.nextCursor,
+    sourceFailures: [{ source: path, reason: "changed" }] })
 })
 
 it("carries the selected-file v1 checkpoint into discovery without forgetting committed bytes", async () => {

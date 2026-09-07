@@ -1,4 +1,5 @@
 import type {
+  AdapterSourceFailure,
   ClientConfig,
   CollectorJobRunStatus,
   CollectorRunFailure,
@@ -61,7 +62,9 @@ export class CollectorRunStatusStore extends Context.Service<CollectorRunStatusS
 export type ManagedCollectorJobStatus = {
   readonly projectId: string
   readonly adapterId: string
-  readonly state: "pending" | "healthy" | "failed"
+  readonly state: "pending" | "healthy" | "partial" | "failed"
+  readonly sourceFailures?: ReadonlyArray<AdapterSourceFailure>
+  readonly sourceFailuresTruncated?: boolean
   readonly lastAttemptAt?: string
   readonly lastSuccessAt?: string
   readonly lastFailureAt?: string
@@ -145,6 +148,7 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")(function*(
           Effect.tap(() => Effect.logInfo("ATape collection cycle completed", {
             jobs: report.jobs.length,
             failures: report.failures.length,
+            partialJobs: report.jobs.filter(job => job.sourceFailures?.length || job.sourceFailuresTruncated).length,
             observations: report.jobs.reduce((sum, job) => sum + job.observations, 0),
             rawChunks: report.jobs.reduce((sum, job) => sum + job.rawChunks, 0)
           })),
@@ -209,7 +213,10 @@ const presentJob = (
   : {
       projectId,
       adapterId,
-      state: recorded.failureMessage === undefined ? "healthy" : "failed",
+      state: recorded.failureMessage !== undefined ? "failed"
+        : recorded.sourceFailures?.length || recorded.sourceFailuresTruncated ? "partial" : "healthy",
+      ...(recorded.sourceFailures ? { sourceFailures: recorded.sourceFailures } : {}),
+      ...(recorded.sourceFailuresTruncated ? { sourceFailuresTruncated: true } : {}),
       lastAttemptAt: recorded.lastAttemptAt,
       ...(recorded.lastSuccessAt === undefined ? {} : { lastSuccessAt: recorded.lastSuccessAt }),
       ...(recorded.lastFailureAt === undefined ? {} : { lastFailureAt: recorded.lastFailureAt }),

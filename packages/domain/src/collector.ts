@@ -236,11 +236,24 @@ export const AdapterObservation = Schema.Struct({
 })
 export type AdapterObservation = typeof AdapterObservation.Type
 
+// Local diagnostics only: never part of Canonical, Raw or Search payloads.
+export const MaxSourceFailures = 32
+export const AdapterSourceFailure = Schema.Struct({
+  source: Schema.String,
+  reason: Schema.Literals(["io", "format", "unsupported", "changed", "limit", "duplicate"])
+})
+export type AdapterSourceFailure = typeof AdapterSourceFailure.Type
+const SourceDiagnostics = {
+  sourceFailures: Schema.optionalKey(Schema.Array(AdapterSourceFailure)),
+  sourceFailuresTruncated: Schema.optionalKey(Schema.Boolean)
+}
+
 export const AdapterCollectionPage = Schema.Struct({
   protocolVersion: Schema.Literal(AdapterProtocolVersion),
   nextCursor: Schema.NullOr(Schema.String),
   hasMore: Schema.Boolean,
-  observations: Schema.Array(AdapterObservation)
+  observations: Schema.Array(AdapterObservation),
+  ...SourceDiagnostics
 })
 export type AdapterCollectionPage = typeof AdapterCollectionPage.Type
 
@@ -326,6 +339,7 @@ export const emptyCollectorState = (installationId: string): CollectorState => (
 })
 
 export const CollectorJobRunStatus = Schema.Struct({
+  ...SourceDiagnostics,
   projectId: Schema.String,
   adapterId: Schema.String,
   lastAttemptAt: Schema.String,

@@ -70,7 +70,15 @@ tool details, migration 000010 and the common reader integration. It is integrat
 with main's narrative reading/index controls and larger Raw transport chunks; the
 Claude source snapshot limit remains 4 MiB. Local research models are not shipped.
 
-Land this increment through a pull request and its checks before starting the next
-one. Next: isolate individual source failures, then add Claude to release artifact
-packaging/verification, then rehearse a packaged upgrade. Those changes are not
-included here. Package publication and deployment require separate execution.
+The first increment landed in PR #71. The next bounded increment implements
+[source failure isolation](../architecture/adr/0031-source-failure-isolation.md):
+healthy Sessions proceed while failed sources retain their checkpoints. Shared
+redacted diagnostics reach one-shot CLI output and managed `partial` status, not
+server data. Native-fixture CLI/Go tests cover mixed healthy/broken discovery,
+nonzero partial exits, repair and incremental recovery without resets. Adapter
+tests also cover duplicate identities, oversized sources, changed prefixes,
+diagnostic limits and cancellation; existing Codex collection stays unchanged.
+
+Land this increment through its pull-request checks before the next one. Remaining:
+add Claude to release artifact packaging/verification, then rehearse a packaged
+upgrade. Package publication and deployment require separate execution.

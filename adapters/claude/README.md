@@ -62,8 +62,27 @@ Discovery scans at most 10,000 directory entries and keeps a checkpoint of at mo
 stop collection without evicting old progress. Only sources with readable identity
 and original CWD in their bounded header are automatically attributable; use the
 single-file override to diagnose malformed or unrecognized headers. An unsupported
-attributed source fails the collection job; it is not silently marked captured.
-Multiple files claiming the same Session identity are rejected rather than merged.
+attributed source is isolated without marking it captured; other sources continue.
+Multiple files claiming the same Session identity are all isolated rather than merged.
+
+## Partial collection
+
+Automatic discovery reports source read/format errors, unsupported histories,
+changed prefixes, oversized snapshots and duplicate identities as local
+`sourceFailures`. Unattributable headers are diagnosed locally; unrelated bodies
+are not uploaded. Healthy Sessions still advance; failed Sessions retain their
+committed progress and are retried next cycle. Repair a malformed source or restore
+its exact captured prefix to resume it. Unsupported history needs a future Adapter
+capability, not a cursor reset. No automatic deletion or permanent quarantine occurs.
+
+`atape collect --once --json` includes the diagnostics and exits nonzero for partial
+collection. Text output lists escaped source paths and generic reasons; the Host
+masks configured secrets. Background `atape status` shows `partial` and continues
+collecting. Reports retain up to 32 distinct diagnostics with a truncation flag,
+not an exact count of all failed files. A clean cycle clears previous diagnostics.
+Global discovery/cursor capacity, corrupt checkpoints and Host/transport failures
+still fail the job. The single-file override stays fail-fast. Update the Host and
+Adapter together to retain the new optional diagnostic fields.
 
 The current v1 Host's source-mutation/concurrent-writer and lost-checkpoint
 recovery limitations still apply. Use a single Collector and preserve its state.
