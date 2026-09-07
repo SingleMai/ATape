@@ -6,10 +6,12 @@ import {
 } from "@atape/domain"
 import { Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect, useMemo } from "react"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type Components } from "react-markdown"
+import { useMarkdownPlugins } from "../presenters/markdownPresenter"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
 import { ConversationReadingFrame } from "./UserMessageIndex"
+import { MarkdownCodeBlock } from "./MarkdownCodeBlock"
 
 type Props = {
   readonly state: LoadableView<Conversation>
@@ -47,11 +49,23 @@ const isToolEvent = (event: CanonicalEvent) =>
 const eventClassName = (base: string, event: CanonicalEvent, highlightedEventId?: string) =>
   `${base}${event.id === highlightedEventId ? " event-highlighted" : ""}`
 
-const MarkdownText = ({ text }: { readonly text: string }) => (
-  <div className="narrative-markdown">
-    <ReactMarkdown>{text}</ReactMarkdown>
-  </div>
-)
+const markdownComponents: Components = {
+  pre: MarkdownCodeBlock,
+  table: ({ children }) => (
+    <div className="narrative-table-scroll" role="region" aria-label="Markdown table" tabIndex={0}>
+      <table>{children}</table>
+    </div>
+  )
+}
+
+const MarkdownText = ({ text }: { readonly text: string }) => {
+  const plugins = useMarkdownPlugins(text)
+  return (
+    <div className="narrative-markdown">
+      <ReactMarkdown {...plugins} components={markdownComponents}>{text}</ReactMarkdown>
+    </div>
+  )
+}
 
 const ToolDetails = ({ event }: { readonly event: CanonicalEvent }) => event.tool ? (
   <div className="tool-details">

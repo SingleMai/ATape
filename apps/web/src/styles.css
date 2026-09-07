@@ -644,7 +644,33 @@ h3 { margin: 0; font-size: 20px; }
 .narrative-markdown code { padding: 2px 5px; border-radius: 5px; background: var(--atape-color-surface-muted); font: .88em/1.5 var(--atape-font-mono); }
 .narrative-markdown pre { overflow-x: auto; padding: 13px 14px; border-radius: 10px; background: var(--atape-color-code); color: var(--atape-color-code-text); }
 .narrative-markdown pre code { padding: 0; background: transparent; color: inherit; }
+.narrative-code-block { margin: 12px 0; border-radius: 10px; background: var(--atape-color-code); color: var(--atape-color-code-text); overflow: hidden; }
+.narrative-code-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 14px; border-bottom: 1px solid color-mix(in srgb, var(--atape-color-code-text) 20%, transparent); font: 12px/1.5 var(--atape-font-mono); }
+.narrative-code-toolbar > button { margin-left: auto; padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--atape-color-code-text) 35%, transparent); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.narrative-code-toolbar > button:hover { background: color-mix(in srgb, var(--atape-color-code-text) 12%, transparent); }
+.narrative-code-toolbar > button:disabled { opacity: .65; cursor: wait; }
+.narrative-code-copy-status:empty { display: none; }
+.narrative-code-copy-status { flex-basis: 100%; }
+.narrative-markdown .narrative-code-block pre { margin: 0; border-radius: 0; }
+.narrative-mermaid { padding: 14px; background: var(--atape-color-paper); overflow-x: auto; }
+.narrative-mermaid iframe { width: 100%; border: 0; }
+.narrative-markdown .narrative-mermaid-status { padding: 10px 14px; margin: 0; }
+.narrative-mermaid-source { padding: 10px 14px; cursor: pointer; font-size: 12px; }
+.narrative-markdown .hljs-comment, .narrative-markdown .hljs-quote { color: var(--atape-color-code-comment); font-style: italic; }
+.narrative-markdown .hljs-keyword, .narrative-markdown .hljs-selector-tag, .narrative-markdown .hljs-literal, .narrative-markdown .hljs-type { color: var(--atape-color-code-keyword); }
+.narrative-markdown .hljs-string, .narrative-markdown .hljs-regexp, .narrative-markdown .hljs-addition { color: var(--atape-color-code-string); }
+.narrative-markdown .hljs-number, .narrative-markdown .hljs-symbol, .narrative-markdown .hljs-attr, .narrative-markdown .hljs-meta { color: var(--atape-color-code-number); }
+.narrative-markdown .hljs-title, .narrative-markdown .hljs-built_in, .narrative-markdown .hljs-name { color: var(--atape-color-code-function); }
+.narrative-markdown .hljs-deletion { color: var(--atape-color-coral); }
+.narrative-markdown .hljs-emphasis { font-style: italic; }
+.narrative-markdown .hljs-strong { font-weight: 700; }
 .narrative-markdown a { color: var(--atape-color-accent); }
+.narrative-table-scroll { max-width: 100%; overflow-x: auto; margin: 12px 0; }
+.narrative-markdown table { width: 100%; border-collapse: collapse; font-size: .94em; }
+.narrative-markdown th, .narrative-markdown td { min-width: 8rem; padding: 9px 12px; border: 1px solid var(--atape-color-border); text-align: left; vertical-align: top; }
+.narrative-markdown th { background: var(--atape-color-surface-muted); font-weight: 600; }
+.narrative-markdown .contains-task-list { list-style: none; padding-left: 0; }
+.narrative-markdown .task-list-item > input { margin-right: 7px; accent-color: var(--atape-color-accent); }
 
 .narrative-activity {
   margin: 3px 30px 5px;
