@@ -213,3 +213,29 @@ test("selects a newly created Team and opens its first captured Project", async 
   await expect(page).toHaveURL(`${appOrigin}/teams/created-team/projects/created-project`)
   await expect(page.locator(".project-pill strong")).toHaveText("Captured Project")
 })
+
+test("keeps each conversation turn focused on the prompt and final response", async ({ context, page }) => {
+  await authenticate(context)
+  await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root")
+
+  await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
+  await expect(page.locator(".turn-message-user")).toHaveCount(2)
+  await expect(page.locator(".turn-message-agent")).toHaveCount(2)
+  await expect(page.getByText("Please diagnose the startup failure")).toBeVisible()
+  await expect(page.getByText("The startup issue is fixed")).toBeVisible()
+  await expect(page.getByText("Planning diagnosis")).not.toBeVisible()
+  await expect(page.getByText("I am checking the environment")).not.toBeVisible()
+  await expect(page.locator(".turn-process").first()).not.toHaveAttribute("open", "")
+
+  await page.locator(".turn-process > summary").first().click()
+  await expect(page.getByText("Planning diagnosis")).toBeVisible()
+  await expect(page.getByText("I am checking the environment")).toBeVisible()
+  await expect(page.locator(".process-tool").first().getByText("exec · completed")).not.toBeVisible()
+  await page.locator(".process-tool > summary").first().click()
+  await expect(page.getByText("exec · completed")).toBeVisible()
+
+  await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root&event=event-04")
+  await expect(page.locator(".turn-process").first()).toHaveAttribute("open", "")
+  await expect(page.locator(".process-tool").first()).toHaveAttribute("open", "")
+  await expect(page.locator("#event-event-04")).toBeVisible()
+})

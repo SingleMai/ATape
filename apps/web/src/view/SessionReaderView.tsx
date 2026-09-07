@@ -2,6 +2,7 @@ import type { CanonicalEvent, Conversation } from "@atape/domain"
 import { Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
+import { presentConversationTurns } from "../presenters/sessionReaderPresenter"
 
 type Props = {
   readonly state: LoadableView<Conversation>
@@ -20,13 +21,30 @@ type Props = {
 const formatTime = (value: string) =>
   new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value))
 
-const EventView = ({ event, onOpenThread, highlighted }: {
+const ChildThreadButton = ({ event, onOpenThread }: {
   readonly event: CanonicalEvent
+  readonly onOpenThread: (threadId: string) => void
+}) => {
+  const childThread = event.childThread
+  return childThread ? (
+    <button className="child-thread" type="button" onClick={() => onOpenThread(childThread.id)}>
+      <span>
+        <strong>{childThread.label} · child thread</strong>
+        <small>{childThread.summary} · {childThread.captureStatus} · {childThread.eventCount} events</small>
+      </span>
+      <strong>Follow thread</strong>
+    </button>
+  ) : null
+}
+
+const MessageView = ({ event, role, onOpenThread, highlighted }: {
+  readonly event: CanonicalEvent
+  readonly role: "user" | "agent"
   readonly onOpenThread: (threadId: string) => void
   readonly highlighted: boolean
 }) => (
   <article
-    className={`event event-${event.kind}${highlighted ? " event-highlighted" : ""}`}
+    className={`event turn-message turn-message-${role}${highlighted ? " event-highlighted" : ""}`}
     id={`event-${event.id}`}
     tabIndex={-1}
   >
@@ -35,18 +53,103 @@ const EventView = ({ event, onOpenThread, highlighted }: {
       <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
     </header>
     <p>{event.text}</p>
-    {event.toolLabel && <span className="tool-label">{event.toolLabel}</span>}
-    {event.childThread && (
-      <button className="child-thread" type="button" onClick={() => onOpenThread(event.childThread!.id)}>
-        <span>
-          <strong>{event.childThread.label} · child thread</strong>
-          <small>{event.childThread.summary} · {event.childThread.captureStatus} · {event.childThread.eventCount} events</small>
-        </span>
-        <strong>Follow thread</strong>
-      </button>
-    )}
+    <ChildThreadButton event={event} onOpenThread={onOpenThread} />
   </article>
 )
+
+const processLabel: Record<CanonicalEvent["kind"], string> = {
+  message: "Agent update",
+  thought: "Thinking",
+  tool_call: "Tool call",
+  tool_result: "Tool result",
+  artifact: "Artifact",
+  spawn: "Delegation",
+  lifecycle: "Activity",
+  context: "Context",
+  notice: "Notice"
+}
+
+const ProcessEventView = ({ event, onOpenThread, highlighted }: {
+  readonly event: CanonicalEvent
+  readonly onOpenThread: (threadId: string) => void
+  readonly highlighted: boolean
+}) => {
+  const isTool = event.kind === "tool_call" || event.kind === "tool_result"
+  const content = (
+    <article
+      className={`process-event process-event-${event.kind}${highlighted ? " event-highlighted" : ""}`}
+      id={`event-${event.id}`}
+      tabIndex={-1}
+    >
+      {!isTool && (
+        <header>
+          <strong>{processLabel[event.kind]}</strong>
+          <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+        </header>
+      )}
+      <p>{event.text}</p>
+      <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+    </article>
+  )
+
+  if (!isTool) return content
+  return (
+    <details className="process-tool" open={highlighted || undefined}>
+      <summary>
+        <span>
+          <strong>{event.toolLabel || processLabel[event.kind]}</strong>
+          <small>{processLabel[event.kind]}</small>
+        </span>
+        <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+      </summary>
+      {content}
+    </details>
+  )
+}
+
+const describeProcess = (events: ReadonlyArray<CanonicalEvent>) => {
+  const toolCount = events.filter((event) => event.kind === "tool_call" || event.kind === "tool_result").length
+  const thoughtCount = events.filter((event) => event.kind === "thought").length
+  const updateCount = events.filter((event) => event.kind === "message").length
+  const backgroundCount = events.length - toolCount - thoughtCount - updateCount
+  const labels = [
+    updateCount > 0 ? `${updateCount} update${updateCount === 1 ? "" : "s"}` : undefined,
+    thoughtCount > 0 ? `${thoughtCount} thought${thoughtCount === 1 ? "" : "s"}` : undefined,
+    toolCount > 0 ? `${toolCount} tool event${toolCount === 1 ? "" : "s"}` : undefined,
+    backgroundCount > 0 ? `${backgroundCount} other event${backgroundCount === 1 ? "" : "s"}` : undefined
+  ].filter((label): label is string => label !== undefined)
+  return labels.join(" · ")
+}
+
+const ProcessDetails = ({ events, onOpenThread, highlightedEventId }: {
+  readonly events: ReadonlyArray<CanonicalEvent>
+  readonly onOpenThread: (threadId: string) => void
+  readonly highlightedEventId: string | undefined
+}) => {
+  if (events.length === 0) return null
+  const containsHighlight = events.some((event) => event.id === highlightedEventId)
+  return (
+    <details className="turn-process" open={containsHighlight || undefined}>
+      <summary>
+        <span>
+          <strong>Process</strong>
+          <small>{describeProcess(events)}</small>
+        </span>
+        <span className="process-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div className="turn-process-events">
+        {events.map((event) => (
+          <ProcessEventView
+            key={event.id}
+            event={event}
+            onOpenThread={onOpenThread}
+            highlighted={event.id === highlightedEventId}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
 
 export const SessionReaderView = ({
   state,
@@ -83,6 +186,7 @@ export const SessionReaderView = ({
   }
 
   const conversation = state.value
+  const turns = presentConversationTurns(conversation)
   return (
     <section aria-labelledby="session-title">
       <nav className="reader-nav" aria-label="Session navigation">
@@ -130,14 +234,37 @@ export const SessionReaderView = ({
       </nav>
 
       <div className="conversation-stream">
-        {conversation.events.map((event) => (
-          <EventView
-            key={event.id}
-            event={event}
-            onOpenThread={onOpenThread}
-            highlighted={event.id === highlightedEventId}
-          />
+        {turns.map((turn, index) => (
+          <section className="conversation-turn" aria-label={`Turn ${index + 1}`} key={turn.id}>
+            {turn.userMessage && (
+              <MessageView
+                event={turn.userMessage}
+                role="user"
+                onOpenThread={onOpenThread}
+                highlighted={turn.userMessage.id === highlightedEventId}
+              />
+            )}
+            <ProcessDetails
+              events={turn.processEvents}
+              onOpenThread={onOpenThread}
+              highlightedEventId={highlightedEventId}
+            />
+            {turn.agentResponse && (
+              <MessageView
+                event={turn.agentResponse}
+                role="agent"
+                onOpenThread={onOpenThread}
+                highlighted={turn.agentResponse.id === highlightedEventId}
+              />
+            )}
+          </section>
         ))}
+        {turns.length === 0 && (
+          <div className="empty-conversation">
+            <strong>No messages captured yet</strong>
+            <span>ATape will add the conversation here as new events arrive.</span>
+          </div>
+        )}
       </div>
 
       <p className="mirror-note">This is a read-only mirror. New captured events appear automatically.</p>

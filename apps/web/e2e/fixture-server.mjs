@@ -204,6 +204,33 @@ const server = http.createServer(async (request, response) => {
       projects
     })
   }
+  if (path === "/api/v1/sessions/session-reader" && request.method === "GET") {
+    if (!requireWeb(request, response)) return
+    return json(response, 200, {
+      session: {
+        id: "session-reader",
+        projectId: "project-1",
+        title: "Conversation hierarchy",
+        actor: { name: "User", harness: "Codex" },
+        branch: "main",
+        status: "active",
+        captureStatus: "healthy",
+        updatedAt: "2026-09-05T00:00:09Z"
+      },
+      thread: { id: "root", label: "Root", captureStatus: "healthy" },
+      threadPath: [{ id: "root", label: "Root" }],
+      events: [
+        { id: "event-01", kind: "message", author: "User", occurredAt: "2026-09-05T00:00:01Z", text: "Please diagnose the startup failure" },
+        { id: "event-02", kind: "thought", author: "Codex", occurredAt: "2026-09-05T00:00:02Z", text: "Planning diagnosis" },
+        { id: "event-03", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:03Z", text: "I am checking the environment" },
+        { id: "event-04", kind: "tool_call", author: "Codex", occurredAt: "2026-09-05T00:00:04Z", text: "exec · completed", toolLabel: "exec" },
+        { id: "event-05", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:05Z", text: "The startup issue is fixed" },
+        { id: "event-06", kind: "message", author: "User", occurredAt: "2026-09-05T00:00:06Z", text: "Can you verify it?" },
+        { id: "event-07", kind: "tool_result", author: "Codex", occurredAt: "2026-09-05T00:00:07Z", text: "test · completed", toolLabel: "test" },
+        { id: "event-08", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:08Z", text: "Verification passed" }
+      ]
+    })
+  }
   if (path === "/api/v1/users/me/external-identities" && request.method === "GET") {
     if (!requireWeb(request, response)) return
     return json(response, 200, { items: [{
