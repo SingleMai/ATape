@@ -37,11 +37,11 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
-    "pack:release": "node scripts/pack.mjs",
+    "pack:release": "node ../../scripts/pack-adapter.mjs",
     "prepack": "node scripts/build.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "verify:package": "node scripts/verify-package.mjs"
+    "verify:package": "node ../../scripts/verify-adapter-package.mjs"
   },
   "devDependencies": {
     "@atape/domain": "workspace:*",

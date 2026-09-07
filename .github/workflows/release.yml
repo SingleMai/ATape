@@ -105,6 +105,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME"
           release/atape-cli-*.tgz
           release/atape-adapter-codex-*.tgz
+          release/atape-adapter-claude-*.tgz
           release/SHA256SUMS
           --verify-tag
           --generate-notes

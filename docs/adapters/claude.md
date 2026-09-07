@@ -79,6 +79,16 @@ nonzero partial exits, repair and incremental recovery without resets. Adapter
 tests also cover duplicate identities, oversized sources, changed prefixes,
 diagnostic limits and cancellation; existing Codex collection stays unchanged.
 
-Land this increment through its pull-request checks before the next one. Remaining:
-add Claude to release artifact packaging/verification, then rehearse a packaged
-upgrade. Package publication and deployment require separate execution.
+Source isolation landed in PR #73. The next increment adds Claude to the shared
+release contract, packing/checksums, npm publication list and GitHub assets. Both
+Adapters share the same installable-package verification; packaged CLI verification
+now captures the native fixture and replaces a distinct-version test package with
+the exact Claude release tarball. It verifies preserved cursor/Raw progress,
+zero duplicate uploads and a later append. Package version alone is not a cursor
+compatibility rule; schema and captured-prefix checks remain authoritative.
+
+The upgrade fixture re-versions the current bundle, not a historical release, so
+it proves package replacement/recovery mechanics only. No new old-version support
+or real deployment is claimed. Remaining release work is the existing candidate,
+staging/operations signoff and explicit publication/deployment workflow in the
+[release guide](../releasing.md); unsupported Claude history shapes stay deferred.
