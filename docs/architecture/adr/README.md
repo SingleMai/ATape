@@ -33,6 +33,10 @@
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.
 
+[ADR-0034](0034-v0.2.0-manual-release-waiver.md) records the user-authorized,
+candidate-bound v0.2.0 manual staging waiver without changing automated gates or
+pretending that staging acceptance passed.
+
 [ADR-0029](0029-claude-first-vertical-slice.md) records the user-directed switch to a first production Claude vertical slice on existing Interfaces, with the broader planned protocols deferred.
 
 [ADR-0030](0030-bounded-tool-details-implementation.md) implements bounded shared tool values with a versioned profile, Canonical persistence, Host redaction and common rendering; the remaining ADR-0028 work stays deferred.

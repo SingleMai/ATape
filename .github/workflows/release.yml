@@ -45,6 +45,9 @@ jobs:
       - name: Verify tag and package metadata
         run: node scripts/check-release-tag.mjs "$GITHUB_REF_NAME"
 
+      - name: Install the browser used by Web interaction tests
+        run: pnpm --filter @atape/web exec playwright install --with-deps chromium
+
       - name: Run repository checks
         run: pnpm check
 
@@ -97,6 +100,18 @@ jobs:
           ignore-unfixed: false
           version: v0.74.0
 
+      - name: Retain the verified publication artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-tarballs-${{ github.ref_name }}
+          path: |
+            release/atape-cli-*.tgz
+            release/atape-adapter-codex-*.tgz
+            release/atape-adapter-claude-*.tgz
+            release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Publish public npm packages
         run: node scripts/publish-npm-release.mjs
 
@@ -109,6 +124,7 @@ jobs:
           release/SHA256SUMS
           --verify-tag
           --generate-notes
+          --notes-file "docs/releases/$GITHUB_REF_NAME.md"
           --title "ATape $GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ github.token }}
