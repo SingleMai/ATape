@@ -1,0 +1,84 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Main-only GitHub OIDC access to the ATape Web deployment command.
+
+Parameters:
+  InstanceId:
+    Type: String
+    AllowedPattern: ^i-[0-9a-f]+$
+
+Resources:
+  DeployDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      Name: atape-deploy-web
+      DocumentType: Command
+      DocumentFormat: YAML
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "2.2"
+        description: Build and deploy only the Web container from an immutable ATape commit.
+        parameters:
+          CommitSha:
+            type: String
+            allowedPattern: ^[0-9a-f]{40}$
+            interpolationType: ENV_VAR
+        mainSteps:
+          - action: aws:runShellScript
+            name: deployWeb
+            inputs:
+              timeoutSeconds: "1800"
+              runCommand:
+                - |
+                  #!/usr/bin/env bash
+                  set -euo pipefail
+                  # The allowlisted SHA is also safe with older SSM agents.
+                  sha='{{ CommitSha }}'
+                  [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+                  directory=$(mktemp -d /opt/atape/web-deploy.XXXXXX)
+                  trap 'rm -rf "$directory"' EXIT
+                  curl -fsSL --retry 3 --max-time 120 \
+                    "https://codeload.github.com/SingleMai/ATape/tar.gz/$sha" \
+                    -o "$directory/source.tar.gz"
+                  mkdir "$directory/source"
+                  tar -xzf "$directory/source.tar.gz" --strip-components=1 -C "$directory/source"
+                  bash "$directory/source/scripts/deploy-web.sh" "$sha" "$directory/source"
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: atape-web-deployment
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub:
+                  - repo:SingleMai/ATape:ref:refs/heads/main
+                  - repo:SingleMai@24849554/ATape@1356660974:ref:refs/heads/main
+      Policies:
+        - PolicyName: DeployWebOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${DeployDocument}
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${InstanceId}
+              - Effect: Allow
+                Action: ssm:GetCommandInvocation
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt DeployRole.Arn
+  DocumentName:
+    Value: !Ref DeployDocument
+  InstanceId:
+    Value: !Ref InstanceId

@@ -44,6 +44,9 @@ jobs:
       - name: Run repository checks
         run: pnpm check
 
+      - name: Verify Web rollout and rollback behavior
+        run: python3 -m unittest discover -s scripts -p 'test_web_deploy.py'
+
       - name: Build production artifacts
         run: pnpm build
 
