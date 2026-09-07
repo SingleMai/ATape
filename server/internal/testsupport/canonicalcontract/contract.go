@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
@@ -20,6 +21,8 @@ type Store interface {
 	ingestion.BatchStore
 	conversation.SnapshotStore
 	workspace.DirectoryStore
+	LeaseProjectionChanges(context.Context, string, int, time.Time) ([]canonical.ProjectionChange, error)
+	AckProjectionChanges(context.Context, string, []int64) error
 }
 
 type Factory func(*testing.T) Store
@@ -213,6 +216,54 @@ func Run(t *testing.T, factory Factory) {
 		}
 		if got, want := opened.Events[1].Text, updatedBatch.Events[0].Text; got != want {
 			t.Fatalf("updated event = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("reprojects unchanged Events when the Session title changes", func(t *testing.T) {
+		store := factory(t)
+		ingestor := ingestion.NewIngestor(store)
+		if _, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), ValidBatch()); err != nil {
+			t.Fatalf("apply first batch: %v", err)
+		}
+		initial, err := store.LeaseProjectionChanges(
+			context.Background(), "initial-title", 100, time.Now().UTC().Add(time.Minute),
+		)
+		if err != nil {
+			t.Fatalf("lease initial projections: %v", err)
+		}
+		initialIDs := make([]int64, 0, len(initial))
+		for _, change := range initial {
+			initialIDs = append(initialIDs, change.ID)
+		}
+		if err := store.AckProjectionChanges(context.Background(), "initial-title", initialIDs); err != nil {
+			t.Fatalf("ack initial projections: %v", err)
+		}
+
+		renamed := ValidBatch()
+		renamed.BatchID = "batch-title-renamed"
+		renamed.Session.Revision = 2
+		renamed.Session.Title = "Checkout accessibility review"
+		result, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), renamed)
+		if err != nil {
+			t.Fatalf("apply renamed Session: %v", err)
+		}
+		if result.UpdatedEvents != 0 || result.UnchangedEvents != len(renamed.Events) {
+			t.Fatalf("title-only update changed Events: %+v", result)
+		}
+
+		changes, err := store.LeaseProjectionChanges(
+			context.Background(), "renamed-title", 100, time.Now().UTC().Add(time.Minute),
+		)
+		if err != nil {
+			t.Fatalf("lease renamed projections: %v", err)
+		}
+		if got, want := len(changes), len(renamed.Events); got != want {
+			t.Fatalf("renamed projection changes = %d, want %d", got, want)
+		}
+		for _, change := range changes {
+			if got, want := change.Document.SessionTitle, renamed.Session.Title; got != want {
+				t.Fatalf("projected Session title = %q, want %q", got, want)
+			}
 		}
 	})
 

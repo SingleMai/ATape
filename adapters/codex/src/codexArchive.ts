@@ -16,11 +16,11 @@ import { homedir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Option, Schema } from "effect"
 
-const CursorVersion = 2 as const
-const LegacyCursorVersion = 1 as const
+const CursorVersion = 3 as const
 const MaxCursorBytes = 16_000
 const MaxMetadataBytes = 1024 * 1024
 const MaxJsonlRecordBytes = 16 * 1024 * 1024
+const MaxSessionIndexBytes = 16 * 1024 * 1024
 const MaxTitleScanBytes = 4 * 1024 * 1024
 const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
@@ -66,6 +66,12 @@ type CodexSession = {
   readonly id: string
   readonly files: ReadonlyArray<RolloutFile>
   readonly modifiedMs: number
+  readonly providerTitle?: SessionTitle
+}
+
+type SessionTitle = {
+  readonly value: string
+  readonly modifiedMs: number
 }
 
 type CursorFile = {
@@ -81,6 +87,7 @@ type ActiveCursor = {
   readonly sessionId: string
   readonly selectedModifiedMs: number
   readonly revision: number
+  readonly providerTitle?: string
   readonly files: ReadonlyArray<CursorFile>
   readonly spawnOffset: number
   readonly eventFileIndex: number
@@ -110,6 +117,7 @@ const ActiveCursorSchema = Schema.Struct({
   sessionId: Schema.String,
   selectedModifiedMs: Schema.Number,
   revision: Schema.Number,
+  providerTitle: Schema.optionalKey(Schema.String),
   files: Schema.Array(CursorFileSchema),
   spawnOffset: Schema.Number,
   eventFileIndex: Schema.Number,
@@ -127,11 +135,17 @@ const CursorSchema = Schema.Struct({
 })
 
 const LegacyCursorSchema = Schema.Struct({
-  v: Schema.Literal(LegacyCursorVersion),
+  v: Schema.Literals([1, 2]),
   watermarkModifiedMs: Schema.Number,
   watermarkSessionId: Schema.String,
   commitSequence: Schema.optionalKey(Schema.Number),
   active: Schema.optionalKey(ActiveCursorSchema)
+})
+
+const SessionTitleIndexRecordSchema = Schema.Struct({
+  id: Schema.String,
+  thread_name: Schema.String,
+  updated_at: Schema.String
 })
 
 const SessionMetaEnvelopeSchema = Schema.Struct({
@@ -380,6 +394,7 @@ const startSession = async (session: CodexSession, signal: AbortSignal): Promise
     sessionId: session.id,
     selectedModifiedMs: session.modifiedMs,
     revision: modifiedMicros * 2 + CanonicalProjectionRevisionOffset + (allArchived ? 1 : 0),
+    ...(session.providerTitle === undefined ? {} : { providerTitle: session.providerTitle.value }),
     files,
     spawnOffset: 0,
     eventFileIndex: 0,
@@ -390,10 +405,12 @@ const startSession = async (session: CodexSession, signal: AbortSignal): Promise
 }
 
 const discoverSessions = async (archive: CodexArchive, signal: AbortSignal): Promise<ReadonlyArray<CodexSession>> => {
-  const paths = [
-    ...(await listJsonl(join(archive.codexHome, "sessions"), signal)),
-    ...(await listJsonl(join(archive.codexHome, "archived_sessions"), signal))
-  ]
+  const [activePaths, archivedPaths, titles] = await Promise.all([
+    listJsonl(join(archive.codexHome, "sessions"), signal),
+    listJsonl(join(archive.codexHome, "archived_sessions"), signal),
+    readSessionTitles(join(archive.codexHome, "session_index.jsonl"), signal)
+  ])
+  const paths = [...activePaths, ...archivedPaths]
   const groups = new Map<string, Array<RolloutFile>>()
   for (const path of paths) {
     throwIfAborted(signal)
@@ -409,12 +426,48 @@ const discoverSessions = async (archive: CodexArchive, signal: AbortSignal): Pro
     group.push(file)
     groups.set(file.metadata.sessionId, group)
   }
-  return [...groups.entries()].map(([id, files]) => ({
-    id,
-    files: files.sort((left, right) =>
-      left.metadata.timestamp.localeCompare(right.metadata.timestamp) || left.relativePath.localeCompare(right.relativePath)),
-    modifiedMs: Math.max(...files.map((file) => file.modifiedMs))
-  }))
+  return [...groups.entries()].map(([id, files]) => {
+    const providerTitle = titles.get(id)
+    return {
+      id,
+      files: files.sort((left, right) =>
+        left.metadata.timestamp.localeCompare(right.metadata.timestamp) || left.relativePath.localeCompare(right.relativePath)),
+      modifiedMs: Math.max(...files.map((file) => file.modifiedMs), providerTitle?.modifiedMs ?? 0),
+      ...(providerTitle === undefined ? {} : { providerTitle })
+    }
+  })
+}
+
+const readSessionTitles = async (
+  path: string,
+  signal: AbortSignal
+): Promise<ReadonlyMap<string, SessionTitle>> => {
+  let details
+  try {
+    details = await stat(path)
+  } catch (cause) {
+    if (hasCode(cause, "ENOENT")) return new Map()
+    throw cause
+  }
+  if (!details.isFile() || details.size === 0) return new Map()
+
+  const start = Math.max(0, details.size - MaxSessionIndexBytes)
+  let skipPartialFirstLine = start > 0
+  const titles = new Map<string, SessionTitle>()
+  for await (const line of readLines(path, start, details.size, signal)) {
+    if (skipPartialFirstLine) {
+      skipPartialFirstLine = false
+      continue
+    }
+    if (line.content.at(-1) !== 0x0a) continue
+    const decoded = Schema.decodeUnknownOption(SessionTitleIndexRecordSchema)(parseJSON(line.content))
+    if (Option.isNone(decoded)) continue
+    const value = normalizeTitle(decoded.value.thread_name)
+    const modifiedMs = Date.parse(decoded.value.updated_at)
+    if (value === "" || Number.isNaN(modifiedMs)) continue
+    titles.set(decoded.value.id, { value, modifiedMs })
+  }
+  return titles
 }
 
 const inspectRollout = async (
@@ -847,6 +900,7 @@ const deriveSessionTitle = async (
   projection: CanonicalProjection,
   signal: AbortSignal
 ) => {
+  if (active.providerTitle !== undefined) return active.providerTitle
   let remaining = MaxTitleScanBytes
   for (const snapshot of active.files) {
     if (snapshot.threadId !== active.sessionId || remaining <= 0) continue
