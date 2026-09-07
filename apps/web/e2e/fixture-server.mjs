@@ -241,6 +241,15 @@ const server = http.createServer(async (request, response) => {
       ]
     })
   }
+  if (path === "/api/v1/projects/project-1/search" && request.method === "GET") {
+    if (!requireWeb(request, response)) return
+    const query = url.searchParams.get("q") ?? ""
+    return json(response, 200, { projectId: "project-1", query, results: query.toLowerCase().includes("startup") ? [{
+      eventId: "event-01", sessionId: "session-reader", sessionTitle: "Conversation hierarchy",
+      threadId: "root", threadPath: [{ id: "root", label: "Root" }], author: "User", harness: "Codex",
+      occurredAt: "2026-09-05T00:00:01Z", text: "Please diagnose the startup failure"
+    }] : [] })
+  }
   if (path === "/api/v1/projects/project-1/memory" && request.method === "GET") {
     if (!requireWeb(request, response)) return
     state.projectMemoryRequests++

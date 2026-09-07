@@ -1,24 +1,10 @@
-import type { User, Workspace, WorkspaceProject } from "@atape/domain"
-import { Button, Eyebrow } from "@atape/ui"
-import { useEffect, useState, type ReactNode } from "react"
+import type { User, Workspace } from "@atape/domain"
+import { Avatar, Button } from "@atape/ui"
+import { Link } from "@tanstack/react-router"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
-import { AccountChip } from "./AccessPrimitives"
-
-const TapeMark = () => (
-  <svg aria-hidden="true" className="brand-mark" viewBox="0 0 48 38">
-    <path d="M8 4h32l5 7v16l-5 7H8l-5-7V11z" fill="currentColor" />
-    <circle cx="18" cy="19" r="6" fill="#fffaf1" />
-    <circle cx="30" cy="19" r="6" fill="#fffaf1" />
-    <circle cx="18" cy="19" r="2" fill="#705844" />
-    <circle cx="30" cy="19" r="2" fill="#705844" />
-  </svg>
-)
-
-const ProjectTypeMark = ({ project }: { readonly project: WorkspaceProject }) => (
-  <span className={`project-type-mark project-type-${project.type}`} aria-hidden="true">
-    {project.type === "git" ? "⑂" : "▰"}
-  </span>
-)
+import { TapeMark } from "./AccessPrimitives"
+import { SearchIcon, PanelIcon } from "./WorkspaceIcons"
 
 type Props = {
   readonly children: ReactNode
@@ -43,170 +29,196 @@ export const AppShell = ({
   onOpenProject,
   onRetryWorkspace
 }: Props) => {
-  const [switcherOpen, setSwitcherOpen] = useState(false)
-  const directory = workspace._tag === "Ready" ? workspace.value : undefined
-  const currentTeam = directory?.teams.find((team) => team.id === currentTeamId)
-  const currentProject = currentTeam?.projects.find((project) => project.id === currentProjectId)
-  const teamName = currentTeam?.name ?? currentTeamId ?? "Your workspace"
-  const projectName = currentProject?.name ?? currentProjectId ?? "No project selected"
-
+  const [collapsed, setCollapsed] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches
+  )
+  const [teamOpen, setTeamOpen] = useState(false)
+  const teamControl = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (onOpenSearch !== undefined && (event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
-        event.preventDefault()
-        onOpenSearch()
-      }
-      if (event.key === "Escape" && switcherOpen) {
-        setSwitcherOpen(false)
-      }
+    if (!teamOpen) return
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !teamControl.current?.contains(event.target)) setTeamOpen(false)
     }
-    window.addEventListener("keydown", handleShortcut)
-    return () => window.removeEventListener("keydown", handleShortcut)
-  }, [onOpenSearch, switcherOpen])
-
-  const toggleSwitcher = () => setSwitcherOpen((open) => !open)
-  return <div className="app-shell">
-    <a className="skip-link" href="#main-content">Skip to project memory</a>
-    <aside className="sidebar" aria-label="Workspace">
-      <div className="brand"><TapeMark /><span>ATape</span></div>
-      <button
-        className="team-card workspace-trigger"
-        type="button"
-        aria-expanded={switcherOpen}
-        aria-controls="workspace-switcher"
-        onClick={toggleSwitcher}
-      >
-        <span>
-          <strong>{teamName}</strong>
-          <small>Shared agent memory</small>
-        </span>
-        <span className="workspace-chevron" aria-hidden="true">⌄</span>
-      </button>
-      <Eyebrow className="sidebar-label">Project memory</Eyebrow>
-      <button
-        className="project-pill workspace-trigger"
-        type="button"
-        aria-expanded={switcherOpen}
-        aria-controls="workspace-switcher"
-        onClick={toggleSwitcher}
-      >
-        <span className="project-dot" />
-        <span>
-          <strong>{projectName}</strong>
-          {currentProject && <small>{currentProject.type === "git" ? "Git repository" : "Folder"}</small>}
-        </span>
-      </button>
-
-      {switcherOpen && (
-        <>
+    document.addEventListener("pointerdown", dismiss)
+    return () => document.removeEventListener("pointerdown", dismiss)
+  }, [teamOpen])
+  const [projectFilter, setProjectFilter] = useState("")
+  const teams = workspace._tag === "Ready" ? workspace.value.teams : []
+  const team = teams.find((item) => item.id === currentTeamId) ?? teams[0]
+  const projects = [...(team?.projects ?? [])]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .filter((project) => project.name.toLocaleLowerCase().includes(projectFilter.toLocaleLowerCase()))
+  return (
+    <div className={`app-shell workspace-shell${collapsed ? " sidebar-collapsed" : ""}`}>
+      <a className="skip-link" href="#main-content">
+        Skip to conversations
+      </a>
+      <aside className="sidebar project-sidebar" aria-label="Workspace">
+        <div className="sidebar-brand-row">
+          <Link className="brand" to="/" aria-label="ATape home">
+            <TapeMark className="brand-mark" />
+            <span>ATape</span>
+          </Link>
           <button
-            className="workspace-switcher-backdrop"
             type="button"
-            aria-label="Close Workspace switcher"
-            onClick={() => setSwitcherOpen(false)}
-          />
-          <nav id="workspace-switcher" className="workspace-switcher" aria-label="Teams and Projects">
-            <header>
-              <span>
-                <Eyebrow>Workspace</Eyebrow>
-                <strong>Choose a Team or Project</strong>
-              </span>
-              {workspace._tag === "Ready" && workspace.refreshing && <small>Syncing…</small>}
-            </header>
-            {workspace._tag === "Loading" && <p className="workspace-switcher-state">Loading Teams…</p>}
-            {workspace._tag === "Failed" && (
-              <div className="workspace-switcher-state" role="alert">
-                <p>{workspace.message}</p>
-                {workspace.retryable && <Button onClick={onRetryWorkspace}>Try again</Button>}
-              </div>
-            )}
-            {directory?.teams.length === 0 && (
-              <p className="workspace-no-projects">No captured Projects yet</p>
-            )}
-            {directory?.teams.map((team) => (
-              <section className="workspace-team" key={team.id} aria-labelledby={`team-${team.id}`}>
-                <h2 id={`team-${team.id}`}>
-                  <button
-                    className="workspace-team-title"
-                    type="button"
-                    aria-current={team.id === currentTeamId ? "page" : undefined}
-                    onClick={() => {
-                      setSwitcherOpen(false)
-                      onOpenTeam(team.id)
-                    }}
-                  >
-                    <span>{team.name}</span>
-                    {team.id === currentTeamId && <small>Selected Team</small>}
-                  </button>
-                </h2>
-                {team.projects.length === 0 ? (
-                  <p className="workspace-no-projects">No captured projects yet</p>
-                ) : (
-                  <div className="workspace-projects">
-                    {team.projects.map((project) => {
-                      const selected = team.id === currentTeamId && project.id === currentProjectId
-                      return (
-                        <button
-                          key={project.id}
-                          type="button"
-                          className={selected ? "current" : ""}
-                          aria-current={selected ? "page" : undefined}
-                          onClick={() => {
-                            setSwitcherOpen(false)
-                            onOpenProject(team.id, project.id)
-                          }}
-                        >
-                          <ProjectTypeMark project={project} />
-                          <span>
-                            <strong>{project.name}</strong>
-                            <small>
-                              {project.type === "git" ? "Git repository" : "Folder"}
-                              {project.sessionCount > 0 ? ` · ${project.activeSessionCount} active / ${project.sessionCount} total` : " · No sessions"}
-                            </small>
-                          </span>
-                          {selected && <span className="workspace-current">Current</span>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </section>
-            ))}
-          </nav>
-        </>
-      )}
-
-      <nav className="sidebar-settings" aria-label="Settings">
-        <a href="/settings/account">Account security</a>
-        {currentTeam !== undefined && <a href={`/teams/${encodeURIComponent(currentTeam.slug)}/settings/access`}>Team &amp; access</a>}
-      </nav>
-      <div className="collector-status">
-        <span className="pulse" />
-        Collector syncs team memory in the background
-      </div>
-    </aside>
-    <div className="workspace">
-      <header className="topbar">
-        <div className="topbar-path">
-          <span>{teamName}</span>
-          <span aria-hidden="true">/</span>
-          <strong>{projectName}</strong>
+            className="quiet-icon"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            aria-controls="project-directory"
+            onClick={() => {
+              setCollapsed(!collapsed)
+              setTeamOpen(false)
+            }}
+          >
+            <PanelIcon />
+          </button>
         </div>
         <button
-          className="search-launcher"
           type="button"
-          disabled={onOpenSearch === undefined}
+          className="workspace-search"
           onClick={onOpenSearch}
+          aria-label="Search all conversations"
+          title="Search all conversations (⌘K)"
         >
-          <span aria-hidden="true">⌕</span>
-          <span>{onOpenSearch === undefined ? "Choose a project to search" : "Search conversations"}</span>
-          {onOpenSearch !== undefined && <kbd>⌘ K</kbd>}
+          <SearchIcon />
+          <span>Search everything</span>
+          <kbd>⌘ K</kbd>
         </button>
-        <a className="topbar-account" href="/settings/account" aria-label="Open account security">
-          <AccountChip displayName={currentUser.displayName} avatarUrl={currentUser.avatarUrl} />
-        </a>
-      </header>
-      <main id="main-content" className="main-content">{children}</main>
+        {team && (
+          <div
+            className="workspace-team-control"
+            ref={teamControl}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && teamOpen) {
+                event.preventDefault()
+                event.stopPropagation()
+                setTeamOpen(false)
+                teamControl.current?.querySelector<HTMLButtonElement>(".workspace-team-trigger")?.focus()
+              }
+            }}
+          >
+            <button
+              className="workspace-team-trigger"
+              type="button"
+              aria-label={`Team options for ${team.name}`}
+              title={`${team.name} · Team settings`}
+              aria-expanded={teamOpen}
+              aria-controls="workspace-team-options"
+              onClick={() => setTeamOpen(!teamOpen)}
+            >
+              <span className="team-initial" aria-hidden="true">
+                {team.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="team-trigger-name">{team.name}</span>
+              <span className="team-trigger-chevron" aria-hidden="true">
+                ⌄
+              </span>
+            </button>
+            {teamOpen && (
+              <nav id="workspace-team-options" className="workspace-team-options" aria-label="Team options">
+                <strong>{team.name}</strong>
+                {teams.length > 1 && (
+                  <label>
+                    Switch team
+                    <select
+                      aria-label="Team"
+                      value={team.id}
+                      onChange={(event) => {
+                        setProjectFilter("")
+                        setTeamOpen(false)
+                        onOpenTeam(event.target.value)
+                      }}
+                    >
+                      {teams.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <Link
+                  to="/teams/$teamSlug/settings/access"
+                  params={{ teamSlug: team.slug }}
+                  onClick={() => setTeamOpen(false)}
+                >
+                  Team settings
+                </Link>
+              </nav>
+            )}
+          </div>
+        )}
+        <div id="project-directory" className="project-directory">
+          <label className="project-filter">
+            <span>Projects</span>
+            <input
+              type="search"
+              aria-label="Filter projects"
+              placeholder="Find a project…"
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+            />
+          </label>
+          <nav className="project-navigation" aria-label="Projects">
+            {projects.map((project) => (
+              <button
+                type="button"
+                key={project.id}
+                title={project.name}
+                aria-current={project.id === currentProjectId ? "page" : undefined}
+                onClick={() => {
+                  if (team) onOpenProject(team.id, project.id)
+                }}
+              >
+                <span aria-hidden="true" className="project-nav-mark">
+                  {project.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span>{project.name}</span>
+                {project.activeSessionCount > 0 && (
+                  <span
+                    className="project-active-dot"
+                    aria-label={`${project.activeSessionCount} active conversations`}
+                  />
+                )}
+              </button>
+            ))}
+            {workspace._tag === "Loading" && <p role="status">Loading projects…</p>}
+            {workspace._tag === "Failed" && (
+              <div role="alert">
+                <p>{workspace.message}</p>
+                <Button onClick={onRetryWorkspace}>Try again</Button>
+              </div>
+            )}
+            {workspace._tag === "Ready" && projects.length === 0 && (
+              <p>{projectFilter ? "No matching projects" : "No captured projects yet"}</p>
+            )}
+          </nav>
+        </div>
+        <nav className="workspace-account" aria-label="Settings">
+          <Link
+            className="workspace-profile"
+            to="/settings/account"
+            title={`Account security · ${currentUser.displayName}`}
+            aria-label={`Open account security for ${currentUser.displayName}`}
+          >
+            <span className="workspace-profile-avatar">
+              <Avatar name={currentUser.displayName} src={currentUser.avatarUrl} size="small" />
+            </span>
+            <span className="workspace-profile-copy">
+              <strong>{currentUser.displayName}</strong>
+              <small>Account &amp; security</small>
+            </span>
+            <span className="workspace-profile-chevron" aria-hidden="true">
+              ›
+            </span>
+          </Link>
+        </nav>
+      </aside>
+      <div className="workspace">
+        <main id="main-content" className="main-content" tabIndex={-1}>
+          {children}
+        </main>
+      </div>
     </div>
-  </div>
+  )
 }

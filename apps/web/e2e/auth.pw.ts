@@ -197,21 +197,13 @@ test("selects a newly created Team and opens its first captured Project", async 
   await page.getByRole("button", { name: "Create Team" }).click()
 
   await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
-  await expect(page.locator(".team-card strong")).toHaveText("Tape Makers")
+  await expect(page.locator(".team-trigger-name")).toHaveText("Tape Makers")
   await expect(page.getByText("atape setup /path/to/project --team tape-makers --create")).toBeVisible()
-
-  await page.locator(".team-card").click()
-  const switcher = page.getByRole("navigation", { name: "Teams and Projects" })
-  const teamSelection = switcher.getByRole("button", { name: /Tape Makers/ })
-  await expect(teamSelection).toBeVisible()
-  await teamSelection.click()
-  await expect(switcher).not.toBeVisible()
-  await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
 
   await request.post(`${fixtureOrigin}/__fixture/created-project?value=1`)
   await page.getByRole("button", { name: "Check again" }).click()
   await expect(page).toHaveURL(`${appOrigin}/teams/created-team/projects/created-project`)
-  await expect(page.locator(".project-pill strong")).toHaveText("Captured Project")
+  await expect(page.getByRole("navigation", { name: "Projects", exact: true }).locator('[aria-current="page"]')).toContainText("Captured Project")
 })
 
 test("keeps each narrative exchange focused on the prompt and primary response", async ({ context, page }) => {
@@ -243,7 +235,8 @@ test("refreshes memory only on request and preserves the reading position", asyn
   await authenticate(context)
   await page.goto("/teams/team-id/projects/project-1")
 
-  await expect(page.getByRole("heading", { name: "What changed while you were away?" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible()
+  await page.getByText("Updates", { exact: true }).click()
   const projectRefresh = page.getByRole("button", { name: "Refresh", exact: true })
   const projectCadence = page.getByLabel("Automatic refresh interval")
   await expect(projectRefresh).toBeVisible()
@@ -260,6 +253,7 @@ test("refreshes memory only on request and preserves the reading position", asyn
   await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root")
 
   await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
+  await page.getByText("More", { exact: true }).click()
   const refresh = page.getByRole("button", { name: "Refresh", exact: true })
   const cadence = page.getByLabel("Automatic refresh interval")
   await expect(refresh).toBeVisible()

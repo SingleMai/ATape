@@ -4,7 +4,7 @@ import {
   type Conversation,
   type NarrativeExchange
 } from "@atape/domain"
-import { Badge, Button, Eyebrow } from "@atape/ui"
+import { Button } from "@atape/ui"
 import { useEffect, useMemo } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import { useMarkdownPlugins } from "../presenters/markdownPresenter"
@@ -29,7 +29,9 @@ type Props = {
 }
 
 const formatTime = (value: string) =>
-  new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value))
+  new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(
+    new Date(value)
+  )
 
 const eventLabel: Record<CanonicalEvent["kind"], string> = {
   message: "Message",
@@ -43,8 +45,7 @@ const eventLabel: Record<CanonicalEvent["kind"], string> = {
   notice: "Notice"
 }
 
-const isToolEvent = (event: CanonicalEvent) =>
-  event.kind === "tool_call" || event.kind === "tool_result"
+const isToolEvent = (event: CanonicalEvent) => event.kind === "tool_call" || event.kind === "tool_result"
 
 const eventClassName = (base: string, event: CanonicalEvent, highlightedEventId?: string) =>
   `${base}${event.id === highlightedEventId ? " event-highlighted" : ""}`
@@ -62,26 +63,40 @@ const MarkdownText = ({ text }: { readonly text: string }) => {
   const plugins = useMarkdownPlugins(text)
   return (
     <div className="narrative-markdown">
-      <ReactMarkdown {...plugins} components={markdownComponents}>{text}</ReactMarkdown>
+      <ReactMarkdown {...plugins} components={markdownComponents}>
+        {text}
+      </ReactMarkdown>
     </div>
   )
 }
 
-const ToolDetails = ({ event }: { readonly event: CanonicalEvent }) => event.tool ? (
-  <div className="tool-details">
-    <small>Tool call · {event.tool.toolCallId}</small>
-    {Object.hasOwn(event.tool, "rawInput") && <details>
-      <summary>Input</summary>
-      <pre>{JSON.stringify(event.tool.rawInput, null, 2)}</pre>
-    </details>}
-    {Object.hasOwn(event.tool, "rawOutput") && <details>
-      <summary>Output</summary>
-      <pre>{typeof event.tool.rawOutput === "string" ? event.tool.rawOutput : JSON.stringify(event.tool.rawOutput, null, 2)}</pre>
-    </details>}
-  </div>
-) : null
+const ToolDetails = ({ event }: { readonly event: CanonicalEvent }) =>
+  event.tool ? (
+    <div className="tool-details">
+      <small>Tool call · {event.tool.toolCallId}</small>
+      {Object.hasOwn(event.tool, "rawInput") && (
+        <details>
+          <summary>Input</summary>
+          <pre>{JSON.stringify(event.tool.rawInput, null, 2)}</pre>
+        </details>
+      )}
+      {Object.hasOwn(event.tool, "rawOutput") && (
+        <details>
+          <summary>Output</summary>
+          <pre>
+            {typeof event.tool.rawOutput === "string"
+              ? event.tool.rawOutput
+              : JSON.stringify(event.tool.rawOutput, null, 2)}
+          </pre>
+        </details>
+      )}
+    </div>
+  ) : null
 
-const ChildThreadButton = ({ event, onOpenThread }: {
+const ChildThreadButton = ({
+  event,
+  onOpenThread
+}: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
 }) => {
@@ -90,14 +105,20 @@ const ChildThreadButton = ({ event, onOpenThread }: {
     <button className="child-thread" type="button" onClick={() => onOpenThread(childThread.id)}>
       <span>
         <strong>{childThread.label} · child thread</strong>
-        <small>{childThread.summary} · {childThread.captureStatus} · {childThread.eventCount} events</small>
+        <small>
+          {childThread.summary} · {childThread.captureStatus} · {childThread.eventCount} events
+        </small>
       </span>
       <strong>Follow thread</strong>
     </button>
   ) : null
 }
 
-const PromptView = ({ event, onOpenThread, highlightedEventId }: {
+const PromptView = ({
+  event,
+  onOpenThread,
+  highlightedEventId
+}: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
@@ -117,7 +138,11 @@ const PromptView = ({ event, onOpenThread, highlightedEventId }: {
   </article>
 )
 
-const PrimaryResponseView = ({ event, onOpenThread, highlightedEventId }: {
+const PrimaryResponseView = ({
+  event,
+  onOpenThread,
+  highlightedEventId
+}: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
@@ -147,16 +172,26 @@ const describeActivity = (events: ReadonlyArray<CanonicalEvent>) => {
     thoughtCount > 0 ? `${thoughtCount} thought${thoughtCount === 1 ? "" : "s"}` : undefined,
     toolCount > 0 ? `${toolCount} tool event${toolCount === 1 ? "" : "s"}` : undefined,
     backgroundCount > 0 ? `${backgroundCount} other event${backgroundCount === 1 ? "" : "s"}` : undefined
-  ].filter((label): label is string => label !== undefined).join(" · ")
+  ]
+    .filter((label): label is string => label !== undefined)
+    .join(" · ")
 }
 
-const ActivityEventView = ({ event, onOpenThread, highlightedEventId }: {
+const ActivityEventView = ({
+  event,
+  onOpenThread,
+  highlightedEventId
+}: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
 }) => (
   <article
-    className={eventClassName(`narrative-activity-event narrative-activity-event-${event.kind}`, event, highlightedEventId)}
+    className={eventClassName(
+      `narrative-activity-event narrative-activity-event-${event.kind}`,
+      event,
+      highlightedEventId
+    )}
     id={`event-${event.id}`}
     tabIndex={-1}
   >
@@ -173,7 +208,11 @@ const ActivityEventView = ({ event, onOpenThread, highlightedEventId }: {
   </article>
 )
 
-const ActivityDetails = ({ exchange, onOpenThread, highlightedEventId }: {
+const ActivityDetails = ({
+  exchange,
+  onOpenThread,
+  highlightedEventId
+}: {
   readonly exchange: NarrativeExchange
   readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
@@ -188,7 +227,9 @@ const ActivityDetails = ({ exchange, onOpenThread, highlightedEventId }: {
           <strong>Activity</strong>
           <small>{describeActivity(exchange.activity)}</small>
         </span>
-        <span className="activity-chevron" aria-hidden="true">⌄</span>
+        <span className="activity-chevron" aria-hidden="true">
+          ⌄
+        </span>
       </summary>
       <div className="narrative-activity-list">
         {exchange.activity.map((event) => (
@@ -204,13 +245,21 @@ const ActivityDetails = ({ exchange, onOpenThread, highlightedEventId }: {
   )
 }
 
-const HighlightView = ({ event, onOpenThread, highlightedEventId }: {
+const HighlightView = ({
+  event,
+  onOpenThread,
+  highlightedEventId
+}: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
 }) => (
   <article
-    className={eventClassName(`narrative-highlight narrative-highlight-${event.kind}`, event, highlightedEventId)}
+    className={eventClassName(
+      `narrative-highlight narrative-highlight-${event.kind}`,
+      event,
+      highlightedEventId
+    )}
     id={`event-${event.id}`}
     tabIndex={-1}
   >
@@ -241,17 +290,27 @@ export const SessionReaderView = ({
   const ready = state._tag === "Ready"
   const threadId = ready ? state.value.thread.id : undefined
   const value = ready ? state.value : undefined
-  const narrative = useMemo(() => value ? projectConversationNarrative(value) : [], [value])
-  const prompts = useMemo(() => narrative.flatMap((exchange) => exchange.prompt ? [exchange.prompt] : []), [narrative])
+  const narrative = useMemo(() => (value ? projectConversationNarrative(value) : []), [value])
+  const prompts = useMemo(
+    () => narrative.flatMap((exchange) => (exchange.prompt ? [exchange.prompt] : [])),
+    [narrative]
+  )
   useEffect(() => {
     if (!ready || !highlightedEventId) return
     const event = document.getElementById(`event-${highlightedEventId}`)
-    event?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" })
+    event?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+      block: "center"
+    })
     event?.focus({ preventScroll: true })
   }, [highlightedEventId, ready, threadId])
 
   if (state._tag === "Loading") {
-    return <section className="state-card" aria-live="polite">Reconstructing conversation…</section>
+    return (
+      <section className="state-card" aria-live="polite">
+        Reconstructing conversation…
+      </section>
+    )
   }
 
   if (state._tag === "Failed") {
@@ -270,62 +329,89 @@ export const SessionReaderView = ({
   const conversation = state.value
   return (
     <section aria-labelledby="session-title">
-      <nav className="reader-nav" aria-label="Session navigation">
-        <Button className="back-link" variant="ghost" onClick={searchOrigin?.onReturn ?? onBack}>
-          {searchOrigin ? "Back to search results" : `Back to ${projectName}`}
-        </Button>
-        <div className="reader-actions">
-          <RefreshControl
-            settings={refresh}
-            refreshing={state.refreshing}
-            refreshFailure={state.refreshFailure}
-            status={<>Updated <time dateTime={conversation.session.updatedAt}>{formatTime(conversation.session.updatedAt)}</time></>}
-            onRefresh={onRetry}
-          />
-          <Button variant="secondary" onClick={onOpenRaw}>View Raw source</Button>
+      <header className="clean-reader-heading">
+        <div className="clean-reader-title">
+          <Button className="back-link" variant="ghost" onClick={onBack} aria-label="Back to conversations">
+            ←
+          </Button>
+          <div>
+            <h1 id="session-title">{conversation.session.title}</h1>
+            <p>
+              {conversation.session.actor.name} · {conversation.session.actor.harness}
+              {conversation.session.branch ? ` · ${conversation.session.branch}` : ""}
+            </p>
+          </div>
         </div>
-      </nav>
-
-      <header className="session-reader-header">
-        <div>
-          <Eyebrow>Shared conversation</Eyebrow>
-          <h1 id="session-title">{conversation.session.title}</h1>
-        </div>
-        <div className="session-reader-tags" aria-label="Conversation metadata">
-          <Badge>{conversation.session.actor.name}</Badge>
-          <Badge>{conversation.session.actor.harness}</Badge>
-          <Badge>{conversation.session.branch}</Badge>
-          <Badge tone="accent">{conversation.session.status} · {conversation.session.captureStatus}</Badge>
-        </div>
+        <details className="quiet-disclosure">
+          <summary aria-label="Conversation details and actions">More</summary>
+          <div className="quiet-disclosure-panel">
+            <p>
+              {conversation.session.status} · Capture: {conversation.session.captureStatus}
+            </p>
+            <RefreshControl
+              settings={refresh}
+              refreshing={state.refreshing}
+              refreshFailure={state.refreshFailure}
+              status={
+                <>
+                  Updated{" "}
+                  <time dateTime={conversation.session.updatedAt}>
+                    {formatTime(conversation.session.updatedAt)}
+                  </time>
+                </>
+              }
+              onRefresh={onRetry}
+            />
+            <Button variant="ghost" onClick={onOpenRaw}>
+              View Raw source
+            </Button>
+          </div>
+        </details>
       </header>
-
+      {(conversation.session.captureStatus === "partial" ||
+        conversation.session.captureStatus === "degraded") && (
+        <p className="compact-warning" role="status">
+          Capture is {conversation.session.captureStatus} · some conversation content may be missing.
+        </p>
+      )}
+      {state.refreshFailure && (
+        <p className="compact-warning" role="status">
+          Refresh failed · showing previous conversation
+        </p>
+      )}
       {searchOrigin && (
-        <div className="search-origin" role="status">
-          <span>Opened from results for <strong>“{searchOrigin.query}”</strong></span>
-          <button type="button" onClick={searchOrigin.onReturn}>Return to results</button>
+        <div className="compact-search-origin">
+          <button type="button" onClick={searchOrigin.onReturn}>
+            ← Search results for “{searchOrigin.query}”
+          </button>
         </div>
       )}
-
-      <nav className="thread-path" aria-label="Thread path">
-        {conversation.threadPath.map((thread, index) => (
-          <span className="thread-path-item" key={thread.id}>
-            {index > 0 && <span aria-hidden="true">/</span>}
-            <button
-              className={thread.id === conversation.thread.id ? "current" : ""}
-              type="button"
-              onClick={() => onOpenThread(thread.id)}
-              aria-current={thread.id === conversation.thread.id ? "page" : undefined}
-            >
-              {thread.label}
-            </button>
-          </span>
-        ))}
-      </nav>
+      {conversation.threadPath.length > 1 && (
+        <nav className="thread-path" aria-label="Thread path">
+          {conversation.threadPath.map((thread, index) => (
+            <span className="thread-path-item" key={thread.id}>
+              {index > 0 && <span aria-hidden="true">/</span>}
+              <button
+                className={thread.id === conversation.thread.id ? "current" : ""}
+                type="button"
+                onClick={() => onOpenThread(thread.id)}
+                aria-current={thread.id === conversation.thread.id ? "page" : undefined}
+              >
+                {thread.label}
+              </button>
+            </span>
+          ))}
+        </nav>
+      )}
 
       <ConversationReadingFrame key={conversation.thread.id} prompts={prompts}>
         <div className="conversation-stream">
           {narrative.map((exchange, index) => (
-            <section className="narrative-exchange" aria-label={`Conversation exchange ${index + 1}`} key={exchange.id}>
+            <section
+              className="narrative-exchange"
+              aria-label={`Conversation exchange ${index + 1}`}
+              key={exchange.id}
+            >
               {exchange.prompt && (
                 <PromptView
                   event={exchange.prompt}
@@ -362,10 +448,7 @@ export const SessionReaderView = ({
             </div>
           )}
         </div>
-
       </ConversationReadingFrame>
-
-      <p className="mirror-note">This is a read-only mirror. Refresh when you want to check for newly captured events.</p>
     </section>
   )
 }

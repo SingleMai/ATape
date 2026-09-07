@@ -28,7 +28,8 @@ import {
 } from "./presenters/accessPresenter"
 import { useConversationPresenter, useProjectMemoryPresenter } from "./presenters/memoryPresenter"
 import { useSessionRawPresenter } from "./presenters/rawPresenter"
-import { useSearchPresenter } from "./presenters/searchPresenter"
+import { useSearchOverlay } from "./presenters/searchOverlayContext"
+import { GlobalSearchProvider } from "./view/GlobalSearch"
 import { useWorkspacePresenter } from "./presenters/workspacePresenter"
 import { AppShell } from "./view/AppShell"
 import { AuthenticationErrorView, SignInView } from "./view/SignInView"
@@ -36,7 +37,6 @@ import { CLIAuthorizationView } from "./view/CLIAuthorizationView"
 import { FailureNotice, FullPageState } from "./view/AccessPrimitives"
 import { ProjectMemoryView } from "./view/ProjectMemoryView"
 import { RawDrawer } from "./view/RawDrawer"
-import { SearchView } from "./view/SearchView"
 import { AccountSecurityView, TeamAccessView } from "./view/SecuritySettingsView"
 import { SessionReaderView } from "./view/SessionReaderView"
 import { CreateTeamView, JoinTeamView, TeamChoiceView } from "./view/TeamOnboardingView"
@@ -163,7 +163,7 @@ function AuthenticatedBoundary() {
   }
   return (
     <AuthenticatedSessionContext.Provider value={session.state.value}>
-      <Outlet />
+      <GlobalSearchProvider><Outlet /></GlobalSearchProvider>
     </AuthenticatedSessionContext.Provider>
   )
 }
@@ -274,21 +274,7 @@ function WorkspaceLayout() {
   const teamId = pathname.match(/^\/teams\/([^/]+)(?:\/|$)/)?.[1]
   const projectId = pathname.match(/^\/teams\/[^/]+\/projects\/([^/]+)(?:\/|$)/)?.[1]
   const workspace = useWorkspacePresenter()
-  const openSearch = teamId === undefined || projectId === undefined ? undefined : () => {
-    if (pathname.endsWith("/search")) {
-      const input = document.getElementById("project-search")
-      if (input instanceof HTMLInputElement) {
-        input.focus()
-        input.select()
-      }
-      return
-    }
-    void navigate({
-      to: "/teams/$teamId/projects/$projectId/search",
-      params: { teamId, projectId },
-      search: { q: "", cursor: "" }
-    })
-  }
+  const { openSearch } = useSearchOverlay()
   return (
     <AppShell
       workspace={workspace.state}
@@ -308,7 +294,7 @@ function WorkspaceLayout() {
           params: { teamId: nextTeamId, projectId: nextProjectId }
         })
       }}
-      {...(openSearch === undefined ? {} : { onOpenSearch: openSearch })}
+      onOpenSearch={() => openSearch()}
     >
       <Outlet />
     </AppShell>
@@ -400,6 +386,7 @@ function SessionRoute() {
   const params = sessionRoute.useParams()
   const search = sessionRoute.useSearch()
   const navigate = useNavigate()
+  const { openSearch, hasSearch } = useSearchOverlay()
   const presenter = useConversationPresenter(params.sessionId, search.thread)
   return (
     <>
@@ -414,7 +401,7 @@ function SessionRoute() {
           search: { ...search, raw: "open" }
         })}
         {...(search.event ? { highlightedEventId: search.event } : {})}
-        {...(search.from === "search" && search.q ? { searchOrigin: { query: search.q, onReturn: () => window.history.back() } } : {})}
+        {...(search.from === "search" && search.q ? { searchOrigin: { query: search.q, onReturn: () => openSearch(hasSearch ? undefined : { query: search.q ?? "", projectId: params.projectId }) } } : {})}
         onBack={() => void navigate({
           to: "/teams/$teamId/projects/$projectId",
           params: { teamId: params.teamId, projectId: params.projectId }
@@ -446,27 +433,13 @@ function RawDrawerRoute({ sessionId, onClose }: { readonly sessionId: string; re
 function SearchRoute() {
   const params = searchRoute.useParams()
   const search = searchRoute.useSearch()
+  const { openSearch } = useSearchOverlay()
   const navigate = useNavigate()
-  const presenter = useSearchPresenter(params.projectId, search.q, search.cursor)
-  const openSearch = (query: string, cursor = "") => void navigate({
-    to: "/teams/$teamId/projects/$projectId/search",
-    params,
-    search: { q: query, cursor },
-    replace: true
-  })
-  return <SearchView
-    state={presenter.state}
-    query={search.q}
-    onRetry={presenter.reload}
-    onSearch={(query) => openSearch(query)}
-    onNextPage={(cursor) => openSearch(search.q, cursor)}
-    onClose={() => window.history.back()}
-    onOpenResult={(result) => void navigate({
-      to: "/teams/$teamId/projects/$projectId/sessions/$sessionId",
-      params: { ...params, sessionId: result.sessionId },
-      search: { thread: result.threadId, event: result.eventId, from: "search", q: search.q }
-    })}
-  />
+  useEffect(() => {
+    openSearch({ query: search.q, projectId: params.projectId })
+    void navigate({ to: "/teams/$teamId/projects/$projectId", params, replace: true })
+  }, [openSearch, navigate, params.teamId, params.projectId, search.q])
+  return null
 }
 
 const onboardingRoute = createRoute({

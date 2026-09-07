@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client"
 import { router } from "./router"
 import "@atape/ui/styles.css"
 import "./styles.css"
+import "./workspace.css"
 
 const root = document.getElementById("root")
 
