@@ -6,6 +6,7 @@ import {
 } from "@atape/domain"
 import { Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect } from "react"
+import { ConversationReadingFrame } from "./UserMessageIndex"
 import ReactMarkdown from "react-markdown"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
@@ -205,12 +206,14 @@ export const SessionReaderView = ({
   highlightedEventId,
   searchOrigin
 }: Props) => {
+  const ready = state._tag === "Ready"
+  const threadId = ready ? state.value.thread.id : undefined
   useEffect(() => {
-    if (state._tag !== "Ready" || !highlightedEventId) return
+    if (!ready || !highlightedEventId) return
     const event = document.getElementById(`event-${highlightedEventId}`)
-    event?.scrollIntoView({ behavior: "smooth", block: "center" })
+    event?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "center" })
     event?.focus({ preventScroll: true })
-  }, [highlightedEventId, state])
+  }, [highlightedEventId, ready, threadId])
 
   if (state._tag === "Loading") {
     return <section className="state-card" aria-live="polite">Reconstructing conversation…</section>
@@ -285,45 +288,48 @@ export const SessionReaderView = ({
         ))}
       </nav>
 
-      <div className="conversation-stream">
-        {narrative.map((exchange, index) => (
-          <section className="narrative-exchange" aria-label={`Conversation exchange ${index + 1}`} key={exchange.id}>
-            {exchange.prompt && (
-              <PromptView
-                event={exchange.prompt}
+      <ConversationReadingFrame key={conversation.thread.id} prompts={narrative.flatMap((exchange) => exchange.prompt ? [exchange.prompt] : [])}>
+        <div className="conversation-stream">
+          {narrative.map((exchange, index) => (
+            <section className="narrative-exchange" aria-label={`Conversation exchange ${index + 1}`} key={exchange.id}>
+              {exchange.prompt && (
+                <PromptView
+                  event={exchange.prompt}
+                  onOpenThread={onOpenThread}
+                  highlightedEventId={highlightedEventId}
+                />
+              )}
+              <ActivityDetails
+                exchange={exchange}
                 onOpenThread={onOpenThread}
                 highlightedEventId={highlightedEventId}
               />
-            )}
-            <ActivityDetails
-              exchange={exchange}
-              onOpenThread={onOpenThread}
-              highlightedEventId={highlightedEventId}
-            />
-            {exchange.primaryResponse && (
-              <PrimaryResponseView
-                event={exchange.primaryResponse}
-                onOpenThread={onOpenThread}
-                highlightedEventId={highlightedEventId}
-              />
-            )}
-            {exchange.highlights.map((event) => (
-              <HighlightView
-                key={event.id}
-                event={event}
-                onOpenThread={onOpenThread}
-                highlightedEventId={highlightedEventId}
-              />
-            ))}
-          </section>
-        ))}
-        {narrative.length === 0 && (
-          <div className="empty-conversation">
-            <strong>No messages captured yet</strong>
-            <span>ATape will add the conversation here as new events arrive.</span>
-          </div>
-        )}
-      </div>
+              {exchange.primaryResponse && (
+                <PrimaryResponseView
+                  event={exchange.primaryResponse}
+                  onOpenThread={onOpenThread}
+                  highlightedEventId={highlightedEventId}
+                />
+              )}
+              {exchange.highlights.map((event) => (
+                <HighlightView
+                  key={event.id}
+                  event={event}
+                  onOpenThread={onOpenThread}
+                  highlightedEventId={highlightedEventId}
+                />
+              ))}
+            </section>
+          ))}
+          {narrative.length === 0 && (
+            <div className="empty-conversation">
+              <strong>No messages captured yet</strong>
+              <span>ATape will add the conversation here as new events arrive.</span>
+            </div>
+          )}
+        </div>
+
+      </ConversationReadingFrame>
 
       <p className="mirror-note">This is a read-only mirror. Refresh when you want to check for newly captured events.</p>
     </section>
