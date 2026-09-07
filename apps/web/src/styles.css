@@ -581,7 +581,8 @@ h3 { margin: 0; font-size: 20px; }
 .turn-process[open] { background: var(--atape-color-paper); }
 .turn-process[open] > summary { border-bottom: 1px dashed var(--atape-color-border-soft); }
 .process-chevron { color: var(--atape-color-accent); font-size: 18px; font-weight: 900; transition: transform var(--atape-duration-fast) var(--atape-ease-standard); }
-.turn-process[open] .process-chevron { transform: rotate(180deg); }
+.turn-process[open] > summary .process-chevron,
+.process-tool-group[open] > summary .process-chevron { transform: rotate(180deg); }
 
 .turn-process-events { padding: 9px 12px 12px; display: grid; gap: 8px; }
 .process-event { min-width: 0; padding: 11px 12px; border-radius: 10px; background: var(--atape-color-surface-muted); }
@@ -597,6 +598,15 @@ h3 { margin: 0; font-size: 20px; }
 .process-tool > summary small, .process-tool > summary time { flex: 0 0 auto; color: var(--atape-color-text-muted); font-size: 11px; }
 .process-tool[open] > summary { border-bottom: 1px solid var(--atape-color-border-soft); }
 .process-tool > .process-event { border-radius: 0 0 10px 10px; background: transparent; }
+
+.process-tool-group { border: 1px dashed var(--atape-color-border); border-radius: 10px; background: var(--atape-color-paper); }
+.process-tool-group > summary { min-height: 45px; padding: 8px 11px; color: var(--atape-color-text-muted); display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; cursor: pointer; }
+.process-tool-group > summary::-webkit-details-marker { display: none; }
+.process-tool-group > summary > span:first-child { display: flex; align-items: baseline; gap: 8px; }
+.process-tool-group > summary strong { color: var(--atape-color-text); font-size: 12px; }
+.process-tool-group > summary small { font-size: 11px; }
+.process-tool-group[open] > summary { border-bottom: 1px dashed var(--atape-color-border-soft); }
+.process-tool-list { padding: 8px; display: grid; gap: 7px; }
 
 .empty-conversation { padding: 30px; border: 2px dashed var(--atape-color-border); border-radius: var(--atape-radius-md); color: var(--atape-color-text-muted); display: grid; gap: 4px; text-align: center; }
 .empty-conversation strong { color: var(--atape-color-text); }

@@ -69,12 +69,14 @@ const processLabel: Record<CanonicalEvent["kind"], string> = {
   notice: "Notice"
 }
 
+const isToolEvent = (event: CanonicalEvent) => event.kind === "tool_call" || event.kind === "tool_result"
+
 const ProcessEventView = ({ event, onOpenThread, highlighted }: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
   readonly highlighted: boolean
 }) => {
-  const isTool = event.kind === "tool_call" || event.kind === "tool_result"
+  const isTool = isToolEvent(event)
   const content = (
     <article
       className={`process-event process-event-${event.kind}${highlighted ? " event-highlighted" : ""}`}
@@ -107,8 +109,38 @@ const ProcessEventView = ({ event, onOpenThread, highlighted }: {
   )
 }
 
+const ToolActivityDetails = ({ events, onOpenThread, highlightedEventId }: {
+  readonly events: ReadonlyArray<CanonicalEvent>
+  readonly onOpenThread: (threadId: string) => void
+  readonly highlightedEventId: string | undefined
+}) => {
+  if (events.length === 0) return null
+  const containsHighlight = events.some((event) => event.id === highlightedEventId)
+  return (
+    <details className="process-tool-group" open={containsHighlight || undefined}>
+      <summary>
+        <span>
+          <strong>Tool activity</strong>
+          <small>{events.length} event{events.length === 1 ? "" : "s"}</small>
+        </span>
+        <span className="process-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div className="process-tool-list">
+        {events.map((event) => (
+          <ProcessEventView
+            key={event.id}
+            event={event}
+            onOpenThread={onOpenThread}
+            highlighted={event.id === highlightedEventId}
+          />
+        ))}
+      </div>
+    </details>
+  )
+}
+
 const describeProcess = (events: ReadonlyArray<CanonicalEvent>) => {
-  const toolCount = events.filter((event) => event.kind === "tool_call" || event.kind === "tool_result").length
+  const toolCount = events.filter(isToolEvent).length
   const thoughtCount = events.filter((event) => event.kind === "thought").length
   const updateCount = events.filter((event) => event.kind === "message").length
   const backgroundCount = events.length - toolCount - thoughtCount - updateCount
@@ -128,6 +160,8 @@ const ProcessDetails = ({ events, onOpenThread, highlightedEventId }: {
 }) => {
   if (events.length === 0) return null
   const containsHighlight = events.some((event) => event.id === highlightedEventId)
+  const toolEvents = events.filter(isToolEvent)
+  const timelineEvents = events.filter((event) => !isToolEvent(event))
   return (
     <details className="turn-process" open={containsHighlight || undefined}>
       <summary>
@@ -138,7 +172,7 @@ const ProcessDetails = ({ events, onOpenThread, highlightedEventId }: {
         <span className="process-chevron" aria-hidden="true">⌄</span>
       </summary>
       <div className="turn-process-events">
-        {events.map((event) => (
+        {timelineEvents.map((event) => (
           <ProcessEventView
             key={event.id}
             event={event}
@@ -146,6 +180,11 @@ const ProcessDetails = ({ events, onOpenThread, highlightedEventId }: {
             highlighted={event.id === highlightedEventId}
           />
         ))}
+        <ToolActivityDetails
+          events={toolEvents}
+          onOpenThread={onOpenThread}
+          highlightedEventId={highlightedEventId}
+        />
       </div>
     </details>
   )
