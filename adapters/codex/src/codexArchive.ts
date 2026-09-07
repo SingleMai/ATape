@@ -16,7 +16,7 @@ import { homedir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Option, Schema } from "effect"
 
-const CursorVersion = 3 as const
+const CursorVersion = 4 as const
 const MaxCursorBytes = 16_000
 const MaxMetadataBytes = 1024 * 1024
 const MaxJsonlRecordBytes = 16 * 1024 * 1024
@@ -25,7 +25,7 @@ const MaxTitleScanBytes = 4 * 1024 * 1024
 const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
 const MaxFilesPerSession = 100
-const CanonicalProjectionRevisionOffset = 4
+const CanonicalProjectionRevisionOffset = 6
 
 export class CodexArchiveError extends Schema.TaggedError<CodexArchiveError>()("CodexArchiveError", {
   reason: Schema.Literals(["configuration", "io", "format", "cursor", "limit"]),
@@ -135,7 +135,7 @@ const CursorSchema = Schema.Struct({
 })
 
 const LegacyCursorSchema = Schema.Struct({
-  v: Schema.Literals([1, 2]),
+  v: Schema.Literals([1, 2, 3]),
   watermarkModifiedMs: Schema.Number,
   watermarkSessionId: Schema.String,
   commitSequence: Schema.optionalKey(Schema.Number),
