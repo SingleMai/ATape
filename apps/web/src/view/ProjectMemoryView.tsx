@@ -1,9 +1,11 @@
 import type { ProjectMemory, SessionSummary } from "@atape/domain"
 import { Avatar, Badge, Button, Eyebrow } from "@atape/ui"
-import type { LoadableView } from "../presenters/memoryPresenter"
+import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
+import { RefreshControl } from "./RefreshControl"
 
 type Props = {
   readonly state: LoadableView<ProjectMemory>
+  readonly refresh: RefreshSettingsView
   readonly onOpenSession: (sessionId: string) => void
   readonly onRetry: () => void
 }
@@ -80,7 +82,7 @@ const TrailItem = ({
   </button>
 )
 
-export const ProjectMemoryView = ({ state, onOpenSession, onRetry }: Props) => {
+export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Props) => {
   if (state._tag === "Loading") {
     return <section className="state-card" aria-live="polite">Gathering project memory…</section>
   }
@@ -104,9 +106,13 @@ export const ProjectMemoryView = ({ state, onOpenSession, onRetry }: Props) => {
           <h1 id="project-memory-title">What changed while you were away?</h1>
           <p>Follow active work or retrace an earlier decision without asking someone to reconstruct the conversation.</p>
         </div>
-        <span className="capture-status" aria-live="polite">
-          {state.refreshing ? "Syncing new events…" : <>Auto-sync · updated <PresenceTime value={memory.capturedThrough} /></>}
-        </span>
+        <RefreshControl
+          settings={refresh}
+          refreshing={state.refreshing}
+          refreshFailure={state.refreshFailure}
+          status={<>Updated <PresenceTime value={memory.capturedThrough} /></>}
+          onRefresh={onRetry}
+        />
       </div>
 
       <section className="memory-section" aria-labelledby="happening-title">
