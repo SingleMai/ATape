@@ -73,6 +73,24 @@ const GlobalSearchDialog = ({
       ref={dialog}
       aria-labelledby="global-search-title"
       onKeyDown={(event) => {
+        if (event.key === "Tab") {
+          // Some browsers send focus to browser chrome at a native dialog boundary.
+          const controls = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>("button, input, select, a[href], [tabindex]")
+          ).filter(
+            (element) =>
+              element.tabIndex >= 0 && !element.matches(":disabled") && element.getClientRects().length > 0
+          )
+          const first = controls[0]
+          const last = controls.at(-1)
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault()
+            last?.focus()
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault()
+            first?.focus()
+          }
+        }
         if (event.key === "Escape") {
           event.preventDefault()
           event.stopPropagation()
