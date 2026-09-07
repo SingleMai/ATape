@@ -34,6 +34,11 @@ node scripts/check-release-tag.mjs v0.2.0
 Pull requests and pushes to `main` run the same repository checks, production build, release-tarball verification, and PostgreSQL integration suite in an unprivileged CI workflow. That workflow has read-only repository permissions and no npm publication credentials.
 
 For v0.2.0, follow the [auth-v1 release checklist](operations/auth-v1-release-checklist.md).
+
+The dogfood Web has a separate [continuous deployment workflow](operations/aws-dogfood.md#automatic-web-deployment):
+the latest `main` commit deploys after CI and Security both pass. This does not
+publish npm packages or deploy the Server, and does not complete the versioned
+release attestation.
 The checked-in staging attestation intentionally starts as `pending`; this lets
 CI validate the evidence shape without pretending that the official GitHub,
 TLS/WAF, backup, smoke, and rollback exercises happened. After those exercises,

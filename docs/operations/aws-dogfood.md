@@ -115,3 +115,64 @@ Skipping automated backup is acceptable only while the dogfood data is
 explicitly disposable. Do not mark the staging attestation complete or publish
 a production release until the repository's paired backup and restore gate has
 been exercised.
+
+## Automatic Web deployment
+
+`Deploy Web` runs after CI or Security completes on `main`. It deploys only when
+both workflows passed on the same, still-current main SHA. Manual dispatch is
+also supported on main and uses the same checks. A newer failing commit is never
+replaced by silently deploying an older successful commit.
+
+Provision the deployment boundary once, using the existing GitHub OIDC provider:
+
+```sh
+aws cloudformation deploy --profile admin --region ap-southeast-1 \
+  --stack-name atape-web-deployment \
+  --template-file deploy/aws/web-deployment.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides InstanceId=<dogfood-instance-id>
+```
+
+Set these GitHub Actions **variables** from the stack outputs (no secrets):
+
+| Variable | Stack output |
+| --- | --- |
+| `ATAPE_WEB_DEPLOY_ROLE_ARN` | `RoleArn` |
+| `ATAPE_WEB_DEPLOY_DOCUMENT_NAME` | `DocumentName` |
+| `ATAPE_WEB_DEPLOY_INSTANCE_ID` | `InstanceId` |
+
+The workflow exchanges GitHub OIDC for temporary AWS credentials, sends the
+verified SHA to the fixed SSM document, waits for its result, then checks
+`https://atape.net/__web-release.json`. That endpoint contains the deployed Web
+commit, independently of the Server's release/version information.
+
+The host builds the canonical Web Dockerfile natively while the old container
+continues serving. Only Web is recreated, using `--no-deps --no-build`; Server,
+PostgreSQL, secrets, and durable volumes are not restarted or migrated. Old
+hashed asset files are retained for seven days so already-open pages can still
+load their code chunks. Build failure leaves Web untouched; rollout or local
+revision-check failure restores the previous image. A public-edge failure marks
+the workflow failed for investigation rather than repeatedly restarting Web.
+
+Subsequent Compose operations must include the persisted image override:
+
+```sh
+cd /opt/atape/app
+docker compose -f compose.yaml -f compose.web-release.yaml ps
+```
+
+The host records `.last-web-release` and `.previous-web-release` under
+`/opt/atape/`. Images use `atape-web:<sha>`; each attempt retains the prior image
+as `atape-web:rollback-<attempted-sha>`. For an explicit rollback, set the Web image
+in `compose.web-release.yaml` to that rollback tag and run:
+
+```sh
+docker compose -f compose.yaml -f compose.web-release.yaml \
+  up -d --no-deps --no-build --wait --wait-timeout 120 web
+curl -fsS http://127.0.0.1:8080/__web-release.json
+```
+
+Automatic rollout does not delete Docker images. Use the storage guardrail above
+and retain the active and rollback images when reclaiming old build cache/images.
+Validate a Server/API contract change with the Server deployment process before
+depending on it in an automatically deployed Web change.
