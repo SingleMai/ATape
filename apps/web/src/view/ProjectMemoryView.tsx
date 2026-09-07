@@ -1,5 +1,6 @@
 import type { ProjectMemory, SessionSummary } from "@atape/domain"
-import { Avatar, Badge, Button, Eyebrow } from "@atape/ui"
+import { Badge, Button } from "@atape/ui"
+import { useState } from "react"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
 
@@ -27,38 +28,9 @@ const formatRelativeTime = (value: string) => {
 }
 
 const PresenceTime = ({ value }: { readonly value: string }) => (
-  <time dateTime={value} title={formatAbsoluteTime(value)}>{formatRelativeTime(value)}</time>
-)
-
-const SessionCard = ({
-  session,
-  onOpen
-}: {
-  readonly session: SessionSummary
-  readonly onOpen: () => void
-}) => (
-  <button className="session-card" type="button" onClick={onOpen}>
-    <div className="session-card-meta">
-      <Avatar name={session.actor.name} />
-      <span>
-        <strong>{session.actor.name} is working with {session.actor.harness}</strong>
-        <small>{session.branch || "No branch"} · updated <PresenceTime value={session.updatedAt} /></small>
-      </span>
-      <Badge
-        className="session-status"
-        tone={session.status === "active" ? "success" : "neutral"}
-      >
-        Active now
-      </Badge>
-    </div>
-    <h3>{session.title}</h3>
-    {session.summary && <p>{session.summary}</p>}
-    {session.insight && <blockquote>{session.insight}</blockquote>}
-    <footer>
-      <span>{session.eventCount} events{session.childThreadCount > 0 ? ` · ${session.childThreadCount} child thread` : ""}</span>
-      <strong>Open conversation</strong>
-    </footer>
-  </button>
+  <time dateTime={value} title={formatAbsoluteTime(value)}>
+    {formatRelativeTime(value)}
+  </time>
 )
 
 const TrailItem = ({
@@ -69,22 +41,29 @@ const TrailItem = ({
   readonly onOpen: () => void
 }) => (
   <button className="trail-item" type="button" onClick={onOpen}>
-    <Avatar name={session.actor.name} size="small" />
+    <span className="conversation-status-dot" data-active={session.status === "active"} aria-hidden="true" />
     <span className="trail-copy">
       <strong>{session.title}</strong>
-      <small>{session.actor.name} · {session.actor.harness}{session.insight ? ` · ${session.insight}` : ""}</small>
+      <small>
+        {session.actor.name} · {session.actor.harness}
+        {session.branch ? ` · ${session.branch}` : ""}
+      </small>
     </span>
     <span className="trail-tags">
       <Badge tone={session.status === "active" ? "success" : "neutral"}>{session.status}</Badge>
-      {session.branch && <Badge>{session.branch}</Badge>}
       <PresenceTime value={session.updatedAt} />
     </span>
   </button>
 )
 
 export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Props) => {
+  const [activeOnly, setActiveOnly] = useState(false)
   if (state._tag === "Loading") {
-    return <section className="state-card" aria-live="polite">Gathering project memory…</section>
+    return (
+      <section className="state-card" aria-live="polite">
+        Gathering project memory…
+      </section>
+    )
   }
 
   if (state._tag === "Failed") {
@@ -98,70 +77,68 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
   }
 
   const memory = state.value
+  const sessions = [
+    ...new Map([...memory.active, ...memory.trail].map((session) => [session.id, session])).values()
+  ]
+    .filter((session) => !activeOnly || session.status === "active")
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
   return (
-    <section aria-labelledby="project-memory-title">
-      <div className="hero project-hero">
+    <section className="project-conversations" aria-labelledby="project-memory-title">
+      <header className="project-page-heading">
         <div>
-          <Eyebrow>Project memory</Eyebrow>
-          <h1 id="project-memory-title">What changed while you were away?</h1>
-          <p>Follow active work or retrace an earlier decision without asking someone to reconstruct the conversation.</p>
+          <p className="project-page-context">{memory.project.name}</p>
+          <h1 id="project-memory-title">Conversations</h1>
         </div>
-        <RefreshControl
-          settings={refresh}
-          refreshing={state.refreshing}
-          refreshFailure={state.refreshFailure}
-          status={<>Updated <PresenceTime value={memory.capturedThrough} /></>}
-          onRefresh={onRetry}
-        />
+        <details className="quiet-disclosure">
+          <summary>Updates</summary>
+          <div className="quiet-disclosure-panel">
+            <RefreshControl
+              settings={refresh}
+              refreshing={state.refreshing}
+              refreshFailure={state.refreshFailure}
+              status={
+                <>
+                  Updated <PresenceTime value={memory.capturedThrough} />
+                </>
+              }
+              onRefresh={onRetry}
+            />
+          </div>
+        </details>
+      </header>
+      {state.refreshFailure && (
+        <p className="compact-warning" role="status">
+          Refresh failed · showing previous conversations
+        </p>
+      )}
+      <div className="conversation-list-toolbar">
+        <div role="group" aria-label="Conversation status">
+          <button type="button" aria-pressed={!activeOnly} onClick={() => setActiveOnly(false)}>
+            All conversations
+          </button>
+          <button type="button" aria-pressed={activeOnly} onClick={() => setActiveOnly(true)}>
+            Active <span>{memory.active.length}</span>
+          </button>
+        </div>
+        <span>
+          {sessions.length} {sessions.length === 1 ? "conversation" : "conversations"}
+        </span>
       </div>
-
-      <section className="memory-section" aria-labelledby="happening-title">
-        <header className="section-heading">
-          <div>
-            <h2 id="happening-title">Happening now</h2>
-            <p>{memory.active.length} conversations updated in the last 5 minutes</p>
+      <div className="trail-list">
+        {sessions.map((session) => (
+          <TrailItem key={session.id} session={session} onOpen={() => onOpenSession(session.id)} />
+        ))}
+        {sessions.length === 0 && (
+          <div className="empty-memory empty-trail">
+            <strong>{activeOnly ? "No active conversations" : "No conversations yet"}</strong>
+            <span>
+              {activeOnly
+                ? "Choose All conversations to browse captured work."
+                : "Conversations will appear after this project is captured."}
+            </span>
           </div>
-        </header>
-        <div className="active-grid">
-          {memory.active.map((session) => (
-            <SessionCard
-              key={session.id}
-              session={session}
-              onOpen={() => onOpenSession(session.id)}
-            />
-          ))}
-          {memory.active.length === 0 && (
-            <div className="empty-memory">
-              <strong>No active conversations</strong>
-              <span>Captured work will appear here when a teammate starts using this Project.</span>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="memory-section" aria-labelledby="trail-title">
-        <header className="section-heading">
-          <div>
-            <h2 id="trail-title">Memory trail</h2>
-            <p>Recent conversations in the order the team experienced them</p>
-          </div>
-        </header>
-        <div className="trail-list">
-          {memory.trail.map((session) => (
-            <TrailItem
-              key={session.id}
-              session={session}
-              onOpen={() => onOpenSession(session.id)}
-            />
-          ))}
-          {memory.trail.length === 0 && (
-            <div className="empty-memory empty-trail">
-              <strong>This Project’s trail is ready</strong>
-              <span>The first captured Session will become shared team memory here.</span>
-            </div>
-          )}
-        </div>
-      </section>
+        )}
+      </div>
     </section>
   )
 }

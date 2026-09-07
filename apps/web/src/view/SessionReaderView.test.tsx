@@ -97,7 +97,7 @@ describe("SessionReaderView", () => {
   it("renders a compact header, user prompt, and primary agent response", () => {
     const html = renderReader()
 
-    expect(html).toContain("session-reader-header")
+    expect(html).toContain("Conversation details and actions")
     expect(html).toContain("Automatic refresh interval")
     expect(html).toContain('<option value="manual" selected="">Off</option>')
     expect(html).toContain("narrative-prompt")
@@ -114,7 +114,7 @@ describe("SessionReaderView", () => {
     expect(activity).toBe('<details class="narrative-activity">')
     expect(html).toContain("1 update · 1 thought · 1 tool event")
     expect(html).toContain("Planning diagnosis")
-    expect(html.match(/<details/g)).toHaveLength(1)
+    expect(html.match(/<details class="narrative-activity"/g)).toHaveLength(1)
     expect(html).not.toContain("process-tool")
   })
 

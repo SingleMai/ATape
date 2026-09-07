@@ -6,6 +6,9 @@ import type {
   User,
   WebSession
 } from "@atape/domain"
+import { useSearchOverlay } from "../presenters/searchOverlayContext"
+import { SearchIcon } from "./WorkspaceIcons"
+import { Link } from "@tanstack/react-router"
 import { Avatar, Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect, useState, type ReactNode } from "react"
 import type {
@@ -17,7 +20,7 @@ import type {
   TeamAccessAction
 } from "../presenters/accessPresenter"
 import {
-  AccessBrand,
+  TapeMark,
   AccountChip,
   ConfirmationDialog,
   FailureNotice,
@@ -43,45 +46,49 @@ export const SettingsShell = ({
   readonly active: "account" | "team"
   readonly team?: { readonly slug: string; readonly displayName: string }
   readonly onSignOut: () => void
-}) => (
-  <div className="settings-shell">
-    <a className="skip-link" href="#main-content">Skip to settings</a>
-    <aside className="settings-sidebar" aria-label="Workspace">
-      <AccessBrand />
-      {team !== undefined && (
-        <a className="settings-team" href="/" aria-label={`Current Team: ${team.displayName}`}>
-          <span><strong>{team.displayName}</strong><small>/teams/{team.slug}</small></span>
-          <Badge>Current</Badge>
-        </a>
-      )}
-      <nav className="settings-nav" aria-label="ATape sections">
-        <span className="settings-nav-label">Workspace</span>
-        <a href="/"><span aria-hidden="true">⌂</span> Overview</a>
-        <span className="settings-nav-label">Settings</span>
-        <a className={active === "account" ? "active" : ""} href="/settings/account" aria-current={active === "account" ? "page" : undefined}>
-          <span aria-hidden="true">◎</span> Account
-        </a>
+}) => {
+  const { openSearch } = useSearchOverlay()
+  return (
+    <div className="settings-shell">
+      <a className="skip-link" href="#main-content">Skip to settings</a>
+      <aside className="settings-sidebar" aria-label="Workspace">
+        <Link className="access-brand" to="/" aria-label="ATape home"><TapeMark className="access-brand-mark" /><span>ATape</span></Link>
+        <button className="workspace-search" type="button" onClick={() => openSearch()} aria-label="Search all conversations"><SearchIcon /><span>Search everything</span><kbd>⌘ K</kbd></button>
         {team !== undefined && (
-          <a
-            className={active === "team" ? "active" : ""}
-            href={`/teams/${encodeURIComponent(team.slug)}/settings/access`}
-            aria-current={active === "team" ? "page" : undefined}
-          >
-            <span aria-hidden="true">♢</span> Team &amp; access
-          </a>
+          <Link className="settings-team" to="/" aria-label={`Current Team: ${team.displayName}`}>
+            <span><strong>{team.displayName}</strong><small>/teams/{team.slug}</small></span>
+            <Badge>Current</Badge>
+          </Link>
         )}
-      </nav>
-      <Button className="settings-signout" variant="ghost" onClick={onSignOut}>Sign out</Button>
-    </aside>
-    <div className="settings-main">
-      <header className="settings-topbar">
-        <span>{team?.displayName ?? "ATape"} / <strong>Settings</strong></span>
-        <AccountChip displayName={user.displayName} avatarUrl={user.avatarUrl} />
-      </header>
-      {children}
+        <nav className="settings-nav" aria-label="ATape sections">
+          <span className="settings-nav-label">Workspace</span>
+          <Link to="/"><span aria-hidden="true">⌂</span> Overview</Link>
+          <span className="settings-nav-label">Settings</span>
+          <Link className={active === "account" ? "active" : ""} to="/settings/account" aria-current={active === "account" ? "page" : undefined}>
+            <span aria-hidden="true">◎</span> Account
+          </Link>
+          {team !== undefined && (
+            <Link
+              className={active === "team" ? "active" : ""}
+              to="/teams/$teamSlug/settings/access" params={{ teamSlug: team.slug }}
+              aria-current={active === "team" ? "page" : undefined}
+            >
+              <span aria-hidden="true">♢</span> Team &amp; access
+            </Link>
+          )}
+        </nav>
+        <Button className="settings-signout" variant="ghost" onClick={onSignOut}>Sign out</Button>
+      </aside>
+      <div className="settings-main">
+        <header className="settings-topbar">
+          <span>{team?.displayName ?? "ATape"} / <strong>Settings</strong></span>
+          <AccountChip displayName={user.displayName} avatarUrl={user.avatarUrl} />
+        </header>
+        {children}
+      </div>
     </div>
-  </div>
-)
+  )
+}
 
 const SectionFailure = ({ section, onRetry }: {
   readonly section: Extract<SectionView<unknown>, { readonly _tag: "Failed" }>

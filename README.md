@@ -2,7 +2,9 @@
 
 ATape is a project-first shared history for coding-agent conversations. It lets a team follow active work, replay prior decisions, and inspect captured subagent threads without changing each member's preferred harness CLI.
 
-The first vertical slices implement **Workspace → Project Memory → Session Reader**, **Keyword Search → Exact Event replay**, and an explicitly opened **Raw source drawer** against a real Go API. The Workspace supports multiple Teams and typed Git-repository or ordinary-directory Projects. Canonical conversation data, Raw source data, and the Search read model use separate APIs and storage paths.
+The first vertical slices implement **Workspace → Project Memory → Session Reader**, **Global Search → Exact Event replay**, and an explicitly opened **Raw source drawer** against a real Go API. The Workspace supports multiple Teams and typed Git-repository or ordinary-directory Projects. Canonical conversation data, Raw source data, and the Search read model use separate APIs and storage paths.
+
+The workspace now centers on a compact Project sidebar and a clean Session reader. Global Search opens with **Cmd/Ctrl+K**, with Team/Project scope, retained result state, and exact-message navigation. See the [workspace and Search guide](docs/workspace-search.md) for behavior and current limits.
 
 Reusable visual primitives, semantic tokens, and themes live in [`packages/ui`](packages/ui/README.md). Product pages consume that package while keeping their business-specific composition local to the Web app.
 

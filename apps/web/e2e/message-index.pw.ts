@@ -17,7 +17,7 @@ test.beforeEach(async ({ context, page, request, scenario }) => {
     reads++
     data.thread = { id: child ? "child" : "root", label: child ? "Child" : "Root", captureStatus: "healthy" }
     data.threadPath = child ? [{ id: "root", label: "Root" }, { id: "child", label: "Child" }] : [{ id: "root", label: "Root" }]
-    data.events = Array.from({ length: child ? 2 : (scenario.append && reads > 1 ? 2 : scenario.count ?? 12) }, (_, i) => [
+    data.events = Array.from({ length: child ? 2 : (scenario.append ? 2 : scenario.count ?? 12) }, (_, i) => [
       { id: `${child ? "child" : "prompt"}-${i}`, kind: "message", author: "User", occurredAt: "2026-09-05T00:00:01Z", text: `**继续**\n[检查结果](https://example.com) ${i + 1}` },
       { id: `response-${i}`, kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:02Z", text: (scenario.image && i === 0 ? "![Delayed diagram](/delayed-diagram.svg)\n\n" : "") + "A long response paragraph.\n\n".repeat(scenario.paragraphs ?? (i === 0 && reads > 1 ? 60 : 40)),
         ...(!child && i === 0 ? { childThread: { id: "child", label: "Child", summary: "Independent verification", captureStatus: "healthy", eventCount: 4 } } : {}) }
@@ -42,9 +42,9 @@ test("locates Canonical prompts and keeps the reading interval through long resp
   const before = await page.locator("#event-prompt-2").evaluate((el) => el.getBoundingClientRect().top)
   // Programmatic activation preserves the user's scroll position while exercising
   // the same refresh button and presenter used by pointer/keyboard callers.
-  await page.getByRole("button", { name: "Refresh", exact: true }).evaluate((el: HTMLButtonElement) => el.click())
+  await page.locator(".refresh-now").evaluate((el: HTMLButtonElement) => el.click())
   await expect.poll(async () => (await page.locator("#event-response-0").innerText()).split("A long response paragraph.").length).toBe(61)
-  await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled()
+  await expect(page.locator(".refresh-now")).toBeEnabled()
   await expect.poll(async () => Math.abs(await page.locator("#event-prompt-2").evaluate((el) => el.getBoundingClientRect().top) - before)).toBeLessThanOrEqual(1)
   await rail.hover()
   await expect(page.locator(".message-index-panel")).toBeVisible()
@@ -168,13 +168,16 @@ test.describe("large index", () => {
 
 for (const count of [0, 1]) {
   test.describe(`initially ${count} user messages`, () => {
-    test.use({ scenario: { count, append: true } })
-    test("introduces the index on refresh without an automatic jump", async ({ page }) => {
+    test.use({ scenario: { count } })
+    test("introduces the index on refresh without an automatic jump", async ({ page, scenario }) => {
+      scenario.append = false
       await page.goto(path)
       await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
       await expect(page.getByRole("navigation", { name: "User messages", exact: true })).toHaveCount(0)
       const before = await page.evaluate(() => scrollY)
-      await page.getByRole("button", { name: "Refresh", exact: true }).evaluate((el: HTMLButtonElement) => el.click())
+      // Publish new fixture data only when the test is ready to request a refresh.
+      scenario.append = true
+      await page.locator(".refresh-now").evaluate((el: HTMLButtonElement) => el.click())
       await expect(page.locator(".message-index-rail button")).toHaveCount(2)
       expect(await page.evaluate(() => scrollY)).toBe(before)
     })

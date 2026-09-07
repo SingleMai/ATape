@@ -1,4 +1,5 @@
 import type { CLIDeviceGrantView, SignInOptions, User } from "@atape/domain"
+import { createMemoryHistory, createRootRoute, createRouter, RouterContextProvider } from "@tanstack/react-router"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import type { ActionView, LoadView, TeamAccess } from "../presenters/accessPresenter.ts"
@@ -129,7 +130,8 @@ describe("access views", () => {
     }
     const state: LoadView<TeamAccess> = { _tag: "Ready", value: memberAccess, refreshing: false }
     const action: ActionView<void> = idle
-    const html = renderToStaticMarkup(<TeamAccessView
+    const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory() })
+    const html = renderToStaticMarkup(<RouterContextProvider router={router}><TeamAccessView
       user={user}
       state={state}
       action={action}
@@ -137,7 +139,7 @@ describe("access views", () => {
       onAction={() => undefined}
       onReauthenticate={() => undefined}
       onSignOut={() => undefined}
-    />)
+    /></RouterContextProvider>)
 
     expect(html).toContain("Team &amp; access")
     expect(html).toContain("Leave Team")
