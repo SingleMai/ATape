@@ -1,6 +1,6 @@
 import type { AcpSessionUpdate, AdapterCollectRequest, AdapterCollectionPage, AdapterEvent, AdapterObservation, AdapterOpenContext } from "@atape/domain"
 import { Effect, Schema } from "effect"
-import { isBoundedToolValue } from "@atape/domain"
+import { isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
 import { constants } from "node:fs"
@@ -30,6 +30,28 @@ type RecordValue = Record<string, unknown>
 type Archive = { readonly context: AdapterOpenContext; readonly file: string | undefined; readonly projects: string; readonly project: string }
 type Candidate = { readonly file: string; readonly sessionId: string }
 
+// Diagnostics do not acknowledge source bytes and are rebuilt on every scan.
+class SourceDiagnostics {
+  private readonly failures: AdapterSourceFailure[] = []
+  private truncated = false
+  add(source: string, reason: AdapterSourceFailure["reason"]) {
+    if (this.failures.length < MaxSourceFailures) this.failures.push({ source, reason })
+    else this.truncated = true
+  }
+  capture(source: string, cause: unknown, signal: AbortSignal) {
+    signal.throwIfAborted()
+    if (cause instanceof ClaudeArchiveError && ["io", "format", "unsupported", "changed", "limit"].includes(cause.reason)) {
+      this.add(source, cause.reason as AdapterSourceFailure["reason"])
+    } else if (["ENOENT", "EACCES", "EPERM", "ELOOP", "ENOTDIR", "EIO", "ESTALE"].includes(string(object(cause)?.code) ?? "")) {
+      this.add(source, "io")
+    } else throw cause // Configuration, cursor errors and defects are job failures.
+  }
+  attach(page: AdapterCollectionPage): AdapterCollectionPage {
+    return { ...page, ...(this.failures.length ? { sourceFailures: this.failures } : {}),
+      ...(this.truncated ? { sourceFailuresTruncated: true } : {}) }
+  }
+}
+
 export class ClaudeArchiveError extends Schema.TaggedError<ClaudeArchiveError>()("ClaudeArchiveError", {
   reason: Schema.Literals(["configuration", "io", "format", "unsupported", "changed", "cursor", "limit"]),
   message: Schema.String
@@ -58,13 +80,14 @@ export const collectClaudePage = (archive: Archive, request: AdapterCollectReque
 async function collect(archive: Archive, request: AdapterCollectRequest): Promise<AdapterCollectionPage> {
   request.signal.throwIfAborted()
   const state = decodeDiscoveryCursor(request.cursor)
+  const diagnostics = new SourceDiagnostics()
   if (request.previousAdapterVersion && request.previousAdapterVersion !== archive.context.adapter.version) {
     fail("unsupported", "Claude Adapter version changed; existing checkpoint needs an explicit upgrade path.")
   }
   const selected = archive.file ? await readHeader(archive.file, request.signal) : undefined
   const candidates = archive.file
     ? [{ file: archive.file, sessionId: string(selected?.sessionId) ?? "" }]
-    : await discover(archive, state, request.signal)
+    : await discover(archive, state, request.signal, diagnostics)
   // Resume after the last publication so a busy Session cannot monopolize pages.
   const pivot = candidates.findIndex(c => c.sessionId === state.after)
   const ordered = [...candidates.slice(pivot + 1), ...candidates.slice(0, pivot + 1)]
@@ -73,7 +96,14 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
     const previous = state.sessions.find(s => s.file === candidate.file)
       ?? state.sessions.find(s => s.checkpoint.sessionId === candidate.sessionId)
       ?? (archive.file && state.sessions.length === 1 && state.sessions[0]!.file === "" ? state.sessions[0] : undefined)
-    const page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous.checkpoint) : null })
+    let page: AdapterCollectionPage
+    try {
+      page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous.checkpoint) : null })
+    } catch (cause) {
+      if (archive.file) throw cause // Explicit single-source diagnostics stay fail-fast.
+      diagnostics.capture(candidate.file, cause, request.signal)
+      continue
+    }
     if (page.observations.length === 0) continue
     const checkpoint = decodeCursor(page.nextCursor)!
     // Keep missing sources' checkpoints: deletion never deletes captured history
@@ -83,9 +113,9 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
     sessions.sort((a, b) => a.checkpoint.sessionId.localeCompare(b.checkpoint.sessionId))
     const nextCursor = JSON.stringify({ v: 2, after: checkpoint.sessionId, sessions } satisfies DiscoveryCursor)
     if (Buffer.byteLength(nextCursor) > MaxCursorBytes) fail("limit", "Claude discovery checkpoint exceeds 16 KB; no session progress was discarded.")
-    return { ...page, nextCursor, hasMore: !archive.file && candidates.length > 1 }
+    return diagnostics.attach({ ...page, nextCursor, hasMore: !archive.file && candidates.length > 1 })
   }
-  return empty(request.cursor)
+  return diagnostics.attach(empty(request.cursor))
 }
 
 async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest): Promise<AdapterCollectionPage> {
@@ -238,7 +268,7 @@ function decodeCursor(value: string | null): Cursor | undefined {
   } catch { return fail("cursor", "Claude checkpoint is invalid; it was not reset.") }
 }
 
-async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortSignal): Promise<Candidate[]> {
+async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortSignal, diagnostics: SourceDiagnostics): Promise<Candidate[]> {
   let projects: string
   try { projects = await realpath(archive.projects) }
   catch (cause) { if (object(cause)?.code === "ENOENT") return []; throw cause }
@@ -246,13 +276,17 @@ async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortS
   let entries = folders.length
   if (entries > MaxDiscoveryEntries) fail("limit", "Claude discovery exceeds 10,000 directory entries.")
   const candidates: Candidate[] = []
-  const ids = new Set<string>()
+  const ids = new Map<string, number>()
   for (const folder of folders.sort((a, b) => a.name.localeCompare(b.name))) {
     signal.throwIfAborted()
     if (!folder.isDirectory()) continue // No recursive subagent or symlink traversal.
     const directory = join(projects, folder.name)
-    if (await realpath(directory) !== directory) fail("changed", "Claude discovery directory changed during scanning.")
-    const files = await readdir(directory, { withFileTypes: true })
+    const files = await (async () => {
+      try {
+        if (await realpath(directory) !== directory) fail("changed", "Claude discovery directory changed during scanning.")
+        return await readdir(directory, { withFileTypes: true })
+      } catch (cause) { diagnostics.capture(directory, cause, signal); return [] }
+    })()
     entries += files.length
     if (entries > MaxDiscoveryEntries) fail("limit", "Claude discovery exceeds 10,000 directory entries.")
     for (const entry of files.sort((a, b) => a.name.localeCompare(b.name))) {
@@ -261,23 +295,32 @@ async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortS
       const file = join(directory, entry.name)
       const known = state.sessions.find(s => s.file === file)
       if (!entry.isFile()) {
-        if (known) fail("changed", "A captured Claude source is no longer a regular file.")
+        if (known) diagnostics.add(file, "changed")
         continue
       }
-      let sessionId = known?.checkpoint.sessionId
-      if (!sessionId) {
-        // Directory encoding is only a discovery hint. Read bounded metadata
-        // first; unrelated histories are never projected or uploaded.
-        const header = await readHeader(file, signal)
-        if (!header || typeof header.sessionId !== "string" || !header.sessionId || typeof header.cwd !== "string" || !isAbsolute(header.cwd)) continue
-        if (!await belongsToProject(archive, header.cwd, signal)) continue
-        sessionId = header.sessionId
+      try {
+        let sessionId = known?.checkpoint.sessionId
+        if (!sessionId) {
+          // Unattributable headers produce local diagnostics, never uploads.
+          const header = await readHeader(file, signal)
+          if (!header || typeof header.sessionId !== "string" || !header.sessionId || typeof header.cwd !== "string" || !isAbsolute(header.cwd)) {
+            diagnostics.add(file, "format"); continue
+          }
+          if (!await belongsToProject(archive, header.cwd, signal)) continue
+          sessionId = header.sessionId
+        }
+        ids.set(sessionId, (ids.get(sessionId) ?? 0) + 1)
+        candidates.push({ file, sessionId })
+      } catch (cause) {
+        diagnostics.capture(file, cause, signal)
       }
-      if (ids.has(sessionId)) fail("unsupported", "Multiple Claude files claim the same session identity; select one source explicitly.")
-      ids.add(sessionId); candidates.push({ file, sessionId })
     }
   }
-  return candidates
+  return candidates.filter(candidate => {
+    if (ids.get(candidate.sessionId) === 1) return true
+    diagnostics.add(candidate.file, "duplicate")
+    return false // Neither copy may win by filename or discovery order.
+  })
 }
 
 async function readHeader(file: string, signal: AbortSignal): Promise<RecordValue | undefined> {

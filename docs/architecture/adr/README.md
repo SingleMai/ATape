@@ -36,3 +36,5 @@ ADRs record consequential implementation decisions. A superseded ADR remains in 
 [ADR-0029](0029-claude-first-vertical-slice.md) records the user-directed switch to a first production Claude vertical slice on existing Interfaces, with the broader planned protocols deferred.
 
 [ADR-0030](0030-bounded-tool-details-implementation.md) implements bounded shared tool values with a versioned profile, Canonical persistence, Host redaction and common rendering; the remaining ADR-0028 work stays deferred.
+
+[ADR-0031](0031-source-failure-isolation.md) isolates individual Claude sources and adds bounded, redacted local diagnostics to the shared Collector Interface.

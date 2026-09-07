@@ -1,4 +1,5 @@
 import type {
+  AdapterSourceFailure,
   AdapterCollectionPage,
   AdapterCollectionLimitValues,
   AdapterInstallation,
@@ -13,7 +14,7 @@ import type {
   RawAppendReceipt
 } from "@atape/domain"
 import { AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
-import { RawTransportChunkBytes } from "@atape/domain"
+import { MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Context, Effect, Layer, Schema, Scope } from "effect"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 
@@ -151,6 +152,8 @@ export const makeSecretRedactorLayer = (secretValues: ReadonlyArray<string> = []
 }
 
 export type AdapterCollectionReport = {
+  readonly sourceFailures?: ReadonlyArray<AdapterSourceFailure>
+  readonly sourceFailuresTruncated?: boolean
   readonly projectId: string
   readonly adapterId: string
   readonly pages: number
@@ -212,6 +215,7 @@ export const runCollector = Effect.fn("Collector.run")(function*(options: RunCol
     yield* Effect.logInfo("ATape collection cycle completed", {
       jobs: report.jobs.length,
       failures: report.failures.length,
+      partialJobs: report.jobs.filter(job => job.sourceFailures?.length || job.sourceFailuresTruncated).length,
       observations: report.jobs.reduce((sum, job) => sum + job.observations, 0),
       rawChunks: report.jobs.reduce((sum, job) => sum + job.rawChunks, 0)
     })
@@ -318,6 +322,8 @@ const collectAdapter = (
   let rawChunks = 0
   let redactions = 0
   let hasMore = false
+  const sourceFailures = new Map<string, AdapterSourceFailure>()
+  let sourceFailuresTruncated = false
 
   const commitCheckpoint = (
     checkpointCursor: string | null,
@@ -365,6 +371,15 @@ const collectAdapter = (
     const page = yield* runtime.collect(request)
     yield* validatePage(adapter.adapterId, cursor, page)
     pages++
+    sourceFailuresTruncated ||= page.sourceFailuresTruncated === true
+    for (const failure of page.sourceFailures ?? []) {
+      const key = JSON.stringify(failure)
+      if (sourceFailures.has(key)) continue
+      if (sourceFailures.size === MaxSourceFailures) { sourceFailuresTruncated = true; continue }
+      const masked = redactor.redact(failure.source)
+      redactions += masked.replacements
+      sourceFailures.set(key, { ...failure, source: masked.value.slice(0, 4096) })
+    }
 
     for (const observation of page.observations) {
       const redacted = redactObservation(redactor, observation)
@@ -424,7 +439,9 @@ const collectAdapter = (
     canonicalBatches,
     rawChunks,
     redactions,
-    hasMore
+    hasMore,
+    ...(sourceFailures.size > 0 ? { sourceFailures: [...sourceFailures.values()] } : {}),
+    ...(sourceFailuresTruncated ? { sourceFailuresTruncated: true } : {})
   }
 }))
 
@@ -580,6 +597,11 @@ const validatePage = (
   page: AdapterCollectionPage
 ): Effect.Effect<void, CollectionContractError> => {
   const fail = (message: string) => contractFailure(adapterId, message)
+  if ((page.sourceFailures?.length ?? 0) > MaxSourceFailures ||
+    page.sourceFailures?.some(f => !boundedText(f.source, 4096, false) ||
+      !["io", "format", "unsupported", "changed", "limit", "duplicate"].includes(f.reason))) {
+    return fail("returned invalid or excessive source diagnostics.")
+  }
   if (page.observations.length > AdapterCollectionLimits.observations) {
     return fail(`returned ${page.observations.length} observations; limit is ${AdapterCollectionLimits.observations}.`)
   }

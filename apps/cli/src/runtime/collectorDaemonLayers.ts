@@ -333,7 +333,9 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
       canonicalBatches: success.canonicalBatches,
       rawChunks: success.rawChunks,
       redactions: success.redactions,
-      hasMore: success.hasMore
+      hasMore: success.hasMore,
+      ...(success.sourceFailures ? { sourceFailures: success.sourceFailures } : {}),
+      ...(success.sourceFailuresTruncated ? { sourceFailuresTruncated: true } : {})
     })
   }
   for (const failure of report.failures) {

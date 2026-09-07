@@ -50,7 +50,15 @@ describe("Node Collector run status Adapter", () => {
 
     await run(Effect.gen(function*() {
       const statuses = yield* CollectorRunStatusStore
+      yield* statuses.recordCycle({ ...first, jobs: first.jobs.map(job => ({ ...job,
+        sourceFailures: [{ source: "/history/broken.jsonl", reason: "format" as const }], sourceFailuresTruncated: true
+      })) })
+      expect((yield* statuses.read()).jobs[0]).toMatchObject({
+        sourceFailures: [{ source: "/history/broken.jsonl", reason: "format" }], sourceFailuresTruncated: true
+      })
       yield* statuses.recordCycle(first)
+      expect((yield* statuses.read()).jobs[0]).not.toHaveProperty("sourceFailures")
+      expect((yield* statuses.read()).jobs[0]).not.toHaveProperty("sourceFailuresTruncated")
       yield* statuses.recordCycle(second)
     }))
     const status = await run(Effect.gen(function*() {

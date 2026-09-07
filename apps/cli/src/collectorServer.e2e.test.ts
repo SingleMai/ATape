@@ -197,12 +197,21 @@ it("discovers and incrementally collects native Claude sessions into existing co
     await appendFile(claudeFile, jsonLines([{ ...last, uuid: "e2e-appended", parentUuid: last.uuid,
       message: { role: "assistant", content: "Automatically discovered append" } }]))
     await writeFile(join(directory, "second.jsonl"), jsonLines(records.map(r => r.sessionId ? { ...r, sessionId: "e2e-second-claude" } : r)))
-    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 2, rawChunks: 2 })
+    const brokenFile = join(directory, "a-broken.jsonl")
+    const repairable = jsonLines(records.map(r => r.sessionId ? { ...r, sessionId: "e2e-repaired-claude" } : r))
+    await writeFile(brokenFile, repairable + "broken-json\n")
+    // A nonzero CLI exit exposes partial collection, but healthy data is durable.
+    expect(onlyJob(await collect(fixture, serverUrl, 1))).toMatchObject({ observations: 2, rawChunks: 2,
+      sourceFailures: [{ source: expect.stringContaining("a-broken.jsonl"), reason: "format" }] })
     expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(2)
     const appended = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=root`)
     expect(appended.events).toHaveLength(7)
     expect(appended.events.slice(0, 6).map(e => e.id)).toEqual(conversation.events.map(e => e.id))
     expect(appended.events.at(-1)?.text).toBe("Automatically discovered append")
+    expect(onlyJob(await collect(fixture, serverUrl, 1))).toMatchObject({ observations: 0, rawChunks: 0 })
+    await writeFile(brokenFile, repairable)
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(3)
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
   } finally {
     await stopServer(server)
@@ -322,7 +331,7 @@ const configureClient = async (fixture: Fixture, serverUrl: string, adapterId: "
   }, null, 2)}\n`, { mode: 0o600 })
 }
 
-const collect = async (fixture: Fixture, serverUrl: string) => {
+const collect = async (fixture: Fixture, serverUrl: string, expectedExit = 0) => {
   const output = await execute(process.execPath, [
     cliEntry,
     "collect",
@@ -330,7 +339,7 @@ const collect = async (fixture: Fixture, serverUrl: string) => {
     "--project",
     "support-notes",
     "--json"
-  ], repositoryRoot, clientEnvironment(fixture, serverUrl))
+  ], repositoryRoot, clientEnvironment(fixture, serverUrl), expectedExit)
   return JSON.parse(output) as CollectionReport
 }
 
@@ -405,7 +414,8 @@ const execute = (
   executable: string,
   args: ReadonlyArray<string>,
   cwd: string,
-  environment: NodeJS.ProcessEnv
+  environment: NodeJS.ProcessEnv,
+  expectedExit = 0
 ) => new Promise<string>((resolveOutput, reject) => {
   execFile(executable, [...args], {
     cwd,
@@ -413,8 +423,8 @@ const execute = (
     timeout: 30_000,
     maxBuffer: 16 * 1024 * 1024
   }, (error, stdout, stderr) => {
-    if (error) {
-      reject(new Error(`${error.message}\n${stderr}\n${stdout}`))
+    if ((error?.code ?? 0) !== expectedExit) {
+      reject(new Error(`Expected exit ${expectedExit}: ${error?.message ?? "exited successfully"}\n${stderr}\n${stdout}`))
       return
     }
     resolveOutput(stdout)

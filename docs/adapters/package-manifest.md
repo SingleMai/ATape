@@ -64,6 +64,16 @@ export async function createAtapeAdapter(context) {
 
 An Adapter returns no more than the requested limits. When it emits observations it must advance to a non-empty replacement cursor. `hasMore: true` also requires at least one observation. Given the same committed cursor, an Adapter must reproduce the same observation identities, revisions, timestamps, segmentation, and source bytes until the Host advances it.
 
+Pages may include local `sourceFailures: [{ source, reason }]` diagnostics and
+`sourceFailuresTruncated: true` when further failures were omitted. Reasons are
+`io`, `format`, `unsupported`, `changed`, `limit` or `duplicate`. At most 32 entries
+with nonempty source paths of at most 4096 UTF-8 bytes are accepted per page.
+The Host redacts and deduplicates them into a bounded job report. They are not
+Canonical/Raw payloads and never acknowledge source progress. Diagnostic-only
+pages must use `hasMore: false`; a failed source keeps its last committed cursor.
+The managed Collector exposes partial health and `collect --once` exits nonzero
+after printing partial results. Use an updated Host to retain these optional fields.
+
 The optional `close` method releases file handles, database connections, or other resources. The Host calls it when the Project/Adapter collection scope ends.
 
 ## ACP-centered observations

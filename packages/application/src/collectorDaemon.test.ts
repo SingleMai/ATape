@@ -88,6 +88,17 @@ const fixture = (config: ClientConfig, status: CollectorRunState) => {
 }
 
 describe("managed Collector Module", () => {
+  it("exposes source diagnostics as partial health, not a healthy or failed job", async () => {
+    const sourceFailures = [{ source: "/history/unsupported.jsonl", reason: "unsupported" as const }]
+    const client = fixture(configuredClient(), { version: 1, jobs: [{
+      projectId: "atape", adapterId: "codex", lastAttemptAt: now, lastSuccessAt: now,
+      sourceFailures, sourceFailuresTruncated: true
+    }] })
+    expect((await client.run(inspectManagedCollector())).jobs).toEqual([expect.objectContaining({
+      state: "partial", sourceFailures, sourceFailuresTruncated: true
+    })])
+  })
+
   it("starts idempotent process management and projects current job health", async () => {
     const status: CollectorRunState = {
       version: 1,

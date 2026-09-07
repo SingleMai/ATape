@@ -525,6 +525,9 @@ const collectCommand = (options: CLIOptions) => Effect.gen(function*() {
   if (report.failures.length > 0) {
     return yield* Effect.fail(new CLIInputError(`${report.failures.length} collection job(s) failed.`))
   }
+  if (report.jobs.some(job => job.sourceFailures?.length || job.sourceFailuresTruncated)) {
+    return yield* Effect.fail(new CLIInputError("Collection is partial: some sources could not be captured; see source diagnostics."))
+  }
 })
 
 const startCommand = (options: CLIOptions) => Effect.gen(function*() {
@@ -599,8 +602,9 @@ const printCollectorStatus = (status: ManagedCollectorStatus) => {
       continue
     }
     lines.push(
-      `- ${job.projectId}/${job.adapterId} · healthy · last success ${formatAge(job.lastSuccessAt)}`,
-      `  ${job.observations ?? 0} observations · ${job.rawChunks ?? 0} Raw chunks · ${job.redactions ?? 0} redactions`
+      `- ${job.projectId}/${job.adapterId} · ${job.state} · last completed cycle ${formatAge(job.lastSuccessAt)}`,
+      `  ${job.observations ?? 0} observations · ${job.rawChunks ?? 0} Raw chunks · ${job.redactions ?? 0} redactions`,
+      ...sourceDiagnosticLines(job)
     )
   }
   return print(lines.join("\n"))
@@ -620,10 +624,16 @@ const formatAge = (value: string | undefined) => {
   return `${Math.floor(hours / 24)}d ago`
 }
 
+const sourceDiagnosticLines = (job: { readonly sourceFailures?: ReadonlyArray<{ readonly source: string; readonly reason: string }>; readonly sourceFailuresTruncated?: boolean }) => [
+  ...(job.sourceFailures ?? []).map(failure => `  Source skipped (${failure.reason}): ${JSON.stringify(failure.source)}`),
+  ...(job.sourceFailuresTruncated ? ["  Additional source failures omitted (diagnostic limit reached)."] : [])
+]
+
 const printCollectionReport = (report: CollectionCycleReport) => print([
   `Collection cycle completed · ${report.jobs.length} succeeded · ${report.failures.length} failed`,
-  ...report.jobs.map((job) =>
-    `- ${job.projectId}/${job.adapterId}: ${job.observations} observations, ${job.rawChunks} Raw chunks, ${job.redactions} redactions${job.hasMore ? " · more queued" : ""}`),
+  ...report.jobs.flatMap((job) => [
+    `- ${job.projectId}/${job.adapterId}: ${job.observations} observations, ${job.rawChunks} Raw chunks, ${job.redactions} redactions${job.hasMore ? " · more queued" : ""}`,
+    ...sourceDiagnosticLines(job)]),
   ...report.failures.map((failure) =>
     `- ${failure.projectId}/${failure.adapterId}: ${failure.message}${failure.retryable ? " · retryable" : ""}`)
 ].join("\n"))
