@@ -31,8 +31,9 @@ Resources:
                 - |
                   #!/usr/bin/env bash
                   set -euo pipefail
-                  # The allowlisted SHA is also safe with older SSM agents.
-                  sha='{{ CommitSha }}'
+                  # ENV_VAR interpolation emits $SSM_CommitSha; allow shell expansion.
+                  # Older agents substitute the allowlisted hexadecimal SHA directly.
+                  sha="{{ CommitSha }}"
                   [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
                   directory=$(mktemp -d /opt/atape/web-deploy.XXXXXX)
                   trap 'rm -rf "$directory"' EXIT
