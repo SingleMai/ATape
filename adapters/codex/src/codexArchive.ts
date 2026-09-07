@@ -16,14 +16,16 @@ import { homedir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Option, Schema } from "effect"
 
-const CursorVersion = 1 as const
+const CursorVersion = 2 as const
+const LegacyCursorVersion = 1 as const
 const MaxCursorBytes = 16_000
 const MaxMetadataBytes = 1024 * 1024
-const MaxJsonlRecordBytes = 4 * 1024 * 1024
+const MaxJsonlRecordBytes = 16 * 1024 * 1024
 const MaxTitleScanBytes = 4 * 1024 * 1024
 const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
 const MaxFilesPerSession = 100
+const CanonicalProjectionRevisionOffset = 2
 
 export class CodexArchiveError extends Schema.TaggedError<CodexArchiveError>()("CodexArchiveError", {
   reason: Schema.Literals(["configuration", "io", "format", "cursor", "limit"]),
@@ -124,6 +126,14 @@ const CursorSchema = Schema.Struct({
   active: Schema.optionalKey(ActiveCursorSchema)
 })
 
+const LegacyCursorSchema = Schema.Struct({
+  v: Schema.Literal(LegacyCursorVersion),
+  watermarkModifiedMs: Schema.Number,
+  watermarkSessionId: Schema.String,
+  commitSequence: Schema.optionalKey(Schema.Number),
+  active: Schema.optionalKey(ActiveCursorSchema)
+})
+
 const SessionMetaEnvelopeSchema = Schema.Struct({
   timestamp: Schema.String,
   type: Schema.Literal("session_meta"),
@@ -148,6 +158,18 @@ const CompletedItemEnvelopeSchema = Schema.Struct({
     thread_id: Schema.String,
     item: Schema.Unknown
   })
+})
+
+const ResponseItemEnvelopeSchema = Schema.Struct({
+  timestamp: Schema.String,
+  type: Schema.Literal("response_item"),
+  payload: Schema.Unknown
+})
+
+const EventMessageEnvelopeSchema = Schema.Struct({
+  timestamp: Schema.String,
+  type: Schema.Literal("event_msg"),
+  payload: Schema.Unknown
 })
 
 export const openCodexArchive = (
@@ -193,9 +215,15 @@ const collectPage = async (
     const active = cursor.active
     const activeSession = byId.get(active.sessionId)
     if (activeSession === undefined) {
-      return emptyPage(advanceWatermark(cursor, active.selectedModifiedMs, active.sessionId))
+      return pageWithRemainingSessions(
+        emptyPage(advanceWatermark(cursor, active.selectedModifiedMs, active.sessionId)),
+        sessions
+      )
     }
-    return collectActiveSession(archive, request, { ...cursor, active }, activeSession)
+    return pageWithRemainingSessions(
+      await collectActiveSession(archive, request, { ...cursor, active }, activeSession),
+      sessions
+    )
   }
 
   const selected = await selectSession(sessions, cursor, request.rawProgress, request.signal)
@@ -210,7 +238,21 @@ const collectPage = async (
   }
 
   const active = await startSession(selected, request.signal)
-  return collectActiveSession(archive, request, { ...cursor, active }, selected)
+  return pageWithRemainingSessions(
+    await collectActiveSession(archive, request, { ...cursor, active }, selected),
+    sessions
+  )
+}
+
+const pageWithRemainingSessions = (
+  page: AdapterCollectionPage,
+  sessions: ReadonlyArray<CodexSession>
+): AdapterCollectionPage => {
+  if (page.hasMore) return page
+  const nextCursor = decodeCursor(page.nextCursor)
+  return sessions.some((session) => isAfterWatermark(session, nextCursor))
+    ? { ...page, hasMore: true }
+    : page
 }
 
 const collectActiveSession = async (
@@ -231,7 +273,8 @@ const collectActiveSession = async (
 
   const observedAt = new Date(active.selectedModifiedMs).toISOString()
   const childCount = threads.length - 1
-  const title = await deriveSessionTitle(active, currentFiles, request.signal)
+  const projection = await inspectCanonicalProjection(active, currentFiles, request.signal)
+  const title = await deriveSessionTitle(active, currentFiles, projection, request.signal)
   const session: AdapterObservation["session"] = {
     sourceSessionId: active.sessionId,
     revision: active.revision,
@@ -256,6 +299,7 @@ const collectActiveSession = async (
     active,
     threads,
     currentFiles,
+    projection,
     request.limits.eventsPerObservation,
     request.limits.canonicalBytesPerObservation - canonicalBaseBytes,
     request.signal
@@ -335,7 +379,7 @@ const startSession = async (session: CodexSession, signal: AbortSignal): Promise
   return {
     sessionId: session.id,
     selectedModifiedMs: session.modifiedMs,
-    revision: modifiedMicros * 2 + (allArchived ? 1 : 0),
+    revision: modifiedMicros * 2 + CanonicalProjectionRevisionOffset + (allArchived ? 1 : 0),
     files,
     spawnOffset: 0,
     eventFileIndex: 0,
@@ -476,10 +520,92 @@ type EventPage = {
   readonly complete: boolean
 }
 
+type ProjectionFormat = "item_completed" | "event_msg" | "response_item"
+
+type CanonicalProjection = {
+  readonly formatBySourceObjectId: ReadonlyMap<string, ProjectionFormat>
+  readonly responseItemOwnerById: ReadonlyMap<string, string>
+}
+
+const inspectCanonicalProjection = async (
+  active: ActiveCursor,
+  currentFiles: ReadonlyMap<string, RolloutFile>,
+  signal: AbortSignal
+): Promise<CanonicalProjection> => {
+  const inspected: Array<{
+    readonly sourceObjectId: string
+    readonly threadId: string
+    readonly hasSupportedCompletedItem: boolean
+    readonly hasLegacyMessage: boolean
+    readonly responseItemIds: ReadonlyArray<string>
+    readonly legacySupplementIds: ReadonlyArray<string>
+  }> = []
+  for (const snapshot of active.files) {
+    const current = currentFiles.get(snapshot.sourceObjectId)
+    if (current === undefined || current.generation !== snapshot.generation) continue
+    let hasSupportedCompletedItem = false
+    let hasLegacyMessage = false
+    let acceptsLegacySupplements = false
+    const responseItemIds: Array<string> = []
+    const legacySupplementIds: Array<string> = []
+    for await (const line of readLines(current.path, 0, snapshot.size, signal)) {
+      if (!hasSupportedCompletedItem &&
+        mapCompletedItem(line.content, line.start, snapshot, active.sessionId) !== undefined) {
+        hasSupportedCompletedItem = true
+      }
+      const parsed = record(parseJSON(line.content))
+      const topLevelType = stringValue(parsed?.type)
+      const payload = record(parsed?.payload)
+      const eventType = topLevelType === "event_msg" ? stringValue(payload?.type) : undefined
+      if (topLevelType === "session_meta" || eventType === "task_started") acceptsLegacySupplements = false
+      if (topLevelType === "turn_context") acceptsLegacySupplements = true
+      if ((eventType === "user_message" || eventType === "agent_message") && itemText(payload?.message) !== "") {
+        hasLegacyMessage = true
+      }
+      const item = decodeResponseItem(line.content)
+      const itemId = stringValue(item?.id)
+      if (item !== undefined && itemId !== undefined && mapResponseItemUpdate(item, itemId) !== undefined) {
+        responseItemIds.push(itemId)
+      }
+      if (acceptsLegacySupplements && item !== undefined && itemId !== undefined &&
+        mapResponseSupplementUpdate(item, itemId) !== undefined) {
+        legacySupplementIds.push(itemId)
+      }
+    }
+    inspected.push({
+      sourceObjectId: snapshot.sourceObjectId,
+      threadId: snapshot.threadId,
+      hasSupportedCompletedItem,
+      hasLegacyMessage,
+      responseItemIds,
+      legacySupplementIds
+    })
+  }
+
+  const formatBySourceObjectId = new Map<string, ProjectionFormat>()
+  const responseItemOwnerById = new Map<string, string>()
+  const rootFirst = [...inspected].sort((left, right) =>
+    Number(right.threadId === active.sessionId) - Number(left.threadId === active.sessionId))
+  for (const file of rootFirst) {
+    const format = file.hasSupportedCompletedItem
+      ? "item_completed"
+      : file.hasLegacyMessage ? "event_msg" : "response_item"
+    formatBySourceObjectId.set(file.sourceObjectId, format)
+    const ownedIds = format === "response_item"
+      ? file.responseItemIds
+      : format === "event_msg" ? file.legacySupplementIds : []
+    for (const itemId of ownedIds) {
+      if (!responseItemOwnerById.has(itemId)) responseItemOwnerById.set(itemId, file.sourceObjectId)
+    }
+  }
+  return { formatBySourceObjectId, responseItemOwnerById }
+}
+
 const collectEvents = async (
   active: ActiveCursor,
   threads: ReadonlyArray<AdapterThread>,
   currentFiles: ReadonlyMap<string, RolloutFile>,
+  projection: CanonicalProjection,
   limit: number,
   byteLimit: number,
   signal: AbortSignal
@@ -546,7 +672,7 @@ const collectEvents = async (
     }
     let reachedEnd = true
     for await (const line of readLines(current.path, offset, snapshot.size, signal)) {
-      const event = mapCompletedItem(line.content, line.start, snapshot, active.sessionId)
+      const event = mapProjectedItem(line.content, line.start, snapshot, active.sessionId, projection)
       if (event === undefined) {
         offset = line.end
         continue
@@ -575,6 +701,39 @@ const collectEvents = async (
     fileIndex,
     offset,
     complete: spawnOffset >= children.length && fileIndex >= active.files.length
+  }
+}
+
+const mapProjectedItem = (
+  line: Buffer,
+  byteOffset: number,
+  file: CursorFile,
+  sessionId: string,
+  projection: CanonicalProjection
+): AdapterEvent | undefined => {
+  switch (projection.formatBySourceObjectId.get(file.sourceObjectId)) {
+    case "response_item":
+      return mapResponseItem(
+        line,
+        byteOffset,
+        file,
+        sessionId,
+        projection.responseItemOwnerById,
+        mapResponseItemUpdate,
+        false
+      )
+    case "event_msg":
+      return mapLegacyMessage(line, byteOffset, file, sessionId) ?? mapResponseItem(
+        line,
+        byteOffset,
+        file,
+        sessionId,
+        projection.responseItemOwnerById,
+        mapResponseSupplementUpdate,
+        true
+      )
+    default:
+      return mapCompletedItem(line, byteOffset, file, sessionId)
   }
 }
 
@@ -608,9 +767,84 @@ const mapCompletedItem = (
   }
 }
 
+const mapResponseItem = (
+  line: Buffer,
+  byteOffset: number,
+  file: CursorFile,
+  sessionId: string,
+  ownerById: ReadonlyMap<string, string>,
+  mapUpdate: (item: Record<string, unknown>, fallbackId: string) => AcpSessionUpdate | undefined,
+  requireOwnedId: boolean
+): AdapterEvent | undefined => {
+  const envelope = Schema.decodeUnknownOption(ResponseItemEnvelopeSchema)(parseJSON(line))
+  if (Option.isNone(envelope)) return undefined
+  const item = record(envelope.value.payload)
+  if (item === undefined) return undefined
+  const explicitId = stringValue(item.id)
+  if (requireOwnedId && explicitId === undefined) return undefined
+  if (explicitId !== undefined && ownerById.get(explicitId) !== file.sourceObjectId) return undefined
+  const itemId = explicitId ?? `${file.sourceObjectId}-${byteOffset}`
+  const update = mapUpdate(item, itemId)
+  if (update === undefined) return undefined
+  return {
+    sourceEventId: truncateUtf8(itemId, 500),
+    sourceThreadId: file.threadId || sessionId,
+    revision: 1,
+    projectionRevision: 1,
+    sourceOrder: timestampOrder(envelope.value.timestamp),
+    eventIndex: byteOffset,
+    orderFidelity: "native",
+    fidelity: "native",
+    rawRef: { _tag: "object", sourceObjectId: file.sourceObjectId, fragment: `#byte=${byteOffset}` },
+    occurredAt: validTimestamp(envelope.value.timestamp) ? envelope.value.timestamp : new Date(0).toISOString(),
+    update
+  }
+}
+
+const mapLegacyMessage = (
+  line: Buffer,
+  byteOffset: number,
+  file: CursorFile,
+  sessionId: string
+): AdapterEvent | undefined => {
+  const envelope = Schema.decodeUnknownOption(EventMessageEnvelopeSchema)(parseJSON(line))
+  if (Option.isNone(envelope)) return undefined
+  const payload = record(envelope.value.payload)
+  const type = stringValue(payload?.type)
+  if (type !== "user_message" && type !== "agent_message") return undefined
+  const text = itemText(payload?.message)
+  if (text === "") return undefined
+  const itemId = stringValue(payload?.client_id) ?? stringValue(payload?.id) ??
+    `${file.sourceObjectId}-${byteOffset}`
+  const update: AcpSessionUpdate = {
+    sessionUpdate: type === "user_message" ? "user_message_chunk" : "agent_message_chunk",
+    messageId: truncateUtf8(itemId, 500),
+    content: { type: "text", text: truncateUtf8(text, 1024 * 1024) }
+  }
+  return {
+    sourceEventId: truncateUtf8(itemId, 500),
+    sourceThreadId: file.threadId || sessionId,
+    revision: 1,
+    projectionRevision: 1,
+    sourceOrder: timestampOrder(envelope.value.timestamp),
+    eventIndex: byteOffset,
+    orderFidelity: "native",
+    fidelity: "native",
+    rawRef: { _tag: "object", sourceObjectId: file.sourceObjectId, fragment: `#byte=${byteOffset}` },
+    occurredAt: validTimestamp(envelope.value.timestamp) ? envelope.value.timestamp : new Date(0).toISOString(),
+    update
+  }
+}
+
+const decodeResponseItem = (line: Buffer): Record<string, unknown> | undefined => {
+  const decoded = Schema.decodeUnknownOption(ResponseItemEnvelopeSchema)(parseJSON(line))
+  return Option.isNone(decoded) ? undefined : record(decoded.value.payload)
+}
+
 const deriveSessionTitle = async (
   active: ActiveCursor,
   currentFiles: ReadonlyMap<string, RolloutFile>,
+  projection: CanonicalProjection,
   signal: AbortSignal
 ) => {
   let remaining = MaxTitleScanBytes
@@ -620,11 +854,9 @@ const deriveSessionTitle = async (
     if (current === undefined || current.generation !== snapshot.generation) continue
     const end = Math.min(snapshot.size, remaining)
     for await (const line of readLines(current.path, 0, end, signal)) {
-      const decoded = Schema.decodeUnknownOption(CompletedItemEnvelopeSchema)(parseJSON(line.content))
-      if (Option.isNone(decoded) || decoded.value.payload.thread_id !== active.sessionId) continue
-      const item = record(decoded.value.payload.item)
-      if (stringValue(item?.type) !== "UserMessage") continue
-      const title = normalizeTitle(itemText(item?.content))
+      const event = mapProjectedItem(line.content, line.start, snapshot, active.sessionId, projection)
+      if (event?.update.sessionUpdate !== "user_message_chunk" || event.update.content.type !== "text") continue
+      const title = normalizeTitle(event.update.content.text)
       if (title !== "") return title
     }
     remaining -= end
@@ -686,10 +918,77 @@ const mapItemUpdate = (item: Record<string, unknown>, fallbackId: string): AcpSe
   }
 }
 
+const mapResponseItemUpdate = (
+  item: Record<string, unknown>,
+  fallbackId: string
+): AcpSessionUpdate | undefined => {
+  const type = stringValue(item.type)
+  const id = truncateUtf8(stringValue(item.id) ?? fallbackId, 500)
+  if (type === "message") {
+    const text = itemText(item.content)
+    if (text === "") return undefined
+    if (item.role === "user") {
+      return {
+        sessionUpdate: "user_message_chunk",
+        messageId: id,
+        content: { type: "text", text: truncateUtf8(text, 1024 * 1024) }
+      }
+    }
+    if (item.role === "assistant") {
+      return {
+        sessionUpdate: "agent_message_chunk",
+        messageId: id,
+        content: { type: "text", text: truncateUtf8(text, 1024 * 1024) }
+      }
+    }
+    return undefined
+  }
+  return mapResponseSupplementUpdate(item, fallbackId)
+}
+
+const mapResponseSupplementUpdate = (
+  item: Record<string, unknown>,
+  fallbackId: string
+): AcpSessionUpdate | undefined => {
+  const type = stringValue(item.type)
+  const id = truncateUtf8(stringValue(item.id) ?? fallbackId, 500)
+  if (type === "agent_message") {
+    const text = itemText(item.content)
+    return text === "" ? undefined : {
+      sessionUpdate: "agent_message_chunk",
+      messageId: id,
+      content: { type: "text", text: truncateUtf8(text, 1024 * 1024) }
+    }
+  }
+  if (type === "reasoning") {
+    const text = itemText(item.summary)
+    return text === "" ? undefined : {
+      sessionUpdate: "agent_thought_chunk",
+      messageId: id,
+      content: { type: "text", text: truncateUtf8(text, 1024 * 1024) }
+    }
+  }
+  if (type === "custom_tool_call" || type === "function_call") {
+    const label = stringValue(item.name) ?? "Codex tool"
+    return toolUpdate(id, label, responseToolKind(label), item.status ?? "completed")
+  }
+  return undefined
+}
+
+const responseToolKind = (label: string): "read" | "edit" | "search" | "execute" | "fetch" | "other" => {
+  const normalized = label.toLowerCase()
+  if (/apply|edit|patch|write/.test(normalized)) return "edit"
+  if (/read|view/.test(normalized)) return "read"
+  if (/search|find|grep|rg/.test(normalized)) return "search"
+  if (/fetch|web|open_url|browser/.test(normalized)) return "fetch"
+  if (/exec|command|shell|terminal/.test(normalized)) return "execute"
+  return "other"
+}
+
 const toolUpdate = (
   id: string,
   title: string,
-  kind: "read" | "edit" | "execute" | "other",
+  kind: "read" | "edit" | "search" | "execute" | "fetch" | "other",
   providerStatus: unknown,
   exitCode?: unknown
 ): AcpSessionUpdate => {
@@ -1010,8 +1309,15 @@ const decodeCursor = (value: string | null): CodexCursor => {
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown
     const decoded = Schema.decodeUnknownOption(CursorSchema)(parsed)
-    if (Option.isNone(decoded) || !validCursor(decoded.value)) throw new Error("invalid cursor fields")
-    return decoded.value
+    if (Option.isSome(decoded) && validCursor(decoded.value)) return decoded.value
+    const legacy = Schema.decodeUnknownOption(LegacyCursorSchema)(parsed)
+    if (Option.isSome(legacy)) {
+      const migrated = { ...legacy.value, v: CursorVersion }
+      if (validCursor(migrated)) {
+        return { v: CursorVersion, watermarkModifiedMs: 0, watermarkSessionId: "", commitSequence: 0 }
+      }
+    }
+    throw new Error("invalid cursor fields")
   } catch (cause) {
     throw archiveError("cursor", "The Codex Adapter cursor is invalid", cause)
   }

@@ -66,8 +66,8 @@ try {
       eventsPerObservation: 500,
       canonicalBytesPerObservation: 3 * 1024 * 1024,
       rawSegmentsPerObservation: 16,
-      rawSegmentBytes: 4 * 1024 * 1024,
-      rawBytesPerObservation: 4 * 1024 * 1024,
+      rawSegmentBytes: 16 * 1024 * 1024,
+      rawBytesPerObservation: 16 * 1024 * 1024,
       pagesPerCycle: 20
     },
     rawProgress: [],
