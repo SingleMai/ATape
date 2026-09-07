@@ -33,7 +33,7 @@ The Codex Adapter uses this title precedence:
 
 Titles are whitespace-normalized and bounded before entering Canonical. The Adapter reads at most the most recent 16 MiB of the title index, ignores an incomplete tail and malformed records, and treats a missing index as normal compatibility fallback. The provider title is snapshotted in the in-progress Cursor so every page at one Session revision carries identical metadata.
 
-A valid title record's `updated_at` participates in Session modification ordering and revision derivation. Cursor v3 resets v1 and v2 watermarks once, replaying matching Sessions so existing captures receive provider titles. Raw source and Raw progress remain unchanged because the title index is provider metadata, not conversation content.
+A valid title record's `updated_at` participates in Session modification ordering and revision derivation. Cursor v3 resets v1 and v2 watermarks once and advances the Canonical projection revision, replaying matching Sessions with a revision newer than the root-prompt projection even when the indexed title predates the latest rollout write. Raw source and Raw progress remain unchanged because the title index is provider metadata, not conversation content.
 
 Canonical ingestion updates the Session when its newer revision changes the title. It also appends Search projection invalidations for that Session's unchanged Events; Events already inserted or updated by the same batch keep their existing projection change. PostgreSQL permits multiple projection changes for the same Event ingest sequence because Session metadata can legitimately reproject one unchanged Event more than once.
 

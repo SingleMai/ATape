@@ -424,7 +424,7 @@ describe("Codex Adapter", () => {
     const first = await collect(runtime)
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
-    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 2)
+    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 4)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
     expect(requiredObservation(second).session.sourceSessionId).toBe("second-session")
@@ -455,7 +455,7 @@ describe("Codex Adapter", () => {
         content: [{ type: "input_text", text: "This first prompt is only the fallback" }]
       })
     ])
-    const rolloutModified = new Date("2026-09-04T23:59:00.000Z")
+    const rolloutModified = new Date("2026-09-05T00:03:00.000Z")
     await utimes(file, rolloutModified, rolloutModified)
     await writeFile(join(root.codexHome, "session_index.jsonl"), [
       JSON.stringify(sessionTitle("titled-session", "Old generated title", "2026-09-05T00:01:00.000Z")),
@@ -468,7 +468,8 @@ describe("Codex Adapter", () => {
     const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
 
     expect(observation.session.title).toBe("Checkout accessibility review")
-    expect(observation.session.updatedAt).toBe("2026-09-05T00:02:00.000Z")
+    expect(observation.session.updatedAt).toBe("2026-09-05T00:03:00.000Z")
+    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 4)
   })
 
   it("collects a title-only rename without new rollout or Raw bytes", async () => {
