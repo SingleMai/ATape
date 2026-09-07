@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-04
+- Chunk and HTTP body sizing amended by [ADR-0022](0022-canonical-priority-and-larger-raw-chunks.md)
 
 ## Context
 

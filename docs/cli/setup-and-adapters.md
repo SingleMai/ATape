@@ -127,7 +127,7 @@ Each page follows this commit order:
 
 1. Validate the Adapter output and apply client-side secret redaction.
 2. Commit each Canonical Session observation and receive its stable server Session ID.
-3. Redact each complete Adapter Raw segment, divide it into bounded 256 KiB transport chunks, and append them through the separate Raw endpoint.
+3. Redact each complete Adapter Raw segment, divide it into bounded 3 MiB transport chunks, and append them through the separate Raw endpoint.
 4. Persist the source/server offset after every complete Adapter segment while leaving the Adapter cursor unchanged.
 5. Atomically advance the opaque Adapter cursor only after the complete page succeeds.
 

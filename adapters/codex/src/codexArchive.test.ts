@@ -28,7 +28,7 @@ describe("Codex Adapter", () => {
 
     const first = await collect(runtime)
 
-    expect(first.hasMore).toBe(false)
+    expect(first.hasMore).toBe(true)
     expect(first.observations).toHaveLength(1)
     const observation = first.observations[0]
     expect(observation?.session).toMatchObject({
@@ -64,9 +64,12 @@ describe("Codex Adapter", () => {
     expect(observation?.events.some((event) => event.sourceEventId === "copied-parent")).toBe(false)
     expect(observation?.events.find((event) => event.sourceEventId === "thought-1")?.update)
       .toMatchObject({ sessionUpdate: "agent_thought_chunk", content: { text: "Keep one key" } })
-    expect(observation?.rawSegments).toHaveLength(2)
-    expect(observation?.rawSegments.every((segment) => segment.mediaType === "application/x-ndjson")).toBe(true)
-    expect(observation?.rawSegments.map((segment) => segment.content).join(""))
+    expect(observation?.rawSegments).toEqual([])
+    const rawObservation = requiredObservation(await collect(runtime, first.nextCursor))
+    expect(rawObservation.events).toEqual([])
+    expect(rawObservation.rawSegments).toHaveLength(2)
+    expect(rawObservation.rawSegments.every((segment) => segment.mediaType === "application/x-ndjson")).toBe(true)
+    expect(rawObservation.rawSegments.map((segment) => segment.content).join(""))
       .toContain("provider-only-private-field")
     expect(JSON.stringify(observation?.events)).not.toContain("provider-only-private-field")
   })
@@ -125,7 +128,9 @@ describe("Codex Adapter", () => {
       legacyMessage("2026-08-16T00:00:11.000Z", "agent_message", "Done")
     ])
 
-    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+    const runtime = await openAdapter(root.project, "directory")
+    const page = await collect(runtime)
+    const observation = requiredObservation(page)
     const projected = observation.events.map((event) => event.update)
 
     expect(observation.session.title).toBe("Inspect the legacy event stream")
@@ -213,7 +218,9 @@ describe("Codex Adapter", () => {
       })
     ])
 
-    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+    const runtime = await openAdapter(root.project, "directory")
+    const page = await collect(runtime)
+    const observation = requiredObservation(page)
 
     expect(observation.session.title).toBe("Inspect the legacy archive")
     expect(observation.events.map((event) => event.sourceEventId)).toEqual([
@@ -229,7 +236,8 @@ describe("Codex Adapter", () => {
     expect(observation.events.find((event) => event.sourceEventId === "legacy-function")?.update)
       .toMatchObject({ sessionUpdate: "tool_call", title: "apply_patch", kind: "edit", status: "completed" })
     expect(JSON.stringify(observation.events)).not.toContain("provider-only")
-    expect(observation.rawSegments.map((segment) => segment.content).join(""))
+    const rawObservation = requiredObservation(await collect(runtime, page.nextCursor))
+    expect(rawObservation.rawSegments.map((segment) => segment.content).join(""))
       .toContain("provider-only-tool-output")
   })
 
@@ -424,11 +432,19 @@ describe("Codex Adapter", () => {
     const first = await collect(runtime)
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
+    expect(firstObservation.rawSegments).toEqual([])
     expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 6)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
-    expect(requiredObservation(second).session.sourceSessionId).toBe("second-session")
-    expect(second.hasMore).toBe(false)
+    const secondObservation = requiredObservation(second)
+    expect(secondObservation.session.sourceSessionId).toBe("second-session")
+    expect(secondObservation.rawSegments).toEqual([])
+    expect(second.hasMore).toBe(true)
+
+    const rawAfterCanonical = requiredObservation(await collect(runtime, second.nextCursor))
+    expect(rawAfterCanonical.session.sourceSessionId).toBe("first-session")
+    expect(rawAfterCanonical.events).toEqual([])
+    expect(rawAfterCanonical.rawSegments).not.toEqual([])
 
     for (const version of [1, 2, 3]) {
       const replay = await collect(runtime, Buffer.from(JSON.stringify({
@@ -440,8 +456,26 @@ describe("Codex Adapter", () => {
       expect(requiredObservation(replay).session.sourceSessionId).toBe("first-session")
       expect(replay.hasMore).toBe(true)
       if (replay.nextCursor === null) throw new Error("Expected migrated Cursor")
-      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 4 })
+      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 5 })
     }
+
+    const stalled = await collect(runtime, null, [], {
+      ...AdapterCollectionLimits,
+      eventsPerObservation: 0
+    })
+    if (stalled.nextCursor === null) throw new Error("Expected active Cursor")
+    const old = JSON.parse(Buffer.from(stalled.nextCursor, "base64url").toString("utf8")) as {
+      readonly active: { readonly phase?: string }
+    }
+    const { phase: _phase, ...oldActive } = old.active
+    const migrated = await collect(runtime, Buffer.from(JSON.stringify({
+      ...old,
+      v: 4,
+      active: oldActive
+    })).toString("base64url"))
+    expect(requiredObservation(migrated).events).not.toEqual([])
+    if (migrated.nextCursor === null) throw new Error("Expected migrated Cursor")
+    expect(JSON.parse(Buffer.from(migrated.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 5 })
   })
 
   it("prefers the latest valid Codex title index record", async () => {
@@ -503,7 +537,10 @@ describe("Codex Adapter", () => {
     expect(observation.session.title).toBe("Renamed in Codex")
     expect(observation.session.revision).toBeGreaterThan(initial.session.revision)
     expect(observation.rawSegments).toEqual([])
-    expect((await collect(runtime, renamed.nextCursor, progress)).observations).toEqual([])
+    const raw = await collect(runtime, renamed.nextCursor, progress)
+    const rawObservation = requiredObservation(raw)
+    const completedProgress = mergeProgress(progress, rawObservation.session.sourceSessionId, rawObservation.rawSegments)
+    expect((await collect(runtime, raw.nextCursor, completedProgress)).observations).toEqual([])
   })
 
   it("resumes Raw bytes, replays Canonical events idempotently, and never mirrors provider deletion", async () => {
@@ -511,9 +548,12 @@ describe("Codex Adapter", () => {
     const runtime = await openAdapter(fixture.project, "directory")
     const first = await collect(runtime)
     const firstObservation = requiredObservation(first)
-    let progress = rawProgress(firstObservation.session.sourceSessionId, firstObservation.rawSegments)
+    expect(firstObservation.rawSegments).toEqual([])
+    const firstRaw = await collect(runtime, first.nextCursor)
+    const firstRawObservation = requiredObservation(firstRaw)
+    let progress = rawProgress(firstRawObservation.session.sourceSessionId, firstRawObservation.rawSegments)
 
-    const unchanged = await collect(runtime, first.nextCursor, progress)
+    const unchanged = await collect(runtime, firstRaw.nextCursor, progress)
     expect(unchanged.observations).toEqual([])
 
     const appended = itemCompleted("2026-09-05T00:01:00.000Z", "session-root", {
@@ -525,24 +565,27 @@ describe("Codex Adapter", () => {
     const changedAt = new Date("2026-09-05T00:02:00.000Z")
     await utimes(fixture.rootFile, changedAt, changedAt)
 
-    const changed = await collect(runtime, first.nextCursor, progress)
+    const changed = await collect(runtime, unchanged.nextCursor, progress)
     const changedObservation = requiredObservation(changed)
     expect(changedObservation.events.map((event) => event.sourceEventId)).toContain("agent-2")
     expect(changedObservation.events.map((event) => event.sourceEventId)).toContain("user-1")
-    expect(changedObservation.rawSegments).toHaveLength(1)
-    expect(changedObservation.rawSegments[0]).toMatchObject({
-      sourceOffset: progress.find((item) => item.sourceObjectId === changedObservation.rawSegments[0]?.sourceObjectId)
+    expect(changedObservation.rawSegments).toEqual([])
+    const changedRaw = await collect(runtime, changed.nextCursor, progress)
+    const changedRawObservation = requiredObservation(changedRaw)
+    expect(changedRawObservation.rawSegments).toHaveLength(1)
+    expect(changedRawObservation.rawSegments[0]).toMatchObject({
+      sourceOffset: progress.find((item) => item.sourceObjectId === changedRawObservation.rawSegments[0]?.sourceObjectId)
         ?.sourceOffset,
       final: false
     })
-    expect(changedObservation.rawSegments[0]?.content).toBe(`${JSON.stringify(appended)}\n`)
-    progress = mergeProgress(progress, changedObservation.session.sourceSessionId, changedObservation.rawSegments)
+    expect(changedRawObservation.rawSegments[0]?.content).toBe(`${JSON.stringify(appended)}\n`)
+    progress = mergeProgress(progress, changedRawObservation.session.sourceSessionId, changedRawObservation.rawSegments)
 
     await rename(fixture.rootFile, join(fixture.archivedDirectory, "root.jsonl"))
     await rename(fixture.childFile, join(fixture.archivedDirectory, "child.jsonl"))
-    const archived = await collect(runtime, changed.nextCursor, progress)
+    const archived = await collect(runtime, changedRaw.nextCursor, progress)
     const archivedObservation = requiredObservation(archived)
-    expect(archived.nextCursor).not.toBe(changed.nextCursor)
+    expect(archived.nextCursor).not.toBe(changedRaw.nextCursor)
     expect(archivedObservation.session.status).toBe("ended")
     expect(archivedObservation.rawSegments).toHaveLength(2)
     expect(archivedObservation.rawSegments.every((segment) => segment.content === "" && segment.final)).toBe(true)
@@ -617,12 +660,15 @@ describe("Codex Adapter", () => {
     const first = await collect(runtime)
     const firstObservation = requiredObservation(first)
     expect(firstObservation.events.map((event) => event.sourceEventId)).toEqual(["complete-answer"])
-    expect(firstObservation.rawSegments.map((segment) => segment.content).join(""))
+    expect(firstObservation.rawSegments).toEqual([])
+    const raw = await collect(runtime, first.nextCursor)
+    const rawObservation = requiredObservation(raw)
+    expect(rawObservation.rawSegments.map((segment) => segment.content).join(""))
       .not.toContain("partial-answer")
     const unchanged = await collect(
       runtime,
-      first.nextCursor,
-      rawProgress(firstObservation.session.sourceSessionId, firstObservation.rawSegments)
+      raw.nextCursor,
+      rawProgress(rawObservation.session.sourceSessionId, rawObservation.rawSegments)
     )
     expect(unchanged.observations).toEqual([])
   })
@@ -647,15 +693,18 @@ describe("Codex Adapter", () => {
       legacyMessage("2026-08-16T00:00:03.000Z", "agent_message", "Canonical remains small")
     ])
 
-    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+    const runtime = await openAdapter(root.project, "directory")
+    const page = await collect(runtime)
+    const observation = requiredObservation(page)
 
     expect(observation.events.map((event) => event.update.sessionUpdate)).toEqual([
       "user_message_chunk",
       "agent_message_chunk"
     ])
-    expect(observation.rawSegments).toHaveLength(1)
-    expect(Buffer.byteLength(observation.rawSegments[0]?.content ?? "")).toBeGreaterThan(4 * 1024 * 1024)
-    expect(observation.rawSegments[0]?.content).toContain('"type":"compacted"')
+    const rawObservation = requiredObservation(await collect(runtime, page.nextCursor))
+    expect(rawObservation.rawSegments).toHaveLength(1)
+    expect(Buffer.byteLength(rawObservation.rawSegments[0]?.content ?? "")).toBeGreaterThan(4 * 1024 * 1024)
+    expect(rawObservation.rawSegments[0]?.content).toContain('"type":"compacted"')
     expect(Buffer.byteLength(JSON.stringify(observation.events))).toBeLessThan(10_000)
   })
 
@@ -697,16 +746,17 @@ describe("Codex Adapter", () => {
     const eventIds: Array<string> = []
     do {
       const page = await collect(runtime, cursor, progress, limits)
-      const observation = requiredObservation(page)
-      expect(Buffer.byteLength(JSON.stringify({
-        session: observation.session,
-        threads: observation.threads,
-        events: observation.events
-      }))).toBeLessThanOrEqual(limits.canonicalBytesPerObservation)
-      expect(observation.rawSegments.reduce((bytes, segment) =>
-        bytes + Buffer.byteLength(segment.content), 0)).toBeLessThanOrEqual(limits.rawBytesPerObservation)
-      eventIds.push(...observation.events.map((event) => event.sourceEventId))
-      progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments)
+      for (const observation of page.observations) {
+        expect(Buffer.byteLength(JSON.stringify({
+          session: observation.session,
+          threads: observation.threads,
+          events: observation.events
+        }))).toBeLessThanOrEqual(limits.canonicalBytesPerObservation)
+        expect(observation.rawSegments.reduce((bytes, segment) =>
+          bytes + Buffer.byteLength(segment.content), 0)).toBeLessThanOrEqual(limits.rawBytesPerObservation)
+        eventIds.push(...observation.events.map((event) => event.sourceEventId))
+        progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments)
+      }
       cursor = page.nextCursor
       pages++
       if (!page.hasMore) break

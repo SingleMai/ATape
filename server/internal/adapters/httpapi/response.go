@@ -16,7 +16,7 @@ const (
 	authBodyLimit         int64 = 16 << 10
 	controlPlaneBodyLimit int64 = 64 << 10
 	canonicalBodyLimit    int64 = 4 << 20
-	rawBodyLimit          int64 = 512 << 10
+	rawBodyLimit          int64 = 5 << 20
 )
 
 func writeJSON(response http.ResponseWriter, request *http.Request, status int, value any) {
