@@ -36,6 +36,7 @@ ATape uses the idempotent Canonical batch Interface.
 - Reusing `batchId` with identical content is a replay; different content is an idempotency conflict.
 - Higher entity revisions replace the current snapshot; lower revisions are stale; equal revisions with different content conflict.
 - Higher projection revisions replace the active projection while prior versions remain outside the ordinary read result.
+- Session title, summary, and insight are normalized only from the Session record. Event pages never synthesize Session memory because different pages at one Session revision must remain idempotent.
 - Thread display order uses `(sourceOrder, eventIndex)`. Timestamps and server `ingestSeq` do not define conversation order.
 - Each Event carries Adapter/schema provenance, fidelity, order fidelity, and an opaque Raw reference. Raw payloads are never embedded in this Interface.
 - The alpha Interface accepts only the shared event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`, `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol carries an explicit extension schema and version.

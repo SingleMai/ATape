@@ -424,13 +424,13 @@ describe("Codex Adapter", () => {
     const first = await collect(runtime)
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
-    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 4)
+    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 6)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
     expect(requiredObservation(second).session.sourceSessionId).toBe("second-session")
     expect(second.hasMore).toBe(false)
 
-    for (const version of [1, 2]) {
+    for (const version of [1, 2, 3]) {
       const replay = await collect(runtime, Buffer.from(JSON.stringify({
         v: version,
         watermarkModifiedMs: secondModified.getTime() + 1,
@@ -440,7 +440,7 @@ describe("Codex Adapter", () => {
       expect(requiredObservation(replay).session.sourceSessionId).toBe("first-session")
       expect(replay.hasMore).toBe(true)
       if (replay.nextCursor === null) throw new Error("Expected migrated Cursor")
-      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 3 })
+      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 4 })
     }
   })
 
@@ -469,7 +469,7 @@ describe("Codex Adapter", () => {
 
     expect(observation.session.title).toBe("Checkout accessibility review")
     expect(observation.session.updatedAt).toBe("2026-09-05T00:03:00.000Z")
-    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 4)
+    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 6)
   })
 
   it("collects a title-only rename without new rollout or Raw bytes", async () => {
