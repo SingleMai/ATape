@@ -68,12 +68,12 @@ Multiple files claiming the same Session identity are rejected rather than merge
 The current v1 Host's source-mutation/concurrent-writer and lost-checkpoint
 recovery limitations still apply. Use a single Collector and preserve its state.
 No new SQLite journal or provider-specific page is installed. Bounded shared tool
-details ship under ADR-0027; full ACP content, generation tokens and atomic
+details ship under ADR-0030; full ACP content, generation tokens and atomic
 publication remain deferred.
 
 ## Upgrade order
 
-Deploy the updated server (including migration 000009) before the updated CLI and
+Deploy the updated server (including migration 000010) before the updated CLI and
 Adapter. The CLI now emits `atape.acp-centered.v2`; the server still accepts v1
 without tool details. Preserve Collector state. Claude reprojects old checkpoints
 once with projection revision 2, retaining Event IDs and source revisions; it

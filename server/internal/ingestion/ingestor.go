@@ -290,7 +290,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 		events = append(events, record)
 	}
 
-	title, summary, insight := memoryCopy(batch.Session, events)
+	title, summary, insight := sessionMemory(batch.Session)
 	sessionSourceKey := sourceKey(scope, "session")
 	session := canonical.SessionRecord{
 		ID:                 sessionID,
@@ -424,33 +424,14 @@ func threadCycle(threads []Thread) string {
 	return ""
 }
 
-func memoryCopy(session Session, events []canonical.EventRecord) (string, string, string) {
+func sessionMemory(session Session) (string, string, string) {
 	title := strings.TrimSpace(session.Title)
 	summary := strings.TrimSpace(session.Summary)
 	insight := strings.TrimSpace(session.Insight)
-	if len(events) > 0 {
-		if title == "" {
-			title = truncate(events[0].Text, 80)
-		}
-		if summary == "" {
-			summary = truncate(events[0].Text, 180)
-		}
-		if insight == "" {
-			insight = truncate(events[len(events)-1].Text, 180)
-		}
-	}
 	if title == "" {
 		title = "Untitled conversation"
 	}
 	return title, summary, insight
-}
-
-func truncate(value string, limit int) string {
-	runes := []rune(strings.TrimSpace(value))
-	if len(runes) <= limit {
-		return string(runes)
-	}
-	return string(runes[:limit-1]) + "…"
 }
 
 func required(field string, value string, maxBytes int) error {

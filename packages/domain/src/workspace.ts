@@ -33,6 +33,10 @@ export type WorkspaceProjectTarget = {
   readonly projectId: string
 }
 
+export type WorkspaceTeamTarget = {
+  readonly teamId: string
+}
+
 // The Workspace landing route uses the most recently captured Project rather
 // than coupling first entry to demo data or server ordering.
 export const selectDefaultWorkspaceProject = (
@@ -51,4 +55,13 @@ export const selectDefaultWorkspaceProject = (
     }
   }
   return selected === undefined ? undefined : { teamId: selected.teamId, projectId: selected.projectId }
+}
+
+export const selectDefaultWorkspaceTeam = (
+  workspace: Workspace
+): WorkspaceTeamTarget | undefined => {
+  const teamId = workspace.teams
+    .map((team) => team.id)
+    .sort((left, right) => left.localeCompare(right))[0]
+  return teamId === undefined ? undefined : { teamId }
 }

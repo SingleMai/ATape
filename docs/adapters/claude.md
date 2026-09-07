@@ -3,7 +3,7 @@
 Install and use [@atape/adapter-claude](../../adapters/claude/README.md). The package
 is production-path code loaded by the existing Collector; it is not a scratch
 reader or an alternate uploader. Broader prototype expansion is paused under
-[ADR-0026](../architecture/adr/0026-claude-first-vertical-slice.md).
+[ADR-0029](../architecture/adr/0029-claude-first-vertical-slice.md).
 
 On 2026-09-07 the package was built, installed and enabled through the real CLI.
 It read the original 9,193-byte controlled native Claude 2.1.263 Session
@@ -43,7 +43,7 @@ collection produces zero observations. Existing Event IDs remain stable. This
 follow-on used synthetic native fixtures, not bulk uploads of local private history.
 
 The next production slice implements bounded shared tool input/output under
-[ADR-0027](../architecture/adr/0027-bounded-tool-details-implementation.md). The Host
+[ADR-0030](../architecture/adr/0030-bounded-tool-details-implementation.md). The Host
 validates and redacts ACP values, the v2 Canonical profile persists their encoded
 JSON in current/version rows, and the existing conversation view shows collapsed
 Input/Output details. Tool summaries remain the Search projection; full tool
@@ -62,3 +62,15 @@ Compaction, ambiguous branches and large histories remain explicitly rejected
 until their production support lands. Discovery capacity and unsupported-header
 behavior are documented in the package README; this is not unrestricted Claude
 archive compatibility.
+
+## Delivery checkpoint
+
+This increment contains the production Claude Adapter, Project discovery, shared
+tool details, migration 000010 and the common reader integration. It is integrated
+with main's narrative reading/index controls and larger Raw transport chunks; the
+Claude source snapshot limit remains 4 MiB. Local research models are not shipped.
+
+Land this increment through a pull request and its checks before starting the next
+one. Next: isolate individual source failures, then add Claude to release artifact
+packaging/verification, then rehearse a packaged upgrade. Those changes are not
+included here. Package publication and deployment require separate execution.

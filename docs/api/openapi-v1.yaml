@@ -198,6 +198,7 @@ paths:
         - {name: state, in: query, required: true, schema: {type: string, maxLength: 512}}
         - {name: code, in: query, required: false, schema: {type: string, maxLength: 4096}}
         - {name: error, in: query, required: false, schema: {type: string, maxLength: 100}}
+        - {name: iss, in: query, required: true, schema: {type: string, format: uri, maxLength: 2048}}
       responses:
         "303": {$ref: "#/components/responses/FederatedRedirect"}
         "4XX": {$ref: "#/components/responses/Problem"}
@@ -869,7 +870,7 @@ paths:
       x-atape-authorization-actions: [raw.ingest]
       tags: [Ingestion]
       summary: Idempotently append one bounded Raw v1 chunk
-      x-atape-route: {class: cli_only, requestBodyPolicy: json-raw, requestBodyLimit: 524288, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-raw, requestBodyLimit: 5242880, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{cliCredential: []}]
       requestBody: {$ref: "#/components/requestBodies/RawChunk"}
       responses:

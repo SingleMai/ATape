@@ -1,4 +1,4 @@
-# ADR-0022: Atomic Canonical Publication
+# ADR-0025: Atomic Canonical Publication
 
 - Status: Accepted design; Implementation pending
 - Date: 2026-09-07
@@ -23,4 +23,4 @@ Materializing target membership references before activation costs O(target memb
 
 This amends ADR-0003 and ADR-0009 only for the explicit new capability, and the Search publication behavior of ADR-0005. ADR-0007 Raw ownership/retention and ADR-0011 source presence semantics remain intact. Implementation must preserve ADR-0016 authorization and ADR-0017 transport rules.
 
-The [selected Interface and storage design](../../../.scratch/claude-code-adapter/publication-interface-design.md), [recovery contract](../../../.scratch/claude-code-adapter/publication-recovery-contract.md), and [executable behavioral model](../../../.scratch/claude-code-adapter/publication-contract-model.test.mjs) record the handoff. Model tests do not substitute for production PostgreSQL concurrency, crash recovery, bounded-memory, source integration or Codex regression tests.
+The selected Interface and storage design (retained as local research evidence), recovery contract (retained as local research evidence), and executable behavioral model (retained as local research evidence) record the handoff. Model tests do not substitute for production PostgreSQL concurrency, crash recovery, bounded-memory, source integration or Codex regression tests.

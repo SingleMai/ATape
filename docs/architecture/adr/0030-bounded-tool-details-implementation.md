@@ -1,9 +1,9 @@
-# ADR-0027: Bounded shared tool details in the production pipeline
+# ADR-0030: Bounded shared tool details in the production pipeline
 
 - Status: Accepted implementation scope
 - Date: 2026-09-07
 
-Implement the next vertical slice of ADR-0025, without reopening its prototype
+Implement the next vertical slice of ADR-0028, without reopening its prototype
 program. ACP tool updates admit bounded JSON `rawInput` and `rawOutput`. The Host
 validates and redacts them before encoding. Calls and results stay separate Events;
 their toolCallId is scoped by the containing Session and Thread, never global.
@@ -32,5 +32,5 @@ fetching content. No provider-specific endpoint or page is introduced.
 Deploy the server/migration before the updated CLI. Unchanged legacy tool Events
 are reprojected by Claude with a higher projection revision, preserving source
 revision, Session metadata and IDs. Snapshot Raw references and existing v1
-publication/recovery restrictions remain as documented in ADR-0026; this does not
+publication/recovery restrictions remain as documented in ADR-0029; this does not
 claim the remaining generation-token, full ACP content or atomic-publication work.

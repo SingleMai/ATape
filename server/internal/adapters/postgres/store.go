@@ -105,6 +105,8 @@ func (s *Store) ApplyBatch(
 			return canonical.ApplyResult{}, persist("insert session", err)
 		}
 	}
+	sessionTitleChanged := sessionExists && batch.Session.Revision > existingSession.Revision &&
+		batch.Session.Title != existingSession.Title
 	result.SessionCreated = !sessionExists
 	if sessionExists && batch.Session.Revision > existingSession.Revision {
 		if err := queries.UpdateSession(ctx, updateSessionParams(batch.Session)); err != nil {
@@ -182,6 +184,7 @@ func (s *Store) ApplyBatch(
 		}
 	}
 
+	projectedEventIDs := make([]string, 0, len(mutations))
 	for _, mutation := range mutations {
 		if !mutation.apply {
 			continue
@@ -208,6 +211,16 @@ func (s *Store) ApplyBatch(
 			ObservedAt: mutation.record.ObservedAt,
 		}); err != nil {
 			return canonical.ApplyResult{}, persist("append projection change", err)
+		}
+		projectedEventIDs = append(projectedEventIDs, mutation.record.ID)
+	}
+	if sessionTitleChanged {
+		if err := queries.InsertSessionProjectionChanges(ctx, db.InsertSessionProjectionChangesParams{
+			SessionID:        batch.Session.ID,
+			ObservedAt:       batch.ObservedAt,
+			ExcludedEventIds: projectedEventIDs,
+		}); err != nil {
+			return canonical.ApplyResult{}, persist("append Session title projection changes", err)
 		}
 	}
 

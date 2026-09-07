@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	authdb "github.com/SingleMai/ATape/server/internal/authentication/internal/db"
 	"github.com/jackc/pgx/v5"
@@ -157,6 +158,10 @@ func (m *Module) CompleteFederatedLogin(
 		!validateRequestID(input.RequestID) {
 		return WebSessionGrant{}, domainError(CodeLoginStateMismatch)
 	}
+	if len(input.AuthorizationServerIssuer) > 2048 || !utf8.ValidString(input.AuthorizationServerIssuer) ||
+		strings.ContainsAny(input.AuthorizationServerIssuer, "\x00\r\n") {
+		return WebSessionGrant{}, domainError(CodeProviderInvalidResponse)
+	}
 	stateDigest := highEntropyDigest("federated-state", input.State)
 	claimed, err := withTransaction(ctx, m.pool, func(tx pgx.Tx) (claimedFederatedLogin, error) {
 		queries := authdb.New(tx)
@@ -236,9 +241,9 @@ func (m *Module) CompleteFederatedLogin(
 	}
 
 	identity, providerErr := claimed.registration.Adapter.Complete(ctx, ProviderCompleteRequest{
-		CallbackURI: claimed.callbackURI, AuthorizationCode: input.AuthorizationCode,
-		AuthorizationError: input.AuthorizationError, PrivateState: claimed.privateState,
-		PrivateStateSchema: claimed.privateStateSchema,
+		CallbackURI: claimed.callbackURI, AuthorizationServerIssuer: input.AuthorizationServerIssuer,
+		AuthorizationCode: input.AuthorizationCode, AuthorizationError: input.AuthorizationError,
+		PrivateState: claimed.privateState, PrivateStateSchema: claimed.privateStateSchema,
 	})
 	clear(claimed.privateState)
 	if providerErr != nil {

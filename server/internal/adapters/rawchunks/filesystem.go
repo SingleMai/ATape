@@ -81,7 +81,7 @@ func (s *Filesystem) Put(ctx context.Context, key string, content []byte) error 
 		return err
 	}
 	if len(content) > rawarchive.MaxChunkBytes {
-		return &rawarchive.ValidationError{Field: "content", Reason: "chunk exceeds 256 KiB"}
+		return &rawarchive.ValidationError{Field: "content", Reason: "chunk exceeds 3 MiB"}
 	}
 	if digest(content) != filepath.Base(path) {
 		return &rawarchive.ConflictError{Identity: key, Reason: "storage key does not match content"}

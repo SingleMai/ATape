@@ -663,6 +663,25 @@ func (q *Queries) InsertSession(ctx context.Context, arg InsertSessionParams) er
 	return err
 }
 
+const insertSessionProjectionChanges = `-- name: InsertSessionProjectionChanges :exec
+INSERT INTO canonical_projection_changes (event_id, event_ingest_seq, observed_at)
+SELECT events.id, events.ingest_seq, $1
+FROM canonical_events events
+WHERE events.session_id = $2
+  AND NOT (events.id = ANY($3::text[]))
+`
+
+type InsertSessionProjectionChangesParams struct {
+	ObservedAt       time.Time
+	SessionID        string
+	ExcludedEventIds []string
+}
+
+func (q *Queries) InsertSessionProjectionChanges(ctx context.Context, arg InsertSessionProjectionChangesParams) error {
+	_, err := q.db.Exec(ctx, insertSessionProjectionChanges, arg.ObservedAt, arg.SessionID, arg.ExcludedEventIds)
+	return err
+}
+
 const insertThread = `-- name: InsertThread :exec
 INSERT INTO canonical_threads (
     session_id, id, source_key, revision, digest, label, summary,

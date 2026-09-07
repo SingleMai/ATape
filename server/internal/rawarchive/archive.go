@@ -21,7 +21,7 @@ import (
 
 const (
 	ProtocolVersion = "atape.raw.v1"
-	MaxChunkBytes   = 256 << 10
+	MaxChunkBytes   = 3 << 20
 	DefaultPageSize = 4
 	MaxPageSize     = 8
 )
@@ -332,14 +332,14 @@ func validateUpload(principal authentication.Principal, upload UploadChunk) (Chu
 		return ChunkRecord{}, nil, &ValidationError{Field: "clientRedacted", Reason: "must acknowledge client-side secret redaction"}
 	}
 	if len(upload.ContentBase64) > base64.StdEncoding.EncodedLen(MaxChunkBytes) {
-		return ChunkRecord{}, nil, &ValidationError{Field: "contentBase64", Reason: "decoded chunk exceeds 256 KiB"}
+		return ChunkRecord{}, nil, &ValidationError{Field: "contentBase64", Reason: "decoded chunk exceeds 3 MiB"}
 	}
 	content, err := base64.StdEncoding.Strict().DecodeString(upload.ContentBase64)
 	if err != nil {
 		return ChunkRecord{}, nil, &ValidationError{Field: "contentBase64", Reason: "must be canonical Base64"}
 	}
 	if len(content) > MaxChunkBytes {
-		return ChunkRecord{}, nil, &ValidationError{Field: "contentBase64", Reason: "decoded chunk exceeds 256 KiB"}
+		return ChunkRecord{}, nil, &ValidationError{Field: "contentBase64", Reason: "decoded chunk exceeds 3 MiB"}
 	}
 	if len(content) == 0 && !upload.Final {
 		return ChunkRecord{}, nil, &ValidationError{Field: "contentBase64", Reason: "must not be empty unless finalizing a generation"}

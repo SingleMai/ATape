@@ -174,7 +174,8 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	}
 
 	callback := httptest.NewRequest(http.MethodGet,
-		"/api/v1/auth/github/callback?state="+url.QueryEscape(authorizationURI.Query().Get("state"))+"&code=person-a", nil)
+		"/api/v1/auth/github/callback?state="+url.QueryEscape(authorizationURI.Query().Get("state"))+
+			"&code=person-a&iss="+url.QueryEscape("https://identity.example/oauth"), nil)
 	callback.AddCookie(loginCookie)
 	callbackResponse := httptest.NewRecorder()
 	handler.ServeHTTP(callbackResponse, callback)
@@ -644,6 +645,9 @@ func (httpIdentityAdapter) Complete(
 	_ context.Context,
 	request authentication.ProviderCompleteRequest,
 ) (authentication.VerifiedExternalIdentity, error) {
+	if request.AuthorizationServerIssuer != "https://identity.example/oauth" {
+		return authentication.VerifiedExternalIdentity{}, &authentication.ProviderFailure{Code: authentication.ProviderProtocolViolation}
+	}
 	if request.AuthorizationError != "" {
 		return authentication.VerifiedExternalIdentity{}, &authentication.ProviderFailure{Code: authentication.ProviderAccessDenied}
 	}

@@ -1,6 +1,7 @@
 package rawarchive_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -133,6 +134,26 @@ func TestArchiveRejectsConflictsAndUnredactedContent(t *testing.T) {
 		var validation *rawarchive.ValidationError
 		if !errors.As(err, &validation) {
 			t.Fatalf("unredacted error = %T, want ValidationError", err)
+		}
+	}
+}
+
+func TestArchiveAcceptsThreeMiBChunksAndRejectsLargerPayloads(t *testing.T) {
+	store := rawStore()
+	archive := rawarchive.NewArchive(store, store)
+	maximum := upload("chunk-maximum", 1, 0, true, string(bytes.Repeat([]byte{'x'}, rawarchive.MaxChunkBytes)))
+	if _, err := archive.Append(t.Context(), rawCLIPrincipal(), maximum); err != nil {
+		t.Fatalf("append maximum chunk: %v", err)
+	}
+
+	oversized := upload("chunk-oversized", 1, 0, true, string(bytes.Repeat([]byte{'x'}, rawarchive.MaxChunkBytes+1)))
+	oversized.SourceObjectID = "raw-oversized"
+	if _, err := archive.Append(t.Context(), rawCLIPrincipal(), oversized); err == nil {
+		t.Fatal("oversized chunk was accepted")
+	} else {
+		var validation *rawarchive.ValidationError
+		if !errors.As(err, &validation) {
+			t.Fatalf("oversized error = %T, want ValidationError", err)
 		}
 	}
 }

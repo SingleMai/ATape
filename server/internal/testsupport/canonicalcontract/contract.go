@@ -7,6 +7,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
@@ -20,6 +21,8 @@ type Store interface {
 	ingestion.BatchStore
 	conversation.SnapshotStore
 	workspace.DirectoryStore
+	LeaseProjectionChanges(context.Context, string, int, time.Time) ([]canonical.ProjectionChange, error)
+	AckProjectionChanges(context.Context, string, []int64) error
 }
 
 type Factory func(*testing.T) Store
@@ -167,6 +170,54 @@ func Run(t *testing.T, factory Factory) {
 		}
 	})
 
+	t.Run("accepts paged Events without mutating Session memory", func(t *testing.T) {
+		store := factory(t)
+		ingestor := ingestion.NewIngestor(store)
+		reader := conversation.NewMemory(store)
+
+		first := ValidBatch()
+		first.BatchID = "paged-batch-001"
+		first.Session.Summary = ""
+		first.Session.Insight = ""
+		first.Events = []ingestion.Event{first.Events[0]}
+		if _, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), first); err != nil {
+			t.Fatalf("apply first page: %v", err)
+		}
+
+		second := ValidBatch()
+		second.BatchID = "paged-batch-002"
+		second.ObservedAt = "2026-09-04T11:00:00+08:00"
+		second.Session.Summary = ""
+		second.Session.Insight = ""
+		second.Events = []ingestion.Event{second.Events[1]}
+		result, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), second)
+		if err != nil {
+			t.Fatalf("apply second page: %v", err)
+		}
+		if got, want := result.InsertedEvents, 1; got != want {
+			t.Fatalf("second-page inserted Events = %d, want %d", got, want)
+		}
+
+		opened, err := reader.OpenConversation(context.Background(), WebPrincipal(), result.SessionID, "root")
+		if err != nil {
+			t.Fatalf("open paged conversation: %v", err)
+		}
+		if got, want := len(opened.Events), 2; got != want {
+			t.Fatalf("paged Event count = %d, want %d", got, want)
+		}
+		project, err := reader.OpenProject(context.Background(), WebPrincipal(), TestProjectID)
+		if err != nil {
+			t.Fatalf("open paged Project memory: %v", err)
+		}
+		if got, want := len(project.Trail), 1; got != want {
+			t.Fatalf("paged Project trail length = %d, want %d", got, want)
+		}
+		if project.Trail[0].Summary != "" || project.Trail[0].Insight != "" {
+			t.Fatalf("paged Session derived page-local memory: summary=%q insight=%q",
+				project.Trail[0].Summary, project.Trail[0].Insight)
+		}
+	})
+
 	t.Run("publishes typed Team and Project identity", func(t *testing.T) {
 		store := factory(t)
 		if _, err := ingestion.NewIngestor(store).ApplyBatch(context.Background(), CLIPrincipal(), ValidBatch()); err != nil {
@@ -263,6 +314,54 @@ func Run(t *testing.T, factory Factory) {
 		}
 		if got, want := opened.Events[1].Text, updatedBatch.Events[0].Text; got != want {
 			t.Fatalf("updated event = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("reprojects unchanged Events when the Session title changes", func(t *testing.T) {
+		store := factory(t)
+		ingestor := ingestion.NewIngestor(store)
+		if _, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), ValidBatch()); err != nil {
+			t.Fatalf("apply first batch: %v", err)
+		}
+		initial, err := store.LeaseProjectionChanges(
+			context.Background(), "initial-title", 100, time.Now().UTC().Add(time.Minute),
+		)
+		if err != nil {
+			t.Fatalf("lease initial projections: %v", err)
+		}
+		initialIDs := make([]int64, 0, len(initial))
+		for _, change := range initial {
+			initialIDs = append(initialIDs, change.ID)
+		}
+		if err := store.AckProjectionChanges(context.Background(), "initial-title", initialIDs); err != nil {
+			t.Fatalf("ack initial projections: %v", err)
+		}
+
+		renamed := ValidBatch()
+		renamed.BatchID = "batch-title-renamed"
+		renamed.Session.Revision = 2
+		renamed.Session.Title = "Checkout accessibility review"
+		result, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), renamed)
+		if err != nil {
+			t.Fatalf("apply renamed Session: %v", err)
+		}
+		if result.UpdatedEvents != 0 || result.UnchangedEvents != len(renamed.Events) {
+			t.Fatalf("title-only update changed Events: %+v", result)
+		}
+
+		changes, err := store.LeaseProjectionChanges(
+			context.Background(), "renamed-title", 100, time.Now().UTC().Add(time.Minute),
+		)
+		if err != nil {
+			t.Fatalf("lease renamed projections: %v", err)
+		}
+		if got, want := len(changes), len(renamed.Events); got != want {
+			t.Fatalf("renamed projection changes = %d, want %d", got, want)
+		}
+		for _, change := range changes {
+			if got, want := change.Document.SessionTitle, renamed.Session.Title; got != want {
+				t.Fatalf("projected Session title = %q, want %q", got, want)
+			}
 		}
 	})
 

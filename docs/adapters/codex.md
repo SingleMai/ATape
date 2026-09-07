@@ -37,7 +37,7 @@ For an ordinary-directory Project, the metadata `cwd` must resolve to the Projec
 
 ## Session and subagent projection
 
-- The Session title is a whitespace-normalized, bounded projection of the first root-thread `UserMessage`. A bounded scan that finds no user message produces `Untitled Codex conversation`; provider Session IDs are never used as display titles.
+- When `session_index.jsonl` contains a valid `thread_name` for the root Session ID, the latest record is used as the whitespace-normalized, bounded Session title. This preserves Codex-generated titles and later user renames. If that compatibility metadata is absent or malformed, the Adapter falls back to the first root-thread `UserMessage`, then to `Untitled Codex conversation`; provider Session IDs are never used as display titles.
 - `session_meta.payload.session_id` identifies the logical ATape Session. When absent on a root rollout, `payload.id` is used.
 - `session_meta.payload.id` identifies the Thread represented by that physical rollout file.
 - Codex `thread_spawn.parent_thread_id` and `agent_nickname` establish the subagent parent and label.
@@ -62,12 +62,14 @@ Private reasoning content is not promoted into Canonical. It remains part of the
 
 ## Incremental and Raw behavior
 
-The Adapter keeps no durable conversation cache. Its opaque cursor contains only a bounded Session watermark, a monotonic commit sequence, and an in-progress page snapshot. The commit sequence lets Raw-only changes such as archive finalization produce a new committed cursor even when the filesystem modification watermark is unchanged. The Collector's separate `rawProgress` checkpoint supplies acknowledged provider byte offsets.
+The Adapter keeps no durable conversation cache. Its opaque cursor contains only a bounded Session watermark, a monotonic commit sequence, and an in-progress page snapshot. The snapshot freezes the selected provider title so pagination cannot emit different content at one Session revision. The commit sequence lets Raw-only changes such as archive finalization produce a new committed cursor even when the filesystem modification watermark is unchanged. The Collector's separate `rawProgress` checkpoint supplies acknowledged provider byte offsets.
+
+The title index is read as a bounded, tolerant compatibility source: only the most recent 16 MiB is considered, incomplete or malformed records are ignored, and collection continues with the root-prompt fallback when the file does not exist. A valid title record's `updated_at` participates in Session discovery and revision selection, so a title-only rename is collected without modifying Raw source. Cursor v3 resets v1 and v2 watermarks once and advances the Canonical projection revision so already captured Sessions can be replayed with provider titles even when the indexed title predates the latest rollout write.
 
 - Active files are snapshotted only through their last complete newline-delimited record. A record being appended is deferred to a later cycle.
-- File reads use 64 KiB blocks; one JSONL record and Adapter Raw segment may be at most 4 MiB. Canonical and Raw output are independently paginated by the Host's event, segment, and byte limits. After redaction, the Collector further divides a segment into server transport chunks of at most 256 KiB.
+- File reads use 64 KiB blocks; one JSONL record and Adapter Raw segment may be at most 4 MiB. Canonical and Raw output are independently paginated by the Host's event, segment, and byte limits. Changed Sessions complete their Canonical phase before Raw-only backlog is selected. After redaction, the Collector further divides a segment into server transport chunks of at most 3 MiB.
 - Raw source objects use a stable filename-derived identity and a filesystem-derived generation. Moving an unchanged rollout from `sessions/` to `archived_sessions/` finalizes the same Raw generation.
 - Canonical events may be replayed after a rollout changes. Stable source Event IDs and revisions make the server update the existing record rather than append a duplicate.
 - Provider deletion is absence, not an ATape deletion signal. Already captured Canonical and Raw history remains on the server.
 
-Compatibility is currently exercised against the local structure observed with Codex CLI `0.150.1`. Fixture tests cover root and subagent rollouts, copied-history filtering, Git worktree matching, incomplete active records, bounded pagination, Raw resumption, archival finalization, and provider deletion.
+Compatibility is currently exercised against the local structure observed with Codex CLI `0.150.1`. Fixture tests cover provider titles and renames, malformed title metadata, legacy Cursor backfill, root and subagent rollouts, copied-history filtering, Git worktree matching, incomplete active records, bounded pagination, Raw resumption, archival finalization, and provider deletion.

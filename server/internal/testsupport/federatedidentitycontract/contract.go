@@ -38,11 +38,12 @@ type Pair struct {
 type Factory func(*testing.T, Scenario) Pair
 
 type Contract struct {
-	Factory           Factory
-	ExpectedIdentity  authentication.VerifiedExternalIdentity
-	CallbackURI       string
-	State             string
-	AuthorizationCode string
+	Factory                   Factory
+	ExpectedIdentity          authentication.VerifiedExternalIdentity
+	CallbackURI               string
+	AuthorizationServerIssuer string
+	State                     string
+	AuthorizationCode         string
 }
 
 func Run(t *testing.T, contract Contract) {
@@ -52,6 +53,9 @@ func Run(t *testing.T, contract Contract) {
 	}
 	if contract.State == "" {
 		contract.State = "federated-state-contract-canary-0123456789"
+	}
+	if contract.AuthorizationServerIssuer == "" {
+		contract.AuthorizationServerIssuer = "https://identity.example.test/oauth"
 	}
 	if contract.AuthorizationCode == "" {
 		contract.AuthorizationCode = "authorization-code-contract-canary"
@@ -71,8 +75,9 @@ func Run(t *testing.T, contract Contract) {
 			t.Fatal("authorization URI exposed opaque PrivateState")
 		}
 		identity, err := pair.CompleteAdapter.Complete(context.Background(), authentication.ProviderCompleteRequest{
-			CallbackURI: contract.CallbackURI, AuthorizationCode: contract.AuthorizationCode,
-			PrivateState: append([]byte(nil), begin.PrivateState...), PrivateStateSchema: begin.StateSchema,
+			CallbackURI: contract.CallbackURI, AuthorizationServerIssuer: contract.AuthorizationServerIssuer,
+			AuthorizationCode: contract.AuthorizationCode,
+			PrivateState:      append([]byte(nil), begin.PrivateState...), PrivateStateSchema: begin.StateSchema,
 		})
 		if err != nil {
 			t.Fatalf("complete on a fresh Adapter instance: %v", err)
@@ -86,8 +91,9 @@ func Run(t *testing.T, contract Contract) {
 		pair := contract.Factory(t, Success)
 		begin := begin(t, pair.BeginAdapter, contract)
 		_, err := pair.CompleteAdapter.Complete(context.Background(), authentication.ProviderCompleteRequest{
-			CallbackURI: contract.CallbackURI, AuthorizationError: "access_denied",
-			PrivateState: begin.PrivateState, PrivateStateSchema: begin.StateSchema,
+			CallbackURI: contract.CallbackURI, AuthorizationServerIssuer: contract.AuthorizationServerIssuer,
+			AuthorizationError: "access_denied",
+			PrivateState:       begin.PrivateState, PrivateStateSchema: begin.StateSchema,
 		})
 		assertFailure(t, err, authentication.ProviderAccessDenied, sensitive(contract, pair, begin)...)
 	})
@@ -96,8 +102,20 @@ func Run(t *testing.T, contract Contract) {
 		pair := contract.Factory(t, Success)
 		begin := begin(t, pair.BeginAdapter, contract)
 		_, err := pair.CompleteAdapter.Complete(context.Background(), authentication.ProviderCompleteRequest{
-			CallbackURI: contract.CallbackURI, AuthorizationCode: contract.AuthorizationCode,
-			PrivateState: begin.PrivateState, PrivateStateSchema: begin.StateSchema + "-unknown",
+			CallbackURI: contract.CallbackURI, AuthorizationServerIssuer: contract.AuthorizationServerIssuer,
+			AuthorizationCode: contract.AuthorizationCode,
+			PrivateState:      begin.PrivateState, PrivateStateSchema: begin.StateSchema + "-unknown",
+		})
+		assertFailure(t, err, authentication.ProviderProtocolViolation, sensitive(contract, pair, begin)...)
+	})
+
+	t.Run("rejects an authorization server mix-up", func(t *testing.T) {
+		pair := contract.Factory(t, Success)
+		begin := begin(t, pair.BeginAdapter, contract)
+		_, err := pair.CompleteAdapter.Complete(context.Background(), authentication.ProviderCompleteRequest{
+			CallbackURI: contract.CallbackURI, AuthorizationServerIssuer: "https://attacker.example/oauth",
+			AuthorizationCode: contract.AuthorizationCode, PrivateState: begin.PrivateState,
+			PrivateStateSchema: begin.StateSchema,
 		})
 		assertFailure(t, err, authentication.ProviderProtocolViolation, sensitive(contract, pair, begin)...)
 	})
@@ -116,8 +134,9 @@ func Run(t *testing.T, contract Contract) {
 			pair := contract.Factory(t, test.scenario)
 			begin := begin(t, pair.BeginAdapter, contract)
 			_, err := pair.CompleteAdapter.Complete(context.Background(), authentication.ProviderCompleteRequest{
-				CallbackURI: contract.CallbackURI, AuthorizationCode: contract.AuthorizationCode,
-				PrivateState: begin.PrivateState, PrivateStateSchema: begin.StateSchema,
+				CallbackURI: contract.CallbackURI, AuthorizationServerIssuer: contract.AuthorizationServerIssuer,
+				AuthorizationCode: contract.AuthorizationCode,
+				PrivateState:      begin.PrivateState, PrivateStateSchema: begin.StateSchema,
 			})
 			assertFailure(t, err, test.code, sensitive(contract, pair, begin)...)
 		})
@@ -129,8 +148,9 @@ func Run(t *testing.T, contract Contract) {
 		ctx, cancel := context.WithTimeout(context.Background(), 75*time.Millisecond)
 		defer cancel()
 		_, err := pair.CompleteAdapter.Complete(ctx, authentication.ProviderCompleteRequest{
-			CallbackURI: contract.CallbackURI, AuthorizationCode: contract.AuthorizationCode,
-			PrivateState: begin.PrivateState, PrivateStateSchema: begin.StateSchema,
+			CallbackURI: contract.CallbackURI, AuthorizationServerIssuer: contract.AuthorizationServerIssuer,
+			AuthorizationCode: contract.AuthorizationCode,
+			PrivateState:      begin.PrivateState, PrivateStateSchema: begin.StateSchema,
 		})
 		assertFailure(t, err, authentication.ProviderUnavailable, sensitive(contract, pair, begin)...)
 	})

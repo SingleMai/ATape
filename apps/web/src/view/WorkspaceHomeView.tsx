@@ -4,6 +4,7 @@ import type { LoadableView } from "../presenters/memoryPresenter"
 
 type Props = {
   readonly state: LoadableView<Workspace>
+  readonly teamSlug?: string
   readonly onRetry: () => void
 }
 
@@ -31,7 +32,7 @@ const SetupStep = ({
   </article>
 )
 
-export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
+export const WorkspaceHomeView = ({ state, teamSlug, onRetry }: Props) => {
   if (state._tag === "Loading") {
     return <section className="state-card" aria-live="polite">Looking for shared project memory…</section>
   }
@@ -65,7 +66,7 @@ export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
           number={1}
           eyebrow="Choose the boundary"
           title="Register a local Project"
-          command={"atape login\natape setup /path/to/project --team your-team --create"}
+          command={`atape login\natape setup /path/to/project --team ${teamSlug ?? "your-team"} --create`}
         >
           ATape captures only the Git repository or ordinary folder you explicitly select.
         </SetupStep>

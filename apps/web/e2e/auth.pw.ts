@@ -37,6 +37,17 @@ test.beforeEach(async ({ context, request }) => {
   await context.clearCookies()
 })
 
+test("redirects a signed-out landing visit with a bounded return path", async ({ page }) => {
+  await page.goto("/")
+
+  await expect(page.getByRole("heading", { name: "Sign in to ATape" })).toBeVisible()
+  await expect(page.getByText("Your previous session ended. Sign in again to continue.")).toBeVisible()
+  const location = new URL(page.url())
+  expect(location.pathname).toBe("/auth/sign-in")
+  expect(location.searchParams.get("returnTo")).toBe("/")
+  expect(location.searchParams.get("reason")).toBe("session_ended")
+})
+
 test("keeps ordinary and CLI-return sign-in minimal at 390px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/auth/sign-in")
@@ -152,8 +163,9 @@ test("recovers fresh authentication and scopes one-time Team codes locally", asy
   await expect(page.getByText("K7M4PX")).toHaveCount(0)
 })
 
-test("normalizes first-Team create and join input through the same Web Interface", async ({ context, page }) => {
+test("normalizes first-Team create and join input through the same Web Interface", async ({ context, page, request }) => {
   await authenticate(context)
+  await request.post(`${fixtureOrigin}/__fixture/workspace?value=empty`)
   await page.goto("/onboarding")
   await expect(page.getByRole("link", { name: "Create a Team" })).toBeVisible()
   await expect(page.getByRole("link", { name: "Join a Team" })).toBeVisible()
@@ -174,4 +186,102 @@ test("normalizes first-Team create and join input through the same Web Interface
     displayName: "Tape Makers"
   })
   expect((await fixtureState(page)).teamCreateIdempotencyKey).toMatch(/^[A-Za-z0-9_-]{22}$/)
+})
+
+test("selects a newly created Team and opens its first captured Project", async ({ context, page, request }) => {
+  await authenticate(context)
+  await request.post(`${fixtureOrigin}/__fixture/workspace?value=empty`)
+  await page.goto("/onboarding/create-team")
+
+  await page.getByLabel("Team name").fill("Tape Makers")
+  await page.getByRole("button", { name: "Create Team" }).click()
+
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
+  await expect(page.locator(".team-card strong")).toHaveText("Tape Makers")
+  await expect(page.getByText("atape setup /path/to/project --team tape-makers --create")).toBeVisible()
+
+  await page.locator(".team-card").click()
+  const switcher = page.getByRole("navigation", { name: "Teams and Projects" })
+  const teamSelection = switcher.getByRole("button", { name: /Tape Makers/ })
+  await expect(teamSelection).toBeVisible()
+  await teamSelection.click()
+  await expect(switcher).not.toBeVisible()
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
+
+  await request.post(`${fixtureOrigin}/__fixture/created-project?value=1`)
+  await page.getByRole("button", { name: "Check again" }).click()
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team/projects/created-project`)
+  await expect(page.locator(".project-pill strong")).toHaveText("Captured Project")
+})
+
+test("keeps each narrative exchange focused on the prompt and primary response", async ({ context, page }) => {
+  await authenticate(context)
+  await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root")
+
+  await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
+  await expect(page.locator(".narrative-prompt")).toHaveCount(2)
+  await expect(page.locator(".narrative-response")).toHaveCount(2)
+  await expect(page.locator(".narrative-prompt").getByText("Please diagnose the startup failure")).toBeVisible()
+  await expect(page.getByText("The startup issue is fixed")).toBeVisible()
+  await expect(page.getByText("Planning diagnosis")).not.toBeVisible()
+  await expect(page.getByText("I am checking the environment")).not.toBeVisible()
+  await expect(page.locator(".narrative-activity").first()).not.toHaveAttribute("open", "")
+
+  await page.locator(".narrative-activity > summary").first().click()
+  await expect(page.getByText("Planning diagnosis")).toBeVisible()
+  await expect(page.getByText("I am checking the environment")).toBeVisible()
+  await expect(page.getByText("exec · completed")).toBeVisible()
+  await expect(page.locator(".narrative-activity details")).toHaveCount(0)
+
+  await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root&event=event-04")
+  await expect(page.locator(".narrative-activity").first()).toHaveAttribute("open", "")
+  await expect(page.locator("#event-event-04")).toBeVisible()
+  await expect(page.locator("#event-event-04")).toHaveClass(/event-highlighted/)
+})
+
+test("refreshes memory only on request and preserves the reading position", async ({ context, page, request }) => {
+  await authenticate(context)
+  await page.goto("/teams/team-id/projects/project-1")
+
+  await expect(page.getByRole("heading", { name: "What changed while you were away?" })).toBeVisible()
+  const projectRefresh = page.getByRole("button", { name: "Refresh", exact: true })
+  const projectCadence = page.getByLabel("Automatic refresh interval")
+  await expect(projectRefresh).toBeVisible()
+  await expect(projectCadence).toHaveValue("manual")
+
+  const initialProjectRequests = (await fixtureState(page)).projectMemoryRequests
+  await page.waitForTimeout(10_500)
+  expect((await fixtureState(page)).projectMemoryRequests).toBe(initialProjectRequests)
+
+  await projectRefresh.click()
+  await expect.poll(async () => (await fixtureState(page)).projectMemoryRequests).toBeGreaterThan(initialProjectRequests)
+  await expect(page.getByText("Conversation hierarchy").first()).toBeVisible()
+
+  await page.goto("/teams/team-id/projects/project-1/sessions/session-reader?thread=root")
+
+  await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
+  const refresh = page.getByRole("button", { name: "Refresh", exact: true })
+  const cadence = page.getByLabel("Automatic refresh interval")
+  await expect(refresh).toBeVisible()
+  await expect(cadence).toHaveValue("manual")
+
+  const initialRequests = (await fixtureState(page)).conversationRequests
+  const activity = page.locator(".narrative-activity").first()
+  await activity.locator("summary").click()
+  await expect(activity).toHaveAttribute("open", "")
+
+  await refresh.click()
+  await expect.poll(async () => (await fixtureState(page)).conversationRequests).toBeGreaterThan(initialRequests)
+  await expect(refresh).toBeEnabled()
+  const requestsAfterManualRefresh = (await fixtureState(page)).conversationRequests
+  await expect(activity).toHaveAttribute("open", "")
+  await expect(page.getByText("The startup issue is fixed")).toBeVisible()
+  await expect(page.getByText("Reconstructing conversation…")).toHaveCount(0)
+
+  await request.post(`${fixtureOrigin}/__fixture/fail-conversation?value=1`)
+  await refresh.click()
+  await expect.poll(async () => (await fixtureState(page)).conversationRequests).toBeGreaterThan(requestsAfterManualRefresh)
+  await expect(page.getByText("Refresh failed · showing previous data")).toBeVisible()
+  await expect(page.getByText("The startup issue is fixed")).toBeVisible()
+  await expect(activity).toHaveAttribute("open", "")
 })

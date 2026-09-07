@@ -456,7 +456,7 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 9; got != want {
+	if got, want := migrationCount, 10; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 }

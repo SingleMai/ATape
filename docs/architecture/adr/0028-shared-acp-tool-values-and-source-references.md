@@ -1,4 +1,4 @@
-# ADR-0025: Shared ACP Tool Values and Versioned Source References
+# ADR-0028: Shared ACP Tool Values and Versioned Source References
 
 - Status: Accepted design; Implementation pending
 - Date: 2026-09-07
@@ -9,4 +9,4 @@ Call and result remain distinct Events sharing a scoped tool correlation ID. ACP
 
 Canonical Raw references identify an exact generation through a durable opaque Host token, which may be pending until Canonical-first Raw allocation binds it. Event links never fall back to a newer generation or pretend source offsets are redacted archive offsets. Appends may grow that generation; this is not a per-Event filesystem snapshot. Raw bytes remain outside ordinary Canonical/Search reads.
 
-This amends ADR-0009's flat HTTP projection for the new profile and extends ADR-0007/0024's generic metadata binding. It preserves ADR-0020 topology and ADR-0022 atomic publication. The [selected mapping contract](../../../.scratch/claude-code-adapter/canonical-projection-contract.md) fixes source roles, conservative graph selection, finite bounds, shared Interfaces and validation gates. Rich-media execution/fetch/playback and a separate Claude UI are not included; native fixture/model evidence is not production support.
+This amends ADR-0009's flat HTTP projection for the new profile and extends ADR-0007/0027's generic metadata binding. It preserves ADR-0023 topology and ADR-0025 atomic publication. The selected mapping contract (retained as local research evidence) fixes source roles, conservative graph selection, finite bounds, shared Interfaces and validation gates. Rich-media execution/fetch/playback and a separate Claude UI are not included; native fixture/model evidence is not production support.

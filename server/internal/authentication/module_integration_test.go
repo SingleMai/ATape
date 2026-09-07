@@ -254,8 +254,9 @@ WHERE protocol_version = 'auth-v1'`); err != nil {
 		attempt := beginFederated(t, module, authentication.SignInIntent, "", "/")
 		validInput := authentication.CompleteFederatedLoginInput{
 			ProviderRegistrationID: "contract", State: attempt.state,
-			BrowserBinding:    attempt.challenge.BrowserBinding,
-			AuthorizationCode: "proof-identity", RequestID: "request-proof",
+			BrowserBinding:            attempt.challenge.BrowserBinding,
+			AuthorizationServerIssuer: "https://identity.example/oauth",
+			AuthorizationCode:         "proof-identity", RequestID: "request-proof",
 		}
 
 		wrongState := validInput
@@ -423,9 +424,12 @@ WHERE id = $1`, grant.User.ID); err != nil {
 		}
 		state := authorization.Query().Get("state")
 		grant, err := module.CompleteFederatedLogin(ctx, authentication.CompleteFederatedLoginInput{
-			ProviderRegistrationID: authgithub.RegistrationID,
-			State:                  state, BrowserBinding: challenge.BrowserBinding,
-			AuthorizationCode: code, RequestID: "request-github-complete",
+			ProviderRegistrationID:    authgithub.RegistrationID,
+			State:                     state,
+			BrowserBinding:            challenge.BrowserBinding,
+			AuthorizationServerIssuer: "https://github.com/login/oauth",
+			AuthorizationCode:         code,
+			RequestID:                 "request-github-complete",
 		})
 		if err != nil {
 			t.Fatalf("complete GitHub login: %s", errorChain(err))
@@ -1269,8 +1273,9 @@ func completeFederated(
 ) (authentication.WebSessionGrant, error) {
 	return module.CompleteFederatedLogin(context.Background(), authentication.CompleteFederatedLoginInput{
 		ProviderRegistrationID: "contract", State: attempt.state,
-		BrowserBinding:    attempt.challenge.BrowserBinding,
-		AuthorizationCode: code, RequestID: "request-complete",
+		BrowserBinding:            attempt.challenge.BrowserBinding,
+		AuthorizationServerIssuer: "https://identity.example/oauth",
+		AuthorizationCode:         code, RequestID: "request-complete",
 	})
 }
 

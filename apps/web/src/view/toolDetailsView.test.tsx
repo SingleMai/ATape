@@ -14,7 +14,7 @@ it("renders shared tool values as escaped, collapsed details while preserving em
       { id: "legacy", kind: "message", author: "User", occurredAt: "2026-09-07T00:00:00Z", text: "Legacy message" }
     ]
   }
-  const html = renderToStaticMarkup(<SessionReaderView state={{ _tag: "Ready", value: conversation, refreshing: false }} projectName="Project" onBack={() => {}} onOpenThread={() => {}} onRetry={() => {}} onOpenRaw={() => {}} />)
+  const html = renderToStaticMarkup(<SessionReaderView state={{ _tag: "Ready", value: conversation, refreshing: false }} refresh={{ cadence: "manual", setCadence: () => undefined }} projectName="Project" onBack={() => {}} onOpenThread={() => {}} onRetry={() => {}} onOpenRaw={() => {}} />)
   expect(html).toContain("<summary>Input</summary><pre>null</pre>")
   expect(html).toContain("<summary>Output</summary><pre></pre>")
   expect(html).toContain("&lt;script&gt;")

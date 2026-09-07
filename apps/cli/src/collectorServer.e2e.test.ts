@@ -16,12 +16,12 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, it } from "vitest"
+import { RawTransportChunkBytes } from "@atape/domain"
 
 const repositoryRoot = resolve(import.meta.dirname, "../../..")
 const cliEntry = join(repositoryRoot, "apps/cli/src/main.ts")
 const codexAdapter = join(repositoryRoot, "adapters/codex")
 const claudeAdapter = join(repositoryRoot, "adapters/claude")
-const rawTransportChunkBytes = 256 * 1024
 const serverStartupTimeoutMs = 120_000
 const endToEndTimeoutMs = 300_000
 
@@ -40,7 +40,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     expect(started).toMatchObject({ created: true, intervalMs: 10_000, concurrency: 2 })
     expect(await startCollector(fixture, serverUrl)).toMatchObject({ created: false, pid: started.pid })
     const first = await waitForCollectorSuccess(fixture, serverUrl)
-    expect(first).toMatchObject({ observations: 1, rawChunks: 3 })
+    expect(first).toMatchObject({ observations: 2, rawChunks: 3 })
     expect((await collectorStatus(fixture, serverUrl)).running).toBe(true)
     expect(await stopCollector(fixture, serverUrl)).toEqual({ stopped: true })
     expect((await collectorStatus(fixture, serverUrl)).running).toBe(false)
@@ -89,8 +89,8 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     expect(archive.objects).toHaveLength(2)
     const raw = await readRaw(serverUrl, archive)
     expect(raw.chunkCount).toBe(3)
-    expect(raw.largestChunk).toBeLessThanOrEqual(rawTransportChunkBytes)
-    expect(raw.largestObject).toBeGreaterThan(rawTransportChunkBytes)
+    expect(raw.largestChunk).toBeLessThanOrEqual(RawTransportChunkBytes)
+    expect(raw.largestObject).toBeGreaterThan(RawTransportChunkBytes)
     expect(raw.text).not.toContain(fixture.secret)
     expect(raw.text).toContain("[REDACTED]")
 
@@ -101,7 +101,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     ]))
     const changedAt = new Date(Date.now() + 1_000)
     await utimes(fixture.rootFile, changedAt, changedAt)
-    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 2, rawChunks: 1 })
 
     const rootAfter = await getJSON<Conversation>(
       serverUrl,
@@ -237,7 +237,7 @@ const createFixture = async () => {
     sessionMetadata(rootSessionId, projectDirectory),
     completedItem("user-1", rootSessionId, "Find e2e-search-needle", "UserMessage"),
     completedItem("agent-1", rootSessionId, "Use one idempotency key for e2e-search-needle", "AgentMessage"),
-    { type: "provider_private", payload: { secret, blob: "x".repeat(300 * 1024) } }
+    { type: "provider_private", payload: { secret, blob: "x".repeat(RawTransportChunkBytes + 64 * 1024) } }
   ]))
   await writeFile(childFile, jsonLines([
     sessionMetadata(childThreadId, projectDirectory, {

@@ -8,6 +8,9 @@ const later = "2027-03-04T00:00:00Z"
 const initialState = () => ({
   cliDecision: "none",
   cliResolveCount: 0,
+  conversationRequests: 0,
+  failConversation: false,
+  projectMemoryRequests: 0,
   failSessions: false,
   fresh: false,
   joinCodeEnabled: true,
@@ -15,7 +18,10 @@ const initialState = () => ({
   cliCredentials: ["credential-one"],
   teamCreateBody: null,
   teamCreateIdempotencyKey: null,
-  teamJoinBody: null
+  teamJoinBody: null,
+  workspaceMode: "full",
+  createdTeam: null,
+  createdProjectVisible: false
 })
 
 let state = initialState()
@@ -92,8 +98,23 @@ const routeFixtureControl = (request, response, url) => {
     empty(response)
     return true
   }
+  if (url.pathname === "/__fixture/fail-conversation" && request.method === "POST") {
+    state.failConversation = url.searchParams.get("value") === "1"
+    empty(response)
+    return true
+  }
   if (url.pathname === "/__fixture/fresh" && request.method === "POST") {
     state.fresh = url.searchParams.get("value") === "1"
+    empty(response)
+    return true
+  }
+  if (url.pathname === "/__fixture/workspace" && request.method === "POST") {
+    state.workspaceMode = url.searchParams.get("value") === "empty" ? "empty" : "full"
+    empty(response)
+    return true
+  }
+  if (url.pathname === "/__fixture/created-project" && request.method === "POST") {
+    state.createdProjectVisible = url.searchParams.get("value") === "1"
     empty(response)
     return true
   }
@@ -160,20 +181,86 @@ const server = http.createServer(async (request, response) => {
   }
   if (path === "/api/v1/workspace" && request.method === "GET") {
     if (!requireWeb(request, response)) return
+    const teams = state.workspaceMode === "full" ? [team] : []
+    if (state.createdTeam !== null) teams.push(state.createdTeam)
+    const projects = state.workspaceMode === "full" ? [{
+      id: "project-1",
+      teamId: team.id,
+      type: "git",
+      name: "ATape",
+      state: "active",
+      repositoryLinkState: "linked",
+      repositoryIdentity: "github.com/SingleMai/ATape",
+      capturedThrough: now,
+      createdAt: now,
+      updatedAt: now
+    }] : []
+    if (state.createdTeam !== null && state.createdProjectVisible) projects.push({
+      id: "created-project",
+      teamId: state.createdTeam.id,
+      type: "git",
+      name: "Captured Project",
+      state: "active",
+      repositoryLinkState: "linked",
+      repositoryIdentity: "github.com/SingleMai/captured-project",
+      capturedThrough: later,
+      createdAt: now,
+      updatedAt: now
+    })
     return json(response, 200, {
-      teams: [team],
-      projects: [{
-        id: "project-1",
-        teamId: team.id,
-        type: "git",
-        name: "ATape",
-        state: "active",
-        repositoryLinkState: "linked",
-        repositoryIdentity: "github.com/SingleMai/ATape",
-        capturedThrough: now,
-        createdAt: now,
-        updatedAt: now
-      }]
+      teams,
+      projects
+    })
+  }
+  if (path === "/api/v1/sessions/session-reader" && request.method === "GET") {
+    if (!requireWeb(request, response)) return
+    state.conversationRequests++
+    if (state.failConversation) return problem(response, 503, "service_unavailable")
+    return json(response, 200, {
+      session: {
+        id: "session-reader",
+        projectId: "project-1",
+        title: "Conversation hierarchy",
+        actor: { name: "User", harness: "Codex" },
+        branch: "main",
+        status: "active",
+        captureStatus: "healthy",
+        updatedAt: "2026-09-05T00:00:09Z"
+      },
+      thread: { id: "root", label: "Root", captureStatus: "healthy" },
+      threadPath: [{ id: "root", label: "Root" }],
+      events: [
+        { id: "event-01", kind: "message", author: "User", occurredAt: "2026-09-05T00:00:01Z", text: "Please diagnose the startup failure" },
+        { id: "event-02", kind: "thought", author: "Codex", occurredAt: "2026-09-05T00:00:02Z", text: "Planning diagnosis" },
+        { id: "event-03", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:03Z", text: "I am checking the environment" },
+        { id: "event-04", kind: "tool_call", author: "Codex", occurredAt: "2026-09-05T00:00:04Z", text: "exec · completed", toolLabel: "exec" },
+        { id: "event-05", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:05Z", text: "The startup issue is fixed" },
+        { id: "event-06", kind: "message", author: "User", occurredAt: "2026-09-05T00:00:06Z", text: "Can you verify it?" },
+        { id: "event-07", kind: "tool_result", author: "Codex", occurredAt: "2026-09-05T00:00:07Z", text: "test · completed", toolLabel: "test" },
+        { id: "event-08", kind: "message", author: "Codex", occurredAt: "2026-09-05T00:00:08Z", text: "Verification passed" }
+      ]
+    })
+  }
+  if (path === "/api/v1/projects/project-1/memory" && request.method === "GET") {
+    if (!requireWeb(request, response)) return
+    state.projectMemoryRequests++
+    const session = {
+      id: "session-reader",
+      title: "Conversation hierarchy",
+      summary: "Diagnosed and verified the startup issue.",
+      insight: "The environment now starts successfully.",
+      actor: { name: "User", harness: "Codex" },
+      branch: "main",
+      status: "active",
+      updatedAt: "2026-09-05T00:00:09Z",
+      eventCount: 8,
+      childThreadCount: 0
+    }
+    return json(response, 200, {
+      project: { id: "project-1", teamId: "team-id", name: "ATape", type: "git" },
+      capturedThrough: "2026-09-05T00:00:09Z",
+      active: [session],
+      trail: [session]
     })
   }
   if (path === "/api/v1/users/me/external-identities" && request.method === "GET") {
@@ -296,12 +383,13 @@ const server = http.createServer(async (request, response) => {
     if (!requireCSRF(request, response)) return
     state.teamCreateBody = await readBody(request)
     state.teamCreateIdempotencyKey = request.headers["idempotency-key"] ?? null
-    return json(response, 201, {
+    state.createdTeam = {
       ...team,
       id: "created-team",
       slug: state.teamCreateBody.slug,
       displayName: state.teamCreateBody.displayName
-    })
+    }
+    return json(response, 201, state.createdTeam)
   }
   if (path === "/api/v1/team-memberships" && request.method === "POST") {
     if (!requireCSRF(request, response)) return

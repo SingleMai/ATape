@@ -408,10 +408,11 @@ describe("Collector Module", () => {
 
   it("splits a complete Adapter Raw segment into bounded UTF-8 transport chunks", async () => {
     const sourceContent = `${JSON.stringify({
-      text: "界".repeat(100_000),
+      text: "界".repeat(2_000_000),
       token: "supersecret"
     })}\n`
     const redactedContent = sourceContent.replace("supersecret", "[REDACTED]")
+    const expectedChunks = Math.ceil(utf8Length(redactedContent) / RawTransportChunkBytes)
     const base = collectionPage()
     const page: AdapterCollectionPage = {
       ...base,
@@ -429,11 +430,13 @@ describe("Collector Module", () => {
     const report = await capture.run(runCollectionCycle())
 
     expect(report.failures).toEqual([])
-    expect(report.jobs[0]).toMatchObject({ rawChunks: 2 })
-    expect(capture.raw).toHaveLength(2)
+    expect(utf8Length(sourceContent)).toBeGreaterThan(4 * 1024 * 1024)
+    expect(report.jobs[0]).toMatchObject({ rawChunks: expectedChunks })
+    expect(capture.raw).toHaveLength(expectedChunks)
     expect(capture.raw.every((submission) => utf8Length(submission.content) <= RawTransportChunkBytes)).toBe(true)
     expect(capture.raw.map((submission) => submission.content).join("")).toBe(redactedContent)
-    expect(capture.raw.map((submission) => submission.final)).toEqual([false, true])
+    expect(capture.raw.slice(0, -1).every((submission) => !submission.final)).toBe(true)
+    expect(capture.raw.at(-1)?.final).toBe(true)
     expect(capture.raw[0]?.sourceChunkId).toBe("g1-o0")
     expect(capture.raw[1]?.sourceChunkId)
       .toBe(`g1-o${utf8Length(capture.raw[0]?.content ?? "")}`)

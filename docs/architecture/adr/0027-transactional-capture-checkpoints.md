@@ -1,4 +1,4 @@
-# ADR-0024: Transactional Capture Checkpoints and Independent Raw Recovery
+# ADR-0027: Transactional Capture Checkpoints and Independent Raw Recovery
 
 - Status: Accepted design; Implementation pending
 - Date: 2026-09-07
@@ -17,4 +17,4 @@ A monolithic JSON rewrite amplifies every metadata update; a sharded file journa
 - The source guarantee is a verified bounded sample, not an atomic filesystem snapshot under arbitrary concurrent rewrite. Preserve unfinished accepted Raw and prior Canonical visibility; deleted intermediate source cannot be reconstructed from a digest.
 - Keep legacy capability/write modes isolated and fail closed on new-journal binding/corruption or unsupported capability. First enabling the capability upgrades JSON state to a version that preserves installation/Codex progress and records journal initialization; older Hosts reject that format rather than erase its marker. Do not silently reset an existing installation's ownership ledger.
 
-This amends ADR-0009's checkpoint mechanics only for the new capability and extends ADR-0007's Raw write control. ADR-0022 visibility and ADR-0023 byte framing remain unchanged. The [consistency design](../../../.scratch/claude-code-adapter/checkpoint-consistency-design.md) selects limits, transaction ordering, initialization/recovery and Interfaces. Local model tests do not satisfy the required real-file crash, packaged-runtime, multi-process server, authorization or supported-OS release gates.
+This amends ADR-0009's checkpoint mechanics only for the new capability and extends ADR-0007's Raw write control. ADR-0025 visibility and ADR-0026 byte framing remain unchanged. The consistency design (retained as local research evidence) selects limits, transaction ordering, initialization/recovery and Interfaces. Local model tests do not satisfy the required real-file crash, packaged-runtime, multi-process server, authorization or supported-OS release gates.

@@ -43,18 +43,18 @@ Session presence is interpreted centrally by the Go read Modules:
 
 Workspace active counts, Project Memory, and Session Reader use the same effective-status rule. Adapters continue to report source lifecycle; read-time presence aging does not require a synthetic ingestion event.
 
-The Codex Adapter derives a stable title from the first root-thread `UserMessage`, using a bounded scan and a short normalized projection. If no user message is available, it emits `Untitled Codex conversation`; it never exposes the opaque provider Session ID as the title.
+The original Codex title policy derived a stable title from the first root-thread `UserMessage`. [ADR-0021](0021-provider-session-titles-and-search-invalidation.md) supersedes that title policy while retaining the same bounded fallback.
 
 ## Consequences
 
-The selected new-capability [failure/observability design](../../../.scratch/claude-code-adapter/failure-observability-contract.md) preserves this separation: bounded content-free diagnostics and progress liveness remain local; v2 published captureStatus describes Projection Fidelity, with Raw readiness resolved independently on explicit access. Foreground/daemon status parity, owner-fenced progress heartbeats and narrow retry/quarantine scheduling are planned extensions, not already implemented by this ADR.
+The selected new-capability failure/observability design (retained as local research evidence) preserves this separation: bounded content-free diagnostics and progress liveness remain local; v2 published captureStatus describes Projection Fidelity, with Raw readiness resolved independently on explicit access. Foreground/daemon status parity, owner-fenced progress heartbeats and narrow retry/quarantine scheduling are planned extensions, not already implemented by this ADR.
 
 - Team history can stay current after the starting terminal closes, while disabled Adapters consume no runtime memory.
 - `atape status` exposes the last successful cycle or current failure for every configured Project/Adapter without querying Canonical or Raw storage.
 - Process control remains user-local and portable enough for v0.1, but does not provide crash restart or boot persistence.
 - Presence naturally ages from active to idle even when a Harness leaves old files in its active directory.
 - Canonical status remains the durable provider fact; effective presence is a read projection and may change with time without a database write.
-- Titles remain deterministic across Adapter pagination and at-least-once replay.
+- The original root-prompt title projection was deterministic across Adapter pagination and at-least-once replay; ADR-0021 preserves that invariant while adding provider-authored titles.
 
 ## Rejected Alternatives
 

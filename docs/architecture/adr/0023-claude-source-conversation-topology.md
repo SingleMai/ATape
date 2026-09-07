@@ -1,6 +1,6 @@
-# ADR-0020: Claude Source Conversation Topology
+# ADR-0023: Claude Source Conversation Topology
 
-- Status: Accepted
+- Status: Accepted design; see ADR-0029 for the implemented subset
 - Date: 2026-09-07
 
 ## Context
@@ -20,7 +20,7 @@ The Claude First-party Adapter projects one source-indicated Active Path as the 
 - Each ordinary Claude subagent becomes a child Captured Thread. A fixture-verified tool-use relationship establishes nesting. If the subagent is valid but its exact parent cannot be established, it becomes a Detached Subagent Thread under the root Captured Thread and reports degraded relation fidelity; the Adapter neither drops it nor guesses a nested parent.
 - Claude workflow artifacts are preserved as Raw Source Data but receive no workflow-specific Canonical Session, Thread, or Event projection until the current Claude version has a sanitized fixture corpus and a separate accepted topology decision.
 
-Stable identity is now specified by the [identity contract](../../../.scratch/claude-code-adapter/identity-contract.md): source-namespaced record UUIDs plus versioned source-coordinate projection slots, pinned logical group anchors before remote publication, and durable bounded ownership metadata rather than a per-Event identity ledger. Coordinate slots do not promise semantic block tracking through arbitrary source reordering. Shared revisions follow ADR-0022; exact Canonical mapping, capture-status transitions and durable checkpoint mechanics remain separate decisions. No production Implementation is claimed.
+Stable identity is now specified by the identity contract (retained as local research evidence): source-namespaced record UUIDs plus versioned source-coordinate projection slots, pinned logical group anchors before remote publication, and durable bounded ownership metadata rather than a per-Event identity ledger. Coordinate slots do not promise semantic block tracking through arbitrary source reordering. Shared revisions follow ADR-0025; exact Canonical mapping, capture-status transitions and durable checkpoint mechanics remain separate decisions. No production Implementation is claimed.
 
 If newly verified fork/source topology contradicts an existing group pin, stop the affected capture and preserve published history for recovery. Do not keep publishing through a known-wrong merged identity, and do not implicitly split/re-key the old history. This is an ownership conflict, distinct from uncertain evidence that can conservatively remain unmerged.
 

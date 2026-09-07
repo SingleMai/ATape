@@ -1,4 +1,4 @@
-# ADR-0026: Claude first implementation slice on the existing Collector
+# ADR-0029: Claude first implementation slice on the existing Collector
 
 - Status: Accepted, narrow implementation scope
 - Date: 2026-09-07
@@ -11,7 +11,7 @@ upload it and display it in the existing conversation page. Existing evidence is
 retained, but further standalone prototype work is paused.
 
 Use the existing bounded pull Adapter/ACP v1/Canonical/Raw Interfaces, rather
-than requiring implementation of ADR-0022–0025 before the first usable slice.
+than requiring implementation of ADR-0025–0028 before the first usable slice.
 This is an explicit sequencing exception to those accepted future designs, not
 a claim that their atomic publication, scanner journal or v2 tool contract ships.
 

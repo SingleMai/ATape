@@ -1,6 +1,6 @@
-# ADR-0021: Claude Origin Project Attribution
+# ADR-0024: Claude Origin Project Attribution
 
-- Status: Accepted
+- Status: Accepted design; see ADR-0029 for the implemented subset
 - Date: 2026-09-07
 
 Claude Code can change working directory and relocate a transcript during the same Session. ATape attributes the conversation using its Session Origin CWD and the user's explicit local Project binding. Once established, the attribution remains fixed across `/cd`, resume, and transcript relocation. Collection continues after `/cd`, including subsequent conversation content; a directory change alone does not split, migrate, stop, or degrade the Captured Session.

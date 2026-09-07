@@ -44,6 +44,10 @@ services:
     command:
       - |
         umask 077
+        # A previous successful run leaves this persistent volume owned by
+        # the unprivileged Server user. Reclaim it with the CHOWN capability
+        # before chmod so initialization remains safe to repeat.
+        chown root:root /run/atape-secrets
         chmod 0700 /run/atape-secrets
         chown atape:atape /run/atape-secrets /var/lib/atape/raw
         for secret in database_url auth_pepper_key_ring auth_private_state_key_ring github_client_secret; do

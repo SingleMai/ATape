@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-05
+- Collection priority and Raw transport sizing amended by [ADR-0022](0022-canonical-priority-and-larger-raw-chunks.md)
 
 ## Context
 

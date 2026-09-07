@@ -93,7 +93,8 @@ func (h *Handler) federatedCallback(providerRegistrationID string) http.HandlerF
 		grant, err := h.auth.CompleteFederatedLogin(request.Context(), authentication.CompleteFederatedLoginInput{
 			ProviderRegistrationID: providerRegistrationID, State: query.Get("state"),
 			BrowserBinding: cookies[0].Value, AuthorizationCode: query.Get("code"),
-			AuthorizationError: query.Get("error"), RequestID: requestIDFromContext(request.Context()),
+			AuthorizationServerIssuer: query.Get("iss"), AuthorizationError: query.Get("error"),
+			RequestID: requestIDFromContext(request.Context()),
 		})
 		if err != nil {
 			h.redirectLoginFailure(response, request, callbackFailureCode(err))
@@ -111,7 +112,7 @@ func validCallbackQuery(request *http.Request) bool {
 	}
 	query := request.URL.Query()
 	for key, values := range query {
-		if key != "state" && key != "code" && key != "error" {
+		if key != "state" && key != "code" && key != "error" && key != "iss" {
 			return false
 		}
 		if len(values) != 1 {
@@ -122,7 +123,17 @@ func validCallbackQuery(request *http.Request) bool {
 	code := query.Get("code")
 	providerError := query.Get("error")
 	return state != "" && len(state) <= 512 && len(code) <= 4096 && len(providerError) <= 100 &&
+		validAuthorizationServerIssuer(query.Get("iss")) &&
 		((code != "" && providerError == "") || (code == "" && providerError != ""))
+}
+
+func validAuthorizationServerIssuer(value string) bool {
+	if value == "" || len(value) > 2048 {
+		return false
+	}
+	issuer, err := url.Parse(value)
+	return err == nil && issuer.Scheme == "https" && issuer.Host != "" && issuer.User == nil &&
+		issuer.RawQuery == "" && issuer.Fragment == ""
 }
 
 func callbackFailureCode(err error) string {

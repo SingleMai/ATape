@@ -21,15 +21,18 @@
 | [0017](0017-http-interface-and-route-security.md) | Accepted | Closed HTTP route classes, centralized transport security, RFC 9457, and OpenAPI drift checks |
 | [0018](0018-auth-cutover-and-deployable-self-hosting.md) | Accepted | Durable reviewed auth cutover, fail-closed serving modes, secret-file Compose, and paired PostgreSQL + Raw recovery |
 | [0019](0019-low-cost-dogfood-egress.md) | Accepted | Time-bounded HTTPS and Cloudflare Tunnel egress for the disposable AWS dogfood host |
-| [0020](0020-claude-source-conversation-topology.md) | Accepted | Active-path Claude projection, conservative continuation merging, self-contained forks, and child subagent Threads |
-| [0021](0021-claude-origin-project-attribution.md) | Accepted | Origin-based Claude Project attribution across worktrees, directory changes, and transcript relocation |
-| [0022](0022-atomic-canonical-publication.md) | Accepted design; Implementation pending | Provider-neutral staged Canonical targets, conditional atomic activation, recovery receipts and head-consistent reads/Search |
-| [0023](0023-bounded-raw-byte-streams.md) | Accepted design; Implementation pending | Bounded Raw byte frames, versioned cross-frame masking, deterministic packing and metadata-only replay |
-| [0024](0024-transactional-capture-checkpoints.md) | Accepted design; Implementation pending | Transactional metadata-only capture journal, explicit source coverage and independently fenced Raw recovery |
-| [0025](0025-shared-acp-tool-values-and-source-references.md) | Accepted design; Implementation pending | End-to-end common ACP tool values, deterministic v2 encoding and generation-specific pending Raw references |
+| [0020](0020-derived-conversation-narrative.md) | Accepted | Non-persisted Narrative Exchanges derived from Canonical Events for readable conversation views |
+| [0021](0021-provider-session-titles-and-search-invalidation.md) | Accepted | Provider-authored Session titles with deterministic fallback, Cursor backfill, and Search invalidation |
+| [0022](0022-canonical-priority-and-larger-raw-chunks.md) | Accepted | Canonical-priority collection with resumable Raw backfill and three MiB transport chunks |
+| [0023](0023-claude-source-conversation-topology.md) | Accepted | Active-path Claude projection, conservative continuation merging, self-contained forks, and child subagent Threads |
+| [0024](0024-claude-origin-project-attribution.md) | Accepted | Origin-based Claude Project attribution across worktrees, directory changes, and transcript relocation |
+| [0025](0025-atomic-canonical-publication.md) | Accepted design; Implementation pending | Provider-neutral staged Canonical targets, conditional atomic activation, recovery receipts and head-consistent reads/Search |
+| [0026](0026-bounded-raw-byte-streams.md) | Accepted design; Implementation pending | Bounded Raw byte frames, versioned cross-frame masking, deterministic packing and metadata-only replay |
+| [0027](0027-transactional-capture-checkpoints.md) | Accepted design; Implementation pending | Transactional metadata-only capture journal, explicit source coverage and independently fenced Raw recovery |
+| [0028](0028-shared-acp-tool-values-and-source-references.md) | Accepted design; Implementation pending | End-to-end common ACP tool values, deterministic v2 encoding and generation-specific pending Raw references |
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.
 
-[ADR-0026](0026-claude-first-vertical-slice.md) records the user-directed switch to a first production Claude vertical slice on existing Interfaces, with the broader planned protocols deferred.
+[ADR-0029](0029-claude-first-vertical-slice.md) records the user-directed switch to a first production Claude vertical slice on existing Interfaces, with the broader planned protocols deferred.
 
-[ADR-0027](0027-bounded-tool-details-implementation.md) implements bounded shared tool values with a versioned profile, Canonical persistence, Host redaction and common rendering; the remaining ADR-0025 work stays deferred.
+[ADR-0030](0030-bounded-tool-details-implementation.md) implements bounded shared tool values with a versioned profile, Canonical persistence, Host redaction and common rendering; the remaining ADR-0028 work stays deferred.

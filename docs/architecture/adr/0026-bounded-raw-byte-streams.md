@@ -1,4 +1,4 @@
-# ADR-0023: Bounded Raw Byte Streams
+# ADR-0026: Bounded Raw Byte Streams
 
 - Status: Accepted design; Implementation pending
 - Date: 2026-09-07
@@ -18,6 +18,6 @@ Whole-record string segments cannot retain arbitrarily large transcript records,
 
 ## Trade-off
 
-Larger whole-record buffers only move the size ceiling and do not solve cross-record masking. A snapshot/two-pass approach can retain legacy decisions but requires source immutability or a protected spool with additional disk/privacy policy. Versioned conservative streaming semantics instead keep memory bounded and respect the accepted metadata-only local progress boundary, at the cost of declared false positives and changed redacted bytes. This amends ADR-0009 for the new capability; ADR-0007 chunk/Raw retention semantics and ADR-0022 Canonical-first ownership remain intact.
+Larger whole-record buffers only move the size ceiling and do not solve cross-record masking. A snapshot/two-pass approach can retain legacy decisions but requires source immutability or a protected spool with additional disk/privacy policy. Versioned conservative streaming semantics instead keep memory bounded and respect the accepted metadata-only local progress boundary, at the cost of declared false positives and changed redacted bytes. This amends ADR-0009 for the new capability; ADR-0007 chunk/Raw retention semantics and ADR-0025 Canonical-first ownership remain intact.
 
-The [framing design](../../../.scratch/claude-code-adapter/raw-framing-design.md) fixes Interface details, bounds and guarantee limits. The [24 primitive/packing tests](../../../.scratch/claude-code-adapter/raw-stream-model.test.mjs) validate the design model, not the full production credential grammar, file mutation, HTTP recovery, restart journal or heap-capacity guarantees. Those are mandatory downstream implementation and release tests.
+The framing design (retained as local research evidence) fixes Interface details, bounds and guarantee limits. The 24 primitive/packing tests (retained as local research evidence) validate the design model, not the full production credential grammar, file mutation, HTTP recovery, restart journal or heap-capacity guarantees. Those are mandatory downstream implementation and release tests.

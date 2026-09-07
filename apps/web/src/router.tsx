@@ -1,4 +1,9 @@
-import { safeLocalReturnTo, selectDefaultWorkspaceProject, type AuthenticatedSession } from "@atape/domain"
+import {
+  safeLocalReturnTo,
+  selectDefaultWorkspaceProject,
+  selectDefaultWorkspaceTeam,
+  type AuthenticatedSession
+} from "@atape/domain"
 import { Option, Schema } from "effect"
 import {
   Navigate,
@@ -139,11 +144,22 @@ const authenticatedRoute = createRoute({
 
 function AuthenticatedBoundary() {
   const session = useSessionPresenter()
-  const href = useRouterState({ select: (state) => state.location.href })
+  const navigate = useNavigate()
+  useEffect(() => {
+    if (session.state._tag !== "Unauthenticated") return
+    const returnTo = safeLocalReturnTo(
+      window.location.pathname + window.location.search + window.location.hash
+    )
+    void navigate({
+      to: "/auth/sign-in",
+      search: { returnTo, reason: "session_ended" },
+      replace: true
+    })
+  }, [navigate, session.state._tag])
   if (session.state._tag === "Loading") return <FullPageState role="status">Restoring your ATape session…</FullPageState>
   if (session.state._tag === "Failed") return <SessionFailure failure={session.state.failure} onRetry={session.reload} />
   if (session.state._tag === "Unauthenticated") {
-    return <Navigate to="/auth/sign-in" search={{ returnTo: safeLocalReturnTo(href), reason: "session_ended" }} replace />
+    return <FullPageState role="status">Taking you to sign in…</FullPageState>
   }
   return (
     <AuthenticatedSessionContext.Provider value={session.state.value}>
@@ -255,9 +271,8 @@ function WorkspaceLayout() {
   const session = useAuthenticatedSession()
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
-  const match = pathname.match(/^\/teams\/([^/]+)\/projects\/([^/]+)/)
-  const teamId = match?.[1]
-  const projectId = match?.[2]
+  const teamId = pathname.match(/^\/teams\/([^/]+)(?:\/|$)/)?.[1]
+  const projectId = pathname.match(/^\/teams\/[^/]+\/projects\/([^/]+)(?:\/|$)/)?.[1]
   const workspace = useWorkspacePresenter()
   const openSearch = teamId === undefined || projectId === undefined ? undefined : () => {
     if (pathname.endsWith("/search")) {
@@ -281,6 +296,12 @@ function WorkspaceLayout() {
       currentTeamId={teamId}
       currentProjectId={projectId}
       onRetryWorkspace={workspace.reload}
+      onOpenTeam={(nextTeamId) => {
+        void navigate({
+          to: "/teams/$teamId",
+          params: { teamId: nextTeamId }
+        })
+      }}
       onOpenProject={(nextTeamId, nextProjectId) => {
         void navigate({
           to: "/teams/$teamId/projects/$projectId",
@@ -303,13 +324,43 @@ const indexRoute = createRoute({
 function WorkspaceHomeRoute() {
   const workspace = useWorkspacePresenter()
   if (workspace.state._tag === "Ready") {
-    if (workspace.state.value.teams.length === 0) return <Navigate to="/onboarding" replace />
+    if (workspace.state.value.teams.length === 0) {
+      if (!workspace.state.refreshing) return <Navigate to="/onboarding" replace />
+      return <WorkspaceHomeView state={workspace.state} onRetry={workspace.reload} />
+    }
     const target = selectDefaultWorkspaceProject(workspace.state.value)
     if (target !== undefined) {
       return <Navigate to="/teams/$teamId/projects/$projectId" params={target} replace />
     }
+    const team = selectDefaultWorkspaceTeam(workspace.state.value)
+    if (team !== undefined) return <Navigate to="/teams/$teamId" params={team} replace />
   }
   return <WorkspaceHomeView state={workspace.state} onRetry={workspace.reload} />
+}
+
+const teamRoute = createRoute({
+  getParentRoute: () => workspaceLayoutRoute,
+  path: "/teams/$teamId",
+  component: TeamWorkspaceRoute
+})
+
+function TeamWorkspaceRoute() {
+  const params = teamRoute.useParams()
+  const workspace = useWorkspacePresenter()
+  const team = workspace.state._tag === "Ready"
+    ? workspace.state.value.teams.find((candidate) => candidate.id === params.teamId)
+    : undefined
+  if (team !== undefined) {
+    const target = selectDefaultWorkspaceProject({ teams: [team] })
+    if (target !== undefined) {
+      return <Navigate to="/teams/$teamId/projects/$projectId" params={target} replace />
+    }
+  }
+  return <WorkspaceHomeView
+    state={workspace.state}
+    {...(team === undefined ? {} : { teamSlug: team.slug })}
+    onRetry={workspace.reload}
+  />
 }
 
 const projectRoute = createRoute({
@@ -336,7 +387,7 @@ function ProjectRoute() {
   const params = projectRoute.useParams()
   const navigate = useNavigate()
   const presenter = useProjectMemoryPresenter(params.projectId)
-  return <ProjectMemoryView state={presenter.state} onRetry={presenter.reload} onOpenSession={(sessionId) => {
+  return <ProjectMemoryView state={presenter.state} refresh={presenter.refresh} onRetry={presenter.reload} onOpenSession={(sessionId) => {
     void navigate({
       to: "/teams/$teamId/projects/$projectId/sessions/$sessionId",
       params: { ...params, sessionId },
@@ -354,6 +405,7 @@ function SessionRoute() {
     <>
       <SessionReaderView
         state={presenter.state}
+        refresh={presenter.refresh}
         projectName={params.projectId}
         onRetry={presenter.reload}
         onOpenRaw={() => void navigate({
@@ -425,6 +477,15 @@ const onboardingRoute = createRoute({
 
 function TeamChoiceRoute() {
   const session = useAuthenticatedSession()
+  const workspace = useWorkspacePresenter()
+  if (workspace.state._tag === "Ready" && workspace.state.value.teams.length > 0) {
+    const project = selectDefaultWorkspaceProject(workspace.state.value)
+    if (project !== undefined) {
+      return <Navigate to="/teams/$teamId/projects/$projectId" params={project} replace />
+    }
+    const team = selectDefaultWorkspaceTeam(workspace.state.value)
+    if (team !== undefined) return <Navigate to="/teams/$teamId" params={team} replace />
+  }
   return <TeamChoiceView user={session.user} />
 }
 
@@ -443,9 +504,10 @@ function CreateTeamRoute() {
   useEffect(() => {
     if (presenter.action._tag === "Succeeded" && handled.current !== presenter.action.value.id) {
       handled.current = presenter.action.value.id
+      const teamId = presenter.action.value.id
       workspace.reload()
       presenter.reset()
-      void navigate({ to: "/", replace: true })
+      void navigate({ to: "/teams/$teamId", params: { teamId }, replace: true })
     }
   }, [navigate, presenter, workspace])
   return <CreateTeamView
@@ -471,9 +533,10 @@ function JoinTeamRoute() {
   useEffect(() => {
     if (presenter.action._tag === "Succeeded" && handled.current !== presenter.action.value.id) {
       handled.current = presenter.action.value.id
+      const teamId = presenter.action.value.id
       workspace.reload()
       presenter.reset()
-      void navigate({ to: "/", replace: true })
+      void navigate({ to: "/teams/$teamId", params: { teamId }, replace: true })
     }
   }, [navigate, presenter, workspace])
   return <JoinTeamView user={session.user} action={presenter.action} onSubmit={presenter.submit} />
@@ -598,7 +661,7 @@ const routeTree = rootRoute.addChildren([
     joinTeamRoute,
     accountSettingsRoute,
     teamAccessRoute,
-    workspaceLayoutRoute.addChildren([indexRoute, projectRoute, sessionRoute, searchRoute])
+    workspaceLayoutRoute.addChildren([indexRoute, teamRoute, projectRoute, sessionRoute, searchRoute])
   ])
 ])
 
