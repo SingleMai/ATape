@@ -127,7 +127,7 @@ test.describe("large index", () => {
   test.use({ scenario: { count: 240, paragraphs: 2 } })
 
   test("shows three-digit numbers and keeps keyboard-selected rows visible in both viewports", async ({ page }) => {
-    await page.setViewportSize({ width: 1024, height: 700 })
+    await page.setViewportSize({ width: 1024, height: 1000 })
     await page.emulateMedia({ reducedMotion: "reduce" })
     await page.goto(path)
     const rail = page.locator(".message-index-rail")

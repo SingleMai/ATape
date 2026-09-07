@@ -15,6 +15,13 @@ const elementFor = (id: string) => document.getElementById(`event-${id}`)
 // Canonical prompts are ordered in the same order as the DOM. Binary search
 // keeps scroll work logarithmic, even when a thread has hundreds of prompts.
 const readingPrompt = (prompts: Props["prompts"]): CanonicalEvent | undefined => {
+  // A short final exchange may never reach the reading line because scrolling
+  // is clamped at the document end. At the bottom, select its visible prompt.
+  const last = prompts.at(-1)
+  if (last && window.scrollY > 0 && document.documentElement.scrollHeight - window.scrollY - window.innerHeight <= 1) {
+    const element = elementFor(last.id)
+    if (element && element.getBoundingClientRect().top < window.innerHeight) return last
+  }
   let low = 0
   let high = prompts.length - 1
   while (low < high) {
