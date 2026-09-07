@@ -177,6 +177,13 @@ INSERT INTO canonical_event_versions (
 INSERT INTO canonical_projection_changes (event_id, event_ingest_seq, observed_at)
 VALUES ($1, $2, $3);
 
+-- name: InsertSessionProjectionChanges :exec
+INSERT INTO canonical_projection_changes (event_id, event_ingest_seq, observed_at)
+SELECT events.id, events.ingest_seq, sqlc.arg(observed_at)
+FROM canonical_events events
+WHERE events.session_id = sqlc.arg(session_id)
+  AND NOT (events.id = ANY(sqlc.arg(excluded_event_ids)::text[]));
+
 -- name: GetProjectForRead :one
 SELECT id, team_id, name, captured_through, project_type, state
 FROM canonical_projects

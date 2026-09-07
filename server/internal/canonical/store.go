@@ -145,6 +145,8 @@ func (s *MemoryStore) ApplyBatch(
 	if sessionExists && existingSession.Revision == batch.Session.Revision && existingSession.Digest != batch.Session.Digest {
 		return ApplyResult{}, &ConflictError{Identity: batch.Session.SourceKey, Reason: "session revision has different content"}
 	}
+	sessionTitleChanged := sessionExists && batch.Session.Revision > existingSession.Revision &&
+		batch.Session.Title != existingSession.Title
 	result.SessionCreated = !sessionExists
 
 	for _, thread := range batch.Threads {
@@ -217,6 +219,7 @@ func (s *MemoryStore) ApplyBatch(
 			}
 		}
 	}
+	projectedEventIDs := make(map[string]struct{}, len(mutations))
 	for _, mutation := range mutations {
 		if !mutation.apply {
 			continue
@@ -233,9 +236,19 @@ func (s *MemoryStore) ApplyBatch(
 			cloneEvent(mutation.record),
 		)
 		s.appendProjectionChange(mutation.record.ID)
+		projectedEventIDs[mutation.record.ID] = struct{}{}
 		if !existed {
 			addToIndex(s.eventIDsByThread, recordKey(mutation.record.SessionID, mutation.record.ThreadID), mutation.record.ID)
 			s.sessionEventCounts[mutation.record.SessionID]++
+		}
+	}
+	if sessionTitleChanged {
+		for threadID := range s.threadIDsBySession[batch.Session.ID] {
+			for eventID := range s.eventIDsByThread[recordKey(batch.Session.ID, threadID)] {
+				if _, projected := projectedEventIDs[eventID]; !projected {
+					s.appendProjectionChange(eventID)
+				}
+			}
 		}
 	}
 

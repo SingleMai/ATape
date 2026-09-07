@@ -22,5 +22,6 @@
 | [0018](0018-auth-cutover-and-deployable-self-hosting.md) | Accepted | Durable reviewed auth cutover, fail-closed serving modes, secret-file Compose, and paired PostgreSQL + Raw recovery |
 | [0019](0019-low-cost-dogfood-egress.md) | Accepted | Time-bounded HTTPS and Cloudflare Tunnel egress for the disposable AWS dogfood host |
 | [0020](0020-derived-conversation-narrative.md) | Accepted | Non-persisted Narrative Exchanges derived from Canonical Events for readable conversation views |
+| [0021](0021-provider-session-titles-and-search-invalidation.md) | Accepted | Provider-authored Session titles with deterministic fallback, Cursor backfill, and Search invalidation |
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.

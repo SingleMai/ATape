@@ -43,7 +43,7 @@ Session presence is interpreted centrally by the Go read Modules:
 
 Workspace active counts, Project Memory, and Session Reader use the same effective-status rule. Adapters continue to report source lifecycle; read-time presence aging does not require a synthetic ingestion event.
 
-The Codex Adapter derives a stable title from the first root-thread `UserMessage`, using a bounded scan and a short normalized projection. If no user message is available, it emits `Untitled Codex conversation`; it never exposes the opaque provider Session ID as the title.
+The original Codex title policy derived a stable title from the first root-thread `UserMessage`. [ADR-0021](0021-provider-session-titles-and-search-invalidation.md) supersedes that title policy while retaining the same bounded fallback.
 
 ## Consequences
 
@@ -52,7 +52,7 @@ The Codex Adapter derives a stable title from the first root-thread `UserMessage
 - Process control remains user-local and portable enough for v0.1, but does not provide crash restart or boot persistence.
 - Presence naturally ages from active to idle even when a Harness leaves old files in its active directory.
 - Canonical status remains the durable provider fact; effective presence is a read projection and may change with time without a database write.
-- Titles remain deterministic across Adapter pagination and at-least-once replay.
+- The original root-prompt title projection was deterministic across Adapter pagination and at-least-once replay; ADR-0021 preserves that invariant while adding provider-authored titles.
 
 ## Rejected Alternatives
 

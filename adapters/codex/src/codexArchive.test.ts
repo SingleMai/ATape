@@ -393,7 +393,7 @@ describe("Codex Adapter", () => {
       .toBe("legacy-child")
   })
 
-  it("migrates v1 cursors by replaying Canonical data and advertises following Sessions", async () => {
+  it("migrates legacy cursors by replaying Canonical data and advertises following Sessions", async () => {
     const root = await makeEmptyFixture()
     const firstFile = join(root.sessionsDirectory, "first.jsonl")
     const secondFile = join(root.sessionsDirectory, "second.jsonl")
@@ -430,14 +430,79 @@ describe("Codex Adapter", () => {
     expect(requiredObservation(second).session.sourceSessionId).toBe("second-session")
     expect(second.hasMore).toBe(false)
 
-    const replay = await collect(runtime, Buffer.from(JSON.stringify({
-      v: 1,
-      watermarkModifiedMs: secondModified.getTime() + 1,
-      watermarkSessionId: "after-everything",
-      commitSequence: 2
-    })).toString("base64url"))
-    expect(requiredObservation(replay).session.sourceSessionId).toBe("first-session")
-    expect(replay.hasMore).toBe(true)
+    for (const version of [1, 2]) {
+      const replay = await collect(runtime, Buffer.from(JSON.stringify({
+        v: version,
+        watermarkModifiedMs: secondModified.getTime() + 1,
+        watermarkSessionId: "after-everything",
+        commitSequence: 2
+      })).toString("base64url"))
+      expect(requiredObservation(replay).session.sourceSessionId).toBe("first-session")
+      expect(replay.hasMore).toBe(true)
+      if (replay.nextCursor === null) throw new Error("Expected migrated Cursor")
+      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 3 })
+    }
+  })
+
+  it("prefers the latest valid Codex title index record", async () => {
+    const root = await makeEmptyFixture()
+    const file = join(root.sessionsDirectory, "titled.jsonl")
+    await writeJsonl(file, [
+      sessionMeta({ id: "titled-session", cwd: root.project }),
+      itemCompleted("2026-09-05T00:00:01.000Z", "titled-session", {
+        type: "UserMessage",
+        id: "title-user",
+        content: [{ type: "input_text", text: "This first prompt is only the fallback" }]
+      })
+    ])
+    const rolloutModified = new Date("2026-09-04T23:59:00.000Z")
+    await utimes(file, rolloutModified, rolloutModified)
+    await writeFile(join(root.codexHome, "session_index.jsonl"), [
+      JSON.stringify(sessionTitle("titled-session", "Old generated title", "2026-09-05T00:01:00.000Z")),
+      "not-json",
+      JSON.stringify(sessionTitle("titled-session", "  Checkout   accessibility review  ", "2026-09-05T00:02:00.000Z")),
+      JSON.stringify(sessionTitle("titled-session", "   ", "2026-09-05T00:03:00.000Z")),
+      "{\"id\":\"incomplete"
+    ].join("\n"))
+
+    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+
+    expect(observation.session.title).toBe("Checkout accessibility review")
+    expect(observation.session.updatedAt).toBe("2026-09-05T00:02:00.000Z")
+  })
+
+  it("collects a title-only rename without new rollout or Raw bytes", async () => {
+    const root = await makeEmptyFixture()
+    const file = join(root.sessionsDirectory, "rename.jsonl")
+    const index = join(root.codexHome, "session_index.jsonl")
+    await writeJsonl(file, [
+      sessionMeta({ id: "renamed-session", cwd: root.project }),
+      itemCompleted("2026-09-05T00:00:01.000Z", "renamed-session", {
+        type: "UserMessage",
+        id: "rename-user",
+        content: [{ type: "input_text", text: "Fallback prompt" }]
+      })
+    ])
+    const rolloutModified = new Date("2026-09-04T23:59:00.000Z")
+    await utimes(file, rolloutModified, rolloutModified)
+    await writeJsonl(index, [
+      sessionTitle("renamed-session", "Initial Codex title", "2026-09-05T00:01:00.000Z")
+    ])
+    const runtime = await openAdapter(root.project, "directory")
+    const first = await collect(runtime)
+    const initial = requiredObservation(first)
+    const progress = rawProgress(initial.session.sourceSessionId, initial.rawSegments)
+
+    await appendFile(index, `${JSON.stringify(
+      sessionTitle("renamed-session", "Renamed in Codex", "2026-09-05T00:02:00.000Z")
+    )}\n`)
+    const renamed = await collect(runtime, first.nextCursor, progress)
+    const observation = requiredObservation(renamed)
+
+    expect(observation.session.title).toBe("Renamed in Codex")
+    expect(observation.session.revision).toBeGreaterThan(initial.session.revision)
+    expect(observation.rawSegments).toEqual([])
+    expect((await collect(runtime, renamed.nextCursor, progress)).observations).toEqual([])
   })
 
   it("resumes Raw bytes, replays Canonical events idempotently, and never mirrors provider deletion", async () => {
@@ -849,6 +914,12 @@ const legacyMessage = (
     message,
     ...(clientId === undefined ? {} : { client_id: clientId })
   }
+})
+
+const sessionTitle = (id: string, threadName: string, updatedAt: string) => ({
+  id,
+  thread_name: threadName,
+  updated_at: updatedAt
 })
 
 const writeJsonl = (path: string, records: ReadonlyArray<unknown>) =>
