@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { loadReleaseContract } from "./release-contract.mjs"
+import { manualWaiverPath, verifyManualReleaseWaiver } from "./manual-release-waiver.mjs"
 
 const execute = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -48,10 +49,18 @@ for (let index = 0; index < gates.gates.length; index += 1) {
 
 const attestation = await readJSON(gates.attestation)
 verifyAttestationShape(attestation, release, requiredManualChecks)
-if (mode === "release") await verifyCompletedAttestation(attestation, gates.attestation)
+let waived = false
+if (mode === "release") {
+  if (attestation.status === "pending" && release.version === "0.2.0") {
+    await verifyManualReleaseWaiver(repositoryRoot, await readJSON(manualWaiverPath), release, requiredManualChecks)
+    waived = true
+  } else await verifyCompletedAttestation(attestation, gates.attestation)
+}
 
 process.stdout.write(mode === "release"
-  ? `Verified completed ${release.tag} Authentication release gates.\n`
+  ? waived
+    ? `WARNING: ${release.tag} manual staging acceptance explicitly waived for this candidate; staging remains pending. Automated gates remain required.\n`
+    : `Verified completed ${release.tag} Authentication release gates.\n`
   : `Verified ${release.tag} Authentication gate index; staging attestation is ${attestation.status}.\n`)
 
 function verifyAttestationShape(attestation, releaseContract, requiredChecks) {

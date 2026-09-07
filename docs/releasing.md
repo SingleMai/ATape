@@ -13,6 +13,12 @@ refuses version/epoch drift or an incomplete staging attestation.
 
 ## Local release verification
 
+For v0.2.0 only, the user authorized a
+[candidate-bound manual staging waiver](architecture/adr/0034-v0.2.0-manual-release-waiver.md).
+The staging attestation stays pending; the separate waiver and release notes
+disclose the missing evidence. This does not exempt any automated check and does
+not authorize future releases or code changes after the recorded candidate.
+
 Before creating a tag, run:
 
 ```sh

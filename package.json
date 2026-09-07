@@ -24,7 +24,7 @@
     "test:e2e": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/cli test:e2e",
     "test:cli-package": "pnpm --filter @atape/cli verify:package",
     "test:release": "pnpm test:cli-package && pnpm test:adapter-package && node scripts/verify-release.mjs",
-    "test:release:gates": "node scripts/verify-auth-release-gates.mjs --mode ci",
+    "test:release:gates": "node --test scripts/manual-release-waiver.test.mjs && node scripts/verify-auth-release-gates.mjs --mode ci",
     "test:go": "cd server && go test ./...",
     "test:go:fuzz": "./scripts/run-go-fuzz.sh",
     "test:go:integration": "cd server && ATAPE_INTEGRATION_TESTS=1 TESTCONTAINERS_RYUK_DISABLED=true go test ./internal/adapters/postgres ./internal/adapters/httpapi ./internal/authentication ./internal/authcutover ./internal/team -count=1",
