@@ -17,6 +17,7 @@
     "@effect/atom-react": "catalog:",
     "@tanstack/react-router": "catalog:",
     "effect": "catalog:",
+    "mdast-util-from-markdown": "2.0.3",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-markdown": "^10.1.0"

@@ -1271,6 +1271,7 @@ h3 { margin: 0; font-size: 20px; }
 
 
 /* The tape index is a presentation overlay; it never narrows the transcript. */
+.conversation-reading-frame { overflow-anchor: none; }
 .message-index { position: fixed; z-index: 15; top: 30vh; right: max(0px, calc((100vw - 1308px) / 2 + 28px)); width: 28px; }
 .message-index button { font: inherit; color: var(--atape-color-text); cursor: pointer; }
 .message-index-rail { position: relative; max-height: 55vh; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain; }
@@ -1278,7 +1279,7 @@ h3 { margin: 0; font-size: 20px; }
 .message-index-rail > button { position: relative; display: flex; align-items: center; justify-content: center; width: 28px; height: 36px; padding: 0; border: 0; background: transparent; }
 .message-index-dot { position: relative; display: block; flex: 0 0 auto; width: 7px; height: 7px; border: 1px solid var(--atape-color-text); border-radius: 50%; background: var(--atape-color-paper); }
 .message-index [aria-current="location"] .message-index-dot, .message-index-mobile .message-index-dot { width: 11px; height: 11px; background: var(--atape-color-yellow); border-width: 2px; }
-.message-index-rail small { position: absolute; left: 22px; font-size: 10px; }
+.message-index-current-number { position: absolute; right: 100%; top: var(--message-index-current-top, 18px); transform: translateY(-50%); padding-right: 3px; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; visibility: var(--message-index-current-visibility, visible); }
 .message-index-rail button:hover .message-index-dot, .message-index-rail button:focus-visible .message-index-dot { outline: 3px solid var(--atape-color-accent-soft); outline-offset: 3px; }
 .message-index button:focus-visible { outline: 2px solid var(--atape-color-accent); outline-offset: -2px; }
 .message-index-panel { position: absolute; right: 100%; top: 0; width: min(360px, calc(100vw - 64px)); padding: 12px; border: 2px solid var(--atape-color-border-soft); border-radius: 16px; background: var(--atape-color-paper); box-shadow: var(--atape-shadow-resting); opacity: 0; visibility: hidden; transform: translateX(6px); transition: opacity 160ms ease, transform 160ms ease, visibility 160ms; }
@@ -1297,11 +1298,11 @@ h3 { margin: 0; font-size: 20px; }
 @media (min-width: 641px) and (max-width: 1023px) {
   .message-index { right: 0; width: 30px; }
   .message-index-rail > button { width: 28px; }
-  .message-index-rail small { left: 21px; font-size: 9px; }
+  .message-index-current-number { font-size: 9px; }
 }
 @media (max-width: 640px) {
   .message-index { top: auto; bottom: max(20px, env(safe-area-inset-bottom)); right: 16px; width: auto; }
-  .message-index-rail { display: none; }
+  .message-index-rail, .message-index-current-number { display: none; }
   .message-index-mobile { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 9px 15px; border: 1px solid var(--atape-color-text); border-radius: var(--atape-radius-pill); background: var(--atape-color-paper); box-shadow: var(--atape-shadow-resting); font-size: 13px !important; }
   .message-index-panel { position: fixed; top: auto; bottom: calc(76px + env(safe-area-inset-bottom)); left: 12px; right: 12px; width: auto; transform: translateY(8px); }
   .message-index-panel > header button { width: 44px; height: 44px; }

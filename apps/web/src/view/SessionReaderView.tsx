@@ -5,11 +5,11 @@ import {
   type NarrativeExchange
 } from "@atape/domain"
 import { Badge, Button, Eyebrow } from "@atape/ui"
-import { useEffect } from "react"
-import { ConversationReadingFrame } from "./UserMessageIndex"
+import { useEffect, useMemo } from "react"
 import ReactMarkdown from "react-markdown"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
+import { ConversationReadingFrame } from "./UserMessageIndex"
 
 type Props = {
   readonly state: LoadableView<Conversation>
@@ -208,6 +208,9 @@ export const SessionReaderView = ({
 }: Props) => {
   const ready = state._tag === "Ready"
   const threadId = ready ? state.value.thread.id : undefined
+  const value = ready ? state.value : undefined
+  const narrative = useMemo(() => value ? projectConversationNarrative(value) : [], [value])
+  const prompts = useMemo(() => narrative.flatMap((exchange) => exchange.prompt ? [exchange.prompt] : []), [narrative])
   useEffect(() => {
     if (!ready || !highlightedEventId) return
     const event = document.getElementById(`event-${highlightedEventId}`)
@@ -233,7 +236,6 @@ export const SessionReaderView = ({
   }
 
   const conversation = state.value
-  const narrative = projectConversationNarrative(conversation)
   return (
     <section aria-labelledby="session-title">
       <nav className="reader-nav" aria-label="Session navigation">
@@ -288,7 +290,7 @@ export const SessionReaderView = ({
         ))}
       </nav>
 
-      <ConversationReadingFrame key={conversation.thread.id} prompts={narrative.flatMap((exchange) => exchange.prompt ? [exchange.prompt] : [])}>
+      <ConversationReadingFrame key={conversation.thread.id} prompts={prompts}>
         <div className="conversation-stream">
           {narrative.map((exchange, index) => (
             <section className="narrative-exchange" aria-label={`Conversation exchange ${index + 1}`} key={exchange.id}>
