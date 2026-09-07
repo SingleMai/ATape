@@ -19,7 +19,7 @@ const event = (
   ...(toolLabel === undefined ? {} : { toolLabel })
 })
 
-const value: Conversation = {
+const conversation = (events: ReadonlyArray<CanonicalEvent>): Conversation => ({
   session: {
     id: "session-1",
     projectId: "project-1",
@@ -32,57 +32,89 @@ const value: Conversation = {
   },
   thread: { id: "thread-1", label: "Root", captureStatus: "healthy" },
   threadPath: [{ id: "thread-1", label: "Root" }],
-  events: [
-    event("01", "message", "User", "Please diagnose this"),
-    event("02", "thought", "Codex", "Planning diagnosis"),
-    event("03", "message", "Codex", "I am checking the logs"),
-    event("04", "tool_call", "Codex", "exec · completed", "exec"),
-    event("05", "message", "Codex", "The issue is fixed")
-  ]
-}
+  events: [...events]
+})
 
-const renderReader = (highlightedEventId?: string) => renderToStaticMarkup(
+const value = conversation([
+  event("01", "message", "User", "Please diagnose this"),
+  event("02", "thought", "Codex", "Planning diagnosis"),
+  event("03", "message", "Codex", "I am checking the logs"),
+  event("04", "tool_call", "Codex", "exec · completed", "exec"),
+  event("05", "message", "Codex", "**The issue is fixed.**")
+])
+
+const renderReader = (options: {
+  readonly value?: Conversation
+  readonly highlightedEventId?: string
+} = {}) => renderToStaticMarkup(
   <SessionReaderView
-    state={{ _tag: "Ready", value, refreshing: false } satisfies LoadableView<Conversation>}
+    state={{
+      _tag: "Ready",
+      value: options.value ?? value,
+      refreshing: false
+    } satisfies LoadableView<Conversation>}
     projectName="ATape"
     onBack={() => undefined}
     onOpenThread={() => undefined}
     onRetry={() => undefined}
     onOpenRaw={() => undefined}
-    {...(highlightedEventId === undefined ? {} : { highlightedEventId })}
+    {...(options.highlightedEventId === undefined ? {} : { highlightedEventId: options.highlightedEventId })}
   />
 )
 
 describe("SessionReaderView", () => {
-  it("renders the user prompt and final agent response as the turn's primary content", () => {
+  it("renders a compact header, user prompt, and primary agent response", () => {
     const html = renderReader()
 
-    expect(html).toContain("turn-message-user")
+    expect(html).toContain("session-reader-header")
+    expect(html).toContain("narrative-prompt")
     expect(html).toContain("Please diagnose this")
-    expect(html).toContain("turn-message-agent")
-    expect(html).toContain("The issue is fixed")
+    expect(html).toContain("narrative-response")
+    expect(html).toContain("<strong>The issue is fixed.</strong>")
     expect(html.indexOf("Please diagnose this")).toBeLessThan(html.indexOf("The issue is fixed"))
   })
 
-  it("keeps thoughts, intermediate messages, and tools inside collapsed process details", () => {
+  it("uses one collapsed Activity disclosure for thoughts, updates, and tools", () => {
     const html = renderReader()
-    const process = html.match(/<details class="turn-process"[^>]*>/)?.[0]
+    const activity = html.match(/<details class="narrative-activity"[^>]*>/)?.[0]
 
-    expect(process).toBe('<details class="turn-process">')
+    expect(activity).toBe('<details class="narrative-activity">')
     expect(html).toContain("1 update · 1 thought · 1 tool event")
     expect(html).toContain("Planning diagnosis")
-    expect(html).toContain('<details class="process-tool-group">')
-    expect(html).toContain('<details class="process-tool">')
-    expect(html).not.toContain("event event-thought")
+    expect(html.match(/<details/g)).toHaveLength(1)
+    expect(html).not.toContain("process-tool")
   })
 
-  it("opens the process and nested tool when a search result targets that event", () => {
-    const html = renderReader("04")
+  it("opens Activity when a search result targets a folded event", () => {
+    const html = renderReader({ highlightedEventId: "04" })
 
-    expect(html).toContain('<details class="turn-process" open="">')
-    expect(html).toContain('<details class="process-tool-group" open="">')
-    expect(html).toContain('<details class="process-tool" open="">')
+    expect(html).toContain('<details class="narrative-activity" open="">')
     expect(html).toContain('id="event-04"')
     expect(html).toContain("event-highlighted")
+  })
+
+  it("keeps incomplete Activity open so a capture never looks blank", () => {
+    const incomplete = conversation([value.events[0]!, value.events[1]!, value.events[3]!])
+    const html = renderReader({ value: incomplete })
+
+    expect(html).toContain('<details class="narrative-activity" open="">')
+    expect(html).not.toContain("narrative-response")
+  })
+
+  it("shows artifacts, notices, and unclassified messages outside Activity", () => {
+    const ambiguous = conversation([
+      event("01", "message", "User", "Review the result"),
+      event("02", "artifact", "Codex", "[Open report](/report.md)"),
+      event("03", "notice", "System", "Capture is partial"),
+      event("04", "message", "Reviewer", "Independent review"),
+      event("05", "message", "Codex", "Review complete")
+    ])
+    const html = renderReader({ value: ambiguous })
+
+    expect(html).toContain("narrative-highlight-artifact")
+    expect(html).toContain("narrative-highlight-notice")
+    expect(html).toContain("narrative-highlight-message")
+    expect(html).toContain("Unclassified message")
+    expect(html).not.toContain("narrative-activity")
   })
 })

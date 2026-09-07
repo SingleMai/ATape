@@ -18,7 +18,8 @@
     "@tanstack/react-router": "catalog:",
     "effect": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@playwright/test": "catalog:build",
