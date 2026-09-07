@@ -81,9 +81,8 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
   request.signal.throwIfAborted()
   const state = decodeDiscoveryCursor(request.cursor)
   const diagnostics = new SourceDiagnostics()
-  if (request.previousAdapterVersion && request.previousAdapterVersion !== archive.context.adapter.version) {
-    fail("unsupported", "Claude Adapter version changed; existing checkpoint needs an explicit upgrade path.")
-  }
+  // The supported cursor schema owns recovery compatibility, not the package
+  // version. Unknown schemas and changed captured prefixes still fail closed.
   const selected = archive.file ? await readHeader(archive.file, request.signal) : undefined
   const candidates = archive.file
     ? [{ file: archive.file, sessionId: string(selected?.sessionId) ?? "" }]

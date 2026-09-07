@@ -10,6 +10,11 @@ pnpm atape adapters enable claude --project YOUR_PROJECT
 pnpm atape collect --once --project YOUR_PROJECT --json
 ```
 
+For an offline packaged installation, `pnpm pack:release` now produces the CLI,
+Codex and Claude tarballs plus `SHA256SUMS` under `release/`. Install the CLI
+tarball, then use `atape adapters install ./release/atape-adapter-claude-0.2.0.tgz`.
+These local build commands do not publish to npm or deploy an instance.
+
 The Project must already be configured and authenticated normally. Discovery reads
 `~/.claude/projects/*/*.jsonl`; set `ATAPE_CLAUDE_HOME` to an absolute alternate
 Claude configuration directory when needed. `ATAPE_CLAUDE_SESSION_FILE` remains
@@ -100,6 +105,14 @@ does not reset captured source prefixes or invent new Sessions. Finish pending
 old-client collection retries before upgrading other Adapters; this slice does
 not add a general cross-profile recovery protocol. No package is published by
 the development build commands above.
+
+A package-version change alone no longer blocks recovery: the installed Adapter
+decodes the persisted cursor schema and revalidates captured bytes. Unknown cursor
+formats and changed prefixes still stop/diagnose the affected capture, never reset
+it. Preserve the complete CLI state directory, stop the Collector before replacement,
+and restart after checking `collect --once`. This is not a promise of old Claude
+source-format compatibility; a future breaking cursor format must provide its own
+explicit migration or rejection. See [ADR-0032](../../docs/architecture/adr/0032-claude-release-and-recovery.md).
 
 `fixtures/native-read-2.1.263.jsonl` retains decoded records from a real, controlled
 Claude Code 2.1.263 invocation, with home/temporary paths substituted. It is not

@@ -14,8 +14,9 @@ const artifacts = release.packages.map((package_) => join(releaseDirectory, pack
 
 await mkdir(releaseDirectory, { recursive: true })
 await Promise.all([...artifacts, join(releaseDirectory, "SHA256SUMS")].map((path) => rm(path, { force: true })))
-await run("pnpm", ["--filter", "@atape/cli", "pack:release"])
-await run("pnpm", ["--filter", "@atape/adapter-codex", "pack:release"])
+for (const package_ of release.packages) {
+  await run("pnpm", ["--filter", package_.name, "pack:release"])
+}
 
 const checksums = []
 for (const path of [...artifacts].sort()) {

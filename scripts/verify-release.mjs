@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises"
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -15,13 +15,18 @@ const release = await loadReleaseContract(repositoryRoot)
 const releaseDirectory = release.releaseDirectory
 const cliPackage = release.packages.find((package_) => package_.name === "@atape/cli")
 const adapterPackage = release.packages.find((package_) => package_.name === "@atape/adapter-codex")
-if (cliPackage === undefined || adapterPackage === undefined) throw new Error("Release packages are incomplete.")
+const claudePackage = release.packages.find((package_) => package_.name === "@atape/adapter-claude")
+if (cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
 const cliArtifact = join(releaseDirectory, cliPackage.artifactName)
 const adapterArtifact = join(releaseDirectory, adapterPackage.artifactName)
+const claudeArtifact = join(releaseDirectory, claudePackage.artifactName)
 const temporaryRoot = await mkdtemp(join(tmpdir(), "atape-release-"))
 const installDirectory = join(temporaryRoot, "install")
 const projectDirectory = join(temporaryRoot, "project")
 const codexHome = join(temporaryRoot, "codex-home")
+const claudeHome = join(temporaryRoot, "claude-home")
+const claudeDirectory = join(claudeHome, "projects", "release-fixture")
+const claudeSource = join(claudeDirectory, "session.jsonl")
 const stateDirectory = join(temporaryRoot, "state")
 const binary = join(
   installDirectory,
@@ -37,6 +42,8 @@ const environment = {
   XDG_DATA_HOME: join(temporaryRoot, "xdg-data"),
   XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
   ATAPE_CODEX_HOME: codexHome,
+  ATAPE_CLAUDE_HOME: claudeHome,
+  ATAPE_CLAUDE_SESSION_FILE: "",
   ATAPE_REDACT_VALUES: "[]"
 }
 let remote
@@ -46,6 +53,7 @@ try {
   await verifyChecksums()
   await Promise.all([
     mkdir(projectDirectory, { recursive: true }),
+    mkdir(claudeDirectory, { recursive: true }),
     mkdir(join(codexHome, "sessions"), { recursive: true }),
     mkdir(join(codexHome, "archived_sessions"), { recursive: true })
   ])
@@ -53,6 +61,7 @@ try {
     "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installDirectory, cliArtifact
   ], temporaryRoot)
   remote = await startCLIAuthFixture({
+    capture: true,
     userId: "release-user",
     userName: "Release User",
     teamId: "release-team-id",
@@ -90,7 +99,10 @@ try {
     observations: job.observations
   })), [{ projectId: "release-project", adapterId: "codex", observations: 0 }])
 
-  process.stdout.write("Verified packaged CLI loading and collecting with the packaged Codex Adapter.\n")
+  await verifyClaudeUpgrade()
+  // The fixture artifact is kept outside release/ and never replaces publish bytes.
+  await verifyChecksums()
+  process.stdout.write("Verified packaged CLI with Codex/Claude and a versioned Claude package replacement preserving capture progress.\n")
 } finally {
   await remote?.close().catch(() => undefined)
   await rm(temporaryRoot, { recursive: true, force: true })
@@ -104,11 +116,81 @@ async function verifyChecksums() {
       const [digest, filename] = line.split(/\s{2}/)
       return [filename, digest]
     }))
-  for (const artifact of [cliArtifact, adapterArtifact]) {
+  assert.equal(expected.size, release.packages.length)
+  for (const artifact of release.packages.map(package_ => join(releaseDirectory, package_.artifactName))) {
     const filename = artifact.slice(releaseDirectory.length + 1)
     const digest = createHash("sha256").update(await readFile(artifact)).digest("hex")
     assert.equal(expected.get(filename), digest)
   }
+}
+
+async function verifyClaudeUpgrade() {
+  // There is no historical released Claude package in this test. Re-version the
+  // current bundle in isolated staging to exercise the real package replacement
+  // boundary; this is not evidence of old source-format compatibility.
+  const staging = join(temporaryRoot, "upgrade-staging")
+  await mkdir(staging)
+  await run("tar", ["-xzf", claudeArtifact, "-C", staging], temporaryRoot)
+  const manifestPath = join(staging, "package", "package.json")
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+  const fixtureVersion = `${release.version.split("-")[0]}-upgrade-fixture`
+  manifest.version = fixtureVersion
+  await writeFile(manifestPath, JSON.stringify(manifest))
+  const packed = JSON.parse((await run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", staging], join(staging, "package"))).stdout)
+  const upgradeSource = join(temporaryRoot, "claude-upgrade.tgz")
+  await copyFile(join(staging, packed[0].filename), upgradeSource)
+  const installed = JSON.parse((await atape(["adapters", "install", upgradeSource, "--json"])).stdout)
+  assert.equal(installed.adapter.adapterId, "claude")
+  assert.equal(installed.adapter.version, fixtureVersion)
+  assert.equal(installed.adapter.upgradeSpec, `file:${await realpath(upgradeSource)}`)
+  await atape(["adapters", "enable", "claude", "--project", "release-project", "--json"])
+  const source = (await readFile(join(repositoryRoot, "adapters/claude/fixtures/native-read-2.1.263.jsonl"), "utf8"))
+    .replaceAll("/fixture/native-read", projectDirectory)
+  await writeFile(claudeSource, source)
+  const collect = async () => {
+    const report = JSON.parse((await atape(["collect", "--once", "--project", "release-project", "--json"])).stdout)
+    assert.deepEqual(report.failures, [])
+    const job = report.jobs.find(job => job.adapterId === "claude")
+    assert.ok(job)
+    assert.equal(job.sourceFailures, undefined)
+    return job
+  }
+  assert.equal((await collect()).observations, 1)
+  const statePath = join(stateDirectory, "state", "collector.json")
+  const before = await readFile(statePath, "utf8")
+  const checkpoint = JSON.parse(before).checkpoints.find(item => item.adapterId === "claude")
+  assert.equal(checkpoint.adapterVersion, fixtureVersion)
+  assert.equal(checkpoint.rawObjects.length, 1)
+  const submitted = () => remote.requests.filter(request => request.url === "/api/v1/ingestion/canonical/batches")
+  const firstEvents = submitted()[0].body.events
+  assert.equal(firstEvents.length, 6)
+  assert.ok(firstEvents.some(event => event.toolUpdateJson?.includes("rawInput")))
+
+  await copyFile(claudeArtifact, upgradeSource)
+  const upgraded = JSON.parse((await atape(["adapters", "upgrade", "claude", "--json"])).stdout)
+  assert.equal(upgraded.adapters.length, 1)
+  assert.equal(upgraded.adapters[0].adapterId, "claude")
+  assert.equal(upgraded.adapters[0].version, claudePackage.version)
+  assert.equal(await readFile(statePath, "utf8"), before, "package replacement must not rewrite Collector state")
+  const unchanged = await collect()
+  assert.equal(unchanged.observations, 0)
+  assert.equal(unchanged.rawChunks, 0)
+  assert.equal(submitted().length, 1)
+  const resumed = JSON.parse(await readFile(statePath, "utf8")).checkpoints.find(item => item.adapterId === "claude")
+  assert.equal(resumed.adapterVersion, claudePackage.version)
+  assert.equal(resumed.cursor, checkpoint.cursor)
+  assert.deepEqual(resumed.rawObjects, checkpoint.rawObjects)
+
+  const last = source.trimEnd().split("\n").map(line => JSON.parse(line)).filter(record => record.uuid).at(-1)
+  await appendFile(claudeSource, JSON.stringify({ ...last, uuid: "packaged-upgrade-append", parentUuid: last.uuid,
+    message: { role: "assistant", content: "Captured after packaged upgrade" } }) + "\n")
+  const appended = await collect()
+  assert.equal(appended.observations, 1)
+  assert.equal(appended.rawChunks, 1)
+  const nextEvents = submitted()[1].body.events
+  assert.deepEqual(nextEvents.slice(0, 6).map(event => event.sourceEventId), firstEvents.map(event => event.sourceEventId))
+  assert.equal(nextEvents.length, 7)
+  assert.equal((await collect()).observations, 0)
 }
 
 function atape(arguments_) {

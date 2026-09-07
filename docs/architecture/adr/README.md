@@ -39,4 +39,6 @@ ADRs record consequential implementation decisions. A superseded ADR remains in 
 
 [ADR-0031](0031-source-failure-isolation.md) isolates individual Claude sources and adds bounded, redacted local diagnostics to the shared Collector Interface.
 
-[ADR-0032](0032-continuous-dogfood-web-deployment.md) deploys verified main commits to the dogfood Web container through a narrow SSM Interface, with rollback and retained lazy-load assets.
+[ADR-0032](0032-claude-release-and-recovery.md) adds Claude release artifacts and resumes supported checkpoint formats across package replacement without resetting source progress.
+
+[ADR-0033](0033-continuous-dogfood-web-deployment.md) deploys verified main commits to the dogfood Web container through a narrow SSM Interface, with rollback and retained lazy-load assets.
