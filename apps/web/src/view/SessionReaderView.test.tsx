@@ -64,6 +64,20 @@ const renderReader = (options: {
 )
 
 describe("SessionReaderView", () => {
+  it("shows a Canonical prompt index only for two or more user messages", () => {
+    expect(renderReader()).not.toContain('aria-label="User messages"')
+    const html = renderReader({ value: conversation([
+      ...value.events,
+      event("06", "message", "User", "**继续**\n[检查](https://example.com)")
+    ]) })
+    expect(html).toContain('aria-label="User messages"')
+    expect(html).toContain('id="event-06"')
+    expect(html).toContain('class="message-index-summary">继续 检查</span>')
+    expect(html).toContain('<strong>继续</strong>')
+    expect(html).toContain('href="https://example.com"')
+    expect(html.match(/class="message-index-number"/g)).toHaveLength(2)
+  })
+
   it("renders a compact header, user prompt, and primary agent response", () => {
     const html = renderReader()
 

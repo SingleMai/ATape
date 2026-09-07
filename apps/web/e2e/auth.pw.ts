@@ -221,7 +221,7 @@ test("keeps each narrative exchange focused on the prompt and primary response",
   await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
   await expect(page.locator(".narrative-prompt")).toHaveCount(2)
   await expect(page.locator(".narrative-response")).toHaveCount(2)
-  await expect(page.getByText("Please diagnose the startup failure")).toBeVisible()
+  await expect(page.locator(".narrative-prompt").getByText("Please diagnose the startup failure")).toBeVisible()
   await expect(page.getByText("The startup issue is fixed")).toBeVisible()
   await expect(page.getByText("Planning diagnosis")).not.toBeVisible()
   await expect(page.getByText("I am checking the environment")).not.toBeVisible()
