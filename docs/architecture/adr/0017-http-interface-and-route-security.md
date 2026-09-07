@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-06
+- Raw request sizing amended by [ADR-0022](0022-canonical-priority-and-larger-raw-chunks.md)
 
 ## Context
 
@@ -59,7 +60,7 @@ Adapter and a closed route registry.
   ordinary product calls.
 - Body policy is route-owned. Strict JSON decoding accepts one
   `application/json` object, rejects unknown/trailing fields, and enforces the
-  16 KiB auth, 64 KiB control-plane, 4 MiB Canonical, and 512 KiB Raw ceilings;
+  16 KiB auth, 64 KiB control-plane, 4 MiB Canonical, and 5 MiB Raw ceilings;
   routes declared without a body reject one rather than silently ignoring it.
 - All JSON failures use one RFC 9457 registry. Authentication challenges,
   `Retry-After`, `Allow`, request correlation, no-store behavior, and public

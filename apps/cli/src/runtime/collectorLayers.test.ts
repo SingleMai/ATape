@@ -397,7 +397,7 @@ describe("Node Collector Layers", () => {
     await authorize(client, remote.url)
     const project = join(client.root, "large-raw")
     await mkdir(project)
-    const content = `${JSON.stringify({ text: "界".repeat(100_000) })}\n`
+    const content = `${JSON.stringify({ text: "x".repeat(RawTransportChunkBytes + 1024) })}\n`
     const adapter = await writeAdapter(client.root, content)
     await client.run(installAdapter(adapter))
     await client.run(setupProject({

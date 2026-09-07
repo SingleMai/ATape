@@ -8,7 +8,9 @@ import { AdapterProtocolVersion } from "./client.ts"
 export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
 export const CanonicalProfileVersion = "atape.acp-centered.v1" as const
 export const RawIngestionProtocolVersion = "atape.raw.v1" as const
-export const RawTransportChunkBytes = 256 * 1024
+// Three decoded MiB expands to four MiB of Base64, leaving room for metadata
+// beneath the five MiB HTTP and reverse-proxy request ceiling.
+export const RawTransportChunkBytes = 3 * 1024 * 1024
 export const CollectorStateVersion = 2 as const
 export const CollectorRunStateVersion = 1 as const
 

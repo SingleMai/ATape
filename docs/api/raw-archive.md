@@ -45,8 +45,8 @@ The client does not send `userId`, `teamId`, `projectId`, `objectId`, or
 Project state, and capturing User. Only the same User who created the Canonical
 Session may append its Raw source; current Team members may read it.
 
-- Decoded content is limited to 256 KiB; the complete request body is limited
-  to 512 KiB.
+- Decoded content is limited to 3 MiB; the complete request body is limited
+  to 5 MiB. Base64 expansion of a maximum chunk remains below that ceiling.
 - Every request contains the exact lowercase SHA-256 of the decoded bytes.
 - The client applies configured secret redaction before upload and declares
   `clientRedacted: true`.
@@ -86,7 +86,8 @@ Accept: application/json
 `generation=0` or an omitted generation selects the current generation.
 `limit` is a chunk count from 1 through 8 and defaults to 4. `nextCursor` is
 opaque and binds the next request to the same Raw object and generation. A page
-therefore contains at most 2 MiB of decoded source.
+therefore contains at most 24 MiB of decoded source; the default four-chunk
+page contains at most 12 MiB.
 
 Provider-side deletion does not delete captured history. An explicit
 `DELETE /api/v1/sessions/{sessionId}` tombstones the captured Session and makes

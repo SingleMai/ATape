@@ -16,7 +16,7 @@ import { homedir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Option, Schema } from "effect"
 
-const CursorVersion = 4 as const
+const CursorVersion = 5 as const
 const MaxCursorBytes = 16_000
 const MaxMetadataBytes = 1024 * 1024
 const MaxJsonlRecordBytes = 16 * 1024 * 1024
@@ -84,10 +84,12 @@ type CursorFile = {
 }
 
 type ActiveCursor = {
+  readonly phase: "canonical" | "raw"
   readonly sessionId: string
   readonly selectedModifiedMs: number
   readonly revision: number
   readonly providerTitle?: string
+  readonly resolvedTitle?: string
   readonly files: ReadonlyArray<CursorFile>
   readonly spawnOffset: number
   readonly eventFileIndex: number
@@ -114,10 +116,12 @@ const CursorFileSchema = Schema.Struct({
 })
 
 const ActiveCursorSchema = Schema.Struct({
+  phase: Schema.Literals(["canonical", "raw"]),
   sessionId: Schema.String,
   selectedModifiedMs: Schema.Number,
   revision: Schema.Number,
   providerTitle: Schema.optionalKey(Schema.String),
+  resolvedTitle: Schema.optionalKey(Schema.String),
   files: Schema.Array(CursorFileSchema),
   spawnOffset: Schema.Number,
   eventFileIndex: Schema.Number,
@@ -134,12 +138,33 @@ const CursorSchema = Schema.Struct({
   active: Schema.optionalKey(ActiveCursorSchema)
 })
 
+const PreviousActiveCursorSchema = Schema.Struct({
+  sessionId: Schema.String,
+  selectedModifiedMs: Schema.Number,
+  revision: Schema.Number,
+  providerTitle: Schema.optionalKey(Schema.String),
+  files: Schema.Array(CursorFileSchema),
+  spawnOffset: Schema.Number,
+  eventFileIndex: Schema.Number,
+  eventOffset: Schema.Number,
+  emitted: Schema.Boolean,
+  step: Schema.Number
+})
+
+const PreviousCursorSchema = Schema.Struct({
+  v: Schema.Literal(4),
+  watermarkModifiedMs: Schema.Number,
+  watermarkSessionId: Schema.String,
+  commitSequence: Schema.optionalKey(Schema.Number),
+  active: Schema.optionalKey(PreviousActiveCursorSchema)
+})
+
 const LegacyCursorSchema = Schema.Struct({
   v: Schema.Literals([1, 2, 3]),
   watermarkModifiedMs: Schema.Number,
   watermarkSessionId: Schema.String,
   commitSequence: Schema.optionalKey(Schema.Number),
-  active: Schema.optionalKey(ActiveCursorSchema)
+  active: Schema.optionalKey(PreviousActiveCursorSchema)
 })
 
 const SessionTitleIndexRecordSchema = Schema.Struct({
@@ -251,9 +276,9 @@ const collectPage = async (
     })
   }
 
-  const active = await startSession(selected, request.signal)
+  const active = await startSession(selected.session, selected.phase, request.signal)
   return pageWithRemainingSessions(
-    await collectActiveSession(archive, request, { ...cursor, active }, selected),
+    await collectActiveSession(archive, request, { ...cursor, active }, selected.session),
     sessions
   )
 }
@@ -287,8 +312,16 @@ const collectActiveSession = async (
 
   const observedAt = new Date(active.selectedModifiedMs).toISOString()
   const childCount = threads.length - 1
-  const projection = await inspectCanonicalProjection(active, currentFiles, request.signal)
-  const title = await deriveSessionTitle(active, currentFiles, projection, request.signal)
+  const projection = active.phase === "canonical" || active.resolvedTitle === undefined
+    ? await inspectCanonicalProjection(active, currentFiles, request.signal)
+    : undefined
+  const title = active.resolvedTitle ?? await deriveSessionTitle(
+    active,
+    currentFiles,
+    // A missing cached title is the only Raw-phase path that reaches this call.
+    projection as CanonicalProjection,
+    request.signal
+  )
   const session: AdapterObservation["session"] = {
     sourceSessionId: active.sessionId,
     revision: active.revision,
@@ -309,28 +342,32 @@ const collectActiveSession = async (
       message: `Codex session ${active.sessionId} metadata exceeds the Canonical byte limit.`
     })
   }
-  const eventPage = await collectEvents(
-    active,
-    threads,
-    currentFiles,
-    projection,
-    request.limits.eventsPerObservation,
-    request.limits.canonicalBytesPerObservation - canonicalBaseBytes,
-    request.signal
-  )
-  const rawPage = await collectRaw(
-    active,
-    currentFiles,
-    request.rawProgress,
-    request.limits.rawSegmentsPerObservation,
-    request.limits.rawSegmentBytes,
-    request.limits.rawBytesPerObservation,
-    request.signal
-  )
+  const eventPage = active.phase === "canonical"
+    ? await collectEvents(
+      active,
+      threads,
+      currentFiles,
+      projection as CanonicalProjection,
+      request.limits.eventsPerObservation,
+      request.limits.canonicalBytesPerObservation - canonicalBaseBytes,
+      request.signal
+    )
+    : completedEventPage(active)
+  const rawPage = active.phase === "raw"
+    ? await collectRaw(
+      active,
+      currentFiles,
+      request.rawProgress,
+      request.limits.rawSegmentsPerObservation,
+      request.limits.rawSegmentBytes,
+      request.limits.rawBytesPerObservation,
+      request.signal
+    )
+    : { segments: [], complete: true }
   const shouldEmit = eventPage.events.length > 0 || rawPage.segments.length > 0 || !active.emitted
   const complete = eventPage.complete && rawPage.complete
   const nextCursor = complete
-    ? advanceWatermark(cursor, active.selectedModifiedMs, active.sessionId)
+    ? completeActive(cursor, active)
     : {
         ...cursor,
         active: {
@@ -338,16 +375,21 @@ const collectActiveSession = async (
           spawnOffset: eventPage.spawnOffset,
           eventFileIndex: eventPage.fileIndex,
           eventOffset: eventPage.offset,
+          resolvedTitle: title,
           emitted: active.emitted || shouldEmit,
           step: active.step + (shouldEmit ? 1 : 0)
         }
       }
 
-  if (!shouldEmit) return emptyPage(nextCursor)
+  if (!shouldEmit) {
+    const page = emptyPage(nextCursor)
+    return complete ? { ...page, hasMore: true } : page
+  }
 
   const root = threads.find((thread) => thread.parentSourceThreadId === undefined)
   const observation: AdapterObservation = {
     observationId: `codex-${digest(JSON.stringify({
+      phase: active.phase,
       sessionId: active.sessionId,
       revision: active.revision,
       step: active.step,
@@ -363,12 +405,26 @@ const collectActiveSession = async (
   return {
     protocolVersion: request.protocolVersion,
     nextCursor: encodeCursor(nextCursor),
-    hasMore: !complete,
+    // A completed phase may expose another Canonical Session or Raw backlog.
+    // Let the Host ask once more; an actually idle selection returns hasMore=false.
+    hasMore: true,
     observations: [observation]
   }
 }
 
-const startSession = async (session: CodexSession, signal: AbortSignal): Promise<ActiveCursor> => {
+const completedEventPage = (active: ActiveCursor): EventPage => ({
+  events: [],
+  spawnOffset: active.spawnOffset,
+  fileIndex: active.eventFileIndex,
+  offset: active.eventOffset,
+  complete: true
+})
+
+const startSession = async (
+  session: CodexSession,
+  phase: ActiveCursor["phase"],
+  signal: AbortSignal
+): Promise<ActiveCursor> => {
   if (session.files.length > MaxFilesPerSession) {
     throw new CodexArchiveError({
       reason: "limit",
@@ -391,6 +447,7 @@ const startSession = async (session: CodexSession, signal: AbortSignal): Promise
   const allArchived = files.length > 0 && files.every((file) => file.archived)
   const modifiedMicros = Math.max(1, Math.floor(session.modifiedMs * 1_000))
   return {
+    phase,
     sessionId: session.id,
     selectedModifiedMs: session.modifiedMs,
     revision: modifiedMicros * 2 + CanonicalProjectionRevisionOffset + (allArchived ? 1 : 0),
@@ -1305,9 +1362,9 @@ const selectSession = async (
 ) => {
   const ordered = [...sessions].sort(compareSessions)
   const changed = ordered.find((session) => isAfterWatermark(session, cursor))
-  if (changed !== undefined) return changed
+  if (changed !== undefined) return { session: changed, phase: "canonical" as const }
   for (const session of ordered) {
-    if (await sessionNeedsRaw(session, progress, signal)) return session
+    if (await sessionNeedsRaw(session, progress, signal)) return { session, phase: "raw" as const }
   }
   return undefined
 }
@@ -1349,6 +1406,18 @@ const advanceWatermark = (cursor: CodexCursor, modifiedMs: number, sessionId: st
   }
 }
 
+const completeActive = (cursor: CodexCursor, active: ActiveCursor): CodexCursor => {
+  if (active.phase === "canonical") {
+    return advanceWatermark(cursor, active.selectedModifiedMs, active.sessionId)
+  }
+  return {
+    v: CursorVersion,
+    watermarkModifiedMs: cursor.watermarkModifiedMs,
+    watermarkSessionId: cursor.watermarkSessionId,
+    commitSequence: (cursor.commitSequence ?? 0) + 1
+  }
+}
+
 const emptyPage = (cursor: CodexCursor): AdapterCollectionPage => ({
   protocolVersion: "atape.adapter.v1alpha1",
   nextCursor: encodeCursor(cursor),
@@ -1364,9 +1433,26 @@ const decodeCursor = (value: string | null): CodexCursor => {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown
     const decoded = Schema.decodeUnknownOption(CursorSchema)(parsed)
     if (Option.isSome(decoded) && validCursor(decoded.value)) return decoded.value
+    const previous = Schema.decodeUnknownOption(PreviousCursorSchema)(parsed)
+    if (Option.isSome(previous)) {
+      const { active, ...rest } = previous.value
+      const migrated: CodexCursor = {
+        ...rest,
+        v: CursorVersion,
+        ...(active === undefined
+          ? {}
+          : { active: { ...active, phase: "canonical" } })
+      }
+      if (validCursor(migrated)) return migrated
+    }
     const legacy = Schema.decodeUnknownOption(LegacyCursorSchema)(parsed)
     if (Option.isSome(legacy)) {
-      const migrated = { ...legacy.value, v: CursorVersion }
+      const { active, ...rest } = legacy.value
+      const migrated: CodexCursor = {
+        ...rest,
+        v: CursorVersion,
+        ...(active === undefined ? {} : { active: { ...active, phase: "canonical" } })
+      }
       if (validCursor(migrated)) {
         return { v: CursorVersion, watermarkModifiedMs: 0, watermarkSessionId: "", commitSequence: 0 }
       }

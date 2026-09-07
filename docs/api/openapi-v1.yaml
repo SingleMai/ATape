@@ -870,7 +870,7 @@ paths:
       x-atape-authorization-actions: [raw.ingest]
       tags: [Ingestion]
       summary: Idempotently append one bounded Raw v1 chunk
-      x-atape-route: {class: cli_only, requestBodyPolicy: json-raw, requestBodyLimit: 524288, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-raw, requestBodyLimit: 5242880, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{cliCredential: []}]
       requestBody: {$ref: "#/components/requestBodies/RawChunk"}
       responses:
