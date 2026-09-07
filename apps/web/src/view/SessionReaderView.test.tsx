@@ -78,6 +78,22 @@ describe("SessionReaderView", () => {
     expect(html.match(/class="message-index-number"/g)).toHaveLength(2)
   })
 
+  it.each([
+    ["# Heading\n\n- First\n- Second", "Heading First Second"],
+    ["[**nested** label](https://example.com/a_(b))", "nested label"],
+    ["[Reference][guide]\n\n[guide]: https://example.com \"Title\"", "Reference"],
+    ["![Screenshot][image]\n\n[image]: https://example.com/image.png", "Screenshot"],
+    ["`file_name.ts` and **bold** and plain_file.ts", "file_name.ts and bold and plain_file.ts"],
+    ["~~~ts\nconst some_value = a * b;\n~~~", "const some_value = a * b;"],
+    ["Use \\*literal\\* &amp; &#60;tag&#62;", "Use *literal* &amp; &lt;tag&gt;"],
+    ["First  \nsecond\n\n> Third", "First second Third"]
+  ])("condenses Markdown summaries without losing literal content: %s", (markdown, expected) => {
+    const html = renderReader({ value: conversation([
+      ...value.events, event("06", "message", "User", markdown)
+    ]) })
+    expect(html).toContain(`class="message-index-summary">${expected}</span>`)
+  })
+
   it("renders a compact header, user prompt, and primary agent response", () => {
     const html = renderReader()
 

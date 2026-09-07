@@ -116,6 +116,9 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.112
+      mdast-util-from-markdown:
+        specifier: 2.0.3
+        version: 2.0.3
       react:
         specifier: 'catalog:'
         version: 19.2.8
