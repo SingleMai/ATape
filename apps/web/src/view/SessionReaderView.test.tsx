@@ -71,6 +71,7 @@ describe("SessionReaderView", () => {
     expect(process).toBe('<details class="turn-process">')
     expect(html).toContain("1 update · 1 thought · 1 tool event")
     expect(html).toContain("Planning diagnosis")
+    expect(html).toContain('<details class="process-tool-group">')
     expect(html).toContain('<details class="process-tool">')
     expect(html).not.toContain("event event-thought")
   })
@@ -79,6 +80,7 @@ describe("SessionReaderView", () => {
     const html = renderReader("04")
 
     expect(html).toContain('<details class="turn-process" open="">')
+    expect(html).toContain('<details class="process-tool-group" open="">')
     expect(html).toContain('<details class="process-tool" open="">')
     expect(html).toContain('id="event-04"')
     expect(html).toContain("event-highlighted")
