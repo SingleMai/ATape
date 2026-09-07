@@ -1,8 +1,13 @@
-import type { CanonicalEvent, Conversation } from "@atape/domain"
+import {
+  projectConversationNarrative,
+  type CanonicalEvent,
+  type Conversation,
+  type NarrativeExchange
+} from "@atape/domain"
 import { Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect } from "react"
+import ReactMarkdown from "react-markdown"
 import type { LoadableView } from "../presenters/memoryPresenter"
-import { presentConversationTurns } from "../presenters/sessionReaderPresenter"
 
 type Props = {
   readonly state: LoadableView<Conversation>
@@ -21,6 +26,30 @@ type Props = {
 const formatTime = (value: string) =>
   new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value))
 
+const eventLabel: Record<CanonicalEvent["kind"], string> = {
+  message: "Message",
+  thought: "Thinking",
+  tool_call: "Tool call",
+  tool_result: "Tool result",
+  artifact: "Artifact",
+  spawn: "Delegation",
+  lifecycle: "Activity",
+  context: "Context",
+  notice: "Notice"
+}
+
+const isToolEvent = (event: CanonicalEvent) =>
+  event.kind === "tool_call" || event.kind === "tool_result"
+
+const eventClassName = (base: string, event: CanonicalEvent, highlightedEventId?: string) =>
+  `${base}${event.id === highlightedEventId ? " event-highlighted" : ""}`
+
+const MarkdownText = ({ text }: { readonly text: string }) => (
+  <div className="narrative-markdown">
+    <ReactMarkdown>{text}</ReactMarkdown>
+  </div>
+)
+
 const ChildThreadButton = ({ event, onOpenThread }: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
@@ -37,14 +66,13 @@ const ChildThreadButton = ({ event, onOpenThread }: {
   ) : null
 }
 
-const MessageView = ({ event, role, onOpenThread, highlighted }: {
+const PromptView = ({ event, onOpenThread, highlightedEventId }: {
   readonly event: CanonicalEvent
-  readonly role: "user" | "agent"
   readonly onOpenThread: (threadId: string) => void
-  readonly highlighted: boolean
+  readonly highlightedEventId: string | undefined
 }) => (
   <article
-    className={`event turn-message turn-message-${role}${highlighted ? " event-highlighted" : ""}`}
+    className={eventClassName("narrative-prompt", event, highlightedEventId)}
     id={`event-${event.id}`}
     tabIndex={-1}
   >
@@ -52,143 +80,117 @@ const MessageView = ({ event, role, onOpenThread, highlighted }: {
       <strong>{event.author}</strong>
       <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
     </header>
-    <p>{event.text}</p>
+    <MarkdownText text={event.text} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
   </article>
 )
 
-const processLabel: Record<CanonicalEvent["kind"], string> = {
-  message: "Agent update",
-  thought: "Thinking",
-  tool_call: "Tool call",
-  tool_result: "Tool result",
-  artifact: "Artifact",
-  spawn: "Delegation",
-  lifecycle: "Activity",
-  context: "Context",
-  notice: "Notice"
-}
-
-const isToolEvent = (event: CanonicalEvent) => event.kind === "tool_call" || event.kind === "tool_result"
-
-const ProcessEventView = ({ event, onOpenThread, highlighted }: {
+const PrimaryResponseView = ({ event, onOpenThread, highlightedEventId }: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
-  readonly highlighted: boolean
-}) => {
-  const isTool = isToolEvent(event)
-  const content = (
-    <article
-      className={`process-event process-event-${event.kind}${highlighted ? " event-highlighted" : ""}`}
-      id={`event-${event.id}`}
-      tabIndex={-1}
-    >
-      {!isTool && (
-        <header>
-          <strong>{processLabel[event.kind]}</strong>
-          <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
-        </header>
-      )}
-      <p>{event.text}</p>
-      <ChildThreadButton event={event} onOpenThread={onOpenThread} />
-    </article>
-  )
-
-  if (!isTool) return content
-  return (
-    <details className="process-tool" open={highlighted || undefined}>
-      <summary>
-        <span>
-          <strong>{event.toolLabel || processLabel[event.kind]}</strong>
-          <small>{processLabel[event.kind]}</small>
-        </span>
-        <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
-      </summary>
-      {content}
-    </details>
-  )
-}
-
-const ToolActivityDetails = ({ events, onOpenThread, highlightedEventId }: {
-  readonly events: ReadonlyArray<CanonicalEvent>
-  readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
-}) => {
-  if (events.length === 0) return null
-  const containsHighlight = events.some((event) => event.id === highlightedEventId)
-  return (
-    <details className="process-tool-group" open={containsHighlight || undefined}>
-      <summary>
-        <span>
-          <strong>Tool activity</strong>
-          <small>{events.length} event{events.length === 1 ? "" : "s"}</small>
-        </span>
-        <span className="process-chevron" aria-hidden="true">⌄</span>
-      </summary>
-      <div className="process-tool-list">
-        {events.map((event) => (
-          <ProcessEventView
-            key={event.id}
-            event={event}
-            onOpenThread={onOpenThread}
-            highlighted={event.id === highlightedEventId}
-          />
-        ))}
-      </div>
-    </details>
-  )
-}
+}) => (
+  <article
+    className={eventClassName("narrative-response", event, highlightedEventId)}
+    id={`event-${event.id}`}
+    tabIndex={-1}
+  >
+    <header>
+      <strong>{event.author}</strong>
+      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+    </header>
+    <MarkdownText text={event.text} />
+    <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+  </article>
+)
 
-const describeProcess = (events: ReadonlyArray<CanonicalEvent>) => {
+const describeActivity = (events: ReadonlyArray<CanonicalEvent>) => {
   const toolCount = events.filter(isToolEvent).length
   const thoughtCount = events.filter((event) => event.kind === "thought").length
   const updateCount = events.filter((event) => event.kind === "message").length
   const backgroundCount = events.length - toolCount - thoughtCount - updateCount
-  const labels = [
+  return [
     updateCount > 0 ? `${updateCount} update${updateCount === 1 ? "" : "s"}` : undefined,
     thoughtCount > 0 ? `${thoughtCount} thought${thoughtCount === 1 ? "" : "s"}` : undefined,
     toolCount > 0 ? `${toolCount} tool event${toolCount === 1 ? "" : "s"}` : undefined,
     backgroundCount > 0 ? `${backgroundCount} other event${backgroundCount === 1 ? "" : "s"}` : undefined
-  ].filter((label): label is string => label !== undefined)
-  return labels.join(" · ")
+  ].filter((label): label is string => label !== undefined).join(" · ")
 }
 
-const ProcessDetails = ({ events, onOpenThread, highlightedEventId }: {
-  readonly events: ReadonlyArray<CanonicalEvent>
+const ActivityEventView = ({ event, onOpenThread, highlightedEventId }: {
+  readonly event: CanonicalEvent
+  readonly onOpenThread: (threadId: string) => void
+  readonly highlightedEventId: string | undefined
+}) => (
+  <article
+    className={eventClassName(`narrative-activity-event narrative-activity-event-${event.kind}`, event, highlightedEventId)}
+    id={`event-${event.id}`}
+    tabIndex={-1}
+  >
+    <header>
+      <span>
+        <strong>{event.toolLabel || eventLabel[event.kind]}</strong>
+        {event.toolLabel && <small>{eventLabel[event.kind]}</small>}
+      </span>
+      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+    </header>
+    <MarkdownText text={event.text} />
+    <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+  </article>
+)
+
+const ActivityDetails = ({ exchange, onOpenThread, highlightedEventId }: {
+  readonly exchange: NarrativeExchange
   readonly onOpenThread: (threadId: string) => void
   readonly highlightedEventId: string | undefined
 }) => {
-  if (events.length === 0) return null
-  const containsHighlight = events.some((event) => event.id === highlightedEventId)
-  const toolEvents = events.filter(isToolEvent)
-  const timelineEvents = events.filter((event) => !isToolEvent(event))
+  if (exchange.activity.length === 0) return null
+  const containsHighlight = exchange.activity.some((event) => event.id === highlightedEventId)
+  const isIncomplete = exchange.primaryResponse === undefined
   return (
-    <details className="turn-process" open={containsHighlight || undefined}>
+    <details className="narrative-activity" open={containsHighlight || isIncomplete || undefined}>
       <summary>
         <span>
-          <strong>Process</strong>
-          <small>{describeProcess(events)}</small>
+          <strong>Activity</strong>
+          <small>{describeActivity(exchange.activity)}</small>
         </span>
-        <span className="process-chevron" aria-hidden="true">⌄</span>
+        <span className="activity-chevron" aria-hidden="true">⌄</span>
       </summary>
-      <div className="turn-process-events">
-        {timelineEvents.map((event) => (
-          <ProcessEventView
+      <div className="narrative-activity-list">
+        {exchange.activity.map((event) => (
+          <ActivityEventView
             key={event.id}
             event={event}
             onOpenThread={onOpenThread}
-            highlighted={event.id === highlightedEventId}
+            highlightedEventId={highlightedEventId}
           />
         ))}
-        <ToolActivityDetails
-          events={toolEvents}
-          onOpenThread={onOpenThread}
-          highlightedEventId={highlightedEventId}
-        />
       </div>
     </details>
   )
 }
+
+const HighlightView = ({ event, onOpenThread, highlightedEventId }: {
+  readonly event: CanonicalEvent
+  readonly onOpenThread: (threadId: string) => void
+  readonly highlightedEventId: string | undefined
+}) => (
+  <article
+    className={eventClassName(`narrative-highlight narrative-highlight-${event.kind}`, event, highlightedEventId)}
+    id={`event-${event.id}`}
+    tabIndex={-1}
+  >
+    <header>
+      <span>
+        <strong>{event.kind === "message" ? event.author : eventLabel[event.kind]}</strong>
+        {event.kind === "message" && <small>Unclassified message</small>}
+      </span>
+      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+    </header>
+    <MarkdownText text={event.text} />
+    <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+  </article>
+)
 
 export const SessionReaderView = ({
   state,
@@ -225,7 +227,7 @@ export const SessionReaderView = ({
   }
 
   const conversation = state.value
-  const turns = presentConversationTurns(conversation)
+  const narrative = projectConversationNarrative(conversation)
   return (
     <section aria-labelledby="session-title">
       <nav className="reader-nav" aria-label="Session navigation">
@@ -238,10 +240,12 @@ export const SessionReaderView = ({
         </div>
       </nav>
 
-      <header className="hero session-hero">
-        <Eyebrow>Shared conversation</Eyebrow>
-        <h1 id="session-title">{conversation.session.title}</h1>
-        <div className="tag-row">
+      <header className="session-reader-header">
+        <div>
+          <Eyebrow>Shared conversation</Eyebrow>
+          <h1 id="session-title">{conversation.session.title}</h1>
+        </div>
+        <div className="session-reader-tags" aria-label="Conversation metadata">
           <Badge>{conversation.session.actor.name}</Badge>
           <Badge>{conversation.session.actor.harness}</Badge>
           <Badge>{conversation.session.branch}</Badge>
@@ -273,32 +277,38 @@ export const SessionReaderView = ({
       </nav>
 
       <div className="conversation-stream">
-        {turns.map((turn, index) => (
-          <section className="conversation-turn" aria-label={`Turn ${index + 1}`} key={turn.id}>
-            {turn.userMessage && (
-              <MessageView
-                event={turn.userMessage}
-                role="user"
+        {narrative.map((exchange, index) => (
+          <section className="narrative-exchange" aria-label={`Conversation exchange ${index + 1}`} key={exchange.id}>
+            {exchange.prompt && (
+              <PromptView
+                event={exchange.prompt}
                 onOpenThread={onOpenThread}
-                highlighted={turn.userMessage.id === highlightedEventId}
+                highlightedEventId={highlightedEventId}
               />
             )}
-            <ProcessDetails
-              events={turn.processEvents}
+            <ActivityDetails
+              exchange={exchange}
               onOpenThread={onOpenThread}
               highlightedEventId={highlightedEventId}
             />
-            {turn.agentResponse && (
-              <MessageView
-                event={turn.agentResponse}
-                role="agent"
+            {exchange.primaryResponse && (
+              <PrimaryResponseView
+                event={exchange.primaryResponse}
                 onOpenThread={onOpenThread}
-                highlighted={turn.agentResponse.id === highlightedEventId}
+                highlightedEventId={highlightedEventId}
               />
             )}
+            {exchange.highlights.map((event) => (
+              <HighlightView
+                key={event.id}
+                event={event}
+                onOpenThread={onOpenThread}
+                highlightedEventId={highlightedEventId}
+              />
+            ))}
           </section>
         ))}
-        {turns.length === 0 && (
+        {narrative.length === 0 && (
           <div className="empty-conversation">
             <strong>No messages captured yet</strong>
             <span>ATape will add the conversation here as new events arrive.</span>
