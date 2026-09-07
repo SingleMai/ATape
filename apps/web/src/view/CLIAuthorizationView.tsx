@@ -148,7 +148,7 @@ export const CLIAuthorizationView = ({
   return (
     <div className="cli-page">
       <div className="cli-wrap">
-        <AccessHeader displayName={user.displayName} />
+        <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
         <main id="main-content">{content}</main>
       </div>
     </div>

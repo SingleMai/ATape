@@ -87,6 +87,11 @@ FROM auth_users
 WHERE id = $1
 FOR UPDATE;
 
+-- name: RefreshUserAvatar :exec
+UPDATE auth_users
+SET avatar_url = $2, updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active' AND avatar_url IS DISTINCT FROM $2;
+
 -- name: UpdateActiveUserProfile :one
 UPDATE auth_users
 SET display_name = $2, updated_at = clock_timestamp()

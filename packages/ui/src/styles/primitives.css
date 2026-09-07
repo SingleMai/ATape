@@ -69,6 +69,13 @@
   font-weight: 900;
 }
 
+.atape-avatar > img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .atape-avatar--medium {
   width: 42px;
   height: 42px;

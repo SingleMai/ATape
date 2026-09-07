@@ -507,6 +507,15 @@ func (m *Module) resolveSignInIdentity(
 	}); err != nil {
 		return User{}, err
 	}
+	// The signing-in identity supplies the avatar; the locally edited name stays intact.
+	if identity.AvatarURL != "" {
+		if err := queries.RefreshUserAvatar(ctx, authdb.RefreshUserAvatarParams{
+			ID: user.ID, AvatarUrl: identity.AvatarURL,
+		}); err != nil {
+			return User{}, err
+		}
+		user.AvatarUrl = identity.AvatarURL
+	}
 	return userFromRow(user), nil
 }
 

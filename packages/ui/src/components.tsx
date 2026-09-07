@@ -1,3 +1,4 @@
+import { useState } from "react"
 import type {
   ButtonHTMLAttributes,
   HTMLAttributes,
@@ -36,6 +37,7 @@ export const Button = ({
 
 export type AvatarProps = HTMLAttributes<HTMLSpanElement> & {
   readonly name: string
+  readonly src?: string | undefined
   readonly size?: "small" | "medium"
 }
 
@@ -49,15 +51,20 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase()
 
-export const Avatar = ({ name, size = "medium", className, ...props }: AvatarProps) => (
-  <span
-    {...props}
-    aria-hidden="true"
-    className={classNames("atape-avatar", `atape-avatar--${size}`, className)}
-  >
-    {initials(name)}
-  </span>
-)
+export const Avatar = ({ name, src, size = "medium", className, ...props }: AvatarProps) => {
+  const [failedSource, setFailedSource] = useState<string>()
+  return (
+    <span
+      {...props}
+      aria-hidden="true"
+      className={classNames("atape-avatar", `atape-avatar--${size}`, className)}
+    >
+      {src && src !== failedSource ? (
+        <img src={src} alt="" referrerPolicy="no-referrer" onError={() => setFailedSource(src)} />
+      ) : initials(name)}
+    </span>
+  )
+}
 
 export type BadgeProps = HTMLAttributes<HTMLSpanElement> & {
   readonly tone?: "neutral" | "accent" | "success" | "warning" | "danger"

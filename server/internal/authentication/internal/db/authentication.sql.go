@@ -1590,6 +1590,22 @@ func (q *Queries) RefreshExternalIdentity(ctx context.Context, arg RefreshExtern
 	return err
 }
 
+const refreshUserAvatar = `-- name: RefreshUserAvatar :exec
+UPDATE auth_users
+SET avatar_url = $2, updated_at = clock_timestamp()
+WHERE id = $1 AND status = 'active' AND avatar_url IS DISTINCT FROM $2
+`
+
+type RefreshUserAvatarParams struct {
+	ID        pgtype.UUID
+	AvatarUrl string
+}
+
+func (q *Queries) RefreshUserAvatar(ctx context.Context, arg RefreshUserAvatarParams) error {
+	_, err := q.db.Exec(ctx, refreshUserAvatar, arg.ID, arg.AvatarUrl)
+	return err
+}
+
 const revokeAllCLICredentialsForUser = `-- name: RevokeAllCLICredentialsForUser :execrows
 UPDATE auth_cli_credentials
 SET status = 'revoked', revoked_at = clock_timestamp(), revoke_reason = $2

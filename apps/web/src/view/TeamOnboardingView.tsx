@@ -7,7 +7,7 @@ import { AccessHeader, FailureNotice } from "./AccessPrimitives"
 export const TeamChoiceView = ({ user }: { readonly user: User }) => (
   <div className="onboarding-page">
     <div className="onboarding-wrap">
-      <AccessHeader displayName={user.displayName} />
+      <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
       <main id="main-content">
         <section className="choice-heading" aria-labelledby="team-choice-title">
           <Eyebrow>Welcome, {user.displayName}</Eyebrow>
@@ -52,7 +52,7 @@ export const CreateTeamView = ({
   return (
     <div className="onboarding-page">
       <div className="onboarding-wrap">
-        <AccessHeader displayName={user.displayName} />
+        <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
         <main className="access-form-page" id="main-content">
           <a className="back-link" href="/onboarding">← Back</a>
           <form
@@ -132,7 +132,7 @@ export const JoinTeamView = ({
   return (
     <div className="onboarding-page">
       <div className="onboarding-wrap">
-        <AccessHeader displayName={user.displayName} />
+        <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
         <main className="access-form-page" id="main-content">
           <a className="back-link" href="/onboarding">← Back</a>
           <form

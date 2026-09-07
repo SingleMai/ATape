@@ -19,7 +19,7 @@ const team = {
 }
 
 const bootstrap = {
-  user: { id: "user-1", displayName: "Mai", avatarUrl: "" },
+  user: { id: "user-1", displayName: "Mai", avatarUrl: "https://avatars.githubusercontent.com/u/424242?v=4" },
   webSession: {
     id: "session-1",
     createdAt: "2026-09-05T00:00:00Z",
