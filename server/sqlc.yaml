@@ -11,6 +11,7 @@ sql:
       - "internal/adapters/postgres/migrations/000007_captured_session_lifecycle.sql"
       - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
       - "internal/adapters/postgres/migrations/000009_session_metadata_projection.sql"
+      - "internal/adapters/postgres/migrations/000010_tool_details.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:

@@ -106,7 +106,7 @@ WHERE session_id = $1 AND id = $2 AND revision < $3;
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
-       kind, author, occurred_at, text, tool_label, child_thread_id
+       kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 FROM canonical_events
 WHERE source_key = $1
 FOR UPDATE;
@@ -115,7 +115,7 @@ FOR UPDATE;
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
-       kind, author, occurred_at, text, tool_label, child_thread_id
+       kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 FROM canonical_events
 WHERE id = $1
 FOR UPDATE;
@@ -129,12 +129,12 @@ INSERT INTO canonical_events (
     id, session_id, thread_id, source_key, revision, projection_revision,
     digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
     adapter_version, schema_version, observed_at, received_at, ingest_seq,
-    kind, author, occurred_at, text, tool_label, child_thread_id
+    kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
-    $18, $19, $20, $21, $22, $23
+    $18, $19, $20, $21, $22, $23, $24
 );
 
 -- name: UpdateEvent :exec
@@ -157,7 +157,8 @@ SET revision = $2,
     occurred_at = $17,
     text = $18,
     tool_label = $19,
-    child_thread_id = $20
+    child_thread_id = $20,
+    tool_update_json = $21
 WHERE id = $1;
 
 -- name: InsertEventVersion :exec
@@ -165,12 +166,12 @@ INSERT INTO canonical_event_versions (
     source_key, projection_revision, revision, event_id, session_id, thread_id,
     digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
     adapter_version, schema_version, observed_at, received_at, ingest_seq,
-    kind, author, occurred_at, text, tool_label, child_thread_id
+    kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
-    $18, $19, $20, $21, $22, $23
+    $18, $19, $20, $21, $22, $23, $24
 );
 
 -- name: InsertProjectionChange :exec
@@ -235,7 +236,7 @@ ORDER BY t.id;
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
-       kind, author, occurred_at, text, tool_label, child_thread_id
+       kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 FROM canonical_events
 WHERE session_id = $1 AND thread_id = $2
 ORDER BY source_order, event_index, id;

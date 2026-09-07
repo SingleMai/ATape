@@ -695,6 +695,12 @@ h3 { margin: 0; font-size: 20px; }
 .empty-conversation { padding: 30px; border: 2px dashed var(--atape-color-border); border-radius: var(--atape-radius-md); color: var(--atape-color-text-muted); display: grid; gap: 4px; text-align: center; }
 .empty-conversation strong { color: var(--atape-color-text); }
 
+.tool-details { margin-top: 12px; min-width: 0; }
+.tool-details small { color: var(--atape-color-text-muted); overflow-wrap: anywhere; }
+.tool-details details { margin-top: 8px; }
+.tool-details summary { cursor: pointer; font-weight: 650; }
+.tool-details pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border-radius: var(--atape-radius-sm); background: var(--atape-color-surface-muted); }
+
 .child-thread {
   width: 100%;
   margin-top: 15px;

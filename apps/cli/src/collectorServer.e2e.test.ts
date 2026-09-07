@@ -21,6 +21,7 @@ import { RawTransportChunkBytes } from "@atape/domain"
 const repositoryRoot = resolve(import.meta.dirname, "../../..")
 const cliEntry = join(repositoryRoot, "apps/cli/src/main.ts")
 const codexAdapter = join(repositoryRoot, "adapters/codex")
+const claudeAdapter = join(repositoryRoot, "adapters/claude")
 const serverStartupTimeoutMs = 120_000
 const endToEndTimeoutMs = 300_000
 
@@ -143,10 +144,77 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
 
 type Fixture = Awaited<ReturnType<typeof createFixture>>
 
+it("discovers and incrementally collects native Claude sessions into existing conversation, Raw and Search APIs", async () => {
+  const fixture = await createFixture()
+  let server: ChildProcess | undefined
+  try {
+    const source = await readFile(join(claudeAdapter, "fixtures/native-read-2.1.263.jsonl"), "utf8")
+    const directory = join(fixture.claudeHome, "projects", "storage-name-is-not-attribution")
+    await mkdir(directory, { recursive: true })
+    const claudeFile = join(directory, "first.jsonl")
+    const nativeRecords: Array<Record<string, unknown>> = source.replaceAll("/fixture/native-read", fixture.projectDirectory).trimEnd().split("\n").map(line => JSON.parse(line))
+    for (const record of nativeRecords) {
+      const message = record.message as { content?: Array<Record<string, unknown>> } | undefined
+      if (Array.isArray(message?.content)) for (const block of message.content) {
+        if (block.type === "tool_use") block.input = { ...(block.input as object), test_secret: fixture.secret, fraction: 0.125, nullable: null }
+      }
+    }
+    const native = jsonLines(nativeRecords)
+    await writeFile(claudeFile, native)
+    // The storage directory does not grant permission to upload a foreign CWD.
+    await writeFile(join(directory, "foreign.jsonl"), source.replaceAll("/fixture/native-read", fixture.root))
+    const port = await availablePort(), serverUrl = `http://127.0.0.1:${port}`
+    await configureClient(fixture, serverUrl, "claude")
+    server = startServer(port); await waitUntilHealthy(serverUrl, server)
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
+    expect(memory.trail).toHaveLength(1)
+    const sessionId = memory.trail[0]!.id
+    const conversation = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=root`)
+    expect(conversation.events).toHaveLength(6)
+    expect(conversation.events.map(e => e.text)).toContain("ATAPE_TOOL_DONE")
+    expect(conversation.events.map(e => e.text)).toEqual(expect.arrayContaining(["Read · completed", "Read · failed"]))
+    expect(conversation.events[1]?.tool).toMatchObject({ sessionUpdate: "tool_call", rawInput: { test_secret: "[REDACTED]", fraction: 0.125, nullable: null } })
+    expect(conversation.events[2]?.tool?.toolCallId).toBe(conversation.events[1]?.tool?.toolCallId)
+    expect(JSON.stringify(conversation.events[2]?.tool?.rawOutput)).toContain("ATAPE_SYNTHETIC_TOOL_FILE")
+    expect(JSON.stringify(conversation)).not.toContain(fixture.secret)
+    const raw = await readRaw(serverUrl, await getJSON<RawArchive>(serverUrl, `/api/v1/sessions/${sessionId}/raw`))
+    expect(raw.text).toContain("ATAPE_SYNTHETIC_TOOL_FILE")
+    expect(raw.text).toContain("tool_result")
+    expect(raw.text).not.toContain(fixture.secret)
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+    expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(1)
+    let indexed = false
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const page = await getJSON<SearchPage>(serverUrl, "/api/v1/projects/support-notes/search?q=ATAPE_TOOL_DONE")
+      if (page.results.some(r => r.text === "ATAPE_TOOL_DONE")) { indexed = true; break }
+      await delay(100)
+    }
+    expect(indexed).toBe(true)
+
+    const records: Array<Record<string, unknown>> = native.trimEnd().split("\n").map(line => JSON.parse(line))
+    const last = records.filter(r => r.uuid).at(-1)!
+    await appendFile(claudeFile, jsonLines([{ ...last, uuid: "e2e-appended", parentUuid: last.uuid,
+      message: { role: "assistant", content: "Automatically discovered append" } }]))
+    await writeFile(join(directory, "second.jsonl"), jsonLines(records.map(r => r.sessionId ? { ...r, sessionId: "e2e-second-claude" } : r)))
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 2, rawChunks: 2 })
+    expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(2)
+    const appended = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=root`)
+    expect(appended.events).toHaveLength(7)
+    expect(appended.events.slice(0, 6).map(e => e.id)).toEqual(conversation.events.map(e => e.id))
+    expect(appended.events.at(-1)?.text).toBe("Automatically discovered append")
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+  } finally {
+    await stopServer(server)
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+}, endToEndTimeoutMs)
+
 const createFixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "atape-server-e2e-"))
   const projectDirectory = join(root, "project")
   const codexHome = join(root, "codex-home")
+  const claudeHome = join(root, "claude-home")
   const sessionsDirectory = join(codexHome, "sessions", "2026", "09", "05")
   const archivedDirectory = join(codexHome, "archived_sessions")
   const adapterDirectory = join(root, "adapter-runtime")
@@ -186,6 +254,7 @@ const createFixture = async () => {
     root,
     projectDirectory,
     codexHome,
+    claudeHome,
     archivedDirectory,
     adapterDirectory,
     configFile,
@@ -200,11 +269,12 @@ const createFixture = async () => {
   }
 }
 
-const configureClient = async (fixture: Fixture, serverUrl: string) => {
+const configureClient = async (fixture: Fixture, serverUrl: string, adapterId: "codex" | "claude" = "codex") => {
+  const adapter = adapterId === "claude" ? claudeAdapter : codexAdapter
   const installedScope = join(fixture.adapterDirectory, "node_modules", "@atape")
   await mkdir(installedScope, { recursive: true })
-  await symlink(codexAdapter, join(installedScope, "adapter-codex"), "dir")
-  const adapterPackage = JSON.parse(await readFile(join(codexAdapter, "package.json"), "utf8")) as {
+  await symlink(adapter, join(installedScope, `adapter-${adapterId}`), "dir")
+  const adapterPackage = JSON.parse(await readFile(join(adapter, "package.json"), "utf8")) as {
     readonly version: string
   }
   const now = new Date().toISOString()
@@ -221,14 +291,14 @@ const configureClient = async (fixture: Fixture, serverUrl: string) => {
       name: "E2E Project",
       type: "directory",
       path: fixture.projectDirectory,
-      adapterIds: ["codex"],
+      adapterIds: [adapterId],
       createdAt: now
     }],
     adapters: [{
-      adapterId: "codex",
-      packageName: "@atape/adapter-codex",
-      upgradeSpec: `file:${codexAdapter}`,
-      displayName: "Codex",
+      adapterId,
+      packageName: `@atape/adapter-${adapterId}`,
+      upgradeSpec: `file:${adapter}`,
+      displayName: adapterId === "claude" ? "Claude Code" : "Codex",
       version: adapterPackage.version,
       installedAt: now,
       updatedAt: now
@@ -319,6 +389,8 @@ const clientEnvironment = (fixture: Fixture, serverUrl: string): NodeJS.ProcessE
   ATAPE_COLLECTOR_LOG_FILE: fixture.collectorLogFile,
   ATAPE_ADAPTER_DIRECTORY: fixture.adapterDirectory,
   ATAPE_CODEX_HOME: fixture.codexHome,
+  ATAPE_CLAUDE_HOME: fixture.claudeHome,
+  ATAPE_CLAUDE_SESSION_FILE: "",
   ATAPE_REDACT_VALUES: JSON.stringify([fixture.secret]),
   ATAPE_SERVER_URL: serverUrl
 })
@@ -548,6 +620,7 @@ type Conversation = {
   readonly events: ReadonlyArray<{
     readonly id: string
     readonly text: string
+    readonly tool?: { readonly toolCallId: string; readonly rawInput?: unknown; readonly rawOutput?: unknown }
     readonly childThread?: { readonly id: string }
   }>
 }

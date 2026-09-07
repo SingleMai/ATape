@@ -14,3 +14,15 @@ The following rules are mandatory:
 - Canonical conversation data, Raw source data, and the Search read model remain separate concerns even when one workflow coordinates them.
 
 If a change needs an exception, record the reason in an ADR before implementing it.
+
+## Delivery cadence
+
+- Finish one usable implementation increment, verify its changed behavior, and
+  land it through the repository's pull-request checks before expanding the next
+  increment when the user has requested integration.
+- Start integration from the latest main branch. Preserve concurrent changes and
+  reconcile migration numbers, ADR numbers and generated code before merging.
+- Keep local research prototypes out of implementation commits. Record the shipped
+  scope, remaining limitations and next increment in the relevant feature guide.
+- Merging code, publishing packages and deploying an instance are separate actions.
+  Do not infer publication or deployment authorization from a request to merge.

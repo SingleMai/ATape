@@ -1,0 +1,31 @@
+{
+  "name": "@atape/adapter-claude",
+  "version": "0.2.0",
+  "description": "ATape Adapter for project-scoped Claude Code local sessions",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "exports": { ".": "./dist/index.js" },
+  "files": ["dist/index.js", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@atape/domain": "workspace:*",
+    "@types/node": "^24.0.0",
+    "esbuild": "catalog:build",
+    "effect": "catalog:",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  },
+  "atapeAdapter": {
+    "protocolVersion": "atape.adapter.v1alpha1",
+    "adapterId": "claude",
+    "displayName": "Claude Code",
+    "entry": "./dist/index.js",
+    "harnesses": ["claude-code"]
+  }
+}

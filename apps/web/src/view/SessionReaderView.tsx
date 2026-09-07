@@ -53,6 +53,20 @@ const MarkdownText = ({ text }: { readonly text: string }) => (
   </div>
 )
 
+const ToolDetails = ({ event }: { readonly event: CanonicalEvent }) => event.tool ? (
+  <div className="tool-details">
+    <small>Tool call · {event.tool.toolCallId}</small>
+    {Object.hasOwn(event.tool, "rawInput") && <details>
+      <summary>Input</summary>
+      <pre>{JSON.stringify(event.tool.rawInput, null, 2)}</pre>
+    </details>}
+    {Object.hasOwn(event.tool, "rawOutput") && <details>
+      <summary>Output</summary>
+      <pre>{typeof event.tool.rawOutput === "string" ? event.tool.rawOutput : JSON.stringify(event.tool.rawOutput, null, 2)}</pre>
+    </details>}
+  </div>
+) : null
+
 const ChildThreadButton = ({ event, onOpenThread }: {
   readonly event: CanonicalEvent
   readonly onOpenThread: (threadId: string) => void
@@ -84,6 +98,7 @@ const PromptView = ({ event, onOpenThread, highlightedEventId }: {
       <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
     </header>
     <MarkdownText text={event.text} />
+    <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
   </article>
 )
@@ -103,6 +118,7 @@ const PrimaryResponseView = ({ event, onOpenThread, highlightedEventId }: {
       <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
     </header>
     <MarkdownText text={event.text} />
+    <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
   </article>
 )
@@ -138,6 +154,7 @@ const ActivityEventView = ({ event, onOpenThread, highlightedEventId }: {
       <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
     </header>
     <MarkdownText text={event.text} />
+    <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
   </article>
 )
@@ -191,6 +208,7 @@ const HighlightView = ({ event, onOpenThread, highlightedEventId }: {
       <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
     </header>
     <MarkdownText text={event.text} />
+    <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
   </article>
 )

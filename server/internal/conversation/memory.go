@@ -78,13 +78,14 @@ type ChildThreadRef struct {
 }
 
 type Event struct {
-	ID          string          `json:"id"`
-	Kind        string          `json:"kind"`
-	Author      string          `json:"author"`
-	OccurredAt  string          `json:"occurredAt"`
-	Text        string          `json:"text"`
-	ToolLabel   string          `json:"toolLabel,omitempty"`
-	ChildThread *ChildThreadRef `json:"childThread,omitempty"`
+	ID          string                `json:"id"`
+	Kind        string                `json:"kind"`
+	Author      string                `json:"author"`
+	OccurredAt  string                `json:"occurredAt"`
+	Text        string                `json:"text"`
+	ToolLabel   string                `json:"toolLabel,omitempty"`
+	Tool        *canonical.ToolUpdate `json:"tool,omitempty"`
+	ChildThread *ChildThreadRef       `json:"childThread,omitempty"`
 }
 
 type Conversation struct {
@@ -193,6 +194,13 @@ func (m *Memory) OpenConversation(
 			OccurredAt: formatTime(stored.OccurredAt),
 			Text:       stored.Text,
 			ToolLabel:  stored.ToolLabel,
+		}
+		if stored.ToolUpdateJSON != "" {
+			tool, err := canonical.ParseToolUpdate(stored.ToolUpdateJSON)
+			if err != nil {
+				return Conversation{}, fmt.Errorf("read canonical tool details: %w", err)
+			}
+			event.Tool = tool
 		}
 		if stored.ChildThreadID != nil {
 			if child, exists := threadByID[*stored.ChildThreadID]; exists {

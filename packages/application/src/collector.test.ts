@@ -253,6 +253,34 @@ const fixture = (options: {
 }
 
 describe("Collector Module", () => {
+  it("masks nested tool values and credential fields before Canonical submission", async () => {
+    const original = collectionPage()
+    const page: AdapterCollectionPage = { ...original, observations: original.observations.map(o => ({ ...o,
+      events: o.events.map(e => e.update.sessionUpdate === "tool_call" ? { ...e, update: { ...e.update,
+        rawInput: { supersecret: ["supersecret", { password: "not-configured-password", fraction: 0.125, empty: "", null: null, flag: false }] },
+        rawOutput: "Output supersecret"
+      } } : e)
+    })) }
+    const capture = fixture({ page })
+    expect((await capture.run(runCollectionCycle())).failures).toEqual([])
+    const event = capture.canonical[0]!.observation.events[0]!
+    expect(JSON.stringify(event)).not.toContain("supersecret")
+    expect(JSON.stringify(event)).not.toContain("not-configured-password")
+    expect(event.fidelity).toBe("redacted")
+    expect(event.update).toMatchObject({ rawInput: { "[REDACTED]": ["[REDACTED]", { password: "[REDACTED]", fraction: 0.125, empty: "", null: null, flag: false }] }, rawOutput: "Output [REDACTED]" })
+  })
+
+  it.each([undefined, Infinity, "x".repeat(65536)])("rejects inadmissible tool values before network or checkpoint writes", async rawInput => {
+    const original = collectionPage()
+    const page: AdapterCollectionPage = { ...original, observations: original.observations.map(o => ({ ...o,
+      events: o.events.map(e => e.update.sessionUpdate === "tool_call" ? { ...e, update: { ...e.update, rawInput } } : e)
+    })) }
+    const capture = fixture({ page })
+    expect((await capture.run(runCollectionCycle())).failures).toHaveLength(1)
+    expect(capture.canonical).toEqual([])
+    expect(capture.commits()).toBe(0)
+  })
+
   it("redacts quoted JSON credentials while preserving valid JSON", async () => {
     const value = await Effect.gen(function*() {
       const redactor = yield* SecretRedactor
