@@ -63,7 +63,8 @@ func insertEventParams(record canonical.EventRecord) db.InsertEventParams {
 		ReceivedAt: record.ReceivedAt, IngestSeq: int64(record.IngestSeq),
 		Kind: record.Kind, Author: record.Author, OccurredAt: record.OccurredAt,
 		Text: record.Text, ToolLabel: record.ToolLabel,
-		ChildThreadID: record.ChildThreadID,
+		ToolUpdateJson: record.ToolUpdateJSON,
+		ChildThreadID:  record.ChildThreadID,
 	}
 }
 
@@ -79,7 +80,8 @@ func updateEventParams(record canonical.EventRecord) db.UpdateEventParams {
 		ReceivedAt: params.ReceivedAt, IngestSeq: params.IngestSeq,
 		Kind: params.Kind, Author: params.Author, OccurredAt: params.OccurredAt,
 		Text: params.Text, ToolLabel: params.ToolLabel,
-		ChildThreadID: params.ChildThreadID,
+		ToolUpdateJson: params.ToolUpdateJson,
+		ChildThreadID:  params.ChildThreadID,
 	}
 }
 
@@ -96,7 +98,8 @@ func insertEventVersionParams(record canonical.EventRecord) db.InsertEventVersio
 		ReceivedAt: params.ReceivedAt, IngestSeq: params.IngestSeq,
 		Kind: params.Kind, Author: params.Author, OccurredAt: params.OccurredAt,
 		Text: params.Text, ToolLabel: params.ToolLabel,
-		ChildThreadID: params.ChildThreadID,
+		ToolUpdateJson: params.ToolUpdateJson,
+		ChildThreadID:  params.ChildThreadID,
 	}
 }
 
@@ -138,5 +141,6 @@ func canonicalEvent(row db.CanonicalEvent) canonical.EventRecord {
 		ReceivedAt: row.ReceivedAt, IngestSeq: uint64(row.IngestSeq), Kind: row.Kind,
 		Author: row.Author, OccurredAt: row.OccurredAt, Text: row.Text,
 		ToolLabel: row.ToolLabel, ChildThreadID: row.ChildThreadID,
+		ToolUpdateJSON: row.ToolUpdateJson,
 	}
 }

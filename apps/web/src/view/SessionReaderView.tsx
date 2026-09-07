@@ -36,6 +36,17 @@ const EventView = ({ event, onOpenThread, highlighted }: {
     </header>
     <p>{event.text}</p>
     {event.toolLabel && <span className="tool-label">{event.toolLabel}</span>}
+    {event.tool && <div className="tool-details">
+      <small>Tool call · {event.tool.toolCallId}</small>
+      {Object.hasOwn(event.tool, "rawInput") && <details>
+        <summary>Input</summary>
+        <pre>{JSON.stringify(event.tool.rawInput, null, 2)}</pre>
+      </details>}
+      {Object.hasOwn(event.tool, "rawOutput") && <details>
+        <summary>Output</summary>
+        <pre>{typeof event.tool.rawOutput === "string" ? event.tool.rawOutput : JSON.stringify(event.tool.rawOutput, null, 2)}</pre>
+      </details>}
+    </div>}
     {event.childThread && (
       <button className="child-thread" type="button" onClick={() => onOpenThread(event.childThread!.id)}>
         <span>

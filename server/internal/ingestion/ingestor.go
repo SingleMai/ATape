@@ -67,7 +67,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 	if batch.ProtocolVersion != ProtocolVersion {
 		return canonical.WriteBatch{}, invalid("protocolVersion", "must be "+ProtocolVersion)
 	}
-	if batch.CanonicalProfileVersion != CanonicalProfileVersion {
+	if batch.CanonicalProfileVersion != CanonicalProfileVersion && batch.CanonicalProfileVersion != LegacyCanonicalProfileVersion {
 		return canonical.WriteBatch{}, invalid("canonicalProfileVersion", "must be "+CanonicalProfileVersion)
 	}
 	if err := required("batchId", batch.BatchID, 200); err != nil {
@@ -241,6 +241,20 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 		if !utf8.ValidString(input.ToolLabel) || len(input.ToolLabel) > 500 {
 			return canonical.WriteBatch{}, invalid(field+".toolLabel", "must be valid UTF-8 up to 500 bytes")
 		}
+		if input.ToolUpdateJSON != "" {
+			if batch.CanonicalProfileVersion != CanonicalProfileVersion {
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "requires the v2 profile")
+			}
+			tool, err := canonical.ParseToolUpdate(input.ToolUpdateJSON)
+			if err != nil {
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "is not a bounded ACP tool update")
+			}
+			kind, text, label := tool.Summary()
+			if input.Kind != kind && !(input.Kind == "spawn" && input.ChildSourceThreadID != nil) {
+				return canonical.WriteBatch{}, invalid(field+".kind", "does not match the tool update")
+			}
+			input.Text, input.ToolLabel = text, label
+		}
 		var childThreadID *string
 		if input.ChildSourceThreadID != nil {
 			mapped, exists := threadIDs[*input.ChildSourceThreadID]
@@ -269,13 +283,14 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 			OccurredAt:         occurredAt,
 			Text:               input.Text,
 			ToolLabel:          input.ToolLabel,
+			ToolUpdateJSON:     input.ToolUpdateJSON,
 			ChildThreadID:      childThreadID,
 		}
 		record.Digest = digest(record)
 		events = append(events, record)
 	}
 
-	title, summary, insight := memoryCopy(batch.Session, batch.Events)
+	title, summary, insight := memoryCopy(batch.Session, events)
 	sessionSourceKey := sourceKey(scope, "session")
 	session := canonical.SessionRecord{
 		ID:                 sessionID,
@@ -409,7 +424,7 @@ func threadCycle(threads []Thread) string {
 	return ""
 }
 
-func memoryCopy(session Session, events []Event) (string, string, string) {
+func memoryCopy(session Session, events []canonical.EventRecord) (string, string, string) {
 	title := strings.TrimSpace(session.Title)
 	summary := strings.TrimSpace(session.Summary)
 	insight := strings.TrimSpace(session.Insight)

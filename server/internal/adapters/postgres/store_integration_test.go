@@ -369,6 +369,15 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 		pool.Close()
 		t.Fatalf("start Raw generation: %v", err)
 	}
+	toolBatch := canonicalcontract.ValidBatch()
+	toolBatch.BatchID, toolBatch.Session.SourceSessionID = "durable-tool", "durable-tool-session"
+	toolBatch.Events[1].Kind = "tool_result"
+	toolBatch.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call_update","toolCallId":"durable-call","title":"Read","status":"completed","rawInput":null,"rawOutput":0.125}`
+	toolCreated, err := ingestor.ApplyBatch(context.Background(), canonicalcontract.CLIPrincipal(), toolBatch)
+	if err != nil {
+		pool.Close()
+		t.Fatal(err)
+	}
 	pool.Close()
 
 	reopenedPool, err := postgresadapter.NewPool(databaseURL)
@@ -380,6 +389,14 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 		t.Fatalf("prepare reopened PostgreSQL: %v", err)
 	}
 	reopenedStore := postgresadapter.NewStore(reopenedPool)
+	toolOpened, err := conversation.NewMemory(reopenedStore).OpenConversation(context.Background(), canonicalcontract.WebPrincipal(), toolCreated.SessionID, "root")
+	if err != nil || len(toolOpened.Events) != 2 || toolOpened.Events[1].Tool == nil || string(toolOpened.Events[1].Tool.RawOutput) != "0.125" {
+		t.Fatalf("tool values after reopening database: %+v %v", toolOpened, err)
+	}
+	var persistedToolJSON string
+	if err := reopenedPool.QueryRow(context.Background(), "SELECT tool_update_json FROM canonical_event_versions WHERE event_id = $1", toolOpened.Events[1].ID).Scan(&persistedToolJSON); err != nil || persistedToolJSON != toolBatch.Events[1].ToolUpdateJSON {
+		t.Fatalf("tool version persistence: %q %v", persistedToolJSON, err)
+	}
 	reopenedChunks, err := rawchunks.NewFilesystem(rawDirectory)
 	if err != nil {
 		t.Fatalf("reopen Raw filesystem Adapter: %v", err)
@@ -439,7 +456,7 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 8; got != want {
+	if got, want := migrationCount, 9; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 }

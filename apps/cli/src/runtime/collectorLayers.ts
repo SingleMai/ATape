@@ -422,6 +422,7 @@ const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
       occurredAt: event.occurredAt,
       text: projection.text,
       ...(projection.toolLabel === undefined ? {} : { toolLabel: projection.toolLabel }),
+      ...("toolCallId" in event.update ? { toolUpdateJson: JSON.stringify(event.update) } : {}),
       ...(event.childSourceThreadId === undefined ? {} : { childSourceThreadId: event.childSourceThreadId })
     }
   })

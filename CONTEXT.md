@@ -2,6 +2,64 @@
 
 ATape captures coding-agent history into shared Team memory. This glossary fixes the domain language used across product decisions, Module Interfaces, and implementations.
 
+## Captured coding-agent history
+
+**First-party Adapter**:
+An ATape-maintained Adapter for one coding-agent source, with a declared support contract for the source's current version. It translates source-owned history into Raw Source Data and Canonical ingestion observations; the Collector runs it.
+_Avoid_: Official Collector, integration
+
+**Claude Code Local History**:
+Durable source artifacts written on a user's machine by Claude Code, regardless of the surface that launched it. It excludes Claude.ai cloud conversations and Claude Desktop chats.
+_Avoid_: Claude history, Claude conversations
+
+**Captured Session**:
+A Project-owned logical coding-agent conversation after source-specific identity rules have been applied. It is not necessarily equivalent to one source transcript file.
+_Avoid_: Transcript, Web Session, source file
+
+**Session Origin CWD**:
+The working directory in which a captured coding-agent conversation originally began. It anchors the conversation's Project attribution; later working-directory changes do not change that origin.
+_Avoid_: Current CWD, latest CWD, transcript storage directory
+
+**Captured Thread**:
+One conversational lane inside a Captured Session. A Captured Session has one root Captured Thread and may have child Captured Threads for subagents.
+_Avoid_: Session, transcript file, agent session
+
+**Active Path**:
+The single source-indicated path through a conversation graph that the coding agent currently continues. It supplies the default Canonical timeline for its Captured Session.
+_Avoid_: Latest path, newest branch, main branch
+
+**Historical Branch**:
+A non-active conversational path retained after a source rewinds and continues from an earlier point in the same Captured Session. It is not a subagent Captured Thread.
+_Avoid_: Old Session, Subagent Thread
+
+**Source Continuation**:
+An unambiguous provider relationship between transcript segments that belong to one logical coding-agent conversation and therefore one Captured Session.
+_Avoid_: Fork, copied Session, adjacent transcript
+
+**Forked Session**:
+A self-contained Captured Session created by an explicit source branch or fork action. Any copied conversation prefix is part of the Forked Session's own Canonical history.
+_Avoid_: Source Continuation, child Thread
+
+**Detached Subagent Thread**:
+A subagent Captured Thread whose exact source parent cannot be established reliably. It remains attached to the root Captured Thread with degraded relation fidelity rather than a guessed parent.
+_Avoid_: Orphaned Session, guessed child
+
+**Raw Source Data**:
+A losslessly retained representation of source-owned history used for fidelity, audit, and later reprocessing. Retention does not imply that every source record has a Canonical projection.
+_Avoid_: Canonical Event, parsed event
+
+**Canonical Event**:
+A source-neutral semantic event projected from coding-agent history into a Captured Thread. Its identity and revision remain stable across repeated collection.
+_Avoid_: Raw record, source line
+
+**Projection Fidelity**:
+How faithfully a published Canonical view represents the source semantics selected for that view. It is distinct from Raw delivery completeness and the Collector's current operation.
+_Avoid_: Collector health, upload progress
+
+**Collector Health**:
+The local Collector's ability to discover, process, and deliver configured coding-agent history. It does not describe whether the coding agent or its human participant is currently active.
+_Avoid_: Session presence, Projection Fidelity
+
 ## Identity
 
 **User**:

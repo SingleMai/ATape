@@ -32,6 +32,7 @@ type CanonicalEvent struct {
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
+	ToolUpdateJson     string
 }
 
 type CanonicalThread struct {

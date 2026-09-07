@@ -1,0 +1,9 @@
+[
+  {"json":"null"},
+  {"json":"false"},
+  {"json":"0"},
+  {"json":"\"\""},
+  {"json":"[]"},
+  {"json":"{}"},
+  {"json":"{\"fraction\":0.125,\"tiny\":1e-7,\"large\":1e+21,\"unicode\":\"工具 😀\",\"html\":\"<script>alert(1)</script>\"}"}
+]

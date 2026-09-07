@@ -78,6 +78,7 @@ type EventRecord struct {
 	OccurredAt         time.Time
 	Text               string
 	ToolLabel          string
+	ToolUpdateJSON     string `json:"ToolUpdateJSON,omitempty"`
 	ChildThreadID      *string
 }
 

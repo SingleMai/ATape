@@ -134,10 +134,28 @@ func (h *Handler) authenticate(request *http.Request, registered route) (request
 			principal.Method = authentication.CLIAuthentication
 		}
 		principal.Fresh = registered.fresh || principal.Fresh
-		return requestAuthentication{
+		result := requestAuthentication{
 			principal: principal,
 			user:      authentication.User{ID: principal.UserID, DisplayName: "ATape Demo"},
-		}, "", nil
+		}
+		// The explicit ephemeral demo Adapter must satisfy the same browser
+		// bootstrap response as a real authenticated session. Without this,
+		// demo ingestion works but the existing Web app cannot open its data.
+		// This branch is never used without DevelopmentPrincipal; no cookie or
+		// reusable production credential is issued.
+		if principal.Method == authentication.WebAuthentication {
+			now := time.Now().UTC()
+			result.web = &authentication.AuthenticatedWebSession{
+				Principal: principal, User: result.user,
+				Session: authentication.WebSession{
+					ID: "development-session", UserID: principal.UserID,
+					CreatedAt: now, LastUsedAt: now, ReauthenticatedAt: now,
+					AbsoluteExpiresAt: now.Add(time.Hour),
+				},
+				CSRFToken: "development-only",
+			}
+		}
+		return result, "", nil
 	}
 
 	credentials, problem := readCredentials(request, h.config.sessionCookie)

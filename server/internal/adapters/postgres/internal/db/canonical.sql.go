@@ -75,7 +75,7 @@ const getEventByIDForUpdate = `-- name: GetEventByIDForUpdate :one
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
-       kind, author, occurred_at, text, tool_label, child_thread_id
+       kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 FROM canonical_events
 WHERE id = $1
 FOR UPDATE
@@ -108,6 +108,7 @@ func (q *Queries) GetEventByIDForUpdate(ctx context.Context, id string) (Canonic
 		&i.Text,
 		&i.ToolLabel,
 		&i.ChildThreadID,
+		&i.ToolUpdateJson,
 	)
 	return i, err
 }
@@ -116,7 +117,7 @@ const getEventBySourceForUpdate = `-- name: GetEventBySourceForUpdate :one
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
-       kind, author, occurred_at, text, tool_label, child_thread_id
+       kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 FROM canonical_events
 WHERE source_key = $1
 FOR UPDATE
@@ -149,6 +150,7 @@ func (q *Queries) GetEventBySourceForUpdate(ctx context.Context, sourceKey strin
 		&i.Text,
 		&i.ToolLabel,
 		&i.ChildThreadID,
+		&i.ToolUpdateJson,
 	)
 	return i, err
 }
@@ -428,12 +430,12 @@ INSERT INTO canonical_events (
     id, session_id, thread_id, source_key, revision, projection_revision,
     digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
     adapter_version, schema_version, observed_at, received_at, ingest_seq,
-    kind, author, occurred_at, text, tool_label, child_thread_id
+    kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
-    $18, $19, $20, $21, $22, $23
+    $18, $19, $20, $21, $22, $23, $24
 )
 `
 
@@ -461,6 +463,7 @@ type InsertEventParams struct {
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
+	ToolUpdateJson     string
 }
 
 func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) error {
@@ -488,6 +491,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) error 
 		arg.Text,
 		arg.ToolLabel,
 		arg.ChildThreadID,
+		arg.ToolUpdateJson,
 	)
 	return err
 }
@@ -497,12 +501,12 @@ INSERT INTO canonical_event_versions (
     source_key, projection_revision, revision, event_id, session_id, thread_id,
     digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
     adapter_version, schema_version, observed_at, received_at, ingest_seq,
-    kind, author, occurred_at, text, tool_label, child_thread_id
+    kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 ) VALUES (
     $1, $2, $3, $4, $5, $6,
     $7, $8, $9, $10, $11, $12,
     $13, $14, $15, $16, $17,
-    $18, $19, $20, $21, $22, $23
+    $18, $19, $20, $21, $22, $23, $24
 )
 `
 
@@ -530,6 +534,7 @@ type InsertEventVersionParams struct {
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
+	ToolUpdateJson     string
 }
 
 func (q *Queries) InsertEventVersion(ctx context.Context, arg InsertEventVersionParams) error {
@@ -557,6 +562,7 @@ func (q *Queries) InsertEventVersion(ctx context.Context, arg InsertEventVersion
 		arg.Text,
 		arg.ToolLabel,
 		arg.ChildThreadID,
+		arg.ToolUpdateJson,
 	)
 	return err
 }
@@ -830,7 +836,7 @@ const listThreadEvents = `-- name: ListThreadEvents :many
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
-       kind, author, occurred_at, text, tool_label, child_thread_id
+       kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
 FROM canonical_events
 WHERE session_id = $1 AND thread_id = $2
 ORDER BY source_order, event_index, id
@@ -874,6 +880,7 @@ func (q *Queries) ListThreadEvents(ctx context.Context, arg ListThreadEventsPara
 			&i.Text,
 			&i.ToolLabel,
 			&i.ChildThreadID,
+			&i.ToolUpdateJson,
 		); err != nil {
 			return nil, err
 		}
@@ -941,7 +948,8 @@ SET revision = $2,
     occurred_at = $17,
     text = $18,
     tool_label = $19,
-    child_thread_id = $20
+    child_thread_id = $20,
+    tool_update_json = $21
 WHERE id = $1
 `
 
@@ -966,6 +974,7 @@ type UpdateEventParams struct {
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
+	ToolUpdateJson     string
 }
 
 func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) error {
@@ -990,6 +999,7 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) error 
 		arg.Text,
 		arg.ToolLabel,
 		arg.ChildThreadID,
+		arg.ToolUpdateJson,
 	)
 	return err
 }

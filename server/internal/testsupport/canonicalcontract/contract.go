@@ -52,6 +52,56 @@ func MemoryControlPlane() canonical.MemoryControlPlane {
 
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
+	t.Run("reprojects legacy tool Events without duplicating identities or losing JSON values", func(t *testing.T) {
+		store := factory(t)
+		ingestor := ingestion.NewIngestor(store)
+		batch := ValidBatch()
+		batch.CanonicalProfileVersion = ingestion.LegacyCanonicalProfileVersion
+		batch.Events[1].Kind = "tool_result"
+		created, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, err := conversation.NewMemory(store).OpenConversation(context.Background(), WebPrincipal(), created.SessionID, "root")
+		if err != nil {
+			t.Fatal(err)
+		}
+		batch.BatchID = "tool-profile-upgrade"
+		batch.CanonicalProfileVersion = ingestion.CanonicalProfileVersion
+		for index := range batch.Events {
+			batch.Events[index].ProjectionRevision++
+		}
+		const toolJSON = `{"sessionUpdate":"tool_call_update","toolCallId":"same-call","title":"Read","status":"completed","rawInput":null,"rawOutput":{"fraction":0.125,"tiny":1e-7,"false":false,"zero":0,"empty":"","array":[]}}`
+		batch.Events[1].ToolUpdateJSON = toolJSON
+		upgraded, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), batch)
+		if err != nil || upgraded.UpdatedEvents != 2 || upgraded.InsertedEvents != 0 {
+			t.Fatalf("upgrade: %+v %v", upgraded, err)
+		}
+		after, err := conversation.NewMemory(store).OpenConversation(context.Background(), WebPrincipal(), created.SessionID, "root")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(after.Events) != 2 || before.Events[1].ID != after.Events[1].ID || after.Events[1].Tool == nil || string(after.Events[1].Tool.RawInput) != "null" {
+			t.Fatalf("tool projection lost values/identity: %+v", after.Events)
+		}
+		snapshot, ok, err := store.Conversation(context.Background(), WebPrincipal(), created.SessionID, "root")
+		if err != nil || !ok {
+			t.Fatalf("snapshot: %v", err)
+		}
+		found := false
+		for _, event := range snapshot.Events {
+			if event.ToolUpdateJSON == toolJSON {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("Canonical persistence changed encoded tool JSON")
+		}
+		replay, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), batch)
+		if err != nil || !replay.Replayed {
+			t.Fatalf("replay: %+v %v", replay, err)
+		}
+	})
 	t.Run("deletes a captured Session through the ingestion lifecycle", func(t *testing.T) {
 		store := factory(t)
 		ingestor := ingestion.NewIngestor(store)

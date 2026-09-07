@@ -91,3 +91,8 @@ An Adapter segment and a server transport chunk are deliberately different units
 The authoritative runtime Schemas and types live in [`packages/domain/src/collector.ts`](../../packages/domain/src/collector.ts). The pull/checkpoint decision and failure semantics are recorded in [ADR-0009](../architecture/adr/0009-pull-adapter-runtime-and-checkpointed-collector.md).
 
 The repository's first production implementation is documented in the [Codex Adapter guide](codex.md).
+
+The opt-in [Claude Code Adapter](../../adapters/claude/README.md) now uses the
+same runtime, ingestion and reader Interfaces for bounded Project-scoped discovery
+and incremental Session collection. Its documented restrictions are not a claim
+of general Claude history support.

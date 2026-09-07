@@ -12,7 +12,7 @@ import type {
   LocalProject,
   RawAppendReceipt
 } from "@atape/domain"
-import { AdapterCollectionLimits, AdapterProtocolVersion } from "@atape/domain"
+import { AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Context, Effect, Layer, Schema, Scope } from "effect"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
@@ -368,6 +368,9 @@ const collectAdapter = (
 
     for (const observation of page.observations) {
       const redacted = redactObservation(redactor, observation)
+      if (!redacted.observation.events.every(event => validAcpUpdate(event.update))) {
+        return yield* contractFailure(adapter.adapterId, "contains tool or content values exceeding limits after redaction.")
+      }
       redactions += redacted.replacements
       const canonical = yield* retryTransport(transport.submitCanonical({
         instanceOrigin: project.instanceOrigin,
@@ -807,12 +810,17 @@ const validAcpUpdate = (update: AcpSessionUpdate) => {
       return (update.messageId === undefined || update.messageId === null || boundedIdentity(update.messageId, 500)) &&
         validAcpContentBlock(update.content)
     case "tool_call":
-      return boundedIdentity(update.toolCallId, 500) && boundedText(update.title, 500, false)
+      return validToolValues(update) && boundedIdentity(update.toolCallId, 500) && boundedText(update.title, 500, false)
     case "tool_call_update":
-      return boundedIdentity(update.toolCallId, 500) &&
+      return validToolValues(update) && boundedIdentity(update.toolCallId, 500) &&
         (update.title === undefined || update.title === null || boundedText(update.title, 500, true))
   }
 }
+
+const validToolValues = (update: Extract<AcpSessionUpdate, { toolCallId: string }>) =>
+  (!Object.hasOwn(update, "rawInput") || isBoundedToolValue(update.rawInput)) &&
+  (!Object.hasOwn(update, "rawOutput") || isBoundedToolValue(update.rawOutput)) &&
+  utf8Bytes(JSON.stringify(update)) <= ToolUpdateBytes
 
 const validAcpContentBlock = (content: AcpContentBlock) => {
   switch (content.type) {
@@ -841,12 +849,41 @@ const redactAcpUpdate = (
     case "agent_thought_chunk":
       return { ...update, content: redactAcpContentBlock(update.content, redact) }
     case "tool_call":
-      return { ...update, title: redact(update.title) }
+      return { ...update, ...redactToolValues(update, redact), title: redact(update.title) }
     case "tool_call_update":
       return {
         ...update,
+        ...redactToolValues(update, redact),
         ...(typeof update.title === "string" ? { title: redact(update.title) } : {})
       }
+  }
+}
+
+const redactToolValues = (update: Extract<AcpSessionUpdate, { toolCallId: string }>, redact: (value: string) => string) => {
+  const visit = (value: unknown): unknown => {
+    if (typeof value === "string") return redact(value)
+    if (typeof value === "number") {
+      const text = JSON.stringify(value), masked = redact(text)
+      return text === masked ? value : masked
+    }
+    if (Array.isArray(value)) return value.map(visit)
+    if (value !== null && typeof value === "object") {
+      const entries = Object.entries(value).map(([key, item]) => [redact(key), visit(item)] as const)
+      // Redacted keys may collide. Do not silently overwrite one value with another.
+      return new Set(entries.map(([key]) => key)).size === entries.length ? Object.fromEntries(entries) : "[REDACTED]"
+    }
+    return value
+  }
+  const value = (input: unknown): unknown => {
+    // Also apply contextual patterns such as {"password":"..."}. If masking
+    // breaks JSON, omit the whole value rather than leaking or coercing it.
+    const masked = redact(JSON.stringify(visit(input)))
+    try { return JSON.parse(masked) }
+    catch { return "[REDACTED]" }
+  }
+  return {
+    ...(Object.hasOwn(update, "rawInput") ? { rawInput: value(update.rawInput) } : {}),
+    ...(Object.hasOwn(update, "rawOutput") ? { rawOutput: value(update.rawOutput) } : {})
   }
 }
 

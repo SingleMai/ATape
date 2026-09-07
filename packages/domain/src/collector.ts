@@ -6,7 +6,7 @@ import type {
 import { AdapterProtocolVersion } from "./client.ts"
 
 export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
-export const CanonicalProfileVersion = "atape.acp-centered.v1" as const
+export const CanonicalProfileVersion = "atape.acp-centered.v2" as const
 export const RawIngestionProtocolVersion = "atape.raw.v1" as const
 export const RawTransportChunkBytes = 256 * 1024
 export const CollectorStateVersion = 2 as const
@@ -164,7 +164,9 @@ const AcpToolCall = Schema.Struct({
   toolCallId: Schema.String,
   title: Schema.String,
   kind: Schema.optionalKey(AcpToolKind),
-  status: Schema.optionalKey(AcpToolStatus)
+  status: Schema.optionalKey(AcpToolStatus),
+  rawInput: Schema.optionalKey(Schema.Unknown),
+  rawOutput: Schema.optionalKey(Schema.Unknown)
 })
 
 const AcpToolCallUpdate = Schema.Struct({
@@ -172,8 +174,13 @@ const AcpToolCallUpdate = Schema.Struct({
   toolCallId: Schema.String,
   title: Schema.optionalKey(Schema.NullOr(Schema.String)),
   kind: Schema.optionalKey(Schema.NullOr(AcpToolKind)),
-  status: Schema.optionalKey(Schema.NullOr(AcpToolStatus))
+  status: Schema.optionalKey(Schema.NullOr(AcpToolStatus)),
+  rawInput: Schema.optionalKey(Schema.Unknown),
+  rawOutput: Schema.optionalKey(Schema.Unknown)
 })
+
+export const AcpToolUpdate = Schema.Union([AcpToolCall, AcpToolCallUpdate])
+export type AcpToolUpdate = typeof AcpToolUpdate.Type
 
 export const AcpSessionUpdate = Schema.Union([
   AcpUserMessageChunk,
@@ -389,6 +396,7 @@ export const CanonicalIngestionEvent = Schema.Struct({
   occurredAt: Schema.String,
   text: Schema.String,
   toolLabel: Schema.optionalKey(Schema.String),
+  toolUpdateJson: Schema.optionalKey(Schema.String),
   childSourceThreadId: Schema.optionalKey(Schema.String)
 })
 

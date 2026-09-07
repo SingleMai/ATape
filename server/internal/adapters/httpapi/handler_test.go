@@ -24,6 +24,25 @@ import (
 	"github.com/SingleMai/ATape/server/internal/workspace"
 )
 
+func TestExplicitDemoModeBootstrapsExistingWebAppWithoutIssuingCookie(t *testing.T) {
+	handler := testHandler(t)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("demo bootstrap = %d: %s", response.Code, response.Body.String())
+	}
+	var session sessionDTO
+	if err := json.Unmarshal(response.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	if session.User.ID != canonical.DemoUserID || session.WebSession.ID == "" || session.CSRFToken == "" {
+		t.Fatalf("incomplete demo browser bootstrap: %+v", session)
+	}
+	if response.Header().Get("Set-Cookie") != "" || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("demo bootstrap must not issue persistent credentials or permit caching")
+	}
+}
+
 func TestRawChunkEndpointIsIdempotent(t *testing.T) {
 	handler := testHandler(t)
 	content := []byte("{\"token\":\"[REDACTED]\"}\n")

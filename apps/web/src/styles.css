@@ -521,6 +521,11 @@ h3 { margin: 0; font-size: 20px; }
 .event header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .event time { color: var(--atape-color-text-muted); font-size: 12px; }
 .event p { margin: 12px 0 0; line-height: 1.62; }
+.tool-details { margin-top: 12px; min-width: 0; }
+.tool-details small { color: var(--atape-color-text-muted); overflow-wrap: anywhere; }
+.tool-details details { margin-top: 8px; }
+.tool-details summary { cursor: pointer; font-weight: 650; }
+.tool-details pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border-radius: var(--atape-radius-sm); background: var(--atape-color-surface-muted); }
 .tool-label { display: inline-block; margin-top: 12px; padding: 7px 10px; border-radius: var(--atape-radius-sm); background: var(--atape-color-surface-muted); color: var(--atape-color-text-muted); font-size: 12px; font-weight: 750; }
 
 .child-thread {

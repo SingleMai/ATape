@@ -47,6 +47,8 @@ The Codex Adapter derives a stable title from the first root-thread `UserMessage
 
 ## Consequences
 
+The selected new-capability [failure/observability design](../../../.scratch/claude-code-adapter/failure-observability-contract.md) preserves this separation: bounded content-free diagnostics and progress liveness remain local; v2 published captureStatus describes Projection Fidelity, with Raw readiness resolved independently on explicit access. Foreground/daemon status parity, owner-fenced progress heartbeats and narrow retry/quarantine scheduling are planned extensions, not already implemented by this ADR.
+
 - Team history can stay current after the starting terminal closes, while disabled Adapters consume no runtime memory.
 - `atape status` exposes the last successful cycle or current failure for every configured Project/Adapter without querying Canonical or Raw storage.
 - Process control remains user-local and portable enough for v0.1, but does not provide crash restart or boot persistence.

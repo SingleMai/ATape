@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { AcpToolUpdate } from "./collector.ts"
 
 export const Actor = Schema.Struct({
   name: Schema.String,
@@ -94,6 +95,7 @@ export const CanonicalEvent = Schema.Struct({
   occurredAt: Schema.String,
   text: Schema.String,
   toolLabel: Schema.optionalKey(Schema.String),
+  tool: Schema.optionalKey(AcpToolUpdate),
   childThread: Schema.optionalKey(ChildThreadRef)
 })
 export type CanonicalEvent = typeof CanonicalEvent.Type

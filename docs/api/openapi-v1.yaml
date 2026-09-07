@@ -1689,6 +1689,10 @@ components:
         occurredAt: {$ref: "#/components/schemas/Timestamp"}
         text: {type: string, maxLength: 1048576}
         toolLabel: {type: string}
+        toolUpdateJson:
+          type: string
+          maxLength: 140000
+          description: "v2 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). Maximum 140000 bytes; each JSON value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
         childSourceThreadId: {type: [string, "null"]}
     CanonicalBatch:
       type: object
@@ -1696,7 +1700,7 @@ components:
       required: [protocolVersion, canonicalProfileVersion, batchId, observedAt, source, projectId, session, threads, events]
       properties:
         protocolVersion: {const: atape.canonical.v1}
-        canonicalProfileVersion: {const: atape.acp-centered.v1}
+        canonicalProfileVersion: {type: string, enum: [atape.acp-centered.v1, atape.acp-centered.v2]}
         batchId: {type: string, minLength: 1, maxLength: 200}
         observedAt: {$ref: "#/components/schemas/Timestamp"}
         source: {$ref: "#/components/schemas/CanonicalSource"}

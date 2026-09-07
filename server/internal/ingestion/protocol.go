@@ -4,7 +4,8 @@ package ingestion
 import "fmt"
 
 const ProtocolVersion = "atape.canonical.v1"
-const CanonicalProfileVersion = "atape.acp-centered.v1"
+const CanonicalProfileVersion = "atape.acp-centered.v2"
+const LegacyCanonicalProfileVersion = "atape.acp-centered.v1"
 
 type Source struct {
 	AdapterID      string `json:"adapterId"`
@@ -62,6 +63,7 @@ type Event struct {
 	OccurredAt          string       `json:"occurredAt"`
 	Text                string       `json:"text"`
 	ToolLabel           string       `json:"toolLabel,omitempty"`
+	ToolUpdateJSON      string       `json:"toolUpdateJson,omitempty"`
 	ChildSourceThreadID *string      `json:"childSourceThreadId,omitempty"`
 }
 
