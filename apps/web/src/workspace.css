@@ -176,7 +176,7 @@
   border-radius: 6px;
   padding: 6px;
 }
-.workspace-team-options a {
+.workspace-team-options > button {
   min-height: 40px;
   display: flex;
   align-items: center;
@@ -186,7 +186,7 @@
   font-size: 13px;
   text-decoration: none;
 }
-.workspace-team-options a:hover {
+.workspace-team-options > button:hover {
   background: var(--atape-color-accent-soft);
 }
 .sidebar-collapsed .team-trigger-name,
@@ -283,7 +283,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--atape-color-border-soft);
 }
-.workspace-account a {
+.workspace-account .workspace-profile {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -292,7 +292,7 @@
   font-size: 13px;
   text-decoration: none;
 }
-.workspace-account a:hover {
+.workspace-account .workspace-profile:hover {
   color: var(--atape-color-text);
 }
 .workspace-account .workspace-profile {
@@ -349,7 +349,7 @@
 }
 .sidebar-collapsed .sidebar-brand-row,
 .sidebar-collapsed .workspace-search,
-.sidebar-collapsed .workspace-account a {
+.sidebar-collapsed .workspace-account .workspace-profile {
   justify-content: center;
   padding-inline: 0;
 }
@@ -817,9 +817,6 @@
   padding: 12px;
   font-size: 12px;
 }
-.settings-sidebar .workspace-search {
-  flex-shrink: 0;
-}
 
 @media (max-width: 860px) {
   .workspace-shell {
@@ -849,35 +846,8 @@
   .workspace-search kbd {
     display: none;
   }
-  .settings-sidebar .workspace-search {
-    width: auto;
-  }
-  .settings-sidebar .workspace-search > span {
-    display: none;
-  }
-  .settings-sidebar {
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
-  }
 }
 @media (max-width: 640px) {
-  .settings-sidebar {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .settings-sidebar .workspace-search {
-    width: 100%;
-  }
-  .settings-sidebar .workspace-search > span {
-    display: inline;
-  }
-  .settings-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    min-width: 0;
-  }
-  .settings-signout {
-    grid-column: 2;
-    grid-row: 1;
-  }
   .workspace-shell,
   .workspace-shell.sidebar-collapsed {
     display: block;

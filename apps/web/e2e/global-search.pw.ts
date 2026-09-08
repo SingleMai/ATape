@@ -84,7 +84,7 @@ test("searches across projects and retains filters, result scroll, and exact-mes
   await page.keyboard.press("Escape")
   await page.getByRole("button", { name: "Back to conversations", exact: true }).click()
   await page.getByRole("button", { name: "Team options for Team A" }).click()
-  await page.getByRole("link", { name: "Team settings" }).click()
+  await page.getByRole("button", { name: "Team settings" }).click()
   await page.keyboard.press("ControlOrMeta+k")
   await expect(input).toHaveValue("startup")
   await expect(dialog.getByRole("button", { name: "Remove project filter" })).toBeVisible()
@@ -146,7 +146,7 @@ for (const width of [390, 1440]) {
   test(`keeps the account avatar reachable with the sidebar collapsed at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })
     await page.goto(projectPath)
-    const account = page.getByRole("link", { name: "Open account security for Mai" })
+    const account = page.getByRole("button", { name: "Open account security for Mai" })
     await expect(account).toBeVisible()
     await expect(account.locator(".workspace-profile-avatar")).toBeVisible()
     if (width > 640) {
@@ -159,8 +159,13 @@ for (const width of [390, 1440]) {
     await expect(account).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0)
     await account.click()
-    await expect(page.getByRole("heading", { name: "Account security" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible()
+    await expect(page).toHaveURL(projectPath)
+    await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
     await expect(page.getByRole("region", { name: "Browser sessions" })).toBeVisible()
+    await page.getByRole("button", { name: "Close settings" }).click()
+    await expect(account).toBeFocused()
   })
 }
 
@@ -173,10 +178,7 @@ for (const width of [320, 390, 1440]) {
     if (width > 640) await page.getByRole("button", { name: "Collapse sidebar" }).click()
     await trigger.click()
     const menu = page.getByRole("navigation", { name: "Team options", exact: true })
-    await expect(menu.getByRole("link", { name: "Team settings" })).toHaveAttribute(
-      "href",
-      "/teams/team-a/settings/access"
-    )
+    await expect(menu.getByRole("button", { name: "Team settings" })).toBeVisible()
     expect(
       await menu.evaluate((element) => {
         const rect = element.getBoundingClientRect()
@@ -184,12 +186,72 @@ for (const width of [320, 390, 1440]) {
       })
     ).toBe(true)
     await page.keyboard.press("Tab")
-    await expect(menu.getByRole("link", { name: "Team settings" })).toBeFocused()
+    await expect(menu.getByRole("button", { name: "Team settings" })).toBeFocused()
     await page.keyboard.press("Escape")
     await expect(menu).toBeHidden()
     await expect(trigger).toBeFocused()
     await trigger.click()
-    await menu.getByRole("link", { name: "Team settings" }).click()
+    await menu.getByRole("button", { name: "Team settings" }).click()
     await expect(page.getByRole("heading", { name: "Team & access" })).toBeVisible()
   })
 }
+
+
+test("settings preserves the reader and supports nested confirmation without dismissing settings", async ({ page }) => {
+  await page.goto(`${projectPath}/sessions/session-reader?thread=root`)
+  await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
+  await page.evaluate(() => window.scrollTo(0, 380))
+  const before = await page.evaluate(() => scrollY)
+  const url = page.url()
+  const account = page.getByRole("button", { name: "Open account security for Mai" })
+  await account.click()
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true })
+  await expect(settings).toBeVisible()
+  await expect(page).toHaveURL(url)
+  await settings.getByRole("button", { name: "Close settings" }).focus()
+  await page.keyboard.press("Shift+Tab")
+  await expect(settings.getByRole("button", { name: "Sign out", exact: true })).toBeFocused()
+  await page.keyboard.press("Tab")
+  await expect(settings.getByRole("button", { name: "Close settings" })).toBeFocused()
+  await settings.getByRole("button", { name: "Browser sessions", exact: true }).click()
+  await settings.getByRole("button", { name: "Revoke", exact: true }).click()
+  const confirmation = page.getByRole("dialog", { name: "Revoke this browser session?" })
+  await expect(confirmation).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(confirmation).toBeHidden()
+  await expect(settings).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(settings).toBeHidden()
+  await expect(account).toBeFocused()
+  expect(await page.evaluate(() => scrollY)).toBe(before)
+  await expect(page).toHaveURL(url)
+})
+
+
+test("finishes signing out even if Settings is dismissed while the request is pending", async ({ page }) => {
+  let release: () => void = () => {}
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  await page.route("**/api/v1/auth/logout", async (route) => {
+    await pending
+    await route.continue()
+  })
+  await page.goto(projectPath)
+  await page.getByRole("button", { name: "Open account security for Mai" }).click()
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true })
+  const request = page.waitForRequest("**/api/v1/auth/logout")
+  await settings.getByRole("button", { name: "Sign out", exact: true }).click()
+  await request
+  await settings.getByRole("button", { name: "Close settings" }).click()
+  release()
+  await expect(page).toHaveURL(/auth\/sign-in/)
+})
+
+
+test("revoking the current browser returns to sign-in without a redirect loop", async ({ page }) => {
+  await page.goto(projectPath)
+  await page.getByRole("button", { name: "Open account security for Mai" }).click()
+  await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
+  await page.getByRole("region", { name: "Browser sessions" }).getByRole("button", { name: "Sign out", exact: true }).click()
+  await page.getByRole("dialog", { name: "Sign out this browser?" }).getByRole("button", { name: "Sign out", exact: true }).click()
+  await expect(page).toHaveURL(/auth\/sign-in/)
+})

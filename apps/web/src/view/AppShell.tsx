@@ -3,6 +3,7 @@ import { Avatar, Button } from "@atape/ui"
 import { Link } from "@tanstack/react-router"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
+import { useSettingsOverlay } from "../presenters/settingsOverlayContext"
 import { TapeMark } from "./AccessPrimitives"
 import { SearchIcon, PanelIcon } from "./WorkspaceIcons"
 
@@ -29,6 +30,7 @@ export const AppShell = ({
   onOpenProject,
   onRetryWorkspace
 }: Props) => {
+  const { openSettings } = useSettingsOverlay()
   const [collapsed, setCollapsed] = useState(
     () => typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches
   )
@@ -137,13 +139,11 @@ export const AppShell = ({
                     </select>
                   </label>
                 )}
-                <Link
-                  to="/teams/$teamSlug/settings/access"
-                  params={{ teamSlug: team.slug }}
-                  onClick={() => setTeamOpen(false)}
-                >
-                  Team settings
-                </Link>
+                <button type="button" onClick={() => {
+                  teamControl.current?.querySelector<HTMLButtonElement>(".workspace-team-trigger")?.focus()
+                  setTeamOpen(false)
+                  openSettings({ section: "team", teamSlug: team.slug })
+                }}>Team settings</button>
               </nav>
             )}
           </div>
@@ -195,9 +195,10 @@ export const AppShell = ({
           </nav>
         </div>
         <nav className="workspace-account" aria-label="Settings">
-          <Link
+          <button
+            type="button"
             className="workspace-profile"
-            to="/settings/account"
+            onClick={() => openSettings()}
             title={`Account security · ${currentUser.displayName}`}
             aria-label={`Open account security for ${currentUser.displayName}`}
           >
@@ -211,7 +212,7 @@ export const AppShell = ({
             <span className="workspace-profile-chevron" aria-hidden="true">
               ›
             </span>
-          </Link>
+          </button>
         </nav>
       </aside>
       <div className="workspace">

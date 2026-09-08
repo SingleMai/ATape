@@ -6,9 +6,7 @@ import type {
   User,
   WebSession
 } from "@atape/domain"
-import { useSearchOverlay } from "../presenters/searchOverlayContext"
-import { SearchIcon } from "./WorkspaceIcons"
-import { Link } from "@tanstack/react-router"
+import { useSettingsOverlay } from "../presenters/settingsOverlayContext"
 import { Avatar, Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect, useState, type ReactNode } from "react"
 import type {
@@ -20,8 +18,6 @@ import type {
   TeamAccessAction
 } from "../presenters/accessPresenter"
 import {
-  TapeMark,
-  AccountChip,
   ConfirmationDialog,
   FailureNotice,
   SuccessNotice,
@@ -34,60 +30,31 @@ const formatTime = (value: string): string => {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
 }
 
-export const SettingsShell = ({
+const SettingsShell = ({
   children,
-  user,
   active,
   team,
   onSignOut
 }: {
   readonly children: ReactNode
-  readonly user: User
   readonly active: "account" | "team"
   readonly team?: { readonly slug: string; readonly displayName: string }
   readonly onSignOut: () => void
 }) => {
-  const { openSearch } = useSearchOverlay()
-  return (
-    <div className="settings-shell">
-      <a className="skip-link" href="#main-content">Skip to settings</a>
-      <aside className="settings-sidebar" aria-label="Workspace">
-        <Link className="access-brand" to="/" aria-label="ATape home"><TapeMark className="access-brand-mark" /><span>ATape</span></Link>
-        <button className="workspace-search" type="button" onClick={() => openSearch()} aria-label="Search all conversations"><SearchIcon /><span>Search everything</span><kbd>⌘ K</kbd></button>
-        {team !== undefined && (
-          <Link className="settings-team" to="/" aria-label={`Current Team: ${team.displayName}`}>
-            <span><strong>{team.displayName}</strong><small>/teams/{team.slug}</small></span>
-            <Badge>Current</Badge>
-          </Link>
-        )}
-        <nav className="settings-nav" aria-label="ATape sections">
-          <span className="settings-nav-label">Workspace</span>
-          <Link to="/"><span aria-hidden="true">⌂</span> Overview</Link>
-          <span className="settings-nav-label">Settings</span>
-          <Link className={active === "account" ? "active" : ""} to="/settings/account" aria-current={active === "account" ? "page" : undefined}>
-            <span aria-hidden="true">◎</span> Account
-          </Link>
-          {team !== undefined && (
-            <Link
-              className={active === "team" ? "active" : ""}
-              to="/teams/$teamSlug/settings/access" params={{ teamSlug: team.slug }}
-              aria-current={active === "team" ? "page" : undefined}
-            >
-              <span aria-hidden="true">♢</span> Team &amp; access
-            </Link>
-          )}
-        </nav>
-        <Button className="settings-signout" variant="ghost" onClick={onSignOut}>Sign out</Button>
-      </aside>
-      <div className="settings-main">
-        <header className="settings-topbar">
-          <span>{team?.displayName ?? "ATape"} / <strong>Settings</strong></span>
-          <AccountChip displayName={user.displayName} avatarUrl={user.avatarUrl} />
-        </header>
-        {children}
-      </div>
-    </div>
-  )
+  const { target, openSettings } = useSettingsOverlay()
+  const section = active === "team" ? "team" : target.section
+  return <div className="settings-modal-layout">
+    <nav className="settings-categories" aria-label="Settings categories">
+      {([ ["account", "Account"], ["sessions", "Browser sessions"], ["credentials", "CLI credentials"] ] as const).map(([key, label]) =>
+        <button type="button" key={key} aria-current={section === key ? "page" : undefined}
+          onClick={() => openSettings({ section: key })}>{label}</button>
+      )}
+      {team && <button type="button" aria-current={section === "team" ? "page" : undefined}
+        onClick={() => openSettings({ section: "team", teamSlug: team.slug })}>Team settings</button>}
+      <button type="button" className="settings-modal-signout" onClick={onSignOut}>Sign out</button>
+    </nav>
+    <div className="settings-modal-content" key={section}>{children}</div>
+  </div>
 }
 
 const SectionFailure = ({ section, onRetry }: {
@@ -197,6 +164,8 @@ export const AccountSecurityView = ({
   }) => void
   readonly onSignOut: () => void
 }) => {
+  const { target } = useSettingsOverlay()
+  const section = target.section === "team" ? "account" : target.section
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     readonly copy: Confirmation
     readonly action: Parameters<typeof onAction>[0]
@@ -206,13 +175,13 @@ export const AccountSecurityView = ({
     if (action._tag === "Succeeded" || action._tag === "Failed") setPendingConfirmation(undefined)
   }, [action._tag])
   if (state._tag === "Loading") {
-    return <SettingsShell user={user} active="account" {...(team === undefined ? {} : { team })} onSignOut={onSignOut}>
-      <main className="settings-content" id="main-content" role="status">Loading account security…</main>
+    return <SettingsShell active="account" {...(team === undefined ? {} : { team })} onSignOut={onSignOut}>
+      <div className="settings-content" role="status">Loading account security…</div>
     </SettingsShell>
   }
   if (state._tag === "Failed") {
-    return <SettingsShell user={user} active="account" {...(team === undefined ? {} : { team })} onSignOut={onSignOut}>
-      <main className="settings-content" id="main-content"><FailureNotice failure={state.failure} onRetry={onRetry} /></main>
+    return <SettingsShell active="account" {...(team === undefined ? {} : { team })} onSignOut={onSignOut}>
+      <div className="settings-content"><FailureNotice failure={state.failure} onRetry={onRetry} /></div>
     </SettingsShell>
   }
 
@@ -223,25 +192,24 @@ export const AccountSecurityView = ({
     setPendingConfirmation({ copy, action: selected })
 
   return (
-    <SettingsShell user={user} active="account" {...(team === undefined ? {} : { team })} onSignOut={onSignOut}>
-      <main className="settings-content" id="main-content">
+    <SettingsShell active="account" {...(team === undefined ? {} : { team })} onSignOut={onSignOut}>
+      <div className="settings-content">
         {action._tag === "Failed" && <FailureNotice failure={action.failure} />}
         {action._tag === "Succeeded" && <SuccessNotice>Account access was updated.</SuccessNotice>}
         <header className="settings-heading">
-          <Eyebrow>Personal settings</Eyebrow>
-          <h1>Account security</h1>
-          <p>Review how you sign in and remove access you no longer recognize. ATape does not build a device inventory.</p>
+          <h1>{section === "account" ? "Account" : section === "sessions" ? "Browser sessions" : "CLI credentials"}</h1>
+          <p>{section === "account" ? "Your profile and connected sign-in methods." : section === "sessions" ? "Manage where you’re signed in." : "Manage access for your connected CLIs."}</p>
         </header>
+        {section === "account" && <div className="settings-profile-row"><Avatar name={user.displayName} src={user.avatarUrl} /><strong>{user.displayName}</strong></div>}
 
-        <section className="settings-section" aria-labelledby="signin-methods-title">
+        <section className="settings-section" hidden={section !== "account"} aria-labelledby="signin-methods-title">
           <header><div><h2 id="signin-methods-title">Sign-in methods</h2><p>Connected identities reach this same ATape account.</p></div></header>
           <IdentityRows identities={snapshot.identities} providers={snapshot.providers} onRetry={onRetry} />
-          <footer className="section-footer"><p>More methods appear only when this instance enables another Provider.</p></footer>
         </section>
 
-        <section className="settings-section" aria-labelledby="sessions-title">
+        <section className="settings-section" hidden={section !== "sessions"} aria-labelledby="sessions-title">
           <header>
-            <div><h2 id="sessions-title">Browser sessions</h2><p>Sessions end after 30 idle days or 180 days total.</p></div>
+            <div><h2 className="visually-hidden" id="sessions-title">Browser sessions</h2><p>Sessions end after 30 idle days or 180 days total.</p></div>
             <Badge>{sessions.length} active</Badge>
           </header>
           <SessionRows section={snapshot.webSessions} onRetry={onRetry} onRevoke={(session) => confirm({
@@ -265,9 +233,9 @@ export const AccountSecurityView = ({
           )}
         </section>
 
-        <section className="settings-section" aria-labelledby="credentials-title">
+        <section className="settings-section" hidden={section !== "credentials"} aria-labelledby="credentials-title">
           <header>
-            <div><h2 id="credentials-title">CLI credentials</h2><p>Only creation and last-use time are retained here; secret values are never shown again.</p></div>
+            <div><h2 className="visually-hidden" id="credentials-title">CLI credentials</h2><p>Revoke credentials you no longer use.</p></div>
             <Badge>{credentials.length} active</Badge>
           </header>
           <CredentialRows section={snapshot.cliCredentials} onRetry={onRetry} onRevoke={(credential) => confirm({
@@ -288,7 +256,7 @@ export const AccountSecurityView = ({
             </footer>
           )}
         </section>
-      </main>
+      </div>
       <ConfirmationDialog
         confirmation={pendingConfirmation?.copy}
         pending={pending}
@@ -386,8 +354,8 @@ export const TeamAccessView = ({
   useEffect(() => {
     if (action._tag === "Succeeded" || action._tag === "Failed") setPendingConfirmation(undefined)
   }, [action._tag])
-  if (state._tag === "Loading") return <div className="access-page"><main className="access-state-card" role="status">Loading Team access…</main></div>
-  if (state._tag === "Failed") return <div className="access-page"><main className="access-state-card"><FailureNotice failure={state.failure} onRetry={onRetry} /></main></div>
+  if (state._tag === "Loading") return <div className="settings-loading" role="status">Loading Team access…</div>
+  if (state._tag === "Failed") return <div className="settings-loading"><FailureNotice failure={state.failure} onRetry={onRetry} /></div>
 
   const access = state.value
   const owner = access.team.membership.role === "owner"
@@ -403,12 +371,11 @@ export const TeamAccessView = ({
 
   return (
     <SettingsShell
-      user={user}
       active="team"
       team={{ slug: access.team.slug, displayName: access.team.displayName }}
       onSignOut={onSignOut}
     >
-      <main className="settings-content" id="main-content">
+      <div className="settings-content">
         {action._tag === "Failed" && (
           <FailureNotice
             failure={action.failure}
@@ -480,7 +447,7 @@ export const TeamAccessView = ({
           />)}
           {onlyOwner && <p className="owner-note"><strong>You are the only Owner.</strong> Make another member an Owner before leaving.</p>}
         </section>
-      </main>
+      </div>
       <ConfirmationDialog
         confirmation={pendingConfirmation?.copy}
         pending={pending}

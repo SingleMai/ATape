@@ -14,7 +14,7 @@ import {
   useNavigate,
   useRouterState
 } from "@tanstack/react-router"
-import { createContext, useContext, useEffect, useRef } from "react"
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react"
 import {
   useAccountSecurityPresenter,
   useCLIAuthorizationPresenter,
@@ -29,6 +29,8 @@ import {
 import { useConversationPresenter, useProjectMemoryPresenter } from "./presenters/memoryPresenter"
 import { useSessionRawPresenter } from "./presenters/rawPresenter"
 import { useSearchOverlay } from "./presenters/searchOverlayContext"
+import { SettingsOverlayContext, useSettingsOverlay, type SettingsTarget } from "./presenters/settingsOverlayContext"
+import { SettingsDialog } from "./view/SettingsDialog"
 import { GlobalSearchProvider } from "./view/GlobalSearch"
 import { useWorkspacePresenter } from "./presenters/workspacePresenter"
 import { AppShell } from "./view/AppShell"
@@ -145,6 +147,17 @@ const authenticatedRoute = createRoute({
 function AuthenticatedBoundary() {
   const session = useSessionPresenter()
   const navigate = useNavigate()
+  const logout = useLogoutPresenter()
+  const handledLogout = useRef(false)
+  useEffect(() => {
+    if (logout.action._tag === "Pending") handledLogout.current = false
+    if (logout.action._tag === "Succeeded" && !handledLogout.current) {
+      handledLogout.current = true
+      // Resolve the new session state before routing; stale authenticated data
+      // would otherwise redirect sign-in straight back into the workspace.
+      session.reload()
+    }
+  }, [logout.action._tag, session.reload])
   useEffect(() => {
     if (session.state._tag !== "Unauthenticated") return
     const returnTo = safeLocalReturnTo(
@@ -152,10 +165,10 @@ function AuthenticatedBoundary() {
     )
     void navigate({
       to: "/auth/sign-in",
-      search: { returnTo, reason: "session_ended" },
+      search: { returnTo, reason: logout.action._tag === "Succeeded" ? "signed_out" : "session_ended" },
       replace: true
     })
-  }, [navigate, session.state._tag])
+  }, [navigate, session.state._tag, logout.action._tag])
   if (session.state._tag === "Loading") return <FullPageState role="status">Restoring your ATape session…</FullPageState>
   if (session.state._tag === "Failed") return <SessionFailure failure={session.state.failure} onRetry={session.reload} />
   if (session.state._tag === "Unauthenticated") {
@@ -163,7 +176,7 @@ function AuthenticatedBoundary() {
   }
   return (
     <AuthenticatedSessionContext.Provider value={session.state.value}>
-      <GlobalSearchProvider><Outlet /></GlobalSearchProvider>
+      <GlobalSearchProvider><AuthenticatedSettings /></GlobalSearchProvider>
     </AuthenticatedSessionContext.Provider>
   )
 }
@@ -515,19 +528,46 @@ function JoinTeamRoute() {
   return <JoinTeamView user={session.user} action={presenter.action} onSubmit={presenter.submit} />
 }
 
+function AuthenticatedSettings() {
+  const logout = useLogoutPresenter()
+  const [target, setTarget] = useState<SettingsTarget>({ section: "account" })
+  const [open, setOpen] = useState(false)
+  const openSettings = useCallback((next: SettingsTarget = { section: "account" }) => {
+    setTarget(next)
+    setOpen(true)
+  }, [])
+  const closeSettings = useCallback(() => setOpen(false), [])
+  return <SettingsOverlayContext.Provider value={{ target, openSettings, closeSettings }}>
+    <Outlet />
+    {open && <SettingsDialog onClose={closeSettings}>
+      {target.section === "team" && target.teamSlug
+        ? <TeamSettingsContent key={target.teamSlug} teamSlug={target.teamSlug} onSignOut={() => logout.logout(undefined)} />
+        : <AccountSettingsContent onSignOut={() => logout.logout(undefined)} />}
+    </SettingsDialog>}
+  </SettingsOverlayContext.Provider>
+}
+
+function LegacySettingsEntry({ teamSlug }: { readonly teamSlug?: string }) {
+  const { openSettings } = useSettingsOverlay()
+  const navigate = useNavigate()
+  useEffect(() => {
+    openSettings(teamSlug ? { section: "team", teamSlug } : { section: "account" })
+    void navigate({ to: "/", replace: true })
+  }, [teamSlug, openSettings, navigate])
+  return null
+}
+
 const accountSettingsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: "/settings/account",
-  component: AccountSettingsRoute
+  component: () => <LegacySettingsEntry />
 })
 
-function AccountSettingsRoute() {
+function AccountSettingsContent({ onSignOut }: { readonly onSignOut: () => void }) {
   const session = useAuthenticatedSession()
   const account = useAccountSecurityPresenter()
-  const logout = useLogoutPresenter()
   const sessionPresenter = useSessionPresenter()
   const workspace = useWorkspacePresenter()
-  const navigate = useNavigate()
   const lastAction = useRef<{ readonly signsOut: boolean } | undefined>(undefined)
   const handled = useRef(false)
   useEffect(() => () => account.resetAction(), [account.resetAction])
@@ -537,18 +577,11 @@ function AccountSettingsRoute() {
       handled.current = true
       if (lastAction.current?.signsOut === true) {
         sessionPresenter.reload()
-        void navigate({ to: "/auth/sign-in", search: { returnTo: "/", reason: "signed_out" }, replace: true })
       } else {
         account.reload()
       }
     }
-  }, [account, navigate, sessionPresenter])
-  useEffect(() => {
-    if (logout.action._tag === "Succeeded") {
-      sessionPresenter.reload()
-      void navigate({ to: "/auth/sign-in", search: { returnTo: "/", reason: "signed_out" }, replace: true })
-    }
-  }, [logout.action, navigate, sessionPresenter])
+  }, [account, sessionPresenter])
   const firstTeam = workspace.state._tag === "Ready" ? workspace.state.value.teams[0] : undefined
   return <AccountSecurityView
     user={session.user}
@@ -565,7 +598,7 @@ function AccountSettingsRoute() {
       }
       account.run(input)
     }}
-    onSignOut={() => logout.logout(undefined)}
+    onSignOut={onSignOut}
   />
 }
 
@@ -577,11 +610,14 @@ const teamAccessRoute = createRoute({
 
 function TeamAccessRoute() {
   const { teamSlug } = teamAccessRoute.useParams()
+  return <LegacySettingsEntry teamSlug={teamSlug} />
+}
+
+function TeamSettingsContent({ teamSlug, onSignOut }: { readonly teamSlug: string; readonly onSignOut: () => void }) {
+  const { closeSettings } = useSettingsOverlay()
   const session = useAuthenticatedSession()
   const access = useTeamAccessPresenter(teamSlug)
   const reauthentication = useReauthenticationPresenter()
-  const logout = useLogoutPresenter()
-  const sessionPresenter = useSessionPresenter()
   const workspace = useWorkspacePresenter()
   const navigate = useNavigate()
   const lastAction = useRef<{ readonly kind: string } | undefined>(undefined)
@@ -594,6 +630,7 @@ function TeamAccessRoute() {
       workspace.reload()
       if (lastAction.current?.kind === "leave") {
         access.resetAction()
+        closeSettings()
         void navigate({ to: "/onboarding", replace: true })
       } else {
         access.reload()
@@ -604,12 +641,6 @@ function TeamAccessRoute() {
   useEffect(() => {
     if (reauthentication.action._tag === "Succeeded") window.location.assign(reauthentication.action.value)
   }, [reauthentication.action])
-  useEffect(() => {
-    if (logout.action._tag === "Succeeded") {
-      sessionPresenter.reload()
-      void navigate({ to: "/auth/sign-in", search: { returnTo: "/", reason: "signed_out" }, replace: true })
-    }
-  }, [logout.action, navigate, sessionPresenter])
   return <TeamAccessView
     user={session.user}
     state={access.state}
@@ -620,7 +651,7 @@ function TeamAccessRoute() {
       access.run(input)
     }}
     onReauthenticate={() => reauthentication.reauthenticate(`/teams/${encodeURIComponent(teamSlug)}/settings/access`)}
-    onSignOut={() => logout.logout(undefined)}
+    onSignOut={onSignOut}
   />
 }
 

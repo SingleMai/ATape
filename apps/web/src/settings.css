@@ -1,0 +1,266 @@
+/* Settings stays above the current workspace, with one scrollable content area. */
+.settings-dialog {
+  width: min(960px, calc(100vw - 64px));
+  height: min(680px, calc(100dvh - 96px));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--atape-color-border-soft);
+  border-radius: 16px;
+  background: var(--atape-color-paper);
+  color: var(--atape-color-text);
+  box-shadow: var(--atape-shadow-raised);
+  overflow: hidden;
+  font-family: var(--atape-font-sans);
+  font-size: 14px;
+}
+.settings-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.settings-dialog::backdrop {
+  background: color-mix(in srgb, var(--atape-color-code) 42%, transparent);
+  backdrop-filter: blur(3px);
+}
+.settings-dialog-header {
+  min-height: 64px;
+  padding: 10px 18px 10px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--atape-color-border-soft);
+  flex-shrink: 0;
+}
+.settings-dialog-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+.settings-close {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.settings-close:hover {
+  background: var(--atape-color-surface-muted);
+}
+.settings-modal-layout {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+.settings-categories {
+  border-right: 1px solid var(--atape-color-border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 12px;
+}
+.settings-categories button {
+  min-height: 44px;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 550;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.settings-categories button:hover,
+.settings-categories button[aria-current="page"] {
+  background: var(--atape-color-surface-muted);
+}
+.settings-categories .settings-modal-signout {
+  margin-top: auto;
+  color: var(--atape-color-text-muted);
+}
+.settings-modal-content {
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 28px 30px;
+}
+.settings-dialog .settings-content {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+.settings-dialog .settings-heading {
+  margin-bottom: 24px;
+}
+.settings-dialog .settings-heading h1 {
+  font-size: 20px;
+  font-weight: 650;
+  margin: 0 0 6px;
+}
+.settings-dialog .settings-heading p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.settings-dialog .settings-heading .atape-eyebrow {
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+.settings-profile-row {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 0 0 24px;
+}
+.settings-profile-row strong {
+  font-weight: 600;
+}
+.settings-dialog .settings-section {
+  margin: 0 0 24px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: visible;
+}
+.settings-dialog .settings-section[hidden] {
+  display: none;
+}
+.settings-dialog .settings-section > header {
+  padding: 0 0 14px;
+  align-items: center;
+  gap: 12px;
+}
+.settings-dialog .settings-section > header h2 {
+  font-size: 14px;
+  font-weight: 650;
+}
+.settings-dialog .settings-section > header p {
+  font-size: 13px;
+}
+.settings-dialog .settings-row {
+  padding: 16px 0;
+  min-height: 72px;
+  gap: 12px;
+}
+.settings-dialog .row-copy strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.settings-dialog .row-copy > span {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.settings-dialog .row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.settings-dialog .section-footer {
+  padding: 14px 0;
+  background: transparent;
+  gap: 12px;
+}
+.settings-dialog .section-footer p {
+  font-size: 12px;
+}
+.settings-dialog .atape-button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border-width: 1px;
+  border-radius: 7px;
+  box-shadow: none;
+  font-size: 13px;
+  font-weight: 550;
+}
+.settings-dialog .atape-badge {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 550;
+  border-width: 1px;
+  padding: 2px 7px;
+}
+.settings-dialog .empty-row,
+.settings-dialog .settings-section-state {
+  padding: 20px 0;
+  text-align: left;
+}
+.settings-dialog .join-code-panel {
+  padding: 16px 0;
+}
+.settings-loading {
+  padding: 32px;
+}
+.workspace-profile {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.workspace-team-options > button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .settings-dialog {
+    width: calc(100vw - 24px);
+    height: min(720px, calc(100dvh - 32px));
+    border-radius: 12px;
+  }
+  .settings-dialog-header {
+    min-height: 56px;
+    padding: 6px 8px 6px 16px;
+  }
+  .settings-modal-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-categories {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 8px;
+    gap: 4px;
+    border-right: 0;
+    border-bottom: 1px solid var(--atape-color-border-soft);
+  }
+  .settings-categories button {
+    font-size: 12px;
+    padding: 8px;
+  }
+  .settings-categories .settings-modal-signout {
+    margin-top: 0;
+    margin-left: auto;
+  }
+  .settings-modal-content {
+    padding: 20px 16px;
+  }
+  .settings-dialog .settings-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .settings-dialog .settings-section > header {
+    flex-direction: row;
+  }
+  .settings-dialog .atape-button {
+    min-height: 44px;
+  }
+}
