@@ -1,5 +1,4 @@
 import type {
-  AdapterSourceFailure,
   AdapterCollectionPage,
   AdapterCollectionLimitValues,
   AdapterInstallation,
@@ -14,7 +13,7 @@ import type {
   RawAppendReceipt
 } from "@atape/domain"
 import { AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
-import { MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
+import { AdapterSourceFailure, MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Context, Effect, Layer, Schema, Scope } from "effect"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 
@@ -598,8 +597,7 @@ const validatePage = (
 ): Effect.Effect<void, CollectionContractError> => {
   const fail = (message: string) => contractFailure(adapterId, message)
   if ((page.sourceFailures?.length ?? 0) > MaxSourceFailures ||
-    page.sourceFailures?.some(f => !boundedText(f.source, 4096, false) ||
-      !["io", "format", "unsupported", "changed", "limit", "duplicate"].includes(f.reason))) {
+    page.sourceFailures?.some(f => !Schema.is(AdapterSourceFailure)(f) || !boundedText(f.source, 4096, false))) {
     return fail("returned invalid or excessive source diagnostics.")
   }
   if (page.observations.length > AdapterCollectionLimits.observations) {

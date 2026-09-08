@@ -304,13 +304,44 @@ describe("Collector Module", () => {
     expect(JSON.stringify([...capture.canonical, ...capture.raw])).not.toContain("/history/")
   })
 
-  it("reports a diagnostic-only page without fabricating observations or progress", async () => {
+  it.each(["format", "attribution"] as const)("reports a %s-only page without fabricating observations or progress", async reason => {
     const capture = fixture({ page: { protocolVersion: AdapterProtocolVersion, nextCursor: null, hasMore: false, observations: [],
-      sourceFailures: [{ source: "/history/broken.jsonl", reason: "format" }] } })
+      sourceFailures: [{ source: "/history/broken.jsonl", reason }] } })
     const report = await capture.run(runCollectionCycle())
-    expect(report.jobs[0]).toMatchObject({ observations: 0, sourceFailures: [{ reason: "format" }] })
+    expect(report.failures).toEqual([])
+    expect(report.jobs[0]).toMatchObject({ observations: 0, sourceFailures: [{ reason }] })
     expect(capture.canonical).toEqual([]); expect(capture.raw).toEqual([])
     expect(capture.checkpoint()?.cursor).toBeNull()
+  })
+
+  it("publishes healthy history and preserves progress alongside unknown Git sources", async () => {
+    const sourceFailures = [{ source: "/history/supersecret.jsonl", reason: "attribution" as const }]
+    const capture = fixture({ pages: [
+      { ...collectionPage(), sourceFailures },
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "cursor-1", hasMore: false, observations: [], sourceFailures }
+    ] })
+    const first = await capture.run(runCollectionCycle())
+    expect(first.failures).toEqual([])
+    expect(first.jobs[0]).toMatchObject({ observations: 1, canonicalBatches: 1, rawChunks: 1,
+      sourceFailures: [{ source: "/history/[REDACTED].jsonl", reason: "attribution" }] })
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    const second = await capture.run(runCollectionCycle())
+    expect(second.failures).toEqual([])
+    expect(second.jobs[0]).toMatchObject({ observations: 0, canonicalBatches: 0, rawChunks: 0,
+      sourceFailures: [{ reason: "attribution" }] })
+    expect(capture.canonical).toHaveLength(1)
+    expect(capture.raw).toHaveLength(1)
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect(JSON.stringify([...capture.canonical, ...capture.raw])).not.toContain("/history/")
+  })
+
+  it("rejects undeclared diagnostic reasons before uploading history or committing progress", async () => {
+    const page = { ...collectionPage(), sourceFailures: [{ source: "/history/source", reason: "not-a-protocol-reason" }] }
+    const capture = fixture({ page: page as AdapterCollectionPage })
+    expect((await capture.run(runCollectionCycle())).failures[0]?.reason).toBe("contract")
+    expect(capture.canonical).toEqual([])
+    expect(capture.raw).toEqual([])
+    expect(capture.commits()).toBe(0)
   })
 
   it("rejects excessive source diagnostics before any network submission", async () => {

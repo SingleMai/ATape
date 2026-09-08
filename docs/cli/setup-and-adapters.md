@@ -113,6 +113,14 @@ identity is skipped and reported as `attribution` in partial collection diagnost
 paths alone never guess it. A known different repository is simply excluded.
 Network or authentication failures fail the job without acknowledging its page.
 
+The Collector validates source diagnostics against the shared Adapter protocol,
+including `attribution`. Both Codex and Claude can therefore capture healthy
+Sessions and advance their checkpoints while skipping unknown or foreign sources.
+Regression coverage includes mixed-source discovery, separate Canonical and Raw
+publication, and resumption without duplicate uploads. Unknown-source diagnostics
+remain local partial coverage; resolving missing historical identity is separate
+from this validation fix and does not require resetting captured progress.
+
 Git collection requires a Host and Adapter declaring
 `atape.git-attribution.v1`; upgrade the CLI and enabled Git Adapters together.
 Incompatible packages are

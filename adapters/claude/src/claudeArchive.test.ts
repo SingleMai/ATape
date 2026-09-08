@@ -114,6 +114,25 @@ it("requires the new Host capability for Git Projects", async () => {
   await expect(createAtapeAdapter({ ...context, project: { ...context.project, type: "git" } })).rejects.toThrow("Upgrade")
 })
 
+it("skips foreign and unknown Git sources while capturing and resuming healthy history", async () => {
+  const healthyId = String(records.find(r => r.parentUuid === null)!.sessionId)
+  const unknownFile = await discoveredFile("unknown", records.map(r => r.sessionId ? { ...r, sessionId: "unknown" } : r))
+  await discoveredFile("foreign", records.map(r => r.sessionId ? { ...r, sessionId: "foreign" } : r))
+  await discoveredFile("healthy")
+  const gitContext = { ...context, project: { ...context.project, type: "git" as const },
+    gitAttribution: { version: "atape.git-attribution.v1" as const,
+      resolve: async (source: { sourceId: string }) => source.sourceId === healthyId ? "included" as const
+        : source.sourceId === "foreign" ? "excluded" as const : "unknown" as const } }
+  const first = await collect(request(), gitContext)
+  expect(first.observations.map(o => o.session.sourceSessionId)).toEqual([healthyId])
+  expect(first.observations[0]?.events).toHaveLength(6)
+  expect(first.observations[0]?.rawSegments).toHaveLength(1)
+  expect(first.sourceFailures).toEqual([{ source: unknownFile, reason: "attribution" }])
+  expect(await collect(request(first.nextCursor), gitContext)).toMatchObject({
+    observations: [], nextCursor: first.nextCursor, hasMore: false,
+    sourceFailures: [{ source: unknownFile, reason: "attribution" }] })
+})
+
 it("discovers multiple sessions, persists each checkpoint and finds later appends and new files", async () => {
   const firstFile = await discoveredFile("first")
   await discoveredFile("second", records.map(r => r.sessionId ? { ...r, sessionId: "second-session" } : r))

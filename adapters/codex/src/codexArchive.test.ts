@@ -6,7 +6,7 @@ import {
   type AdapterSourceProgress,
   type AtapeAdapterRuntime
 } from "@atape/domain"
-import { appendFile, mkdir, mkdtemp, rename, rm, utimes, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, mkdtemp, realpath, rename, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -636,6 +636,35 @@ describe("Codex Adapter", () => {
     expect(requiredObservation(recovered).events.length).toBeGreaterThan(0)
     expect(requiredObservation(await collect(runtime, recovered.nextCursor)).rawSegments.length).toBeGreaterThan(0)
     await expect(openAdapter(root.project, "git")).rejects.toThrow("Upgrade")
+  })
+
+  it("skips foreign and unknown Git sources while capturing and resuming healthy history", async () => {
+    const root = await makeEmptyFixture()
+    for (const id of ["healthy", "foreign", "unknown"]) {
+      await writeJsonl(join(root.sessionsDirectory, `${id}.jsonl`), [
+        sessionMeta({ id, cwd: root.project }),
+        itemCompleted("2026-09-05T01:00:01.000Z", id, {
+          type: "AgentMessage", id: `${id}-answer`, content: [{ type: "output_text", text: id }]
+        })
+      ])
+    }
+    const runtime = await openAdapter(root.project, "git", {
+      version: "atape.git-attribution.v1",
+      resolve: async source => source.sourceId === "healthy" ? "included" : source.sourceId === "foreign" ? "excluded" : "unknown"
+    })
+    const canonical = await collect(runtime)
+    expect(canonical.observations.map(o => o.session.sourceSessionId)).toEqual(["healthy"])
+    expect(requiredObservation(canonical).events).toHaveLength(1)
+    const raw = await collect(runtime, canonical.nextCursor)
+    expect(raw.observations.map(o => o.session.sourceSessionId)).toEqual(["healthy"])
+    expect(requiredObservation(raw).rawSegments).toHaveLength(1)
+    const progress = mergeProgress([], "healthy", requiredObservation(raw).rawSegments)
+    const resumed = await collect(runtime, raw.nextCursor, progress)
+    expect(resumed).toMatchObject({ observations: [], hasMore: false })
+    const unknownFile = await realpath(join(root.sessionsDirectory, "unknown.jsonl"))
+    for (const page of [canonical, raw, resumed]) {
+      expect(page.sourceFailures).toEqual([{ source: unknownFile, reason: "attribution" }])
+    }
   })
 
   it("uses a stable untitled label when the root Thread has no user message", async () => {
