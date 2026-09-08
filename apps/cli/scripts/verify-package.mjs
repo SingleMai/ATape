@@ -55,7 +55,9 @@ try {
   await run("npm", [
     "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installDirectory, tarball
   ], temporaryRoot)
-  assert.match((await atape(["--help"])).stdout, /^ATape CLI/m)
+  const help = (await atape(["--help"])).stdout
+  assert.match(help, /^ATape CLI/m)
+  assert.match(help, /atape upgrade/)
   assert.equal((await atape(["--version"])).stdout.trim(), `ATape ${packageManifest.version}`)
   assert.deepEqual(JSON.parse((await atape(["status", "--json"])).stdout), {
     running: false,

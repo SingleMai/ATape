@@ -1,5 +1,5 @@
 import {
-  CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup,
+  CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
   setActiveInstance, startExperienceCollector, stopExperienceCollector,
@@ -33,6 +33,7 @@ export type Screen = {
   readonly notice?: string
   readonly context?: string
   readonly diagnostics?: boolean
+  readonly exitOnBack?: boolean
 }
 const stateLabels = {
   no_sources: "No tools enabled", stopped: "Sync stopped", waiting: "No conversations yet",
@@ -99,11 +100,12 @@ export class ExperiencePresenter {
   private toolsConfigured = false
   private enabledTools: ReadonlyArray<string> = []
   private focusedProject: string | undefined
+  private started = false
   focusProject = (value: string) => { this.focusedProject = value }
   refresh = () => this.refreshConsole()
-  constructor(private run: ExperienceRunner, private exit: () => void, private options: {
+  constructor(private run: ExperienceRunner, private exit: (restart?: boolean) => void, private options: {
     readonly path: string; readonly setup: boolean; readonly instance?: string; readonly noBrowser?: boolean
-    readonly environment: NodeJS.ProcessEnv
+    readonly environment: NodeJS.ProcessEnv; readonly version: string
   }) { this.path = options.path }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   getSnapshot = () => this.screen
@@ -113,11 +115,11 @@ export class ExperiencePresenter {
     this.cancelOperation()
     previous()
   }
-  close = () => {
+  close = (restart = false) => {
     if (this.lifetime.signal.aborted) return
     this.cancelOperation()
     this.lifetime.abort()
-    this.exit()
+    this.exit(restart)
   }
   private publish(screen: Screen) {
     if (this.lifetime.signal.aborted) return
@@ -169,6 +171,30 @@ export class ExperiencePresenter {
       }, back)
   }
   start() {
+    if (this.started) return
+    this.started = true
+    this.work("Checking for updates", checkCLIUpgrade(this.options.version), version => {
+      if (version) this.offerUpgrade(version)
+      else this.openExperience()
+    }, undefined, () => this.close())
+  }
+  private offerUpgrade(version: string, error?: unknown) {
+    const recovery = error instanceof CLIUpgradeError ? error.recovery : undefined
+    this.show({ kind: "menu", title: recovery ? "Updated, but sync is stopped" : error ? "Update could not finish" : "Update available", exitOnBack: true,
+      details: error ? [error instanceof Error ? error.message : String(error)] : [
+        `ATape ${this.options.version} → ${version}`, "Upgrade now or skip for this session."
+      ], options: [
+        { value: "upgrade", label: recovery ? "Resume sync and continue" : error ? "Retry upgrade" : "Upgrade and continue" },
+        { value: "skip", label: "Skip" }
+      ] }, value => {
+        if (value === "skip") { if (recovery) this.close(true); else this.openExperience() }
+        else if (value === "upgrade") this.work(recovery ? "Resuming sync" : "Upgrading ATape", recovery ? resumeCLIUpgrade(recovery) : upgradeCLI(this.options.version), result => {
+          if (result.updated) this.close(true)
+          else this.openExperience()
+        }, error => this.offerUpgrade(version, error), () => this.close())
+      }, () => this.close())
+  }
+  private openExperience() {
     this.work("Reading local Projects", Effect.gen(function*(this: ExperiencePresenter) {
       const config = yield* inspectClient()
       const instanceOrigin = yield* selectInstanceOrigin({

@@ -87,7 +87,7 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
       : screen.pathInput ? "↑↓ Choose · Enter Select · Tab Edit path"
       : screen.kind === "input" ? "Enter Continue · Esc Back · Ctrl+C Exit"
       : screen.kind === "busy" ? "Esc Cancel · Ctrl+C Exit"
-      : `↑↓ Move · Enter Select${screen.refreshable ? " · r Refresh" : ""} · Esc Back · q Exit`)
+      : `↑↓ Move · Enter Select${screen.refreshable ? " · r Refresh" : ""} · Esc ${screen.exitOnBack ? "Exit" : "Back"} · q Exit`)
   )
 }
 

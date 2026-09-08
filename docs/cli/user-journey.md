@@ -1,7 +1,8 @@
 # CLI user journey: global tools and connected Projects
 
-Status: Global tool selection shipped in v0.4.0. Direct selection and reader
-recovery and local name-search changes are implemented and await publication.
+Status: Global tool selection shipped in v0.4.0. Direct selection, reader
+recovery and local name search shipped in v0.4.1. CLI upgrade and startup
+choices are implemented and await publication.
 This specification supersedes per-Project tool selection in the earlier
 experience guide. Command and persistence behavior is documented in
 setup-and-adapters.md; ADR-0040 records the configuration decision.
@@ -63,6 +64,22 @@ the repository is already connected to the same destination, open its status
 without repeating setup or resetting progress.
 
 ## Daily use
+
+Before opening the welcome, Project list or explicit setup, ATape checks for a
+newer stable CLI. Results are cached for twelve hours; startup network access
+has a 1.5-second timeout. Offline failures proceed normally. When an update is
+available, the user must choose `Upgrade and continue` or `Skip` before entering.
+Skip applies only to this session. Escape exits. Successful upgrades restore the
+terminal and reopen the installed CLI with the original arguments, directory and
+ATAPE_HOME. Failures offer Retry and Skip. Scripts and JSON commands do not show
+this interactive choice.
+
+`atape upgrade` checks fresh metadata and updates the active npm global CLI
+installation. After installation is verified, it resumes the current home's
+previously running sync with its existing settings. Stopped sync stays stopped;
+Projects, sign-in and checkpoints remain intact. Equal/newer installed versions
+are a no-op. Other package managers and development builds receive guidance
+instead of an inferred installation target. Adapter upgrades remain separate.
 
 `atape` opens the Project list after initial setup. A configured installation
 with no Projects shows an empty list with `Add project`, rather than restarting

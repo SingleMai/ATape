@@ -117,6 +117,12 @@ describe("atape CLI", () => {
     expect(result.stdout.trim()).toBe("ATape development")
   })
 
+  it("exposes upgrade and rejects development self-installation without entering the TUI", async () => {
+    expect((await exec(process.execPath, [cli, "--help"])).stdout).toContain("atape upgrade")
+    await expect(exec(process.execPath, [cli, "upgrade", "--json"]))
+      .rejects.toMatchObject({ stdout: "", stderr: expect.stringContaining("Development builds cannot upgrade themselves") })
+  })
+
   // This integration scenario starts ten real CLI processes on shared CI runners.
   it("completes non-interactive Project setup and listing", async () => {
     const root = await mkdtemp(join(tmpdir(), "atape-cli-command-"))

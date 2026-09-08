@@ -24,6 +24,7 @@ import {
   startManagedCollector,
   stopManagedCollector,
   upgradeAdapters,
+  upgradeCLI, type CLIUpgradePlatform,
   inspectTools, planToolChange, applyToolChange,
   type CLISetupPlatform,
   type AdapterPackages,
@@ -128,7 +129,7 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
     CollectorStateStore | AdapterRuntimes | CollectorTransport | SecretRedactor |
     CollectorDaemonProcess | CollectorRunStatusStore |
     CLIAuthenticationGateway | CLICredentialStore | CLIAuthenticationInteraction | ProjectSetupGateway |
-    CLISetupPlatform
+    CLISetupPlatform | CLIUpgradePlatform
 > => {
   const [command, action, argument, extra] = cli.positionals
   if (cli.options.version) {
@@ -141,6 +142,12 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
   if (extra !== undefined) return failUsage("Too many positional arguments.")
 
   switch (command) {
+    case "upgrade":
+      if (action !== undefined) return failUsage("upgrade accepts no positional arguments.")
+      return (cli.options.json ? Effect.void : print("Checking for an ATape update…")).pipe(
+        Effect.andThen(upgradeCLI(cliVersion)), Effect.flatMap(result => cli.options.json ? printJSON(result) : print(
+          result.updated ? `Updated ATape to ${result.version}.${result.resumed ? " Background sync resumed." : ""}`
+            : `ATape ${result.version} is up to date.`)))
     case "login":
       if (action !== undefined) return failUsage("login accepts no positional arguments.")
       return loginCommand(cli.options)
@@ -607,6 +614,7 @@ const helpText = `ATape CLI
 
 Usage:
   atape --version
+  atape upgrade
   atape login [--instance <origin>] [--no-browser]
   atape logout [--instance <origin>]
   atape                              Guided setup or Project console

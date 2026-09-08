@@ -1,5 +1,5 @@
-import { ClientConfigStore, CollectorRunStatusStore, inspectCLIExperience, inspectClient, setupProject } from "@atape/application"
-import { Effect, ManagedRuntime } from "effect"
+import { ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, inspectCLIExperience, inspectClient, setupProject } from "@atape/application"
+import { Effect, Layer, ManagedRuntime } from "effect"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -14,14 +14,31 @@ import { ExperiencePresenter, type Screen } from "./presenter.ts"
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
-const fixture = async (setup = false) => {
+const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false) => {
   const root = await mkdtemp(join(tmpdir(), "atape-presenter-"))
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
     XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
     ATAPE_CODEX_HOME: join(root, "no-codex"), ATAPE_CLAUDE_HOME: join(root, "no-claude")
   }
-  const runtime = ManagedRuntime.make(makeNodeClientLayer(defaultNodeClientPaths(environment), environment))
+  let installs = 0, restarted = false
+  let syncRunning = failFirstResume
+  const starts: Array<{ intervalMs: number; concurrency: number }> = []
+  const base = makeNodeClientLayer(defaultNodeClientPaths(environment), environment)
+  const runtime = ManagedRuntime.make(update ? Layer.mergeAll(base, Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
+    latest: () => Effect.tryPromise({ try: () => update.then(version => { if (version === "offline") throw new Error("offline"); return version }), catch: () => new CLIUpgradeError({ reason: "check", message: "offline" }) }),
+    install: () => Effect.sync(() => { installs++ }).pipe(Effect.andThen(failInstall
+      ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "Installation failed" })) : Effect.void))
+  })), ...(failFirstResume ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+    inspect: () => Effect.sync(() => syncRunning ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
+    stop: () => Effect.sync(() => { syncRunning = false; return true }),
+    start: options => Effect.suspend(() => {
+      starts.push(options)
+      if (starts.length === 1) return Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "temporary failure" }))
+      syncRunning = true
+      return Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
+    })
+  }))] : [])) : base)
   let exited = false
   let nextDelay: Promise<void> | undefined
   const releases: Array<() => void> = []
@@ -35,8 +52,8 @@ const fixture = async (setup = false) => {
     const delay = nextDelay
     nextDelay = undefined
     return delay ? delay.then(() => runtime.runPromise(effect, { signal })) : runtime.runPromise(effect, { signal })
-  }, () => { exited = true }, {
-    path: root, setup, noBrowser: true, environment
+  }, restart => { exited = true; restarted = Boolean(restart) }, {
+    path: root, setup, noBrowser: true, environment, version: update ? "0.4.1" : "development"
   })
   cleanup.push(async () => { releases.forEach(release => release()); presenter.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }) })
   const wait = async (matches: (screen: Screen) => boolean) => {
@@ -66,7 +83,7 @@ const fixture = async (setup = false) => {
         upgradeSpec: "@atape/adapter-codex", installedAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z" }]
     } }))
   }))
-  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, exited: () => exited }
+  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
 }
 
 const terminal = (presenter: ExperiencePresenter, rows = 14) => {
@@ -88,6 +105,79 @@ const terminal = (presenter: ExperiencePresenter, rows = 14) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
+  it("retries sync recovery without another install, or opens the installed version when skipped", async () => {
+    for (const action of ["upgrade", "skip"]) {
+      const client = await fixture(false, Promise.resolve("0.4.2"), false, true)
+      client.presenter.start()
+      await client.wait(screen => screen.title === "Update available")
+      client.presenter.submit("upgrade")
+      const recovery = await client.wait(screen => screen.title === "Updated, but sync is stopped")
+      expect(recovery.options?.[0]?.label).toBe("Resume sync and continue")
+      client.presenter.submit(action)
+      await expect.poll(client.restarted).toBe(true)
+      expect(client.installs()).toBe(1)
+      expect(client.syncRunning()).toBe(action === "upgrade")
+      expect(client.starts).toEqual(Array(action === "upgrade" ? 2 : 1).fill({ intervalMs: 45_000, concurrency: 2 }))
+    }
+  })
+  it("waits for the update choice before opening Projects and skips only this session", async () => {
+    let complete!: (version: string) => void
+    const client = await fixture(false, new Promise<string>(resolve => { complete = resolve }))
+    await client.toolsReady()
+    client.presenter.start()
+    expect(client.presenter.getSnapshot()).toMatchObject({ kind: "busy", title: "Checking for updates" })
+    complete("0.4.2")
+    const choice = await client.wait(screen => screen.title === "Update available")
+    expect(choice.layout).toBeUndefined()
+    expect(choice.options?.map(option => option.value)).toEqual(["upgrade", "skip"])
+    const ui = terminal(client.presenter)
+    await expect.poll(() => ui.frame()).toContain("Upgrade and continue")
+    expect(ui.frame()).not.toContain("Your Projects")
+    await ui.send("\x1b[B\r")
+    await client.wait(screen => screen.layout === "projects")
+    expect(client.installs()).toBe(0)
+    client.presenter.submit("tools")
+    await client.wait(screen => screen.kind === "sources")
+    client.presenter.back()
+    await client.wait(screen => screen.layout === "projects")
+  })
+  it("reopens the updated executable only after the selected upgrade succeeds", async () => {
+    const client = await fixture(false, Promise.resolve("0.4.2"))
+    client.presenter.start()
+    await client.wait(screen => screen.title === "Update available")
+    client.presenter.submit("upgrade")
+    await expect.poll(client.restarted).toBe(true)
+    expect(client.installs()).toBe(1)
+    expect(client.exited()).toBe(true)
+    expect(client.presenter.getSnapshot().layout).not.toBe("projects")
+  })
+  it("keeps upgrade errors at the choice with retry and skip", async () => {
+    const client = await fixture(true, Promise.resolve("0.4.2"), true)
+    await client.toolsReady()
+    client.presenter.start()
+    await client.wait(screen => screen.title === "Update available")
+    client.presenter.submit("upgrade")
+    const failed = await client.wait(screen => screen.title === "Update could not finish")
+    expect(failed.details).toContain("Installation failed")
+    expect(failed.options?.map(option => option.value)).toEqual(["upgrade", "skip"])
+    expect(client.restarted()).toBe(false)
+    client.presenter.submit("skip")
+    await client.wait(screen => screen.pathInput === true)
+  })
+  it("enters normally when current or offline and exits instead of bypassing an update with Escape", async () => {
+    for (const latest of ["0.4.1", "offline"]) {
+      const client = await fixture(false, Promise.resolve(latest))
+      client.presenter.start()
+      await client.wait(screen => screen.layout === "welcome")
+      expect(client.installs()).toBe(0)
+    }
+    const client = await fixture(false, Promise.resolve("0.4.2"))
+    client.presenter.start()
+    await client.wait(screen => screen.title === "Update available")
+    client.presenter.back()
+    expect(client.exited()).toBe(true)
+    expect(client.restarted()).toBe(false)
+  })
   it("welcomes a new user and retains an edited directory after Back without configuring capture", async () => {
     const client = await fixture()
     const directory = join(client.root, "项目 space")

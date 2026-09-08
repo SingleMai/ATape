@@ -356,4 +356,40 @@ parent or paste a path for projects outside the current scope.
 
 Validation covers nested and Unicode names, case/gap matching and ranking, skipped
 trees, the n shortcut, search clearing, selected-directory browsing, and packaged
-CLI terminal operation. This work awaits publication.
+CLI terminal operation. This work shipped in v0.4.1.
+
+## CLI upgrade and startup choice — local increment
+
+Users can run `atape upgrade` instead of remembering npm installation commands.
+The command checks the latest stable release and upgrades only the active npm
+global installation. It verifies the installed version before restarting the
+current home's previously running Collector with its original settings. An
+installation failure does not stop that Collector. Stopped sync remains stopped;
+configuration, credentials and checkpoints are not changed by the workflow.
+
+Startup waits for a bounded update check before entering the welcome, Project
+list or explicit setup. A newer release presents `Upgrade and continue` and
+`Skip`. Upgrade installs and reopens the new executable automatically; Skip
+continues the original flow for this session. Escape exits. Failed upgrades
+retain the choice with Retry and Skip. The app never installs without selection.
+Metadata is cached for twelve hours; startup network access has a 1.5-second
+timeout and failures proceed normally. Explicit upgrade checks bypass the cache.
+Noninteractive and JSON commands do not present the startup choice.
+
+ADR-0044 records the Module Interface and npm Adapter ownership checks. This
+increment is implemented and awaits publication.
+Validation covers numeric version comparisons, offline and malformed responses,
+cache expiry, ownership rejection, installation locks and failures, preservation
+of sync settings, blocking startup selection, Skip, restart and packaged terminal navigation.
+Other package managers, automatic installation, updating all Adapter packages
+and managing Collectors across multiple ATAPE_HOME directories remain outside
+this increment. Next: hands-on feedback on the published upgrade path.
+
+Review fixes: cancellation now waits for installer termination and lock cleanup;
+an unresponsive installer is forcibly terminated after a one-second grace period.
+Restart explicitly relinquishes the old process's terminal input. If CLI
+installation succeeds but sync cannot resume, the recovery action retries only
+sync with its original parameters. Skip opens the installed CLI while leaving
+sync stopped. Regression coverage includes real subprocess cancellation, real
+PTY input after Ink teardown, and repeated recovery through the Module and
+presenter Interfaces. This work awaits publication.

@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0044](0044-cli-self-upgrade.md) records npm-owned CLI self-upgrade and
+cached startup Upgrade/Skip selection.
+
 [ADR-0043](0043-v0.4.2-manual-release-waiver.md) records the separately authorized,
 candidate-bound v0.4.2 manual staging waiver; automated gates remain required.
 
