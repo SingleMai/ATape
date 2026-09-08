@@ -90,11 +90,20 @@ try:
     for ending in ("escape", "ctrl-c", "sigterm"):
         terminal = Terminal()
         terminals.append(terminal)
+        terminal.wait("Welcome to ATape")
+        terminal.send("\r")
         terminal.wait("Connect a Project")
         terminal.send("\x15" + str(root) + "/项")
         terminal.drain(.4)
-        terminal.send("\t")
-        terminal.wait("项目 space")
+        terminal.wait("项目 space")  # Candidates are visible before completion.
+        # Down selects the explicit connection row, then the matching folder.
+        terminal.send("\x1b[B\x1b[B\r")
+        assert b"Finding your Project" not in terminal.output, "browsing connected the directory"
+        terminal.wait("../")
+        # Enter on the parent candidate browses back without starting setup.
+        terminal.send("\x1b[B\r")
+        assert b"Finding your Project" not in terminal.output, "parent navigation connected a directory"
+        terminal.wait("Use current directory")
         terminal.resize(38, 12)
         terminal.send("\x15")
         terminal.send("\x1b[200~" + str(project) + "\n\x1b[201~")
@@ -102,7 +111,7 @@ try:
         assert b"Finding your Project" not in terminal.output, "paste submitted the form"
         if ending == "escape":
             terminal.send("\x1b")
-            terminal.wait("Project setup")
+            terminal.wait("Welcome to ATape")
             terminal.finish("\x1b")
         elif ending == "sigterm":
             terminal.process.send_signal(signal.SIGTERM)
@@ -134,8 +143,13 @@ try:
     team_mode(False)
     terminal = Terminal(("--no-browser",))
     terminals.append(terminal)
+    terminal.wait("Welcome to ATape")
+    terminal.send("\r")
     terminal.wait("Connect a Project")
     terminal.send("\x15" + str(project) + "\r")
+    assert b"Finding your Project" not in terminal.output, "finishing a path edit submitted setup"
+    terminal.wait("Use current directory")
+    terminal.send("\r")
     terminal.wait("Code: Q7KM4W")
     terminal.wait("Create or join a Team")
     terminal.send("\r")
@@ -157,12 +171,37 @@ try:
     assert len(config["projects"]) == 1 and config["projects"][0]["adapterIds"] == ["smoke"]
     assert config["projects"][0]["path"] == str(project.resolve())
 
-    terminal = Terminal()
+    terminal = Terminal(("--no-browser",))
     terminals.append(terminal)
     terminal.wait("Your Projects")
+    terminal.send("/")
+    terminal.send("q-no-such-project")
+    terminal.wait("No matching projects")
+    assert terminal.process.poll() is None, "q in search exited the console"
+    terminal.send("\x1b")
+    terminal.send("\t")
+    terminal.wait("Actions: Add project")
+    terminal.send("\t")
+    terminal.send("/")
+    terminal.send("Package")
     terminal.send("\r")
     terminal.wait("Package Project")
+    terminal.send("\x1b")
+    terminal.wait("/ Package")
+    terminal.send("\t\x1b[C\x1b[C")
+    terminal.wait("Actions: Refresh")
+    terminal.send("\r")
+    terminal.drain(.4)
+    assert b"/ Package" in terminal.output, "refresh discarded the search"
+    assert b"Working" not in terminal.output, "refresh replaced the Project list"
+    terminal.send("\t\r")
+    terminal.wait("Package Project")
+    terminal.send("\r")
+    terminal.wait("Open:")
+    # Opening the Web link returns inline to this Project, without an extra page.
     terminal.send("\x1b[B\r")
+    terminal.wait("Project settings")
+    terminal.send("\r")
     terminal.wait("Manage conversation sources")
     terminal.send("\x1b[B\x1b[B \r")
     terminal.wait("Apply source selection?")

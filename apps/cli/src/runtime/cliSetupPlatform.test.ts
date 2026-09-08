@@ -3,7 +3,7 @@ import { AdapterProtocolVersion, GitAttributionVersion } from "@atape/domain"
 import { Effect } from "effect"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { defaultNodeClientPaths } from "./clientLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
@@ -26,7 +26,25 @@ describe("Node guided setup Adapter", () => {
       return { detected: yield* platform.detectSources(), suggestions: yield* platform.suggestDirectories(join(client.root, "项")) }
     }))
     expect(result.detected).toEqual(["codex"])
-    expect(result.suggestions).toEqual([join(client.root, "项目 space") + "/"])
+    expect(result.suggestions).toEqual([{ path: join(client.root, "项目 space") + "/", git: false }])
+  })
+  it("browses a complete path without a trailing slash and marks repositories and worktrees", async () => {
+    const client = await fixture()
+    const repo = join(client.root, "repo")
+    const worktree = join(client.root, "worktree")
+    await mkdir(join(repo, ".git"), { recursive: true })
+    await mkdir(worktree)
+    await writeFile(join(worktree, ".git"), "gitdir: /other/repo/.git/worktrees/feature")
+    await mkdir(join(client.root, "folder"))
+    const suggestions = await client.run(Effect.gen(function*() {
+      return yield* (yield* CLISetupPlatform).suggestDirectories(client.root)
+    }))
+    expect(suggestions).toEqual([
+      { path: dirname(client.root) + "/", git: false, parent: true },
+      { path: join(client.root, "folder") + "/", git: false },
+      { path: repo + "/", git: true },
+      { path: worktree + "/", git: true }
+    ])
   })
   it("reuses a durable, account-scoped creation key across concurrent retries", async () => {
     const client = await fixture()

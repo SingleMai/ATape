@@ -1,4 +1,4 @@
-import { CLIExperienceError, CLISetupPlatform } from "@atape/application"
+import { CLIExperienceError, CLISetupPlatform, type DirectorySuggestion } from "@atape/application"
 import { AdapterManifest, GitAttributionVersion } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { createHash, randomUUID } from "node:crypto"
@@ -25,9 +25,15 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
     suggestDirectories: input => localIO(async signal => {
       const expanded = input === "~" || input.startsWith(`~${sep}`) ? homedir() + input.slice(1) : input
       const path = resolve(expanded || ".")
-      const parent = input.endsWith(sep) || input === "" ? path : dirname(path)
-      const prefix = input.endsWith(sep) || input === "" ? "" : basename(path)
-      const choices: string[] = []
+      const browsing = input.endsWith(sep) || input === "" || (await stat(path).catch(() => undefined))?.isDirectory()
+      const parent = browsing ? path : dirname(path)
+      const prefix = browsing ? "" : basename(path)
+      const choices: DirectorySuggestion[] = []
+      if (browsing && dirname(path) !== path) {
+        const ancestor = dirname(path)
+        const git = await stat(join(ancestor, ".git")).catch(() => undefined)
+        choices.push({ path: ancestor + sep, git: Boolean(git?.isDirectory() || git?.isFile()), parent: true })
+      }
       let count = 0
       const directory = await opendir(parent)
       for await (const entry of directory) {
@@ -35,11 +41,13 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
         if (++count > 2_000) break
         if (entry.name.startsWith(prefix) && (prefix.startsWith(".") || !entry.name.startsWith(".")) &&
           (entry.isDirectory() || entry.isSymbolicLink() && (await stat(join(parent, entry.name)).catch(() => undefined))?.isDirectory())) {
-          choices.push(join(parent, entry.name) + sep)
+          const candidate = join(parent, entry.name)
+          const git = await stat(join(candidate, ".git")).catch(() => undefined)
+          choices.push({ path: candidate + sep, git: Boolean(git?.isDirectory() || git?.isFile()) })
           if (choices.length >= 30) break
         }
       }
-      return choices.sort()
+      return choices.sort((a, b) => Number(Boolean(b.parent)) - Number(Boolean(a.parent)) || a.path.localeCompare(b.path))
     }),
     supportsGit: adapter => localIO(async () => {
       const manifestPath = join(paths.adapterDirectory, "node_modules", ...adapter.packageName.split("/"), "package.json")
