@@ -188,7 +188,7 @@ const ensureSources = Effect.fn("CLIExperience.ensureSources")(function*(ids: Re
       if (!official || installed.packageName !== official.packageName) {
         return yield* new CLIExperienceError({ reason: "upgrade", message: `Upgrade ${installed.displayName} to support shared Git attribution, then retry.` })
       }
-      installed = (yield* upgradeAdapters(id))[0]!
+      installed = (yield* installAdapter(`${official.packageName}@latest`, { installation: installed })).adapter
       if (!(yield* platform.supportsGit(installed))) {
         return yield* new CLIExperienceError({ reason: "upgrade", message: `The installed ${installed.displayName} package still lacks shared Git attribution. Install a compatible package and retry.` })
       }
@@ -238,9 +238,12 @@ export const updateSyncReader = Effect.fn("CLIExperience.updateSyncReader")(func
   if (project) yield* currentProject(project)
   for (const connected of config.projects.filter(item => item.adapterIds.length > 0)) yield* verifyProjectAccount(connected)
   const installed = config.adapters.find(adapter => adapter.adapterId === id)
-  if (installed) yield* upgradeAdapters(id)
+  const source = officialSources.find(source => source.id === id)
+  if (installed && source?.packageName === installed.packageName) {
+    yield* installAdapter(`${source.packageName}@latest`, { installation: installed })
+  }
+  else if (installed) yield* upgradeAdapters(id)
   else {
-    const source = officialSources.find(source => source.id === id)
     if (!source) return yield* new CLIExperienceError({ reason: "selection", message: `The ${id} reader is no longer available. Choose another tool to sync.` })
     yield* installAdapter(source.packageName)
   }

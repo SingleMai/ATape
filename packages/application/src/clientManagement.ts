@@ -243,11 +243,21 @@ export const removeProject = Effect.fn("Client.removeProject")(function*(project
   }))
 })
 
-export const installAdapter = Effect.fn("Client.installAdapter")(function*(packageSpec: string) {
+export const installAdapter = Effect.fn("Client.installAdapter")(function*(packageSpec: string, expected?: {
+  readonly installation: AdapterInstallation
+  readonly version?: string
+}) {
   const store = yield* ClientConfigStore
   const packages = yield* AdapterPackages
   return yield* store.transact<AdapterInstallResult, ClientManagementError | AdapterPackageError, never>((config) => Effect.gen(function*() {
+    if (expected && JSON.stringify(config.adapters.find(adapter => adapter.adapterId === expected.installation.adapterId)) !== JSON.stringify(expected.installation)) {
+      return yield* new ClientManagementError({ reason: "conflict", resource: "adapter", message: "This tool's installation changed. Check for updates again." })
+    }
     const installed = yield* packages.install(packageSpec)
+    if (expected && (installed.manifest.adapterId !== expected.installation.adapterId || installed.packageName !== expected.installation.packageName ||
+      expected.version !== undefined && installed.version !== expected.version)) {
+      return yield* new ClientManagementError({ reason: "conflict", resource: "adapter", message: "The installed package does not match the selected tool release." })
+    }
     yield* validateIdentifier("adapter", installed.manifest.adapterId)
     const byID = config.adapters.find((adapter) => adapter.adapterId === installed.manifest.adapterId)
     if (byID && byID.packageName !== installed.packageName) {

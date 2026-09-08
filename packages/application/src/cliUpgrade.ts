@@ -1,5 +1,6 @@
 import { Context, Effect, Schema } from "effect"
 import { CollectorDaemonProcess } from "./collectorDaemon.ts"
+import { stableVersion, newer } from "./releaseVersion.ts"
 
 const CLIUpgradeRecovery = Schema.Struct({ version: Schema.String, intervalMs: Schema.Number, concurrency: Schema.Number })
 
@@ -14,15 +15,6 @@ export class CLIUpgradePlatform extends Context.Service<CLIUpgradePlatform, {
   latest(cached: boolean): Effect.Effect<string, CLIUpgradeError>
   install(version: string): Effect.Effect<void, CLIUpgradeError>
 }>()("atape/application/CLIUpgradePlatform") {}
-
-const stableVersion = (value: string) => /^\d+\.\d+\.\d+$/.test(value) &&
-  value.split(".").every(part => Number.isSafeInteger(Number(part)))
-const newer = (candidate: string, current: string) => {
-  if (!stableVersion(candidate) || !stableVersion(current)) return false
-  const left = candidate.split(".").map(Number), right = current.split(".").map(Number)
-  for (let i = 0; i < 3; i++) if (left[i] !== right[i]) return left[i]! > right[i]!
-  return false
-}
 
 // Startup checking is optional. Neither an offline registry nor a corrupt cache
 // may prevent the user from opening ATape. Development builds never check npm.

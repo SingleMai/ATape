@@ -1,6 +1,7 @@
 import {
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
+  inspectToolUpdates, updateToolRelease, type ToolRelease,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
   setActiveInstance, startExperienceCollector, stopExperienceCollector,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
@@ -161,7 +162,7 @@ export class ExperiencePresenter {
     const reader = typeof error === "object" && error !== null && "adapterId" in error && typeof error.adapterId === "string" ? error.adapterId : undefined
     this.show({ kind: "menu", title: "Let's get this working", details: [error instanceof Error ? error.message : String(error)],
       options: [
-        ...(reason === "upgrade" && reader ? [{ value: "reader", label: "Update ATape reader and continue" }] : []),
+        ...(reason === "upgrade" && reader ? [{ value: "reader", label: `Install latest published ${toolLabel(reader)} integration and continue` }] : []),
         ...(reason === "unauthenticated" || reason === "changed" && instance ? [{ value: "login", label: "Sign in again" }] : []),
         { value: "retry", label: reason === "changed" && !instance ? "Review again" : "Retry this operation" }
       ] }, value => {
@@ -425,7 +426,7 @@ export class ExperiencePresenter {
     }))
     const actions = [
       { value: "add", label: "Add project" },
-      { value: "tools", label: "Choose tools to sync" }, { value: "settings", label: "Settings" },
+      { value: "tools", label: "Tools and updates" }, { value: "settings", label: "Settings" },
       ...(!snapshot.collector.running && snapshot.projects.some(item => item.project.adapterIds.length > 0) ? [{ value: "start", label: "Start sync" }] : [])
     ]
     this.show({ kind: "menu", refreshable: true, title: selected ? selected.project.name : "Your Projects",
@@ -443,7 +444,7 @@ export class ExperiencePresenter {
   }
   private projectOptions(item: ConsoleProject) {
     const primary = item.recovery.kind === "sources" ? { value: "tools", label: "Choose tools to sync" }
-      : item.recovery.kind === "tool" ? { value: "tool", label: item.recovery.action === "install" ? "Set up conversation sync" : "Update ATape reader and continue" }
+      : item.recovery.kind === "tool" ? { value: "tool", label: item.recovery.action === "install" ? "Set up conversation sync" : "Check for tool updates" }
       : item.recovery.kind === "sign_in" ? { value: "login", label: "Sign in again and resume" }
       : item.recovery.kind === "sign_in_elsewhere" ? { value: "unblock", label: `Sign in for ${item.recovery.project.name} and resume` }
       : item.recovery.kind === "resume" ? { value: "start", label: "Start sync for all projects" }
@@ -453,6 +454,7 @@ export class ExperiencePresenter {
       : { value: "diagnostics", label: "Sync details" }
     return [
       primary,
+      ...(item.recovery.kind === "tool" && !this.latest?.collector.running ? [{ value: "start", label: "Start sync for all projects" }] : []),
       ...(primary.value !== "diagnostics" ? [{ value: "diagnostics", label: "Sync details" }] : []),
       { value: "remove", label: "Disconnect project" }
     ]
@@ -504,9 +506,10 @@ export class ExperiencePresenter {
     else if (value === "start") this.work("Starting background sync", startExperienceCollector(), back, undefined, back)
     else if (value === "stop") this.confirm("Stop background sync?", ["This stops future collection for ALL local Projects. Captured history is retained."], "Stop all sync", () => this.work("Stopping background sync", stopExperienceCollector(), () => this.list(), undefined, back), back)
     else if (value === "settings") this.settings()
-    else if (value === "tools") this.tools(back)
+    else if (value === "tools") item ? this.configureTools(back, back) : this.tools(back)
     else if (item && value === "tool" && item.recovery.kind === "tool") {
       const { adapterId, action } = item.recovery
+      if (action === "update") return this.tools(back, true)
       this.work(`${action === "install" ? "Installing" : "Updating"} ATape's ${toolLabel(adapterId)} reader`,
         updateSyncReader(adapterId, item.project).pipe(Effect.andThen(inspectCLIExperience())),
         snapshot => this.showConsole(snapshot, item.project, false,
@@ -525,8 +528,57 @@ export class ExperiencePresenter {
       "Server conversations and history will be retained."
     ], "Disconnect project", () => this.work("Disconnecting project", removeExperienceProject(item.project), () => this.list(), undefined, back), back)
   }
-  private tools(back = () => this.list()) {
-    this.configureTools(back, back)
+  private tools(back = () => this.list(), refresh = false, notice?: string) {
+    this.work("Checking tool versions", inspectToolUpdates(this.options.version, refresh), releases => {
+      const updateable = releases.filter(release => release.status === "available" ||
+        release.source === "local" && release.status === "current")
+      this.show({ kind: "menu", title: "Tools and updates", ...(notice ? { notice } : {}), details: [
+        "Manage ATape and its conversation sync integrations.",
+        ...releases.map(release => `${release.label}${release.id === "cli" ? "" : " sync"}: ${release.version}${
+          release.latest ? release.status === "available" ? ` → ${release.latest} (latest)` : ` · latest ${release.latest}${release.status === "ahead" ? " (older)" : ""}`
+            : release.status === "unavailable" ? " · latest unavailable" : release.status === "development" ? " · development build" : " · manual update"}${
+          release.id === "cli" ? "" : release.enabled ? " · enabled" : " · disabled"}${
+          release.source === "local" ? " · file/URL install" : release.source === "custom" ? " · custom package" : ""}`),
+        "Latest versions are cached for 12 hours."
+      ], options: [
+        ...updateable.map(release => ({ value: `update:${release.id}`, label: release.source === "local"
+          ? `Use published ${release.label} integration ${release.latest}` : `Update ${release.label}${release.id === "cli" ? "" : " sync"} to ${release.latest}` })),
+        { value: "configure", label: "Choose tools to sync" },
+        { value: "check", label: "Check again" }
+      ] }, value => {
+        if (value === "configure") this.configureTools(() => this.tools(back), () => this.tools(back))
+        else if (value === "check") this.tools(back, true)
+        else {
+          const release = updateable.find(release => `update:${release.id}` === value)
+          if (release) this.updateRelease(release, back)
+        }
+      }, back)
+    }, undefined, back)
+  }
+  private updateRelease(release: ToolRelease, back: () => void, error?: unknown) {
+    const recovery = error instanceof CLIUpgradeError ? error.recovery : undefined
+    const stale = typeof error === "object" && error !== null && "reason" in error && error.reason === "conflict"
+    if (error) {
+      this.show({ kind: "menu", title: recovery ? "Updated, but sync is stopped" : "Update could not finish",
+        details: [error instanceof Error ? error.message : String(error)], options: [
+          { value: stale ? "check" : "retry", label: stale ? "Check versions again" : recovery ? "Resume sync and continue" : "Retry update" },
+          ...(recovery ? [{ value: "continue", label: "Continue with sync stopped" }] : [])
+        ] }, value => {
+          if (value === "continue" && recovery) this.close(true)
+          else if (value === "check") this.tools(back, true)
+          else if (value === "retry") this.applyRelease(release, back, recovery)
+        }, recovery ? () => this.close(true) : () => this.tools(back))
+    } else this.applyRelease(release, back)
+  }
+  private applyRelease(release: ToolRelease, back: () => void, recovery?: CLIUpgradeError["recovery"]) {
+    if (release.id === "cli") this.work(recovery ? "Resuming sync" : "Updating ATape",
+      recovery ? resumeCLIUpgrade(recovery) : upgradeCLI(this.options.version), result => {
+        if (result.updated) this.close(true)
+        else this.tools(back)
+      }, error => this.updateRelease(release, back, error), () => this.tools(back))
+    else this.work(`Updating ${release.label} integration`, updateToolRelease(release), () => this.tools(back, false,
+      `${release.label} integration updated. Running sync will use it on its next attempt.`),
+      error => this.updateRelease(release, back, error), () => this.tools(back))
   }
   private configureTools(after: () => void, back: () => void, selected?: ReadonlyArray<string>) {
     this.work("Reading tools", inspectTools(), inspection => this.showSources("Which conversations should ATape sync?", inspection.choices, selected, [

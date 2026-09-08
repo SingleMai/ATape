@@ -15,6 +15,7 @@ import {
   emptyClientConfig,
   type ClientConfig
 } from "@atape/domain"
+import { executeOwnedProcess } from "./ownedProcess.ts"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
@@ -34,6 +35,7 @@ import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
 import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
 import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
+import { makeAdapterReleasesLayer } from "./adapterReleases.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 
 export type NodeClientPaths = {
@@ -94,6 +96,7 @@ export const makeNodeClientLayer = (
     makeConfigStoreLayer(paths.configFile),
     makeCLISetupPlatformLayer(paths, environment),
     makeCLIUpgradePlatformLayer(paths.atapeHome, process.argv[1] ?? "", environment),
+    makeAdapterReleasesLayer(paths.atapeHome),
     locator,
     makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
     projectSetup,
@@ -343,8 +346,9 @@ const installAcquiredAdapterPackage = (
       reason: "manifest", packageSpec, message: "Could not determine the Adapter package name."
     })
   }
-  yield* Effect.tryPromise({
-    try: async () => {
+  yield* Effect.callback<void, AdapterPackageError>(resume => {
+    const cancellation = new AbortController()
+    const task = (async () => {
       await mkdir(adapterDirectory, { recursive: true, mode: 0o700 })
       const packageFile = join(adapterDirectory, "package.json")
       try {
@@ -352,14 +356,16 @@ const installAcquiredAdapterPackage = (
       } catch {
         await writeFile(packageFile, `${JSON.stringify({ private: true }, null, 2)}\n`, { mode: 0o600, flag: "wx" })
       }
-      await execFilePromise("npm", [
+      await executeOwnedProcess("npm", [
         "install", "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund",
         "--prefix", adapterDirectory, source.installSpec
-      ], 120_000)
-    },
-    catch: (cause) => new AdapterPackageError({
+      ], process.env, cancellation.signal, 120_000)
+    })()
+    task.then(() => resume(Effect.void), cause => resume(Effect.fail(new AdapterPackageError({
       reason: "install", packageSpec, message: errorMessage(`Could not install ${packageSpec}`, cause)
-    })
+    }))))
+    // Do not release the config lock while npm can still mutate the installation.
+    return Effect.promise(async () => { cancellation.abort(); await task.catch(() => {}) })
   })
 
   const packageRoot = join(adapterDirectory, "node_modules", ...packageName.split("/"))
@@ -508,13 +514,6 @@ const decodePackageManifest = (packageSpec: string, value: unknown) => Effect.ge
 })
 
 const noRelease = async () => undefined
-
-const execFilePromise = (file: string, args: ReadonlyArray<string>, timeout: number) => new Promise<void>((resolveResult, reject) => {
-  execFile(file, [...args], { timeout, maxBuffer: 4 * 1024 * 1024 }, (error) => {
-    if (error) reject(error)
-    else resolveResult()
-  })
-})
 
 const locatedFailure = (
   reason: "not_directory" | "not_git",

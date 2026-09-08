@@ -12,3 +12,4 @@ export * from "./workspace.ts"
 
 export * from "./cliExperience.ts"
 export * from "./cliUpgrade.ts"
+export * from "./toolUpdates.ts"
