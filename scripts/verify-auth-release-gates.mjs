@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { loadReleaseContract } from "./release-contract.mjs"
-import { manualWaiverPath, verifyManualReleaseWaiver } from "./manual-release-waiver.mjs"
+import { manualWaiverPathFor, verifyManualReleaseWaiver } from "./manual-release-waiver.mjs"
 
 const execute = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -51,7 +51,8 @@ const attestation = await readJSON(gates.attestation)
 verifyAttestationShape(attestation, release, requiredManualChecks)
 let waived = false
 if (mode === "release") {
-  if (attestation.status === "pending" && release.version === "0.2.0") {
+  const manualWaiverPath = manualWaiverPathFor(release.version)
+  if (attestation.status === "pending" && manualWaiverPath !== undefined) {
     await verifyManualReleaseWaiver(repositoryRoot, await readJSON(manualWaiverPath), release, requiredManualChecks)
     waived = true
   } else await verifyCompletedAttestation(attestation, gates.attestation)
