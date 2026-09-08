@@ -56,7 +56,9 @@ class Terminal:
             self.drain()
             if self.process.poll() is not None: break
         assert marker in self.output, f"Missing {text!r}: {self.output[-7000:].decode(errors='replace')}"
+        output = self.output
         self.output = b""
+        return output
     def send(self, text):
         # Keys are separate terminal events, while paste remains one packet.
         if "\x1b[200~" in text:
@@ -247,6 +249,11 @@ try:
     terminal.send("\x1b")
     terminal.wait("Your Projects")
     terminal.send("\t\x1b[C\r")
+    updates = terminal.wait("Check again")
+    assert b"Tools and updates" in updates, "global tools did not open the updates page"
+    assert f"Update ATape to {available}".encode() in updates, "skipped startup update is unavailable in Tools"
+    assert b"manual update" in updates, "custom installation should remain on its original source"
+    terminal.send("\x1b[B\r")
     terminal.wait("Which conversations should ATape sync?")
     terminal.send("\x1b[B\x1b[B \r")
     terminal.wait("Apply tools to all projects?")
@@ -257,6 +264,8 @@ try:
     terminal.send("\r")
     terminal.wait("Apply tools to all projects?")
     terminal.send("\x1b[B\r")
+    terminal.wait("Check again")
+    terminal.send("\x1b")
     terminal.wait("Your Projects")
     terminal.finish("q")
     terminals.pop()
