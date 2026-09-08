@@ -29,13 +29,16 @@ def cli(*args):
     return subprocess.run([binary, *args], env=env, cwd=root, capture_output=True, text=True, timeout=40, check=True).stdout
 
 class Terminal:
-    def __init__(self, args=(), overrides=None):
+    def __init__(self, args=(), overrides=None, skip_updates=True):
         self.master, self.slave = pty.openpty()
         self.before = termios.tcgetattr(self.slave)
         self.resize(80, 24)
         self.process = subprocess.Popen([binary, *args], env=dict(env, **(overrides or {})), cwd=root,
                                         stdin=self.slave, stdout=self.slave, stderr=self.slave, start_new_session=True)
         self.output = b""
+        if skip_updates and not (overrides or {}).get("CI") and (not args or args[0] in ("setup", "--no-browser")):
+            self.wait("Update available")
+            self.send("\x1b[B\r")
     def resize(self, columns, rows):
         fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
         if hasattr(self, "process"):
@@ -86,6 +89,26 @@ class Terminal:
 
 terminals = []
 try:
+    # Seed a future release in this disposable home's cache: packaged startup
+    # choices are deterministic and never depend on the public npm registry.
+    current = cli("--version").strip().split()[-1].split(".")
+    available = f"{int(current[0]) + 1}.0.0"
+    cache = root / "home" / "cache" / "cli-update.json"
+    (root / "home").mkdir(mode=0o700, exist_ok=True)
+    cache.parent.mkdir(mode=0o700, exist_ok=True)
+    cache.write_text(json.dumps({"checkedAt": int(time.time() * 1000), "version": available}))
+    terminal = Terminal(skip_updates=False)
+    terminals.append(terminal)
+    terminal.drain(.5)
+    assert b"Welcome to ATape" not in terminal.output, "startup bypassed the update choice"
+    terminal.wait("Upgrade and continue")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Welcome to ATape")
+    terminal.send("\r")
+    terminal.wait("Which conversations should ATape sync?")
+    terminal.finish()
+    terminals.pop()
+
     # Controls can be exercised without any authentication or package execution.
     for ending in ("escape", "ctrl-c", "sigterm"):
         terminal = Terminal()
@@ -145,6 +168,7 @@ try:
         terminal.process.wait(timeout=10)
         terminal.drain()
         assert b"\x1b" not in terminal.output, terminal.output
+        assert b"Update available" not in terminal.output
         if args == ("status", "--json"):
             json.loads(terminal.output)
         assert termios.tcgetattr(terminal.slave) == terminal.before

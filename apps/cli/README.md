@@ -21,6 +21,35 @@ offline packages.
 
 Checksummed `.tgz` files attached to each GitHub Release provide the equivalent offline installation path.
 
+## Upgrade
+
+Before opening the interactive console, ATape checks for a newer release using
+a twelve-hour cache and a short network timeout. If one is available, choose
+`Upgrade and continue` or `Skip`. Skip enters the original flow for this session;
+upgrading reopens the newly installed CLI with the same arguments and ATAPE_HOME.
+The choice appears again on later launches while an update remains available.
+An offline or failed check proceeds normally. Upgrade failures offer Retry and
+Skip; Escape exits instead of bypassing the choice.
+If installation succeeds but background sync cannot resume, choose
+`Resume sync and continue` to retry sync without reinstalling, or `Skip` to open
+the new CLI with sync stopped.
+
+```sh
+atape upgrade
+```
+
+This checks npm for the latest stable CLI and updates the active npm global
+installation. Already current versions need no action. After a successful
+upgrade, previously running background sync resumes with the same settings;
+stopped sync stays stopped. Use the same `ATAPE_HOME` as usual. Projects, login
+and sync checkpoints are retained. Adapter packages have their own
+`atape adapters upgrade --all` command.
+
+For an installation owned by another package manager, use that manager's update
+command. Repository development builds cannot upgrade themselves. Startup
+update choices do not appear in scripts or JSON output; `atape upgrade --json` returns
+the version and whether the CLI was updated and sync resumed.
+
 ## First Project
 
 ```sh

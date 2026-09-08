@@ -33,6 +33,7 @@ import { makeNodeAuthenticationLayer } from "./authenticationLayers.ts"
 import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
 import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
+import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 
 export type NodeClientPaths = {
@@ -92,6 +93,7 @@ export const makeNodeClientLayer = (
     authenticatedHTTP,
     makeConfigStoreLayer(paths.configFile),
     makeCLISetupPlatformLayer(paths, environment),
+    makeCLIUpgradePlatformLayer(paths.atapeHome, process.argv[1] ?? "", environment),
     locator,
     makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
     projectSetup,
