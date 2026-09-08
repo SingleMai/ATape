@@ -2,7 +2,7 @@
 
 Status: Global tool selection shipped in v0.4.0. Direct selection, reader
 recovery and local name search shipped in v0.4.1. CLI upgrade and startup
-choices shipped in v0.4.4. Tools and updates is implemented, pending package release.
+choices shipped in v0.4.4. Tools and updates is included in the v0.4.5 release candidate.
 This specification supersedes per-Project tool selection in the earlier
 experience guide. Command and persistence behavior is documented in
 setup-and-adapters.md; ADR-0040 records the configuration decision.

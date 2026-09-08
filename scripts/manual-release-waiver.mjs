@@ -12,7 +12,8 @@ const manualWaiverPaths = new Map([
   ["0.4.0", "docs/releases/evidence/v0.4.0-manual-waiver.json"],
   ["0.4.1", "docs/releases/evidence/v0.4.1-manual-waiver.json"],
   ["0.4.2", "docs/releases/evidence/v0.4.2-manual-waiver.json"],
-  ["0.4.4", "docs/releases/evidence/v0.4.4-manual-waiver.json"]
+  ["0.4.4", "docs/releases/evidence/v0.4.4-manual-waiver.json"],
+  ["0.4.5", "docs/releases/evidence/v0.4.5-manual-waiver.json"]
 ])
 export const manualWaiverPathFor = version => manualWaiverPaths.get(version)
 
@@ -27,7 +28,7 @@ export async function verifyManualReleaseWaiver(root, waiver, release, requiredC
   assert.equal(waiver.authEpoch, release.authEpoch)
   assert.equal(waiver.status, "authorized")
   assert.equal(waiver.scope, "manual-staging-only")
-  assert.equal(waiver.authorizedOn, "2026-09-08")
+  assert.equal(waiver.authorizedOn, release.version === "0.4.5" ? "2026-09-09" : "2026-09-08")
   assert.ok(typeof waiver.authorization === "string" && waiver.authorization.length >= 40)
   assert.equal(waiver.riskNotice, `docs/releases/v${release.version}.md`)
   assert.deepEqual([...waiver.unverifiedChecks].sort(), [...requiredChecks].sort(), "Waiver must disclose every unverified manual check")

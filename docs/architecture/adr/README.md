@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0046](0046-v0.4.5-manual-release-waiver.md) records the explicitly authorized,
+candidate-bound v0.4.5 manual staging waiver; automated gates remain required.
+
 [ADR-0045](0045-v0.4.4-manual-release-waiver.md) records the explicitly authorized,
 candidate-bound v0.4.4 manual staging waiver; all automated gates remain required.
 
