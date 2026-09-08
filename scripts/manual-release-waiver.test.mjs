@@ -8,7 +8,7 @@ import { promisify } from "node:util"
 import { manualWaiverPathFor, verifyManualReleaseWaiver } from "./manual-release-waiver.mjs"
 
 const execute = promisify(execFile)
-const authorizedVersions = ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.4.1"]
+const authorizedVersions = ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.4.1", "0.4.2"]
 for (const version of authorizedVersions) test(`v${version} manual waiver is version-, scope- and candidate-bound without fabricating staging evidence`, async () => {
   const manualWaiverPath = manualWaiverPathFor(version)
   const root = await mkdtemp(join(tmpdir(), "atape-waiver-test-"))
@@ -36,7 +36,7 @@ for (const version of authorizedVersions) test(`v${version} manual waiver is ver
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.2.1" }, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.3.2" }, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.5.0" }, checks))
-    await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.4.2" }, checks))
+    await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.4.3" }, checks))
     const otherVersion = version === "0.2.0" ? "0.3.0" : "0.2.0"
     for (const differentVersion of authorizedVersions.filter(candidate => candidate !== version)) {
       await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: differentVersion }, checks))
