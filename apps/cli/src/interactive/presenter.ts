@@ -1,7 +1,7 @@
 import {
-  CLIAuthenticationInteraction, CLISetupPlatform, changeProjectSources, completeGuidedSetup,
-  experienceWebURL, guidedSourceChoices, inspectCLIExperience, inspectClient, inspectProjectSources,
-  loginCLI, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
+  CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup,
+  experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
+  loginCLI, logoutCLI, upgradeAdapters, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
   setActiveInstance, startExperienceCollector, stopExperienceCollector,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
 } from "@atape/application"
@@ -24,28 +24,31 @@ export type Screen = {
   readonly directoriesLoading?: boolean
   readonly pathInput?: boolean
   readonly refreshing?: boolean
+  readonly refreshable?: boolean
   readonly refreshError?: string
   readonly layout?: "welcome" | "projects"
   readonly actions?: ReadonlyArray<{ value: string; label: string }>
-  readonly projects?: ReadonlyArray<{ value: string; name: string; sources: string; status: string; team: string }>
+  readonly projects?: ReadonlyArray<{ value: string; name: string; status: string; team: string }>
   readonly focusedProject?: string
   readonly notice?: string
   readonly context?: string
   readonly diagnostics?: boolean
 }
 const stateLabels = {
-  no_sources: "No sources enabled", stopped: "Sync stopped", waiting: "Waiting for a first conversation",
+  no_sources: "No tools enabled", stopped: "Sync stopped", waiting: "No conversations yet",
   syncing: "Syncing", queued: "History queued", up_to_date: "Up to date",
   partial: "Partial coverage", failed: "Needs attention"
 } as const
 const recoveryLabels: Record<ProjectRecovery["kind"], string | undefined> = {
-  sources: "No sources enabled", sign_in: "Sign-in required", sign_in_elsewhere: "Blocked by sign-in",
+  sources: "No tools enabled", tool: "Tool needs attention", sign_in: "Sign-in required", sign_in_elsewhere: "Blocked by sign-in",
   resume: "Sync stopped", automatic_retry: "Waiting to retry", repair: "Needs a fix", partial: "Partial coverage", none: undefined
 }
 const statusLabel = (item: ConsoleProject) => recoveryLabels[item.recovery.kind] ?? stateLabels[item.state]
+const toolLabel = (id: string) => id === "claude" ? "Claude Code" : id === "codex" ? "Codex" : id
 const recoveryGuidance = (item: ConsoleProject, running: boolean): string => {
   switch (item.recovery.kind) {
-    case "sources": return "Choose which conversation sources to sync."
+    case "sources": return "Enable tools once for all connected projects."
+    case "tool": return `${item.recovery.adapterId} needs setup or an update in Tools.`
     case "sign_in": return "Sign in again to resume background sync for all enabled projects."
     case "sign_in_elsewhere": return `${item.recovery.project.name} needs sign-in before background sync can continue.`
     case "resume": return "Start sync for all projects to resume. Access is checked before starting."
@@ -87,8 +90,11 @@ export class ExperiencePresenter {
   private path: string
   private latest: CLIExperienceSnapshot | undefined
   private hasProjects = false
+  private toolsConfigured = false
+  private enabledTools: ReadonlyArray<string> = []
   private focusedProject: string | undefined
   focusProject = (value: string) => { this.focusedProject = value }
+  refresh = () => this.refreshConsole()
   constructor(private run: ExperienceRunner, private exit: () => void, private options: {
     readonly path: string; readonly setup: boolean; readonly instance?: string; readonly noBrowser?: boolean
     readonly environment: NodeJS.ProcessEnv
@@ -146,13 +152,13 @@ export class ExperiencePresenter {
     const instance = typeof error === "object" && error !== null && "instanceOrigin" in error && typeof error.instanceOrigin === "string" ? error.instanceOrigin : undefined
     this.show({ kind: "menu", title: "Let's get this working", details: [error instanceof Error ? error.message : String(error)],
       options: [
-        ...(reason === "unauthenticated" || reason === "changed" ? [{ value: "login", label: "Sign in again" }] : []),
-        { value: "retry", label: "Retry this operation" },
-        { value: "back", label: "Back" }
+        ...(reason === "upgrade" ? [{ value: "tools", label: "Open Tools" }] : []),
+        ...(reason === "unauthenticated" || reason === "changed" && instance ? [{ value: "login", label: "Sign in again" }] : []),
+        { value: "retry", label: reason === "changed" && !instance ? "Review again" : "Retry this operation" }
       ] }, value => {
         if (value === "retry") retry()
+        else if (value === "tools") this.tools(retry)
         else if (value === "login") { if (instance) this.instanceOrigin = instance; this.login(retry, back) }
-        else back()
       }, back)
   }
   start() {
@@ -168,8 +174,10 @@ export class ExperiencePresenter {
     }.bind(this)), ({ config, instanceOrigin }) => {
       this.instanceOrigin = instanceOrigin
       this.hasProjects = config.projects.length > 0
-      if (this.options.setup) this.pathScreen()
-      else if (!this.hasProjects) this.welcome()
+      this.toolsConfigured = config.toolsConfigured
+      this.enabledTools = config.enabledAdapterIds
+      if (this.options.setup) this.connectProject()
+      else if (!this.hasProjects && !this.toolsConfigured) this.welcome()
       else this.list()
     }, undefined, () => this.close())
     void this.run(Effect.gen(function*(this: ExperiencePresenter) {
@@ -186,25 +194,29 @@ export class ExperiencePresenter {
     }.bind(this)), this.lifetime.signal).catch(() => {})
   }
   private get developmentHTTP() { return this.options.environment.ATAPE_DEVELOPMENT_ALLOW_HTTP === "true" }
-  private home = () => this.hasProjects ? this.list() : this.welcome()
+  private home = () => this.hasProjects || this.toolsConfigured ? this.list() : this.welcome()
+  private connectProject() {
+    if (this.toolsConfigured && this.enabledTools.length > 0) this.pathScreen()
+    else this.configureTools(() => this.pathScreen(), this.home)
+  }
   private welcome() {
     this.show({ kind: "menu", layout: "welcome", title: "Welcome to ATape", details: [
-      "Your conversations, together.", "Connect a project, choose your sources, and keep your history in sync."
+      "Your conversations, together.", "Choose your tools once, then connect the projects you want to sync."
     ], options: [
-      { value: "connect", label: "Connect your first project" },
+      { value: "connect", label: "Get started" },
       { value: "help", label: "How syncing works" },
       { value: "instance", label: "Change Instance" }
     ] }, value => {
-      if (value === "connect") this.pathScreen()
+      if (value === "connect") this.connectProject()
       else if (value === "instance") this.instanceScreen()
       else this.show({ kind: "menu", title: "How syncing works", details: [
-        "1. Choose a directory. Git subdirectories resolve to their repository root.",
-        "2. Sign in and choose which conversation sources to connect.",
-        "3. Review before importing history and starting background sync.",
+        "1. Choose the tools you use on this machine, once for all projects.",
+        "2. Connect a directory. Git repositories include their worktrees and clones.",
+        "3. Sign in if needed, then review and start syncing.",
         "Sync continues after you exit. After a reboot, run atape start.",
         "Read conversations and manage your Team in the Web app."
-      ], options: [{ value: "connect", label: "Connect a project" }, { value: "back", label: "Back" }] },
-      value => value === "connect" ? this.pathScreen() : this.welcome(), () => this.welcome())
+      ], options: [{ value: "connect", label: "Connect a project" }] },
+      () => this.connectProject(), () => this.welcome())
     }, () => this.close())
   }
   private pathScreen() {
@@ -215,20 +227,14 @@ export class ExperiencePresenter {
     }, this.home)
     this.pathChanged(this.path)
   }
-  private setupOptions() {
-    this.show({ kind: "menu", title: "Project setup", details: [`Directory: ${this.path}`, `Instance: ${this.instanceOrigin}`], options: [
-      { value: "path", label: "Continue with directory" }, { value: "instance", label: "Change Instance" },
-      { value: "projects", label: "Project list" }, { value: "exit", label: "Exit" }
-    ] }, value => value === "path" ? this.pathScreen() : value === "instance" ? this.instanceScreen() : value === "exit" ? this.close() : this.list(), () => this.close())
-  }
-  private instanceScreen() {
+  private instanceScreen(after = () => this.connectProject(), back = this.home) {
     this.show({ kind: "input", title: "ATape Instance", initial: this.instanceOrigin,
       details: ["Use https://atape.net or your self-hosted Instance origin."] }, value => {
       this.work("Checking Instance", selectInstanceOrigin({ commandLine: String(value), allowLoopbackHttp: this.developmentHTTP }), origin => {
         this.instanceOrigin = origin
-        this.pathScreen()
-      }, undefined, () => this.instanceScreen())
-    }, () => this.pathScreen())
+        this.work("Saving server", setActiveInstance(origin), after, undefined, back)
+      }, undefined, () => this.instanceScreen(after, back))
+    }, back)
   }
   pathChanged = (value: string) => {
     this.suggestions?.abort()
@@ -246,11 +252,14 @@ export class ExperiencePresenter {
       if (!controller.signal.aborted && this.screen.revision === revision) this.publish({ ...this.screen, suggestions, directoriesLoading: false })
     }).catch(() => {})
   }
-  private prepare(loginAllowed = true) {
-    this.work("Finding your Project", prepareGuidedSetup({ instanceOrigin: this.instanceOrigin, path: this.path }), plan => this.teamScreen(plan), error => {
+  private prepare(loginAllowed = true, reviewed?: { readonly teamId: string; readonly name?: string }) {
+    this.work("Finding your Project", prepareGuidedSetup({ instanceOrigin: this.instanceOrigin, path: this.path }), plan => {
+      if (reviewed && plan.project.teams.some(team => team.id === reviewed.teamId)) this.reviewProject(plan, reviewed.teamId, reviewed.name)
+      else this.teamScreen(plan)
+    }, error => {
       if ("reason" in error && error.reason === "no_team") this.noTeam()
-      else if ("reason" in error && error.reason === "unauthenticated" && loginAllowed) this.login(() => this.prepare(false), () => this.pathScreen())
-      else this.failed(error, () => this.prepare(), () => this.pathScreen())
+      else if ("reason" in error && error.reason === "unauthenticated" && loginAllowed) this.login(() => this.prepare(false, reviewed), () => this.pathScreen())
+      else this.failed(error, () => this.prepare(true, reviewed), () => this.pathScreen())
     }, () => this.pathScreen())
   }
   private login(after: () => void, back: () => void) {
@@ -278,43 +287,42 @@ export class ExperiencePresenter {
   private noTeam(url?: string) {
     this.show({ kind: "menu", title: "Create or join a Team", details: [
       "Finish Team onboarding in the Web app, then return here and Refresh.", `Directory retained: ${this.path}`, ...(url ? [url] : [])
-    ], options: [{ value: "web", label: "Open Web onboarding" }, { value: "refresh", label: "Refresh" }, { value: "back", label: "Back" }] }, value => {
+    ], options: [{ value: "web", label: "Open Web onboarding" }, { value: "refresh", label: "Refresh" }] }, value => {
       if (value === "refresh") this.prepare()
       else if (value === "web") this.work("Opening Web onboarding", this.openWeb(), url => this.noTeam(url), undefined, () => this.noTeam(url))
-      else this.pathScreen()
     }, () => this.pathScreen())
   }
-  private openWeb(project?: LocalProject) {
-    return experienceWebURL(project?.instanceOrigin ?? this.instanceOrigin, project, this.developmentHTTP).pipe(
+  private openWeb() {
+    return experienceOnboardingURL(this.instanceOrigin, this.developmentHTTP).pipe(
       Effect.tap(url => this.options.noBrowser ? Effect.void : Effect.promise(() => launchBrowser(process.platform, url)))
     )
   }
   private teamScreen(plan: GuidedSetupPlan) {
-    if (plan.existingDirectory) return this.sourcesScreen(plan, plan.existingDirectory.teamId)
-    if (plan.project.teams.length === 1) return this.sourcesScreen(plan, plan.project.teams[0]!.id)
+    if (!plan.config.toolsConfigured || plan.config.enabledAdapterIds.length === 0) {
+      return this.configureTools(() => this.prepare(), () => this.pathScreen())
+    }
+    if (plan.existingDirectory) return this.detail(plan.existingDirectory)
+    if (plan.project.exactMatches.length === 1) return this.reviewProject(plan, plan.project.exactMatches[0]!.team.id)
+    if (plan.project.teams.length === 1) return this.reviewProject(plan, plan.project.teams[0]!.id)
     this.show({ kind: "menu", title: "Choose a Team", details: [`Signed in as ${plan.project.user.displayName}`],
       options: plan.project.teams.map(team => ({ value: team.id, label: `${team.displayName}${plan.project.exactMatches.some(match => match.team.id === team.id) ? " · existing Project" : ""}` }))
-    }, value => this.sourcesScreen(plan, String(value)), () => this.pathScreen())
+    }, value => this.reviewProject(plan, String(value)), () => this.pathScreen())
   }
-  private sourcesScreen(plan: GuidedSetupPlan, teamId: string, selected?: ReadonlyArray<string>, name?: string) {
-    const choices = guidedSourceChoices(plan, teamId)
-    this.showSources("Choose conversation sources", choices, selected, [
-      `Project: ${plan.project.local.name}`,
-      `${plan.project.local.type === "git" ? "Git repository root" : "Directory"}: ${plan.project.local.path}`,
-      "Detected means local source data exists, not necessarily conversations for this project.",
-      "Selected sources import existing history and keep syncing future conversations."
-    ], ids => this.reviewSetup(plan, teamId, ids, name), () => this.pathScreen())
+  private reviewProject(plan: GuidedSetupPlan, teamId: string, name?: string) {
+    const exact = plan.project.exactMatches.find(match => match.team.id === teamId)
+    const existing = plan.config.projects.find(project => project.instanceOrigin === plan.project.instanceOrigin && project.id === exact?.project.id)
+    if (existing) return this.detail(existing)
+    this.reviewSetup(plan, teamId, plan.config.enabledAdapterIds, name)
   }
   private showSources(title: string, choices: ReadonlyArray<SourceChoice>, selected: ReadonlyArray<string> | undefined,
     details: ReadonlyArray<string>, submit: (ids: string[]) => void, back: () => void) {
     this.show({ kind: "sources", title, details, selected: selected ?? choices.filter(choice => choice.selected).map(choice => choice.id),
-      options: choices.map(choice => ({ value: choice.id, label: `${choice.label} · ${choice.detected ? "detected" : "not detected"}${choice.installed ? " · installed" : " · will install"}` }))
+      options: choices.map(choice => ({ value: choice.id, label: `${choice.label} · ${choice.detected ? "Found on this machine" : "Not detected"}${choice.installed ? " · Ready" : ""}` }))
     }, value => submit(Array.isArray(value) ? value : [value]), back)
   }
   private reviewSetup(plan: GuidedSetupPlan, teamId: string, ids: ReadonlyArray<string>, name?: string) {
     if (ids.length === 0) {
-      this.sourcesScreen(plan, teamId, ids, name)
-      this.publish({ ...this.screen, notice: "Select at least one source to continue." })
+      this.configureTools(() => this.prepare(), () => this.pathScreen())
       return
     }
     const team = plan.project.teams.find(team => team.id === teamId)!
@@ -324,25 +332,25 @@ export class ExperiencePresenter {
       `Instance: ${plan.project.instanceOrigin}`, `Account: ${plan.project.user.displayName}`, `Team: ${team.displayName}`,
       `Project: ${projectName} · ${exact || plan.existingDirectory ? "connect existing" : "create new"}`,
       ...(plan.project.local.type === "git" ? [`Git: ${exact?.project.repositoryIdentity ?? plan.project.local.repositoryRemote}`, `Repository root: ${plan.project.local.path}`] : [`Directory: ${plan.project.local.path}`]),
-      `Sources: ${ids.join(", ")}`, "Import existing conversations and continuously sync future conversations.",
-      "Install or upgrade selected integrations as needed. Background sync continues after you exit."
+      `Tools: ${ids.map(toolLabel).join(", ")} · global selection`, "Import existing conversations and continuously sync future conversations.",
+      "Background sync continues after you exit."
     ]
     this.show({ kind: "menu", title: "Review and connect", details, options: [
-      { value: "confirm", label: "Confirm and start syncing" }, { value: "sources", label: "Change sources" },
+      { value: "confirm", label: "Connect and sync" },
       ...(!exact && !plan.existingDirectory && plan.project.local.type === "directory" ? [{ value: "name", label: "Change Project name" }] : []),
       ...(!plan.existingDirectory && plan.project.teams.length > 1 ? [{ value: "team", label: "Change Team" }] : []),
-      { value: "back", label: "Change directory or Instance" }
+      { value: "path", label: "Change directory" }
     ] }, value => {
       if (value === "confirm") {
         this.work("Connecting your Project", completeGuidedSetup({ plan, teamId, sourceIds: ids, ...(name ? { name } : {}),
           progress: title => Effect.sync(() => { this.publish({ ...this.screen, title }) })
         }).pipe(Effect.flatMap(project => observeInitialSync(project).pipe(Effect.map(snapshot => ({ project, snapshot }))))),
-        ({ project, snapshot }) => this.showConsole(snapshot, project), undefined, () => this.list())
-      } else if (value === "sources") this.sourcesScreen(plan, teamId, ids, name)
-      else if (value === "name") this.show({ kind: "input", title: "Project name", initial: projectName, details: [] }, value => this.reviewSetup(plan, teamId, ids, String(value)), () => this.reviewSetup(plan, teamId, ids, name))
-      else if (value === "team") this.show({ kind: "menu", title: "Choose a Team", details: [], options: plan.project.teams.map(team => ({ value: team.id, label: team.displayName })) }, value => this.sourcesScreen(plan, String(value)), () => this.reviewSetup(plan, teamId, ids, name))
-      else this.setupOptions()
-    }, () => this.sourcesScreen(plan, teamId, ids, name))
+        ({ project, snapshot }) => this.showConsole(snapshot, project),
+        error => this.failed(error, () => this.prepare(true, { teamId, ...(name ? { name } : {}) }), () => this.pathScreen()), () => this.list())
+      } else if (value === "name") this.show({ kind: "input", title: "Project name", initial: projectName, details: [] }, value => this.reviewSetup(plan, teamId, ids, String(value)), () => this.reviewSetup(plan, teamId, ids, name))
+      else if (value === "team") this.show({ kind: "menu", title: "Choose a Team", details: [], options: plan.project.teams.map(team => ({ value: team.id, label: team.displayName })) }, value => this.reviewProject(plan, String(value)), () => this.reviewSetup(plan, teamId, ids, name))
+      else this.pathScreen()
+    }, () => this.pathScreen())
   }
   private refreshConsole() {
     const target = this.consoleTarget
@@ -372,56 +380,49 @@ export class ExperiencePresenter {
   private showConsole(snapshot: CLIExperienceSnapshot, target: LocalProject | "list", refresh = false, notice?: string) {
     this.latest = snapshot
     this.hasProjects = snapshot.projects.length > 0
-    if (!this.hasProjects) return this.welcome()
+    this.toolsConfigured = snapshot.toolsConfigured
+    this.enabledTools = snapshot.enabledTools
+    if (!this.hasProjects && !this.toolsConfigured) return this.welcome()
     const selected = target === "list" ? undefined : snapshot.projects.find(item => item.project.id === target.id && item.project.instanceOrigin === target.instanceOrigin)
     if (selected && refresh && this.screen.diagnostics) return this.diagnostics(selected, true, notice ?? this.screen.notice)
     const revision = this.screen.revision
     const options = selected ? this.projectOptions(selected) : snapshot.projects.map(item => ({
       value: `project:${item.project.instanceOrigin}:${item.project.id}`,
-      label: `${item.project.name} · ${item.project.adapterIds.map(id => id === "claude" ? "Claude" : id === "codex" ? "Codex" : id).join(" + ") || "No sources"} · ${statusLabel(item)} · ${item.project.teamName}`
+      label: `${item.project.name} · ${statusLabel(item)} · ${item.project.teamName}`
     }))
     const actions = [
       { value: "add", label: "Add project" },
-      ...(!snapshot.collector.running ? [{ value: "start", label: "Start sync for all projects" }] : [{ value: "stop", label: "Stop sync for all projects" }]),
-      { value: "refresh", label: "Refresh status" }, { value: "exit", label: "Exit" }
+      { value: "tools", label: "Tools" }, { value: "settings", label: "Settings" },
+      ...(!snapshot.collector.running && snapshot.projects.some(item => item.project.adapterIds.length > 0) ? [{ value: "start", label: "Start sync" }] : [])
     ]
-    this.show({ kind: "menu", title: selected ? selected.project.name : "Your Projects",
+    this.show({ kind: "menu", refreshable: true, title: selected ? selected.project.name : "Your Projects",
       ...(!selected ? { layout: "projects" as const, actions, projects: snapshot.projects.map(item => ({
         value: `project:${item.project.instanceOrigin}:${item.project.id}`, name: item.project.name,
-        sources: item.project.adapterIds.map(id => id === "claude" ? "Claude" : id === "codex" ? "Codex" : id).join(" + ") || "None",
         status: statusLabel(item), team: item.project.teamName
       })), ...(this.focusedProject ? { focusedProject: this.focusedProject } : {}) } : {}),
       ...((notice ?? (refresh ? this.screen.notice : undefined)) ? { notice: notice ?? this.screen.notice! } : {}),
       details: selected ? this.projectDetails(selected, snapshot) : [
-        snapshot.collector.running ? "Background sync is running. Exiting keeps it running." : "Sync is stopped. Start sync for all projects to resume.",
+        `${snapshot.collector.running ? "Syncing" : "Sync stopped"} · ${snapshot.projects.length} projects · ${snapshot.needsAttention} need attention`,
+        snapshot.toolsConfigured ? `Tools: ${snapshot.enabledTools.map(toolLabel).join(" + ") || "None enabled"}` : "No tools configured. Open Tools to get started.",
         ...(snapshot.collector.collectorFailure ? [snapshot.collector.collectorFailure.message] : [])
       ], options }, value => this.consoleAction(String(value), selected), selected ? () => this.list() : () => this.close(), refresh ? revision : undefined)
     this.consoleTarget = selected?.project ?? "list"
   }
   private projectOptions(item: ConsoleProject) {
-    const primary = item.recovery.kind === "sources" ? { value: "sources", label: "Choose conversation sources" }
+    const primary = item.recovery.kind === "sources" ? { value: "tools", label: "Set up tools" }
+      : item.recovery.kind === "tool" ? { value: "tool", label: `Fix ${toolLabel(item.recovery.adapterId)}` }
       : item.recovery.kind === "sign_in" ? { value: "login", label: "Sign in again and resume" }
       : item.recovery.kind === "sign_in_elsewhere" ? { value: "unblock", label: `Sign in for ${item.recovery.project.name} and resume` }
       : item.recovery.kind === "resume" ? { value: "start", label: "Start sync for all projects" }
       : item.recovery.kind === "partial" ? { value: "diagnostics", label: "Review skipped conversations" }
       : item.recovery.kind === "repair" ? { value: "diagnostics", label: "Resolve sync issue" }
       : item.recovery.kind === "automatic_retry" ? { value: "diagnostics", label: "View retry details" }
-      : { value: "web", label: "Open Project in Web" }
+      : { value: "diagnostics", label: "Sync details" }
     return [
       primary,
-      ...(primary.value !== "web" ? [{ value: "web", label: "Open Project in Web" }] : []),
-      { value: "settings", label: "Project settings" },
-      { value: "refresh", label: "Refresh status" }, { value: "back", label: "All Projects" }
+      ...(primary.value !== "diagnostics" ? [{ value: "diagnostics", label: "Sync details" }] : []),
+      { value: "remove", label: "Disconnect project" }
     ]
-  }
-  private projectSettings(item: ConsoleProject) {
-    this.show({ kind: "menu", title: "Project settings", details: [item.project.name, `${item.project.teamName} · ${item.project.instanceOrigin}`], options: [
-      { value: "sources", label: "Manage conversation sources" },
-      { value: "diagnostics", label: "Sync details" },
-      { value: "login", label: "Sign in again and resume" },
-      { value: "remove", label: "Remove local capture" },
-      { value: "back", label: "Back to Project" }
-    ] }, value => value === "back" ? this.detail(item.project) : this.consoleAction(String(value), item), () => this.detail(item.project))
   }
   private projectDetails(item: ConsoleProject, snapshot: CLIExperienceSnapshot) { return [
     statusLabel(item),
@@ -431,12 +432,15 @@ export class ExperiencePresenter {
     ...(item.recovery.kind === "automatic_retry" || item.recovery.kind === "repair" ? ["Refresh status only updates this page."] : []),
     `${item.project.teamName} · ${item.project.instanceOrigin}`,
     item.project.type === "git" ? `Git: ${item.project.repositoryIdentity ?? item.project.repositoryRemote ?? item.project.name}` : `Directory: ${item.project.path}`,
-    `Sources: ${item.project.adapterIds.join(", ") || "none"}`
+    ...item.project.adapterIds.map(id => {
+      const job = item.jobs.find(job => job.adapterId === id)
+      return `${toolLabel(id)}: ${job?.state === "failed" ? "Needs attention" : job?.state === "partial" ? "Some conversations skipped" : job?.hasMore ? "Syncing history" : item.state === "waiting" ? "No conversations yet" : job?.lastSuccessAt ? `Last synced ${job.lastSuccessAt}` : "Waiting for sync"}`
+    })
   ] }
   private diagnostics(item: ConsoleProject, refresh = false, notice?: string) {
     const back = () => this.detail(item.project)
     const running = Boolean(this.latest?.collector.running)
-    this.show({ kind: "menu", diagnostics: true, title: "Sync details", ...(notice ? { notice } : {}), details: [
+    this.show({ kind: "menu", diagnostics: true, refreshable: true, title: "Sync details", ...(notice ? { notice } : {}), details: [
       item.project.name, recoveryGuidance(item, running),
       ...(this.latest?.collector.collectorFailure ? [this.latest.collector.collectorFailure.message] : []),
       ...item.jobs.flatMap(job => [
@@ -451,11 +455,9 @@ export class ExperiencePresenter {
       ...(item.recovery.kind === "sign_in" ? [{ value: "login", label: "Sign in again and resume" }] : []),
       ...(item.recovery.kind === "sign_in_elsewhere" ? [{ value: "unblock", label: `Sign in for ${item.recovery.project.name} and resume` }] : []),
       ...(!running && item.recovery.kind !== "sign_in" && item.recovery.kind !== "sign_in_elsewhere" ? [{ value: "start", label: "Start sync for all projects" }] : []),
-      { value: "sources", label: "Manage conversation sources" },
-      { value: "refresh", label: "Refresh status" }, { value: "back", label: "Back to Project" }
+      ...(item.recovery.kind === "tool" ? [{ value: "tool", label: `Fix ${toolLabel(item.recovery.adapterId)}` }] : [{ value: "tools", label: "Tools" }])
     ] }, value => {
-      if (value === "back") back()
-      else if (value === "refresh") this.refreshConsole()
+      if (value === "refresh") this.refreshConsole()
       else this.consoleAction(String(value), item)
     }, back, refresh ? this.screen.revision : undefined)
     this.consoleTarget = item.project
@@ -465,33 +467,101 @@ export class ExperiencePresenter {
     if (value.startsWith("project:")) {
       const selected = this.latest?.projects.find(item => `project:${item.project.instanceOrigin}:${item.project.id}` === value)
       if (selected) { this.focusedProject = value; this.detail(selected.project) }
-    } else if (value === "add") this.pathScreen()
+    } else if (value === "add") this.connectProject()
     else if (value === "exit") this.close()
-    else if (value === "back") this.list()
     else if (value === "refresh") this.refreshConsole()
     else if (value === "start") this.work("Starting background sync", startExperienceCollector(), back, undefined, back)
     else if (value === "stop") this.confirm("Stop background sync?", ["This stops future collection for ALL local Projects. Captured history is retained."], "Stop all sync", () => this.work("Stopping background sync", stopExperienceCollector(), () => this.list(), undefined, back), back)
-    else if (item && value === "web") this.work("Opening Project", this.openWeb(item.project), url => this.showConsole(this.latest!, item.project, false, `${this.options.noBrowser ? "Open" : "Opened in browser"}: ${url}`), undefined, back)
-    else if (item && value === "settings") this.projectSettings(item)
+    else if (value === "settings") this.settings()
+    else if (value === "tools") this.tools(back)
+    else if (item && value === "tool" && item.recovery.kind === "tool") this.toolDetails(item.recovery.adapterId, back)
     else if (item && value === "diagnostics") this.diagnostics(item)
     else if (item && value === "unblock" && item.recovery.kind === "sign_in_elsewhere") {
       this.instanceOrigin = item.recovery.project.instanceOrigin
       this.login(() => this.work("Checking account and resuming", startExperienceCollector(), back, undefined, back), back)
     }
-    else if (item && value === "sources") this.manageSources(item.project)
     else if (item && value === "login") {
       this.instanceOrigin = item.project.instanceOrigin
       this.login(() => this.work("Checking account and resuming", startExperienceCollector(), back, undefined, back), back)
-    } else if (item && value === "remove") this.confirm("Remove local capture?", [
+    } else if (item && value === "remove") this.confirm("Disconnect project?", [
       `${item.project.name} · ${item.project.instanceOrigin}`, "Future cycles will stop collecting this Project. An in-flight upload may finish.",
       "Server conversations and history will be retained."
-    ], "Remove local capture", () => this.work("Removing local capture", removeExperienceProject(item.project), () => this.list(), undefined, back), back)
+    ], "Disconnect project", () => this.work("Disconnecting project", removeExperienceProject(item.project), () => this.list(), undefined, back), back)
   }
-  private manageSources(project: LocalProject) {
-    this.work("Reading source integrations", inspectProjectSources(project), choices => this.showSources("Manage conversation sources", choices, undefined, [
-      "Changes apply to subsequent cycles. An in-flight upload may finish.", "Newly enabled sources include existing history. No sources means no capture."
-    ], ids => this.confirm("Apply source selection?", [`Sources: ${ids.join(", ") || "none"}`, "Install or upgrade selected integrations as needed."], "Apply sources",
-      () => this.work("Updating sources", changeProjectSources(project, ids), () => this.detail(project), undefined, () => this.detail(project)), () => this.manageSources(project)), () => this.detail(project)), undefined, () => this.detail(project))
+  private tools(back = () => this.list()) {
+    this.work("Reading tools", inspectTools(), inspection => this.show({ kind: "menu", title: "Tools",
+      details: ["Configured once on this machine, for all connected projects."],
+      options: [{ value: "configure", label: "Choose tools" }, ...inspection.choices.map(choice => ({ value: choice.id,
+        label: `${choice.label} · ${inspection.configured && choice.selected ? "Enabled" : "Not enabled"} · ${choice.installed ? "Ready" : "Needs setup"}` }))]
+    }, value => value === "configure" ? this.configureTools(() => this.tools(back), () => this.tools(back))
+      : this.toolDetails(String(value), () => this.tools(back)), back), undefined, back)
+  }
+  private configureTools(after: () => void, back: () => void, selected?: ReadonlyArray<string>) {
+    this.work("Reading tools", inspectTools(), inspection => this.showSources("Which tools do you use?", inspection.choices, selected, [
+      "This selection applies to all connected projects on this machine.",
+      "Save sets up the selected integrations. Connecting a project is a separate step.",
+      "Local detection does not mean every project has conversations.",
+    ], ids => this.work("Reviewing tool changes", planToolChange(ids), plan => {
+      const apply = () => this.work("Setting up tools", applyToolChange(plan), () => {
+        this.toolsConfigured = true; this.enabledTools = plan.ids
+        if (!this.hasProjects && plan.ids.length === 0) this.list()
+        else after()
+      }, error => {
+        if ("reason" in error && error.reason === "changed" && !("instanceOrigin" in error && error.instanceOrigin)) {
+          this.show({ kind: "menu", title: "Review tool changes again", details: [error.message],
+            options: [{ value: "review", label: "Review changes" }]
+          }, () => this.configureTools(after, back, ids), () => this.configureTools(after, back, ids))
+        } else this.failed(error, () => this.configureTools(after, back, ids), () => this.configureTools(after, back, ids))
+      }, () => this.configureTools(after, back, ids))
+      if (plan.projects.length === 0) return apply()
+      this.confirm("Apply tools to all projects?", [
+        `Tools: ${ids.map(toolLabel).join(", ") || "None"} · ${plan.projects.length} connected projects`,
+        ...plan.projects.map(change => `${change.project.name} · ${change.project.teamName} · ${change.project.instanceOrigin}: ${[
+          ...change.added.map(id => `+ ${toolLabel(id)}`), ...change.removed.map(id => `− ${toolLabel(id)}`)
+        ].join(", ") || "unchanged"}`),
+        "Added tools import existing history and keep syncing. Disabled tools retain captured history.",
+        "Changes apply to later cycles; an in-flight upload may finish.",
+      ], "Apply to all projects", apply, () => this.configureTools(after, back, ids))
+    }, undefined, () => this.configureTools(after, back, ids)), back), undefined, back)
+  }
+  private toolDetails(id: string, back: () => void) {
+    this.work("Reading tool", inspectTools(), inspection => {
+      const tool = inspection.choices.find(choice => choice.id === id)
+      this.show({ kind: "menu", title: tool?.label ?? toolLabel(id), details: [
+        tool?.installed ? `Ready · version ${tool.version}` : "Tool integration needs setup.",
+        "Installation and updates apply to this machine. They do not enable additional tools."
+      ], options: [
+        ...(tool?.installed ? [{ value: "upgrade", label: "Update integration" }] : []),
+        { value: "configure", label: "Choose tools" }
+      ] }, value => value === "upgrade" ? this.work("Updating integration", upgradeAdapters(id), () => this.toolDetails(id, back), undefined, back)
+        : this.configureTools(() => this.toolDetails(id, back), () => this.toolDetails(id, back)), back)
+    }, undefined, back)
+  }
+  private settings() {
+    this.work("Reading settings", inspectCLIExperience(), snapshot => this.show({ kind: "menu", title: "Settings",
+      details: [`Server: ${this.instanceOrigin}`, snapshot.collector.running ? "Background sync is running. Exiting keeps it running." : "Background sync is stopped."],
+      options: [{ value: "accounts", label: "Accounts" }, { value: "server", label: "Change server" },
+        { value: snapshot.collector.running ? "stop" : "start", label: snapshot.collector.running ? "Stop sync for all projects" : "Start sync" }]
+    }, value => value === "accounts" ? this.accounts() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
+      : this.consoleAction(String(value)), () => this.list()))
+  }
+  private accounts() {
+    this.work("Reading accounts", inspectClient(), config => {
+      const instances = [...new Set([this.instanceOrigin, ...config.projects.map(project => project.instanceOrigin)])]
+      this.show({ kind: "menu", title: "Accounts", details: ["Sign-in is shared by projects on the same server."],
+        options: instances.map(origin => ({ value: origin, label: origin }))
+      }, value => {
+        const origin = String(value)
+        this.show({ kind: "menu", title: "Account", details: [origin], options: [
+          { value: "login", label: "Sign in" }, { value: "logout", label: "Sign out" }
+        ] }, action => {
+          this.instanceOrigin = origin
+          if (action === "login") this.login(() => this.accounts(), () => this.accounts())
+          else this.confirm("Sign out?", [origin, "Projects on this server will need sign-in before syncing."], "Sign out",
+            () => this.work("Signing out", logoutCLI({ instanceOrigin: origin }), () => this.accounts(), undefined, () => this.accounts()), () => this.accounts())
+        }, () => this.accounts())
+      }, () => this.settings())
+    }, undefined, () => this.settings())
   }
   private confirm(title: string, details: ReadonlyArray<string>, label: string, apply: () => void, back: () => void) {
     this.show({ kind: "menu", title, details, options: [{ value: "back", label: "Cancel" }, { value: "confirm", label }] }, value => value === "confirm" ? apply() : back(), back)

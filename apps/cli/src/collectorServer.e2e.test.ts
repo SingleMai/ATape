@@ -288,7 +288,9 @@ const configureClient = async (fixture: Fixture, serverUrl: string, adapterId: "
   }
   const now = new Date().toISOString()
   await writeFile(fixture.configFile, `${JSON.stringify({
-    version: 2,
+    version: 3,
+    toolsConfigured: true,
+    enabledAdapterIds: [adapterId],
     activeInstanceOrigin: serverUrl,
     projects: [{
       id: "support-notes",
@@ -300,7 +302,6 @@ const configureClient = async (fixture: Fixture, serverUrl: string, adapterId: "
       name: "E2E Project",
       type: "directory",
       path: fixture.projectDirectory,
-      adapterIds: [adapterId],
       createdAt: now
     }],
     adapters: [{

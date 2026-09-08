@@ -83,9 +83,10 @@ try {
 
     await writeSmokeAdapter()
     await atape(["adapters", "install", adapterSource, "--json"])
+    await atape(["tools", "configure", "--adapter", "smoke", "--apply", "--json"])
     const setup = JSON.parse((await atape([
       "setup", projectDirectory, "--team", "package-team", "--create",
-      "--name", "Package Project", "--type", "directory", "--adapter", "smoke", "--json"
+      "--name", "Package Project", "--type", "directory", "--json"
     ])).stdout)
     assert.equal(setup.createdRemotely, true)
     assert.equal(setup.project.userId, "package-user")

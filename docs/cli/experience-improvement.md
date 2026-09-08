@@ -1,5 +1,11 @@
 # CLI experience improvement
 
+The [revised user journey](user-journey.md) records the accepted move to global
+tool configuration and implements the resulting first-use, daily-use and recovery
+flows. It supersedes the per-Project source-selection direction below; the older
+sections describe earlier increments. The global-tools increment is implemented
+in the v0.4.0 candidate; publication follows the release gates.
+
 ## Outcome and scope
 
 The accepted outcome is that a new user can run `atape`, connect a local Project,
@@ -14,8 +20,8 @@ upgrades are allowed when justified by the selected library and package checks.
 
 ## Accepted product decisions
 
-- Bare `atape` enters setup when no Projects are configured and opens the Project
-  console otherwise. Unsupported interactive terminals receive useful plain-text
+- Bare `atape` enters setup before tools have been configured and opens the Project
+  console afterward, including when no Projects are connected. Unsupported interactive terminals receive useful plain-text
   guidance; pipes, CI and JSON requests never wait for interactive input.
 - Setup defaults to the current directory, resolves a Git subdirectory to its
   worktree root, and supports entering another path with directory completion.
@@ -27,9 +33,10 @@ upgrades are allowed when justified by the selected library and package checks.
 - Detection means that a supported source's local data directory exists, not
   that the tool is installed or this Project has conversations. Detected sources
   are preselected; missing sources may be selected manually.
-- One review displays the destination Instance and Team, Project identity, sources,
-  historical import and continuing background sync. Only after acceptance does
-  setup install needed official Adapters, enable them and start collection.
+- First choose tools globally; saving installs the selected integrations. One
+  Project review then displays the destination Instance and Team, Project identity,
+  global tools, historical import and continuing background sync. Confirmation
+  connects the Project and starts collection.
   Detecting a new source later never expands authorization automatically.
 - Existing conversations are imported and new ones continue syncing. Time-range
   selection is outside the first release. Unknown historical attribution is
@@ -41,13 +48,13 @@ upgrades are allowed when justified by the selected library and package checks.
   is outside this initiative's first release; `atape start` starts it manually.
   The console offers Start when the Collector is stopped. Global Stop clearly
   affects every Project. No separate per-Project pause state is introduced.
-- The Project list and details support adding a Project, managing sources,
-  inspecting sync outcomes, removing local capture, opening the Web Project and
+- Home provides Add project, Tools and Settings. Project details support
+  inspecting sync outcomes, removing local capture and
   recovering from authentication and collection failures. Local removal does not
   delete server history. Changes affect subsequent cycles; the UI must not imply
   that an in-flight upload was immediately cancelled.
 - Conversation reading, Search and Team administration remain in the Web app.
-  Third-party package management, migration and detailed diagnostics retain their
+  Third-party package management and detailed diagnostics retain their
   explicit command Interfaces rather than becoming mandatory setup concepts.
 
 ## Git Project identity
@@ -59,7 +66,7 @@ setup from another checkout must resolve to the configured Project without a new
 collection job or checkpoint identity.
 
 All Harness Adapters must use one shared attribution contract. A Git Project has
-no "only this folder" mode, including through legacy explicit flags. A genuinely
+no "only this folder" mode, including through explicit flags. A
 non-Git folder remains a directory Project. Missing or unsupported Git remotes
 require correction; setup must not suggest converting the Git directory into a
 directory Project as a workaround.
@@ -80,7 +87,7 @@ historical identity is not promised.
 The shared Host contract now replaces both private Git matchers. Git setup stores
 verified repository identity and accepts the same Project from another checkout;
 capture can continue from recorded or established evidence when the configured
-locator disappears. Config v2 and recognized Adapter cursors remain readable.
+locator disappears.
 The [Git attribution ADR](../architecture/adr/0037-shared-git-source-attribution.md)
 records the protocol, compatibility checks and evidence-store semantics.
 
@@ -120,7 +127,7 @@ and Raw chunk counters belong in details rather than the main success message.
 | 1. Ink and distribution | Verified runtime, bundle, directory input and terminal lifecycle; selected architecture documented | Complete for macOS/Linux arm64; see [validation evidence](ink-validation.md) |
 | 2. Git identity | Shared attribution for Codex and Claude, identity-based setup, explicit unknown-source diagnostics | Included in v0.3.0 candidate; publication gated |
 | 3. Complete setup | One guided flow through login, Team, Project, sources and observable first sync; matching CLI/Web documentation | Included in v0.3.0 candidate; publication gated |
-| 4. Project console | List/details, source changes, local removal, Web links and recovery using the same Module Interface | Included in v0.3.0 candidate; publication gated |
+| 4. Project console | List/details, source changes, local removal and recovery using the same Module Interface | Included in v0.3.0 candidate; publication gated |
 
 Finish and verify each increment before expanding it. Research programs stay
 outside implementation commits. When integration is requested, reconcile with
@@ -185,7 +192,10 @@ gates; this guide does not attest manual staging acceptance.
 
 - Bare `atape` with no Projects shows a monochrome pixel-cassette welcome and one
   primary connection action. Explicit `atape setup` still opens the path directly.
-  Small terminals replace the welcome artwork with compact text.
+  The cassette now stays in the shared header on every interactive screen.
+  Spacious terminals show the full artwork; ordinary terminals show a three-line
+  cassette, and short or narrow terminals keep a single-line cassette mark.
+  Header height is included in the available space for details and controls.
 - Returning users see Project rows with source and sync state. `/` searches names,
   sources, Teams and status; Enter opens the focused Project. Tab switches to a
   separate global action bar. Search text, focused Project and the visible list
@@ -203,8 +213,7 @@ gates; this guide does not attest manual staging acceptance.
   worktree files; this is not an identity check. The application Module still
   resolves and validates the actual repository, shown before confirmation.
 - Browser login offers a link-opening action and continues automatically after
-  approval. The no-Team Web/Refresh detour remains available. Opening a Web Project
-  displays its link in the existing Project page; notices and refresh failures
+  approval. The no-Team Web/Refresh detour remains available. Notices and refresh failures
   appear before long details, so they are not hidden by pagination.
 - Terminal dimensions are observed live. Narrow Project lists prioritize names
   and status over source columns. Ink controls and the cassette share the terminal
@@ -255,3 +264,50 @@ with sign-in first when authentication is required.
 Validation covers automatic retry versus required repair, stopped/background
 state, global authentication blockers, partial recovery, action ordering, error
 visibility, and in-place diagnostics refresh without starting collection.
+
+### Project actions after v0.3.1 feedback
+
+Project details no longer offer `Open Project in Web`. A Project with no recovery
+action defaults to `Sync details`, with secondary disconnection. Esc returns to the list.
+Projects needing attention continue to prioritize their specific recovery action.
+Browser sign-in and the no-Team onboarding/Refresh flow remain available.
+
+This increment removes the unused Project URL workflow as well as the menu entry.
+Validation uses the existing presenter recovery scenario and installed-package
+PTY flow to check action ordering and in-place refresh. It is not yet published;
+broader terminal and live-account acceptance remain the next increment.
+
+Ordinary menus use the visible `Esc Back` hint instead of duplicate `Back`,
+`Back to Project` or `All Projects` rows. This applies to Project details,
+settings, diagnostics, help, onboarding and error recovery. Explicit setup edits
+remain named actions. Confirmation dialogs retain a default `Cancel` choice so
+Enter cannot accidentally confirm removal or stopping sync.
+
+### Global tools and current configuration
+
+The current increment follows [the revised journey](user-journey.md): choose tools
+once, connect Projects using that selection, inspect outcomes, and recover at the
+scope of the problem. Tools and accounts belong to global navigation. No Project
+settings, Web Project shortcut or duplicate Back rows remain. The cassette stays
+visible on all interactive pages.
+
+Project registrations no longer persist tool overrides. The Client Module combines
+them with global enabled tools for collection. Changes preview their impact on all
+Projects, retain checkpoints, and invalidate stale setup reviews. First-use tool
+setup can finish without connecting a Project; the next launch opens an empty list.
+
+ATape has not launched publicly. This increment removes old configuration branches,
+the v0.1 migration Module/command and XDG migration interception, with no automatic
+conversion or restart. Development files remain untouched. ADR-0040 supersedes the
+older CLI configuration and migration decisions; the CLI release gate now checks
+current-schema reads and rejection without overwriting unsupported files.
+
+Local validation for this increment: all workspace typechecks; Domain 22,
+application 72 and CLI 51 tests; two real CLI/Go end-to-end scenarios; installed
+CLI PTY verification; independently packaged Codex/Claude and Claude replacement
+with preserved progress. The release gate index passes in CI mode; this does not
+claim new staging acceptance. The v0.4.0 candidate is ready for integration; publication follows the release gates.
+
+The next increment is hands-on feedback on this global navigation plus terminal
+acceptance beyond the local macOS environment. Automatic reboot recovery remains
+excluded.

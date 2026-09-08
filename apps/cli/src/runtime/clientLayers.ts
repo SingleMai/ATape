@@ -34,11 +34,6 @@ import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
 import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
-import {
-  legacyDataExists,
-  makeClientMigrationLayer,
-  type LegacyClientPaths
-} from "./clientMigrationLayers.ts"
 
 export type NodeClientPaths = {
   readonly atapeHome: string
@@ -49,14 +44,10 @@ export type NodeClientPaths = {
   readonly collectorStatusFile: string
   readonly collectorLogFile: string
   readonly adapterDirectory: string
-  readonly legacy: LegacyClientPaths
 }
 
 export const defaultNodeClientPaths = (environment: NodeJS.ProcessEnv = process.env): NodeClientPaths => {
   const atapeHome = environment.ATAPE_HOME || join(homedir(), ".atape")
-  const legacyConfigRoot = environment.XDG_CONFIG_HOME || join(homedir(), ".config")
-  const legacyDataRoot = environment.XDG_DATA_HOME || join(homedir(), ".local", "share")
-  const legacyStateRoot = environment.XDG_STATE_HOME || join(homedir(), ".local", "state")
   return {
     atapeHome,
     credentialDirectory: join(atapeHome, "credentials"),
@@ -65,15 +56,7 @@ export const defaultNodeClientPaths = (environment: NodeJS.ProcessEnv = process.
     collectorProcessFile: environment.ATAPE_COLLECTOR_PROCESS_FILE || join(atapeHome, "state", "collector-process.json"),
     collectorStatusFile: environment.ATAPE_COLLECTOR_STATUS_FILE || join(atapeHome, "state", "collector-status.json"),
     collectorLogFile: environment.ATAPE_COLLECTOR_LOG_FILE || join(atapeHome, "logs", "collector.log"),
-    adapterDirectory: environment.ATAPE_ADAPTER_DIRECTORY || join(atapeHome, "adapters"),
-    legacy: {
-      configFile: join(legacyConfigRoot, "atape", "config.json"),
-      collectorStateFile: join(legacyStateRoot, "atape", "collector.json"),
-      collectorProcessFile: join(legacyStateRoot, "atape", "collector-process.json"),
-      collectorStatusFile: join(legacyStateRoot, "atape", "collector-status.json"),
-      collectorLogFile: join(legacyStateRoot, "atape", "collector.log"),
-      adapterDirectory: join(legacyDataRoot, "atape", "adapters")
-    }
+    adapterDirectory: environment.ATAPE_ADAPTER_DIRECTORY || join(atapeHome, "adapters")
   }
 }
 
@@ -107,26 +90,21 @@ export const makeNodeClientLayer = (
   return Layer.mergeAll(
     authentication,
     authenticatedHTTP,
-    makeConfigStoreLayer(paths.configFile, paths.legacy),
+    makeConfigStoreLayer(paths.configFile),
     makeCLISetupPlatformLayer(paths, environment),
     locator,
     makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
     projectSetup,
-    makeClientMigrationLayer({
-      atapeHome: paths.atapeHome,
-      configFile: paths.configFile,
-      legacy: paths.legacy
-    }),
     collector,
     makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "", environment)
   )
 }
 
-export const makeConfigStoreLayer = (configFile: string, legacy: LegacyClientPaths) => Layer.succeed(
+export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
   ClientConfigStore,
   ClientConfigStore.of({
     transact: <A, E, R>(change: (config: ClientConfig) => Effect.Effect<ClientConfigChange<A>, E, R>) =>
-      guardLegacyCutover(configFile, legacy).pipe(Effect.flatMap(() => Effect.acquireUseRelease(
+      Effect.acquireUseRelease(
         acquireConfigLock(configFile),
         () => readClientConfig(configFile).pipe(
           Effect.flatMap(change),
@@ -138,34 +116,9 @@ export const makeConfigStoreLayer = (configFile: string, legacy: LegacyClientPat
           await lock.close().catch(() => undefined)
           await rm(lock.path, { force: true }).catch(() => undefined)
         })
-      )))
+      )
   })
 )
-
-const guardLegacyCutover = (
-  configFile: string,
-  legacy: LegacyClientPaths
-): Effect.Effect<void, ClientConfigStoreError> => Effect.tryPromise({
-  try: async () => {
-    try {
-      await stat(configFile)
-      return
-    } catch (cause) {
-      if (!hasCode(cause, "ENOENT")) throw cause
-    }
-    if (await legacyDataExists(legacy)) throw new LegacyMigrationRequired()
-  },
-  catch: (cause) => cause instanceof LegacyMigrationRequired
-    ? new ClientConfigStoreError({
-      reason: "migration_required",
-      message: "v0.1 XDG data exists. Run `atape migrate-local-v0.1` before using v0.2."
-    })
-    : new ClientConfigStoreError({
-      reason: "io", message: "Could not inspect the local ATape configuration layout."
-    })
-})
-
-class LegacyMigrationRequired extends Error {}
 
 const acquireConfigLock = (configFile: string) => Effect.tryPromise({
   try: async () => {

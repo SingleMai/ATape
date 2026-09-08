@@ -1,6 +1,5 @@
 export * from "./access.ts"
 export * from "./cliAuthentication.ts"
-export * from "./clientMigration.ts"
 export * from "./clientManagement.ts"
 export * from "./gitSourceAttribution.ts"
 export * from "./collector.ts"

@@ -41,15 +41,7 @@ const fixture = async () => {
     collectorProcessFile: join(root, "state", "collector-process.json"),
     collectorStatusFile: join(root, "state", "collector-status.json"),
     collectorLogFile: join(root, "state", "collector.log"),
-    adapterDirectory: join(root, "data", "adapters"),
-    legacy: {
-      configFile: join(root, "legacy", "config.json"),
-      collectorStateFile: join(root, "legacy", "collector.json"),
-      collectorProcessFile: join(root, "legacy", "collector-process.json"),
-      collectorStatusFile: join(root, "legacy", "collector-status.json"),
-      collectorLogFile: join(root, "legacy", "collector.log"),
-      adapterDirectory: join(root, "legacy", "adapters")
-    }
+    adapterDirectory: join(root, "data", "adapters")
   }
   const layer = makeNodeClientLayer(paths, {
     ...process.env,
@@ -303,6 +295,8 @@ describe("Node Collector Layers", () => {
     await mkdir(project)
     const adapter = await writeAdapter(client.root)
     await client.run(installAdapter(adapter))
+    await client.run(Effect.flatMap(ClientConfigStore, store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["collector-fixture"] } }))))
     await client.run(setupProject({
       path: project,
       instanceOrigin: remote.url,
@@ -314,7 +308,6 @@ describe("Node Collector Layers", () => {
       name: "Payments",
       createdAt: "2026-09-06T00:00:00Z",
       type: "directory",
-      adapterIds: ["collector-fixture"]
     }))
 
     const first = await client.run(runCollectionCycle())
@@ -391,10 +384,12 @@ describe("Node Collector Layers", () => {
     await git("git", ["-C", project, "remote", "add", "origin", "git@github.com:acme/payments.git"])
     const adapter = await writeAdapter(client.root)
     await client.run(installAdapter(adapter))
+    await client.run(Effect.flatMap(ClientConfigStore, store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["collector-fixture"] } }))))
     await client.run(setupProject({
       path: project, type: "git", repositoryIdentity: "github.com/acme/payments",
       instanceOrigin: remote.url, userId: "user-1", teamId: "team-1", teamSlug: "acme", teamName: "Acme",
-      projectId: "payments", name: "Payments", createdAt: "2026-09-06T00:00:00Z", adapterIds: ["collector-fixture"]
+      projectId: "payments", name: "Payments", createdAt: "2026-09-06T00:00:00Z"
     }))
     const unsupported = await client.run(runCollectionCycle())
     expect(unsupported.failures[0]?.message).toContain("Upgrade")
@@ -405,6 +400,8 @@ describe("Node Collector Layers", () => {
     manifest.atapeAdapter.gitAttribution = "atape.git-attribution.v1"
     await writeFile(manifestPath, JSON.stringify(manifest))
     await client.run(installAdapter(adapter))
+    await client.run(Effect.flatMap(ClientConfigStore, store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["collector-fixture"] } }))))
     const first = await client.run(runCollectionCycle())
     expect(first.failures).toEqual([])
     expect(remote.canonical).toHaveLength(1)
@@ -456,6 +453,8 @@ describe("Node Collector Layers", () => {
     const content = `${JSON.stringify({ text: "x".repeat(RawTransportChunkBytes + 1024) })}\n`
     const adapter = await writeAdapter(client.root, content)
     await client.run(installAdapter(adapter))
+    await client.run(Effect.flatMap(ClientConfigStore, store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["collector-fixture"] } }))))
     await client.run(setupProject({
       path: project,
       instanceOrigin: remote.url,
@@ -467,7 +466,6 @@ describe("Node Collector Layers", () => {
       name: "Large Raw",
       createdAt: "2026-09-06T00:00:00Z",
       type: "directory",
-      adapterIds: ["collector-fixture"]
     }))
 
     const report = await client.run(runCollectionCycle())

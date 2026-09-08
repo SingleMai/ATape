@@ -201,7 +201,7 @@ const validateManagedConfig = (config: ClientConfig): Effect.Effect<void, Collec
 }
 
 const configuredJobs = (config: ClientConfig) => config.projects.flatMap((project) =>
-  project.adapterIds.map((adapterId) => ({ projectId: project.id, adapterId })))
+  config.enabledAdapterIds.map((adapterId) => ({ projectId: project.id, adapterId })))
   .sort((left, right) => jobKey(left.projectId, left.adapterId).localeCompare(jobKey(right.projectId, right.adapterId)))
 
 const presentJob = (

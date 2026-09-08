@@ -159,5 +159,18 @@ describe("atape CLI", () => {
     expect(JSON.parse(collected.stdout)).toMatchObject({ jobs: [], failures: [] })
     expect(remote.requests.find((request) => request.url === "/api/v1/teams/acme/projects"))
       .toMatchObject({ authorization: "Bearer atc_v1_command-fixture" })
+    // Preview is inert; apply saves one global selection.
+    const preview = await exec(process.execPath, [cli, "tools", "configure", "--none", "--json"], { env: environment })
+    expect(JSON.parse(preview.stdout)).toMatchObject({ ids: [] })
+    expect(JSON.parse((await exec(process.execPath, [cli, "tools", "list", "--json"], { env: environment })).stdout)).toMatchObject({ configured: false })
+    const applied = await exec(process.execPath, [cli, "tools", "configure", "--none", "--apply", "--json"], { env: environment })
+    expect(JSON.parse(applied.stdout)).toMatchObject({ version: 3, enabledAdapterIds: [] })
+    const requestsBefore = remote.requests.length
+    await expect(exec(process.execPath, [cli, "setup", project, "--team", "acme", "--create", "--adapter", "codex", "--json"], { env: environment }))
+      .rejects.toMatchObject({ stderr: expect.stringContaining("Tools are global") })
+    await expect(exec(process.execPath, [cli, "adapters", "enable", "codex", "--project", "project-1"], { env: environment }))
+      .rejects.toMatchObject({ stderr: expect.stringContaining("list|install|upgrade") })
+    expect(remote.requests).toHaveLength(requestsBefore)
+    expect(JSON.parse((await exec(process.execPath, [cli, "collect", "--once", "--json"], { env: environment })).stdout)).toMatchObject({ jobs: [], failures: [] })
   })
 })

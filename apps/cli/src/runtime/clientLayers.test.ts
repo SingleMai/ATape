@@ -1,12 +1,12 @@
 import {
   inspectClient,
   installAdapter,
-  setProjectAdapter,
   setupProject,
   type AdapterPackages,
   type ClientConfigStore,
   type ProjectLocator
 } from "@atape/application"
+import { emptyClientConfig } from "@atape/domain"
 import { execFile } from "node:child_process"
 import { mkdtemp, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -35,15 +35,7 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
     collectorProcessFile: join(root, "state", "collector-process.json"),
     collectorStatusFile: join(root, "state", "collector-status.json"),
     collectorLogFile: join(root, "state", "collector.log"),
-    adapterDirectory: join(root, "data", "adapters"),
-    legacy: {
-      configFile: join(root, "legacy", "config.json"),
-      collectorStateFile: join(root, "legacy", "collector.json"),
-      collectorProcessFile: join(root, "legacy", "collector-process.json"),
-      collectorStatusFile: join(root, "legacy", "collector-status.json"),
-      collectorLogFile: join(root, "legacy", "collector.log"),
-      adapterDirectory: join(root, "legacy", "adapters")
-    }
+    adapterDirectory: join(root, "data", "adapters")
   }
   const layer = makeNodeClientLayer(paths, process.env, fetchAdapterPackage)
   const run = <A, E>(effect: Effect.Effect<
@@ -70,6 +62,15 @@ const setupInput = (path: string, type: "auto" | "git" | "directory" = "auto") =
 } as const)
 
 describe("Node client Layers", () => {
+  it("reads only current configuration without rewriting unsupported data", async () => {
+    const client = await fixture()
+    expect(await client.run(inspectClient())).toEqual(emptyClientConfig())
+    const unsupported = JSON.stringify({ version: 2, projects: [], adapters: [] })
+    await writeFile(client.paths.configFile, unsupported)
+    await expect(client.run(inspectClient())).rejects.toMatchObject({ reason: "decode" })
+    expect(await readFile(client.paths.configFile, "utf8")).toBe(unsupported)
+  })
+
   it("detects the Git root and persists owner-only atomic configuration", async () => {
     const client = await fixture()
     const repository = join(client.root, "payments")
@@ -87,6 +88,7 @@ describe("Node client Layers", () => {
 
     expect(result.project).toMatchObject({ id: "payments", path: canonicalRepository, type: "git" })
     expect(persisted.projects).toEqual([expect.objectContaining({ path: canonicalRepository, type: "git" })])
+    expect(persisted.projects[0]).not.toHaveProperty("adapterIds")
     expect(metadata.mode & 0o777).toBe(0o600)
   })
 
@@ -155,9 +157,6 @@ describe("Node client Layers", () => {
 
     await client.run(setupProject(setupInput(project, "directory")))
     const installed = await client.run(installAdapter(adapter))
-    const enabled = await client.run(setProjectAdapter({
-      projectId: "project", adapterId: "fixture", enabled: true
-    }))
 
     expect(installed.adapter).toMatchObject({
       adapterId: "fixture",
@@ -165,7 +164,7 @@ describe("Node client Layers", () => {
       version: "1.0.0",
       upgradeSpec: `file:${canonicalAdapter}`
     })
-    expect(enabled.adapterIds).toEqual(["fixture"])
+    expect((await client.run(inspectClient())).enabledAdapterIds).toEqual([])
     await expect(stat(join(adapter, "lifecycle-ran"))).rejects.toMatchObject({ code: "ENOENT" })
     await expect(stat(join(
       client.paths.adapterDirectory,

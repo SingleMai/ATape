@@ -92,6 +92,17 @@ try:
         terminals.append(terminal)
         terminal.wait("Welcome to ATape")
         terminal.send("\r")
+        terminal.wait("Which tools do you use?")
+        # Cancelling first-use tool selection does not install or enable anything.
+        terminal.send("\x1b")
+        terminal.wait("Welcome to ATape")
+        terminal.finish()
+        terminals.pop()
+        # Path controls run with an explicitly saved, inert fixture integration.
+        cli("adapters", "install", adapter, "--json")
+        cli("tools", "configure", "--adapter", "smoke", "--apply", "--json")
+        terminal = Terminal(("setup",))
+        terminals.append(terminal)
         terminal.wait("Connect a Project")
         terminal.send("\x15" + str(root) + "/项")
         terminal.drain(.4)
@@ -111,7 +122,7 @@ try:
         assert b"Finding your Project" not in terminal.output, "paste submitted the form"
         if ending == "escape":
             terminal.send("\x1b")
-            terminal.wait("Welcome to ATape")
+            terminal.wait("Your Projects")
             terminal.finish("\x1b")
         elif ending == "sigterm":
             terminal.process.send_signal(signal.SIGTERM)
@@ -119,6 +130,8 @@ try:
         else:
             terminal.finish()
         terminals.pop()
+        # Restore an unconfigured fixture for the next independent first-use run.
+        (root / "home" / "config" / "client.json").unlink()
 
     for args, overrides in (((), {"CI": "true"}), (("--version",), {}), (("status", "--json"), {})):
         terminal = Terminal(args, overrides)
@@ -135,8 +148,8 @@ try:
     assert "Interactive setup needs" in piped and "\x1b" not in piped
 
     cli("adapters", "install", adapter, "--json")
-    # Exercise real device login, zero-Team detour, Refresh, explicit source
-    # selection and confirmation through the installed terminal entry.
+    # Configure tools once, then exercise login and the zero-Team detour during
+    # Project connection without a second tool-selection step.
     def team_mode(enabled):
         request = urllib.request.Request(origin + "/__terminal-fixture/teams", data=json.dumps({"enabled": enabled}).encode(), method="POST")
         with urllib.request.urlopen(request, timeout=5) as response: response.read()
@@ -145,6 +158,8 @@ try:
     terminals.append(terminal)
     terminal.wait("Welcome to ATape")
     terminal.send("\r")
+    terminal.wait("Which tools do you use?")
+    terminal.send("\x1b[B\x1b[B \r")
     terminal.wait("Connect a Project")
     terminal.send("\x15" + str(project) + "\r")
     assert b"Finding your Project" not in terminal.output, "finishing a path edit submitted setup"
@@ -156,13 +171,11 @@ try:
     terminal.wait("/onboarding")
     team_mode(True)
     terminal.send("\x1b[B\r")
-    terminal.wait("Choose conversation sources")
-    terminal.send("\x1b[B\x1b[B \r")
     terminal.wait("Review and connect")
     config = json.loads(cli("projects", "list", "--json"))
     assert not config["projects"], "setup enabled capture before confirmation"
     terminal.send("\r")
-    terminal.wait("Waiting for a first conversation", seconds=30)
+    terminal.wait("No conversations yet", seconds=30)
     terminal.finish("q")
     terminals.pop()
     status = json.loads(cli("status", "--json"))
@@ -188,29 +201,35 @@ try:
     terminal.wait("Package Project")
     terminal.send("\x1b")
     terminal.wait("/ Package")
-    terminal.send("\t\x1b[C\x1b[C")
-    terminal.wait("Actions: Refresh")
-    terminal.send("\r")
+    terminal.send("r")
     terminal.drain(.4)
     assert b"/ Package" in terminal.output, "refresh discarded the search"
     assert b"Working" not in terminal.output, "refresh replaced the Project list"
-    terminal.send("\t\r")
+    terminal.send("\r")
     terminal.wait("Package Project")
+    assert b"Open Project in Web" not in terminal.output, "Project details still offer Web navigation"
+    terminal.send("r")
+    terminal.wait("Status updated. Sync timing is unchanged.")
+    terminal.send("\x1b")
+    terminal.wait("Your Projects")
+    terminal.send("\t\x1b[C\r")
+    terminal.wait("Tools")
     terminal.send("\r")
-    terminal.wait("Open:")
-    # Opening the Web link returns inline to this Project, without an extra page.
-    terminal.send("\x1b[B\r")
-    terminal.wait("Project settings")
-    terminal.send("\r")
-    terminal.wait("Manage conversation sources")
+    terminal.wait("Which tools do you use?")
     terminal.send("\x1b[B\x1b[B \r")
-    terminal.wait("Apply source selection?")
+    terminal.wait("Apply tools to all projects?")
+    # Escape cancels the global change without changing capture authorization.
+    terminal.send("\x1b")
+    terminal.wait("Which tools do you use?")
+    assert json.loads(cli("projects", "list", "--json"))["projects"][0]["adapterIds"] == ["smoke"]
+    terminal.send("\r")
+    terminal.wait("Apply tools to all projects?")
     terminal.send("\x1b[B\r")
-    terminal.wait("No sources enabled")
+    terminal.wait("Tools")
     terminal.finish("q")
     terminals.pop()
     assert json.loads(cli("projects", "list", "--json"))["projects"][0]["adapterIds"] == []
-    print("Verified installed Ink controls, restoration, login/Web Refresh, confirmed setup, source changes and background lifetime.")
+    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation and background lifetime.")
 finally:
     for terminal in terminals:
         terminal.abort()

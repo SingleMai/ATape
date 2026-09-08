@@ -146,6 +146,8 @@ const twoSegmentCollectionPage = (): AdapterCollectionPage => {
 
 const clientConfig = (): ClientConfig => ({
   ...emptyClientConfig(),
+  toolsConfigured: true,
+  enabledAdapterIds: ["fixture"],
   activeInstanceOrigin: "https://atape.net",
   projects: [{
     id: "payments",
@@ -157,7 +159,6 @@ const clientConfig = (): ClientConfig => ({
     name: "Payments",
     type: "git",
     path: "/work/payments",
-    adapterIds: ["fixture"],
     createdAt: now
   }],
   adapters: [{
@@ -172,6 +173,7 @@ const clientConfig = (): ClientConfig => ({
 })
 
 const fixture = (options: {
+  readonly config?: () => ClientConfig
   readonly page?: AdapterCollectionPage
   readonly pages?: ReadonlyArray<AdapterCollectionPage>
   readonly rawFailure?: CollectionTransportError
@@ -187,7 +189,7 @@ const fixture = (options: {
   const raw: Array<RawSubmission> = []
   const layer = Layer.mergeAll(
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({
-      transact: (change) => change(clientConfig()).pipe(Effect.map((result) => result.value))
+      transact: (change) => change(options.config?.() ?? clientConfig()).pipe(Effect.map((result) => result.value))
     })),
     Layer.succeed(CollectorStateStore, CollectorStateStore.of({
       snapshot: () => Effect.succeed({
@@ -255,6 +257,25 @@ const fixture = (options: {
 }
 
 describe("Collector Module", () => {
+  it("uses global tools for collection and preserves its checkpoint while a tool is disabled", async () => {
+    const original = clientConfig()
+    let config: ClientConfig = original
+    const capture = fixture({ config: () => config, pages: [collectionPage(), {
+      protocolVersion: AdapterProtocolVersion, nextCursor: "cursor-1", hasMore: false, observations: []
+    }] })
+    const first = await capture.run(runCollectionCycle())
+    expect(first.jobs).toHaveLength(1)
+    expect(capture.canonical).toHaveLength(1)
+    const checkpoint = structuredClone(capture.checkpoint())
+    config = { ...config, enabledAdapterIds: [], projects: original.projects }
+    expect((await capture.run(runCollectionCycle())).jobs).toEqual([])
+    expect(capture.canonical).toHaveLength(1)
+    expect(capture.checkpoint()).toEqual(checkpoint)
+    config = { ...config, enabledAdapterIds: ["fixture"] }
+    expect((await capture.run(runCollectionCycle())).jobs).toHaveLength(1)
+    expect(capture.checkpoint()?.cursor).toBe(checkpoint?.cursor)
+  })
+
   it("deduplicates diagnostics across pages and bounds the cycle report without blocking publication", async () => {
     const sourceFailures = Array.from({ length: 32 }, (_, i) => ({ source: `/history/file-${i}`, reason: "format" as const }))
     const capture = fixture({ pages: [
