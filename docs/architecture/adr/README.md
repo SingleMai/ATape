@@ -50,3 +50,4 @@ pretending that staging acceptance passed.
 [ADR-0033](0033-continuous-dogfood-web-deployment.md) deploys verified main commits to the dogfood Web container through a narrow SSM Interface, with rollback and retained lazy-load assets.
 
 [ADR-0035](0035-global-search-workspace.md) adds a persistent global Search dialog and bounded cross-project queries through the existing Search Module.
+| [0038](0038-v0.3.0-manual-release-waiver.md) | Accepted by explicit user authorization | Separate candidate-bound v0.3.0 manual staging waiver; all automated gates remain blocking |

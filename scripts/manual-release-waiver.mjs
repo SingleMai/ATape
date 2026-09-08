@@ -3,10 +3,17 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
 const execute = promisify(execFile)
-export const manualWaiverPath = "docs/releases/evidence/v0.2.0-manual-waiver.json"
+// Closed list of separately authorized decisions. Future releases do not inherit
+// either waiver merely by adding an evidence file.
+const manualWaiverPaths = new Map([
+  ["0.2.0", "docs/releases/evidence/v0.2.0-manual-waiver.json"],
+  ["0.3.0", "docs/releases/evidence/v0.3.0-manual-waiver.json"]
+])
+export const manualWaiverPathFor = version => manualWaiverPaths.get(version)
 
 export async function verifyManualReleaseWaiver(root, waiver, release, requiredChecks) {
-  assert.equal(release.version, "0.2.0", "The manual waiver applies only to v0.2.0")
+  const manualWaiverPath = manualWaiverPathFor(release.version)
+  assert.ok(manualWaiverPath, "This release has no separately authorized manual waiver")
   assert.equal(release.authEpoch, "auth-v1")
   assert.deepEqual(Object.keys(waiver).sort(), ["protocol", "releaseVersion", "authEpoch", "status",
     "candidateCommit", "authorizedOn", "authorization", "scope", "unverifiedChecks", "riskNotice"].sort())
@@ -17,7 +24,7 @@ export async function verifyManualReleaseWaiver(root, waiver, release, requiredC
   assert.equal(waiver.scope, "manual-staging-only")
   assert.equal(waiver.authorizedOn, "2026-09-08")
   assert.ok(typeof waiver.authorization === "string" && waiver.authorization.length >= 40)
-  assert.equal(waiver.riskNotice, "docs/releases/v0.2.0.md")
+  assert.equal(waiver.riskNotice, `docs/releases/v${release.version}.md`)
   assert.deepEqual([...waiver.unverifiedChecks].sort(), [...requiredChecks].sort(), "Waiver must disclose every unverified manual check")
   assert.match(waiver.candidateCommit, /^[0-9a-f]{40}$/)
   const git = args => execute("git", args, { cwd: root, encoding: "utf8" })
