@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0042](0042-v0.4.1-manual-release-waiver.md) records the separately authorized,
+candidate-bound v0.4.1 manual staging waiver.
+
 [ADR-0041](0041-v0.4.0-manual-release-waiver.md) records the separately authorized,
 candidate-bound v0.4.0 manual staging waiver.
 
