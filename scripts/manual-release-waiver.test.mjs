@@ -8,7 +8,7 @@ import { promisify } from "node:util"
 import { manualWaiverPathFor, verifyManualReleaseWaiver } from "./manual-release-waiver.mjs"
 
 const execute = promisify(execFile)
-const authorizedVersions = ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.4.1", "0.4.2", "0.4.4"]
+const authorizedVersions = ["0.2.0", "0.3.0", "0.3.1", "0.4.0", "0.4.1", "0.4.2", "0.4.4", "0.4.5"]
 for (const version of authorizedVersions) test(`v${version} manual waiver is version-, scope- and candidate-bound without fabricating staging evidence`, async () => {
   const manualWaiverPath = manualWaiverPathFor(version)
   const root = await mkdtemp(join(tmpdir(), "atape-waiver-test-"))
@@ -24,7 +24,7 @@ for (const version of authorizedVersions) test(`v${version} manual waiver is ver
     const waiver = {
       protocol: "atape.manual-release-waiver.v1", releaseVersion: version, authEpoch: "auth-v1",
       status: "authorized", candidateCommit: (await git(["rev-parse", "HEAD"])).stdout.trim(),
-      authorizedOn: "2026-09-08", authorization: "Explicit user authorization of one-time manual waiver; automated checks remain required.",
+      authorizedOn: version === "0.4.5" ? "2026-09-09" : "2026-09-08", authorization: "Explicit user authorization of one-time manual waiver; automated checks remain required.",
       scope: "manual-staging-only", unverifiedChecks: ["staging", "signoff"], riskNotice: `docs/releases/v${version}.md`
     }
     await mkdir(dirname(join(root, manualWaiverPath)), { recursive: true })
@@ -37,12 +37,13 @@ for (const version of authorizedVersions) test(`v${version} manual waiver is ver
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.3.2" }, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.5.0" }, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.4.3" }, checks))
-    await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.4.5" }, checks))
+    await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: "0.4.6" }, checks))
     const otherVersion = version === "0.2.0" ? "0.3.0" : "0.2.0"
     for (const differentVersion of authorizedVersions.filter(candidate => candidate !== version)) {
       await assert.rejects(verifyManualReleaseWaiver(root, waiver, { ...release, version: differentVersion }, checks))
       await assert.rejects(verifyManualReleaseWaiver(root, { ...waiver, riskNotice: `docs/releases/v${differentVersion}.md` }, release, checks))
     }
+    await assert.rejects(verifyManualReleaseWaiver(root, { ...waiver, authorizedOn: "2026-01-01" }, release, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, { ...waiver, scope: "all-checks" }, release, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, { ...waiver, unverifiedChecks: ["signoff"] }, release, checks))
     await assert.rejects(verifyManualReleaseWaiver(root, { ...waiver, candidateCommit: "0".repeat(40) }, release, checks))
