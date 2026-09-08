@@ -76,8 +76,9 @@ export const makeProjectSetupGatewayLayer = () => Layer.effect(
           projects: workspace.projects.map(projectFromWire)
         } satisfies SetupWorkspace
       }),
-      matchGitProject: (instanceOrigin, teamId, remote) => client.request({
+      matchGitProject: (instanceOrigin, teamId, remote, expectedUserId) => client.request({
         instanceOrigin,
+        ...(expectedUserId === undefined ? {} : { expectedUserId }),
         path: "/api/v1/project-matches",
         method: "POST",
         body: { teamId, type: "git", remote }
@@ -88,11 +89,12 @@ export const makeProjectSetupGatewayLayer = () => Layer.effect(
           ? match
           : { status: "exact", project: projectFromWire(match.project) })
       ),
-      createProject: (instanceOrigin, teamSlug, project) => {
-        const idempotencyKey = randomUUID()
+      createProject: (instanceOrigin, teamSlug, project, options) => {
+        const idempotencyKey = options?.idempotencyKey ?? randomUUID()
         const request = client.request({
           instanceOrigin,
           path: `/api/v1/teams/${encodeURIComponent(teamSlug)}/projects`,
+          ...(options === undefined ? {} : { expectedUserId: options.expectedUserId }),
           method: "POST",
           body: projectBody(project),
           idempotencyKey
@@ -138,7 +140,7 @@ const expectDecoded = <A, I>(
 }
 
 const statusError = (status: number, resource: string) => new ProjectSetupGatewayError({
-  reason: status === 401 ? "unauthenticated"
+  reason: status === 400 ? "invalid_remote" : status === 401 ? "unauthenticated"
     : status === 403 ? "forbidden"
     : status === 404 ? "not_found"
     : status === 409 ? "conflict"

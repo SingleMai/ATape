@@ -240,7 +240,7 @@ export type AdapterObservation = typeof AdapterObservation.Type
 export const MaxSourceFailures = 32
 export const AdapterSourceFailure = Schema.Struct({
   source: Schema.String,
-  reason: Schema.Literals(["io", "format", "unsupported", "changed", "limit", "duplicate"])
+  reason: Schema.Literals(["io", "format", "unsupported", "changed", "limit", "duplicate", "attribution"])
 })
 export type AdapterSourceFailure = typeof AdapterSourceFailure.Type
 const SourceDiagnostics = {
@@ -268,7 +268,21 @@ export type AdapterOpenContext = {
     readonly type: "git" | "directory"
     readonly path: string
   }
+  readonly gitAttribution?: {
+    readonly version: "atape.git-attribution.v1"
+    readonly resolve: (source: GitSource, signal: AbortSignal) => Promise<GitSourceDecision>
+  }
 }
+
+// Provider-origin metadata only. Paths and this callback never enter ingestion.
+export const GitSource = Schema.Struct({
+  sourceId: Schema.String,
+  originKey: Schema.String,
+  cwd: Schema.String,
+  repositoryRemote: Schema.optionalKey(Schema.String)
+})
+export type GitSource = typeof GitSource.Type
+export type GitSourceDecision = "included" | "excluded" | "unknown"
 
 export type AdapterSourceProgress = {
   readonly sourceSessionId: string

@@ -1,12 +1,12 @@
-// Package releaseinfo owns the immutable identity shared by ATape v0.2
+// Package releaseinfo owns the immutable identity shared by ATape release
 // artifacts. The variables remain overrideable at link time so a container
 // label and the executable can be proven to describe the same build.
 package releaseinfo
 
 var (
-	Version           = "0.2.0"
+	Version           = "0.3.0"
 	AuthEpoch         = "auth-v1"
-	MinimumCLIVersion = "0.2.0"
+	MinimumCLIVersion = "0.3.0"
 )
 
 // Info is the small, presentation-safe view exposed by diagnostics and

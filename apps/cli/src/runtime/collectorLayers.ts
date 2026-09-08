@@ -6,6 +6,9 @@ import {
   CollectorStateStore,
   CollectorTransport,
   makeSecretRedactorLayer,
+  GitSourceAttribution,
+  GitAttributionError,
+  ProjectLocator,
   type CanonicalSubmission,
   type CollectorStateSnapshot,
   type HostedAdapter,
@@ -15,6 +18,8 @@ import {
   AdapterCollectionPage as AdapterCollectionPageSchema,
   AdapterManifest as AdapterManifestSchema,
   AdapterProtocolVersion,
+  GitAttributionVersion,
+  GitSource,
   CanonicalApplyReceipt as CanonicalApplyReceiptSchema,
   CanonicalIngestionProtocolVersion,
   CanonicalProfileVersion,
@@ -241,35 +246,42 @@ const writeCollectorState = (stateFile: string, state: CollectorState): Effect.E
     }))
   )
 
-export const makeAdapterRuntimeLayer = (adapterDirectory: string) => Layer.succeed(
+export const makeAdapterRuntimeLayer = (adapterDirectory: string) => Layer.effect(
   AdapterRuntimes,
-  AdapterRuntimes.of({
-    open: (project, adapter) => Effect.acquireRelease(
-      loadAdapterRuntime(adapterDirectory, project, adapter),
-      ({ foreign, lifetime }) => Effect.sync(() => lifetime.abort()).pipe(
-        Effect.flatMap(() => foreign.close === undefined
-          ? Effect.void
-          : Effect.tryPromise({
-            try: () => Promise.resolve(foreign.close?.()),
-            catch: (cause) => new AdapterRuntimeError({
-              reason: "close",
-              adapterId: adapter.adapterId,
-              retryable: false,
-              message: errorMessage(`Adapter ${adapter.adapterId} failed to close`, cause)
-            })
-          }).pipe(Effect.matchEffect({
-            onFailure: (error) => Effect.logWarning(error.message),
-            onSuccess: () => Effect.void
-          })))
-      )
-    ).pipe(Effect.map(({ hosted }) => hosted))
+  Effect.gen(function*() {
+    const attribution = yield* GitSourceAttribution
+    const locator = yield* ProjectLocator
+    return AdapterRuntimes.of({
+      open: (project, adapter) => Effect.acquireRelease(
+        (project.type === "directory" ? locator.locate(project.path, "directory").pipe(
+          Effect.mapError(error => runtimeFailure(adapter.adapterId, "load", false, error.message)), Effect.asVoid
+        ) : Effect.void).pipe(Effect.flatMap(() => loadAdapterRuntime(adapterDirectory, project, adapter, attribution))),
+        ({ foreign, lifetime }) => Effect.sync(() => lifetime.abort()).pipe(
+          Effect.flatMap(() => foreign.close === undefined
+            ? Effect.void
+            : Effect.tryPromise({
+              try: () => Promise.resolve(foreign.close?.()),
+              catch: (cause) => new AdapterRuntimeError({
+                reason: "close",
+                adapterId: adapter.adapterId,
+                retryable: false,
+                message: errorMessage(`Adapter ${adapter.adapterId} failed to close`, cause)
+              })
+            }).pipe(Effect.matchEffect({
+              onFailure: (error) => Effect.logWarning(error.message),
+              onSuccess: () => Effect.void
+            })))
+        )
+      ).pipe(Effect.map(({ hosted }) => hosted))
+    })
   })
 )
 
 const loadAdapterRuntime = (
   adapterDirectory: string,
   project: Parameters<AdapterRuntimes["Service"]["open"]>[0],
-  adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1]
+  adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1],
+  attribution: GitSourceAttribution["Service"]
 ) => Effect.gen(function*() {
   const packageRoot = join(adapterDirectory, "node_modules", ...adapter.packageName.split("/"))
   const packageJSON = yield* Effect.tryPromise({
@@ -291,6 +303,10 @@ const loadAdapterRuntime = (
       `Installed package identity no longer matches the client configuration; reinstall ${adapter.packageName}.`
     )
   }
+  if (project.type === "git" && manifest.gitAttribution !== GitAttributionVersion) {
+    return yield* runtimeFailure(adapter.adapterId, "contract", false,
+      `Adapter ${adapter.adapterId} does not support Git repository attribution. Upgrade it before collecting this Git Project.`)
+  }
   const entry = yield* resolveAdapterEntry(packageRoot, manifest, adapter.adapterId)
   const imported = yield* Effect.tryPromise({
     try: () => import(`${pathToFileURL(entry).href}?atape=${encodeURIComponent(adapter.updatedAt)}`) as Promise<unknown>,
@@ -305,39 +321,71 @@ const loadAdapterRuntime = (
     )
   }
   const lifetime = new AbortController()
+  let resolver = attribution.forProject(project, adapter.adapterId)
+  let attributionFailure: GitAttributionError | undefined
+  const attributionRuntimeFailure = () => runtimeFailure(adapter.adapterId,
+    attributionFailure?.reason === "unauthenticated" ? "unauthenticated" : "collect",
+    attributionFailure?.reason === "transport" || attributionFailure?.reason === "io",
+    attributionFailure?.message ?? "Could not determine Git source attribution.")
   const foreign = yield* Effect.tryPromise({
     try: (signal) => Promise.resolve(module.createAtapeAdapter?.({
       protocolVersion: AdapterProtocolVersion,
       adapter: { id: adapter.adapterId, version: adapter.version },
       project: { id: project.id, type: project.type, path: project.path },
+      ...(project.type !== "git" ? {} : { gitAttribution: {
+        version: GitAttributionVersion,
+        resolve: (source: GitSource, sourceSignal: AbortSignal) => Effect.runPromise(
+          Schema.decodeUnknownEffect(GitSource)(source).pipe(
+            Effect.mapError(() => new GitAttributionError({ reason: "contract", message: "Adapter supplied invalid Git source metadata." })),
+            Effect.flatMap(source => isAbsolute(source.cwd)
+              ? resolver(source)
+              : Effect.fail(new GitAttributionError({ reason: "contract", message: "Adapter supplied a relative Git source directory." }))),
+            Effect.tapError(error => Effect.sync(() => { attributionFailure = error }))
+          ),
+          { signal: AbortSignal.any([sourceSignal, lifetime.signal]) }
+        )
+      } }),
       signal: AbortSignal.any([signal, lifetime.signal])
     })) as Promise<AtapeAdapterRuntime>,
-    catch: (cause) => runtimeFailure(
+    catch: (cause) => attributionFailure ? attributionRuntimeFailure() : runtimeFailure(
       adapter.adapterId, "load", false, errorMessage(`Could not create Adapter ${adapter.adapterId}`, cause)
     )
-  })
+  }).pipe(Effect.onError(() => Effect.sync(() => lifetime.abort())))
   if (!foreign || typeof foreign.collect !== "function") {
+    lifetime.abort()
     return yield* runtimeFailure(
       adapter.adapterId, "contract", false, "createAtapeAdapter must return an object with collect(request)."
     )
   }
+  if (attributionFailure) {
+    lifetime.abort()
+    if (typeof foreign.close === "function") yield* Effect.tryPromise({
+      try: () => Promise.resolve(foreign.close?.()), catch: () => undefined
+    }).pipe(Effect.catch(() => Effect.void))
+    return yield* attributionRuntimeFailure()
+  }
   const hosted: HostedAdapter = {
-    collect: (request) => Effect.tryPromise({
-      try: (signal) => Promise.resolve(foreign.collect({
-        ...request,
-        signal: AbortSignal.any([signal, lifetime.signal])
-      })),
-      catch: (cause) => runtimeFailure(
-        adapter.adapterId, "collect", true, errorMessage(`Adapter ${adapter.adapterId} collection failed`, cause)
+    collect: (request) => Effect.suspend(() => {
+      resolver = attribution.forProject(project, adapter.adapterId)
+      attributionFailure = undefined
+      return Effect.tryPromise({
+        try: (signal) => Promise.resolve(foreign.collect({
+          ...request,
+          signal: AbortSignal.any([signal, lifetime.signal])
+        })),
+        catch: (cause) => attributionFailure ? attributionRuntimeFailure() : runtimeFailure(
+          adapter.adapterId, "collect", true, errorMessage(`Adapter ${adapter.adapterId} collection failed`, cause)
+        )
+      }).pipe(
+        Effect.flatMap(value => attributionFailure ? Effect.fail(attributionRuntimeFailure()) : Effect.succeed(value)),
+        Effect.flatMap((value) => Schema.decodeUnknownEffect(AdapterCollectionPageSchema)(value)),
+        Effect.mapError((error) => error instanceof AdapterRuntimeError
+          ? error
+          : runtimeFailure(
+            adapter.adapterId, "contract", false, `Adapter ${adapter.adapterId} returned an invalid page: ${String(error)}`
+          ))
       )
-    }).pipe(
-      Effect.flatMap((value) => Schema.decodeUnknownEffect(AdapterCollectionPageSchema)(value)),
-      Effect.mapError((error) => error instanceof AdapterRuntimeError
-        ? error
-        : runtimeFailure(
-          adapter.adapterId, "contract", false, `Adapter ${adapter.adapterId} returned an invalid page: ${String(error)}`
-        ))
-    )
+    })
   }
   return { foreign, hosted, lifetime }
 })
@@ -584,7 +632,7 @@ const staleLock = async (lockPath: string) => {
 
 const runtimeFailure = (
   adapterId: string,
-  reason: "load" | "contract" | "collect" | "close",
+  reason: AdapterRuntimeError["reason"],
   retryable: boolean,
   message: string
 ) => new AdapterRuntimeError({ reason, adapterId, retryable, message })

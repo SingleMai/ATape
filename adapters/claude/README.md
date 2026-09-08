@@ -12,7 +12,7 @@ pnpm atape collect --once --project YOUR_PROJECT --json
 
 For an offline packaged installation, `pnpm pack:release` now produces the CLI,
 Codex and Claude tarballs plus `SHA256SUMS` under `release/`. Install the CLI
-tarball, then use `atape adapters install ./release/atape-adapter-claude-0.2.0.tgz`.
+tarball, then use `atape adapters install ./release/atape-adapter-claude-0.3.0.tgz`.
 These local build commands do not publish to npm or deploy an instance.
 
 The Project must already be configured and authenticated normally. Discovery reads
@@ -21,10 +21,14 @@ Claude configuration directory when needed. `ATAPE_CLAUDE_SESSION_FILE` remains
 an optional absolute single-file override, useful for controlled capture or
 diagnosing a file outside the discovery profile.
 
-A discovered file is not permission to upload it to an unrelated Project: its original root
-CWD must belong to the configured directory, or resolve to the same Git common
-directory (including linked worktrees). Later `/cd` values do not reassign it.
-An unavailable original directory cannot be matched in this first slice.
+A discovered file is not permission to upload it to an unrelated Project: its
+original root CWD must belong to the configured ordinary directory, or the shared
+Host must match its original Git remote to the configured Project. Git matching
+includes linked worktrees and independent clones and excludes nested unrelated
+repositories. Later `/cd` values do not reassign a Session. The Host preserves
+confirmed evidence across origin changes and directory deletion; an unavailable
+original directory without established evidence is reported as `attribution`.
+Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
 
 ## Supported now
 
@@ -86,7 +90,8 @@ masks configured secrets. Background `atape status` shows `partial` and continue
 collecting. Reports retain up to 32 distinct diagnostics with a truncation flag,
 not an exact count of all failed files. A clean cycle clears previous diagnostics.
 Global discovery/cursor capacity, corrupt checkpoints and Host/transport failures
-still fail the job. The single-file override stays fail-fast. Update the Host and
+still fail the job. The single-file override stays fail-fast except that unknown
+Git attribution is reported as partial coverage. Update the Host and
 Adapter together to retain the new optional diagnostic fields.
 
 The current v1 Host's source-mutation/concurrent-writer and lost-checkpoint

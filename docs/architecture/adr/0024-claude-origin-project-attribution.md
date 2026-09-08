@@ -7,6 +7,10 @@ Claude Code can change working directory and relocate a transcript during the sa
 
 A Directory Project matches its explicitly bound directory scope after filesystem path resolution. A Git Project matches the bound repository identity, including linked worktrees whose paths are outside the configured checkout. Paths locate Git repositories; directory containment alone does not prove Git Project membership. Discovery does not choose a destination by fuzzy matching among all configured Projects.
 
+Git identity resolution and durable evidence are now implemented by the shared
+Host contract in [ADR-0037](0037-shared-git-source-attribution.md). This preserves
+the original-Session attribution rule and extends matching to independent clones.
+
 ## Consequences
 
 - One Captured Session remains a continuous conversation in its original Project, even when Claude later works in another directory. The capture unit is the conversation, not a per-message file-access boundary.

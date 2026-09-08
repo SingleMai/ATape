@@ -43,6 +43,7 @@ import { createInterface } from "node:readline/promises"
 import { parseArgs } from "node:util"
 import { Effect } from "effect"
 import { cliVersion } from "./version.ts"
+import { supportsInteractiveExperience } from "./interactiveEligibility.ts"
 
 type CLIOptions = {
   readonly help?: boolean
@@ -208,7 +209,9 @@ const setupCommand = (path: string | undefined, options: CLIOptions) => Effect.g
     return
   }
   yield* print([
-    result.createdLocally ? "Configured local capture Project." : "Project was already configured; nothing changed.",
+    result.createdLocally ? "Configured local capture Project." : result.updatedLocally
+      ? "Updated the existing Project locator and selected sources; capture progress was retained."
+      : "Project was already configured; nothing changed.",
     `  ${result.project.id} · ${result.project.type}`,
     `  ${result.project.path}`,
     `  Team: ${result.project.teamName} (${result.project.teamSlug})`,
@@ -335,7 +338,7 @@ const resolveProjectSetupSelection = (
   options: CLIOptions
 ): Effect.Effect<ProjectSetupSelection, CLIInputError> => Effect.tryPromise({
   try: async () => {
-    const interactive = process.stdin.isTTY && process.stdout.isTTY && options.json !== true
+    const interactive = supportsInteractiveExperience() && options.json !== true
     let team = options.team === undefined ? undefined : findTeam(plan.teams, options.team)
     if (options.team !== undefined && team === undefined) {
       throw new CLIInputError(`Team ${options.team} is not available to the signed-in account.`)
@@ -676,6 +679,8 @@ Usage:
   atape --version
   atape login [--instance <origin>] [--no-browser]
   atape logout [--instance <origin>]
+  atape                              Guided setup or Project console
+  atape setup [directory]             Guided setup in an interactive terminal
   atape setup [directory] [--team <slug>] [--create] [options]
   atape migrate-local-v0.1 [--apply] [--json]
   atape migrate-local-v0.1 --adopt-checkpoint --from <import-id>
@@ -698,7 +703,7 @@ Setup options:
   --team <slug>         Select one of the signed-in account's Teams
   --create              Explicitly create when no exact Project match exists
   --name <name>         Name for a newly created directory Project
-  --type <mode>         auto, git, or directory (default: auto)
+  --type <mode>         auto (default), git, or directory (outside Git only)
   --adapter <id>        Attach an installed Adapter; may be repeated
 
 Login options:

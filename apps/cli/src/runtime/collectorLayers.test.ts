@@ -12,6 +12,8 @@ import {
   setupProject
 } from "@atape/application"
 import { AdapterProtocolVersion, RawTransportChunkBytes, type CollectorCheckpoint } from "@atape/domain"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { createServer, type Server } from "node:http"
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -66,6 +68,7 @@ const listen = async () => {
   const raw: Array<Record<string, unknown>> = []
   const authorizations: Array<string | undefined> = []
   let origin = ""
+  let matchStatus = 200
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/api/v1/instance") {
       response.setHeader("Content-Type", "application/json")
@@ -86,6 +89,15 @@ const listen = async () => {
     const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>
     authorizations.push(request.headers.authorization)
     response.setHeader("Content-Type", "application/json")
+    if (request.url === "/api/v1/project-matches") {
+      response.statusCode = matchStatus
+      response.end(JSON.stringify(matchStatus === 200 ? { status: "exact", project: {
+        id: "payments", teamId: "team-1", type: "git", name: "Payments", state: "active",
+        repositoryIdentity: "github.com/acme/payments", repositoryLinkState: "linked",
+        createdAt: "2026-09-06T00:00:00Z", updatedAt: "2026-09-06T00:00:00Z"
+      } } : { code: "unauthenticated" }))
+      return
+    }
     if (request.url === "/api/v1/ingestion/canonical/batches") {
       canonical.push(body)
       response.statusCode = 201
@@ -126,7 +138,7 @@ const listen = async () => {
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("test server did not bind TCP")
   origin = `http://127.0.0.1:${address.port}`
-  return { url: origin, canonical, raw, authorizations }
+  return { url: origin, canonical, raw, authorizations, setMatchStatus: (status: number) => { matchStatus = status } }
 }
 
 const authorize = <A extends { readonly run: <T, E>(effect: Effect.Effect<T, E, CLICredentialStore>) => Promise<T> }>(
@@ -145,7 +157,7 @@ const authorize = <A extends { readonly run: <T, E>(effect: Effect.Effect<T, E, 
   }
 })))
 
-const writeAdapter = async (root: string, rawContent?: string) => {
+const writeAdapter = async (root: string, rawContent?: string, gitCapability = false) => {
   const adapter = join(root, "adapter")
   await mkdir(adapter)
   const page = {
@@ -246,6 +258,12 @@ export async function createAtapeAdapter(context) {
   await writeFile(context.project.path + "/adapter-context.json", JSON.stringify(context))
   return {
     async collect(request) {
+      if (context.project.type === "git") {
+        try {
+          await context.gitAttribution.resolve({ sourceId: "checkout", originKey: "original-header", cwd: context.project.path,
+            repositoryRemote: "git@github.com:acme/payments.git" }, request.signal)
+        } catch { /* Deliberately swallowed to exercise the Host's failure boundary. */ }
+      }
       await appendFile(context.project.path + "/adapter-calls.jsonl", JSON.stringify({
         cursor: request.cursor,
         rawProgress: request.rawProgress
@@ -266,6 +284,7 @@ export async function createAtapeAdapter(context) {
     type: "module",
     atapeAdapter: {
       protocolVersion: AdapterProtocolVersion,
+      ...(gitCapability ? { gitAttribution: "atape.git-attribution.v1" } : {}),
       adapterId: "collector-fixture",
       displayName: "Collector Fixture",
       entry: "./index.js",
@@ -360,6 +379,43 @@ describe("Node Collector Layers", () => {
     ])
     expect((await stat(client.paths.collectorStateFile)).mode & 0o777).toBe(0o600)
     expect(await readFile(join(project, "adapter-closed"), "utf8")).toBe("yes")
+  })
+
+  it("requires declared Git capability and preserves authentication failures across the foreign callback", async () => {
+    const client = await fixture(), remote = await listen()
+    await authorize(client, remote.url)
+    const project = join(client.root, "payments")
+    await mkdir(project)
+    const git = promisify(execFile)
+    await git("git", ["init", "-q", project])
+    await git("git", ["-C", project, "remote", "add", "origin", "git@github.com:acme/payments.git"])
+    const adapter = await writeAdapter(client.root)
+    await client.run(installAdapter(adapter))
+    await client.run(setupProject({
+      path: project, type: "git", repositoryIdentity: "github.com/acme/payments",
+      instanceOrigin: remote.url, userId: "user-1", teamId: "team-1", teamSlug: "acme", teamName: "Acme",
+      projectId: "payments", name: "Payments", createdAt: "2026-09-06T00:00:00Z", adapterIds: ["collector-fixture"]
+    }))
+    const unsupported = await client.run(runCollectionCycle())
+    expect(unsupported.failures[0]?.message).toContain("Upgrade")
+    await expect(stat(join(project, "adapter-context.json"))).rejects.toMatchObject({ code: "ENOENT" })
+
+    const manifestPath = join(adapter, "package.json")
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"))
+    manifest.atapeAdapter.gitAttribution = "atape.git-attribution.v1"
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await client.run(installAdapter(adapter))
+    const first = await client.run(runCollectionCycle())
+    expect(first.failures).toEqual([])
+    expect(remote.canonical).toHaveLength(1)
+    const before = JSON.parse(await readFile(client.paths.collectorStateFile, "utf8"))
+    remote.setMatchStatus(401)
+    const failed = await client.run(runCollectionCycle())
+    expect(failed.failures[0]).toMatchObject({ reason: "unauthenticated", retryable: false })
+    expect(JSON.parse(await readFile(client.paths.collectorStateFile, "utf8"))).toEqual(before)
+    expect(remote.canonical).toHaveLength(1)
+    remote.setMatchStatus(200)
+    expect((await client.run(runCollectionCycle())).failures).toEqual([])
   })
 
   it("rejects a stale compare-and-set checkpoint", async () => {

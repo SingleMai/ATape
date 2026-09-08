@@ -65,6 +65,7 @@ const setupInput = (path: string, type: "auto" | "git" | "directory" = "auto") =
   projectId: type === "directory" ? path.split("/").at(-1) ?? "project" : "payments",
   name: type === "directory" ? path.split("/").at(-1) ?? "Project" : "Payments",
   createdAt: "2026-09-06T00:00:00Z",
+  repositoryIdentity: "github.com/acme/payments",
   type
 } as const)
 
@@ -75,6 +76,7 @@ describe("Node client Layers", () => {
     const nested = join(repository, "services", "api")
     await mkdir(nested, { recursive: true })
     await exec("git", ["init", "-q", repository])
+    await exec("git", ["-C", repository, "remote", "add", "origin", "git@github.com:acme/payments.git"])
     const canonicalRepository = await realpath(repository)
 
     const result = await client.run(setupProject(setupInput(nested)))
@@ -86,6 +88,15 @@ describe("Node client Layers", () => {
     expect(result.project).toMatchObject({ id: "payments", path: canonicalRepository, type: "git" })
     expect(persisted.projects).toEqual([expect.objectContaining({ path: canonicalRepository, type: "git" })])
     expect(metadata.mode & 0o777).toBe(0o600)
+  })
+
+  it("rejects directory mode inside Git, including a nested path", async () => {
+    const client = await fixture()
+    const repository = join(client.root, "repo"), nested = join(repository, "src")
+    await mkdir(nested, { recursive: true })
+    await exec("git", ["init", "-q", repository])
+    await expect(client.run(setupProject(setupInput(nested, "directory"))))
+      .rejects.toThrow("without --type directory")
   })
 
   it("serializes concurrent setup commands without losing a Project", async () => {

@@ -1,8 +1,7 @@
 import type { AcpSessionUpdate, AdapterCollectRequest, AdapterCollectionPage, AdapterEvent, AdapterObservation, AdapterOpenContext } from "@atape/domain"
 import { Effect, Schema } from "effect"
-import { isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
+import { GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
 import { createHash } from "node:crypto"
-import { execFile } from "node:child_process"
 import { constants } from "node:fs"
 import { open, readdir, realpath } from "node:fs/promises"
 import { homedir } from "node:os"
@@ -40,7 +39,7 @@ class SourceDiagnostics {
   }
   capture(source: string, cause: unknown, signal: AbortSignal) {
     signal.throwIfAborted()
-    if (cause instanceof ClaudeArchiveError && ["io", "format", "unsupported", "changed", "limit"].includes(cause.reason)) {
+    if (cause instanceof ClaudeArchiveError && ["io", "format", "unsupported", "changed", "limit", "attribution"].includes(cause.reason)) {
       this.add(source, cause.reason as AdapterSourceFailure["reason"])
     } else if (["ENOENT", "EACCES", "EPERM", "ELOOP", "ENOTDIR", "EIO", "ESTALE"].includes(string(object(cause)?.code) ?? "")) {
       this.add(source, "io")
@@ -53,7 +52,7 @@ class SourceDiagnostics {
 }
 
 export class ClaudeArchiveError extends Schema.TaggedError<ClaudeArchiveError>()("ClaudeArchiveError", {
-  reason: Schema.Literals(["configuration", "io", "format", "unsupported", "changed", "cursor", "limit"]),
+  reason: Schema.Literals(["configuration", "io", "format", "unsupported", "changed", "cursor", "limit", "attribution"]),
   message: Schema.String
 }) {}
 function fail(reason: ClaudeArchiveError["reason"], message: string): never { throw new ClaudeArchiveError({ reason, message }) }
@@ -67,7 +66,11 @@ export const openClaudeArchive = (context: AdapterOpenContext): Effect.Effect<Ar
     const file = process.env.ATAPE_CLAUDE_SESSION_FILE || undefined
     const home = process.env.ATAPE_CLAUDE_HOME || join(homedir(), ".claude")
     if (file && !isAbsolute(file) || !isAbsolute(home)) fail("configuration", "Claude source overrides must be absolute paths.")
-    return { context, file, projects: join(home, "projects"), project: await realpath(context.project.path) }
+    if (context.project.type === "git" && context.gitAttribution?.version !== GitAttributionVersion) {
+      fail("configuration", "Upgrade the ATape CLI to collect Git Projects with shared attribution.")
+    }
+    return { context, file, projects: join(home, "projects"),
+      project: context.project.type === "git" ? context.project.path : await realpath(context.project.path) }
   },
   catch: cause => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "configuration", message: "Could not open the selected Claude Project." })
 })
@@ -99,7 +102,7 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
     try {
       page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous.checkpoint) : null })
     } catch (cause) {
-      if (archive.file) throw cause // Explicit single-source diagnostics stay fail-fast.
+      if (archive.file && !(cause instanceof ClaudeArchiveError && cause.reason === "attribution")) throw cause // Other explicit-source errors stay fail-fast.
       diagnostics.capture(candidate.file, cause, request.signal)
       continue
     }
@@ -144,7 +147,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
   }
   const sessionId = root.sessionId as string, origin = root.cwd as string
   if (cursor && (cursor.sessionId !== sessionId || cursor.origin !== origin)) fail("changed", "Claude session identity or original CWD changed.")
-  if (!await belongsToProject(archive, origin, request.signal)) return empty(request.cursor)
+  if (!await belongsToProject(archive, root, request.signal)) return empty(request.cursor)
   // Refuse ambiguity instead of publishing branches that v1 cannot withdraw.
   let previous: string | null = null
   const seen = new Set<string>()
@@ -305,7 +308,7 @@ async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortS
           if (!header || typeof header.sessionId !== "string" || !header.sessionId || typeof header.cwd !== "string" || !isAbsolute(header.cwd)) {
             diagnostics.add(file, "format"); continue
           }
-          if (!await belongsToProject(archive, header.cwd, signal)) continue
+          if (!await belongsToProject(archive, header, signal)) continue
           sessionId = header.sessionId
         }
         ids.set(sessionId, (ids.get(sessionId) ?? 0) + 1)
@@ -365,12 +368,18 @@ async function snapshot(file: string, signal: AbortSignal): Promise<Buffer> {
     return bytes
   } finally { await handle.close() }
 }
-async function belongsToProject(archive: Archive, origin: string, signal: AbortSignal): Promise<boolean> {
-  if (!isAbsolute(origin)) fail("format", "Claude original CWD must be absolute.")
+async function belongsToProject(archive: Archive, root: RecordValue, signal: AbortSignal): Promise<boolean> {
+  const origin = string(root.cwd)
+  if (!origin || !isAbsolute(origin)) fail("format", "Claude original CWD must be absolute.")
   if (archive.context.project.type === "git") {
-    const common = (cwd: string) => new Promise<string>((resolve, reject) => execFile("git", ["-C", cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"], { signal, timeout: 5000 }, (error, out) => error ? reject(error) : resolve(out.trim())))
-    try { return await realpath(await common(origin)) === await realpath(await common(archive.project)) }
-    catch { signal.throwIfAborted(); return false }
+    if (root.type !== "user" || root.parentUuid !== null || root.isMeta === true || typeof root.uuid !== "string" || typeof root.sessionId !== "string") {
+      fail("attribution", "Claude source has no trustworthy original user root.")
+    }
+    const decision = await archive.context.gitAttribution!.resolve({
+      sourceId: root.sessionId, originKey: root.uuid, cwd: origin
+    }, signal)
+    if (decision === "unknown") fail("attribution", "The original Git repository could not be established for this Claude source.")
+    return decision === "included"
   }
   let resolved: string
   try { resolved = await realpath(origin) }

@@ -2,6 +2,7 @@ import { Schema } from "effect"
 
 export const ClientConfigVersion = 2 as const
 export const AdapterProtocolVersion = "atape.adapter.v1alpha1" as const
+export const GitAttributionVersion = "atape.git-attribution.v1" as const
 
 export const LocalProject = Schema.Struct({
   id: Schema.String,
@@ -14,6 +15,7 @@ export const LocalProject = Schema.Struct({
   type: Schema.Literals(["git", "directory"]),
   path: Schema.String,
   repositoryRemote: Schema.optionalKey(Schema.String),
+  repositoryIdentity: Schema.optionalKey(Schema.String),
   adapterIds: Schema.Array(Schema.String),
   createdAt: Schema.String
 })
@@ -43,7 +45,8 @@ export const AdapterManifest = Schema.Struct({
   adapterId: Schema.String,
   displayName: Schema.String,
   entry: Schema.String,
-  harnesses: Schema.Array(Schema.String)
+  harnesses: Schema.Array(Schema.String),
+  gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion))
 })
 export type AdapterManifest = typeof AdapterManifest.Type
 

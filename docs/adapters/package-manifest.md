@@ -12,7 +12,8 @@ ATape Adapters are independently installed npm packages. The management plane re
     "adapterId": "codex",
     "displayName": "Codex CLI",
     "entry": "./dist/index.js",
-    "harnesses": ["codex"]
+    "harnesses": ["codex"],
+    "gitAttribution": "atape.git-attribution.v1"
   }
 }
 ```
@@ -24,6 +25,9 @@ The fields mean:
 - `displayName` is a non-empty human-readable name.
 - `entry` must start with `./`, stay inside the installed package, and point to an existing file.
 - `harnesses` is a non-empty list of source Harness identifiers represented by the Adapter.
+- `gitAttribution` is required for Git capture and declares use of the Host's
+  `atape.git-attribution.v1` callback. It may be omitted for directory-only capture.
+  The Host checks this capability before importing a Git Adapter.
 
 The package itself must also have valid `name` and `version` fields. Its installed name must match the requested package. npm lifecycle scripts are disabled, so build artifacts must already be present in the published or local package.
 
@@ -53,6 +57,22 @@ export async function createAtapeAdapter(context) {
 
 `context` contains the Adapter ID and version, the stable ATape user ID, plus the selected local Project ID, type, and absolute path. It also carries an `AbortSignal`. It does not contain another Project's path or server credentials.
 
+For Git Projects, `context.gitAttribution` contains `version` and
+`resolve(source, signal): Promise<"included" | "excluded" | "unknown">`.
+Check the version before Git capture and require an updated Host when absent.
+Each original source supplies `{ sourceId, originKey, cwd, repositoryRemote? }`:
+the source ID is stable across relocation, the origin key identifies its immutable
+starting record, CWD is its original absolute directory, and the optional remote
+comes from provider metadata. Do not substitute a later CWD or the configured
+Project path. The configured Git path is only a locator and need not still exist.
+
+Await resolution before emitting a source. Include only `included`; omit
+`excluded`; report `unknown` as an `attribution` source diagnostic. Do not catch a
+rejected resolution as unknown: authentication, transport and persistence failures
+fail the job. Pass the operation's cancellation signal. The Host owns Git lookup,
+server matching and durable attribution evidence, with bounded per-call caches.
+See [ADR-0037](../architecture/adr/0037-shared-git-source-attribution.md).
+
 `request` contains:
 
 - `protocolVersion`, fixed to `atape.adapter.v1alpha1`
@@ -66,7 +86,7 @@ An Adapter returns no more than the requested limits. When it emits observations
 
 Pages may include local `sourceFailures: [{ source, reason }]` diagnostics and
 `sourceFailuresTruncated: true` when further failures were omitted. Reasons are
-`io`, `format`, `unsupported`, `changed`, `limit` or `duplicate`. At most 32 entries
+`io`, `format`, `unsupported`, `changed`, `limit`, `duplicate` or `attribution`. At most 32 entries
 with nonempty source paths of at most 4096 UTF-8 bytes are accepted per page.
 The Host redacts and deduplicates them into a bounded job report. They are not
 Canonical/Raw payloads and never acknowledge source progress. Diagnostic-only

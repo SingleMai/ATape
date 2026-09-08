@@ -1,0 +1,179 @@
+"""Installed-binary PTY acceptance. All state and capture sources are disposable."""
+import fcntl
+import json
+import os
+import pty
+import select
+import signal
+import struct
+import subprocess
+import sys
+import termios
+import time
+import urllib.request
+from pathlib import Path
+
+binary, root, adapter, origin = sys.argv[1:]
+root = Path(root)
+project = root / "项目 space"
+project.mkdir(parents=True, exist_ok=True)
+env = dict(os.environ, ATAPE_HOME=str(root / "home"), ATAPE_INSTANCE_URL=origin,
+           ATAPE_CODEX_HOME=str(root / "absent-codex"), ATAPE_CLAUDE_HOME=str(root / "absent-claude"),
+           TERM="xterm-256color", ATAPE_DEVELOPMENT_ALLOW_HTTP="true")
+for name in ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
+             "ATAPE_CONFIG_FILE", "ATAPE_COLLECTOR_STATE_FILE", "ATAPE_COLLECTOR_PROCESS_FILE", "ATAPE_COLLECTOR_STATUS_FILE",
+             "ATAPE_COLLECTOR_LOG_FILE", "ATAPE_ADAPTER_DIRECTORY"):
+    env.pop(name, None)
+
+def cli(*args):
+    return subprocess.run([binary, *args], env=env, cwd=root, capture_output=True, text=True, timeout=40, check=True).stdout
+
+class Terminal:
+    def __init__(self, args=(), overrides=None):
+        self.master, self.slave = pty.openpty()
+        self.before = termios.tcgetattr(self.slave)
+        self.resize(80, 24)
+        self.process = subprocess.Popen([binary, *args], env=dict(env, **(overrides or {})), cwd=root,
+                                        stdin=self.slave, stdout=self.slave, stderr=self.slave, start_new_session=True)
+        self.output = b""
+    def resize(self, columns, rows):
+        fcntl.ioctl(self.slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, columns, 0, 0))
+        if hasattr(self, "process"):
+            self.process.send_signal(signal.SIGWINCH)
+    def drain(self, seconds=.12):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if select.select([self.master], [], [], min(.05, max(0, deadline - time.monotonic())))[0]:
+                try: self.output += os.read(self.master, 65536)
+                except OSError: break
+    def wait(self, text, seconds=20):
+        marker = text.encode()
+        deadline = time.monotonic() + seconds
+        while marker not in self.output and time.monotonic() < deadline:
+            self.drain()
+            if self.process.poll() is not None: break
+        assert marker in self.output, f"Missing {text!r}: {self.output[-7000:].decode(errors='replace')}"
+        self.output = b""
+    def send(self, text):
+        # Keys are separate terminal events, while paste remains one packet.
+        if "\x1b[200~" in text:
+            os.write(self.master, text.encode())
+            self.drain(.18)
+            return
+        import re
+        for event in re.findall(r"\x1b\[[A-D]|[^\x00-\x1f\x7f]+|.", text, re.S):
+            os.write(self.master, event.encode())
+            self.drain(.12)
+    def finish(self, text="\x03", allowed=(0,)):
+        if text: self.send(text)
+        deadline = time.monotonic() + 10
+        while self.process.poll() is None and time.monotonic() < deadline:
+            self.drain()
+        assert self.process.poll() is not None, "Terminal did not exit: " + self.output.decode(errors="replace")
+        self.drain()
+        assert self.process.returncode in allowed, self.output.decode(errors="replace")
+        assert termios.tcgetattr(self.slave) == self.before, "terminal attributes were not restored"
+        assert b"\x1b[?1049l" in self.output, "primary screen was not restored"
+        assert b"\x1b[?25h" in self.output, "cursor was not restored"
+        os.close(self.master)
+        os.close(self.slave)
+    def abort(self):
+        if self.process.poll() is None:
+            self.process.kill()
+            self.process.wait()
+        os.close(self.master)
+        os.close(self.slave)
+
+terminals = []
+try:
+    # Controls can be exercised without any authentication or package execution.
+    for ending in ("escape", "ctrl-c", "sigterm"):
+        terminal = Terminal()
+        terminals.append(terminal)
+        terminal.wait("Connect a Project")
+        terminal.send("\x15" + str(root) + "/项")
+        terminal.drain(.4)
+        terminal.send("\t")
+        terminal.wait("项目 space")
+        terminal.resize(38, 12)
+        terminal.send("\x15")
+        terminal.send("\x1b[200~" + str(project) + "\n\x1b[201~")
+        terminal.drain(.3)
+        assert b"Finding your Project" not in terminal.output, "paste submitted the form"
+        if ending == "escape":
+            terminal.send("\x1b")
+            terminal.wait("Project setup")
+            terminal.finish("\x1b")
+        elif ending == "sigterm":
+            terminal.process.send_signal(signal.SIGTERM)
+            terminal.finish("", allowed=(0, 143, -signal.SIGTERM))
+        else:
+            terminal.finish()
+        terminals.pop()
+
+    for args, overrides in (((), {"CI": "true"}), (("--version",), {}), (("status", "--json"), {})):
+        terminal = Terminal(args, overrides)
+        terminals.append(terminal)
+        terminal.process.wait(timeout=10)
+        terminal.drain()
+        assert b"\x1b" not in terminal.output, terminal.output
+        if args == ("status", "--json"):
+            json.loads(terminal.output)
+        assert termios.tcgetattr(terminal.slave) == terminal.before
+        terminal.abort()
+        terminals.pop()
+    piped = cli()
+    assert "Interactive setup needs" in piped and "\x1b" not in piped
+
+    cli("adapters", "install", adapter, "--json")
+    # Exercise real device login, zero-Team detour, Refresh, explicit source
+    # selection and confirmation through the installed terminal entry.
+    def team_mode(enabled):
+        request = urllib.request.Request(origin + "/__terminal-fixture/teams", data=json.dumps({"enabled": enabled}).encode(), method="POST")
+        with urllib.request.urlopen(request, timeout=5) as response: response.read()
+    team_mode(False)
+    terminal = Terminal(("--no-browser",))
+    terminals.append(terminal)
+    terminal.wait("Connect a Project")
+    terminal.send("\x15" + str(project) + "\r")
+    terminal.wait("Code: Q7KM4W")
+    terminal.wait("Create or join a Team")
+    terminal.send("\r")
+    terminal.wait("/onboarding")
+    team_mode(True)
+    terminal.send("\x1b[B\r")
+    terminal.wait("Choose conversation sources")
+    terminal.send("\x1b[B\x1b[B \r")
+    terminal.wait("Review and connect")
+    config = json.loads(cli("projects", "list", "--json"))
+    assert not config["projects"], "setup enabled capture before confirmation"
+    terminal.send("\r")
+    terminal.wait("Waiting for a first conversation", seconds=30)
+    terminal.finish("q")
+    terminals.pop()
+    status = json.loads(cli("status", "--json"))
+    assert status["running"], "exiting the console stopped background collection"
+    config = json.loads(cli("projects", "list", "--json"))
+    assert len(config["projects"]) == 1 and config["projects"][0]["adapterIds"] == ["smoke"]
+    assert config["projects"][0]["path"] == str(project.resolve())
+
+    terminal = Terminal()
+    terminals.append(terminal)
+    terminal.wait("Your Projects")
+    terminal.send("\r")
+    terminal.wait("Package Project")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Manage conversation sources")
+    terminal.send("\x1b[B\x1b[B \r")
+    terminal.wait("Apply source selection?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("No sources enabled")
+    terminal.finish("q")
+    terminals.pop()
+    assert json.loads(cli("projects", "list", "--json"))["projects"][0]["adapterIds"] == []
+    print("Verified installed Ink controls, restoration, login/Web Refresh, confirmed setup, source changes and background lifetime.")
+finally:
+    for terminal in terminals:
+        terminal.abort()
+    try: cli("stop", "--json")
+    except Exception: pass

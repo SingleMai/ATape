@@ -75,6 +75,8 @@ export type SetupProjectInput = {
   readonly projectId: string
   readonly name: string
   readonly createdAt: string
+  readonly repositoryIdentity?: string
+  readonly expectedRepositoryRemote?: string
   readonly type?: "auto" | "git" | "directory"
   readonly adapterIds?: ReadonlyArray<string>
 }
@@ -82,6 +84,7 @@ export type SetupProjectInput = {
 export type SetupProjectResult = {
   readonly project: LocalProject
   readonly created: boolean
+  readonly updated?: boolean
 }
 
 export type AdapterInstallResult = {
@@ -115,6 +118,11 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
   const store = yield* ClientConfigStore
   const locator = yield* ProjectLocator
   const located = yield* locator.locate(input.path, input.type ?? "auto")
+  if (located.type === "git" && (!located.repositoryRemote || !input.repositoryIdentity ||
+    input.expectedRepositoryRemote !== undefined && input.expectedRepositoryRemote !== located.repositoryRemote)) {
+    return yield* new ClientManagementError({ reason: "invalid", resource: "project",
+      message: "Git setup requires a supported origin and server-verified repository identity. Run authenticated setup again." })
+  }
   const projectName = input.name.trim()
   const projectId = input.projectId.trim()
   yield* validateText("project", projectName)
@@ -133,11 +141,31 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
 
     const existing = config.projects.find((project) =>
       project.instanceOrigin === input.instanceOrigin && project.id === projectId)
+    const pathOwner = config.projects.find((project) => project.path === located.path && project !== existing)
+    if (pathOwner) {
+      return yield* new ClientManagementError({ reason: "conflict", resource: "project",
+        message: `${located.path} is already configured as Project ${pathOwner.id}.` })
+    }
     if (existing) {
+      if (located.type === "git" && existing.type === "git" &&
+        existing.userId === input.userId.trim() && existing.teamId === input.teamId.trim()) {
+        const next: LocalProject = { ...existing,
+          name: projectName, teamSlug: input.teamSlug.trim(), teamName: input.teamName.trim(),
+          path: located.path, repositoryRemote: located.repositoryRemote!, repositoryIdentity: input.repositoryIdentity!,
+          adapterIds: [...new Set([...existing.adapterIds, ...adapterIds])].sort()
+        }
+        const updated = JSON.stringify(next) !== JSON.stringify(existing)
+        return { value: { project: next, created: false, updated } satisfies SetupProjectResult,
+          ...(updated || config.activeInstanceOrigin !== input.instanceOrigin ? { config: {
+            ...config, activeInstanceOrigin: input.instanceOrigin,
+            projects: config.projects.map(project => project === existing ? next : project)
+          } } : {}) }
+      }
       const same = existing.userId === input.userId.trim() && existing.teamId === input.teamId.trim() &&
         existing.teamSlug === input.teamSlug.trim() && existing.teamName === input.teamName.trim() &&
         existing.name === projectName && existing.type === located.type && existing.path === located.path &&
-        existing.repositoryRemote === located.repositoryRemote && sameStrings(existing.adapterIds, adapterIds)
+        existing.repositoryRemote === located.repositoryRemote &&
+        (input.adapterIds === undefined || sameStrings(existing.adapterIds, adapterIds))
       if (!same) {
         return yield* new ClientManagementError({
           reason: "conflict",
@@ -152,15 +180,6 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
           : { config: { ...config, activeInstanceOrigin: input.instanceOrigin } })
       }
     }
-    const pathOwner = config.projects.find((project) => project.path === located.path)
-    if (pathOwner) {
-      return yield* new ClientManagementError({
-        reason: "conflict",
-        resource: "project",
-        message: `${located.path} is already configured as Project ${pathOwner.id}.`
-      })
-    }
-
     const project: LocalProject = {
       id: projectId,
       instanceOrigin: input.instanceOrigin,
@@ -172,6 +191,7 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
       type: located.type,
       path: located.path,
       ...(located.repositoryRemote === undefined ? {} : { repositoryRemote: located.repositoryRemote }),
+      ...(located.type !== "git" ? {} : { repositoryIdentity: input.repositoryIdentity! }),
       adapterIds,
       createdAt: input.createdAt
     }

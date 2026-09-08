@@ -621,7 +621,7 @@ const syncDirectory = async (path: string) => {
 
 const noFollowFlag = () => typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0
 
-const launchBrowser = (platform: NodeJS.Platform, uri: string): Promise<boolean> => new Promise((resolveResult) => {
+export const launchBrowser = (platform: NodeJS.Platform, uri: string): Promise<boolean> => new Promise((resolveResult) => {
   const command = platform === "darwin"
     ? { file: "open", args: [uri] }
     : platform === "win32"

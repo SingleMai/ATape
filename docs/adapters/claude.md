@@ -30,7 +30,7 @@ ephemeral in-memory demo with a durable deployed installation.
 Project-scoped automatic discovery is now implemented in the production Adapter.
 After installation and Project enablement, normal `collect` no longer needs a
 selected-file environment variable. It scans bounded headers under the Claude
-home, uses original CWD / Git common-directory attribution, and stores incremental
+home, uses original CWD attribution, and stores incremental
 progress for multiple Sessions in the existing Host checkpoint. The original
 single-file override remains available. No server or view changes were needed.
 
@@ -92,3 +92,11 @@ it proves package replacement/recovery mechanics only. No new old-version suppor
 or real deployment is claimed. Remaining release work is the existing candidate,
 staging/operations signoff and explicit publication/deployment workflow in the
 [release guide](../releasing.md); unsupported Claude history shapes stay deferred.
+
+The CLI experience increment now replaces private Git common-directory matching
+with the [shared Host attribution Module](../architecture/adr/0037-shared-git-source-attribution.md).
+Codex and Claude follow the same server repository identity and alias rules,
+including independent clones. Established evidence survives changed origins and
+deleted directories; unknown historical identity becomes partial coverage.
+Git capture requires the new capability on both Host and Adapter. Directory
+matching and Claude's existing history-format limits remain unchanged.

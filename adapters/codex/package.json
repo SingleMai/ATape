@@ -1,6 +1,6 @@
 {
   "name": "@atape/adapter-codex",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ATape Adapter for local Codex rollout archives",
   "license": "MIT",
   "type": "module",
@@ -53,6 +53,7 @@
   },
   "atapeAdapter": {
     "protocolVersion": "atape.adapter.v1alpha1",
+    "gitAttribution": "atape.git-attribution.v1",
     "adapterId": "codex",
     "displayName": "Codex",
     "entry": "./dist/index.js",

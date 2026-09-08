@@ -19,6 +19,7 @@ import {
 
 const setupInput = (overrides: Partial<Parameters<typeof setupProject>[0]> = {}): Parameters<typeof setupProject>[0] => ({
   path: "/work/payments/src",
+  repositoryIdentity: "github.com/acme/payments",
   instanceOrigin: "https://atape.net",
   userId: "user-1",
   teamId: "team-1",
@@ -44,8 +45,9 @@ const fixture = (fixedUpgradeSpec?: string) => {
       )
     })),
     Layer.succeed(ProjectLocator, ProjectLocator.of({
-      locate: (_path, preference) => Effect.succeed({
-        path: preference === "directory" ? "/work/payments/src" : "/work/payments",
+      locate: (path, preference) => Effect.succeed({
+        path: preference === "directory" ? "/work/payments/src" : path.startsWith("/work/clone") ? path : "/work/payments",
+        ...(preference === "directory" ? {} : { repositoryRemote: "git@github.com:acme/payments.git" }),
         name: preference === "directory" ? "src" : "payments",
         type: preference === "directory" ? "directory" : "git"
       })
@@ -85,6 +87,18 @@ describe("Client management Module", () => {
     expect(created.created).toBe(true)
     expect(created.project).toMatchObject({ id: "project-1", type: "git", path: "/work/payments" })
     expect(replayed.created).toBe(false)
+    expect(client.read().projects).toHaveLength(1)
+  })
+
+  it("reattaches a clone without replacing sources or the registration epoch", async () => {
+    const client = fixture()
+    await client.run(installAdapter("@atape/adapter-codex"))
+    const first = await client.run(setupProject(setupInput({ adapterIds: ["codex"] })))
+    const second = await client.run(setupProject(setupInput({
+      path: "/work/clone", createdAt: "2026-09-08T00:00:00Z", name: "Renamed Project"
+    })))
+    expect(second).toMatchObject({ created: false, updated: true,
+      project: { path: "/work/clone", adapterIds: ["codex"], createdAt: first.project.createdAt, name: "Renamed Project" } })
     expect(client.read().projects).toHaveLength(1)
   })
 

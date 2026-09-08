@@ -18,7 +18,17 @@ await build({
   platform: "node",
   format: "esm",
   target: "node24",
-  define: { __ATAPE_CLI_VERSION__: JSON.stringify(packageManifest.version) },
+  define: { __ATAPE_CLI_VERSION__: JSON.stringify(packageManifest.version), "process.env.NODE_ENV": '"production"' },
+  banner: { js: 'import { createRequire as __atapeCreateRequire } from "node:module"; const require = __atapeCreateRequire(import.meta.url);' },
+  plugins: [{
+    name: "ink-release-without-devtools",
+    setup(build) {
+      build.onResolve({ filter: /^\.\/devtools\.js$/ }, args =>
+        /[/\\]ink[/\\]build[/\\]reconciler\.js$/.test(args.importer)
+          ? { path: "ink-release-devtools", namespace: "atape-release" } : undefined)
+      build.onLoad({ filter: /.*/, namespace: "atape-release" }, () => ({ contents: "export {};", loader: "js" }))
+    }
+  }],
   legalComments: "eof",
   logLevel: "info"
 })
