@@ -7,7 +7,7 @@ import { CollectorStateStore } from "./collector.ts"
 import { ProjectSetupGateway, type SetupRemoteProject } from "./projectSetup.ts"
 import {
   CLISetupPlatform, changeProjectSources, completeGuidedSetup, guidedSourceChoices,
-  inspectCLIExperience, prepareGuidedSetup, removeExperienceProject, startExperienceCollector
+  inspectCLIExperience, prepareGuidedSetup, removeExperienceProject, startExperienceCollector, stopExperienceCollector
 } from "./cliExperience.ts"
 
 const date = "2026-09-08T00:00:00Z"
@@ -162,4 +162,47 @@ describe("CLI experience application Interface", () => {
     expect(client.config().projects).toHaveLength(1)
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("no_sources")
   })
+  it("distinguishes automatic retry, required repair and stopped sync without starting jobs on inspection", async () => {
+    const client = fixture()
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const failure = { projectId: project.id, adapterId: "codex", lastAttemptAt: date,
+      lastFailureAt: date, failureReason: "transport" as const, failureMessage: "Server unavailable", retryable: true }
+    client.record({ version: 1, jobs: [failure] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("automatic_retry")
+    client.record({ version: 1, jobs: [{ ...failure, retryable: false }] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("repair")
+    client.record({ version: 1, jobs: [failure], collectorFailure: { occurredAt: date, message: "Cannot read configuration" } })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("repair")
+    client.record({ version: 1, jobs: [failure] })
+    await client.run(stopExperienceCollector())
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("resume")
+    expect(client.starts()).toBe(1)
+  })
+
+  it("routes global authentication blocks to the affected Project, including while the process is stopping", async () => {
+    const client = fixture()
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const other = { ...project, id: "other-project", path: "/work/other", name: "Other", instanceOrigin: "https://other.example" }
+    client.edit(config => ({ ...config, projects: [...config.projects, other] }))
+    client.record({ version: 1, jobs: [{ projectId: other.id, adapterId: "codex", lastAttemptAt: date,
+      failureReason: "unauthenticated", failureMessage: "Expired credential", retryable: false }] })
+    const snapshot = await client.run(inspectCLIExperience())
+    expect(snapshot.projects[0]?.recovery).toEqual({ kind: "sign_in_elsewhere", project: other })
+    expect(snapshot.projects[1]?.recovery.kind).toBe("sign_in")
+    expect(client.starts()).toBe(1)
+  })
+
+  it("keeps partial coverage distinct from failures and clears recovery after a healthy cycle", async () => {
+    const client = fixture()
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const job = { projectId: project.id, adapterId: "codex", lastAttemptAt: date, lastSuccessAt: date, canonicalBatches: 1 }
+    client.record({ version: 1, jobs: [{ ...job, sourceFailures: [{ source: "old-session", reason: "attribution" }] }] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("partial")
+    client.record({ version: 1, jobs: [job] })
+    expect((await client.run(inspectCLIExperience())).projects[0]).toMatchObject({ state: "up_to_date", recovery: { kind: "none" } })
+  })
+
 })

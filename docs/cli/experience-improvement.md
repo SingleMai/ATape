@@ -176,3 +176,82 @@ publication follows the repository release gates and is not a Server deployment.
 The next experience increment is broader terminal and live-account acceptance:
 x64, Windows TUI, SSH/tmux, IME and accessibility remain pending. Reboot
 persistence remains deliberately excluded; `atape start` provides manual resume.
+
+## Welcome and navigation increment
+
+The v0.3.1 candidate improves the existing Ink presentation without a new GUI
+or changes to capture authorization. Publication follows the repository release
+gates; this guide does not attest manual staging acceptance.
+
+- Bare `atape` with no Projects shows a monochrome pixel-cassette welcome and one
+  primary connection action. Explicit `atape setup` still opens the path directly.
+  Small terminals replace the welcome artwork with compact text.
+- Returning users see Project rows with source and sync state. `/` searches names,
+  sources, Teams and status; Enter opens the focused Project. Tab switches to a
+  separate global action bar. Search text, focused Project and the visible list
+  position survive returning from details. Manual and periodic refreshes update
+  the current page in place, preserving navigation; a late refresh cannot pull the
+  user back from another page.
+- Project actions reflect their state: enable sources, resume global sync, or
+  sign in after an authentication failure. Account controls, removal and detailed
+  diagnostics live in Project settings. Removal and global Stop retain explicit
+  confirmation and do not delete captured server history.
+- Directory candidates are visible on entry and while typing. Arrow keys choose,
+  Enter browses folders (including the parent directory), and a fixed `Use current
+  directory` action connects the chosen location. Tab switches to path editing;
+  Enter after editing returns focus to that action without submitting setup. A `[Git]` hint recognizes both `.git` directories and
+  worktree files; this is not an identity check. The application Module still
+  resolves and validates the actual repository, shown before confirmation.
+- Browser login offers a link-opening action and continues automatically after
+  approval. The no-Team Web/Refresh detour remains available. Opening a Web Project
+  displays its link in the existing Project page; notices and refresh failures
+  appear before long details, so they are not hidden by pagination.
+- Terminal dimensions are observed live. Narrow Project lists prioritize names
+  and status over source columns. Ink controls and the cassette share the terminal
+  theme Adapter; normal commands and JSON retain their existing output.
+
+Validation exercises presenter intents against disposable Node Layers, bounded
+filesystem browsing, and the installable CLI's real PTY. The PTY scenarios include
+visible Unicode/space candidates, bracketed paste without submission, resize,
+search containing `q`, retained filtered viewports, in-place refreshes, late refresh
+completion after navigation, browsing without connecting, switching action focus,
+inline Web results, source changes,
+Ctrl+C/SIGTERM, and terminal restoration.
+
+This increment does not add immediate per-Project collection, reboot persistence,
+conversation browsing in the terminal, or filesystem-wide discovery. Collection
+failures retain their existing retry behavior. The next increment is acceptance
+on additional terminal environments (x64, Windows, SSH/tmux, IME and accessibility)
+and feedback from everyday use of this navigation.
+
+
+### Recovery follows the user's next action
+
+The Project snapshot now describes recovery through the application Module
+Interface. It distinguishes enabling sources, signing in, resuming a stopped
+Collector, awaiting an automatic retry, fixing a persistent issue, and reviewing
+partial coverage. This translates the existing Collector behavior; it does not
+add a second retry policy or a per-Project restart operation.
+
+Project rows name the actionable state, and Project details place the explanation
+and failure before long repository paths. The primary action opens sign-in,
+recovery details or skipped-conversation details as appropriate. A credential
+failure in another Project offers direct sign-in for that Project's Instance,
+then resumes all enabled Projects through the existing account checks.
+
+Only retryable job failures with a running Collector and no global blocker are
+shown as awaiting automatic retry. No countdown is invented: a later collection
+cycle may also be delayed by other work. Non-retryable and unclassified failures
+require inspection even though periodic checks may continue. Partial source
+failures explain the affected source and reason without promising recovery of
+unknown historical attribution.
+
+`Refresh status` only rereads status. The Project page and diagnostics keep their
+context and show that sync timing is unchanged; they never start or restart the
+Collector. Diagnostics include source-specific guidance and existing source or
+resume actions. Generic operation failures label retry as `Retry this operation`,
+with sign-in first when authentication is required.
+
+Validation covers automatic retry versus required repair, stopped/background
+state, global authentication blockers, partial recovery, action ordering, error
+visibility, and in-place diagnostics refresh without starting collection.

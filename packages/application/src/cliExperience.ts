@@ -7,7 +7,7 @@ import {
   applyProjectSetup, planProjectSetup, ProjectSetupGateway,
   type ProjectSetupPlan, type ProjectSetupSelection
 } from "./projectSetup.ts"
-import { inspectManagedCollector, startManagedCollector, stopManagedCollector, type ManagedCollectorJobStatus } from "./collectorDaemon.ts"
+import { inspectManagedCollector, startManagedCollector, stopManagedCollector, type ManagedCollectorJobStatus, type ManagedCollectorStatus } from "./collectorDaemon.ts"
 import { CollectorStateStore } from "./collector.ts"
 import { CLIAuthenticationGateway } from "./cliAuthentication.ts"
 import { normalizeInstanceTopology } from "@atape/domain"
@@ -23,11 +23,18 @@ export const officialSources = [
   { id: "claude", label: "Claude Code", packageName: "@atape/adapter-claude" }
 ] as const
 
+export type DirectorySuggestion = {
+  readonly path: string
+  // A local .git entry is a browsing hint, not repository identity or authorization.
+  readonly git: boolean
+  readonly parent?: true
+}
+
 // Local filesystem/package inspection is a real Adapter Seam. It never reads
 // conversation bodies. Creation keys survive interruption before local commit.
 export class CLISetupPlatform extends Context.Service<CLISetupPlatform, {
   detectSources(): Effect.Effect<ReadonlyArray<string>, CLIExperienceError>
-  suggestDirectories(input: string): Effect.Effect<ReadonlyArray<string>, CLIExperienceError>
+  suggestDirectories(input: string): Effect.Effect<ReadonlyArray<DirectorySuggestion>, CLIExperienceError>
   supportsGit(adapter: AdapterInstallation): Effect.Effect<boolean, CLIExperienceError>
   creationKey(scope: { readonly instanceOrigin: string; readonly userId: string; readonly teamId: string; readonly path: string; readonly name: string }): Effect.Effect<string, CLIExperienceError>
 }>()("atape/application/CLISetupPlatform") {}
@@ -213,9 +220,15 @@ export const removeExperienceProject = Effect.fn("CLIExperience.remove")(functio
 })
 
 export type ProjectSyncState = "no_sources" | "stopped" | "waiting" | "syncing" | "queued" | "up_to_date" | "partial" | "failed"
+// Describes the existing Collector recovery behavior; presentation must not
+// infer a retry schedule or restart collection merely to refresh its status.
+export type ProjectRecovery =
+  | { readonly kind: "sources" | "sign_in" | "resume" | "automatic_retry" | "repair" | "partial" | "none" }
+  | { readonly kind: "sign_in_elsewhere"; readonly project: LocalProject }
 export type ConsoleProject = {
   readonly project: LocalProject
   readonly state: ProjectSyncState
+  readonly recovery: ProjectRecovery
   readonly jobs: ReadonlyArray<ManagedCollectorJobStatus>
 }
 export const inspectCLIExperience = Effect.fn("CLIExperience.inspect")(function*() {
@@ -236,10 +249,23 @@ export const inspectCLIExperience = Effect.fn("CLIExperience.inspect")(function*
       : jobs.some(job => job.hasMore) ? "queued"
       : jobs.some(job => job.state === "pending") ? "syncing"
       : captured || jobs.some(job => (job.canonicalBatches ?? 0) > 0) ? "up_to_date" : "waiting"
-    projects.push({ project, state, jobs })
+    projects.push({ project, state, jobs, recovery: projectRecovery(project, jobs, collector, config.projects) })
   }
   return { projects, collector, activeInstanceOrigin: config.activeInstanceOrigin }
 })
+const projectRecovery = (project: LocalProject, jobs: ReadonlyArray<ManagedCollectorJobStatus>, collector: ManagedCollectorStatus, projects: ReadonlyArray<LocalProject>): ProjectRecovery => {
+  if (project.adapterIds.length === 0) return { kind: "sources" }
+  if (jobs.some(job => job.failureReason === "unauthenticated")) return { kind: "sign_in" }
+  // One expired credential stops the global Collector, including healthy jobs.
+  const blockedBy = projects.find(candidate => collector.jobs.some(job => job.projectId === candidate.id && job.failureReason === "unauthenticated"))
+  if (blockedBy) return { kind: "sign_in_elsewhere", project: blockedBy }
+  const failures = jobs.filter(job => job.state === "failed")
+  if (collector.collectorFailure || failures.some(job => job.retryable !== true)) return { kind: "repair" }
+  if (!collector.running) return { kind: "resume" }
+  if (failures.length > 0) return { kind: "automatic_retry" }
+  if (jobs.some(job => job.state === "partial")) return { kind: "partial" }
+  return { kind: "none" }
+}
 export type CLIExperienceSnapshot = Effect.Success<ReturnType<typeof inspectCLIExperience>>
 
 export const observeInitialSync = Effect.fn("CLIExperience.firstSync")(function*(project: LocalProject) {
