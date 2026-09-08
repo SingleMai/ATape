@@ -1,7 +1,7 @@
 import { CLISetupPlatform } from "@atape/application"
 import { AdapterProtocolVersion, GitAttributionVersion } from "@atape/domain"
 import { Effect } from "effect"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -56,6 +56,23 @@ describe("Node guided setup Adapter", () => {
     expect(new Set(first).size).toBe(1)
     expect(await key()).toBe(first[0])
     expect(await key("another-user")).not.toBe(first[0])
+  })
+
+  it("fuzzy-finds nested project names with ranked matches and skips dependencies, hidden folders and symlink loops", async () => {
+    const { root, run } = await fixture()
+    for (const name of ["ATape", "Archive-Tape", "work/atape-web", "工作/磁带项目", "node_modules/atape", ".cache/atape", "a/b/c/too-deep-atape"]) {
+      await mkdir(join(root, name), { recursive: true })
+    }
+    await mkdir(join(root, "ATape/.git"))
+    await mkdir(join(root, "ATape/atape-internals"))
+    await symlink(root, join(root, "loop"))
+    const search = (query: string) => run(Effect.gen(function*() {
+      return yield* (yield* CLISetupPlatform).suggestDirectories(root, query)
+    }))
+    expect((await search("ATAPE")).map(item => item.path)).toEqual([join(root, "ATape") + "/", join(root, "work/atape-web") + "/", join(root, "Archive-Tape") + "/"])
+    expect((await search("atp")).map(item => item.path)).toContain(join(root, "Archive-Tape") + "/")
+    expect(await search("磁项")).toEqual([{ path: join(root, "工作/磁带项目") + "/", git: false }])
+    expect(await search("nonexistent")).toEqual([])
   })
   it("checks the actual installed capability and package identity", async () => {
     const client = await fixture()

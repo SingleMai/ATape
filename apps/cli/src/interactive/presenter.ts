@@ -1,7 +1,7 @@
 import {
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
-  loginCLI, logoutCLI, upgradeAdapters, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
+  loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
   setActiveInstance, startExperienceCollector, stopExperienceCollector,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
 } from "@atape/application"
@@ -40,20 +40,26 @@ const stateLabels = {
   partial: "Partial coverage", failed: "Needs attention"
 } as const
 const recoveryLabels: Record<ProjectRecovery["kind"], string | undefined> = {
-  sources: "No tools enabled", tool: "Tool needs attention", sign_in: "Sign-in required", sign_in_elsewhere: "Blocked by sign-in",
-  resume: "Sync stopped", automatic_retry: "Waiting to retry", repair: "Needs a fix", partial: "Partial coverage", none: undefined
+  sources: "No tools enabled", tool: "Conversations not syncing", sign_in: "Sign-in required", sign_in_elsewhere: "Blocked by sign-in",
+  resume: "Sync stopped", automatic_retry: "Waiting to retry", repair: "Sync failed", partial: "Partial coverage", none: undefined
 }
 const statusLabel = (item: ConsoleProject) => recoveryLabels[item.recovery.kind] ?? stateLabels[item.state]
 const toolLabel = (id: string) => id === "claude" ? "Claude Code" : id === "codex" ? "Codex" : id
-const recoveryGuidance = (item: ConsoleProject, running: boolean): string => {
+const recoveryGuidance = (item: ConsoleProject): string => {
   switch (item.recovery.kind) {
     case "sources": return "Enable tools once for all connected projects."
-    case "tool": return `${item.recovery.adapterId} needs setup or an update in Tools.`
+    case "tool": return item.recovery.action === "install"
+      ? `ATape needs to install its ${toolLabel(item.recovery.adapterId)} reader to sync these conversations.`
+      : `ATape couldn't read ${toolLabel(item.recovery.adapterId)} conversations. Updating ATape's reader may help.`
     case "sign_in": return "Sign in again to resume background sync for all enabled projects."
     case "sign_in_elsewhere": return `${item.recovery.project.name} needs sign-in before background sync can continue.`
     case "resume": return "Start sync for all projects to resume. Access is checked before starting."
     case "automatic_retry": return "Sync will retry automatically in a later background cycle. No action is needed."
-    case "repair": return running ? "Review the issue below. Background checks continue, but it may need a fix." : "Review the issue below, then start sync for all projects."
+    case "repair": {
+      const job = item.jobs.find(job => job.state === "failed")
+      return job?.failureReason ? `${toolLabel(job.adapterId)} conversations could not sync. ${failureGuidance[job.failureReason]}`
+        : "ATape couldn't run background sync. See Sync details for the latest error."
+    }
     case "partial": return "Some conversations were skipped. Other conversations continue syncing."
     case "none": return item.state === "waiting" ? "Use a connected source in this project. New conversations will sync automatically." : ""
   }
@@ -61,9 +67,9 @@ const recoveryGuidance = (item: ConsoleProject, running: boolean): string => {
 const failureGuidance = {
   unauthenticated: "Sign in again from this project to resume sync.",
   transport: "Check your network and access to the ATape instance.",
-  adapter: "Check that the source data is available and its integration is compatible.",
+  adapter: "ATape couldn't read local conversations. Check the reported file path and read permissions.",
   state: "Check the local ATape data directory, permissions and free disk space.",
-  contract: "Check integration compatibility; update the affected adapter if needed."
+  contract: "ATape couldn't process the reader's output. Try updating ATape's reader; if this continues, share these details when reporting the issue."
 } as const
 const sourceFailureGuidance = {
   io: "Source data could not be read. Check its path and permissions.",
@@ -150,14 +156,15 @@ export class ExperiencePresenter {
   private failed(error: unknown, retry: () => void, back: () => void) {
     const reason = typeof error === "object" && error !== null && "reason" in error ? error.reason : undefined
     const instance = typeof error === "object" && error !== null && "instanceOrigin" in error && typeof error.instanceOrigin === "string" ? error.instanceOrigin : undefined
+    const reader = typeof error === "object" && error !== null && "adapterId" in error && typeof error.adapterId === "string" ? error.adapterId : undefined
     this.show({ kind: "menu", title: "Let's get this working", details: [error instanceof Error ? error.message : String(error)],
       options: [
-        ...(reason === "upgrade" ? [{ value: "tools", label: "Open Tools" }] : []),
+        ...(reason === "upgrade" && reader ? [{ value: "reader", label: "Update ATape reader and continue" }] : []),
         ...(reason === "unauthenticated" || reason === "changed" && instance ? [{ value: "login", label: "Sign in again" }] : []),
         { value: "retry", label: reason === "changed" && !instance ? "Review again" : "Retry this operation" }
       ] }, value => {
         if (value === "retry") retry()
-        else if (value === "tools") this.tools(retry)
+        else if (value === "reader" && reader) this.work(`Updating ATape's ${toolLabel(reader)} reader`, updateSyncReader(reader), retry, undefined, back)
         else if (value === "login") { if (instance) this.instanceOrigin = instance; this.login(retry, back) }
       }, back)
   }
@@ -221,7 +228,7 @@ export class ExperiencePresenter {
   }
   private pathScreen() {
     this.show({ kind: "input", title: "Connect a Project", initial: this.path, pathInput: true,
-      details: [`Instance: ${this.instanceOrigin}`, "Browse or paste a directory. Git subdirectories resolve to the repository root."] }, value => {
+      details: ["Type a project name to search here, or paste its path.", "Search includes folders up to 3 levels below the current directory."] }, value => {
       this.path = String(value)
       this.prepare()
     }, this.home)
@@ -236,7 +243,7 @@ export class ExperiencePresenter {
       }, undefined, () => this.instanceScreen(after, back))
     }, back)
   }
-  pathChanged = (value: string) => {
+  pathChanged = (value: string, query?: string) => {
     this.suggestions?.abort()
     if (!this.screen.pathInput) return
     this.path = value
@@ -247,7 +254,7 @@ export class ExperiencePresenter {
     void this.run(Effect.gen(function*() {
       yield* Effect.sleep(120)
       const platform = yield* CLISetupPlatform
-      return yield* platform.suggestDirectories(value)
+      return yield* platform.suggestDirectories(value, query)
     }).pipe(Effect.catch(() => Effect.succeed([] as DirectorySuggestion[]))), AbortSignal.any([controller.signal, this.lifetime.signal])).then(suggestions => {
       if (!controller.signal.aborted && this.screen.revision === revision) this.publish({ ...this.screen, suggestions, directoriesLoading: false })
     }).catch(() => {})
@@ -317,7 +324,7 @@ export class ExperiencePresenter {
   private showSources(title: string, choices: ReadonlyArray<SourceChoice>, selected: ReadonlyArray<string> | undefined,
     details: ReadonlyArray<string>, submit: (ids: string[]) => void, back: () => void) {
     this.show({ kind: "sources", title, details, selected: selected ?? choices.filter(choice => choice.selected).map(choice => choice.id),
-      options: choices.map(choice => ({ value: choice.id, label: `${choice.label} · ${choice.detected ? "Found on this machine" : "Not detected"}${choice.installed ? " · Ready" : ""}` }))
+      options: choices.map(choice => ({ value: choice.id, label: choice.label }))
     }, value => submit(Array.isArray(value) ? value : [value]), back)
   }
   private reviewSetup(plan: GuidedSetupPlan, teamId: string, ids: ReadonlyArray<string>, name?: string) {
@@ -392,7 +399,7 @@ export class ExperiencePresenter {
     }))
     const actions = [
       { value: "add", label: "Add project" },
-      { value: "tools", label: "Tools" }, { value: "settings", label: "Settings" },
+      { value: "tools", label: "Choose tools to sync" }, { value: "settings", label: "Settings" },
       ...(!snapshot.collector.running && snapshot.projects.some(item => item.project.adapterIds.length > 0) ? [{ value: "start", label: "Start sync" }] : [])
     ]
     this.show({ kind: "menu", refreshable: true, title: selected ? selected.project.name : "Your Projects",
@@ -401,21 +408,21 @@ export class ExperiencePresenter {
         status: statusLabel(item), team: item.project.teamName
       })), ...(this.focusedProject ? { focusedProject: this.focusedProject } : {}) } : {}),
       ...((notice ?? (refresh ? this.screen.notice : undefined)) ? { notice: notice ?? this.screen.notice! } : {}),
-      details: selected ? this.projectDetails(selected, snapshot) : [
+      details: selected ? this.projectDetails(selected) : [
         `${snapshot.collector.running ? "Syncing" : "Sync stopped"} · ${snapshot.projects.length} projects · ${snapshot.needsAttention} need attention`,
-        snapshot.toolsConfigured ? `Tools: ${snapshot.enabledTools.map(toolLabel).join(" + ") || "None enabled"}` : "No tools configured. Open Tools to get started.",
+        snapshot.toolsConfigured ? `Tools: ${snapshot.enabledTools.map(toolLabel).join(" + ") || "None enabled"}` : "Choose which tools' conversations to sync.",
         ...(snapshot.collector.collectorFailure ? [snapshot.collector.collectorFailure.message] : [])
       ], options }, value => this.consoleAction(String(value), selected), selected ? () => this.list() : () => this.close(), refresh ? revision : undefined)
     this.consoleTarget = selected?.project ?? "list"
   }
   private projectOptions(item: ConsoleProject) {
-    const primary = item.recovery.kind === "sources" ? { value: "tools", label: "Set up tools" }
-      : item.recovery.kind === "tool" ? { value: "tool", label: `Fix ${toolLabel(item.recovery.adapterId)}` }
+    const primary = item.recovery.kind === "sources" ? { value: "tools", label: "Choose tools to sync" }
+      : item.recovery.kind === "tool" ? { value: "tool", label: item.recovery.action === "install" ? "Set up conversation sync" : "Update ATape reader and continue" }
       : item.recovery.kind === "sign_in" ? { value: "login", label: "Sign in again and resume" }
       : item.recovery.kind === "sign_in_elsewhere" ? { value: "unblock", label: `Sign in for ${item.recovery.project.name} and resume` }
       : item.recovery.kind === "resume" ? { value: "start", label: "Start sync for all projects" }
       : item.recovery.kind === "partial" ? { value: "diagnostics", label: "Review skipped conversations" }
-      : item.recovery.kind === "repair" ? { value: "diagnostics", label: "Resolve sync issue" }
+      : item.recovery.kind === "repair" ? { value: "diagnostics", label: "View sync issue" }
       : item.recovery.kind === "automatic_retry" ? { value: "diagnostics", label: "View retry details" }
       : { value: "diagnostics", label: "Sync details" }
     return [
@@ -424,11 +431,9 @@ export class ExperiencePresenter {
       { value: "remove", label: "Disconnect project" }
     ]
   }
-  private projectDetails(item: ConsoleProject, snapshot: CLIExperienceSnapshot) { return [
+  private projectDetails(item: ConsoleProject) { return [
     statusLabel(item),
-    ...(recoveryGuidance(item, snapshot.collector.running) ? [recoveryGuidance(item, snapshot.collector.running)] : []),
-    ...item.jobs.flatMap(job => job.failureMessage ? [`${job.adapterId}: ${job.failureMessage}`] : []),
-    ...(snapshot.collector.collectorFailure ? [snapshot.collector.collectorFailure.message] : []),
+    ...(recoveryGuidance(item) ? [recoveryGuidance(item)] : []),
     ...(item.recovery.kind === "automatic_retry" || item.recovery.kind === "repair" ? ["Refresh status only updates this page."] : []),
     `${item.project.teamName} · ${item.project.instanceOrigin}`,
     item.project.type === "git" ? `Git: ${item.project.repositoryIdentity ?? item.project.repositoryRemote ?? item.project.name}` : `Directory: ${item.project.path}`,
@@ -441,10 +446,10 @@ export class ExperiencePresenter {
     const back = () => this.detail(item.project)
     const running = Boolean(this.latest?.collector.running)
     this.show({ kind: "menu", diagnostics: true, refreshable: true, title: "Sync details", ...(notice ? { notice } : {}), details: [
-      item.project.name, recoveryGuidance(item, running),
+      item.project.name, recoveryGuidance(item),
       ...(this.latest?.collector.collectorFailure ? [this.latest.collector.collectorFailure.message] : []),
       ...item.jobs.flatMap(job => [
-        `${job.adapterId}: ${job.state}`,
+        `${toolLabel(job.adapterId)}: ${job.state}`,
         ...(job.failureMessage ? [job.failureMessage] : []),
         ...(job.failureReason ? [failureGuidance[job.failureReason]] : []),
         ...(job.lastSuccessAt ? [`Last completed: ${job.lastSuccessAt}`] : []),
@@ -455,7 +460,7 @@ export class ExperiencePresenter {
       ...(item.recovery.kind === "sign_in" ? [{ value: "login", label: "Sign in again and resume" }] : []),
       ...(item.recovery.kind === "sign_in_elsewhere" ? [{ value: "unblock", label: `Sign in for ${item.recovery.project.name} and resume` }] : []),
       ...(!running && item.recovery.kind !== "sign_in" && item.recovery.kind !== "sign_in_elsewhere" ? [{ value: "start", label: "Start sync for all projects" }] : []),
-      ...(item.recovery.kind === "tool" ? [{ value: "tool", label: `Fix ${toolLabel(item.recovery.adapterId)}` }] : [{ value: "tools", label: "Tools" }])
+      ...(item.recovery.kind === "tool" ? [this.projectOptions(item)[0]!] : [])
     ] }, value => {
       if (value === "refresh") this.refreshConsole()
       else this.consoleAction(String(value), item)
@@ -474,7 +479,13 @@ export class ExperiencePresenter {
     else if (value === "stop") this.confirm("Stop background sync?", ["This stops future collection for ALL local Projects. Captured history is retained."], "Stop all sync", () => this.work("Stopping background sync", stopExperienceCollector(), () => this.list(), undefined, back), back)
     else if (value === "settings") this.settings()
     else if (value === "tools") this.tools(back)
-    else if (item && value === "tool" && item.recovery.kind === "tool") this.toolDetails(item.recovery.adapterId, back)
+    else if (item && value === "tool" && item.recovery.kind === "tool") {
+      const { adapterId, action } = item.recovery
+      this.work(`${action === "install" ? "Installing" : "Updating"} ATape's ${toolLabel(adapterId)} reader`,
+        updateSyncReader(adapterId, item.project).pipe(Effect.andThen(inspectCLIExperience())),
+        snapshot => this.showConsole(snapshot, item.project, false,
+          "ATape reader installed. Background sync will use it on its next attempt. The last sync result is shown below."), undefined, back)
+    }
     else if (item && value === "diagnostics") this.diagnostics(item)
     else if (item && value === "unblock" && item.recovery.kind === "sign_in_elsewhere") {
       this.instanceOrigin = item.recovery.project.instanceOrigin
@@ -489,18 +500,12 @@ export class ExperiencePresenter {
     ], "Disconnect project", () => this.work("Disconnecting project", removeExperienceProject(item.project), () => this.list(), undefined, back), back)
   }
   private tools(back = () => this.list()) {
-    this.work("Reading tools", inspectTools(), inspection => this.show({ kind: "menu", title: "Tools",
-      details: ["Configured once on this machine, for all connected projects."],
-      options: [{ value: "configure", label: "Choose tools" }, ...inspection.choices.map(choice => ({ value: choice.id,
-        label: `${choice.label} · ${inspection.configured && choice.selected ? "Enabled" : "Not enabled"} · ${choice.installed ? "Ready" : "Needs setup"}` }))]
-    }, value => value === "configure" ? this.configureTools(() => this.tools(back), () => this.tools(back))
-      : this.toolDetails(String(value), () => this.tools(back)), back), undefined, back)
+    this.configureTools(back, back)
   }
   private configureTools(after: () => void, back: () => void, selected?: ReadonlyArray<string>) {
-    this.work("Reading tools", inspectTools(), inspection => this.showSources("Which tools do you use?", inspection.choices, selected, [
+    this.work("Reading tools", inspectTools(), inspection => this.showSources("Which conversations should ATape sync?", inspection.choices, selected, [
       "This selection applies to all connected projects on this machine.",
-      "Save sets up the selected integrations. Connecting a project is a separate step.",
-      "Local detection does not mean every project has conversations.",
+      "ATape will set up the selected tools when you save.",
     ], ids => this.work("Reviewing tool changes", planToolChange(ids), plan => {
       const apply = () => this.work("Setting up tools", applyToolChange(plan), () => {
         this.toolsConfigured = true; this.enabledTools = plan.ids
@@ -513,7 +518,7 @@ export class ExperiencePresenter {
           }, () => this.configureTools(after, back, ids), () => this.configureTools(after, back, ids))
         } else this.failed(error, () => this.configureTools(after, back, ids), () => this.configureTools(after, back, ids))
       }, () => this.configureTools(after, back, ids))
-      if (plan.projects.length === 0) return apply()
+      if (plan.projects.length === 0 || plan.projects.every(change => change.added.length === 0 && change.removed.length === 0)) return apply()
       this.confirm("Apply tools to all projects?", [
         `Tools: ${ids.map(toolLabel).join(", ") || "None"} · ${plan.projects.length} connected projects`,
         ...plan.projects.map(change => `${change.project.name} · ${change.project.teamName} · ${change.project.instanceOrigin}: ${[
@@ -523,19 +528,6 @@ export class ExperiencePresenter {
         "Changes apply to later cycles; an in-flight upload may finish.",
       ], "Apply to all projects", apply, () => this.configureTools(after, back, ids))
     }, undefined, () => this.configureTools(after, back, ids)), back), undefined, back)
-  }
-  private toolDetails(id: string, back: () => void) {
-    this.work("Reading tool", inspectTools(), inspection => {
-      const tool = inspection.choices.find(choice => choice.id === id)
-      this.show({ kind: "menu", title: tool?.label ?? toolLabel(id), details: [
-        tool?.installed ? `Ready · version ${tool.version}` : "Tool integration needs setup.",
-        "Installation and updates apply to this machine. They do not enable additional tools."
-      ], options: [
-        ...(tool?.installed ? [{ value: "upgrade", label: "Update integration" }] : []),
-        { value: "configure", label: "Choose tools" }
-      ] }, value => value === "upgrade" ? this.work("Updating integration", upgradeAdapters(id), () => this.toolDetails(id, back), undefined, back)
-        : this.configureTools(() => this.toolDetails(id, back), () => this.toolDetails(id, back)), back)
-    }, undefined, back)
   }
   private settings() {
     this.work("Reading settings", inspectCLIExperience(), snapshot => this.show({ kind: "menu", title: "Settings",

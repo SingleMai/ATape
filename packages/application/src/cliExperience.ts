@@ -35,7 +35,7 @@ export type DirectorySuggestion = {
 // conversation bodies. Creation keys survive interruption before local commit.
 export class CLISetupPlatform extends Context.Service<CLISetupPlatform, {
   detectSources(): Effect.Effect<ReadonlyArray<string>, CLIExperienceError>
-  suggestDirectories(input: string): Effect.Effect<ReadonlyArray<DirectorySuggestion>, CLIExperienceError>
+  suggestDirectories(input: string, query?: string): Effect.Effect<ReadonlyArray<DirectorySuggestion>, CLIExperienceError>
   supportsGit(adapter: AdapterInstallation): Effect.Effect<boolean, CLIExperienceError>
   creationKey(scope: { readonly instanceOrigin: string; readonly userId: string; readonly teamId: string; readonly path: string; readonly name: string }): Effect.Effect<string, CLIExperienceError>
 }>()("atape/application/CLISetupPlatform") {}
@@ -145,7 +145,7 @@ export const completeGuidedSetup = Effect.fn("CLIExperience.complete")(function*
       const installed = currentConfig.adapters.find(adapter => adapter.adapterId === id)
       if (!installed || plan.project.local.type === "git" && !(yield* platform.supportsGit(installed))) {
         return yield* new CLIExperienceError({ reason: "upgrade", adapterId: id,
-          message: `${id} needs setup or an update in Tools before this Project can connect.` })
+          message: `ATape needs an updated ${officialSources.find(source => source.id === id)?.label ?? id} reader before this project can connect.` })
       }
     }
   }
@@ -230,6 +230,28 @@ export const startExperienceCollector = Effect.fn("CLIExperience.start")(functio
 })
 export const stopExperienceCollector = stopManagedCollector
 
+// Package maintenance is global; keep selection and capture checkpoints intact.
+// A running Collector loads the replacement on a later cycle, without a restart.
+export const updateSyncReader = Effect.fn("CLIExperience.updateSyncReader")(function*(id: string, project?: LocalProject) {
+  const config = yield* inspectClient()
+  if (!config.enabledAdapterIds.includes(id)) return yield* changed("The selected tools changed. Review your selection again.")
+  if (project) yield* currentProject(project)
+  for (const connected of config.projects.filter(item => item.adapterIds.length > 0)) yield* verifyProjectAccount(connected)
+  const installed = config.adapters.find(adapter => adapter.adapterId === id)
+  if (installed) yield* upgradeAdapters(id)
+  else {
+    const source = officialSources.find(source => source.id === id)
+    if (!source) return yield* new CLIExperienceError({ reason: "selection", message: `The ${id} reader is no longer available. Choose another tool to sync.` })
+    yield* installAdapter(source.packageName)
+  }
+  const current = yield* inspectClient()
+  if (toolScope(current) !== toolScope(config)) return yield* changed("Projects or tools changed during the update. Review the project again.")
+  if (project) {
+    yield* currentProject(project)
+    if (!(yield* inspectManagedCollector()).running) yield* startExperienceCollector()
+  }
+})
+
 export const removeExperienceProject = Effect.fn("CLIExperience.remove")(function*(project: LocalProject) {
   yield* currentProject(project)
   yield* removeProject(project.id)
@@ -241,7 +263,7 @@ export type ProjectSyncState = "no_sources" | "stopped" | "waiting" | "syncing" 
 export type ProjectRecovery =
   | { readonly kind: "sources" | "sign_in" | "resume" | "automatic_retry" | "repair" | "partial" | "none" }
   | { readonly kind: "sign_in_elsewhere"; readonly project: LocalProject }
-  | { readonly kind: "tool"; readonly adapterId: string }
+  | { readonly kind: "tool"; readonly adapterId: string; readonly action: "install" | "update" }
 export type ConsoleProject = {
   readonly project: LocalProject
   readonly state: ProjectSyncState
@@ -267,9 +289,12 @@ export const inspectCLIExperience = Effect.fn("CLIExperience.inspect")(function*
       : jobs.some(job => job.state === "pending") ? "syncing"
       : captured || jobs.some(job => (job.canonicalBatches ?? 0) > 0) ? "up_to_date" : "waiting"
     const missing = project.adapterIds.find(id => !config.adapters.some(adapter => adapter.adapterId === id))
-    const broken = jobs.find(job => job.state === "failed" && (job.failureReason === "adapter" || job.failureReason === "contract"))
+    const broken = jobs.find(job => job.state === "failed" && job.failureReason === "contract" && job.retryable !== true)
+    const recovery = projectRecovery(project, jobs, collector, config.projects)
     projects.push({ project, state: missing ? "failed" : state, jobs,
-      recovery: missing ? { kind: "tool", adapterId: missing } : broken ? { kind: "tool", adapterId: broken.adapterId } : projectRecovery(project, jobs, collector, config.projects) })
+      recovery: recovery.kind === "sign_in" || recovery.kind === "sign_in_elsewhere" ? recovery
+        : missing ? { kind: "tool", adapterId: missing, action: "install" }
+        : broken ? { kind: "tool", adapterId: broken.adapterId, action: "update" } : recovery })
   }
   return { projects, collector, activeInstanceOrigin: config.activeInstanceOrigin,
     toolsConfigured: config.toolsConfigured, enabledTools: config.enabledAdapterIds,

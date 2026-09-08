@@ -1,6 +1,7 @@
 # CLI user journey: global tools and connected Projects
 
-Status: Implemented in the v0.4.0 candidate; publication follows the release gates.
+Status: Global tool selection shipped in v0.4.0. Direct selection and reader
+recovery and local name-search changes are implemented and await publication.
 This specification supersedes per-Project tool selection in the earlier
 experience guide. Command and persistence behavior is documented in
 setup-and-adapters.md; ADR-0040 records the configuration decision.
@@ -13,7 +14,7 @@ to the local ATape installation, across its connected Projects and Instances.
 It is not an account-wide or Team-wide setting shared with other machines.
 
 The TUI names actual tools, such as Claude Code and Codex. Adapter packages,
-versions and acquisition details appear in tool details when needed. Installing
+versions and acquisition details remain available through explicit CLI commands. Installing
 a package and authorizing capture remain distinct operations: an installed
 Adapter is not implicitly enabled, and enabling a tool does not discover or
 connect additional repositories.
@@ -31,13 +32,20 @@ identity applies only outside Git.
    mandatory stop on subsequent launches once initial setup is complete. The
    theme-color cassette remains in the shared header on every interactive page,
    adapting its size to the terminal rather than disappearing after first use.
-2. `Which tools do you use?` shows Claude Code and Codex with simple selection
-   and local detection status. Detection only means local source data exists.
+2. `Which conversations should ATape sync?` shows Claude Code and Codex with simple selection
+   checkboxes. Detection may preselect tools on first use.
    Saving enables the chosen tools globally and installs their Adapters as
    necessary. With no connected Projects, this does not import conversations.
-3. `Connect a project` starts from the current directory and supports browsing
-   and pasting another path. Enter browses candidates; an explicit action selects
-   the directory. Git subdirectories resolve to the worktree root.
+3. `Connect a project` starts from the current directory. Typing a project name
+   fuzzy-searches directory names below it, ignoring case and allowing gaps.
+   Results show full paths to distinguish namesakes. Enter browses a result;
+   `Use current directory` proceeds to setup. Esc clears a name search first.
+   Paste a complete path to replace the input, or Tab to edit the path. Git
+   subdirectories still resolve to the worktree root. Search is bounded to three
+   levels, 200 directories, 4,000 entries and a one-second traversal budget,
+   returns up to 30 ranked results, and skips hidden/dependency folders, symlinks
+   and repository interiors. For projects outside that scope, browse upward or
+   paste a path. This searches local directories, not server Project names.
 4. Sign in only if the chosen Instance requires it. Browser approval resumes
    the same flow. Reuse valid authentication. Resolve the repository against the
    server and select a Team only when the destination is ambiguous; a single
@@ -67,13 +75,16 @@ The home screen has three global entry points:
 | Entry | Responsibility |
 | --- | --- |
 | Add project | Connect a repository or ordinary folder to a destination |
-| Tools | Enable/disable tools, inspect their readiness and manage Adapters |
+| Choose tools to sync | Select which tools' conversations to sync across all projects |
 | Settings | Accounts, server addresses and global background sync controls |
 
 The Project list shows names and sync outcomes. Since tool selection is global,
 do not repeat an identical tool list in every row. Show enabled tools once in
-the home summary. `/` filters Projects, Enter opens one, and Tab moves to global
-actions. Returning preserves filter, selection and scroll position.
+the home summary. The action bar is above the list with a highlighted `[n] Add
+project` entry; `n` opens setup directly. Up from the first Project also reaches
+this action. `/` filters Projects, Enter opens one, and Tab moves to global
+actions. Shortcuts remain ordinary text while searching. Returning preserves
+filter, selection and scroll position.
 
 Background sync state belongs in the home summary. If stopped, offer a contextual
 `Start sync` action there. Stopping is a global setting with an impact confirmation.
@@ -101,15 +112,17 @@ updates do not move selection or switch screens.
 
 ## Changing tools
 
-Tools lists the global selection with detected, ready or attention-needed state.
-Adapter version and update actions belong inside a tool's details. Normal setup
-does not require users to learn install, enable and upgrade as separate commands.
+`Choose tools to sync` opens the global checkboxes directly. Rows contain tool
+names; package versions, detection and installation status are not selection
+choices. Save sets up the selected readers and returns to the page that opened
+the selection. Esc returns without saving. There is no intermediate Tools menu
+or individual tool details page.
 
 Editing saves through one impact review: tool additions/removals, affected Project
 count (with names available), and whether existing conversations will be imported.
 Adding a tool includes its history for all connected Projects; disabling it stops
 future collection for those Projects and retains captured history. In-flight work
-may finish. Saving a change with no Projects requires no capture-impact review.
+may finish. Saving with no Projects or no selection changes requires no capture-impact review.
 Disabling every tool is valid and leaves a clear global no-tools-enabled state.
 
 Preserve unfinished selection on errors. Partial package installation must not
@@ -120,7 +133,9 @@ Changing global tools never reassigns Projects, accounts, Teams or checkpoints.
 
 | Problem | Place and action |
 | --- | --- |
-| Tool missing or incompatible | Global tool status; open that tool's repair/update flow |
+| Reader missing | Project explains that ATape needs its reader; Set up conversation sync installs it directly |
+| Reader output incompatible | Project explains which conversations could not be read; Update ATape reader and continue attempts an update directly |
+| Local read failure | Preserve automatic retry when retryable; otherwise show the file/error and guidance in Sync details |
 | No tools enabled | Home summary; configure tools once |
 | Credential expired | Account/Instance alert; sign in, then resume the interrupted action |
 | Global sync stopped | Home summary; Start sync |
@@ -129,6 +144,13 @@ Changing global tools never reassigns Projects, accounts, Teams or checkpoints.
 
 A Project affected by a global problem links directly to the relevant global
 action and returns afterward. It does not duplicate the configuration locally.
+Reader installation/update preserves the global selection, registrations and
+checkpoints. It validates connected accounts and resumes a stopped Collector; a
+running Collector uses the replacement in a later cycle without restarting. The
+Project retains its last observed result until that cycle finishes and says that
+retry is pending. Updating a package is not evidence of successful conversation
+sync. Technical failure messages remain in Sync details.
+
 Preserve the actual Collector semantics: an account failure currently can block
 global startup; changing account isolation is outside this UX increment.
 
