@@ -26,7 +26,6 @@ import type {
   CLIDeviceGrantView,
   JoinCodeGrant,
   AuthenticatedSession,
-  SignInOptions,
   Team,
   TeamRole
 } from "@atape/domain"

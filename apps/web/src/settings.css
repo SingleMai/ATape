@@ -1,4 +1,78 @@
+
 /* Settings stays above the current workspace, with one scrollable content area. */
+.settings-heading > p:last-child {
+  max-width: 650px;
+  color: var(--atape-color-text-muted);
+}
+.settings-row + .settings-row {
+  border-top: 1px solid var(--atape-color-border-soft);
+}
+.row-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.row-copy {
+  min-width: 0;
+}
+.row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-section-state .access-notice {
+  margin: 0;
+}
+.join-code {
+  margin: 8px 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.join-code code {
+  padding: 8px 12px;
+  border: 2px dashed var(--atape-color-navigation-border);
+  border-radius: 12px;
+  background: var(--atape-color-accent-soft);
+  color: var(--atape-color-accent-strong);
+  font: 900 23px/1.2 var(--atape-font-mono);
+  letter-spacing: 0.12em;
+}
+.join-code span {
+  color: var(--atape-color-text-muted);
+  font-size: 13px;
+}
+.join-code-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.one-time-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--atape-color-warning-soft);
+  color: var(--atape-color-warning-text);
+  font-size: 13px;
+}
+.copy-status {
+  margin: 0;
+  padding: 0 22px 18px;
+  color: var(--atape-color-accent-strong);
+  font-size: 13px;
+}
+.owner-note {
+  margin: 0;
+  padding: 14px 22px;
+  border-top: 1px solid var(--atape-color-border-soft);
+  background: var(--atape-color-warning-soft);
+  color: var(--atape-color-warning-text);
+  font-size: 13px;
+}
 .settings-dialog {
   width: min(960px, calc(100vw - 64px));
   height: min(680px, calc(100dvh - 96px));
@@ -136,31 +210,53 @@
   display: none;
 }
 .settings-dialog .settings-section > header {
+  border-bottom: 1px solid var(--atape-color-border-soft);
+  display: flex;
+  justify-content: space-between;
   padding: 0 0 14px;
   align-items: center;
   gap: 12px;
 }
 .settings-dialog .settings-section > header h2 {
+  margin: 0 0 4px;
   font-size: 14px;
   font-weight: 650;
 }
 .settings-dialog .settings-section > header p {
+  margin: 0;
+  color: var(--atape-color-text-muted);
   font-size: 13px;
 }
 .settings-dialog .settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 16px 0;
   min-height: 72px;
   gap: 12px;
 }
 .settings-dialog .row-copy strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  overflow-wrap: anywhere;
   font-size: 14px;
   font-weight: 600;
 }
 .settings-dialog .row-copy > span {
+  display: block;
+  color: var(--atape-color-text-muted);
+  overflow-wrap: anywhere;
   font-size: 12px;
   line-height: 1.6;
 }
 .settings-dialog .row-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  background: var(--atape-color-surface-muted);
+  font-weight: 900;
   width: 32px;
   height: 32px;
   border-radius: 6px;
@@ -168,11 +264,17 @@
   flex-shrink: 0;
 }
 .settings-dialog .section-footer {
+  border-top: 1px solid var(--atape-color-border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 14px 0;
   background: transparent;
   gap: 12px;
 }
 .settings-dialog .section-footer p {
+  margin: 0;
+  color: var(--atape-color-text-muted);
   font-size: 12px;
 }
 .settings-dialog .atape-button {
@@ -194,30 +296,19 @@
 }
 .settings-dialog .empty-row,
 .settings-dialog .settings-section-state {
+  color: var(--atape-color-text-muted);
   padding: 20px 0;
   text-align: left;
 }
 .settings-dialog .join-code-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 22px;
   padding: 16px 0;
 }
 .settings-loading {
   padding: 32px;
-}
-.workspace-profile {
-  width: 100%;
-  font: inherit;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-}
-.workspace-team-options > button {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
 }
 @media (max-width: 640px) {
   .settings-dialog {
@@ -262,5 +353,24 @@
   }
   .settings-dialog .atape-button {
     min-height: 44px;
+  }
+  .row-actions {
+    width: 100%;
+  }
+  .row-actions .atape-button {
+    flex: 1;
+  }
+  .settings-dialog .join-code-panel {
+    grid-template-columns: 1fr;
+  }
+  .join-code-actions {
+    justify-content: flex-start;
+  }
+  .join-code-actions .atape-button {
+    flex: 1;
+  }
+  .settings-dialog .section-footer {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
