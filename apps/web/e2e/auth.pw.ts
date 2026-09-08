@@ -202,7 +202,8 @@ test("selects a newly created Team and opens its first captured Project", async 
 
   await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
   await expect(page.locator(".team-trigger-name")).toHaveText("Tape Makers")
-  await expect(page.getByText("atape setup /path/to/project --team tape-makers --create")).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Open guided setup" })).toBeVisible()
+  await expect(page.getByText("atape setup /path/to/project", { exact: true })).toBeVisible()
 
   await request.post(`${fixtureOrigin}/__fixture/created-project?value=1`)
   await page.getByRole("button", { name: "Check again" }).click()
