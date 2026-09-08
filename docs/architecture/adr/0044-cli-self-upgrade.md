@@ -1,6 +1,6 @@
 # ADR-0044: CLI upgrade and startup update choice
 
-Status: Accepted; implemented, awaiting publication.
+Status: Accepted; included in the v0.4.4 release candidate.
 
 ## Decision
 

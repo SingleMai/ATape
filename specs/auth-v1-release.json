@@ -1,6 +1,6 @@
 {
   "protocol": "atape.auth-release.v1",
-  "releaseVersion": "0.4.2",
+  "releaseVersion": "0.4.4",
   "authEpoch": "auth-v1",
-  "minimumCliVersion": "0.4.2"
+  "minimumCliVersion": "0.4.4"
 }

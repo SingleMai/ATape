@@ -1,8 +1,8 @@
 {
   "protocol": "atape.auth-release-gates.v1",
-  "releaseVersion": "0.4.2",
+  "releaseVersion": "0.4.4",
   "authEpoch": "auth-v1",
-  "attestation": "docs/releases/evidence/v0.4.2-staging.json",
+  "attestation": "docs/releases/evidence/v0.4.4-staging.json",
   "gates": [
     {
       "id": 1,
@@ -111,7 +111,7 @@
       "evidence": [
         {"path": "docs/operations/auth-v1-release-checklist.md", "contains": "TLS / callback / WAF"},
         {"path": "docs/operations/backup-and-restore.md", "contains": "restore"},
-        {"path": "docs/releases/evidence/v0.4.2-staging.json", "contains": "official-topology"}
+        {"path": "docs/releases/evidence/v0.4.4-staging.json", "contains": "official-topology"}
       ],
       "manualRequirements": ["official-topology", "waf-tls-callback", "backup-restore", "observability-secret-sample", "rollback"]
     },
@@ -124,8 +124,8 @@
         {"path": "specs/auth-v1-release.json", "contains": "atape.auth-release.v1"},
         {"path": "scripts/build-release-images.mjs", "contains": "ATAPE_MINIMUM_CLI_VERSION"},
         {"path": "scripts/release-contract.mjs", "contains": "MinimumCLIVersion"},
-        {"path": "docs/releases/v0.4.2.md", "contains": "180 days"},
-        {"path": "docs/releases/evidence/v0.4.2-staging.json", "contains": "two-user-two-team"}
+        {"path": "docs/releases/v0.4.4.md", "contains": "180 days"},
+        {"path": "docs/releases/evidence/v0.4.4-staging.json", "contains": "two-user-two-team"}
       ],
       "manualRequirements": ["candidate-artifacts", "two-user-two-team", "release-signoff"]
     }

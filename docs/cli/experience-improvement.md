@@ -358,7 +358,7 @@ Validation covers nested and Unicode names, case/gap matching and ranking, skipp
 trees, the n shortcut, search clearing, selected-directory browsing, and packaged
 CLI terminal operation. This work shipped in v0.4.1.
 
-## CLI upgrade and startup choice — local increment
+## CLI upgrade and startup choice — v0.4.4
 
 Users can run `atape upgrade` instead of remembering npm installation commands.
 The command checks the latest stable release and upgrades only the active npm
@@ -377,7 +377,7 @@ timeout and failures proceed normally. Explicit upgrade checks bypass the cache.
 Noninteractive and JSON commands do not present the startup choice.
 
 ADR-0044 records the Module Interface and npm Adapter ownership checks. This
-increment is implemented and awaits publication.
+increment is included in the v0.4.4 release candidate.
 Validation covers numeric version comparisons, offline and malformed responses,
 cache expiry, ownership rejection, installation locks and failures, preservation
 of sync settings, blocking startup selection, Skip, restart and packaged terminal navigation.
@@ -392,4 +392,4 @@ installation succeeds but sync cannot resume, the recovery action retries only
 sync with its original parameters. Skip opens the installed CLI while leaving
 sync stopped. Regression coverage includes real subprocess cancellation, real
 PTY input after Ink teardown, and repeated recovery through the Module and
-presenter Interfaces. This work awaits publication.
+presenter Interfaces. This work is included in the v0.4.4 release candidate.
