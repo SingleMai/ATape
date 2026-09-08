@@ -321,11 +321,13 @@ describe("CLI experience application Interface", () => {
     client.record({ version: 1, jobs: [{ projectId: project.id, adapterId: "codex", lastAttemptAt: date,
       failureReason: "contract", failureMessage: "Incompatible output", retryable: false }] })
     const registrations = structuredClone(client.config().projects)
+    client.edit(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, upgradeSpec: "file:/old/codex" })) }))
     await client.run(updateSyncReader("codex", project))
     expect(client.packages).toEqual(["@atape/adapter-codex", "@atape/adapter-codex@latest"])
     expect(client.starts()).toBe(1)
     expect(client.config().enabledAdapterIds).toEqual(["codex"])
     expect(client.config().projects).toEqual(registrations)
+    expect(client.config().adapters[0]?.upgradeSpec).toBe("@atape/adapter-codex@latest")
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("failed")
     await client.run(stopExperienceCollector())
     client.edit(config => ({ ...config, adapters: [] }))

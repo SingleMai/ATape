@@ -1,4 +1,4 @@
-import { ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, inspectCLIExperience, inspectClient, setupProject } from "@atape/application"
+import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, inspectCLIExperience, inspectClient, setupProject } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -14,7 +14,7 @@ import { ExperiencePresenter, type Screen } from "./presenter.ts"
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
-const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false) => {
+const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false) => {
   const root = await mkdtemp(join(tmpdir(), "atape-presenter-"))
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
@@ -24,7 +24,14 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   let installs = 0, restarted = false
   let syncRunning = failFirstResume
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
-  const base = makeNodeClientLayer(defaultNodeClientPaths(environment), environment)
+  const toolInstalls: string[] = []
+  const base = Layer.mergeAll(makeNodeClientLayer(defaultNodeClientPaths(environment), environment),
+    Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: () => toolUpdate ? Effect.succeed("0.4.4") : Effect.fail(new ToolUpdateError({ message: "offline" })) })),
+    ...(toolUpdate ? [Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sync(() => {
+      toolInstalls.push(spec)
+      return { packageName: "@atape/adapter-codex", upgradeSpec: "@atape/adapter-codex", version: "0.4.4",
+        manifest: { protocolVersion: "atape.adapter.v1alpha1", adapterId: "codex", displayName: "Codex", entry: "./index.js", harnesses: ["codex"] } }
+    }) }))] : []))
   const runtime = ManagedRuntime.make(update ? Layer.mergeAll(base, Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
     latest: () => Effect.tryPromise({ try: () => update.then(version => { if (version === "offline") throw new Error("offline"); return version }), catch: () => new CLIUpgradeError({ reason: "check", message: "offline" }) }),
     install: () => Effect.sync(() => { installs++ }).pipe(Effect.andThen(failInstall
@@ -83,7 +90,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
         upgradeSpec: "@atape/adapter-codex", installedAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z" }]
     } }))
   }))
-  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
+  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
 }
 
 const terminal = (presenter: ExperiencePresenter, rows = 14) => {
@@ -105,6 +112,45 @@ const terminal = (presenter: ExperiencePresenter, rows = 14) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
+  it("shows versions, switches a local integration to its published release and returns home with Escape", async () => {
+    const client = await fixture(false, undefined, false, false, true)
+    await client.toolsReady()
+    await client.runtime.runPromise(Effect.gen(function*() {
+      yield* (yield* ClientConfigStore).transact(config => Effect.succeed({ value: undefined,
+        config: { ...config, adapters: config.adapters.map(adapter => ({ ...adapter, upgradeSpec: "file:/old/codex" })) } }))
+    }))
+    client.presenter.start()
+    const home = await client.wait(screen => screen.layout === "projects")
+    expect(home.actions?.find(action => action.value === "tools")?.label).toBe("Tools and updates")
+    client.presenter.submit("tools")
+    const tools = await client.wait(screen => screen.title === "Tools and updates")
+    expect(tools.details.join("\n")).toContain("Codex sync: 0.3.1 → 0.4.4 (latest) · enabled · file/URL install")
+    expect(tools.options?.[0]?.label).toBe("Use published Codex integration 0.4.4")
+    const ui = terminal(client.presenter, 24)
+    await expect.poll(() => ui.frame()).toContain("Use published Codex integration 0.4.4")
+    await ui.send("\r")
+    const updated = await client.wait(screen => Boolean(screen.notice?.includes("integration updated")))
+    expect(updated.details.join("\n")).toContain("Codex sync: 0.4.4 · latest 0.4.4 · enabled")
+    expect(client.toolInstalls).toEqual(["@atape/adapter-codex@0.4.4"])
+    expect((await client.runtime.runPromise(inspectClient())).enabledAdapterIds).toEqual(["codex"])
+    client.presenter.back()
+    await client.wait(screen => screen.layout === "projects")
+  })
+  it("allows updating the CLI after skipping the startup prompt", async () => {
+    const client = await fixture(false, Promise.resolve("0.4.4"))
+    await client.toolsReady()
+    client.presenter.start()
+    await client.wait(screen => screen.title === "Update available")
+    client.presenter.submit("skip")
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("tools")
+    const tools = await client.wait(screen => screen.title === "Tools and updates")
+    expect(tools.details.join("\n")).toContain("latest unavailable")
+    expect(tools.options?.[0]?.label).toBe("Update ATape to 0.4.4")
+    client.presenter.submit("update:cli")
+    await expect.poll(client.restarted).toBe(true)
+    expect(client.installs()).toBe(1)
+  })
   it("retries sync recovery without another install, or opens the installed version when skipped", async () => {
     for (const action of ["upgrade", "skip"]) {
       const client = await fixture(false, Promise.resolve("0.4.2"), false, true)
@@ -137,7 +183,7 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.layout === "projects")
     expect(client.installs()).toBe(0)
     client.presenter.submit("tools")
-    await client.wait(screen => screen.kind === "sources")
+    await client.wait(screen => screen.title === "Tools and updates")
     client.presenter.back()
     await client.wait(screen => screen.layout === "projects")
   })
@@ -249,15 +295,19 @@ describe("interactive navigation through the presenter Interface", () => {
     expect((await client.runtime.runPromise(inspectClient())).projects).toEqual([])
   })
 
-  it("opens global checkboxes directly, cancels without saving and returns to the project after an unchanged save", async () => {
+  it("opens global checkboxes from Tools, cancels without saving and keeps project recovery direct", async () => {
     const client = await fixture()
     const project = await client.seed("project", true)
     client.presenter.start()
     await client.wait(screen => screen.layout === "projects")
     client.presenter.submit("tools")
+    await client.wait(screen => screen.title === "Tools and updates")
+    client.presenter.submit("configure")
     const tools = await client.wait(screen => screen.kind === "sources")
     expect(tools.options).toEqual([{ value: "codex", label: "Codex" }, { value: "claude", label: "Claude Code" }])
     expect(tools.selected).toEqual(["codex"])
+    client.presenter.back()
+    await client.wait(screen => screen.title === "Tools and updates")
     client.presenter.back()
     await client.wait(screen => screen.layout === "projects")
     expect((await client.runtime.runPromise(inspectClient())).enabledAdapterIds).toEqual(["codex"])
@@ -421,7 +471,7 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.layout === "projects")
     client.presenter.submit(`project:${project.instanceOrigin}:${project.id}`)
     const detail = await client.wait(screen => screen.title === "broken")
-    expect(detail.options?.[0]).toEqual({ value: "tool", label: "Update ATape reader and continue" })
+    expect(detail.options?.[0]).toEqual({ value: "tool", label: "Check for tool updates" })
     expect(detail.options?.some(option => option.value === "web")).toBe(false)
     expect(detail.details.join(" ")).toContain("ATape couldn't read Codex conversations")
     expect(detail.details.join(" ")).not.toContain("Integration version is incompatible")

@@ -178,6 +178,12 @@ pnpm atape adapters upgrade codex
 pnpm atape adapters upgrade --all
 ```
 
+The interactive `Tools and updates` page shows current/latest versions and updates
+official integrations without requiring these commands. For an official package
+installed from a local file or URL, `Use published …` explicitly switches to the
+reviewed npm release; custom publisher packages stay on their original source.
+This does not enable additional tools or start stopped sync.
+
 Bulk upgrades run sequentially because the packages share one isolated npm installation tree. Registry packages resolve `latest`; local directories and archives keep their canonical local source path; HTTPS installations fetch the same URL again. Release URLs should therefore either be stable update endpoints or be replaced by explicitly installing a newer asset.
 
 ## Run collection

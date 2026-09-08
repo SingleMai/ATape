@@ -8,18 +8,19 @@ import {
 } from "@atape/application"
 import { emptyClientConfig } from "@atape/domain"
 import { execFile } from "node:child_process"
-import { mkdtemp, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { Effect } from "effect"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { makeNodeClientLayer } from "./clientLayers.ts"
 
 const exec = promisify(execFile)
 const temporaryDirectories: Array<string> = []
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   const { rm } = await import("node:fs/promises")
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
@@ -42,8 +43,8 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
     A,
     E,
     ClientConfigStore | ProjectLocator | AdapterPackages
-  >) =>
-    effect.pipe(Effect.provide(layer), Effect.runPromise)
+  >, signal?: AbortSignal) =>
+    Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined)
   return { root, paths, run }
 }
 
@@ -62,6 +63,42 @@ const setupInput = (path: string, type: "auto" | "git" | "directory" = "auto") =
 } as const)
 
 describe("Node client Layers", () => {
+  it("waits for a cancelled npm process to exit before releasing the configuration lock", async () => {
+    const client = await fixture()
+    const bin = join(client.root, "bin")
+    await mkdir(bin)
+    await writeFile(join(bin, "npm"), `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+const root = args[args.indexOf("--prefix") + 1];
+process.on("SIGTERM", () => fs.writeFileSync(root + "/terminated", "true"));
+fs.writeFileSync(root + "/pid", String(process.pid));
+setInterval(() => {}, 1000);
+`)
+    await chmod(join(bin, "npm"), 0o755)
+    vi.stubEnv("PATH", `${bin}:${process.env.PATH}`)
+    const cancellation = new AbortController()
+    let settled = false, pid: number | undefined
+    const pending = client.run(installAdapter("@atape/adapter-codex@0.4.4"), cancellation.signal)
+      .then(() => "success", () => "cancelled").finally(() => { settled = true })
+    try {
+      const marker = join(client.paths.adapterDirectory, "pid")
+      await expect.poll(() => readFile(marker, "utf8").catch(() => "")).not.toBe("")
+      pid = Number(await readFile(marker, "utf8"))
+      cancellation.abort()
+      await expect.poll(() => readFile(join(client.paths.adapterDirectory, "terminated"), "utf8").catch(() => "")).toBe("true")
+      expect(settled).toBe(false)
+      await expect(readFile(`${client.paths.configFile}.lock`)).resolves.toBeDefined()
+      expect(await pending).toBe("cancelled")
+      expect(() => process.kill(pid!, 0)).toThrow()
+      await expect(readFile(`${client.paths.configFile}.lock`)).rejects.toMatchObject({ code: "ENOENT" })
+      expect(await client.run(inspectClient())).toEqual(emptyClientConfig())
+    } finally {
+      cancellation.abort()
+      if (pid) { try { process.kill(pid, "SIGKILL") } catch {} }
+      await pending
+    }
+  })
   it("reads only current configuration without rewriting unsupported data", async () => {
     const client = await fixture()
     expect(await client.run(inspectClient())).toEqual(emptyClientConfig())

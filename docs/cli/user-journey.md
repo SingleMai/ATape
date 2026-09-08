@@ -2,7 +2,7 @@
 
 Status: Global tool selection shipped in v0.4.0. Direct selection, reader
 recovery and local name search shipped in v0.4.1. CLI upgrade and startup
-choices are included in the v0.4.4 release candidate.
+choices shipped in v0.4.4. Tools and updates is implemented, pending package release.
 This specification supersedes per-Project tool selection in the earlier
 experience guide. Command and persistence behavior is documented in
 setup-and-adapters.md; ADR-0040 records the configuration decision.
@@ -14,8 +14,9 @@ the Projects whose conversations they want to sync. Tool configuration belongs
 to the local ATape installation, across its connected Projects and Instances.
 It is not an account-wide or Team-wide setting shared with other machines.
 
-The TUI names actual tools, such as Claude Code and Codex. Adapter packages,
-versions and acquisition details remain available through explicit CLI commands. Installing
+The TUI names actual tools, such as Claude Code and Codex. The global Tools and
+updates page shows CLI and installed integration versions, installation source,
+latest releases and direct update actions. Explicit commands remain available. Installing
 a package and authorizing capture remain distinct operations: an installed
 Adapter is not implicitly enabled, and enabling a tool does not discover or
 connect additional repositories.
@@ -92,7 +93,7 @@ The home screen has three global entry points:
 | Entry | Responsibility |
 | --- | --- |
 | Add project | Connect a repository or ordinary folder to a destination |
-| Choose tools to sync | Select which tools' conversations to sync across all projects |
+| Tools and updates | Choose conversations to sync, inspect versions and update ATape or its integrations |
 | Settings | Accounts, server addresses and global background sync controls |
 
 The Project list shows names and sync outcomes. Since tool selection is global,
@@ -129,11 +130,12 @@ updates do not move selection or switch screens.
 
 ## Changing tools
 
-`Choose tools to sync` opens the global checkboxes directly. Rows contain tool
+`Tools and updates` opens version information and available update actions.
+Its `Choose tools to sync` action opens the global checkboxes. Rows contain tool
 names; package versions, detection and installation status are not selection
 choices. Save sets up the selected readers and returns to the page that opened
-the selection. Esc returns without saving. There is no intermediate Tools menu
-or individual tool details page.
+the selection. Esc returns without saving. Initial setup and a Project with no
+enabled tools still open the checkboxes directly.
 
 Editing saves through one impact review: tool additions/removals, affected Project
 count (with names available), and whether existing conversations will be imported.
@@ -151,7 +153,7 @@ Changing global tools never reassigns Projects, accounts, Teams or checkpoints.
 | Problem | Place and action |
 | --- | --- |
 | Reader missing | Project explains that ATape needs its reader; Set up conversation sync installs it directly |
-| Reader output incompatible | Project explains which conversations could not be read; Update ATape reader and continue attempts an update directly |
+| Reader output incompatible | Project offers Check for tool updates; review current/latest versions and select the published integration. If sync is stopped, Start sync is also available |
 | Local read failure | Preserve automatic retry when retryable; otherwise show the file/error and guidance in Sync details |
 | No tools enabled | Home summary; configure tools once |
 | Credential expired | Account/Instance alert; sign in, then resume the interrupted action |
@@ -189,3 +191,42 @@ interrupted installation, checkpoint preservation, no-Team and expired-login
 recovery, and installed-package PTY flows. Merge and publication require their
 own delivery steps. Additional terminal platform acceptance and reboot persistence
 remain outside this increment.
+
+## Updating without memorizing package commands
+
+Tools and updates checks the CLI and installed official Codex/Claude integrations
+in parallel. Each package has its own twelve-hour successful-result cache.
+Check again bypasses those caches. Offline checks retain current versions and
+show latest unavailable, without blocking tool configuration or navigation.
+Uninstalled integrations are set up through Choose tools to sync.
+
+An official integration installed from a file or URL is marked explicitly.
+Use published <tool> integration <version> replaces that source with the exact
+reviewed npm version and records the registry source for subsequent updates.
+A newer installed release is never downgraded. Custom publisher packages remain
+manual; matching an official adapter ID alone does not permit replacement.
+
+Package maintenance preserves global selection, Projects and checkpoints and
+does not start stopped sync. A running Collector loads replacements on later
+attempts; installing a package does not prove that a previous sync error cleared.
+The Project offers Start sync when needed. CLI upgrades reuse the existing
+verified installation/restart and sync recovery workflow, including after the
+startup update prompt was skipped. Stale update selections require another check.
+
+The ToolUpdates Module hides release comparison and source/installation checks.
+AdapterReleases is the npm metadata Seam; its Node Adapter shares bounded fetch
+and cache behavior with CLI upgrades. A unified page was chosen over per-tool
+settings pages to keep version maintenance in one global location. Existing
+command-line custom-source upgrades retain their original acquisition semantics.
+
+Limits: no unattended or bulk integration updates; npm installation is not an
+atomic rollback transaction. Cancellation waits for npm termination before the
+configuration lock is released. Next increment: validate the published journey
+on actual existing installations before considering broader update automation.
+
+Validation: 86 application tests and 74 CLI tests pass, along with both package
+typechecks and the CLI build. A disposable real terminal run of the bundled CLI
+verified keyboard navigation from Projects to Tools and updates, current/latest
+versions, the explicit file-to-published action and clean exit without installing
+anything. Tests cover stale selection, failure/cancellation, custom publishers,
+per-package cache expiry, source replacement and CLI restart after startup Skip.
