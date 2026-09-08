@@ -1,6 +1,6 @@
 {
   "name": "@atape/adapter-codex",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "ATape Adapter for local Codex rollout archives",
   "license": "MIT",
   "type": "module",

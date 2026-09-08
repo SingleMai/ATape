@@ -118,9 +118,9 @@ and Raw chunk counters belong in details rather than the main success message.
 | Increment | Usable outcome | Status |
 | --- | --- | --- |
 | 1. Ink and distribution | Verified runtime, bundle, directory input and terminal lifecycle; selected architecture documented | Complete for macOS/Linux arm64; see [validation evidence](ink-validation.md) |
-| 2. Git identity | Shared attribution for Codex and Claude, identity-based setup, explicit unknown-source diagnostics | Implemented and locally verified; integration/publication pending |
-| 3. Complete setup | One guided flow through login, Team, Project, sources and observable first sync; matching CLI/Web documentation | Implemented and locally verified; integration/publication pending |
-| 4. Project console | List/details, source changes, local removal, Web links and recovery using the same Module Interface | Implemented and locally verified; integration/publication pending |
+| 2. Git identity | Shared attribution for Codex and Claude, identity-based setup, explicit unknown-source diagnostics | Included in v0.3.0 candidate; publication gated |
+| 3. Complete setup | One guided flow through login, Team, Project, sources and observable first sync; matching CLI/Web documentation | Included in v0.3.0 candidate; publication gated |
+| 4. Project console | List/details, source changes, local removal, Web links and recovery using the same Module Interface | Included in v0.3.0 candidate; publication gated |
 
 Finish and verify each increment before expanding it. Research programs stay
 outside implementation commits. When integration is requested, reconcile with
@@ -170,8 +170,9 @@ retry failures, upgrade capability checks and late historical recovery. The
 installable release suite and existing CLI/Go Canonical/Raw/Search end-to-end
 suite pass. No research probes or private conversation snapshots are shipped.
 
-This is locally verified working-tree code, not an npm publication or deployment.
-The next delivery step is integration through repository PR checks when requested,
-then a separately authorized release of the compatible CLI and Adapters. Full
-x64, Windows TUI, SSH/tmux, IME and accessibility acceptance remain pending. Reboot
+The v0.3.0 candidate includes these implementations and matching CLI/Adapter
+versions. Integration is tracked in [PR #83](https://github.com/SingleMai/ATape/pull/83);
+publication follows the repository release gates and is not a Server deployment.
+The next experience increment is broader terminal and live-account acceptance:
+x64, Windows TUI, SSH/tmux, IME and accessibility remain pending. Reboot
 persistence remains deliberately excluded; `atape start` provides manual resume.
