@@ -3,7 +3,7 @@
   "releaseVersion": "0.3.0",
   "authEpoch": "auth-v1",
   "status": "authorized",
-  "candidateCommit": "644ea37a516c8ed80048088c5d94bb42997da14d",
+  "candidateCommit": "334949405f1a1c0a1ea7bf123791c0231cfd8549",
   "authorizedOn": "2026-09-08",
   "authorization": "The user explicitly approved a one-time manual staging waiver for v0.3.0 after PR #83 merged, retaining all automated tests and security gates and disclosing unverified risks, so the user can self-test online after package publication. This is a separate authorization from v0.2.0.",
   "scope": "manual-staging-only",
