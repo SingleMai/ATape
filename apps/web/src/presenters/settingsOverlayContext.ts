@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react"
 
 export type SettingsTarget = {
-  readonly section: "account" | "sessions" | "credentials" | "team"
+  readonly section: "account" | "credentials" | "team"
   readonly teamSlug?: string
 }
 

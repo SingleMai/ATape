@@ -172,7 +172,7 @@ export const browserRequest = (path: string, options: RequestOptions = {}): Effe
             reason: "http",
             status: 401,
             code: "unauthenticated",
-            message: "Your browser session needs to be restored."
+            message: "Please sign in again to continue."
           })
         }
         headers.set("X-ATape-CSRF", csrfToken)

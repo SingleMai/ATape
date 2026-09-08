@@ -162,8 +162,8 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible()
     await expect(page).toHaveURL(projectPath)
-    await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
-    await expect(page.getByRole("region", { name: "Browser sessions" })).toBeVisible()
+    await page.getByRole("button", { name: "CLI credentials", exact: true }).click()
+    await expect(page.getByRole("region", { name: "CLI credentials" })).toBeVisible()
     await page.getByRole("button", { name: "Close settings" }).click()
     await expect(account).toBeFocused()
   })
@@ -213,9 +213,9 @@ test("settings preserves the reader and supports nested confirmation without dis
   await expect(settings.getByRole("button", { name: "Sign out", exact: true })).toBeFocused()
   await page.keyboard.press("Tab")
   await expect(settings.getByRole("button", { name: "Close settings" })).toBeFocused()
-  await settings.getByRole("button", { name: "Browser sessions", exact: true }).click()
+  await settings.getByRole("button", { name: "CLI credentials", exact: true }).click()
   await settings.getByRole("button", { name: "Revoke", exact: true }).click()
-  const confirmation = page.getByRole("dialog", { name: "Revoke this browser session?" })
+  const confirmation = page.getByRole("dialog", { name: "Revoke this CLI credential?" })
   await expect(confirmation).toBeVisible()
   await page.keyboard.press("Escape")
   await expect(confirmation).toBeHidden()
@@ -247,11 +247,17 @@ test("finishes signing out even if Settings is dismissed while the request is pe
 })
 
 
-test("revoking the current browser returns to sign-in without a redirect loop", async ({ page }) => {
+test("settings does not expose or request browser session management", async ({ page }) => {
+  const requests: string[] = []
+  page.on("request", (request) => {
+    if (request.url().includes("/users/me/web-sessions")) requests.push(request.url())
+  })
   await page.goto(projectPath)
   await page.getByRole("button", { name: "Open account security for Mai" }).click()
-  await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
-  await page.getByRole("region", { name: "Browser sessions" }).getByRole("button", { name: "Sign out", exact: true }).click()
-  await page.getByRole("dialog", { name: "Sign out this browser?" }).getByRole("button", { name: "Sign out", exact: true }).click()
-  await expect(page).toHaveURL(/auth\/sign-in/)
+  const settings = page.getByRole("dialog", { name: "Settings", exact: true })
+  await expect(settings.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
+  await expect(settings.getByRole("button", { name: "Browser sessions", exact: true })).toHaveCount(0)
+  await settings.getByRole("button", { name: "CLI credentials", exact: true }).click()
+  await expect(settings.getByText("atape-cli")).toBeVisible()
+  expect(requests).toEqual([])
 })

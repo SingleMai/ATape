@@ -10,8 +10,7 @@ import type {
   SignInOptions,
   Team,
   TeamMember,
-  TeamRole,
-  WebSession
+  TeamRole
 } from "@atape/domain"
 import {
   normalizeDeviceUserCode,
@@ -60,9 +59,6 @@ export class AuthenticationGateway extends Context.Service<AuthenticationGateway
   beginReauthentication(input: BeginFederatedInput): Effect.Effect<string, AccessError>
   logout(): Effect.Effect<void, AccessError>
   listExternalIdentities(): Effect.Effect<ReadonlyArray<ExternalIdentity>, AccessError>
-  listWebSessions(): Effect.Effect<ReadonlyArray<WebSession>, AccessError>
-  revokeWebSession(sessionId: string): Effect.Effect<void, AccessError>
-  revokeAllWebSessions(): Effect.Effect<void, AccessError>
   listCLICredentials(): Effect.Effect<ReadonlyArray<CLICredential>, AccessError>
   revokeCLICredential(credentialId: string): Effect.Effect<void, AccessError>
   revokeAllCLICredentials(): Effect.Effect<void, AccessError>
@@ -77,7 +73,6 @@ export type SettledSection<A> =
 export type AccountSecurity = {
   readonly providers: SettledSection<ReadonlyArray<ProviderRegistration>>
   readonly identities: SettledSection<ReadonlyArray<ExternalIdentity>>
-  readonly webSessions: SettledSection<ReadonlyArray<WebSession>>
   readonly cliCredentials: SettledSection<ReadonlyArray<CLICredential>>
 }
 
@@ -171,23 +166,11 @@ export const loadAccountSecurity = Effect.fn("Authentication.loadAccountSecurity
   return yield* Effect.all({
     providers: settle(gateway.listProviderRegistrations()),
     identities: settle(gateway.listExternalIdentities()),
-    webSessions: settle(gateway.listWebSessions()),
     cliCredentials: settle(gateway.listCLICredentials())
   }, { concurrency: "unbounded" }).pipe(
     Effect.map((snapshot): AccountSecurity => snapshot),
     Effect.withSpan("Authentication.loadAccountSecurity")
   )
-})
-
-export const revokeWebSession = Effect.fn("Authentication.revokeWebSession")(function*(sessionId: string) {
-  if (sessionId.trim() === "") return yield* invalidInput("The browser session is missing.")
-  const gateway = yield* AuthenticationGateway
-  return yield* gateway.revokeWebSession(sessionId)
-})
-
-export const revokeAllWebSessions = Effect.fn("Authentication.revokeAllWebSessions")(function*() {
-  const gateway = yield* AuthenticationGateway
-  return yield* gateway.revokeAllWebSessions()
 })
 
 export const revokeCLICredential = Effect.fn("Authentication.revokeCLICredential")(function*(credentialId: string) {

@@ -14,7 +14,6 @@ import {
   AuthenticatedSession,
   Team,
   TeamMember,
-  WebSession,
   type TeamRole
 } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
@@ -188,18 +187,6 @@ const authenticationGateway = AuthenticationGateway.of({
     "/api/v1/users/me/external-identities",
     Items(ExternalIdentity)
   ).pipe(Effect.map((response) => response.items)),
-  listWebSessions: () => requestDecoded(
-    "/api/v1/users/me/web-sessions",
-    Items(WebSession)
-  ).pipe(Effect.map((response) => response.items)),
-  revokeWebSession: (sessionId) => requestVoid(
-    `/api/v1/users/me/web-sessions/${encoded(sessionId)}`,
-    { method: "DELETE", csrf: true }
-  ),
-  revokeAllWebSessions: () => requestVoid(
-    "/api/v1/users/me/web-sessions/revoke-all",
-    { method: "POST", body: {}, csrf: true }
-  ),
   listCLICredentials: () => requestDecoded(
     "/api/v1/users/me/cli-credentials",
     Items(CLICredential)
