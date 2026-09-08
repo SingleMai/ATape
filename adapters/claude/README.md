@@ -12,7 +12,7 @@ pnpm atape collect --once --project YOUR_PROJECT --json
 
 For an offline packaged installation, `pnpm pack:release` now produces the CLI,
 Codex and Claude tarballs plus `SHA256SUMS` under `release/`. Install the CLI
-tarball, then use `atape adapters install ./release/atape-adapter-claude-0.4.2.tgz`.
+tarball, then use `atape adapters install ./release/atape-adapter-claude-0.4.4.tgz`.
 These local build commands do not publish to npm or deploy an instance.
 
 The Project must already be configured and authenticated normally. Discovery reads

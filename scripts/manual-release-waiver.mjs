@@ -11,7 +11,8 @@ const manualWaiverPaths = new Map([
   ["0.3.1", "docs/releases/evidence/v0.3.1-manual-waiver.json"],
   ["0.4.0", "docs/releases/evidence/v0.4.0-manual-waiver.json"],
   ["0.4.1", "docs/releases/evidence/v0.4.1-manual-waiver.json"],
-  ["0.4.2", "docs/releases/evidence/v0.4.2-manual-waiver.json"]
+  ["0.4.2", "docs/releases/evidence/v0.4.2-manual-waiver.json"],
+  ["0.4.4", "docs/releases/evidence/v0.4.4-manual-waiver.json"]
 ])
 export const manualWaiverPathFor = version => manualWaiverPaths.get(version)
 
