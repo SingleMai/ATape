@@ -29,7 +29,7 @@ export class CollectorStateError extends Schema.TaggedError<CollectorStateError>
 }) {}
 
 export class AdapterRuntimeError extends Schema.TaggedError<AdapterRuntimeError>()("AdapterRuntimeError", {
-  reason: Schema.Literals(["load", "contract", "collect", "close"]),
+  reason: Schema.Literals(["load", "contract", "collect", "close", "unauthenticated"]),
   adapterId: Schema.String,
   retryable: Schema.Boolean,
   message: Schema.String
@@ -790,7 +790,7 @@ const collectionFailureReason = (error: CollectionJobError): AdapterCollectionFa
   error instanceof CollectionTransportError
     ? error.reason === "unauthenticated" ? "unauthenticated" : "transport"
     : error instanceof AdapterRuntimeError
-      ? "adapter"
+      ? error.reason === "unauthenticated" ? "unauthenticated" : "adapter"
       : error instanceof CollectorStateError
         ? "state"
         : "contract"

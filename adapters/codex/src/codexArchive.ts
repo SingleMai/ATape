@@ -10,7 +10,7 @@ import type {
   AcpSessionUpdate
 } from "@atape/domain"
 import { createHash } from "node:crypto"
-import { execFile } from "node:child_process"
+import { GitAttributionVersion, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
 import { open, opendir, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -36,7 +36,6 @@ type CodexArchive = {
   readonly context: AdapterOpenContext
   readonly codexHome: string
   readonly projectRoot: string
-  readonly projectRepository?: string
 }
 
 type RolloutMetadata = {
@@ -103,6 +102,7 @@ type CodexCursor = {
   readonly watermarkModifiedMs: number
   readonly watermarkSessionId: string
   readonly commitSequence?: number
+  readonly lastCanonicalSessionId?: string
   readonly active?: ActiveCursor
 }
 
@@ -135,6 +135,7 @@ const CursorSchema = Schema.Struct({
   watermarkModifiedMs: Schema.Number,
   watermarkSessionId: Schema.String,
   commitSequence: Schema.optionalKey(Schema.Number),
+  lastCanonicalSessionId: Schema.optionalKey(Schema.String),
   active: Schema.optionalKey(ActiveCursorSchema)
 })
 
@@ -216,17 +217,14 @@ export const openCodexArchive = (
 ): Effect.Effect<CodexArchive, CodexArchiveError> => Effect.tryPromise({
   try: async () => {
     const configuredHome = process.env.ATAPE_CODEX_HOME || process.env.CODEX_HOME || join(homedir(), ".codex")
-    const [codexHome, projectRoot, projectRepository] = await Promise.all([
-      realpath(configuredHome),
-      realpath(context.project.path),
-      context.project.type === "git" ? readGitOrigin(context.project.path) : Promise.resolve(undefined)
-    ])
-    return {
-      context,
-      codexHome,
-      projectRoot,
-      ...(projectRepository === undefined ? {} : { projectRepository: normalizeRepository(projectRepository) })
+    if (context.project.type === "git" && context.gitAttribution?.version !== GitAttributionVersion) {
+      throw new CodexArchiveError({ reason: "configuration", message: "Upgrade the ATape CLI to collect Git Projects with shared attribution." })
     }
+    const [codexHome, projectRoot] = await Promise.all([
+      realpath(configuredHome),
+      context.project.type === "git" ? Promise.resolve(context.project.path) : realpath(context.project.path)
+    ])
+    return { context, codexHome, projectRoot }
   },
   catch: (cause) => archiveError("configuration", "Could not open the Codex archive", cause)
 })
@@ -235,7 +233,12 @@ export const collectCodexPage = (
   archive: CodexArchive,
   request: AdapterCollectRequest
 ): Effect.Effect<AdapterCollectionPage, CodexArchiveError> => Effect.tryPromise({
-  try: () => collectPage(archive, request),
+  try: async () => {
+    const diagnostics: { failures: AdapterSourceFailure[]; truncated: boolean } = { failures: [], truncated: false }
+    const page = await collectPage(archive, request, diagnostics)
+    return { ...page, ...(diagnostics.failures.length ? { sourceFailures: diagnostics.failures } : {}),
+      ...(diagnostics.truncated ? { sourceFailuresTruncated: true } : {}) }
+  },
   catch: (cause) => cause instanceof CodexArchiveError
     ? cause
     : archiveError("io", "Could not collect Codex sessions", cause)
@@ -243,11 +246,12 @@ export const collectCodexPage = (
 
 const collectPage = async (
   archive: CodexArchive,
-  request: AdapterCollectRequest
+  request: AdapterCollectRequest,
+  diagnostics: { failures: AdapterSourceFailure[]; truncated: boolean }
 ): Promise<AdapterCollectionPage> => {
   throwIfAborted(request.signal)
   const cursor = decodeCursor(request.cursor)
-  const sessions = await discoverSessions(archive, request.signal)
+  const sessions = await discoverSessions(archive, request.signal, diagnostics)
   const byId = new Map(sessions.map((session) => [session.id, session]))
 
   if (cursor.active !== undefined) {
@@ -265,7 +269,7 @@ const collectPage = async (
     )
   }
 
-  const selected = await selectSession(sessions, cursor, request.rawProgress, request.signal)
+  const selected = await selectSession(sessions, cursor, request.rawProgress, request.signal, archive.context.project.type === "git")
 
   if (selected === undefined) {
     if (request.cursor !== null) return emptyPage(cursor)
@@ -461,7 +465,7 @@ const startSession = async (
   }
 }
 
-const discoverSessions = async (archive: CodexArchive, signal: AbortSignal): Promise<ReadonlyArray<CodexSession>> => {
+const discoverSessions = async (archive: CodexArchive, signal: AbortSignal, diagnostics: { failures: AdapterSourceFailure[]; truncated: boolean }): Promise<ReadonlyArray<CodexSession>> => {
   const [activePaths, archivedPaths, titles] = await Promise.all([
     listJsonl(join(archive.codexHome, "sessions"), signal),
     listJsonl(join(archive.codexHome, "archived_sessions"), signal),
@@ -473,7 +477,7 @@ const discoverSessions = async (archive: CodexArchive, signal: AbortSignal): Pro
     throwIfAborted(signal)
     let file
     try {
-      file = await inspectRollout(archive, path, signal)
+      file = await inspectRollout(archive, path, signal, diagnostics)
     } catch (cause) {
       if (hasCode(cause, "ENOENT")) continue
       throw cause
@@ -530,12 +534,19 @@ const readSessionTitles = async (
 const inspectRollout = async (
   archive: CodexArchive,
   path: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  diagnostics: { failures: AdapterSourceFailure[]; truncated: boolean }
 ): Promise<RolloutFile | undefined> => {
   const first = await readFirstLine(path, signal)
   if (first === undefined) return undefined
   const metadata = decodeMetadata(first)
-  if (metadata === undefined || !(await matchesProject(archive, metadata))) return undefined
+  if (metadata === undefined) return undefined
+  const decision = await matchesProject(archive, metadata, signal)
+  if (decision === "unknown") {
+    if (diagnostics.failures.length < MaxSourceFailures) diagnostics.failures.push({ source: path, reason: "attribution" })
+    else diagnostics.truncated = true
+  }
+  if (decision !== "included") return undefined
   const details = await stat(path)
   if (!details.isFile()) return undefined
   const relativePath = relative(archive.codexHome, path)
@@ -576,11 +587,18 @@ const decodeMetadata = (line: Buffer): RolloutMetadata | undefined => {
   }
 }
 
-const matchesProject = async (archive: CodexArchive, metadata: RolloutMetadata) => {
+const matchesProject = async (archive: CodexArchive, metadata: RolloutMetadata, signal: AbortSignal) => {
+  if (!isAbsolute(metadata.cwd)) return "unknown" as const
+  if (archive.context.project.type === "git") {
+    return archive.context.gitAttribution!.resolve({
+      sourceId: metadata.threadId,
+      originKey: JSON.stringify([metadata.sessionId, metadata.timestamp]),
+      cwd: metadata.cwd,
+      ...(metadata.repository === undefined ? {} : { repositoryRemote: metadata.repository })
+    }, signal)
+  }
   const workingDirectory = await realpath(metadata.cwd).catch(() => resolve(metadata.cwd))
-  if (isPathInside(archive.projectRoot, workingDirectory)) return true
-  return archive.context.project.type === "git" && archive.projectRepository !== undefined &&
-    metadata.repository !== undefined && normalizeRepository(metadata.repository) === archive.projectRepository
+  return isPathInside(archive.projectRoot, workingDirectory) ? "included" as const : "excluded" as const
 }
 
 const buildThreads = (session: CodexSession, revision: number): ReadonlyArray<AdapterThread> => {
@@ -1358,13 +1376,19 @@ const selectSession = async (
   sessions: ReadonlyArray<CodexSession>,
   cursor: CodexCursor,
   progress: ReadonlyArray<AdapterSourceProgress>,
-  signal: AbortSignal
+  signal: AbortSignal,
+  recoverGitHistory = false
 ) => {
   const ordered = [...sessions].sort(compareSessions)
   const changed = ordered.find((session) => isAfterWatermark(session, cursor))
   if (changed !== undefined) return { session: changed, phase: "canonical" as const }
   for (const session of ordered) {
-    if (await sessionNeedsRaw(session, progress, signal)) return { session, phase: "raw" as const }
+    if (await sessionNeedsRaw(session, progress, signal)) {
+      // A source may become attributable after the discovery watermark passed it.
+      // Publish its Canonical content before Raw; one cursor marker prevents a loop.
+      const unseen = !progress.some(item => item.sourceSessionId === session.id)
+      return { session, phase: recoverGitHistory && unseen && cursor.lastCanonicalSessionId !== session.id ? "canonical" as const : "raw" as const }
+    }
   }
   return undefined
 }
@@ -1402,19 +1426,21 @@ const advanceWatermark = (cursor: CodexCursor, modifiedMs: number, sessionId: st
     v: CursorVersion,
     watermarkModifiedMs: advances ? modifiedMs : cursor.watermarkModifiedMs,
     watermarkSessionId: advances ? sessionId : cursor.watermarkSessionId,
-    commitSequence: (cursor.commitSequence ?? 0) + 1
+    commitSequence: (cursor.commitSequence ?? 0) + 1,
+    ...(cursor.lastCanonicalSessionId ? { lastCanonicalSessionId: cursor.lastCanonicalSessionId } : {})
   }
 }
 
 const completeActive = (cursor: CodexCursor, active: ActiveCursor): CodexCursor => {
   if (active.phase === "canonical") {
-    return advanceWatermark(cursor, active.selectedModifiedMs, active.sessionId)
+    return { ...advanceWatermark(cursor, active.selectedModifiedMs, active.sessionId), lastCanonicalSessionId: active.sessionId }
   }
   return {
     v: CursorVersion,
     watermarkModifiedMs: cursor.watermarkModifiedMs,
     watermarkSessionId: cursor.watermarkSessionId,
-    commitSequence: (cursor.commitSequence ?? 0) + 1
+    commitSequence: (cursor.commitSequence ?? 0) + 1,
+    ...(cursor.lastCanonicalSessionId ? { lastCanonicalSessionId: cursor.lastCanonicalSessionId } : {})
   }
 }
 
@@ -1465,6 +1491,7 @@ const decodeCursor = (value: string | null): CodexCursor => {
 
 const validCursor = (cursor: CodexCursor) => Number.isFinite(cursor.watermarkModifiedMs) &&
   cursor.watermarkModifiedMs >= 0 && cursor.watermarkSessionId.length <= 500 &&
+  (cursor.lastCanonicalSessionId === undefined || cursor.lastCanonicalSessionId.length <= 500) &&
   (cursor.commitSequence === undefined ||
     (Number.isSafeInteger(cursor.commitSequence) && cursor.commitSequence >= 0)) &&
   (cursor.active === undefined || (
@@ -1487,22 +1514,6 @@ const encodeCursor = (cursor: CodexCursor) => {
   }
   return encoded
 }
-
-const readGitOrigin = (projectPath: string): Promise<string | undefined> => new Promise((resolveOrigin) => {
-  execFile("git", ["-C", projectPath, "config", "--get", "remote.origin.url"], {
-    encoding: "utf8",
-    timeout: 10_000,
-    maxBuffer: 1024 * 1024
-  }, (error, stdout) => resolveOrigin(error === null && stdout.trim() !== "" ? stdout.trim() : undefined))
-})
-
-const normalizeRepository = (value: string) => value.trim().toLowerCase()
-  .replace(/^ssh:\/\//, "")
-  .replace(/^git@([^:]+):/, "$1/")
-  .replace(/^git@/, "")
-  .replace(/^https?:\/\//, "")
-  .replace(/\.git$/, "")
-  .replace(/\/$/, "")
 
 const isPathInside = (root: string, candidate: string) => {
   if (!isAbsolute(candidate)) return false

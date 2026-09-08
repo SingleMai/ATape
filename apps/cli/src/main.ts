@@ -3,6 +3,7 @@
 import { Effect } from "effect"
 import { parseCLI, runCommand } from "./commands.ts"
 import { defaultNodeClientPaths, makeNodeClientLayer } from "./runtime/clientLayers.ts"
+import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
 
 const main = async () => {
   let command
@@ -11,6 +12,16 @@ const main = async () => {
   } catch (cause) {
     process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`)
     process.exitCode = 2
+    return
+  }
+
+  if (requestsGuidedExperience(command) && supportsInteractiveExperience()) {
+    const { runInteractiveExperience } = await import("./interactive/run.ts")
+    await runInteractiveExperience(command)
+    return
+  }
+  if (requestsGuidedExperience(command)) {
+    process.stdout.write("Interactive setup needs a macOS/Linux terminal. Use `atape setup <directory> --team <slug> --create --adapter <id>` and `atape start`, or `atape --help`.\n")
     return
   }
 

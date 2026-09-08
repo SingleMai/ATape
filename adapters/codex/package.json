@@ -53,6 +53,7 @@
   },
   "atapeAdapter": {
     "protocolVersion": "atape.adapter.v1alpha1",
+    "gitAttribution": "atape.git-attribution.v1",
     "adapterId": "codex",
     "displayName": "Codex",
     "entry": "./dist/index.js",

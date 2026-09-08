@@ -33,6 +33,7 @@
   },
   "atapeAdapter": {
     "protocolVersion": "atape.adapter.v1alpha1",
+    "gitAttribution": "atape.git-attribution.v1",
     "adapterId": "claude",
     "displayName": "Claude Code",
     "entry": "./dist/index.js",

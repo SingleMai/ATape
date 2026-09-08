@@ -33,7 +33,12 @@ The Adapter resolves the Codex data root in this order:
 
 It scans `.jsonl` files below `sessions/` and `archived_sessions/` without following symbolic links. The first `session_meta` record identifies the rollout before the rest of the file is read.
 
-For an ordinary-directory Project, the metadata `cwd` must resolve to the Project directory or one of its descendants. For a Git Project, the same path rule applies; a normalized `remote.origin.url` match is also accepted so Codex worktrees outside the primary checkout remain attached to the same ATape Project. Other sessions are ignored.
+For an ordinary-directory Project, the metadata `cwd` must resolve to the Project directory or one of its descendants. For a Git Project, the Adapter supplies original `session_meta` identity, CWD and any recorded Git remote to the shared Host attribution Module. Server repository identity and aliases determine membership across worktrees and independent clones. Path containment never includes a nested unrelated repository. Unknown identity produces an `attribution` source diagnostic; a known foreign repository is ignored. Git capture requires both the updated CLI and an Adapter declaring `atape.git-attribution.v1`.
+
+The Host retains confirmed source evidence independently of the capture cursor.
+Recorded or established remotes allow capture after the original directory is
+deleted; without either, missing historical identity is reported rather than
+guessed. See the [shared Git rules](../cli/setup-and-adapters.md#git-conversation-attribution).
 
 ## Session and subagent projection
 
@@ -62,7 +67,13 @@ Private reasoning content is not promoted into Canonical. It remains part of the
 
 ## Incremental and Raw behavior
 
-The Adapter keeps no durable conversation cache. Its opaque cursor contains only a bounded Session watermark, a monotonic commit sequence, and an in-progress page snapshot. The snapshot freezes the selected provider title so pagination cannot emit different content at one Session revision. The commit sequence lets Raw-only changes such as archive finalization produce a new committed cursor even when the filesystem modification watermark is unchanged. The Collector's separate `rawProgress` checkpoint supplies acknowledged provider byte offsets.
+The Adapter keeps no durable conversation cache. Its opaque cursor contains only a bounded Session watermark, a monotonic commit sequence, a last-completed Canonical Session marker, and an in-progress page snapshot. The snapshot freezes the selected provider title so pagination cannot emit different content at one Session revision. The commit sequence lets Raw-only changes such as archive finalization produce a new committed cursor even when the filesystem modification watermark is unchanged. The Collector's separate `rawProgress` checkpoint supplies acknowledged provider byte offsets.
+
+When previously unknown Git history becomes attributable after the watermark has
+passed it, unacknowledged sources complete Canonical before Raw. The optional
+marker avoids repeatedly selecting the same Canonical recovery phase. Existing
+v3 cursors remain readable; recovery may replay an idempotent Canonical observation
+before its first Raw acknowledgement.
 
 The title index is read as a bounded, tolerant compatibility source: only the most recent 16 MiB is considered, incomplete or malformed records are ignored, and collection continues with the root-prompt fallback when the file does not exist. A valid title record's `updated_at` participates in Session discovery and revision selection, so a title-only rename is collected without modifying Raw source. Cursor v3 resets v1 and v2 watermarks once and advances the Canonical projection revision so already captured Sessions can be replayed with provider titles even when the indexed title predates the latest rollout write.
 

@@ -30,6 +30,8 @@
 | [0026](0026-bounded-raw-byte-streams.md) | Accepted design; Implementation pending | Bounded Raw byte frames, versioned cross-frame masking, deterministic packing and metadata-only replay |
 | [0027](0027-transactional-capture-checkpoints.md) | Accepted design; Implementation pending | Transactional metadata-only capture journal, explicit source coverage and independently fenced Raw recovery |
 | [0028](0028-shared-acp-tool-values-and-source-references.md) | Accepted design; Implementation pending | End-to-end common ACP tool values, deterministic v2 encoding and generation-specific pending Raw references |
+| [0036](0036-ink-cli-experience.md) | Accepted; implemented and verified locally | Ink setup and Project console over shared Effect workflows, with installed-artifact terminal validation |
+| [0037](0037-shared-git-source-attribution.md) | Accepted; implemented locally | Shared Host Git attribution, repository-based reattachment and durable source evidence for Codex/Claude |
 
 ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.
 

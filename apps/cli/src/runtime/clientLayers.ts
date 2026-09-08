@@ -5,6 +5,7 @@ import {
   ClientConfigStoreError,
   ProjectLocator,
   ProjectLocatorError,
+  makeGitSourceAttributionLayer,
   type ClientConfigChange,
   type InstalledAdapterPackage
 } from "@atape/application"
@@ -31,6 +32,8 @@ import { makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
 import { makeNodeAuthenticationLayer } from "./authenticationLayers.ts"
 import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
 import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
+import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
+import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 import {
   legacyDataExists,
   makeClientMigrationLayer,
@@ -91,17 +94,22 @@ export const makeNodeClientLayer = (
   ).pipe(
     Layer.provide(authentication)
   )
-  const collector = makeNodeCollectorLayer(paths, environment).pipe(
-    Layer.provide(authenticatedHTTP)
-  )
   const projectSetup = makeProjectSetupGatewayLayer().pipe(
     Layer.provide(authenticatedHTTP)
+  )
+  const locator = makeProjectLocatorLayer()
+  const gitAttribution = makeGitSourceAttributionLayer().pipe(Layer.provide(Layer.mergeAll(
+    projectSetup, locator, makeGitSourceBindingsLayer(`${paths.collectorStateFile}.git-attribution`)
+  )))
+  const collector = makeNodeCollectorLayer(paths, environment).pipe(
+    Layer.provide(Layer.mergeAll(authenticatedHTTP, gitAttribution, locator))
   )
   return Layer.mergeAll(
     authentication,
     authenticatedHTTP,
     makeConfigStoreLayer(paths.configFile, paths.legacy),
-    makeProjectLocatorLayer(),
+    makeCLISetupPlatformLayer(paths, environment),
+    locator,
     makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
     projectSetup,
     makeClientMigrationLayer({
@@ -265,16 +273,17 @@ const writeClientConfig = (configFile: string, config: ClientConfig): Effect.Eff
 
 export const makeProjectLocatorLayer = () => Layer.succeed(ProjectLocator, ProjectLocator.of({
   locate: (inputPath, preference) => Effect.tryPromise({
-    try: async () => {
-      const requested = await realpath(resolve(inputPath))
+    try: async (signal) => {
+      const expanded = inputPath === "~" || inputPath.startsWith("~/") ? homedir() + inputPath.slice(1) : inputPath
+      const requested = await realpath(resolve(expanded))
       const metadata = await stat(requested)
       if (!metadata.isDirectory()) {
         throw locatedFailure("not_directory", requested, `${requested} is not a directory.`)
       }
-      if (preference === "directory") {
-        return { path: requested, name: basename(requested), type: "directory" as const }
+      const gitRoot = await findGitRoot(requested, signal)
+      if (preference === "directory" && gitRoot !== undefined) {
+        throw locatedFailure("not_git", requested, "This directory belongs to a Git repository. Run setup without --type directory to connect the repository.")
       }
-      const gitRoot = await findGitRoot(requested)
       if (gitRoot === undefined) {
         if (preference === "git") {
           throw locatedFailure("not_git", requested, `${requested} is not inside a Git worktree.`)
@@ -282,7 +291,7 @@ export const makeProjectLocatorLayer = () => Layer.succeed(ProjectLocator, Proje
         return { path: requested, name: basename(requested), type: "directory" as const }
       }
       const root = await realpath(gitRoot)
-      const repositoryRemote = await findGitRemote(root)
+      const repositoryRemote = await findGitRemote(root, signal)
       return {
         path: root,
         name: basename(root),
@@ -304,26 +313,27 @@ export const makeProjectLocatorLayer = () => Layer.succeed(ProjectLocator, Proje
   })
 }))
 
-const findGitRoot = (path: string): Promise<string | undefined> => new Promise((resolveResult, reject) => {
+const findGitRoot = (path: string, signal: AbortSignal): Promise<string | undefined> => new Promise((resolveResult, reject) => {
   execFile("git", ["-C", path, "rev-parse", "--show-toplevel"], {
+    signal,
+    env: gitEnvironment(),
     encoding: "utf8",
     timeout: 10_000,
     maxBuffer: 1024 * 1024
-  }, (error, stdout) => {
+  }, (error, stdout, stderr) => {
     if (error === null) {
       resolveResult(stdout.trim())
       return
     }
-    if (hasCode(error, "ENOENT")) {
-      reject(error)
-      return
-    }
-    resolveResult(undefined)
+    if (String(error.code) === "128" && stderr.includes("not a git repository")) resolveResult(undefined)
+    else reject(error)
   })
 })
 
-const findGitRemote = (path: string): Promise<string | undefined> => new Promise((resolveResult, reject) => {
+const findGitRemote = (path: string, signal: AbortSignal): Promise<string | undefined> => new Promise((resolveResult, reject) => {
   execFile("git", ["-C", path, "config", "--get", "remote.origin.url"], {
+    signal,
+    env: gitEnvironment(),
     encoding: "utf8",
     timeout: 10_000,
     maxBuffer: 1024 * 1024
@@ -333,13 +343,16 @@ const findGitRemote = (path: string): Promise<string | undefined> => new Promise
       resolveResult(remote === "" || /[\r\n\0]/.test(remote) ? undefined : remote)
       return
     }
-    if (hasCode(error, "ENOENT")) {
-      reject(error)
-      return
-    }
-    resolveResult(undefined)
+    if (String(error.code) === "1") resolveResult(undefined)
+    else reject(error)
   })
 })
+
+const gitEnvironment = () => {
+  const environment = { ...process.env, LC_ALL: "C" }
+  for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) delete (environment as NodeJS.ProcessEnv)[name]
+  return environment
+}
 
 export const makeAdapterPackagesLayer = (
   adapterDirectory: string,

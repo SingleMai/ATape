@@ -2,8 +2,6 @@ import { AdapterCollectionLimits, type AdapterCollectRequest, type AdapterCollec
 import { appendFile, mkdtemp, mkdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { createAtapeAdapter } from "./index.ts"
 
@@ -97,18 +95,23 @@ it("rejects malformed complete records and does not reset corrupt checkpoints", 
   await expect(collect()).rejects.toThrow("malformed")
 })
 
-it("matches a linked Git worktree by common directory, not a similar pathname", async () => {
-  const git = promisify(execFile), repo = join(root, "repo"), worktree = join(root, "linked"), unrelated = join(root, "repo-other")
-  await git("git", ["init", repo]); await git("git", ["-C", repo, "-c", "user.name=ATape Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "fixture"])
-  await git("git", ["-C", repo, "worktree", "add", "--detach", worktree])
-  await git("git", ["init", unrelated])
-  for (const r of records) if (r.cwd) r.cwd = worktree
-  await writeFile(file, records.map(r => JSON.stringify(r)).join("\n") + "\n")
-  expect((await collect(request(), { ...context, project: { ...context.project, type: "git", path: repo } })).observations).toHaveLength(1)
-  expect((await collect(request(), { ...context, project: { ...context.project, type: "git", path: unrelated } })).observations).toEqual([])
+it("uses Host Git attribution for both explicit and discovered sources, without a live Project path", async () => {
+  const origin = records.find(r => r.parentUuid === null)!
+  const resolve = vi.fn(async () => "included" as const)
+  const gitContext = { ...context, project: { ...context.project, type: "git" as const, path: "/deleted/project" },
+    gitAttribution: { version: "atape.git-attribution.v1" as const, resolve } }
+  expect((await collect(request(), gitContext)).observations).toHaveLength(1)
+  expect(resolve).toHaveBeenCalledWith({ sourceId: origin.sessionId, originKey: origin.uuid, cwd: origin.cwd }, expect.any(AbortSignal))
   await discoveredFile("worktree")
-  expect((await collect(request(), { ...context, project: { ...context.project, type: "git", path: repo } })).observations).toHaveLength(1)
-  expect((await collect(request(), { ...context, project: { ...context.project, type: "git", path: unrelated } })).observations).toEqual([])
+  expect((await collect(request(), gitContext)).observations).toHaveLength(1)
+  const excluded = { ...gitContext, gitAttribution: { ...gitContext.gitAttribution, resolve: async () => "excluded" as const } }
+  expect((await collect(request(), excluded)).observations).toEqual([])
+  const unknown = { ...gitContext, gitAttribution: { ...gitContext.gitAttribution, resolve: async () => "unknown" as const } }
+  expect(await collect(request(), unknown)).toMatchObject({ observations: [], sourceFailures: [{ reason: "attribution" }] })
+})
+
+it("requires the new Host capability for Git Projects", async () => {
+  await expect(createAtapeAdapter({ ...context, project: { ...context.project, type: "git" } })).rejects.toThrow("Upgrade")
 })
 
 it("discovers multiple sessions, persists each checkpoint and finds later appends and new files", async () => {

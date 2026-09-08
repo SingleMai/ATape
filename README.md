@@ -60,7 +60,9 @@ pnpm dev:web
 
 Open [http://127.0.0.1:4187/](http://127.0.0.1:4187/).
 
-Against the authenticated Compose Instance, configure local capture Projects and independently installed Harness Adapters with the Node/Effect CLI:
+Run `atape` (or `pnpm atape` in this repository) for guided setup and the Ink Project console. It handles login, Team and repository selection, source confirmation and background sync.
+
+Against the authenticated Compose Instance, the explicit automation Interface also remains available:
 
 ```sh
 ATAPE_DEVELOPMENT_ALLOW_HTTP=true pnpm atape login --instance http://127.0.0.1:8080 --no-browser
@@ -86,7 +88,7 @@ The public npm packages use the `@atape` scope:
 
 ```sh
 npm install --global @atape/cli
-atape adapters install @atape/adapter-codex
+atape
 ```
 
 The release directory also contains `SHA256SUMS`. Tag-driven publication is documented in [`docs/releasing.md`](docs/releasing.md).

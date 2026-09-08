@@ -1,6 +1,9 @@
 # Local setup and Adapter management
 
-The ATape CLI keeps capture authorization explicit and local. `setup` records which directories may be observed, Adapter commands manage independently installed Harness integrations, and `collect` runs the bounded upload workflow.
+The [CLI experience initiative](experience-improvement.md) tracks the Ink setup
+and Project console. This guide also documents the explicit command Interface.
+
+The ATape CLI keeps capture authorization explicit and local. `setup` records which Git repositories or ordinary directories may be observed, Adapter commands manage independently installed Harness integrations, and `collect` runs the bounded upload workflow.
 
 ## Install the CLI
 
@@ -12,6 +15,41 @@ atape --version
 ```
 
 The checksummed GitHub Release tarball remains an equivalent offline installation source. Repository maintainers create the complete CLI + Codex/Claude Adapter release set with `pnpm pack:release`, verify the clean installation boundary with `pnpm test:release`, and follow [`docs/releasing.md`](../releasing.md) for publication.
+
+## Guided setup and Project console
+
+Run `atape` in a macOS or Linux terminal. With no configured Projects it opens
+setup; otherwise it opens your Project list. `atape setup [directory]` opens the
+same guide to add another Project. Explicit command flags such as `--team`,
+`--create`, `--adapter` and `--json` retain the command workflow below.
+
+Setup offers directory editing with Tab completion, browser sign-in, Team
+selection and detected source choices. Detection checks known local source data
+directories; it does not scan the disk or guarantee this Project has history.
+Review the Instance, account, Team, Project, sources and historical import before
+confirming. Only confirmation installs/upgrades selected integrations, enables
+capture and starts continuing background sync. No Teams means open Web onboarding,
+then return and select Refresh; the directory remains selected.
+
+The initial wait is bounded to 15 seconds. Waiting for a first conversation,
+syncing, queued history, up to date, partial coverage and failure are distinct
+outcomes. Use Refresh or leave the console open for updates. Project details
+provide source management, Web navigation, identity-checked sign-in/restart and
+local removal. Source changes affect subsequent cycles; an in-flight upload may
+finish. Global Stop requires a review because it affects all local Projects.
+
+Use arrows and Enter to navigate, Space to select sources, Escape to go back or
+cancel, and Ctrl+C to exit. Path input supports paste, Unicode, Home/End and
+Ctrl+A/E/U/K. PgUp/PgDn pages long details on narrow screens. Exiting restores the
+terminal and leaves the independently managed Collector running. After reboot,
+`atape start` resumes collection manually.
+
+Pipes, CI, Windows and `TERM=dumb` get plain guidance; use explicit commands and
+JSON for automation. Configuration completed before cancellation is retained.
+An interrupted source installation can be retried, and confirmed directory-Project
+creation retains a request key under `config/setup-requests/` to reuse the server's
+idempotency contract. Existing local directory registrations are reused. These
+files contain request keys, not conversation data.
 
 ## Sign in
 
@@ -45,9 +83,9 @@ pnpm atape setup ../payments-api \
   --adapter codex
 ```
 
-The User, Team, and Project authority always comes from the authenticated server; the CLI has no flags that let callers assert those identities. The default `--type auto` behavior promotes a path inside a Git worktree to the repository root, reads its `origin`, and searches every visible Team for an exact repository match. One exact match is attached automatically. No match requires an explicit Team and `--create`; ambiguous matches require an explicit selection. Use `--type directory` when the selected folder itself is the intended boundary, even when it sits inside a Git repository. `--type git` rejects paths outside a Git worktree or without an origin remote.
+The User, Team, and Project authority always comes from the authenticated server; the CLI has no flags that let callers assert those identities. The default `--type auto` behavior promotes a path inside a Git worktree to the repository root, reads its `origin`, and searches every visible Team for an exact repository match. One exact match is attached automatically. No match requires an explicit Team and `--create`; ambiguous matches require an explicit selection. Git repositories always use repository identity, including worktrees and independent clones. `--type directory` is accepted only outside Git. `--type git` rejects paths outside a Git worktree or without an origin remote; fix the remote before continuing.
 
-Each local Project stores its verified Instance, User, Team, server Project, type, and resolved path. The path never crosses the HTTP boundary as identity. Repeating an identical setup is idempotent. To change Project identity, remove the local Project and set it up again:
+Each local Project stores its verified Instance, User, Team, server Project, type, and resolved path; Git setup also stores the server repository identity. The path never crosses the HTTP boundary as identity. Repeating an identical setup is idempotent. Repeating Git setup from another checkout of the same Project updates the local path and verified display metadata while preserving enabled sources and collection progress. Explicit `--adapter` selections add sources; omitting them retains existing selections. To change Project identity, remove the local Project and set it up again:
 
 ```sh
 pnpm atape projects list
@@ -55,7 +93,29 @@ pnpm atape projects remove payments-api
 ```
 
 Removal only changes this machine's configuration. It never deletes conversation history already captured by the ATape server.
-If the same Project ID is registered again later, its new local creation timestamp starts a fresh Adapter cursor and Raw checkpoint. Existing server history is still retained and ingestion identities remain idempotent.
+
+## Git conversation attribution
+
+Codex and Claude use the same Host attribution contract. Codex supplies the
+original rollout CWD and recorded Git remote when available; Claude supplies the
+original root record's CWD. The Host resolves the nearest repository when needed
+and asks the configured Instance to match its remote in the selected Team. The
+server owns remote equivalence and repository aliases. A nested unrelated
+repository is excluded even when its path is under the configured checkout.
+
+Confirmed source evidence stays in local metadata so an established conversation
+can continue after `/cd`, a changed origin or deletion of its original directory.
+New conversations must establish their own attribution. Unknown historical
+identity is skipped and reported as `attribution` in partial collection diagnostics;
+paths alone never guess it. A known different repository is simply excluded.
+Network or authentication failures fail the job without acknowledging its page.
+
+Git collection requires a Host and Adapter declaring
+`atape.git-attribution.v1`; upgrade the CLI and enabled Git Adapters together.
+Existing config v2 and recognized cursors remain readable. Older packages are
+rejected for Git capture before import, with upgrade guidance. Directory capture
+keeps its existing contract, but a previously configured directory that is now
+inside Git must be reconnected as a Git Project.
 
 ## Install and assign Adapters
 
@@ -140,6 +200,7 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 - Credentials: `~/.atape/credentials/`
 - Configuration: `~/.atape/config/client.json`
 - Collector checkpoints, process metadata, and status: `~/.atape/state/`
+- Git attribution evidence: beside the Collector state file, in `<state-file>.git-attribution/`
 - Background logs: `~/.atape/logs/collector.log`
 - Adapter packages: `~/.atape/adapters/`
 
@@ -155,6 +216,12 @@ pnpm atape migrate-local-v0.1 --apply
 The import deliberately discards old client-asserted server/User/Team/Project authority. An old checkpoint can be adopted only later, after authenticated setup has bound exactly one new Instance/User/Project/Adapter tuple, with the explicit `--adopt-checkpoint` command shown by `atape --help`.
 
 The checkpoint file stores only an installation ID, opaque cursors, and per-Raw-object offsets; it never queues conversation bodies. Raw content is re-read from the Harness through an unadvanced cursor after a failed upload, while acknowledged source ranges are skipped.
+
+Git attribution evidence contains source identifiers, original CWD and remote,
+never conversation bodies or upload acknowledgements. Preserve it with Collector
+state; losing it can make history unattributable when its original checkout is
+gone and the provider did not record a remote. Saved remotes are matched against
+the server again during collection.
 
 The redactor covers common credentials and environment values whose names end in `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`, `DATABASE_URL`, or `DSN`. Add exact values with a JSON array in `ATAPE_REDACT_VALUES`. Identity fields are stable and are not rewritten, so Adapter authors must never place secrets in IDs.
 

@@ -32,7 +32,7 @@ const SetupStep = ({
   </article>
 )
 
-export const WorkspaceHomeView = ({ state, teamSlug, onRetry }: Props) => {
+export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
   if (state._tag === "Loading") {
     return <section className="state-card" aria-live="polite">Looking for shared project memory…</section>
   }
@@ -65,26 +65,26 @@ export const WorkspaceHomeView = ({ state, teamSlug, onRetry }: Props) => {
         <SetupStep
           number={1}
           eyebrow="Choose the boundary"
-          title="Register a local Project"
-          command={`atape login\natape setup /path/to/project --team ${teamSlug ?? "your-team"} --create`}
+          title="Open guided setup"
+          command={"npm install --global @atape/cli\natape"}
         >
-          ATape captures only the Git repository or ordinary folder you explicitly select.
+          Choose a local directory in the terminal. Setup handles sign-in and connects its Git repository or ordinary folder to your Team.
         </SetupStep>
         <SetupStep
           number={2}
-          eyebrow="Connect a Harness"
-          title="Install and enable an Adapter"
-          command={"atape adapters install <adapter-package>\natape adapters enable <adapter-id> --project <project-id>"}
+          eyebrow="Review your choices"
+          title="Confirm the Project and sources"
+          command={"atape setup /path/to/project"}
         >
-          Adapters stay independent and are loaded only when that Project is collected.
+          Review the Instance, Team, Project and conversation sources. Confirm once to install the selected integrations, import history and start ongoing sync.
         </SetupStep>
         <SetupStep
           number={3}
           eyebrow="Create shared memory"
-          title="Start background collection"
-          command={"atape start\natape status"}
+          title="Check progress in your Project console"
+          command={"atape\n# After a reboot:\natape start"}
         >
-          The first successful cycle makes the Project visible here; later cycles keep it current.
+          The terminal distinguishes waiting for a conversation, syncing and partial coverage. You can close it while background sync continues.
         </SetupStep>
       </div>
 

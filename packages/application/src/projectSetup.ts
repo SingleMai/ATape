@@ -17,7 +17,8 @@ export class ProjectSetupGatewayError extends Schema.TaggedError<ProjectSetupGat
       "conflict",
       "transport",
       "decode",
-      "unavailable"
+      "unavailable",
+      "invalid_remote"
     ]),
     message: Schema.String
   }
@@ -72,12 +73,14 @@ export class ProjectSetupGateway extends Context.Service<ProjectSetupGateway, {
   matchGitProject(
     instanceOrigin: string,
     teamId: string,
-    remote: string
+    remote: string,
+    expectedUserId?: string
   ): Effect.Effect<SetupProjectMatch, ProjectSetupGatewayError>
   createProject(
     instanceOrigin: string,
     teamSlug: string,
-    project: CreateRemoteProject
+    project: CreateRemoteProject,
+    options?: { readonly idempotencyKey?: string; readonly expectedUserId: string }
   ): Effect.Effect<SetupRemoteProject, ProjectSetupGatewayError>
 }>()("atape/application/ProjectSetupGateway") {}
 
@@ -103,6 +106,7 @@ export type ProjectSetupSelection =
     readonly mode: "create"
     readonly teamId: string
     readonly name?: string
+    readonly idempotencyKey?: string
     readonly adapterIds?: ReadonlyArray<string>
   }
 
@@ -110,6 +114,7 @@ export type ProjectSetupOutcome = {
   readonly project: LocalProject
   readonly createdLocally: boolean
   readonly createdRemotely: boolean
+  readonly updatedLocally: boolean
 }
 
 export const planProjectSetup = Effect.fn("ProjectSetup.plan")(function*(input: {
@@ -123,7 +128,7 @@ export const planProjectSetup = Effect.fn("ProjectSetup.plan")(function*(input: 
   if (local.type === "git" && local.repositoryRemote === undefined) {
     return yield* new ProjectSetupError({
       reason: "missing_git_remote",
-      message: "This Git worktree has no origin remote. Add one or use --type directory explicitly."
+      message: "This Git worktree has no origin remote. Configure a supported origin remote and run setup again."
     })
   }
   const workspace = yield* gateway.loadWorkspace(input.instanceOrigin)
@@ -140,7 +145,8 @@ export const planProjectSetup = Effect.fn("ProjectSetup.plan")(function*(input: 
     ? (yield* Effect.forEach(teams, (team) => gateway.matchGitProject(
       input.instanceOrigin,
       team.id,
-      local.repositoryRemote as string
+      local.repositoryRemote as string,
+      workspace.user.id
     ).pipe(Effect.map((match) => ({ team, match }))), { concurrency: 4 }))
       .flatMap(({ team, match }) => match.status === "exact" ? [{ team, project: match.project }] : [])
     : []
@@ -193,7 +199,8 @@ export const applyProjectSetup = Effect.fn("ProjectSetup.apply")(function*(
     const match = yield* gateway.matchGitProject(
       plan.instanceOrigin,
       team.id,
-      currentLocal.repositoryRemote
+      currentLocal.repositoryRemote,
+      workspace.user.id
     )
     if (match.status !== "exact" || match.project.id !== selection.projectId || match.project.state !== "active") {
       return yield* new ProjectSetupError({
@@ -213,12 +220,14 @@ export const applyProjectSetup = Effect.fn("ProjectSetup.apply")(function*(
       team.slug,
       currentLocal.type === "git"
         ? { type: "git", remote: currentLocal.repositoryRemote as string }
-        : { type: "folder", name }
+        : { type: "folder", name },
+      { expectedUserId: workspace.user.id, ...(selection.idempotencyKey === undefined ? {} : { idempotencyKey: selection.idempotencyKey }) }
     )
     createdRemotely = true
   }
   if (remote.teamId !== team.id || remote.state !== "active" ||
     (currentLocal.type === "git" && remote.type !== "git") ||
+    (currentLocal.type === "git" && !remote.repositoryIdentity) ||
     (currentLocal.type === "directory" && remote.type !== "folder")) {
     return yield* new ProjectSetupError({
       reason: "changed", message: "The server returned a Project outside the selected setup scope."
@@ -235,11 +244,14 @@ export const applyProjectSetup = Effect.fn("ProjectSetup.apply")(function*(
     name: remote.name,
     createdAt: remote.createdAt,
     type: currentLocal.type,
+    ...(remote.repositoryIdentity === undefined ? {} : { repositoryIdentity: remote.repositoryIdentity }),
+    ...(currentLocal.repositoryRemote === undefined ? {} : { expectedRepositoryRemote: currentLocal.repositoryRemote }),
     ...(selection.adapterIds === undefined ? {} : { adapterIds: selection.adapterIds })
   })
   return {
     project: local.project,
     createdLocally: local.created,
+    updatedLocally: local.updated === true,
     createdRemotely
   } satisfies ProjectSetupOutcome
 })

@@ -597,7 +597,7 @@ describe("Codex Adapter", () => {
     expect(deleted.observations).toEqual([])
   })
 
-  it("matches a Git project by normalized origin when Codex recorded a worktree outside its path", async () => {
+  it("passes recorded Git metadata to the Host and obeys its attribution decision", async () => {
     const root = await makeEmptyFixture()
     const outside = join(root.workspace, "worktree")
     await mkdir(outside)
@@ -618,10 +618,24 @@ describe("Codex Adapter", () => {
     await runGit(root.project, ["init"])
     await runGit(root.project, ["remote", "add", "origin", "git@github.com:example/atape.git"])
 
-    const runtime = await openAdapter(root.project, "git")
+    const sources: Array<unknown> = []
+    const runtime = await openAdapter(root.project, "git", {
+      version: "atape.git-attribution.v1",
+      resolve: async source => { sources.push(source); return "included" }
+    })
     const page = await collect(runtime)
 
     expect(requiredObservation(page).session.sourceSessionId).toBe("remote-session")
+    expect(sources[0]).toMatchObject({ sourceId: "remote-session", cwd: outside, repositoryRemote: "ssh://git@github.com/Example/ATape.git" })
+    const denied = await openAdapter(root.project, "git", { version: "atape.git-attribution.v1", resolve: async () => "excluded" })
+    expect((await collect(denied)).observations).toEqual([])
+    const unknown = await openAdapter("/deleted/project", "git", { version: "atape.git-attribution.v1", resolve: async () => "unknown" })
+    const unknownPage = await collect(unknown)
+    expect(unknownPage).toMatchObject({ observations: [], sourceFailures: [{ reason: "attribution" }] })
+    const recovered = await collect(runtime, unknownPage.nextCursor)
+    expect(requiredObservation(recovered).events.length).toBeGreaterThan(0)
+    expect(requiredObservation(await collect(runtime, recovered.nextCursor)).rawSegments.length).toBeGreaterThan(0)
+    await expect(openAdapter(root.project, "git")).rejects.toThrow("Upgrade")
   })
 
   it("uses a stable untitled label when the root Thread has no user message", async () => {
@@ -850,7 +864,8 @@ const makeEmptyFixture = async () => {
   return { workspace, codexHome, project, sessionsDirectory, archivedDirectory }
 }
 
-const openAdapter = (project: string, type: "git" | "directory") => createAtapeAdapter({
+const openAdapter = (project: string, type: "git" | "directory", gitAttribution?: import("@atape/domain").AdapterOpenContext["gitAttribution"]) => createAtapeAdapter({
+  ...(gitAttribution === undefined ? {} : { gitAttribution }),
   protocolVersion: AdapterProtocolVersion,
   adapter: { id: "codex", version: "0.1.0" },
   project: { id: "project-1", type, path: project },

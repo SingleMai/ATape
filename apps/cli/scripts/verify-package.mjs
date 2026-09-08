@@ -41,7 +41,7 @@ try {
     mkdir(adapterSource, { recursive: true })
   ])
   const packed = JSON.parse((await run("npm", [
-    "pack", "--json", "--pack-destination", artifactDirectory
+    "pack", ...(process.env.ATAPE_VERIFY_CLI_TARBALL ? [process.env.ATAPE_VERIFY_CLI_TARBALL, "--ignore-scripts"] : []), "--json", "--pack-destination", artifactDirectory
   ], packageRoot)).stdout)
   assert.equal(packed.length, 1)
   const manifest = packed[0]
@@ -66,6 +66,8 @@ try {
     const remote = await startFixtureServer()
     fixtureServer = remote.server
     environment.ATAPE_INSTANCE_URL = remote.origin
+    await writeSmokeAdapter()
+    process.stdout.write((await run("python3", [fileURLToPath(new URL("verify-terminal.py", import.meta.url)), binary, join(temporaryRoot, "terminal"), adapterSource, remote.origin], temporaryRoot)).stdout)
     const login = await atape(["login", "--no-browser", "--json"])
     assert.deepEqual(JSON.parse(login.stdout), {
       instanceOrigin: remote.origin,
@@ -115,6 +117,8 @@ try {
 
 async function startFixtureServer() {
   let origin = ""
+  let teamsEnabled = true
+  const projects = []
   const server = createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
@@ -125,6 +129,10 @@ async function startFixtureServer() {
       else response.end(JSON.stringify(body))
     }
     switch (`${request.method} ${request.url}`) {
+      case "POST /__terminal-fixture/teams":
+        teamsEnabled = JSON.parse(Buffer.concat(chunks).toString("utf8")).enabled
+        send(200, {})
+        return
       case "GET /api/v1/instance":
         send(200, {
           protocol: "atape.instance.v1",
@@ -163,20 +171,20 @@ async function startFixtureServer() {
         return
       case "GET /api/v1/workspace":
         send(200, {
-          teams: [{
+          teams: teamsEnabled ? [{
             id: "package-team-id",
             slug: "package-team",
             displayName: "Package Team",
             membership: { role: "owner" },
             createdAt: "2026-09-06T00:00:00Z",
             updatedAt: "2026-09-06T00:00:00Z"
-          }],
-          projects: []
+          }] : [],
+          projects
         })
         return
       case "POST /api/v1/teams/package-team/projects":
         assert.equal(request.headers.authorization, "Bearer atc_v1_package-secret")
-        send(201, {
+        const project = {
           id: "package-project",
           teamId: "package-team-id",
           type: "folder",
@@ -185,7 +193,9 @@ async function startFixtureServer() {
           repositoryLinkState: "not_applicable",
           createdAt: "2026-09-06T00:00:00Z",
           updatedAt: "2026-09-06T00:00:00Z"
-        })
+        }
+        if (projects.length === 0) projects.push(project)
+        send(201, project)
         return
       case "DELETE /api/v1/auth/cli/credentials/current":
         send(204)
