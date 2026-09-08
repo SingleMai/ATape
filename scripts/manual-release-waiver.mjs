@@ -4,10 +4,11 @@ import { promisify } from "node:util"
 
 const execute = promisify(execFile)
 // Closed list of separately authorized decisions. Future releases do not inherit
-// either waiver merely by adding an evidence file.
+// a waiver merely by adding an evidence file.
 const manualWaiverPaths = new Map([
   ["0.2.0", "docs/releases/evidence/v0.2.0-manual-waiver.json"],
-  ["0.3.0", "docs/releases/evidence/v0.3.0-manual-waiver.json"]
+  ["0.3.0", "docs/releases/evidence/v0.3.0-manual-waiver.json"],
+  ["0.3.1", "docs/releases/evidence/v0.3.1-manual-waiver.json"]
 ])
 export const manualWaiverPathFor = version => manualWaiverPaths.get(version)
 
