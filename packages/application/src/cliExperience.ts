@@ -1,7 +1,7 @@
 import type { AdapterInstallation, ClientConfig, LocalProject } from "@atape/domain"
 import { Clock, Context, Effect, Schema } from "effect"
 import {
-  ClientConfigStore, inspectClient, installAdapter, removeProject, upgradeAdapters
+  ClientConfigStore, effectiveClientConfig, type ClientSnapshot, inspectClient, installAdapter, removeProject, upgradeAdapters
 } from "./clientManagement.ts"
 import {
   applyProjectSetup, planProjectSetup, ProjectSetupGateway,
@@ -15,7 +15,8 @@ import { normalizeInstanceTopology } from "@atape/domain"
 export class CLIExperienceError extends Schema.TaggedError<CLIExperienceError>()("CLIExperienceError", {
   reason: Schema.Literals(["io", "changed", "selection", "upgrade", "unauthenticated"]),
   message: Schema.String,
-  instanceOrigin: Schema.optionalKey(Schema.String)
+  instanceOrigin: Schema.optionalKey(Schema.String),
+  adapterId: Schema.optionalKey(Schema.String)
 }) {}
 
 export const officialSources = [
@@ -48,10 +49,48 @@ export type SourceChoice = {
 }
 export type GuidedSetupPlan = {
   readonly project: ProjectSetupPlan
-  readonly config: ClientConfig
+  readonly config: ClientSnapshot
   readonly detected: ReadonlyArray<string>
   readonly existingDirectory?: LocalProject
 }
+
+export const inspectTools = Effect.fn("CLIExperience.tools")(function*() {
+  const config = yield* inspectClient()
+  const detected = yield* (yield* CLISetupPlatform).detectSources()
+  const selected = config.toolsConfigured ? config.enabledAdapterIds : detected
+  return { configured: config.toolsConfigured,
+    choices: sourceChoices(config, detected).map(choice => ({ ...choice, selected: selected.includes(choice.id),
+      version: config.adapters.find(adapter => adapter.adapterId === choice.id)?.version })), config }
+})
+const toolScope = (config: ClientConfig) => JSON.stringify({ version: config.version,
+  configured: config.toolsConfigured, enabled: config.enabledAdapterIds, projects: effectiveClientConfig(config).projects })
+export const planToolChange = Effect.fn("CLIExperience.planTools")(function*(sourceIds: ReadonlyArray<string>) {
+  const { config, choices } = yield* inspectTools()
+  const ids = [...new Set(sourceIds)].sort()
+  if (ids.some(id => !choices.some(choice => choice.id === id))) return yield* changed("The available tools changed. Review your selection again.")
+  return { ids, scope: toolScope(config), projects: config.projects.map(project => ({
+    project, added: ids.filter(id => !project.adapterIds.includes(id)), removed: project.adapterIds.filter(id => !ids.includes(id))
+  })) }
+})
+export type ToolChangePlan = Effect.Success<ReturnType<typeof planToolChange>>
+export const applyToolChange = Effect.fn("CLIExperience.applyTools")(function*(plan: ToolChangePlan) {
+  const config = yield* inspectClient()
+  if (toolScope(config) !== plan.scope) return yield* changed("Projects or tools changed. Review the impact again.")
+  const ids = [...new Set(plan.ids)].sort()
+  for (const project of config.projects.filter(project => ids.some(id => !project.adapterIds.includes(id)))) {
+    yield* verifyProjectAccount(project)
+  }
+  yield* ensureSources(ids, config.projects.some(project => project.type === "git"))
+  const store = yield* ClientConfigStore
+  const saved = yield* store.transact(current => Effect.gen(function*() {
+    if (toolScope(current) !== plan.scope || ids.some(id => !current.adapters.some(adapter => adapter.adapterId === id))) {
+      return yield* changed("Projects or tools changed during installation. Review the impact again.")
+    }
+    const next: ClientConfig = { ...current, toolsConfigured: true, enabledAdapterIds: ids }
+    return { value: next, config: next }
+  }))
+  return saved
+})
 export const prepareGuidedSetup = Effect.fn("CLIExperience.prepare")(function*(input: {
   readonly instanceOrigin: string; readonly path: string
 }) {
@@ -69,24 +108,18 @@ export const prepareGuidedSetup = Effect.fn("CLIExperience.prepare")(function*(i
   return { project, config, detected, ...(existingDirectory ? { existingDirectory } : {}) } satisfies GuidedSetupPlan
 })
 
-export const guidedSourceChoices = (plan: GuidedSetupPlan, teamId: string): ReadonlyArray<SourceChoice> => {
-  const matchingId = plan.project.exactMatches.find(match => match.team.id === teamId)?.project.id
-  const existing = plan.existingDirectory ?? plan.config.projects.find(item =>
-    item.instanceOrigin === plan.project.instanceOrigin && item.id === matchingId && item.userId === plan.project.user.id)
-  return sourceChoices(plan.config, plan.detected, existing)
-}
-const sourceChoices = (config: ClientConfig, detected: ReadonlyArray<string>, project?: LocalProject): ReadonlyArray<SourceChoice> => [
+const sourceChoices = (config: ClientConfig, detected: ReadonlyArray<string>): ReadonlyArray<SourceChoice> => [
   ...officialSources.map(source => ({
     id: source.id, label: source.label, detected: detected.includes(source.id),
     installed: config.adapters.some(adapter => adapter.adapterId === source.id),
-    selected: project ? project.adapterIds.includes(source.id) : detected.includes(source.id)
+    selected: config.toolsConfigured ? config.enabledAdapterIds.includes(source.id) : detected.includes(source.id)
   })),
   ...config.adapters.filter(adapter => !officialSources.some(source => source.id === adapter.adapterId)).map(adapter => ({
     id: adapter.adapterId, label: adapter.displayName, detected: false, installed: true,
-    selected: project?.adapterIds.includes(adapter.adapterId) ?? false
+    selected: config.enabledAdapterIds.includes(adapter.adapterId)
   }))
 ]
-export type SetupProgress = "Installing selected sources" | "Connecting Project" | "Starting background sync" | "Waiting for first sync"
+export type SetupProgress = "Connecting Project" | "Starting background sync" | "Waiting for first sync"
 
 export const completeGuidedSetup = Effect.fn("CLIExperience.complete")(function*(input: {
   readonly plan: GuidedSetupPlan
@@ -96,34 +129,44 @@ export const completeGuidedSetup = Effect.fn("CLIExperience.complete")(function*
   readonly progress: (stage: SetupProgress) => Effect.Effect<void>
 }) {
   const { plan } = input
-  const sourceIds = yield* validateSources(input.sourceIds, guidedSourceChoices(plan, input.teamId))
+  const sourceIds = yield* validateSources(input.sourceIds, sourceChoices(plan.config, plan.detected))
+  const currentConfig = yield* inspectClient()
+  if (JSON.stringify([...currentConfig.enabledAdapterIds].sort()) !== JSON.stringify([...sourceIds].sort())) {
+    return yield* changed("Global tools changed. Review the Project again.")
+  }
   const gateway = yield* ProjectSetupGateway
   const workspace = yield* gateway.loadWorkspace(plan.project.instanceOrigin)
   if (workspace.user.id !== plan.project.user.id || !workspace.teams.some(team => team.id === input.teamId)) {
     return yield* changed("The account or Team changed. Review setup again.")
   }
-  yield* input.progress("Installing selected sources")
-  yield* ensureSources(sourceIds, plan.project.local.type === "git")
+  {
+    const platform = yield* CLISetupPlatform
+    for (const id of sourceIds) {
+      const installed = currentConfig.adapters.find(adapter => adapter.adapterId === id)
+      if (!installed || plan.project.local.type === "git" && !(yield* platform.supportsGit(installed))) {
+        return yield* new CLIExperienceError({ reason: "upgrade", adapterId: id,
+          message: `${id} needs setup or an update in Tools before this Project can connect.` })
+      }
+    }
+  }
   yield* input.progress("Connecting Project")
   let project: LocalProject
   if (plan.existingDirectory) {
     if (plan.existingDirectory.teamId !== input.teamId) return yield* changed("This directory is already connected to another Team.")
     project = yield* currentProject(plan.existingDirectory)
     yield* verifyProjectAccount(project)
-    project = yield* replaceSourceSelection(project, sourceIds)
   } else {
     const exact = plan.project.exactMatches.find(match => match.team.id === input.teamId)
     const platform = yield* CLISetupPlatform
     const name = input.name?.trim() || plan.project.local.name
     const selection: ProjectSetupSelection = exact
-      ? { mode: "exact", teamId: input.teamId, projectId: exact.project.id, adapterIds: sourceIds }
-      : { mode: "create", teamId: input.teamId, name, adapterIds: sourceIds,
+      ? { mode: "exact", teamId: input.teamId, projectId: exact.project.id, expectedToolIds: sourceIds }
+      : { mode: "create", teamId: input.teamId, name, expectedToolIds: sourceIds,
           idempotencyKey: yield* platform.creationKey({
             instanceOrigin: plan.project.instanceOrigin, userId: plan.project.user.id,
             teamId: input.teamId, path: plan.project.local.path, name
           }) }
     project = (yield* applyProjectSetup(plan.project, selection)).project
-    project = yield* replaceSourceSelection(project, sourceIds)
   }
   yield* input.progress("Starting background sync")
   yield* startExperienceCollector()
@@ -187,33 +230,6 @@ export const startExperienceCollector = Effect.fn("CLIExperience.start")(functio
 })
 export const stopExperienceCollector = stopManagedCollector
 
-export const inspectProjectSources = Effect.fn("CLIExperience.sources")(function*(expected: LocalProject) {
-  const project = yield* currentProject(expected)
-  const platform = yield* CLISetupPlatform
-  return sourceChoices(yield* inspectClient(), yield* platform.detectSources(), project)
-})
-export const changeProjectSources = Effect.fn("CLIExperience.changeSources")(function*(expected: LocalProject, sourceIds: ReadonlyArray<string>) {
-  const project = yield* currentProject(expected)
-  yield* verifyProjectAccount(project)
-  const ids = [...new Set(sourceIds)]
-  const choices = yield* inspectProjectSources(project)
-  if (ids.some(id => !choices.some(choice => choice.id === id))) return yield* changed("The available sources changed. Review the selection again.")
-  yield* ensureSources(ids, project.type === "git")
-  return yield* replaceSourceSelection(project, ids)
-})
-const replaceSourceSelection = Effect.fn("CLIExperience.replaceSources")(function*(project: LocalProject, ids: ReadonlyArray<string>) {
-  const store = yield* ClientConfigStore
-  return yield* store.transact((config) => Effect.gen(function*() {
-    const current = config.projects.find(item => item.instanceOrigin === project.instanceOrigin && item.id === project.id)
-    if (!current || current.userId !== project.userId || current.createdAt !== project.createdAt ||
-      JSON.stringify(current.adapterIds) !== JSON.stringify(project.adapterIds) ||
-      ids.some(id => !config.adapters.some(adapter => adapter.adapterId === id))) {
-      return yield* changed("The Project's sources changed during this operation. Refresh and review them again.")
-    }
-    const updated = { ...current, adapterIds: [...ids].sort() }
-    return { value: updated, config: { ...config, projects: config.projects.map(item => item === current ? updated : item) } }
-  }))
-})
 export const removeExperienceProject = Effect.fn("CLIExperience.remove")(function*(project: LocalProject) {
   yield* currentProject(project)
   yield* removeProject(project.id)
@@ -225,6 +241,7 @@ export type ProjectSyncState = "no_sources" | "stopped" | "waiting" | "syncing" 
 export type ProjectRecovery =
   | { readonly kind: "sources" | "sign_in" | "resume" | "automatic_retry" | "repair" | "partial" | "none" }
   | { readonly kind: "sign_in_elsewhere"; readonly project: LocalProject }
+  | { readonly kind: "tool"; readonly adapterId: string }
 export type ConsoleProject = {
   readonly project: LocalProject
   readonly state: ProjectSyncState
@@ -249,9 +266,14 @@ export const inspectCLIExperience = Effect.fn("CLIExperience.inspect")(function*
       : jobs.some(job => job.hasMore) ? "queued"
       : jobs.some(job => job.state === "pending") ? "syncing"
       : captured || jobs.some(job => (job.canonicalBatches ?? 0) > 0) ? "up_to_date" : "waiting"
-    projects.push({ project, state, jobs, recovery: projectRecovery(project, jobs, collector, config.projects) })
+    const missing = project.adapterIds.find(id => !config.adapters.some(adapter => adapter.adapterId === id))
+    const broken = jobs.find(job => job.state === "failed" && (job.failureReason === "adapter" || job.failureReason === "contract"))
+    projects.push({ project, state: missing ? "failed" : state, jobs,
+      recovery: missing ? { kind: "tool", adapterId: missing } : broken ? { kind: "tool", adapterId: broken.adapterId } : projectRecovery(project, jobs, collector, config.projects) })
   }
-  return { projects, collector, activeInstanceOrigin: config.activeInstanceOrigin }
+  return { projects, collector, activeInstanceOrigin: config.activeInstanceOrigin,
+    toolsConfigured: config.toolsConfigured, enabledTools: config.enabledAdapterIds,
+    needsAttention: projects.filter(item => ["sign_in", "sign_in_elsewhere", "repair", "partial", "tool"].includes(item.recovery.kind)).length }
 })
 const projectRecovery = (project: LocalProject, jobs: ReadonlyArray<ManagedCollectorJobStatus>, collector: ManagedCollectorStatus, projects: ReadonlyArray<LocalProject>): ProjectRecovery => {
   if (project.adapterIds.length === 0) return { kind: "sources" }
@@ -279,14 +301,11 @@ export const observeInitialSync = Effect.fn("CLIExperience.firstSync")(function*
 })
 const changed = (message: string) => new CLIExperienceError({ reason: "changed", message })
 
-export const experienceWebURL = Effect.fn("CLIExperience.webURL")(function*(
-  instanceOrigin: string, project?: LocalProject, allowLoopbackHttp = false
+export const experienceOnboardingURL = Effect.fn("CLIExperience.onboardingURL")(function*(
+  instanceOrigin: string, allowLoopbackHttp = false
 ) {
   const gateway = yield* CLIAuthenticationGateway
   const topology = normalizeInstanceTopology(yield* gateway.discover(instanceOrigin), { allowLoopbackHttp })
   if (!topology || topology.instanceOrigin !== instanceOrigin) return yield* changed("The Instance returned a different Web destination. Check its public origins.")
-  const route = project
-    ? `/teams/${encodeURIComponent(project.teamId)}/projects/${encodeURIComponent(project.id)}`
-    : "/onboarding"
-  return new URL(route, topology.webOrigin).href
+  return new URL("/onboarding", topology.webOrigin).href
 })

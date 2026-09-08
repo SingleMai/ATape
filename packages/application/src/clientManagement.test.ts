@@ -12,7 +12,6 @@ import {
   inspectClient,
   installAdapter,
   removeProject,
-  setProjectAdapter,
   setupProject,
   upgradeAdapters
 } from "./clientManagement"
@@ -93,7 +92,9 @@ describe("Client management Module", () => {
   it("reattaches a clone without replacing sources or the registration epoch", async () => {
     const client = fixture()
     await client.run(installAdapter("@atape/adapter-codex"))
-    const first = await client.run(setupProject(setupInput({ adapterIds: ["codex"] })))
+    await client.run(Effect.flatMap(ClientConfigStore, store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["codex"] } }))))
+    const first = await client.run(setupProject(setupInput()))
     const second = await client.run(setupProject(setupInput({
       path: "/work/clone", createdAt: "2026-09-08T00:00:00Z", name: "Renamed Project"
     })))
@@ -126,17 +127,15 @@ describe("Client management Module", () => {
       .rejects.toMatchObject({ reason: "conflict", resource: "project" })
   })
 
-  it("installs, enables, and upgrades an Adapter without starting a sidecar", async () => {
+  it("installs and upgrades an Adapter without enabling tools without starting a sidecar", async () => {
     const client = fixture()
     await client.run(setupProject(setupInput()))
     const installed = await client.run(installAdapter("@atape/adapter-codex@1.0.0"))
-    const enabled = await client.run(setProjectAdapter({ projectId: "project-1", adapterId: "codex", enabled: true }))
     const upgraded = await client.run(upgradeAdapters("all"))
 
     expect(installed.adapter.version).toBe("1.0.0")
-    expect(enabled.adapterIds).toEqual(["codex"])
     expect(upgraded[0]?.version).toBe("1.1.0")
-    expect((await client.run(inspectClient())).projects[0]?.adapterIds).toEqual(["codex"])
+    expect((await client.run(inspectClient())).projects[0]?.adapterIds).toEqual([])
   })
 
   it("reuses an HTTPS package source during an explicit Adapter upgrade", async () => {

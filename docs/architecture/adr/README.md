@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0040](0040-global-cli-tools.md) records global CLI tool configuration,
+one current configuration schema and shared Collector semantics.
+
 | ADR | Status | Decision |
 | --- | --- | --- |
 | [0001](0001-web-runtime-and-view-stack.md) | Accepted | Effect 4 RC, React 19, Vite 8, and TanStack Router for the v0.1 Web application |

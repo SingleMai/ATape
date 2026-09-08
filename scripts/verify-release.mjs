@@ -84,9 +84,10 @@ try {
   assert.equal(installed.adapter.upgradeSpec, `file:${adapterArtifact}`)
   assert.equal(installed.adapter.version, adapterPackage.version)
   assert.equal(installed.adapter.displayName, "Codex")
+  await atape(["tools", "configure", "--adapter", "codex", "--apply", "--json"])
   await atape([
     "setup", projectDirectory, "--team", "release-team", "--create",
-    "--name", "Release Project", "--type", "directory", "--adapter", "codex", "--json"
+    "--name", "Release Project", "--type", "directory", "--json"
   ])
   assert.ok(!JSON.stringify(remote.requests).includes(projectDirectory), "setup uploaded a local filesystem path")
   const collected = JSON.parse((await atape([
@@ -143,7 +144,7 @@ async function verifyClaudeUpgrade() {
   assert.equal(installed.adapter.adapterId, "claude")
   assert.equal(installed.adapter.version, fixtureVersion)
   assert.equal(installed.adapter.upgradeSpec, `file:${await realpath(upgradeSource)}`)
-  await atape(["adapters", "enable", "claude", "--project", "release-project", "--json"])
+  await atape(["tools", "configure", "--adapter", "codex", "--adapter", "claude", "--apply", "--json"])
   const source = (await readFile(join(repositoryRoot, "adapters/claude/fixtures/native-read-2.1.263.jsonl"), "utf8"))
     .replaceAll("/fixture/native-read", projectDirectory)
   await writeFile(claudeSource, source)

@@ -7,10 +7,7 @@ import {
   CLIAuthenticationGateway,
   CLIAuthenticationInteraction,
   CLICredentialStore,
-  ClientMigration,
   ProjectSetupGateway,
-  adoptClientCheckpoint,
-  applyClientMigration,
   applyProjectSetup,
   SecretRedactor,
   inspectClient,
@@ -19,18 +16,19 @@ import {
   loginCLI,
   logoutCLI,
   planProjectSetup,
-  planClientMigration,
   removeProject,
   runCollector,
   runManagedCollector,
-  setProjectAdapter,
   setActiveInstance,
   selectInstanceOrigin,
   startManagedCollector,
   stopManagedCollector,
   upgradeAdapters,
+  inspectTools, planToolChange, applyToolChange,
+  type CLISetupPlatform,
   type AdapterPackages,
   type ClientConfigStore,
+  type ClientSnapshot,
   type CollectionCycleReport,
   type ManagedCollectorStatus,
   type ProjectLocator,
@@ -38,7 +36,6 @@ import {
   type ProjectSetupSelection,
   type SetupTeam
 } from "@atape/application"
-import type { ClientConfig } from "@atape/domain"
 import { createInterface } from "node:readline/promises"
 import { parseArgs } from "node:util"
 import { Effect } from "effect"
@@ -54,10 +51,7 @@ type CLIOptions = {
   readonly team?: string
   readonly create?: boolean
   readonly apply?: boolean
-  readonly adoptCheckpoint?: boolean
-  readonly from?: string
-  readonly sourceProject?: string
-  readonly sourceAdapter?: string
+  readonly none?: boolean
   readonly name?: string
   readonly type?: string
   readonly adapter?: ReadonlyArray<string>
@@ -90,10 +84,7 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
       team: { type: "string" },
       create: { type: "boolean" },
       apply: { type: "boolean" },
-      "adopt-checkpoint": { type: "boolean" },
-      from: { type: "string" },
-      "source-project": { type: "string" },
-      "source-adapter": { type: "string" },
+      none: { type: "boolean" },
       name: { type: "string" },
       type: { type: "string" },
       adapter: { type: "string", multiple: true },
@@ -116,10 +107,7 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
       ...(parsed.values.team ? { team: parsed.values.team } : {}),
       ...(parsed.values.create === true ? { create: true } : {}),
       ...(parsed.values.apply === true ? { apply: true } : {}),
-      ...(parsed.values["adopt-checkpoint"] === true ? { adoptCheckpoint: true } : {}),
-      ...(parsed.values.from ? { from: parsed.values.from } : {}),
-      ...(parsed.values["source-project"] ? { sourceProject: parsed.values["source-project"] } : {}),
-      ...(parsed.values["source-adapter"] ? { sourceAdapter: parsed.values["source-adapter"] } : {}),
+      ...(parsed.values.none === true ? { none: true } : {}),
       ...(parsed.values.name ? { name: parsed.values.name } : {}),
       ...(parsed.values.type ? { type: parsed.values.type } : {}),
       ...(parsed.values.adapter ? { adapter: parsed.values.adapter } : {}),
@@ -140,7 +128,7 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
     CollectorStateStore | AdapterRuntimes | CollectorTransport | SecretRedactor |
     CollectorDaemonProcess | CollectorRunStatusStore |
     CLIAuthenticationGateway | CLICredentialStore | CLIAuthenticationInteraction | ProjectSetupGateway |
-    ClientMigration
+    CLISetupPlatform
 > => {
   const [command, action, argument, extra] = cli.positionals
   if (cli.options.version) {
@@ -162,15 +150,27 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
     case "setup":
       if (argument !== undefined) return failUsage("setup accepts at most one directory.")
       return setupCommand(action, cli.options)
-    case "migrate-local-v0.1":
-      if (action !== undefined) return failUsage("migrate-local-v0.1 accepts no positional arguments.")
-      return migrateCommand(cli.options)
     case "projects":
       if (action === "list" && argument === undefined) return listProjects(cli.options.json === true)
       if (action === "remove" && argument !== undefined) return removeProjectCommand(argument, cli.options.json === true)
       return failUsage("Use `atape projects list` or `atape projects remove <project-id>`.")
     case "adapters":
       return adapterCommand(action, argument, cli.options)
+    case "tools":
+      if (argument !== undefined) return failUsage("tools accepts no extra arguments.")
+      if (action === "list") return inspectTools().pipe(Effect.flatMap(result => cli.options.json ? printJSON({ configured: result.configured,
+        tools: result.choices, projectCount: result.config.projects.length }) : print(
+        result.choices.map(choice => `${choice.label}: ${result.configured && choice.selected ? "enabled" : "not enabled"}${choice.installed ? " · ready" : ""}`).join("\n"))))
+      if (action !== "configure" || cli.options.project || Boolean(cli.options.none) === Boolean(cli.options.adapter?.length)) {
+        return failUsage("Use atape tools configure --adapter <id> [--adapter <id>] or --none. Preview first; add --apply to save globally.")
+      }
+      return planToolChange(cli.options.adapter ?? []).pipe(Effect.flatMap(plan => cli.options.apply
+        ? applyToolChange(plan).pipe(Effect.flatMap(config => cli.options.json ? printJSON(config) : print("Global tools saved for all connected projects.")))
+        : cli.options.json ? printJSON(plan) : print([
+          `Tools: ${plan.ids.join(", ") || "none"} · ${plan.projects.length} projects`,
+          ...plan.projects.map(change => `${change.project.name} (${change.project.instanceOrigin}): +[${change.added.join(", ")}] -[${change.removed.join(", ")}]`),
+          "Added tools import existing history. Disabled tools retain captured history. Add --apply to confirm."
+        ].join("\n"))))
     case "collect":
       if (action !== undefined) return failUsage("collect accepts no positional arguments.")
       return collectCommand(cli.options)
@@ -194,8 +194,8 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
 }
 
 const setupCommand = (path: string | undefined, options: CLIOptions) => Effect.gen(function*() {
-  const current = yield* inspectClient()
-  const instanceOrigin = yield* resolveInstance(options, current)
+  if (options.adapter !== undefined) return yield* failUsage("Tools are global. Omit --adapter for Project setup; use atape tools configure to change tools.")
+  const instanceOrigin = yield* resolveInstance(options, yield* inspectClient())
   const type = yield* setupType(options.type)
   const plan = yield* planProjectSetup({
     instanceOrigin,
@@ -260,62 +260,7 @@ const logoutCommand = (options: CLIOptions) => Effect.gen(function*() {
   ].join("\n"))
 })
 
-const migrateCommand = (options: CLIOptions) => Effect.gen(function*() {
-  if (options.adoptCheckpoint === true) {
-    if (options.apply === true) return yield* failUsage("--adopt-checkpoint and --apply are separate operations.")
-    if (options.from === undefined || options.project === undefined || options.adapter?.length !== 1) {
-      return yield* failUsage(
-        "Checkpoint adoption requires --from <import-id>, --project <project-id>, and one --adapter <adapter-id>."
-      )
-    }
-    const adapterId = options.adapter[0]
-    if (adapterId === undefined) return yield* failUsage("Checkpoint adoption requires one Adapter ID.")
-    const result = yield* adoptClientCheckpoint({
-      importId: options.from,
-      projectId: options.project,
-      adapterId,
-      ...(options.sourceProject === undefined ? {} : { sourceProjectId: options.sourceProject }),
-      ...(options.sourceAdapter === undefined ? {} : { sourceAdapterId: options.sourceAdapter })
-    })
-    yield* options.json
-      ? printJSON(result)
-      : print([
-        `Adopted checkpoint ${result.source.projectId}/${result.source.adapterId}.`,
-        `Target: ${result.target.instanceOrigin} · User ${result.target.userId} · ${result.target.projectId}/${result.target.adapterId}`,
-        `Local checkpoint revision: ${result.revision} (archived source revision ${result.sourceRevision}).`
-      ].join("\n"))
-    return
-  }
-  if (options.apply === true) {
-    const result = yield* applyClientMigration()
-    if (options.json) {
-      yield* printJSON(result)
-      return
-    }
-    yield* print([
-      `Archived v0.1 data in ${result.importDirectory}.`,
-      `Created an empty v0.2 configuration at ${result.createdConfig}.`,
-      "The original files were not removed.",
-      ...result.unresolved.map((item) => `- ${item}`)
-    ].join("\n"))
-    return
-  }
-  const result = yield* planClientMigration()
-  if (options.json) {
-    yield* printJSON(result)
-    return
-  }
-  yield* print([
-    "v0.1 → v0.2 migration plan",
-    `Destination: ${result.destinationRoot}`,
-    ...result.sources.map((source) => `- Archive ${source.kind}: ${source.path}`),
-    ...result.discardedAuthority.map((item) => `- Discard authority: ${item}`),
-    ...result.blockers.map((item) => `Blocker: ${item}`),
-    result.canApply ? "Run `atape migrate-local-v0.1 --apply` to apply this plan." : "Resolve the blockers before applying."
-  ].join("\n"))
-})
-
-const resolveInstance = (options: CLIOptions, config: ClientConfig) => selectInstanceOrigin({
+const resolveInstance = (options: CLIOptions, config: ClientSnapshot) => selectInstanceOrigin({
   ...(options.instance === undefined ? {} : { commandLine: options.instance }),
   ...(process.env.ATAPE_INSTANCE_URL === undefined ? {} : { environment: process.env.ATAPE_INSTANCE_URL }),
   ...(config.activeInstanceOrigin === undefined ? {} : { savedActive: config.activeInstanceOrigin }),
@@ -351,7 +296,6 @@ const resolveProjectSetupSelection = (
         mode: "exact",
         teamId: exact.team.id,
         projectId: exact.project.id,
-        ...(options.adapter === undefined ? {} : { adapterIds: options.adapter })
       }
     }
 
@@ -383,7 +327,6 @@ const resolveProjectSetupSelection = (
         mode: "exact",
         teamId: team.id,
         projectId: exact.project.id,
-        ...(options.adapter === undefined ? {} : { adapterIds: options.adapter })
       }
     }
 
@@ -403,7 +346,6 @@ const resolveProjectSetupSelection = (
       mode: "create",
       teamId: team.id,
       ...(options.name === undefined ? {} : { name: options.name }),
-      ...(options.adapter === undefined ? {} : { adapterIds: options.adapter })
     }
   },
   catch: (cause) => cause instanceof CLIInputError
@@ -422,7 +364,7 @@ const listProjects = (json: boolean) => inspectClient().pipe(
     : printProjects(config))
 )
 
-const printProjects = (config: ClientConfig) => {
+const printProjects = (config: ClientSnapshot) => {
   if (config.projects.length === 0) return print("No local capture Projects. Run `atape setup`.")
   return print([
     `Local capture Projects${config.activeInstanceOrigin ? ` · active ${config.activeInstanceOrigin}` : ""}`,
@@ -455,20 +397,8 @@ const adapterCommand = (
         ? printJSON(result)
         : print([
           `${result.created ? "Installed" : "Updated"} ${result.adapter.displayName} (${result.adapter.adapterId}) v${result.adapter.version}.`,
-          "No Adapter process was started. Enable it for a Project when ready."
+          "No sync was enabled. Open Tools to configure it for your projects."
         ].join("\n"))))
-    case "enable":
-    case "disable": {
-      if (argument === undefined || options.project === undefined) {
-        return failUsage(`adapters ${action} requires <adapter-id> and --project <project-id>.`)
-      }
-      const enabled = action === "enable"
-      return setProjectAdapter({ projectId: options.project, adapterId: argument, enabled }).pipe(
-        Effect.flatMap((project) => options.json
-          ? printJSON({ projectId: project.id, adapterId: argument, enabled })
-          : print(`${enabled ? "Enabled" : "Disabled"} ${argument} for ${project.id}. ${enabled ? "It will be loaded only while this Project is collected." : "It is no longer loaded for this Project."}`))
-      )
-    }
     case "upgrade": {
       const target = options.all ? "all" : argument
       if (target === undefined || (options.all && argument !== undefined)) {
@@ -481,7 +411,7 @@ const adapterCommand = (
           : ["Adapter upgrades complete:", ...adapters.map((adapter) => `- ${adapter.adapterId} · v${adapter.version}`)].join("\n"))))
     }
     default:
-      return failUsage("Use `atape adapters list|install|enable|disable|upgrade`.")
+      return failUsage("Use `atape adapters list|install|upgrade`.")
   }
 }
 
@@ -489,14 +419,14 @@ const listAdapters = (json: boolean) => inspectClient().pipe(
   Effect.flatMap((config) => json ? printJSON(adapterList(config)) : printAdapters(config))
 )
 
-const adapterList = (config: ClientConfig) => config.adapters.map((adapter) => ({
+const adapterList = (config: ClientSnapshot) => config.adapters.map((adapter) => ({
   ...adapter,
   projectIds: config.projects
     .filter((project) => project.adapterIds.includes(adapter.adapterId))
     .map((project) => project.id)
 }))
 
-const printAdapters = (config: ClientConfig) => {
+const printAdapters = (config: ClientSnapshot) => {
   const adapters = adapterList(config)
   if (adapters.length === 0) return print("No Adapters installed.")
   return print([
@@ -682,15 +612,13 @@ Usage:
   atape                              Guided setup or Project console
   atape setup [directory]             Guided setup in an interactive terminal
   atape setup [directory] [--team <slug>] [--create] [options]
-  atape migrate-local-v0.1 [--apply] [--json]
-  atape migrate-local-v0.1 --adopt-checkpoint --from <import-id>
-        --project <id> --adapter <id> [--source-project <id>] [--source-adapter <id>]
   atape projects list [--json]
   atape projects remove <project-id> [--json]
+  atape tools list [--json]
+  atape tools configure --adapter <id> [--adapter <id>] [--apply] [--json]
+  atape tools configure --none [--apply] [--json]
   atape adapters list [--json]
   atape adapters install <package-or-source> [--json]
-  atape adapters enable <adapter-id> --project <project-id>
-  atape adapters disable <adapter-id> --project <project-id>
   atape adapters upgrade <adapter-id>
   atape adapters upgrade --all
   atape collect [--once] [--project <project-id>] [options]
@@ -704,7 +632,6 @@ Setup options:
   --create              Explicitly create when no exact Project match exists
   --name <name>         Name for a newly created directory Project
   --type <mode>         auto (default), git, or directory (outside Git only)
-  --adapter <id>        Attach an installed Adapter; may be repeated
 
 Login options:
   --no-browser          Print the URL and code without opening a browser

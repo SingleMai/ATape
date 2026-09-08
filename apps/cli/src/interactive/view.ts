@@ -4,7 +4,7 @@ import { Select, MultiSelect, ThemeProvider } from "@inkjs/ui"
 import stringWidth from "string-width"
 import type { DirectorySuggestion } from "@atape/application"
 import { cliVersion } from "../version.ts"
-import { cassette, controlsTheme, terminalTheme } from "./theme.ts"
+import { cassette, compactCassette, inlineCassette, controlsTheme, terminalTheme } from "./theme.ts"
 import { ExperiencePresenter, safeTerminalText, type Screen } from "./presenter.ts"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -42,6 +42,7 @@ export const ExperienceView = ({ presenter }: { presenter: ExperiencePresenter }
     if (key.ctrl && input === "c") presenter.close()
     else if (screen.layout === "projects") return
     else if (key.escape) presenter.back()
+    else if (input === "r" && screen.refreshable) presenter.refresh()
     else if (input === "q" && screen.kind === "menu") presenter.close()
   })
   // Pasting into menus must never act like Enter or Space.
@@ -52,10 +53,12 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
   const window = useWindowSize()
   const width = Math.max(1, window.columns - 2)
   const rows = Math.max(8, window.rows)
-  const welcome = screen.layout === "welcome" && width >= 62 && rows >= 22
+  const brand = width >= 62 && rows >= 28 ? "full" : width >= 36 && rows >= 18 ? "compact" : "inline"
+  const headerHeight = brand === "full" ? cassette.length : brand === "compact" ? compactCassette.length : 1
+  const contentRows = rows - (headerHeight - 1)
   const [detailPage, setDetailPage] = useState(0)
-  const details = linesWithin(welcome ? [] : [...(screen.notice && screen.layout !== "projects" ? [screen.notice] : []), ...(screen.refreshError ? [screen.refreshError] : []), ...screen.details], width)
-  const detailCapacity = Math.max(1, Math.min(screen.layout === "projects" ? 3 : screen.title === "Review and connect" ? 12 : 7, rows - (screen.pathInput ? 10 : 8)))
+  const details = linesWithin([...(screen.notice && screen.layout !== "projects" ? [screen.notice] : []), ...(screen.refreshError ? [screen.refreshError] : []), ...screen.details], width)
+  const detailCapacity = Math.max(1, Math.min(screen.layout === "projects" ? 3 : screen.title === "Review and connect" ? 12 : 7, contentRows - (screen.pathInput ? 10 : 8)))
   const pages = Math.max(1, Math.ceil(details.length / detailCapacity))
   const page = Math.min(detailPage, pages - 1)
   const shown = details.slice(page * detailCapacity, (page + 1) * detailCapacity)
@@ -64,11 +67,10 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
     if (key.pageUp) setDetailPage(value => Math.max(0, value - 1))
   })
   const options = screen.options?.map(option => ({ ...option, label: safeTerminalText(option.label) })) ?? []
-  const available = rows - shown.length - (welcome ? 13 : 4) - (pages > 1 ? 1 : 0)
+  const available = contentRows - shown.length - 4 - (pages > 1 ? 1 : 0)
   const optionCount = Math.max(1, Math.min(7, available - 1))
   return h(Box, { flexDirection: "column", width: window.columns },
-    h(Text, { bold: true, color: terminalTheme.accent, wrap: "truncate-end" }, `ATape · ${safeTerminalText(screen.kind === "busy" ? screen.context ?? screen.title : screen.title)}${screen.refreshing ? " · Refreshing…" : screen.layout === "projects" && screen.notice ? ` · ${safeTerminalText(screen.notice)}` : ""}`),
-    welcome ? h(Welcome, { width }) : null,
+    h(BrandHeader, { mode: brand, title: `ATape · ${safeTerminalText(screen.kind === "busy" ? screen.context ?? screen.title : screen.title)}${screen.refreshing ? " · Refreshing…" : screen.layout === "projects" && screen.notice ? ` · ${safeTerminalText(screen.notice)}` : ""}` }),
     ...shown.map((line, index) => h(Text, { key: index, dimColor: true }, line || " ")),
     pages > 1 ? h(Text, { color: "yellow" }, `Details ${page + 1}/${pages} · PgUp/PgDn`) : null,
     h(Box, { marginTop: 1, flexDirection: "column" },
@@ -81,24 +83,25 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
         : screen.kind === "menu" ? h(Select, { options, visibleOptionCount: optionCount, onChange: presenter.submit })
         : h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, `${screen.title}…`)),
     screen.layout === "projects" ? null : h(Text, { dimColor: true, wrap: "truncate-end" }, screen.kind === "sources"
-      ? "↑↓ Move · Space Select · Enter Continue · Esc Back · Ctrl+C Exit"
+      ? "↑↓ Move · Space Select · Enter Save · Esc Back · Ctrl+C Exit"
       : screen.pathInput ? "↑↓ Choose · Enter Select · Tab Edit path"
       : screen.kind === "input" ? "Enter Continue · Esc Back · Ctrl+C Exit"
       : screen.kind === "busy" ? "Esc Cancel · Ctrl+C Exit"
-      : "↑↓ Move · Enter Select · Esc Back · q Exit")
+      : `↑↓ Move · Enter Select${screen.refreshable ? " · r Refresh" : ""} · Esc Back · q Exit`)
   )
 }
 
-const Welcome = ({ width }: { width: number }) => h(Box, {
-  borderStyle: "round", borderColor: terminalTheme.border, width, paddingX: 1, marginTop: 1
-}, h(Box, { width: 28, flexDirection: "column", alignItems: "center" },
-  h(Text, { color: terminalTheme.accent }, cassette.join("\n")),
-  h(Text, { dimColor: true }, `v${cliVersion}`)),
-h(Box, { flexGrow: 1, flexBasis: 0, flexDirection: "column", justifyContent: "center", paddingLeft: 2 },
-  h(Text, { color: terminalTheme.accent, bold: true }, "Your conversations, together."),
-  h(Text, null, " "),
-  h(Text, null, "Connect a project. Choose your sources."),
-  h(Text, { dimColor: true }, "Review once, then keep your history in sync.")))
+const BrandHeader = ({ mode, title }: { mode: "full" | "compact" | "inline"; title: string }) => {
+  const heading = h(Text, { color: terminalTheme.accent, bold: true, wrap: "truncate-end" }, title)
+  if (mode === "inline") return h(Box, null,
+    h(Box, { flexGrow: 1, flexBasis: 0 }, heading),
+    h(Box, { flexShrink: 0 }, h(Text, { color: terminalTheme.accent }, ` ${inlineCassette}`)))
+  const art = mode === "full" ? cassette : compactCassette
+  return h(Box, null,
+    h(Box, { flexShrink: 0, marginRight: 2 }, h(Text, { color: terminalTheme.accent }, art.join("\n"))),
+    h(Box, { flexDirection: "column", flexGrow: 1, flexBasis: 0 }, heading,
+      h(Text, { dimColor: true }, `v${cliVersion}`)))
+}
 
 const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowser }: { screen: Screen; presenter: ExperiencePresenter; width: number; capacity: number } & BrowserBinding) => {
   const { query, searching, actions, focused, actionIndex } = browser
@@ -141,6 +144,7 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
       else setQuery(value => (value + cleanInput(input)).slice(0, 256))
     } else if (input === "/") update({ searching: true, actions: false })
     else if (input === "q") presenter.close()
+    else if (input === "r") presenter.refresh()
   })
   const start = Math.max(0, Math.min(index, Math.max(Math.min(browser.start, Math.max(0, options.length - capacity)), index - capacity + 1)))
   return h(Box, { flexDirection: "column" },
@@ -152,17 +156,17 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
       return project ? h(Box, { key: option.value },
         h(Text, color, active ? "› " : "  "),
         h(Box, { width: Math.max(8, Math.floor(width * 0.28)), paddingRight: 1 }, h(Text, { ...color, bold: active, wrap: "truncate-end" }, safeTerminalText(project.name))),
-        ...(width >= 70 ? [h(Box, { key: "sources", width: Math.floor(width * 0.23), paddingRight: 1 }, h(Text, { dimColor: !active, ...color, wrap: "truncate-end" }, safeTerminalText(project.sources)))] : []),
+        ...(width >= 70 ? [h(Box, { key: "team", width: Math.floor(width * 0.23), paddingRight: 1 }, h(Text, { dimColor: !active, ...color, wrap: "truncate-end" }, safeTerminalText(project.team)))] : []),
         h(Box, { flexGrow: 1, flexBasis: 0 }, h(Text, { ...color, wrap: "truncate-end" }, project.status)))
         : h(Text, { key: option.value, ...color, wrap: "truncate-end" }, `${active ? "›" : " "} ${safeTerminalText(option.label)}`)
-    }) : [h(Text, { key: "empty", dimColor: true }, "No matching projects. Esc clears search.")]),
+    }) : [h(Text, { key: "empty", dimColor: true }, query ? "No matching projects. Esc clears search." : "No projects yet. Tab to Add project.")]),
     options.length > capacity ? h(Text, { dimColor: true }, `${index + 1}/${options.length} · ↑↓ More`) : null,
     h(Box, { marginTop: 1 }, h(Text, { wrap: "truncate-end" }, ...globalActions.map((action, i) => h(Text, {
       key: action.value, ...(actions && i === selectedAction ? { color: terminalTheme.accent } : {}),
       bold: actions && i === selectedAction, dimColor: !actions
     }, `${i ? "  ·  " : ""}${actions && i === selectedAction ? "› " : ""}${action.label}`)))),
     // The focused action remains readable even when the action bar is truncated.
-    h(Text, { dimColor: true, wrap: "truncate-end" }, actions ? `Actions: ${globalActions[selectedAction]?.label} · ←→ Choose · Enter Run · Tab Projects` : (width < 60 ? "↑↓ Enter Open · / Find · Tab Actions" : "↑↓ Choose · Enter Open · / Search · Tab Actions · q Exit")))
+    h(Text, { dimColor: true, wrap: "truncate-end" }, actions ? `Actions: ${globalActions[selectedAction]?.label} · ←→ Choose · Enter Run · Tab Projects` : (width < 60 ? "↑↓ Enter Open · / Find · r Refresh · Tab" : "↑↓ Choose · Enter Open · / Search · r Refresh · Tab Actions · q Exit")))
 }
 
 const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity, onChange, onSubmit }: {

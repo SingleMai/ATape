@@ -21,7 +21,7 @@ const main = async () => {
     return
   }
   if (requestsGuidedExperience(command)) {
-    process.stdout.write("Interactive setup needs a macOS/Linux terminal. Use `atape setup <directory> --team <slug> --create --adapter <id>` and `atape start`, or `atape --help`.\n")
+    process.stdout.write("Interactive setup needs a macOS/Linux terminal. Configure tools with `atape tools configure --adapter <id> --apply`, then use `atape setup <directory> --team <slug> --create` and `atape start`, or `atape --help`.\n")
     return
   }
 

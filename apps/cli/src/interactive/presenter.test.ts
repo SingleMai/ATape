@@ -54,12 +54,19 @@ const fixture = async (setup = false) => {
       yield* store.transact(config => Effect.succeed({ value: undefined, config: { ...config,
         adapters: [{ adapterId: "codex", displayName: "Codex", packageName: "@atape/adapter-codex", version: "0.3.0",
           upgradeSpec: "@atape/adapter-codex", installedAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z" }],
-        projects: config.projects.map(item => item.id === id ? { ...item, adapterIds: ["codex"] } : item)
+        toolsConfigured: true, enabledAdapterIds: ["codex"]
       } }))
     }))
     return project.project
   }
-  return { root, presenter, runtime, wait, seed, holdNext, exited: () => exited }
+  const toolsReady = async (configured = true) => runtime.runPromise(Effect.gen(function*() {
+    yield* (yield* ClientConfigStore).transact(config => Effect.succeed({ value: undefined, config: {
+      ...config, toolsConfigured: configured, enabledAdapterIds: configured ? ["codex"] : [],
+      adapters: [{ adapterId: "codex", displayName: "Codex", packageName: "@atape/adapter-codex", version: "0.3.1",
+        upgradeSpec: "@atape/adapter-codex", installedAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z" }]
+    } }))
+  }))
+  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, exited: () => exited }
 }
 
 const terminal = (presenter: ExperiencePresenter, rows = 14) => {
@@ -85,22 +92,38 @@ describe("interactive navigation through the presenter Interface", () => {
     const client = await fixture()
     const directory = join(client.root, "项目 space")
     await mkdir(directory)
+    await client.toolsReady(false)
     client.presenter.start()
     await client.wait(screen => screen.layout === "welcome")
     client.presenter.submit("connect")
+    await client.wait(screen => screen.title === "Which tools do you use?")
+    client.presenter.submit(["codex"])
     await client.wait(screen => screen.suggestions?.some(item => item.path === directory + "/") ?? false)
     client.presenter.pathChanged(directory)
     client.presenter.back()
-    expect(client.presenter.getSnapshot().layout).toBe("welcome")
-    client.presenter.submit("connect")
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("add")
     expect(client.presenter.getSnapshot().initial).toBe(directory)
     expect((await client.runtime.runPromise(inspectClient())).projects).toEqual([])
     client.presenter.close()
     expect(client.exited()).toBe(true)
   })
 
+  it("opens an empty Project list when tool setup was completed on an earlier launch", async () => {
+    const client = await fixture()
+    await client.toolsReady()
+    client.presenter.start()
+    const screen = await client.wait(screen => screen.layout === "projects")
+    expect(screen.options).toEqual([])
+    expect(screen.details.join(" ")).toContain("Tools: Codex")
+    client.presenter.submit("add")
+    await client.wait(screen => screen.pathInput === true)
+    expect((await client.runtime.runPromise(inspectClient())).projects).toEqual([])
+  })
+
   it("explicit setup skips the welcome while bare atape separates Projects from global actions", async () => {
     const explicit = await fixture(true)
+    await explicit.toolsReady()
     explicit.presenter.start()
     await explicit.wait(screen => Boolean(screen.pathInput))
     const client = await fixture()
@@ -110,7 +133,7 @@ describe("interactive navigation through the presenter Interface", () => {
     const list = await client.wait(screen => screen.layout === "projects")
     expect(list.options).toHaveLength(2)
     expect(list.options?.every(option => option.value.startsWith("project:"))).toBe(true)
-    expect(list.actions?.map(action => action.value)).toEqual(["add", "start", "refresh", "exit"])
+    expect(list.actions?.map(action => action.value)).toEqual(["add", "tools", "settings"])
     client.presenter.submit(`project:${second.instanceOrigin}:${second.id}`)
     await client.wait(screen => screen.title === "second")
     client.presenter.back()
@@ -119,24 +142,34 @@ describe("interactive navigation through the presenter Interface", () => {
     expect(returned.projects?.map(project => project.name)).toEqual([first.name, second.name])
   })
 
-  it("prioritizes source setup or global resume and puts account/removal controls in Project settings", async () => {
+  it("routes tool setup globally, keeps Project actions shallow and requires confirmation to disconnect", async () => {
     const client = await fixture()
     const empty = await client.seed("empty")
-    const stopped = await client.seed("stopped", true)
     client.presenter.start()
     await client.wait(screen => screen.layout === "projects")
     client.presenter.submit(`project:${empty.instanceOrigin}:${empty.id}`)
     const noSources = await client.wait(screen => screen.title === "empty")
-    expect(noSources.options?.[0]?.value).toBe("sources")
+    expect(noSources.options?.[0]?.value).toBe("tools")
+    const stopped = await client.seed("stopped", true)
     client.presenter.back()
     await client.wait(screen => screen.layout === "projects")
     client.presenter.submit(`project:${stopped.instanceOrigin}:${stopped.id}`)
     const resume = await client.wait(screen => screen.title === "stopped")
+    const ui = terminal(client.presenter)
     expect(resume.options?.[0]).toEqual({ value: "start", label: "Start sync for all projects" })
     expect(resume.options?.map(option => option.value)).not.toContain("login")
-    expect(resume.options?.map(option => option.value)).not.toContain("remove")
-    client.presenter.submit("settings")
-    expect(client.presenter.getSnapshot().options?.map(option => option.value)).toContain("remove")
+    expect(resume.options?.map(option => option.value)).toContain("remove")
+    expect(resume.options?.map(option => option.value)).not.toContain("settings")
+    expect(resume.options?.map(option => option.value)).not.toContain("back")
+    client.presenter.submit("diagnostics")
+    expect(client.presenter.getSnapshot().options?.map(option => option.value)).not.toContain("back")
+    await ui.send("\x1b")
+    await client.wait(screen => screen.title === "stopped")
+    await ui.send("\x1b")
+    await client.wait(screen => screen.layout === "projects")
+    expect(client.presenter.getSnapshot().focusedProject).toBe(`project:${stopped.instanceOrigin}:${stopped.id}`)
+    client.presenter.submit(`project:${stopped.instanceOrigin}:${stopped.id}`)
+    await client.wait(screen => screen.title === "stopped")
     client.presenter.submit("remove")
     expect(client.presenter.getSnapshot().options?.[0]?.value).toBe("back")
     client.presenter.back()
@@ -173,6 +206,7 @@ describe("interactive navigation through the presenter Interface", () => {
 
   it("treats Enter on directory candidates as browsing and requires the connection action", async () => {
     const client = await fixture(true)
+    await client.toolsReady()
     const directory = join(client.root, "child")
     await mkdir(directory)
     const ui = terminal(client.presenter)
@@ -200,7 +234,7 @@ describe("interactive navigation through the presenter Interface", () => {
     expect(client.presenter.getSnapshot().pathInput).toBe(true)
   })
 
-  it("does not navigate back when a slow refresh completes after opening settings", async () => {
+  it("does not navigate back when a slow refresh completes after opening global tools", async () => {
     const client = await fixture()
     const project = await client.seed("project")
     client.presenter.start()
@@ -210,15 +244,15 @@ describe("interactive navigation through the presenter Interface", () => {
     const release = client.holdNext()
     client.presenter.submit("refresh")
     expect(client.presenter.getSnapshot().refreshing).toBe(true)
-    client.presenter.submit("settings")
-    expect(client.presenter.getSnapshot().title).toBe("Project settings")
+    client.presenter.submit("tools")
+    await client.wait(screen => screen.title === "Tools")
     release()
     // Allow the real filesystem-backed refresh to finish after navigation.
     await new Promise(resolve => setTimeout(resolve, 150))
-    expect(client.presenter.getSnapshot().title).toBe("Project settings")
+    expect(client.presenter.getSnapshot().title).toBe("Tools")
   })
 
-  it("puts a required fix before Web navigation and keeps diagnostics refresh read-only and in place", async () => {
+  it("prioritizes the required fix and keeps diagnostics refresh read-only and in place", async () => {
     const client = await fixture()
     const project = await client.seed("broken", true)
     const record = (failed: boolean) => client.runtime.runPromise(Effect.gen(function*() {
@@ -233,7 +267,8 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.layout === "projects")
     client.presenter.submit(`project:${project.instanceOrigin}:${project.id}`)
     const detail = await client.wait(screen => screen.title === "broken")
-    expect(detail.options?.[0]).toEqual({ value: "diagnostics", label: "Resolve sync issue" })
+    expect(detail.options?.[0]).toEqual({ value: "tool", label: "Fix Codex" })
+    expect(detail.options?.some(option => option.value === "web")).toBe(false)
     expect(detail.details.indexOf("codex: Integration version is incompatible")).toBeLessThan(detail.details.findIndex(line => line.startsWith("Directory:")))
     client.presenter.submit("diagnostics")
     expect(client.presenter.getSnapshot().details).toContain("Check integration compatibility; update the affected adapter if needed.")

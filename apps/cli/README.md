@@ -14,11 +14,10 @@ npm install --global @atape/cli
 atape --version
 ```
 
-The package contains one bundled executable. Internal ATape workspace packages are not installed globally, and Harness Adapters remain separate packages. Install the first-party Adapter independently:
-
-```sh
-atape adapters install @atape/adapter-codex
-```
+The package contains one bundled executable. Internal workspace packages are not
+installed globally. The Tools flow installs the selected tool integrations as
+separate packages; manual Adapter installation remains available for custom or
+offline packages.
 
 Checksummed `.tgz` files attached to each GitHub Release provide the equivalent offline installation path.
 
@@ -28,18 +27,19 @@ Checksummed `.tgz` files attached to each GitHub Release provide the equivalent 
 atape
 ```
 
-The Ink setup defaults to the current directory and guides you through sign-in,
-Team selection, Project matching and conversation sources. Review the destination
-and selected sources once; setup then installs integrations as needed, imports
-existing history and starts continuing background sync. No Team yet? Open Web
-onboarding and choose Refresh when you return. `atape setup /path/to/project`
-opens the same guide for another directory.
+First choose your tools once for this machine, then connect a Project directory.
+The guide reuses sign-in and unambiguous destinations. Review the destination,
+global tools and historical import before confirming the connection. No Team yet?
+Open Web onboarding and choose Refresh when you return. `atape setup /path/to/project`
+adds another Project using the same tools, without repeating tool selection.
 
 Running `atape` again opens your Project console. It shows waiting, syncing,
-queued history, up-to-date, partial and failed outcomes, and lets you manage
-sources, open Web Projects and remove local capture. Exiting leaves background
+queued history, up-to-date, partial and failed outcomes. Home offers Add project,
+Tools and Settings; Project details show outcomes, recovery and disconnection.
+Use `r` to refresh in place and Esc to return. The theme-color cassette remains
+visible on every interactive page and adapts to terminal size. Exiting leaves background
 sync running. After reboot, run `atape start`; automatic boot persistence is not
-included. Stop from the console explicitly affects every Project.
+included. Stop in Settings explicitly affects every Project.
 
 Git Projects cover the repository across worktrees and independent clones.
 Repeating setup from another checkout updates its locator while preserving
@@ -48,21 +48,27 @@ Codex and Claude require shared Git attribution support on both CLI and Adapter.
 
 The default Instance is `https://atape.net`; pass `--instance https://atape.example`
 for a self-hosted Instance. Local configuration, credentials and progress remain
-under `~/.atape`. History is uploaded only after your explicit source review.
+under `~/.atape`. History is uploaded only for confirmed Projects and tools.
+
+Tools apply to all connected Projects. A change previews per-Project additions
+and removals before saving. Added tools include existing history; disabling tools
+retains captured history and checkpoints. Tool selection is global; Project
+registrations have no overrides. ATape is still in development and does not
+provide compatibility or migration for older local configurations.
 
 Scripts and unsupported terminals retain explicit commands without entering Ink:
 
 ```sh
 atape login --no-browser
-atape adapters install @atape/adapter-codex
-atape setup /path/to/project --team <team-slug> --create --adapter codex --json
+atape tools configure --adapter codex --json
+atape tools configure --adapter codex --apply --json
+atape setup /path/to/project --team <team-slug> --create --json
 atape start --json
 atape status --json
 ```
 
 `--help` lists the complete automation Interface. Pipes, CI and `TERM=dumb` never
-wait for input. Use `atape migrate-local-v0.1` to review existing v0.1 XDG data;
-apply migration explicitly before setup.
+wait for input.
 
 ## Build and verify from the repository
 
@@ -73,4 +79,4 @@ pnpm test:release
 pnpm pack:release
 ```
 
-The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it without using the source tree at runtime. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and source management. Release verification additionally exercises the independently bundled Codex and Claude Adapters and package replacement recovery. `release/SHA256SUMS` covers all three artifacts.
+The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it without using the source tree at runtime. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification additionally exercises the independently bundled Codex and Claude Adapters and package replacement recovery. `release/SHA256SUMS` covers all three artifacts.

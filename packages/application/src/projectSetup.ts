@@ -3,6 +3,8 @@ import { Context, Effect, Schema } from "effect"
 import {
   ProjectLocator,
   setupProject,
+  inspectClient,
+  validateProjectToolSelection,
   type ClientConfigStore,
   type LocatedProject
 } from "./clientManagement.ts"
@@ -100,14 +102,14 @@ export type ProjectSetupSelection =
     readonly mode: "exact"
     readonly teamId: string
     readonly projectId: string
-    readonly adapterIds?: ReadonlyArray<string>
+    readonly expectedToolIds?: ReadonlyArray<string>
   }
   | {
     readonly mode: "create"
     readonly teamId: string
     readonly name?: string
     readonly idempotencyKey?: string
-    readonly adapterIds?: ReadonlyArray<string>
+    readonly expectedToolIds?: ReadonlyArray<string>
   }
 
 export type ProjectSetupOutcome = {
@@ -163,6 +165,7 @@ export const applyProjectSetup = Effect.fn("ProjectSetup.apply")(function*(
   plan: ProjectSetupPlan,
   selection: ProjectSetupSelection
 ) {
+  yield* validateProjectToolSelection(yield* inspectClient(), selection.expectedToolIds)
   const locator = yield* ProjectLocator
   const gateway = yield* ProjectSetupGateway
   const currentLocal = yield* locator.locate(plan.local.path, plan.local.type)
@@ -246,7 +249,7 @@ export const applyProjectSetup = Effect.fn("ProjectSetup.apply")(function*(
     type: currentLocal.type,
     ...(remote.repositoryIdentity === undefined ? {} : { repositoryIdentity: remote.repositoryIdentity }),
     ...(currentLocal.repositoryRemote === undefined ? {} : { expectedRepositoryRemote: currentLocal.repositoryRemote }),
-    ...(selection.adapterIds === undefined ? {} : { adapterIds: selection.adapterIds })
+    ...(selection.expectedToolIds === undefined ? {} : { expectedToolIds: selection.expectedToolIds })
   })
   return {
     project: local.project,

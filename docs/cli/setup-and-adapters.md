@@ -18,25 +18,27 @@ The checksummed GitHub Release tarball remains an equivalent offline installatio
 
 ## Guided setup and Project console
 
-Run `atape` in a macOS or Linux terminal. With no configured Projects it opens
-setup; otherwise it opens your Project list. `atape setup [directory]` opens the
+Run `atape` in a macOS or Linux terminal. On first use it opens
+setup; after tools have been configured it opens your Project list, even when empty. `atape setup [directory]` opens the
 same guide to add another Project. Explicit command flags such as `--team`,
-`--create`, `--adapter` and `--json` retain the command workflow below.
+`--create` and `--json` retain the command workflow below.
 
-Setup offers directory editing with Tab completion, browser sign-in, Team
-selection and detected source choices. Detection checks known local source data
+First use configures tools globally, then offers directory browsing, browser
+sign-in and Team selection when needed. Detection checks known local tool data
 directories; it does not scan the disk or guarantee this Project has history.
-Review the Instance, account, Team, Project, sources and historical import before
-confirming. Only confirmation installs/upgrades selected integrations, enables
-capture and starts continuing background sync. No Teams means open Web onboarding,
-then return and select Refresh; the directory remains selected.
+Saving tools installs their integrations but does not connect any Project.
+Review the Instance, account, Team, Project, global tools and historical import
+before confirming capture and starting sync. Subsequent Projects reuse the global
+tools. No Teams means Web onboarding, then Refresh; the directory remains selected.
 
 The initial wait is bounded to 15 seconds. Waiting for a first conversation,
 syncing, queued history, up to date, partial coverage and failure are distinct
-outcomes. Use Refresh or leave the console open for updates. Project details
-provide source management, Web navigation, identity-checked sign-in/restart and
-local removal. Source changes affect subsequent cycles; an in-flight upload may
-finish. Global Stop requires a review because it affects all local Projects.
+outcomes. Use `r` or leave the console open for updates. Project details provide
+sync details, relevant recovery and disconnection. Tools and accounts are global
+flows. Tool changes preview their impact on every Project before saving and affect
+subsequent cycles; an in-flight upload may finish. Stop in Settings requires a
+review because it affects all local Projects. Esc returns without a duplicate
+Back menu row. The cassette remains in the shared responsive header.
 
 Use arrows and Enter to navigate, Space to select sources, Escape to go back or
 cancel, and Ctrl+C to exit. Path input supports paste, Unicode, Home/End and
@@ -73,19 +75,20 @@ Run setup from a Project directory:
 pnpm atape setup --team acme-engineering --create
 ```
 
-Or provide a directory, Instance, and installed Adapter explicitly:
+Configure global tools, then provide a directory and Instance explicitly:
 
 ```sh
+pnpm atape tools configure --adapter codex
+pnpm atape tools configure --adapter codex --apply
 pnpm atape setup ../payments-api \
   --instance https://atape.example \
   --team acme-engineering \
-  --create \
-  --adapter codex
+  --create
 ```
 
 The User, Team, and Project authority always comes from the authenticated server; the CLI has no flags that let callers assert those identities. The default `--type auto` behavior promotes a path inside a Git worktree to the repository root, reads its `origin`, and searches every visible Team for an exact repository match. One exact match is attached automatically. No match requires an explicit Team and `--create`; ambiguous matches require an explicit selection. Git repositories always use repository identity, including worktrees and independent clones. `--type directory` is accepted only outside Git. `--type git` rejects paths outside a Git worktree or without an origin remote; fix the remote before continuing.
 
-Each local Project stores its verified Instance, User, Team, server Project, type, and resolved path; Git setup also stores the server repository identity. The path never crosses the HTTP boundary as identity. Repeating an identical setup is idempotent. Repeating Git setup from another checkout of the same Project updates the local path and verified display metadata while preserving enabled sources and collection progress. Explicit `--adapter` selections add sources; omitting them retains existing selections. To change Project identity, remove the local Project and set it up again:
+Each local Project stores its verified Instance, User, Team, server Project, type, and resolved path; Git setup also stores the server repository identity. The path never crosses the HTTP boundary as identity. Repeating an identical setup is idempotent. Repeating Git setup from another checkout of the same Project updates the local path and verified display metadata while preserving enabled sources and collection progress. Tools are derived from the global selection; Project setup has no tool override. To change Project identity, remove the local Project and set it up again:
 
 ```sh
 pnpm atape projects list
@@ -112,12 +115,33 @@ Network or authentication failures fail the job without acknowledging its page.
 
 Git collection requires a Host and Adapter declaring
 `atape.git-attribution.v1`; upgrade the CLI and enabled Git Adapters together.
-Existing config v2 and recognized cursors remain readable. Older packages are
+Incompatible packages are
 rejected for Git capture before import, with upgrade guidance. Directory capture
 keeps its existing contract, but a previously configured directory that is now
 inside Git must be reconnected as a Git Project.
 
-## Install and assign Adapters
+## Tools and Adapter packages
+
+The Tools screen manages one selection for all connected Projects on this
+machine. The equivalent commands preview changes unless `--apply` is explicit:
+
+```sh
+pnpm atape tools list --json
+pnpm atape tools configure --adapter codex --adapter claude --json
+pnpm atape tools configure --adapter codex --adapter claude --apply --json
+pnpm atape tools configure --none --apply
+```
+
+Added tools import attributable history and continue syncing for connected
+Projects. Disabled tools retain server history and checkpoints. A plan becomes
+invalid if Projects or global selection change before it is saved. Failed or
+cancelled installation never partially enables tools; inert installed packages
+may be reused on retry. Project setup cannot install or update tools.
+
+ATape is still in development. One current schema stores global tool selection
+and Project registrations separately. There is no configuration migration or
+compatibility path for earlier development versions. Commands and the Collector
+derive effective Project tools from the same global selection.
 
 An Adapter may come from the npm registry, a local package directory, an npm `.tgz` archive, or an HTTPS archive URL such as a GitHub Release asset:
 
@@ -136,15 +160,8 @@ pnpm atape adapters install ./adapters/codex
 
 Local and remote archives are read with explicit compressed, expanded, and manifest size limits. ATape streams their TAR structure and validates `package/package.json` before asking npm to install them; it never extracts the archive itself. Every installation disables npm lifecycle scripts and validates the installed entry without importing it. A package must therefore contain ready-to-run output. Installing an Adapter does not start a process, though enabling it means its code will execute later inside the Collector Host.
 
-Enable only the integrations needed by each Project:
-
-```sh
-pnpm atape adapters enable codex --project payments-api
-pnpm atape adapters disable codex --project payments-api
-pnpm atape adapters list
-```
-
-The Collector Host loads only the Adapters enabled for the Project being collected. There is no persistent sidecar per installed Adapter.
+The Collector Host loads globally enabled Adapters for each connected Project.
+There is no persistent sidecar per installed Adapter.
 
 Upgrade one Adapter or all installed Adapters:
 
@@ -165,7 +182,7 @@ pnpm atape status
 pnpm atape stop
 ```
 
-On macOS and Linux, the process runs every 30 seconds by default and stays alive after the starting terminal closes. `status` reports whether the process is running plus each configured Project/Adapter's last success time, current failure reason, and latest bounded counters. It does not expose conversation bodies. The v0.1 managed process does not promise restart after logout or reboot; an external supervisor may still invoke `collect --once` when boot persistence is required. Windows retains foreground `collect` until ATape can verify managed process ownership without relying on a reusable PID alone.
+On macOS and Linux, the process runs every 30 seconds by default and stays alive after the starting terminal closes. `status` reports whether the process is running plus each configured Project/Adapter's last success time, current failure reason, and latest bounded counters. It does not expose conversation bodies. The managed process does not promise restart after logout or reboot; an external supervisor may still invoke `collect --once` when boot persistence is required. Windows retains foreground `collect` until ATape can verify managed process ownership without relying on a reusable PID alone.
 
 Run one bounded cycle for diagnosis or an external scheduler:
 
@@ -193,7 +210,7 @@ Each page follows this commit order:
 
 If Raw fails after Canonical succeeds, the cursor remains unchanged. The next cycle replays the Canonical batch, skips Raw source bytes already recorded in the local progress checkpoint, and resumes at the first unacknowledged segment. If the server accepted a segment immediately before the client lost power, its deterministic identity makes that final replay safe. Source deletion never sends a delete to ATape.
 
-## Local state and v0.1 migration
+## Local state
 
 All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 
@@ -205,15 +222,6 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 - Adapter packages: `~/.atape/adapters/`
 
 `ATAPE_HOME` relocates the whole layout. Individual `ATAPE_CONFIG_FILE`, `ATAPE_COLLECTOR_STATE_FILE`, `ATAPE_COLLECTOR_PROCESS_FILE`, `ATAPE_COLLECTOR_STATUS_FILE`, `ATAPE_COLLECTOR_LOG_FILE`, and `ATAPE_ADAPTER_DIRECTORY` overrides remain available for development. Credentials use opaque per-Instance filenames, owner-only directories/files, no-follow reads, compare-and-swap updates, and fsynced atomic replacement. Local filesystem paths remain client state and are not part of server Project, Canonical, Raw, or Search payloads.
-
-v0.2 never silently adopts v0.1 XDG data. Preview and explicitly archive it while retaining every original:
-
-```sh
-pnpm atape migrate-local-v0.1
-pnpm atape migrate-local-v0.1 --apply
-```
-
-The import deliberately discards old client-asserted server/User/Team/Project authority. An old checkpoint can be adopted only later, after authenticated setup has bound exactly one new Instance/User/Project/Adapter tuple, with the explicit `--adopt-checkpoint` command shown by `atape --help`.
 
 The checkpoint file stores only an installation ID, opaque cursors, and per-Raw-object offsets; it never queues conversation bodies. Raw content is re-read from the Harness through an unadvanced cursor after a failed upload, while acknowledged source ranges are skipped.
 

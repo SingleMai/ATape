@@ -2,12 +2,13 @@ import type {
   AdapterInstallation,
   AdapterManifest,
   ClientConfig,
-  LocalProject
+  LocalProject,
+  ProjectRegistration
 } from "@atape/domain"
 import { Clock, Context, Effect, Schema } from "effect"
 
 export class ClientConfigStoreError extends Schema.TaggedError<ClientConfigStoreError>()("ClientConfigStoreError", {
-  reason: Schema.Literals(["io", "decode", "migration_required"]),
+  reason: Schema.Literals(["io", "decode"]),
   message: Schema.String
 }) {}
 
@@ -78,7 +79,7 @@ export type SetupProjectInput = {
   readonly repositoryIdentity?: string
   readonly expectedRepositoryRemote?: string
   readonly type?: "auto" | "git" | "directory"
-  readonly adapterIds?: ReadonlyArray<string>
+  readonly expectedToolIds?: ReadonlyArray<string>
 }
 
 export type SetupProjectResult = {
@@ -94,8 +95,21 @@ export type AdapterInstallResult = {
 
 export const inspectClient = Effect.fn("Client.inspect")(function*() {
   const store = yield* ClientConfigStore
-  return yield* store.transact<ClientConfig, never, never>((config) => Effect.succeed({ value: config }))
+  return yield* store.transact<ClientSnapshot, never, never>((config) => Effect.succeed({ value: effectiveClientConfig(config) }))
 })
+
+export type ClientSnapshot = Omit<ClientConfig, "projects"> & { readonly projects: ReadonlyArray<LocalProject> }
+
+// Every caller, including the Collector, sees the authoritative global selection.
+export const effectiveClientConfig = (config: ClientConfig): ClientSnapshot =>
+  ({ ...config, projects: config.projects.map(project => ({ ...project, adapterIds: config.enabledAdapterIds })) })
+
+// A reviewed selection is an optimistic concurrency check, never a Project override.
+export const validateProjectToolSelection = (config: ClientConfig, ids?: ReadonlyArray<string>) =>
+  ids !== undefined && !sameStrings([...ids].sort(), [...config.enabledAdapterIds].sort())
+    ? Effect.fail(new ClientManagementError({ reason: "conflict", resource: "tools",
+      message: "Global tools changed. Review this Project again." }))
+    : Effect.void
 
 export const setActiveInstance = Effect.fn("Client.setActiveInstance")(function*(instanceOrigin: string) {
   const store = yield* ClientConfigStore
@@ -127,8 +141,9 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
   const projectId = input.projectId.trim()
   yield* validateText("project", projectName)
 
-  const adapterIds = [...new Set(input.adapterIds ?? [])].sort()
   return yield* store.transact<SetupProjectResult, ClientManagementError, never>((config) => Effect.gen(function*() {
+    yield* validateProjectToolSelection(config, input.expectedToolIds)
+    const adapterIds = [...config.enabledAdapterIds]
     for (const adapterId of adapterIds) {
       if (!config.adapters.some((adapter) => adapter.adapterId === adapterId)) {
         return yield* new ClientManagementError({
@@ -149,13 +164,12 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
     if (existing) {
       if (located.type === "git" && existing.type === "git" &&
         existing.userId === input.userId.trim() && existing.teamId === input.teamId.trim()) {
-        const next: LocalProject = { ...existing,
+        const next: ProjectRegistration = { ...existing,
           name: projectName, teamSlug: input.teamSlug.trim(), teamName: input.teamName.trim(),
-          path: located.path, repositoryRemote: located.repositoryRemote!, repositoryIdentity: input.repositoryIdentity!,
-          adapterIds: [...new Set([...existing.adapterIds, ...adapterIds])].sort()
+          path: located.path, repositoryRemote: located.repositoryRemote!, repositoryIdentity: input.repositoryIdentity!
         }
         const updated = JSON.stringify(next) !== JSON.stringify(existing)
-        return { value: { project: next, created: false, updated } satisfies SetupProjectResult,
+        return { value: { project: { ...next, adapterIds }, created: false, updated } satisfies SetupProjectResult,
           ...(updated || config.activeInstanceOrigin !== input.instanceOrigin ? { config: {
             ...config, activeInstanceOrigin: input.instanceOrigin,
             projects: config.projects.map(project => project === existing ? next : project)
@@ -164,8 +178,7 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
       const same = existing.userId === input.userId.trim() && existing.teamId === input.teamId.trim() &&
         existing.teamSlug === input.teamSlug.trim() && existing.teamName === input.teamName.trim() &&
         existing.name === projectName && existing.type === located.type && existing.path === located.path &&
-        existing.repositoryRemote === located.repositoryRemote &&
-        (input.adapterIds === undefined || sameStrings(existing.adapterIds, adapterIds))
+        existing.repositoryRemote === located.repositoryRemote
       if (!same) {
         return yield* new ClientManagementError({
           reason: "conflict",
@@ -174,13 +187,13 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
         })
       }
       return {
-        value: { project: existing, created: false } satisfies SetupProjectResult,
+        value: { project: { ...existing, adapterIds }, created: false } satisfies SetupProjectResult,
         ...(config.activeInstanceOrigin === input.instanceOrigin
           ? {}
           : { config: { ...config, activeInstanceOrigin: input.instanceOrigin } })
       }
     }
-    const project: LocalProject = {
+    const project: ProjectRegistration = {
       id: projectId,
       instanceOrigin: input.instanceOrigin,
       userId: input.userId.trim(),
@@ -192,11 +205,10 @@ export const setupProject = Effect.fn("Client.setupProject")(function*(input: Se
       path: located.path,
       ...(located.repositoryRemote === undefined ? {} : { repositoryRemote: located.repositoryRemote }),
       ...(located.type !== "git" ? {} : { repositoryIdentity: input.repositoryIdentity! }),
-      adapterIds,
       createdAt: input.createdAt
     }
     return {
-      value: { project, created: true } satisfies SetupProjectResult,
+      value: { project: { ...project, adapterIds }, created: true } satisfies SetupProjectResult,
       config: {
         ...config,
         activeInstanceOrigin: input.instanceOrigin,
@@ -261,46 +273,6 @@ export const installAdapter = Effect.fn("Client.installAdapter")(function*(packa
         ...config,
         adapters: [...config.adapters.filter((item) => item.adapterId !== adapter.adapterId), adapter]
           .sort((left, right) => left.adapterId.localeCompare(right.adapterId))
-      }
-    }
-  }))
-})
-
-export const setProjectAdapter = Effect.fn("Client.setProjectAdapter")(function*(input: {
-  readonly projectId: string
-  readonly adapterId: string
-  readonly enabled: boolean
-}) {
-  const store = yield* ClientConfigStore
-  return yield* store.transact<LocalProject, ClientManagementError, never>((config) => Effect.gen(function*() {
-    if (!config.adapters.some((adapter) => adapter.adapterId === input.adapterId)) {
-      return yield* new ClientManagementError({
-        reason: "not_found", resource: "adapter", message: `Adapter ${input.adapterId} is not installed.`
-      })
-    }
-    const matches = config.projects.filter((item) => item.id === input.projectId)
-    if (matches.length > 1) {
-      return yield* new ClientManagementError({
-        reason: "conflict", resource: "project",
-        message: `Project ${input.projectId} exists on more than one Instance; select an Instance explicitly.`
-      })
-    }
-    const project = matches[0]
-    if (!project) {
-      return yield* new ClientManagementError({
-        reason: "not_found", resource: "project", message: `Project ${input.projectId} is not configured locally.`
-      })
-    }
-    const adapterIds = input.enabled
-      ? [...new Set([...project.adapterIds, input.adapterId])].sort()
-      : project.adapterIds.filter((adapterId) => adapterId !== input.adapterId)
-    if (sameStrings(project.adapterIds, adapterIds)) return { value: project }
-    const updated: LocalProject = { ...project, adapterIds }
-    return {
-      value: updated,
-      config: {
-        ...config,
-        projects: config.projects.map((item) => item.id === project.id ? updated : item)
       }
     }
   }))

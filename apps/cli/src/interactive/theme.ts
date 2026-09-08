@@ -25,3 +25,10 @@ export const cassette = [
   " █     ▄▀▀▀▀▀▀▀▀▄     █ ",
   "  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  "
 ] as const
+
+export const compactCassette = [
+  "▗▄▄▄▄▄▄▄▄▄▄▄▖",
+  "▐ ▣━━━━━━━▣ ▌",
+  "▝▀▀▀▀▀▀▀▀▀▀▀▘"
+] as const
+export const inlineCassette = "▣━━▣"

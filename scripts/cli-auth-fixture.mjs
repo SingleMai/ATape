@@ -18,6 +18,7 @@ export async function startCLIAuthFixture(options = {}) {
   const userCode = options.userCode ?? "Q7KM4W"
   const now = "2026-09-06T00:00:00Z"
   const requests = []
+  const projects = []
   let origin = ""
 
   const server = createServer(async (request, response) => {
@@ -115,7 +116,7 @@ export async function startCLIAuthFixture(options = {}) {
             createdAt: now,
             updatedAt: now
           }],
-          projects: []
+          projects
         })
         return
       case `POST /api/v1/teams/${teamSlug}/projects`:
@@ -123,7 +124,7 @@ export async function startCLIAuthFixture(options = {}) {
           send(401, { status: 401, code: "unauthenticated" })
           return
         }
-        send(201, {
+        const project = {
           id: projectId,
           teamId,
           type: "folder",
@@ -132,7 +133,9 @@ export async function startCLIAuthFixture(options = {}) {
           repositoryLinkState: "not_applicable",
           createdAt: now,
           updatedAt: now
-        })
+        }
+        if (projects.length === 0) projects.push(project)
+        send(201, project)
         return
       case "DELETE /api/v1/auth/cli/credentials/current":
         send(204)

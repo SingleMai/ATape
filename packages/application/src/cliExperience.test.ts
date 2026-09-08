@@ -1,13 +1,14 @@
 import { emptyClientConfig, AdapterProtocolVersion, type ClientConfig, type CollectorCheckpoint, type CollectorRunState } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { AdapterPackages, ClientConfigStore, ProjectLocator } from "./clientManagement.ts"
+import { AdapterPackages, ClientConfigStore, ProjectLocator, inspectClient, installAdapter, setupProject } from "./clientManagement.ts"
 import { CollectorDaemonProcess, CollectorRunStatusStore } from "./collectorDaemon.ts"
 import { CollectorStateStore } from "./collector.ts"
 import { ProjectSetupGateway, type SetupRemoteProject } from "./projectSetup.ts"
 import {
-  CLISetupPlatform, changeProjectSources, completeGuidedSetup, guidedSourceChoices,
-  inspectCLIExperience, prepareGuidedSetup, removeExperienceProject, startExperienceCollector, stopExperienceCollector
+  CLISetupPlatform, completeGuidedSetup,
+  inspectCLIExperience, prepareGuidedSetup, removeExperienceProject, startExperienceCollector, stopExperienceCollector,
+  inspectTools, planToolChange, applyToolChange
 } from "./cliExperience.ts"
 
 const date = "2026-09-08T00:00:00Z"
@@ -20,27 +21,34 @@ const fixture = () => {
   let creations = 0
   let runState: CollectorRunState = { version: 1, jobs: [] }
   let checkpoint: CollectorCheckpoint | undefined
+  let onInstall: (() => void) | undefined
   const packages: string[] = []
   const projects: SetupRemoteProject[] = []
   const keys: string[] = []
   const team = { id: "team-1", slug: "acme", displayName: "Acme", role: "owner" as const }
   const layer = Layer.mergeAll(
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(structuredClone(config)).pipe(
-      Effect.tap(result => Effect.sync(() => { if (result.config) config = structuredClone(result.config) })), Effect.map(result => result.value)
+      Effect.tap(result => Effect.sync(() => {
+        if (result.config) {
+          const installed = result.config.adapters.length > config.adapters.length
+          config = structuredClone(result.config)
+          if (installed) onInstall?.()
+        }
+      })), Effect.map(result => result.value)
     ) })),
     Layer.succeed(ProjectLocator, ProjectLocator.of({ locate: path => Effect.succeed({ path, name: "Payments", type: "directory" }) })),
     Layer.succeed(CLISetupPlatform, CLISetupPlatform.of({
       detectSources: () => Effect.succeed(["codex"]), suggestDirectories: () => Effect.succeed([]),
       supportsGit: () => Effect.succeed(true), creationKey: () => Effect.succeed("stable-request")
     })),
-    Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sync(() => {
+    Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sleep(10).pipe(Effect.andThen(Effect.sync(() => {
       packages.push(spec)
       if (failInstall) throw new Error("offline")
       const id = spec.includes("claude") ? "claude" : "codex"
       return { packageName: `@atape/adapter-${id}`, upgradeSpec: spec, version: "1.0.0", manifest: {
         protocolVersion: AdapterProtocolVersion, adapterId: id, displayName: id, entry: "./index.js", harnesses: [id]
       } }
-    }) })),
+    }))) })),
     Layer.succeed(ProjectSetupGateway, ProjectSetupGateway.of({
       loadWorkspace: () => Effect.succeed({ user: { id: userId, displayName: "Mai" }, teams: [team], projects }),
       matchGitProject: () => Effect.succeed({ status: "none" }),
@@ -73,21 +81,111 @@ const fixture = () => {
     failInstall: (value: boolean) => { failInstall = value },
     record: (state: CollectorRunState, progress?: CollectorCheckpoint) => { runState = state; checkpoint = progress },
     packages, keys, creations: () => creations, starts: () => starts,
-    edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) }
+    edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) },
+    remoteProjects: projects, duringInstall: (callback: () => void) => { onInstall = callback }
   }
 }
 const input = { instanceOrigin: "https://atape.net", path: "/work/payments" }
 const progress = () => Effect.void
 
 describe("CLI experience application Interface", () => {
+  it("configures tools once, connects subsequent Projects with the same selection and rejects scoped overrides", async () => {
+    const client = fixture()
+    expect((await client.run(inspectTools())).configured).toBe(false)
+    const tools = await client.run(planToolChange(["codex"]))
+    expect(client.packages).toEqual([])
+    await client.run(applyToolChange(tools))
+    expect(client.config()).toMatchObject({ version: 3, enabledAdapterIds: ["codex"], projects: [] })
+    expect(client.starts()).toBe(0)
+    const plan = await client.run(prepareGuidedSetup(input))
+    const first = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const { adapterIds, ...identity } = first
+    const second = await client.run(setupProject({ ...identity, path: "/work/second", projectId: "second", name: "Second" }))
+    expect(second.project.adapterIds).toEqual(["codex"])
+    expect(client.packages).toEqual(["@atape/adapter-codex"])
+    expect((await client.run(inspectCLIExperience())).projects).toHaveLength(2)
+    await expect(client.run(setupProject({ ...identity, path: "/work/third", projectId: "third", expectedToolIds: [] }))).rejects.toMatchObject({ reason: "conflict" })
+    expect(client.config().projects.every(project => !("adapterIds" in project))).toBe(true)
+    expect((await client.run(inspectClient())).projects.every(project => project.adapterIds.join() === "codex")).toBe(true)
+  })
+
+  it("previews changes without enabling anything, then applies one global selection to every Project", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const setup = await client.run(prepareGuidedSetup(input))
+    const first = await client.run(completeGuidedSetup({ plan: setup, teamId: "team-1", sourceIds: ["codex"], progress }))
+    await client.run(installAdapter("@atape/adapter-claude"))
+    await client.run(setupProject({ ...first, path: "/work/second", projectId: "second", name: "Second" }))
+    client.remoteProjects.push({ ...client.remoteProjects[0]!, id: "second", name: "Second" })
+    const before = structuredClone(client.config())
+    const inspection = await client.run(inspectTools())
+    expect(inspection).toMatchObject({ configured: true })
+    expect(inspection.choices.filter(choice => choice.selected).map(choice => choice.id).sort()).toEqual(["codex"])
+    const plan = await client.run(planToolChange(["codex", "claude"]))
+    expect(plan.projects.map(change => ({ id: change.project.id, added: change.added }))).toEqual([
+      { id: "project-1", added: ["claude"] }, { id: "second", added: ["claude"] }
+    ])
+    expect(client.config()).toEqual(before)
+    await client.run(applyToolChange(plan))
+    expect((await client.run(inspectClient())).projects.map(project => project.adapterIds)).toEqual([["claude", "codex"], ["claude", "codex"]])
+    expect(client.config().projects).toEqual(before.projects)
+    expect(client.starts()).toBe(1)
+    const disabled = await client.run(planToolChange([]))
+    await client.run(applyToolChange(disabled))
+    expect((await client.run(inspectCLIExperience())).projects.every(project => project.state === "no_sources")).toBe(true)
+    expect(client.config().projects).toHaveLength(2)
+  })
+
+  it("keeps authorization unchanged on install failure, cancellation and stale impact plans", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const before = structuredClone(client.config())
+    const plan = await client.run(planToolChange(["codex", "claude"]))
+    client.failInstall(true)
+    await expect(client.run(applyToolChange(plan))).rejects.toThrow("offline")
+    expect(client.config()).toEqual(before)
+    client.failInstall(false)
+    const cancellation = new AbortController()
+    cancellation.abort()
+    await expect(client.run(applyToolChange(plan), cancellation.signal)).rejects.toBeDefined()
+    expect(client.config()).toEqual(before)
+    client.duringInstall(() => client.edit(config => ({ ...config, version: 3, enabledAdapterIds: [] })))
+    await expect(client.run(applyToolChange(plan))).rejects.toMatchObject({ reason: "changed" })
+    expect(client.config()).toMatchObject({ version: 3, enabledAdapterIds: [] })
+    const count = client.packages.length
+    await expect(client.run(applyToolChange(plan))).rejects.toMatchObject({ reason: "changed" })
+    expect(client.packages).toHaveLength(count)
+  })
+
+  it("invalidates a Project review when global tools change and preserves acknowledged progress across selection changes", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const stale = await client.run(prepareGuidedSetup(input))
+    await client.run(applyToolChange(await client.run(planToolChange(["claude"]))))
+    await expect(client.run(completeGuidedSetup({ plan: stale, teamId: "team-1", sourceIds: ["codex"], progress }))).rejects.toMatchObject({ reason: "changed" })
+    expect(client.creations()).toBe(0)
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["claude"], progress }))
+    const checkpoint: CollectorCheckpoint = { instanceOrigin: project.instanceOrigin, userId: project.userId, projectId: project.id,
+      projectCreatedAt: project.createdAt, adapterId: "claude", adapterVersion: "1.0.0", revision: 7, cursor: "acknowledged",
+      updatedAt: date, rawObjects: [] }
+    client.record({ version: 1, jobs: [] }, checkpoint)
+    await client.run(applyToolChange(await client.run(planToolChange([]))))
+    await client.run(applyToolChange(await client.run(planToolChange(["claude"]))))
+    const saved = await client.run(Effect.flatMap(CollectorStateStore, store => store.snapshot(project.instanceOrigin, project.userId, project.id, "claude")))
+    expect(saved.checkpoint).toEqual(checkpoint)
+    expect(client.creations()).toBe(1)
+  })
+
   it("plans without installing/enabling/starting, then applies only the explicit selection", async () => {
     const client = fixture()
     const plan = await client.run(prepareGuidedSetup(input))
-    expect(guidedSourceChoices(plan, "team-1").map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false]])
+    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false]])
     expect(client.config().projects).toEqual([])
     expect(client.packages).toEqual([])
     expect(client.starts()).toBe(0)
-    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["claude"], progress }))
+    await client.run(applyToolChange(await client.run(planToolChange(["claude"]))))
+    const project = await client.run(completeGuidedSetup({ plan: await client.run(prepareGuidedSetup(input)), teamId: "team-1", sourceIds: ["claude"], progress }))
     expect(client.packages).toEqual(["@atape/adapter-claude"])
     expect(project.adapterIds).toEqual(["claude"])
     expect(client.keys).toEqual(["stable-request"])
@@ -96,6 +194,7 @@ describe("CLI experience application Interface", () => {
   })
   it("resumes an existing directory registration and preserves unselected history on local removal", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const first = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan: first, teamId: "team-1", sourceIds: ["codex"], progress }))
     const resumed = await client.run(prepareGuidedSetup(input))
@@ -107,30 +206,28 @@ describe("CLI experience application Interface", () => {
     expect(client.config().projects).toEqual([])
     expect(client.creations()).toBe(1)
   })
-  it("does not enable sources or start after installation fails or confirmation is cancelled", async () => {
+  it("does not connect or start when Project confirmation is cancelled", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
-    client.failInstall(true)
-    await expect(client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))).rejects.toThrow("offline")
-    expect(client.config().projects).toEqual([])
-    expect(client.creations()).toBe(0)
-    expect(client.starts()).toBe(0)
-    client.failInstall(false)
     const cancellation = new AbortController()
     const pending = client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress: () => Effect.sleep(10_000) }), cancellation.signal)
     cancellation.abort()
     await expect(pending).rejects.toBeDefined()
     expect(client.config().projects).toEqual([])
+    expect(client.creations()).toBe(0)
+    expect(client.starts()).toBe(0)
     await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
     expect(client.creations()).toBe(1)
   })
   it("rejects changed accounts before setup side effects and before global resume", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
     client.changeUser()
     await expect(client.run(startExperienceCollector())).rejects.toMatchObject({ reason: "changed" })
-    await expect(client.run(changeProjectSources(project, ["claude"]))).rejects.toMatchObject({ reason: "changed" })
+    await expect(client.run(applyToolChange(await client.run(planToolChange(["claude"]))))).rejects.toMatchObject({ reason: "changed" })
     await expect(client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["claude"], progress }))).rejects.toMatchObject({ reason: "changed" })
     expect(client.packages).toEqual(["@atape/adapter-codex"])
     expect(client.starts()).toBe(1)
@@ -138,6 +235,7 @@ describe("CLI experience application Interface", () => {
   })
   it("keeps an already captured Project up to date after an empty cycle, instead of returning to first-conversation waiting", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
     const state: CollectorRunState = { version: 1, jobs: [{
@@ -155,15 +253,17 @@ describe("CLI experience application Interface", () => {
   })
   it("allows an explicit empty source selection without removing the Project", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
-    const changed = await client.run(changeProjectSources(project, []))
-    expect(changed.adapterIds).toEqual([])
+    const changed = await client.run(applyToolChange(await client.run(planToolChange([]))))
+    expect(changed.enabledAdapterIds).toEqual([])
     expect(client.config().projects).toHaveLength(1)
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("no_sources")
   })
   it("distinguishes automatic retry, required repair and stopped sync without starting jobs on inspection", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
     const failure = { projectId: project.id, adapterId: "codex", lastAttemptAt: date,
@@ -182,6 +282,7 @@ describe("CLI experience application Interface", () => {
 
   it("routes global authentication blocks to the affected Project, including while the process is stopping", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
     const other = { ...project, id: "other-project", path: "/work/other", name: "Other", instanceOrigin: "https://other.example" }
@@ -196,6 +297,7 @@ describe("CLI experience application Interface", () => {
 
   it("keeps partial coverage distinct from failures and clears recovery after a healthy cycle", async () => {
     const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
     const plan = await client.run(prepareGuidedSetup(input))
     const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
     const job = { projectId: project.id, adapterId: "codex", lastAttemptAt: date, lastSuccessAt: date, canonicalBatches: 1 }

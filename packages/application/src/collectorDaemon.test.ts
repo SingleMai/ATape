@@ -14,6 +14,8 @@ const now = "2026-09-05T02:30:00.000Z"
 
 const configuredClient = (): ClientConfig => ({
   ...emptyClientConfig(),
+  toolsConfigured: true,
+  enabledAdapterIds: ["codex"],
   activeInstanceOrigin: "https://atape.net",
   projects: [{
     id: "atape",
@@ -25,7 +27,6 @@ const configuredClient = (): ClientConfig => ({
     name: "ATape",
     type: "git",
     path: "/work/atape",
-    adapterIds: ["codex"],
     createdAt: now
   }],
   adapters: [{
