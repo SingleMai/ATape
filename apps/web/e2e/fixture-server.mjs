@@ -68,7 +68,7 @@ const readBody = async (request) => {
   return encoded === "" ? {} : JSON.parse(encoded)
 }
 
-const signedIn = (request) => (request.headers.cookie ?? "").includes("fixture_session=1")
+const signedIn = (request) => (request.headers.cookie ?? "").includes("fixture_session=1") && state.webSessions.includes("session-current")
 
 const requireWeb = (request, response) => {
   if (signedIn(request)) return true

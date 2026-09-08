@@ -38,3 +38,15 @@ or date filters in the existing backend contract. Cross-project global relevance
 server-side filtering, and latency improvements for very large project directories
 belong to the next Search API increment. Project pinning/recent-visit persistence
 is also outside this increment; the current directory uses stable name ordering.
+
+## Settings overlay
+
+Account and Team settings open in a lightweight dialog over the current page.
+Account, Browser sessions, and CLI credentials are separate categories; Team
+settings shares the same dialog. Closing restores keyboard focus and preserves
+the reader URL and scroll position. Nested security confirmations retain their
+existing behavior and do not dismiss Settings when canceled.
+
+Legacy account and Team settings URLs open the dialog above the default workspace.
+Settings selection is ephemeral; a reload returns to the underlying workspace.
+Existing account and Team Effect presenters still own remote data and actions.

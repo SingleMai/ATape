@@ -101,18 +101,24 @@ test("recovers account sections independently and keyboard-confirms revocation",
   await authenticate(context)
   await page.goto("/settings/account")
 
-  await expect(page.getByRole("heading", { name: "Account security" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
   await expect(page.getByText("singlemai")).toBeVisible()
+  await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
   await expect(page.getByText("2 active")).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0)
 
   await request.post(`${fixtureOrigin}/__fixture/fail-sessions?value=1`)
   await page.reload()
+  await page.getByRole("button", { name: "Open account security for Mai" }).click()
+  await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
   const sessions = page.getByRole("region", { name: "Browser sessions" })
   await expect(sessions.getByRole("alert")).toBeVisible()
   await expect(sessions.getByRole("button", { name: "Try again" })).toBeVisible()
+  await page.getByRole("button", { name: "Account", exact: true }).click()
   await expect(page.getByText("singlemai")).toBeVisible()
+  await page.getByRole("button", { name: "CLI credentials", exact: true }).click()
   await expect(page.getByText("atape-cli")).toBeVisible()
+  await page.getByRole("button", { name: "Browser sessions", exact: true }).click()
 
   await request.post(`${fixtureOrigin}/__fixture/fail-sessions?value=0`)
   await sessions.getByRole("button", { name: "Try again" }).click()
@@ -147,7 +153,7 @@ test("recovers fresh authentication and scopes one-time Team codes locally", asy
   await page.getByRole("dialog").getByRole("button", { name: "Rotate code" }).click()
   await expect(page.getByRole("alert")).toContainText("Confirm your sign-in")
   await expect(page.getByRole("button", { name: "Confirm sign-in" })).toBeVisible()
-  expect(page.url()).toBe(`${appOrigin}/teams/team-a/settings/access`)
+  await expect(page).toHaveURL(`${appOrigin}/teams/team-id/projects/project-1`)
 
   await request.post(`${fixtureOrigin}/__fixture/fresh?value=1`)
   await page.getByRole("button", { name: "Rotate" }).click()
@@ -158,7 +164,7 @@ test("recovers fresh authentication and scopes one-time Team codes locally", asy
   expect(await page.evaluate(() => [...Object.values(localStorage), ...Object.values(sessionStorage)])).not.toContain("K7M4PX")
 
   await clientNavigate(page, "/settings/account")
-  await expect(page.getByRole("heading", { name: "Account security" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
   await clientNavigate(page, "/teams/team-a/settings/access")
   await expect(page.getByText("K7M4PX")).toHaveCount(0)
 })

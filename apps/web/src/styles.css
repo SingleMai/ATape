@@ -693,21 +693,6 @@ h3 { margin: 0; font-size: 20px; }
 .cli-code-entry form { margin-top: 25px; }
 .cli-code-entry .atape-button { width: 100%; margin-top: 14px; }
 .cli-code-input { font: 850 21px/1.2 var(--atape-font-mono); letter-spacing: .12em; text-transform: uppercase; }
-
-.settings-shell { min-height: 100vh; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
-.settings-sidebar { position: sticky; top: 0; height: 100vh; padding: 24px 17px; border-right: 2px solid var(--atape-color-navigation-border); background: var(--atape-color-navigation); display: flex; flex-direction: column; gap: 20px; }
-.settings-team { width: 100%; min-height: 66px; padding: 11px 13px; border: 2px solid var(--atape-color-navigation-border); border-radius: var(--atape-radius-md); background: var(--atape-color-paper-translucent); color: var(--atape-color-text); display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; text-decoration: none; }
-.settings-team > span:first-child { min-width: 0; display: grid; }
-.settings-team strong, .settings-team small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.settings-team small { color: var(--atape-color-text-muted); font-size: 11px; }
-.settings-nav { display: grid; gap: 6px; }
-.settings-nav-label { margin: 5px 10px 2px; color: var(--atape-color-text-muted); font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.settings-nav a { min-height: 46px; padding: 9px 12px; border: 2px solid transparent; border-radius: var(--atape-radius-sm); color: var(--atape-color-text); display: flex; align-items: center; gap: 10px; font-weight: 760; text-decoration: none; }
-.settings-nav a:hover { background: var(--atape-color-paper-translucent); }
-.settings-nav a.active { border-color: var(--atape-color-navigation-border); background: var(--atape-color-paper); color: var(--atape-color-accent-strong); }
-.settings-signout { margin-top: auto; justify-content: flex-start; }
-.settings-main { min-width: 0; }
-.settings-topbar { min-height: 72px; padding: 0 clamp(20px, 4vw, 52px); border-bottom: 2px dashed color-mix(in srgb, var(--atape-color-border) 55%, transparent); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .settings-content { width: min(920px, calc(100% - 40px)); margin: 0 auto; padding: 42px 0 80px; }
 .settings-heading { margin-bottom: 30px; }
 .settings-heading h1 { margin: 0 0 10px; font-size: clamp(32px, 4vw, 45px); }
@@ -751,13 +736,6 @@ h3 { margin: 0; font-size: 20px; }
 @media (max-width: 860px) {
   .choice-grid { grid-template-columns: 1fr; }
   .choice-card { min-height: 235px; }
-  .settings-shell { display: block; }
-  .settings-sidebar { position: static; width: 100%; height: auto; padding: 13px 16px; border-right: 0; border-bottom: 2px solid var(--atape-color-navigation-border); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
-  .settings-team { display: none; }
-  .settings-nav { display: flex; justify-content: flex-end; overflow-x: auto; }
-  .settings-nav-label { display: none; }
-  .settings-nav a { flex: 0 0 auto; white-space: nowrap; }
-  .settings-signout { margin-top: 0; }
 }
 
 @media (max-width: 640px) {
@@ -791,13 +769,6 @@ h3 { margin: 0; font-size: 20px; }
   .cli-title-row .atape-badge { margin-bottom: 12px; }
   .request-facts { grid-template-columns: 1fr; }
   .request-code code { letter-spacing: .06em; }
-  .settings-sidebar { grid-template-columns: 1fr; gap: 9px; }
-  .settings-sidebar > .access-brand { display: none; }
-  .settings-nav { justify-content: flex-start; }
-  .settings-nav a { flex: 1 0 auto; justify-content: center; }
-  .settings-signout { width: 100%; justify-content: center; }
-  .settings-topbar { min-height: 61px; padding: 0 17px; }
-  .settings-topbar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .settings-content { width: min(100% - 24px, 920px); padding-top: 27px; }
   .settings-section > header, .settings-row, .section-footer { padding-right: 16px; padding-left: 16px; align-items: stretch; flex-direction: column; }
   .row-actions { width: 100%; }
