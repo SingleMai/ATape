@@ -117,6 +117,7 @@ describe("atape CLI", () => {
     expect(result.stdout.trim()).toBe("ATape development")
   })
 
+  // This integration scenario starts ten real CLI processes on shared CI runners.
   it("completes non-interactive Project setup and listing", async () => {
     const root = await mkdtemp(join(tmpdir(), "atape-cli-command-"))
     temporaryDirectories.push(root)
@@ -172,5 +173,5 @@ describe("atape CLI", () => {
       .rejects.toMatchObject({ stderr: expect.stringContaining("list|install|upgrade") })
     expect(remote.requests).toHaveLength(requestsBefore)
     expect(JSON.parse((await exec(process.execPath, [cli, "collect", "--once", "--json"], { env: environment })).stdout)).toMatchObject({ jobs: [], failures: [] })
-  })
+  }, 20_000)
 })
