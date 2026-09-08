@@ -287,6 +287,8 @@ export async function createAtapeAdapter(context) {
 }
 
 describe("Node Collector Layers", () => {
+  // Real npm installation plus two HTTP collection cycles can exceed Vitest's
+  // default five seconds when the full workspace runs concurrently on CI.
   it("loads only the enabled package, posts separate redacted payloads, and resumes from its cursor", async () => {
     const client = await fixture()
     const remote = await listen()
@@ -372,7 +374,7 @@ describe("Node Collector Layers", () => {
     ])
     expect((await stat(client.paths.collectorStateFile)).mode & 0o777).toBe(0o600)
     expect(await readFile(join(project, "adapter-closed"), "utf8")).toBe("yes")
-  })
+  }, 20_000)
 
   it("requires declared Git capability and preserves authentication failures across the foreign callback", async () => {
     const client = await fixture(), remote = await listen()
