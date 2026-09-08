@@ -8,7 +8,7 @@ import { ProjectSetupGateway, type SetupRemoteProject } from "./projectSetup.ts"
 import {
   CLISetupPlatform, completeGuidedSetup,
   inspectCLIExperience, prepareGuidedSetup, removeExperienceProject, startExperienceCollector, stopExperienceCollector,
-  inspectTools, planToolChange, applyToolChange
+  inspectTools, planToolChange, applyToolChange, updateSyncReader
 } from "./cliExperience.ts"
 
 const date = "2026-09-08T00:00:00Z"
@@ -292,6 +292,63 @@ describe("CLI experience application Interface", () => {
     const snapshot = await client.run(inspectCLIExperience())
     expect(snapshot.projects[0]?.recovery).toEqual({ kind: "sign_in_elsewhere", project: other })
     expect(snapshot.projects[1]?.recovery.kind).toBe("sign_in")
+    expect(client.starts()).toBe(1)
+  })
+
+  it("distinguishes missing readers, incompatible output and ordinary read failures", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const job = { projectId: project.id, adapterId: "codex", lastAttemptAt: date, failureMessage: "Read failed", retryable: false }
+    client.record({ version: 1, jobs: [{ ...job, failureReason: "adapter" }] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("repair")
+    client.record({ version: 1, jobs: [{ ...job, failureReason: "adapter", retryable: true }] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("automatic_retry")
+    client.record({ version: 1, jobs: [{ ...job, failureReason: "contract" }] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery).toEqual({ kind: "tool", adapterId: "codex", action: "update" })
+    client.edit(config => ({ ...config, adapters: [] }))
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery).toEqual({ kind: "tool", adapterId: "codex", action: "install" })
+    client.record({ version: 1, jobs: [{ ...job, failureReason: "unauthenticated" }] })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.recovery.kind).toBe("sign_in")
+  })
+
+  it("updates a reader directly without restarting running sync or claiming the recorded failure is resolved", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    client.record({ version: 1, jobs: [{ projectId: project.id, adapterId: "codex", lastAttemptAt: date,
+      failureReason: "contract", failureMessage: "Incompatible output", retryable: false }] })
+    const registrations = structuredClone(client.config().projects)
+    await client.run(updateSyncReader("codex", project))
+    expect(client.packages).toEqual(["@atape/adapter-codex", "@atape/adapter-codex@latest"])
+    expect(client.starts()).toBe(1)
+    expect(client.config().enabledAdapterIds).toEqual(["codex"])
+    expect(client.config().projects).toEqual(registrations)
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("failed")
+    await client.run(stopExperienceCollector())
+    client.edit(config => ({ ...config, adapters: [] }))
+    await client.run(updateSyncReader("codex", project))
+    expect(client.config().adapters[0]?.adapterId).toBe("codex")
+    expect(client.starts()).toBe(2)
+  })
+
+  it("rejects stale or unauthorized reader recovery and leaves sync stopped on an installation failure", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    await client.run(stopExperienceCollector())
+    await expect(client.run(updateSyncReader("claude", project))).rejects.toMatchObject({ reason: "changed" })
+    await expect(client.run(updateSyncReader("codex", { ...project, createdAt: "different" }))).rejects.toMatchObject({ reason: "changed" })
+    client.failInstall(true)
+    await expect(client.run(updateSyncReader("codex", project))).rejects.toThrow("offline")
+    expect(client.starts()).toBe(1)
+    client.changeUser()
+    const attempts = client.packages.length
+    await expect(client.run(updateSyncReader("codex", project))).rejects.toMatchObject({ reason: "changed" })
+    expect(client.packages).toHaveLength(attempts)
     expect(client.starts()).toBe(1)
   })
 

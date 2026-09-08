@@ -41,7 +41,7 @@ export const ExperienceView = ({ presenter }: { presenter: ExperiencePresenter }
   useInput((input, key) => {
     if (key.ctrl && input === "c") presenter.close()
     else if (screen.layout === "projects") return
-    else if (key.escape) presenter.back()
+    else if (key.escape && !screen.pathInput) presenter.back()
     else if (input === "r" && screen.refreshable) presenter.refresh()
     else if (input === "q" && screen.kind === "menu") presenter.close()
   })
@@ -78,7 +78,7 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
       : screen.kind === "input" ? h(TextEditor, {
         initial: screen.initial ?? "", suggestions: screen.suggestions ?? [], width,
         pathInput: Boolean(screen.pathInput), loading: Boolean(screen.directoriesLoading), capacity: Math.max(1, Math.min(5, available - 3)),
-        onChange: screen.pathInput ? presenter.pathChanged : () => {}, onSubmit: presenter.submit
+        onChange: screen.pathInput ? presenter.pathChanged : () => {}, onSubmit: presenter.submit, onBack: presenter.back
       }) : screen.kind === "sources" ? h(MultiSelect, { options, defaultValue: [...screen.selected ?? []], visibleOptionCount: optionCount, onSubmit: presenter.submit })
         : screen.kind === "menu" ? h(Select, { options, visibleOptionCount: optionCount, onChange: presenter.submit })
         : h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, `${screen.title}…`)),
@@ -128,6 +128,8 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
       return
     }
     if (key.tab) { update({ actions: !actions, searching: false }); return }
+    if (key.upArrow && !actions && index === 0) { update({ actions: true, actionIndex: 0 }); return }
+    if (key.downArrow && actions) { update({ actions: false }); return }
     if (key.upArrow || key.downArrow || actions && (key.leftArrow || key.rightArrow)) {
       const delta = key.upArrow || key.leftArrow ? -1 : 1
       if (actions) update({ actionIndex: Math.max(0, Math.min(globalActions.length - 1, selectedAction + delta)) })
@@ -143,11 +145,16 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
       if (key.backspace || key.delete) setQuery(value => characters(value).slice(0, -1).join(""))
       else setQuery(value => (value + cleanInput(input)).slice(0, 256))
     } else if (input === "/") update({ searching: true, actions: false })
+    else if (input === "n") presenter.submit("add")
     else if (input === "q") presenter.close()
     else if (input === "r") presenter.refresh()
   })
   const start = Math.max(0, Math.min(index, Math.max(Math.min(browser.start, Math.max(0, options.length - capacity)), index - capacity + 1)))
   return h(Box, { flexDirection: "column" },
+    h(Box, { marginBottom: 1 }, h(Text, { wrap: "truncate-end" }, ...globalActions.map((action, i) => h(Text, {
+      key: action.value, ...(action.value === "add" || actions && i === selectedAction ? { color: terminalTheme.accent } : {}),
+      bold: action.value === "add" || actions && i === selectedAction, dimColor: !actions && action.value !== "add"
+    }, `${i ? "  ·  " : ""}${actions && i === selectedAction ? "› " : ""}${action.value === "add" ? "[n] " : ""}${action.label}`)))),
     h(Text, { dimColor: !searching, ...(searching ? { color: terminalTheme.accent } : {}), wrap: "truncate-end" }, searching || query ? `/ ${safeTerminalText(query)}${searching ? "▌" : ""}` : `${options.length} projects · / to search`),
     ...(options.length ? options.slice(start, start + capacity).map(option => {
       const project = screen.projects?.find(project => project.value === option.value)
@@ -159,42 +166,55 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
         ...(width >= 70 ? [h(Box, { key: "team", width: Math.floor(width * 0.23), paddingRight: 1 }, h(Text, { dimColor: !active, ...color, wrap: "truncate-end" }, safeTerminalText(project.team)))] : []),
         h(Box, { flexGrow: 1, flexBasis: 0 }, h(Text, { ...color, wrap: "truncate-end" }, project.status)))
         : h(Text, { key: option.value, ...color, wrap: "truncate-end" }, `${active ? "›" : " "} ${safeTerminalText(option.label)}`)
-    }) : [h(Text, { key: "empty", dimColor: true }, query ? "No matching projects. Esc clears search." : "No projects yet. Tab to Add project.")]),
+    }) : [h(Text, { key: "empty", dimColor: true }, query ? "No matching projects. Esc clears search." : "No projects yet. Press n to add your first project.")]),
     options.length > capacity ? h(Text, { dimColor: true }, `${index + 1}/${options.length} · ↑↓ More`) : null,
-    h(Box, { marginTop: 1 }, h(Text, { wrap: "truncate-end" }, ...globalActions.map((action, i) => h(Text, {
-      key: action.value, ...(actions && i === selectedAction ? { color: terminalTheme.accent } : {}),
-      bold: actions && i === selectedAction, dimColor: !actions
-    }, `${i ? "  ·  " : ""}${actions && i === selectedAction ? "› " : ""}${action.label}`)))),
     // The focused action remains readable even when the action bar is truncated.
-    h(Text, { dimColor: true, wrap: "truncate-end" }, actions ? `Actions: ${globalActions[selectedAction]?.label} · ←→ Choose · Enter Run · Tab Projects` : (width < 60 ? "↑↓ Enter Open · / Find · r Refresh · Tab" : "↑↓ Choose · Enter Open · / Search · r Refresh · Tab Actions · q Exit")))
+    h(Text, { dimColor: true, wrap: "truncate-end" }, actions ? `Actions: ${globalActions[selectedAction]?.label} · ←→ Choose · Enter Run · Tab Projects` : (width < 60 ? "n Add · ↑↓ Enter Open · / Find · Tab" : "n Add · ↑↓ Enter Open · / Search · r Refresh · Tab Actions · q Exit")))
 }
 
-const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity, onChange, onSubmit }: {
+const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity, onChange, onSubmit, onBack }: {
   initial: string; suggestions: ReadonlyArray<DirectorySuggestion>; width: number; pathInput: boolean; loading: boolean; capacity: number
-  onChange: (value: string) => void; onSubmit: (value: string) => void
+  onChange: (value: string, query?: string) => void; onSubmit: (value: string) => void; onBack: () => void
 }) => {
   const [edit, setEdit] = useState(() => ({ value: cleanInput(initial), cursor: characters(cleanInput(initial)).length }))
   // -2 edits the path; -1 is the explicit Use current directory action.
   const [candidate, setCandidate] = useState(-1)
+  const [query, setQuery] = useState<string | undefined>()
   const current = useRef(edit)
-  const update = (value: string, cursor: number) => { setCandidate(-2); current.current = { value, cursor }; setEdit(current.current); onChange(value) }
+  const search = (value: string) => { setQuery(value); setCandidate(0); onChange(current.current.value, value) }
+  const update = (value: string, cursor: number) => { setQuery(undefined); setCandidate(-2); current.current = { value, cursor }; setEdit(current.current); onChange(value) }
   const move = (cursor: number) => { current.current = { ...current.current, cursor }; setEdit(current.current) }
   const insert = (text: string) => {
     const edit = current.current
     const chars = characters(edit.value)
     const clean = cleanInput(text)
+    if (pathInput && (query !== undefined || candidate !== -2)) {
+      if (query === undefined && (clean.startsWith("/") || clean.startsWith("~"))) update(clean, characters(clean).length)
+      else search(((query ?? "") + clean).slice(0, 256))
+      return
+    }
     const value = chars.slice(0, edit.cursor).join("") + clean + chars.slice(edit.cursor).join("")
     if (value.length <= 4096) update(value, edit.cursor + characters(clean).length)
   }
-  usePaste(insert)
+  usePaste(text => {
+    const clean = cleanInput(text)
+    if (pathInput && (clean.startsWith("/") || clean.startsWith("~"))) update(clean, characters(clean).length)
+    else insert(text)
+  })
   useInput((input, key) => {
     const edit = current.current
     const chars = characters(edit.value)
-    if (key.escape || key.ctrl && input === "c") return
+    if (key.escape) {
+      if (pathInput && query !== undefined) { setQuery(undefined); setCandidate(-1); onChange(edit.value) }
+      else if (pathInput) onBack()
+      return
+    }
+    if (key.ctrl && input === "c") return
     if (key.return) {
-      if (!pathInput || candidate === -1) onSubmit(edit.value)
+      if (!pathInput || candidate === -1 && query === undefined) onSubmit(edit.value)
       else {
         if (candidate >= 0) {
+          if (loading) return
           const path = suggestions[candidate]?.path
           if (!path) return
           update(path, characters(path).length)
@@ -204,11 +224,20 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
       return
     }
     if (pathInput && (key.upArrow || key.downArrow)) {
-      setCandidate(value => Math.max(-2, Math.min(Math.max(0, suggestions.length - 1), value + (key.upArrow ? -1 : 1))))
+      setCandidate(value => Math.max(query === undefined ? -2 : 0, Math.min(Math.max(0, suggestions.length - 1), value + (key.upArrow ? -1 : 1))))
       return
     }
     if (key.tab) {
-      if (pathInput) setCandidate(value => value === -2 ? -1 : -2)
+      if (pathInput) {
+        if (query !== undefined) { setQuery(undefined); onChange(edit.value); setCandidate(-2) }
+        else setCandidate(value => value === -2 ? -1 : -2)
+      }
+      return
+    }
+    if (query !== undefined) {
+      if (key.ctrl && input === "u") search("")
+      else if (key.backspace || key.delete) search(characters(query).slice(0, -1).join(""))
+      else if (!key.ctrl && !key.meta && !key.leftArrow && !key.rightArrow && !key.pageDown && !key.pageUp) insert(input)
       return
     }
     if (key.leftArrow) return move(Math.max(0, edit.cursor - 1))
@@ -231,10 +260,11 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
   while (tail && stringWidth(chars.slice(start, edit.cursor + 1).join("") + tail) > width - 4) tail = characters(tail).slice(0, -1).join("")
   const first = Math.max(0, candidate - capacity + 1)
   return h(Box, { flexDirection: "column" },
+    pathInput && query !== undefined ? h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, `Search: ${safeTerminalText(query)}▌ · Esc Clear`) : null,
     h(Text, null, "> ", start ? "…" : "", chars.slice(start, edit.cursor).join(""), h(Text, { inverse: !pathInput || candidate === -2 }, chars[edit.cursor] || " "), tail),
     pathInput ? h(Box, { flexDirection: "column" },
-      h(Text, { ...(candidate === -1 ? { color: terminalTheme.accent, bold: true } : {}), wrap: "truncate-end" }, `${candidate === -1 ? "›" : " "} Use current directory`),
-      ...(suggestions.length === 0 ? [h(Text, { key: "directory-status", dimColor: true, wrap: "truncate-end" }, loading ? "Loading folders…" : "No matching folders · Tab to edit path")] : []),
+      query === undefined ? h(Text, { ...(candidate === -1 ? { color: terminalTheme.accent, bold: true } : {}), wrap: "truncate-end" }, `${candidate === -1 ? "›" : " "} Use current directory`) : null,
+      ...(suggestions.length === 0 ? [h(Text, { key: "directory-status", dimColor: true, wrap: "truncate-end" }, loading ? "Finding folders…" : "No matching folders · Paste a path or Tab to edit")] : []),
       ...suggestions.slice(first, first + capacity).map((suggestion, i) => h(Text, {
         key: suggestion.path, ...(first + i === candidate ? { color: terminalTheme.accent } : {}), wrap: "truncate-middle"
       }, `${first + i === candidate ? "›" : " "} ${suggestion.parent ? "../ · " : ""}${safeTerminalText(suggestion.path)}${suggestion.git ? " [Git]" : ""}`))) : null)

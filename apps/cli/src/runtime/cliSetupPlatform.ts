@@ -22,9 +22,10 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
       }
       return detected
     }),
-    suggestDirectories: input => localIO(async signal => {
+    suggestDirectories: (input, query) => localIO(async signal => {
       const expanded = input === "~" || input.startsWith(`~${sep}`) ? homedir() + input.slice(1) : input
       const path = resolve(expanded || ".")
+      if (query?.trim()) return searchDirectories(path, query.trim(), signal)
       const browsing = input.endsWith(sep) || input === "" || (await stat(path).catch(() => undefined))?.isDirectory()
       const parent = browsing ? path : dirname(path)
       const prefix = browsing ? "" : basename(path)
@@ -39,15 +40,15 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
       for await (const entry of directory) {
         signal.throwIfAborted()
         if (++count > 2_000) break
-        if (entry.name.startsWith(prefix) && (prefix.startsWith(".") || !entry.name.startsWith(".")) &&
+        if (fuzzyScore(entry.name, prefix) !== undefined && (prefix.startsWith(".") || !entry.name.startsWith(".")) &&
           (entry.isDirectory() || entry.isSymbolicLink() && (await stat(join(parent, entry.name)).catch(() => undefined))?.isDirectory())) {
           const candidate = join(parent, entry.name)
           const git = await stat(join(candidate, ".git")).catch(() => undefined)
           choices.push({ path: candidate + sep, git: Boolean(git?.isDirectory() || git?.isFile()) })
-          if (choices.length >= 30) break
         }
       }
-      return choices.sort((a, b) => Number(Boolean(b.parent)) - Number(Boolean(a.parent)) || a.path.localeCompare(b.path))
+      return choices.sort((a, b) => Number(Boolean(b.parent)) - Number(Boolean(a.parent)) ||
+        (fuzzyScore(basename(a.path), prefix) ?? 0) - (fuzzyScore(basename(b.path), prefix) ?? 0) || a.path.localeCompare(b.path)).slice(0, 30)
     }),
     supportsGit: adapter => localIO(async () => {
       const manifestPath = join(paths.adapterDirectory, "node_modules", ...adapter.packageName.split("/"), "package.json")
@@ -83,6 +84,56 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
     })
   })
 )
+
+// Read directory metadata only. Bound traversal and avoid dependency trees,
+// hidden directories and symlink loops; Git markers remain browsing hints.
+const searchDirectories = async (root: string, query: string, signal: AbortSignal): Promise<DirectorySuggestion[]> => {
+  const queue = [{ path: root, depth: 0 }]
+  const matches: Array<DirectorySuggestion & { score: number }> = []
+  const ignored = new Set(["node_modules", "vendor", "dist", "build", "coverage", "target"])
+  let entries = 0
+  let visited = 0
+  const deadline = Date.now() + 1_000
+  while (queue.length && visited++ < 200 && entries < 4_000 && Date.now() < deadline) {
+    signal.throwIfAborted()
+    const current = queue.shift()!
+    const directory = await opendir(current.path).catch(cause => {
+      if (hasCode(cause, "ENOENT") || hasCode(cause, "EACCES") || hasCode(cause, "EPERM")) return undefined
+      throw cause
+    })
+    if (!directory) continue
+    for await (const entry of directory) {
+      signal.throwIfAborted()
+      if (++entries > 4_000 || Date.now() >= deadline) break
+      if (!entry.isDirectory() || entry.name.startsWith(".") || ignored.has(entry.name)) continue
+      const candidate = join(current.path, entry.name)
+      const marker = await stat(join(candidate, ".git")).catch(() => undefined)
+      const git = Boolean(marker?.isDirectory() || marker?.isFile())
+      const score = fuzzyScore(entry.name, query)
+      if (score !== undefined) matches.push({ path: candidate + sep, git, score })
+      if (!git && current.depth < 2) queue.push({ path: candidate, depth: current.depth + 1 })
+    }
+  }
+  return matches.sort((a, b) => a.score - b.score || Number(b.git) - Number(a.git) || a.path.localeCompare(b.path))
+    .slice(0, 30).map(({ score, ...choice }) => choice)
+}
+
+const fuzzyScore = (name: string, query: string): number | undefined => {
+  const text = name.normalize("NFKC").toLocaleLowerCase()
+  const needle = query.normalize("NFKC").toLocaleLowerCase()
+  if (!needle || text === needle) return 0
+  const contiguous = text.indexOf(needle)
+  if (contiguous >= 0) return 1 + contiguous
+  let cursor = 0
+  let gaps = 0
+  for (const character of needle) {
+    const found = text.indexOf(character, cursor)
+    if (found < 0) return undefined
+    gaps += found - cursor
+    cursor = found + character.length
+  }
+  return 100 + gaps
+}
 const hasCode = (cause: unknown, code: string) => cause instanceof Error && "code" in cause && cause.code === code
 const localIO = <A>(run: (signal: AbortSignal) => Promise<A>) => Effect.tryPromise({
   try: run,

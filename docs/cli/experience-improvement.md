@@ -311,3 +311,49 @@ claim new staging acceptance. The v0.4.0 candidate is ready for integration; pub
 The next increment is hands-on feedback on this global navigation plus terminal
 acceptance beyond the local macOS environment. Automatic reboot recovery remains
 excluded.
+
+
+### Direct conversation selection and recovery after v0.4.0 feedback
+
+Home now opens global tool checkboxes directly. Saving returns to the originating
+page, with an impact review only for actual selection changes affecting connected
+projects. The extra Tools menu, per-tool details and ambiguous Fix actions are
+removed. Rows show names rather than installation/version states.
+
+Project recovery explains the affected conversations and the available action.
+Missing readers offer setup; incompatible output offers an ATape reader update.
+Ordinary read errors retain their retry classification instead of always prompting
+an update. Sign-in blockers take precedence. Raw errors remain in Sync details.
+
+The CLIExperience Module owns reader maintenance and account checks through its
+Effect Interface, reusing the existing package and process Seams. Updates preserve
+selection, registrations and checkpoints. Running sync is not restarted; the UI
+reports that a later cycle will retry and retains the last result until then.
+A new reader version does not establish that a conversation failure is resolved.
+
+This increment awaits publication. Application and CLI typechecks pass,
+as do 75 application tests, 52 CLI tests and installed-package PTY verification.
+Validation covers direct navigation,
+cancel/save return paths, recovery classification, reader installation/update,
+stale selection and account rejection, installation failure, and installed CLI
+terminal controls. Next: hands-on feedback on the shorter flow; broader terminal
+and live-account acceptance remain separate.
+
+
+### Discoverable Add project and local name search
+
+The Project list puts its action bar above the rows and highlights `[n] Add
+project`. Pressing n opens setup directly; search input does not trigger it.
+Typing in directory browsing starts a fuzzy name search with ranked full-path
+results. Paste replaces the path; Esc clears search before returning. Selection
+still browses before the explicit connection action and review.
+
+The existing filesystem Adapter Seam accepts a query; bounded directory discovery
+and ranking stay out of presentation. Search covers up to three levels below the
+current directory and skips hidden/dependency trees, symlinks and Git interiors.
+It is local discovery, not a full-disk index or server Project search. Browse a
+parent or paste a path for projects outside the current scope.
+
+Validation covers nested and Unicode names, case/gap matching and ranking, skipped
+trees, the n shortcut, search clearing, selected-directory browsing, and packaged
+CLI terminal operation. This work awaits publication.
