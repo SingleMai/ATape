@@ -201,7 +201,7 @@ function SignInRoute() {
       action={presenter.action}
       cliReturn={search.returnTo.startsWith("/cli/authorize")}
       {...(search.reason === "signed_out"
-        ? { flash: "This browser session was signed out." }
+        ? { flash: "You’ve been signed out." }
         : search.reason === "session_ended"
           ? { flash: "Your previous session ended. Sign in again to continue." }
           : {})}
@@ -565,22 +565,16 @@ const accountSettingsRoute = createRoute({
 function AccountSettingsContent({ onSignOut }: { readonly onSignOut: () => void }) {
   const session = useAuthenticatedSession()
   const account = useAccountSecurityPresenter()
-  const sessionPresenter = useSessionPresenter()
   const workspace = useWorkspacePresenter()
-  const lastAction = useRef<{ readonly signsOut: boolean } | undefined>(undefined)
   const handled = useRef(false)
   useEffect(() => () => account.resetAction(), [account.resetAction])
   useEffect(() => {
     if (account.action._tag === "Pending") handled.current = false
     if (account.action._tag === "Succeeded" && !handled.current) {
       handled.current = true
-      if (lastAction.current?.signsOut === true) {
-        sessionPresenter.reload()
-      } else {
-        account.reload()
-      }
+      account.reload()
     }
-  }, [account, sessionPresenter])
+  }, [account])
   const firstTeam = workspace.state._tag === "Ready" ? workspace.state.value.teams[0] : undefined
   return <AccountSecurityView
     user={session.user}
@@ -588,15 +582,7 @@ function AccountSettingsContent({ onSignOut }: { readonly onSignOut: () => void 
     state={account.state}
     action={account.action}
     onRetry={account.reload}
-    onAction={(input) => {
-      const currentSession = account.state._tag === "Ready" && account.state.value.webSessions._tag === "Ready"
-        ? account.state.value.webSessions.value.find((item) => item.id === input.id)
-        : undefined
-      lastAction.current = {
-        signsOut: input.kind === "revoke-all-web" || (input.kind === "revoke-web" && currentSession?.current === true)
-      }
-      account.run(input)
-    }}
+    onAction={account.run}
     onSignOut={onSignOut}
   />
 }

@@ -11,10 +11,9 @@ const initialState = () => ({
   conversationRequests: 0,
   failConversation: false,
   projectMemoryRequests: 0,
-  failSessions: false,
+  failCredentials: false,
   fresh: false,
   joinCodeEnabled: true,
-  webSessions: ["session-current", "session-other"],
   cliCredentials: ["credential-one"],
   teamCreateBody: null,
   teamCreateIdempotencyKey: null,
@@ -68,7 +67,7 @@ const readBody = async (request) => {
   return encoded === "" ? {} : JSON.parse(encoded)
 }
 
-const signedIn = (request) => (request.headers.cookie ?? "").includes("fixture_session=1") && state.webSessions.includes("session-current")
+const signedIn = (request) => (request.headers.cookie ?? "").includes("fixture_session=1")
 
 const requireWeb = (request, response) => {
   if (signedIn(request)) return true
@@ -93,8 +92,8 @@ const routeFixtureControl = (request, response, url) => {
     empty(response)
     return true
   }
-  if (url.pathname === "/__fixture/fail-sessions" && request.method === "POST") {
-    state.failSessions = url.searchParams.get("value") === "1"
+  if (url.pathname === "/__fixture/fail-credentials" && request.method === "POST") {
+    state.failCredentials = url.searchParams.get("value") === "1"
     empty(response)
     return true
   }
@@ -283,37 +282,15 @@ const server = http.createServer(async (request, response) => {
       lastVerifiedAt: now
     }] })
   }
-  if (path === "/api/v1/users/me/web-sessions" && request.method === "GET") {
-    if (!requireWeb(request, response)) return
-    if (state.failSessions) return problem(response, 503, "service_unavailable")
-    return json(response, 200, { items: state.webSessions.map((id) => ({
-      id,
-      createdAt: now,
-      lastUsedAt: now,
-      reauthenticatedAt: now,
-      absoluteExpiresAt: later,
-      current: id === "session-current"
-    })) })
-  }
   if (path === "/api/v1/users/me/cli-credentials" && request.method === "GET") {
     if (!requireWeb(request, response)) return
+    if (state.failCredentials) return problem(response, 503, "service_unavailable")
     return json(response, 200, { items: state.cliCredentials.map((id) => ({
       id,
       capability: "atape-cli.v1",
       createdAt: now,
       lastUsedAt: now
     })) })
-  }
-  if (path === "/api/v1/users/me/web-sessions/revoke-all" && request.method === "POST") {
-    if (!requireCSRF(request, response)) return
-    state.webSessions = []
-    return empty(response, 204, { "Set-Cookie": "fixture_session=; Path=/; Max-Age=0" })
-  }
-  if (path.startsWith("/api/v1/users/me/web-sessions/") && request.method === "DELETE") {
-    if (!requireCSRF(request, response)) return
-    const id = decodeURIComponent(path.split("/").at(-1))
-    state.webSessions = state.webSessions.filter((item) => item !== id)
-    return empty(response)
   }
   if (path === "/api/v1/users/me/cli-credentials/revoke-all" && request.method === "POST") {
     if (!requireCSRF(request, response)) return

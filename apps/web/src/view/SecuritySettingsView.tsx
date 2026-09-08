@@ -3,8 +3,7 @@ import type {
   ExternalIdentity,
   JoinCodeGrant,
   TeamMember,
-  User,
-  WebSession
+  User
 } from "@atape/domain"
 import { useSettingsOverlay } from "../presenters/settingsOverlayContext"
 import { Avatar, Badge, Button, Eyebrow } from "@atape/ui"
@@ -45,7 +44,7 @@ const SettingsShell = ({
   const section = active === "team" ? "team" : target.section
   return <div className="settings-modal-layout">
     <nav className="settings-categories" aria-label="Settings categories">
-      {([ ["account", "Account"], ["sessions", "Browser sessions"], ["credentials", "CLI credentials"] ] as const).map(([key, label]) =>
+      {([ ["account", "Account"], ["credentials", "CLI credentials"] ] as const).map(([key, label]) =>
         <button type="button" key={key} aria-current={section === key ? "page" : undefined}
           onClick={() => openSettings({ section: key })}>{label}</button>
       )}
@@ -85,36 +84,6 @@ const IdentityRows = ({
           <span>{identity.displayName} · verified {formatTime(identity.lastVerifiedAt)}</span>
         </div>
       </div>
-    </div>
-  ))
-}
-
-const SessionRows = ({
-  section,
-  onRetry,
-  onRevoke
-}: {
-  readonly section: SectionView<ReadonlyArray<WebSession>>
-  readonly onRetry: () => void
-  readonly onRevoke: (session: WebSession) => void
-}) => {
-  if (section._tag === "Failed") return <SectionFailure section={section} onRetry={onRetry} />
-  if (section.value.length === 0) return <div className="empty-row">No active browser sessions.</div>
-  return section.value.map((session) => (
-    <div className="settings-row" key={session.id}>
-      <div className="row-identity">
-        <span className="row-icon" aria-hidden="true">{session.current === true ? "◉" : "○"}</span>
-        <div className="row-copy">
-          <strong>
-            {session.current === true ? "This browser session" : "Browser session"}
-            {session.current === true && <Badge tone="success">Current</Badge>}
-          </strong>
-          <span>Created {formatTime(session.createdAt)} · last used {formatTime(session.lastUsedAt)}</span>
-        </div>
-      </div>
-      <Button className={session.current === true ? undefined : "quiet-danger-button"} onClick={() => onRevoke(session)}>
-        {session.current === true ? "Sign out" : "Revoke"}
-      </Button>
     </div>
   ))
 }
@@ -159,7 +128,7 @@ export const AccountSecurityView = ({
   readonly action: ActionView<void>
   readonly onRetry: () => void
   readonly onAction: (input: {
-    readonly kind: "revoke-web" | "revoke-all-web" | "revoke-cli" | "revoke-all-cli"
+    readonly kind: "revoke-cli" | "revoke-all-cli"
     readonly id?: string
   }) => void
   readonly onSignOut: () => void
@@ -186,7 +155,6 @@ export const AccountSecurityView = ({
   }
 
   const snapshot = state.value
-  const sessions = snapshot.webSessions._tag === "Ready" ? snapshot.webSessions.value : []
   const credentials = snapshot.cliCredentials._tag === "Ready" ? snapshot.cliCredentials.value : []
   const confirm = (copy: Confirmation, selected: Parameters<typeof onAction>[0]) =>
     setPendingConfirmation({ copy, action: selected })
@@ -197,40 +165,14 @@ export const AccountSecurityView = ({
         {action._tag === "Failed" && <FailureNotice failure={action.failure} />}
         {action._tag === "Succeeded" && <SuccessNotice>Account access was updated.</SuccessNotice>}
         <header className="settings-heading">
-          <h1>{section === "account" ? "Account" : section === "sessions" ? "Browser sessions" : "CLI credentials"}</h1>
-          <p>{section === "account" ? "Your profile and connected sign-in methods." : section === "sessions" ? "Manage where you’re signed in." : "Manage access for your connected CLIs."}</p>
+          <h1>{section === "account" ? "Account" : "CLI credentials"}</h1>
+          <p>{section === "account" ? "Your profile and connected sign-in methods." : "Manage access for your connected CLIs."}</p>
         </header>
         {section === "account" && <div className="settings-profile-row"><Avatar name={user.displayName} src={user.avatarUrl} /><strong>{user.displayName}</strong></div>}
 
         <section className="settings-section" hidden={section !== "account"} aria-labelledby="signin-methods-title">
           <header><div><h2 id="signin-methods-title">Sign-in methods</h2><p>Connected identities reach this same ATape account.</p></div></header>
           <IdentityRows identities={snapshot.identities} providers={snapshot.providers} onRetry={onRetry} />
-        </section>
-
-        <section className="settings-section" hidden={section !== "sessions"} aria-labelledby="sessions-title">
-          <header>
-            <div><h2 className="visually-hidden" id="sessions-title">Browser sessions</h2><p>Sessions end after 30 idle days or 180 days total.</p></div>
-            <Badge>{sessions.length} active</Badge>
-          </header>
-          <SessionRows section={snapshot.webSessions} onRetry={onRetry} onRevoke={(session) => confirm({
-            title: session.current === true ? "Sign out this browser?" : "Revoke this browser session?",
-            description: session.current === true
-              ? "You will return to sign-in. Other browser sessions and CLI credentials stay active."
-              : "That browser will need to sign in again. Other access stays active.",
-            confirmLabel: session.current === true ? "Sign out" : "Revoke session",
-            danger: true
-          }, { kind: "revoke-web", id: session.id })} />
-          {snapshot.webSessions._tag === "Ready" && sessions.length > 0 && (
-            <footer className="section-footer">
-              <p>This signs the account out in every browser, including this one.</p>
-              <Button className="quiet-danger-button" onClick={() => confirm({
-                title: "Revoke every browser session?",
-                description: "Every browser will be signed out. CLI credentials stay active.",
-                confirmLabel: "Revoke all sessions",
-                danger: true
-              }, { kind: "revoke-all-web" })}>Revoke all</Button>
-            </footer>
-          )}
         </section>
 
         <section className="settings-section" hidden={section !== "credentials"} aria-labelledby="credentials-title">
@@ -240,7 +182,7 @@ export const AccountSecurityView = ({
           </header>
           <CredentialRows section={snapshot.cliCredentials} onRetry={onRetry} onRevoke={(credential) => confirm({
             title: "Revoke this CLI credential?",
-            description: "That CLI login will stop working immediately. Browser sessions are unaffected.",
+            description: "That CLI login will stop working immediately. You’ll stay signed in here.",
             confirmLabel: "Revoke credential",
             danger: true
           }, { kind: "revoke-cli", id: credential.id })} />
@@ -249,7 +191,7 @@ export const AccountSecurityView = ({
               <p>Use this if a computer is lost or you no longer trust any CLI login.</p>
               <Button className="quiet-danger-button" onClick={() => confirm({
                 title: "Revoke every CLI credential?",
-                description: "All connected CLIs will stop working and must sign in again. Browser sessions are unaffected.",
+                description: "All connected CLIs will stop working and must sign in again. You’ll stay signed in here.",
                 confirmLabel: "Revoke all credentials",
                 danger: true
               }, { kind: "revoke-all-cli" })}>Revoke all</Button>

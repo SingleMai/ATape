@@ -14,9 +14,7 @@ import {
   resolveCLIDeviceGrant,
   restoreWebSession,
   revokeAllCLICredentials,
-  revokeAllWebSessions,
   revokeCLICredential,
-  revokeWebSession,
   rotateTeamJoinCode,
   setTeamMemberRole,
   type AccessError,
@@ -69,14 +67,13 @@ export type SectionView<A> =
 export type AccountSecurityViewModel = {
   readonly providers: SectionView<import("@atape/domain").ProviderRegistration[] | ReadonlyArray<import("@atape/domain").ProviderRegistration>>
   readonly identities: SectionView<ReadonlyArray<import("@atape/domain").ExternalIdentity>>
-  readonly webSessions: SectionView<ReadonlyArray<import("@atape/domain").WebSession>>
   readonly cliCredentials: SectionView<ReadonlyArray<import("@atape/domain").CLICredential>>
 }
 
 const friendlyFailure = (error: AccessError): FailureView => {
   const message = (() => {
     switch (error.reason) {
-      case "unauthenticated": return "Your browser session ended. Sign in again to continue."
+      case "unauthenticated": return "Please sign in again to continue."
       case "fresh_authentication_required": return "Confirm your sign-in before making this security change."
       case "forbidden": return "Your current Team role does not allow this action."
       case "not_found": return "This item is unavailable or you no longer have access to it."
@@ -139,12 +136,10 @@ const reauthenticationAtom = runtime.fn(beginDefaultReauthentication)
 const logoutAtom = runtime.fn(logoutWebSession)
 const accountAtom = runtime.atom(loadAccountSecurity())
 const accountActionAtom = runtime.fn((input: {
-  readonly kind: "revoke-web" | "revoke-all-web" | "revoke-cli" | "revoke-all-cli"
+  readonly kind: "revoke-cli" | "revoke-all-cli"
   readonly id?: string
 }) => {
   switch (input.kind) {
-    case "revoke-web": return revokeWebSession(input.id ?? "")
-    case "revoke-all-web": return revokeAllWebSessions()
     case "revoke-cli": return revokeCLICredential(input.id ?? "")
     case "revoke-all-cli": return revokeAllCLICredentials()
   }
@@ -185,7 +180,7 @@ export const useSessionPresenter = (): {
       : { _tag: "Failed", failure: friendlyFailure(error) },
     onDefect: (): SessionView => ({
       _tag: "Failed",
-      failure: defectFailure("ATape could not restore this browser session safely.")
+      failure: defectFailure("ATape could not verify your sign-in. Please try again.")
     }),
     onSuccess: (success): SessionView => ({
       _tag: "Authenticated",
@@ -239,7 +234,6 @@ export const useAccountSecurityPresenter = () => {
         value: {
           providers: section(loaded.value.providers),
           identities: section(loaded.value.identities),
-          webSessions: section(loaded.value.webSessions),
           cliCredentials: section(loaded.value.cliCredentials)
         } satisfies AccountSecurityViewModel
       }

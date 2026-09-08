@@ -87,9 +87,6 @@ const authenticationFixture = (overrides: Partial<AuthenticationGateway["Service
     }),
     logout: () => Effect.void,
     listExternalIdentities: () => Effect.succeed([identity]),
-    listWebSessions: () => Effect.succeed([session]),
-    revokeWebSession: () => Effect.void,
-    revokeAllWebSessions: () => Effect.void,
     listCLICredentials: () => Effect.succeed([credential]),
     revokeCLICredential: () => Effect.void,
     revokeAllCLICredentials: () => Effect.void,
@@ -137,20 +134,20 @@ describe("Authentication application Module", () => {
 
   it("preserves independently recoverable account sections", async () => {
     const fixture = authenticationFixture({
-      listWebSessions: () => Effect.fail(new AccessError({
+      listCLICredentials: () => Effect.fail(new AccessError({
         reason: "unavailable",
         code: "service_unavailable",
-        message: "Sessions are temporarily unavailable."
+        message: "CLI credentials are temporarily unavailable."
       }))
     })
     const result = await fixture.run(loadAccountSecurity())
 
     expect(result.identities).toMatchObject({ _tag: "Ready", value: [identity] })
-    expect(result.webSessions).toMatchObject({
+    expect(result.cliCredentials).toMatchObject({
       _tag: "Failed",
       error: { code: "service_unavailable" }
     })
-    expect(result.cliCredentials).toMatchObject({ _tag: "Ready", value: [credential] })
+    expect(result.providers._tag).toBe("Ready")
   })
 
   it("normalizes the CLI code before crossing the Gateway Seam", async () => {

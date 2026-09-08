@@ -42,10 +42,14 @@ is also outside this increment; the current directory uses stable name ordering.
 ## Settings overlay
 
 Account and Team settings open in a lightweight dialog over the current page.
-Account, Browser sessions, and CLI credentials are separate categories; Team
+Account and CLI credentials are separate categories; Team
 settings shares the same dialog. Closing restores keyboard focus and preserves
 the reader URL and scroll position. Nested security confirmations retain their
 existing behavior and do not dismiss Settings when canceled.
+
+Browser-session management is no longer exposed in Settings or requested by the
+Web account loader. Ordinary sign-out remains available; server-side session
+validation, expiration, and revocation APIs remain unchanged.
 
 Legacy account and Team settings URLs open the dialog above the default workspace.
 Settings selection is ephemeral; a reload returns to the underlying workspace.
