@@ -1,0 +1,23 @@
+{
+  "protocol": "atape.manual-release-waiver.v1",
+  "releaseVersion": "0.4.2",
+  "authEpoch": "auth-v1",
+  "status": "authorized",
+  "candidateCommit": "8caca413896a41ce510924ffc07b29c2dad1e714",
+  "authorizedOn": "2026-09-08",
+  "authorization": "After PR #92 passed CI and Security and merged, the user explicitly authorized a one-time manual staging waiver for v0.4.2 and package publication on 2026-09-08. All automated tests and security scans remain required, and release notes disclose unverified manual acceptance. This authorization is separate from earlier waivers and does not claim completed staging or authorize a Server deployment.",
+  "scope": "manual-staging-only",
+  "unverifiedChecks": [
+    "github-provider-staging-smoke",
+    "official-domain-egress-deny-smoke",
+    "official-topology",
+    "waf-tls-callback",
+    "backup-restore",
+    "observability-secret-sample",
+    "rollback",
+    "candidate-artifacts",
+    "two-user-two-team",
+    "release-signoff"
+  ],
+  "riskNotice": "docs/releases/v0.4.2.md"
+}
