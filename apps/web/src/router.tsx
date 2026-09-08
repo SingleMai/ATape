@@ -73,14 +73,13 @@ const parseSessionSearch = (input: unknown): SessionLocationSearch =>
   })
 
 const ProjectSearch = Schema.Struct({
-  q: Schema.optionalKey(Schema.String),
-  cursor: Schema.optionalKey(Schema.String)
+  q: Schema.optionalKey(Schema.String)
 })
 
-const parseProjectSearch = (input: unknown): { readonly q: string; readonly cursor: string } =>
+const parseProjectSearch = (input: unknown): { readonly q: string } =>
   Option.match(Schema.decodeUnknownOption(ProjectSearch)(input), {
-    onNone: () => ({ q: "", cursor: "" }),
-    onSome: (value) => ({ q: value.q ?? "", cursor: value.cursor ?? "" })
+    onNone: () => ({ q: "" }),
+    onSome: (value) => ({ q: value.q ?? "" })
   })
 
 const SignInSearch = Schema.Struct({

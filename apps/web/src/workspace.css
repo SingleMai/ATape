@@ -183,8 +183,13 @@
   padding: 8px;
   border-radius: 6px;
   color: var(--atape-color-text);
-  font-size: 13px;
   text-decoration: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
 }
 .workspace-team-options > button:hover {
   background: var(--atape-color-accent-soft);
@@ -283,19 +288,20 @@
   padding-top: 12px;
   border-top: 1px solid var(--atape-color-border-soft);
 }
+.workspace-profile {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
 .workspace-account .workspace-profile {
   display: flex;
   align-items: center;
-  gap: 9px;
   padding: 7px 9px;
-  color: var(--atape-color-text-muted);
   font-size: 13px;
   text-decoration: none;
-}
-.workspace-account .workspace-profile:hover {
-  color: var(--atape-color-text);
-}
-.workspace-account .workspace-profile {
   min-height: 52px;
   gap: 10px;
   border-radius: 8px;
