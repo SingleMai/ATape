@@ -73,3 +73,5 @@ pretending that staging acceptance passed.
 [ADR-0035](0035-global-search-workspace.md) adds a persistent global Search dialog and bounded cross-project queries through the existing Search Module.
 | [0038](0038-v0.3.0-manual-release-waiver.md) | Accepted by explicit user authorization | Separate candidate-bound v0.3.0 manual staging waiver; all automated gates remain blocking |
 | [0039](0039-v0.3.1-manual-release-waiver.md) | Accepted by explicit user authorization | Separate candidate-bound v0.3.1 manual staging waiver for CLI self-test; all automated gates remain blocking |
+
+- [ADR-0047: Informational CLI device inventory](0047-cli-device-inventory.md)

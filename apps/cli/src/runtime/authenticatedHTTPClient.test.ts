@@ -35,6 +35,7 @@ const metadata: InstanceMetadata = {
 const fixture = (options: {
   readonly stored?: StoredCLICredential
   readonly metadata?: InstanceMetadata
+  readonly device?: import("@atape/domain").CLIDeviceMetadata
 } = {}) => {
   let discoveries = 0
   const fetches: Array<{ readonly url: string; readonly init?: RequestInit }> = []
@@ -65,7 +66,7 @@ const fixture = (options: {
       headers: { "content-type": "application/json" }
     })
   }) as typeof fetch
-  const layer = makeAuthenticatedHTTPClientLayer(fetchImplementation).pipe(Layer.provide(dependencies))
+  const layer = makeAuthenticatedHTTPClientLayer(fetchImplementation, false, options.device === undefined ? undefined : Effect.succeed(options.device)).pipe(Layer.provide(dependencies))
   return {
     discoveries: () => discoveries,
     fetches,
@@ -75,6 +76,15 @@ const fixture = (options: {
 }
 
 describe("authenticated CLI HTTP boundary", () => {
+  it("reports Unicode device names and Adapter state without local paths or credentials", async () => {
+    const device = { name: "Mai 的 Mac", platform: "darwin arm64", version: "0.4.5", adapters: [{ id: "codex", version: "0.4.5", enabled: false }] }
+    const client = fixture({ device })
+    await client.run(AuthenticatedHTTPClient.use((http) => http.request({ instanceOrigin: credential.instanceOrigin, path: "/api/v1/workspace", method: "GET" })))
+    const header = new Headers(client.fetches[0]?.init?.headers).get("X-Atape-Device")!
+    expect(JSON.parse(Buffer.from(header, "base64url").toString())).toEqual(device)
+    expect(header.length).toBeLessThanOrEqual(8192)
+  })
+
   it("verifies pinned discovery once, checks User scope, and rejects redirects", async () => {
     const client = fixture()
     await client.run(Effect.gen(function*() {

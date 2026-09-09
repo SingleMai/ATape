@@ -374,3 +374,48 @@
     flex-direction: column;
   }
 }
+
+/* Sync device details stay compact until the user needs local troubleshooting. */
+/* CLI inventory: a single disclosure per device, with actions inside. */
+.cli-device-details { border-top: 1px solid var(--atape-color-border-soft); }
+.cli-device-details:last-of-type { border-bottom: 1px solid var(--atape-color-border-soft); }
+.cli-device-summary { display: grid; grid-template-columns: 40px minmax(0,1fr) auto 16px; gap: 14px; align-items: center; padding: 24px 4px; cursor: pointer; list-style: none; }
+.cli-device-summary::-webkit-details-marker { display: none; }
+.cli-device-summary:hover { background: var(--atape-color-surface-muted); }
+.cli-device-summary:focus-visible, .cli-device-body summary:focus-visible { outline: 2px solid var(--atape-color-focus); outline-offset: 3px; }
+.cli-device-copy { min-width: 0; }
+.cli-device-copy strong { display: block; font-size: 15px; }
+.cli-device-copy > span { display: block; margin-top: 5px; font-size: 12px; color: var(--atape-color-text-muted); overflow-wrap: anywhere; }
+.cli-device-copy .cli-update-hint, .cli-attention { color: var(--atape-color-warning-text); }
+.cli-device-status { font-size: 12px; }
+.cli-chevron { font-size: 24px; transition: transform 150ms; }
+.cli-device-details[open] > summary .cli-chevron { transform: rotate(90deg); }
+.cli-device-body { margin: 0 0 24px 54px; font-size: 12px; overflow-wrap: anywhere; }
+.cli-guidance { color: var(--atape-color-text-muted); font-size: 12px; }
+.cli-issue { padding: 14px; border-radius: 10px; background: var(--atape-color-warning-soft); color: var(--atape-color-warning-text); }
+.cli-adapter-table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 20px; table-layout: fixed; }
+.cli-adapter-table th { font-weight: 600; color: var(--atape-color-text-muted); padding-bottom: 10px; }
+.cli-adapter-table th:first-child { width: 45%; }
+.cli-adapter-table td { padding: 14px 8px 14px 0; border-top: 1px solid var(--atape-color-border-soft); vertical-align: top; }
+.cli-adapter-table td > span { display: block; margin-top: 4px; color: var(--atape-color-text-muted); font-size: 11px; }
+.cli-adapter-table td:last-child, .cli-adapter-table th:last-child { text-align: right; color: var(--atape-color-text-muted); }
+.cli-version-row { display: flex; justify-content: space-between; gap: 20px; padding: 18px 0; border-top: 1px solid var(--atape-color-border-soft); }
+.cli-version-row p { color: var(--atape-color-text-muted); margin: 5px 0; }
+.cli-upgrade { min-width: 100px; }
+.cli-upgrade summary { color: var(--atape-color-accent-strong); cursor: pointer; padding: 8px 0; }
+.cli-device-foot { display: flex; flex-wrap: wrap; gap: 8px 20px; color: var(--atape-color-text-muted); font-size: 11px; }
+.cli-device-actions { border-top: 1px solid var(--atape-color-border-soft); margin-top: 18px; padding-top: 10px; display: flex; justify-content: flex-end; }
+.cli-project-details summary { padding-top: 8px; cursor: pointer; }
+.cli-report-info { position: relative; }
+.cli-report-info summary { cursor: pointer; padding: 12px; list-style: none; }
+.cli-report-info p { position: absolute; right: 0; width: 240px; padding: 14px; z-index: 2; background: var(--atape-color-paper); border: 1px solid var(--atape-color-border); border-radius: 10px; }
+@media (max-width: 760px) {
+ .cli-device-summary { grid-template-columns: 32px minmax(0,1fr) 16px; gap: 10px; }
+ .cli-device-status { grid-column: 2; grid-row: 2; }
+ .cli-chevron { grid-column: 3; grid-row: 1; }
+ .cli-device-body { margin-left: 0; }
+ .cli-version-row { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .cli-chevron { transition: none; } }
+
+.settings-dialog .cli-toolbar-actions { width: auto; flex-shrink: 0; }

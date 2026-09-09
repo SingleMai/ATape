@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -307,12 +308,23 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Fatalf("invalid CLI Credential response")
 	}
 
+	heartbeat := httptest.NewRequest(http.MethodGet, "/api/v1/users/me", nil)
+	heartbeat.Header.Set("Authorization", "Bearer "+token.Credential)
+	heartbeat.Header.Set("X-Atape-Device", base64.RawURLEncoding.EncodeToString([]byte(`{"name":"Work Mac","platform":"darwin arm64","version":"0.4.5","latestVersion":"0.4.6","adapters":[],"sync":{"phase":"waiting","jobs":[],"jobsTruncated":false}}`)))
+	heartbeatResponse := httptest.NewRecorder()
+	handler.ServeHTTP(heartbeatResponse, heartbeat)
+	if heartbeatResponse.Code != http.StatusOK {
+		t.Fatalf("device heartbeat failed: %d", heartbeatResponse.Code)
+	}
 	cliCredentialsRequest := httptest.NewRequest(http.MethodGet, "/api/v1/users/me/cli-credentials", nil)
 	cliCredentialsRequest.AddCookie(sessionCookie)
 	cliCredentialsResponse := httptest.NewRecorder()
 	handler.ServeHTTP(cliCredentialsResponse, cliCredentialsRequest)
 	if cliCredentialsResponse.Code != http.StatusOK || token.CredentialID == "" ||
 		!strings.Contains(cliCredentialsResponse.Body.String(), `"id":"`+token.CredentialID+`"`) ||
+		!strings.Contains(cliCredentialsResponse.Body.String(), `"reportedAt":`) ||
+		!strings.Contains(cliCredentialsResponse.Body.String(), `"phase":"waiting"`) ||
+		!strings.Contains(cliCredentialsResponse.Body.String(), `"name":"Work Mac"`) ||
 		strings.Contains(cliCredentialsResponse.Body.String(), token.Credential) {
 		t.Fatalf("CLI Credential inventory = %d: %s", cliCredentialsResponse.Code, cliCredentialsResponse.Body.String())
 	}

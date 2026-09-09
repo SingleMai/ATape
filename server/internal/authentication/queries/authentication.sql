@@ -373,7 +373,7 @@ WHERE secret_digest = $1
 FOR UPDATE;
 
 -- name: ListActiveCLICredentialsForUser :many
-SELECT id, capability_version, created_at, last_used_at
+SELECT id, capability_version, created_at, last_used_at, device_metadata, device_sync, device_reported_at
 FROM auth_cli_credentials
 WHERE user_id = $1 AND status = 'active'
 ORDER BY last_used_at DESC, created_at DESC, id DESC;
@@ -515,3 +515,11 @@ WITH candidates AS (
 )
 DELETE FROM auth_user_code_attempt_windows w USING candidates c
 WHERE w.web_session_id = c.web_session_id AND w.window_start = c.window_start;
+
+-- name: UpdateCLIDeviceMetadata :exec
+UPDATE auth_cli_credentials
+SET device_metadata = CASE WHEN sqlc.narg(sync)::bytea IS NOT NULL OR device_sync IS NULL THEN sqlc.arg(metadata)::bytea ELSE device_metadata END,
+    device_sync = COALESCE(sqlc.narg(sync)::bytea, device_sync),
+    device_reported_at = CASE WHEN sqlc.narg(sync)::bytea IS NOT NULL THEN clock_timestamp() ELSE device_reported_at END
+WHERE id = $1 AND status = 'active'
+  AND (sqlc.narg(sync)::bytea IS NOT NULL OR (device_sync IS NULL AND device_metadata IS DISTINCT FROM sqlc.arg(metadata)::bytea));

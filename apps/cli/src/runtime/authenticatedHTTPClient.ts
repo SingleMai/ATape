@@ -3,6 +3,9 @@ import {
   CLICredentialStore
 } from "@atape/application"
 import { normalizeInstanceTopology, type StoredCLICredential } from "@atape/domain"
+import { hostname, platform, arch } from "node:os"
+import { cliVersion } from "../version.ts"
+import type { CLIDeviceMetadata } from "@atape/domain"
 import { Context, Effect, Layer, Schema } from "effect"
 
 const MaximumBodyBytes = 1024 * 1024
@@ -33,6 +36,7 @@ export type AuthenticatedHTTPRequest = {
   readonly method: "GET" | "POST" | "DELETE"
   readonly body?: unknown
   readonly idempotencyKey?: string
+  readonly deviceReport?: CLIDeviceMetadata & { readonly sync: import("@atape/domain").CLISyncReport }
 }
 
 export type AuthenticatedHTTPResponse = {
@@ -50,8 +54,10 @@ export class AuthenticatedHTTPClient extends Context.Service<AuthenticatedHTTPCl
 
 export const makeAuthenticatedHTTPClientLayer = (
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
-  allowLoopbackHttp = false
+  allowLoopbackHttp = false,
+  deviceReport: Effect.Effect<CLIDeviceMetadata> = Effect.sync(() => ({ name: hostname(), platform: `${platform()} ${arch()}`, version: cliVersion }))
 ) => Layer.effect(AuthenticatedHTTPClient, Effect.gen(function*() {
+  const cachedDeviceReport = yield* Effect.cachedWithTTL(deviceReport, "30 seconds")
   const credentials = yield* CLICredentialStore
   const authentication = yield* CLIAuthenticationGateway
   const verified = new Map<string, { readonly apiOrigin: string; readonly checkedAt: number }>()
@@ -71,7 +77,8 @@ export const makeAuthenticatedHTTPClientLayer = (
         )
       }
       yield* verifyPinnedTopology(authentication, credential, verified, allowLoopbackHttp)
-      return yield* credentialedRequest(fetchImplementation, credential, input)
+      const device = input.deviceReport ?? (yield* cachedDeviceReport)
+      return yield* credentialedRequest(fetchImplementation, credential, input, device)
     })
   })
 }))
@@ -106,13 +113,16 @@ const verifyPinnedTopology = (
 const credentialedRequest = (
   fetchImplementation: typeof globalThis.fetch,
   credential: StoredCLICredential,
-  input: AuthenticatedHTTPRequest
+  input: AuthenticatedHTTPRequest,
+  device: CLIDeviceMetadata
 ): Effect.Effect<AuthenticatedHTTPResponse, AuthenticatedHTTPError> => Effect.tryPromise({
   try: async (signal) => {
     const headers = new Headers({
       Accept: "application/json",
       Authorization: `Bearer ${credential.credential}`
     })
+    const report = Buffer.from(JSON.stringify(device)).toString("base64url")
+    if (report.length <= 8192) headers.set("X-Atape-Device", report)
     let body: string | undefined
     if (input.body !== undefined) {
       headers.set("Content-Type", "application/json")

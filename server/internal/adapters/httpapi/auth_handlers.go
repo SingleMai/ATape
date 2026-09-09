@@ -340,10 +340,13 @@ func (h *Handler) revokeAllWebSessions(response http.ResponseWriter, request *ht
 }
 
 type cliCredentialDTO struct {
-	ID         string    `json:"id"`
-	Capability string    `json:"capability"`
-	CreatedAt  time.Time `json:"createdAt"`
-	LastUsedAt time.Time `json:"lastUsedAt"`
+	Sync       *authentication.CLISyncReport     `json:"sync,omitempty"`
+	ReportedAt *time.Time                        `json:"reportedAt,omitempty"`
+	Device     *authentication.CLIDeviceMetadata `json:"device,omitempty"`
+	ID         string                            `json:"id"`
+	Capability string                            `json:"capability"`
+	CreatedAt  time.Time                         `json:"createdAt"`
+	LastUsedAt time.Time                         `json:"lastUsedAt"`
 }
 
 func (h *Handler) cliCredentials(response http.ResponseWriter, request *http.Request) {
@@ -359,7 +362,7 @@ func (h *Handler) cliCredentials(response http.ResponseWriter, request *http.Req
 	result := make([]cliCredentialDTO, 0, len(items))
 	for _, item := range items {
 		result = append(result, cliCredentialDTO{
-			ID: item.ID, Capability: item.Capability, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt,
+			Sync: item.Sync, ReportedAt: item.ReportedAt, Device: item.Device, ID: item.ID, Capability: item.Capability, CreatedAt: item.CreatedAt, LastUsedAt: item.LastUsedAt,
 		})
 	}
 	writeJSON(response, request, http.StatusOK, struct {

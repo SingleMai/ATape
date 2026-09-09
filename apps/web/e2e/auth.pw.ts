@@ -103,27 +103,31 @@ test("recovers account sections independently and keyboard-confirms revocation",
 
   await expect(page.getByRole("heading", { name: "Account", exact: true })).toBeVisible()
   await expect(page.getByText("singlemai")).toBeVisible()
-  await page.getByRole("button", { name: "CLI credentials", exact: true }).click()
-  await expect(page.getByText("1 active")).toBeVisible()
+  await page.getByRole("button", { name: "atape-cli", exact: true }).click()
+  await expect(page.getByText("1 device")).toBeVisible()
+  await expect(page.getByText("Unidentified device")).toBeVisible()
+  await expect(page.getByText("Status not reported", { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0)
 
   await request.post(`${fixtureOrigin}/__fixture/fail-credentials?value=1`)
   await page.reload()
   await page.getByRole("button", { name: "Open account security for Mai" }).click()
-  await page.getByRole("button", { name: "CLI credentials", exact: true }).click()
-  const credentials = page.getByRole("region", { name: "CLI credentials" })
+  await page.getByRole("button", { name: "atape-cli", exact: true }).click()
+  const credentials = page.getByRole("region", { name: "atape-cli" })
   await expect(credentials.getByRole("alert")).toBeVisible()
   await expect(credentials.getByRole("button", { name: "Try again" })).toBeVisible()
   await page.getByRole("button", { name: "Account", exact: true }).click()
   await expect(page.getByText("singlemai")).toBeVisible()
-  await page.getByRole("button", { name: "CLI credentials", exact: true }).click()
+  await page.getByRole("button", { name: "atape-cli", exact: true }).click()
 
   await request.post(`${fixtureOrigin}/__fixture/fail-credentials?value=0`)
   await credentials.getByRole("button", { name: "Try again" }).click()
-  await expect(credentials.getByText("1 active")).toBeVisible()
+  await expect(credentials.getByText("1 device")).toBeVisible()
 
-  const credential = credentials.locator(".settings-row")
-  await credential.getByRole("button", { name: "Revoke" }).click()
+  const credential = credentials.locator(".cli-device-details")
+  await expect(credential.getByRole("button", { name: "Disconnect device" })).not.toBeVisible()
+  await credential.locator(":scope > summary").click()
+  await credential.getByRole("button", { name: "Disconnect device" }).click()
   const dialog = page.getByRole("dialog", { name: "Revoke this CLI credential?" })
   await expect(dialog).toBeVisible()
   await expect(page.locator(":focus")).toHaveText("Cancel")
@@ -131,12 +135,12 @@ test("recovers account sections independently and keyboard-confirms revocation",
   await expect(dialog).not.toBeVisible()
   expect((await fixtureState(page)).cliCredentials).toHaveLength(1)
 
-  await credential.getByRole("button", { name: "Revoke" }).click()
+  await credential.getByRole("button", { name: "Disconnect device" }).click()
   await page.keyboard.press("Tab")
   await expect(page.locator(":focus")).toHaveText("Revoke credential")
   await page.keyboard.press("Enter")
   await expect(dialog).not.toBeVisible()
-  await expect(credentials.getByText("0 active")).toBeVisible()
+  await expect(credentials.getByText("0 devices")).toBeVisible()
   expect((await fixtureState(page)).cliCredentials).toEqual([])
   await expectNoBrowserSecrets(page)
 })
@@ -312,3 +316,50 @@ for (const imageLoads of [true, false]) {
     }
   })
 }
+
+
+test("shows device reports including disabled Adapters and empty installations", async ({ context, page }, testInfo) => {
+  await authenticate(context)
+  await page.route("**/api/v1/users/me/cli-credentials", (route) => route.fulfill({ json: { items: [
+    { id: "mac-credential", capability: "atape-cli.v1", createdAt: "2026-09-09T00:00:00Z", lastUsedAt: "2026-09-09T00:00:00Z",
+      device: { name: "Mai 的 Mac", platform: "darwin arm64", version: "0.4.5", adapters: [{ id: "codex", packageName: "@atape/adapter-codex", version: "0.4.4", enabled: false }] } },
+    { id: "linux-credential", capability: "atape-cli.v1", createdAt: "2026-09-09T00:00:00Z", lastUsedAt: "2026-09-09T00:00:00Z",
+      device: { name: "Build server", platform: "linux x64", version: "0.4.5", adapters: [] } }
+  ] } }))
+  await page.goto("/settings/account")
+  await page.getByRole("button", { name: "atape-cli", exact: true }).click()
+  await expect(page.getByText("Mai 的 Mac", { exact: true })).toBeVisible()
+  for (const details of await page.locator(".cli-device-details > summary").all()) await details.click()
+  const adapter = page.getByRole("row").filter({ hasText: "@atape/adapter-codex" })
+  await expect(adapter).toContainText("v0.4.4")
+  await expect(adapter).toContainText("Disabled")
+  await expect(page.getByText("Adapters: None installed")).toBeVisible()
+  await expect(page.getByText("2 devices")).toBeVisible()
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    const content = page.locator(".settings-modal-content")
+    await expect.poll(() => content.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  }
+  await page.screenshot({ path: testInfo.outputPath("devices.png") })
+})
+
+
+test("shows stale reports, actionable sync failures and independent CLI upgrade guidance", async ({ context, page }) => {
+  await authenticate(context)
+  const credential = { id: "mac", capability: "atape-cli.v1", createdAt: "2026-09-09T00:00:00Z", lastUsedAt: "2026-09-09T00:00:00Z",
+    device: { name: "Work Mac", platform: "darwin arm64", version: "0.4.4", latestVersion: "0.4.5", adapters: [] },
+    reportedAt: new Date().toISOString(), sync: { phase: "waiting", jobsTruncated: false, jobs: [
+      { projectId: "project", projectName: "ATape", adapterId: "codex", state: "failed", reason: "adapter", hasMore: false }
+    ] } }
+  await page.route("**/api/v1/users/me/cli-credentials", (route) => route.fulfill({ json: { items: [credential] } }))
+  await page.goto("/settings/account")
+  await page.getByRole("button", { name: "atape-cli", exact: true }).click()
+  await expect(page.getByText("Needs attention", { exact: true })).toBeVisible()
+  await expect(page.locator(".cli-update-hint")).toBeVisible()
+  await page.locator(".cli-device-details > summary").click()
+  await expect(page.getByText("The Adapter could not collect data.", { exact: false })).toBeVisible()
+  credential.reportedAt = "2020-01-01T00:00:00Z"
+  await page.getByRole("region", { name: "atape-cli" }).getByRole("button", { name: "Refresh", exact: true }).click()
+  await expect(page.getByText("Status expired", { exact: true })).toBeVisible()
+  await expect(page.getByText("The device may be asleep", { exact: false })).toBeVisible()
+})

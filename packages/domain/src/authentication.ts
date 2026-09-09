@@ -64,9 +64,47 @@ export const ExternalIdentity = Schema.Struct({
 })
 export type ExternalIdentity = typeof ExternalIdentity.Type
 
+export const CLISyncJob = Schema.Struct({
+  projectId: DisplayText,
+  projectName: DisplayText,
+  adapterId: DisplayText,
+  state: Schema.Literals(["pending", "synced", "partial", "failed"]),
+  reason: Schema.optionalKey(Schema.Literals(["unauthenticated", "transport", "adapter", "state", "contract", "partial"])),
+  lastSuccessAt: Schema.optionalKey(Timestamp),
+  lastAttemptAt: Schema.optionalKey(Timestamp),
+  hasMore: Schema.Boolean
+})
+export type CLISyncJob = typeof CLISyncJob.Type
+export const CLISyncReport = Schema.Struct({
+  phase: Schema.Literals(["starting", "syncing", "waiting", "stopped", "error"]),
+  jobs: Schema.Array(CLISyncJob),
+  jobsTruncated: Schema.Boolean
+})
+export type CLISyncReport = typeof CLISyncReport.Type
+
+export const CLIDeviceMetadata = Schema.Struct({
+  name: DisplayText,
+  platform: DisplayText,
+  version: DisplayText,
+  latestVersion: Schema.optionalKey(DisplayText),
+  versionCheckedAt: Schema.optionalKey(Timestamp),
+  adaptersTruncated: Schema.optionalKey(Schema.Boolean),
+  adapters: Schema.optionalKey(Schema.Array(Schema.Struct({
+    id: DisplayText,
+    packageName: Schema.optionalKey(DisplayText),
+    version: DisplayText,
+    latestVersion: Schema.optionalKey(DisplayText),
+    enabled: Schema.Boolean
+  })))
+})
+export type CLIDeviceMetadata = typeof CLIDeviceMetadata.Type
+
 export const CLICredential = Schema.Struct({
   id: OpaqueIdentifier,
   capability: Schema.Literal("atape-cli.v1"),
+  device: Schema.optionalKey(CLIDeviceMetadata),
+  sync: Schema.optionalKey(CLISyncReport),
+  reportedAt: Schema.optionalKey(Timestamp),
   createdAt: Timestamp,
   lastUsedAt: Timestamp
 })

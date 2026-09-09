@@ -29,6 +29,15 @@ const formatTime = (value: string): string => {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
 }
 
+const relativeTime = (value: string): string => {
+  const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60_000))
+  if (!Number.isFinite(minutes)) return "Unknown time"
+  if (minutes < 1) return "just now"
+  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 1440) return `${Math.floor(minutes / 60)} hr ago`
+  return `${Math.floor(minutes / 1440)} days ago`
+}
+
 const SettingsShell = ({
   children,
   active,
@@ -44,7 +53,7 @@ const SettingsShell = ({
   const section = active === "team" ? "team" : target.section
   return <div className="settings-modal-layout">
     <nav className="settings-categories" aria-label="Settings categories">
-      {([ ["account", "Account"], ["credentials", "CLI credentials"] ] as const).map(([key, label]) =>
+      {([ ["account", "Account"], ["credentials", "atape-cli"] ] as const).map(([key, label]) =>
         <button type="button" key={key} aria-current={section === key ? "page" : undefined}
           onClick={() => openSettings({ section: key })}>{label}</button>
       )}
@@ -93,23 +102,50 @@ const CredentialRows = ({
   onRetry,
   onRevoke
 }: {
-  readonly section: SectionView<ReadonlyArray<CLICredential>>
+  readonly section: AccountSecurityViewModel["cliCredentials"]
   readonly onRetry: () => void
   readonly onRevoke: (credential: CLICredential) => void
 }) => {
   if (section._tag === "Failed") return <SectionFailure section={section} onRetry={onRetry} />
-  if (section.value.length === 0) return <div className="empty-row">No active CLI credentials.</div>
+  if (section.value.length === 0) return <div className="empty-row">No connected CLI devices. Sign in with atape login on a device to connect it.</div>
   return section.value.map((credential) => (
-    <div className="settings-row" key={credential.id}>
-      <div className="row-identity">
+    <details className="cli-device-details" key={credential.id}>
+      <summary className="cli-device-summary">
         <span className="row-icon" aria-hidden="true">⌘</span>
-        <div className="row-copy">
-          <strong>atape-cli</strong>
-          <span>Created {formatTime(credential.createdAt)} · last used {formatTime(credential.lastUsedAt)}</span>
+        <span className="cli-device-copy">
+          <strong>{credential.device?.name ?? "Unidentified device"}</strong>
+          <span>{credential.device?.platform ?? `Credential ${credential.id}`} · {credential.lastSuccessAt ? `Synced ${relativeTime(credential.lastSuccessAt)}` : "No successful sync reported"}</span>
+          {credential.versionStatus?.startsWith("Update available") && <span className="cli-update-hint">{credential.versionStatus}</span>}
+        </span>
+        <span className={`cli-device-status${credential.attention ? " cli-attention" : ""}`}>{credential.status}</span>
+        <span className="cli-chevron" aria-hidden="true">›</span>
+      </summary>
+      <div className="cli-device-body">
+        <p className={credential.attention ? "cli-issue" : "cli-guidance"}>{credential.guidance}</p>
+        {credential.jobs.filter(job => job.guidance).map(job => <p className="cli-guidance" key={`${job.projectId}:${job.adapterId}`}>{job.guidance}</p>)}
+        {credential.adapters.length > 0 ? <table className="cli-adapter-table">
+          <caption className="visually-hidden">Adapters on {credential.device?.name ?? credential.id}</caption>
+          <thead><tr><th>Adapter</th><th>Status</th><th>Last success</th></tr></thead>
+          <tbody>{credential.adapters.map(adapter => <tr key={adapter.id}>
+            <td><strong>{adapter.packageName}</strong><span>{adapter.version ? `v${adapter.version}` : "Version not reported"}{adapter.version && <> · {adapter.versionStatus}</>}</span>
+              {adapter.jobs.length > 1 && <details className="cli-project-details"><summary>{adapter.jobs.length} projects</summary>{adapter.jobs.map(job => <p key={job.projectId}>{job.projectName} · {job.state}{job.hasMore ? " · Catching up" : ""} · {job.lastSuccessAt ? formatTime(job.lastSuccessAt) : "No successful sync"}</p>)}</details>}
+            </td>
+            <td className={adapter.attention ? "cli-attention" : ""}>{adapter.status}</td>
+            <td>{adapter.lastSuccessAt ? relativeTime(adapter.lastSuccessAt) : "Not reported"}</td>
+          </tr>)}</tbody>
+        </table> : <p>Adapters: {credential.device?.adapters === undefined ? "Not reported" : "None installed"}</p>}
+        {credential.sync?.jobsTruncated && <p>Only part of this device’s job list is shown. Run <code>atape status</code> locally for all jobs.</p>}
+        {credential.device?.adaptersTruncated && <p>Only part of the installed Adapter list is shown. Run <code>atape adapters list</code> locally.</p>}
+        <div className="cli-version-row">
+          <div><strong>atape-cli {credential.device ? `v${credential.device.version}` : "version not reported"}</strong><p>{credential.versionStatus}</p></div>
+          <details className="cli-upgrade"><summary>Upgrade guide</summary><p>Run on this device:</p><code>atape upgrade</code><p>Update Adapters:</p><code>atape adapters upgrade --all</code></details>
         </div>
+        <div className="cli-device-foot"><span>Status received: {credential.reportedAt ? formatTime(credential.reportedAt) : "Not reported"}</span><span>Connected {formatTime(credential.createdAt)}</span>
+          {credential.device?.versionCheckedAt && <span>Versions checked: {formatTime(credential.device.versionCheckedAt)}</span>}
+        </div>
+        <div className="cli-device-actions"><Button className="quiet-danger-button" onClick={() => onRevoke(credential)}>Disconnect device</Button></div>
       </div>
-      <Button className="quiet-danger-button" onClick={() => onRevoke(credential)}>Revoke</Button>
-    </div>
+    </details>
   ))
 }
 
@@ -165,8 +201,8 @@ export const AccountSecurityView = ({
         {action._tag === "Failed" && <FailureNotice failure={action.failure} />}
         {action._tag === "Succeeded" && <SuccessNotice>Account access was updated.</SuccessNotice>}
         <header className="settings-heading">
-          <h1>{section === "account" ? "Account" : "CLI credentials"}</h1>
-          <p>{section === "account" ? "Your profile and connected sign-in methods." : "Manage access for your connected CLIs."}</p>
+          <h1>{section === "account" ? "Account" : "atape-cli"}</h1>
+          <p>{section === "account" ? "Your profile and connected sign-in methods." : "Check your sync devices here. Resolve issues in the local CLI."}</p>
         </header>
         {section === "account" && <div className="settings-profile-row"><Avatar name={user.displayName} src={user.avatarUrl} /><strong>{user.displayName}</strong></div>}
 
@@ -177,8 +213,8 @@ export const AccountSecurityView = ({
 
         <section className="settings-section" hidden={section !== "credentials"} aria-labelledby="credentials-title">
           <header>
-            <div><h2 className="visually-hidden" id="credentials-title">CLI credentials</h2><p>Revoke credentials you no longer use.</p></div>
-            <Badge>{credentials.length} active</Badge>
+            <div><h2 className="visually-hidden" id="credentials-title">atape-cli</h2><span>{credentials.length} {credentials.length === 1 ? "device" : "devices"}</span></div>
+            <div className="row-actions cli-toolbar-actions"><Button onClick={onRetry}>Refresh</Button><details className="cli-report-info"><summary aria-label="About device status">ⓘ</summary><p>Status updates every 30 seconds. Reports older than 2 minutes are marked as expired.</p></details></div>
           </header>
           <CredentialRows section={snapshot.cliCredentials} onRetry={onRetry} onRevoke={(credential) => confirm({
             title: "Revoke this CLI credential?",
@@ -186,17 +222,7 @@ export const AccountSecurityView = ({
             confirmLabel: "Revoke credential",
             danger: true
           }, { kind: "revoke-cli", id: credential.id })} />
-          {snapshot.cliCredentials._tag === "Ready" && credentials.length > 0 && (
-            <footer className="section-footer">
-              <p>Use this if a computer is lost or you no longer trust any CLI login.</p>
-              <Button className="quiet-danger-button" onClick={() => confirm({
-                title: "Revoke every CLI credential?",
-                description: "All connected CLIs will stop working and must sign in again. You’ll stay signed in here.",
-                confirmLabel: "Revoke all credentials",
-                danger: true
-              }, { kind: "revoke-all-cli" })}>Revoke all</Button>
-            </footer>
-          )}
+          <p className="cli-guidance">Manage sync and updates in your local CLI.</p>
         </section>
       </div>
       <ConfirmationDialog

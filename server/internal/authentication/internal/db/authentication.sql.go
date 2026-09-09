@@ -1214,7 +1214,7 @@ func (q *Queries) InsertWebSessionSecret(ctx context.Context, arg InsertWebSessi
 }
 
 const listActiveCLICredentialsForUser = `-- name: ListActiveCLICredentialsForUser :many
-SELECT id, capability_version, created_at, last_used_at
+SELECT id, capability_version, created_at, last_used_at, device_metadata, device_sync, device_reported_at
 FROM auth_cli_credentials
 WHERE user_id = $1 AND status = 'active'
 ORDER BY last_used_at DESC, created_at DESC, id DESC
@@ -1225,6 +1225,9 @@ type ListActiveCLICredentialsForUserRow struct {
 	CapabilityVersion string
 	CreatedAt         time.Time
 	LastUsedAt        time.Time
+	DeviceMetadata    []byte
+	DeviceSync        []byte
+	DeviceReportedAt  pgtype.Timestamptz
 }
 
 func (q *Queries) ListActiveCLICredentialsForUser(ctx context.Context, userID pgtype.UUID) ([]ListActiveCLICredentialsForUserRow, error) {
@@ -1241,6 +1244,9 @@ func (q *Queries) ListActiveCLICredentialsForUser(ctx context.Context, userID pg
 			&i.CapabilityVersion,
 			&i.CreatedAt,
 			&i.LastUsedAt,
+			&i.DeviceMetadata,
+			&i.DeviceSync,
+			&i.DeviceReportedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1787,6 +1793,26 @@ func (q *Queries) UpdateActiveUserProfile(ctx context.Context, arg UpdateActiveU
 	var i UpdateActiveUserProfileRow
 	err := row.Scan(&i.DisplayName, &i.AvatarUrl, &i.CreatedAt)
 	return i, err
+}
+
+const updateCLIDeviceMetadata = `-- name: UpdateCLIDeviceMetadata :exec
+UPDATE auth_cli_credentials
+SET device_metadata = CASE WHEN $2::bytea IS NOT NULL OR device_sync IS NULL THEN $3::bytea ELSE device_metadata END,
+    device_sync = COALESCE($2::bytea, device_sync),
+    device_reported_at = CASE WHEN $2::bytea IS NOT NULL THEN clock_timestamp() ELSE device_reported_at END
+WHERE id = $1 AND status = 'active'
+  AND ($2::bytea IS NOT NULL OR (device_sync IS NULL AND device_metadata IS DISTINCT FROM $3::bytea))
+`
+
+type UpdateCLIDeviceMetadataParams struct {
+	ID       pgtype.UUID
+	Sync     []byte
+	Metadata []byte
+}
+
+func (q *Queries) UpdateCLIDeviceMetadata(ctx context.Context, arg UpdateCLIDeviceMetadataParams) error {
+	_, err := q.db.Exec(ctx, updateCLIDeviceMetadata, arg.ID, arg.Sync, arg.Metadata)
+	return err
 }
 
 const upsertCodeAttemptFailure = `-- name: UpsertCodeAttemptFailure :one

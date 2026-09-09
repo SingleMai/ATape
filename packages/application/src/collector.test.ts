@@ -6,7 +6,9 @@ import {
   type ClientConfig,
   type CollectorCheckpoint
 } from "@atape/domain"
-import { Effect, Layer } from "effect"
+import { CollectorDeviceGateway } from "./collectorMonitoring.ts"
+import { TestClock } from "effect/testing"
+import { Effect, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import { ClientConfigStore } from "./clientManagement.ts"
 import {
@@ -257,6 +259,46 @@ const fixture = (options: {
 }
 
 describe("Collector Module", () => {
+  it("reports idle liveness without new content and stops its heartbeat on cancellation", async () => {
+    const reports: import("@atape/domain").CLISyncReport[] = []
+    const capture = fixture({ page: { protocolVersion: AdapterProtocolVersion, nextCursor: null, hasMore: false, observations: [] } })
+    await capture.run(Effect.gen(function*() {
+      const fiber = yield* runCollector({ intervalMs: 3_600_000 }).pipe(Effect.forkChild)
+      yield* TestClock.adjust("31 seconds")
+      expect(reports.some(report => report.phase === "waiting" && report.jobs[0]?.state === "synced")).toBe(true)
+      yield* Fiber.interrupt(fiber)
+      expect(reports.at(-1)?.phase).toBe("stopped")
+      const count = reports.length
+      yield* TestClock.adjust("90 seconds")
+      expect(reports).toHaveLength(count)
+    }).pipe(Effect.provideService(CollectorDeviceGateway, { publish: report => Effect.sync(() => { reports.push(report) }) }), Effect.provide(TestClock.layer())))
+  })
+
+  it("bounds shutdown even when reporting is unavailable", async () => {
+    const capture = fixture({ page: { protocolVersion: AdapterProtocolVersion, nextCursor: null, hasMore: false, observations: [] } })
+    await capture.run(Effect.gen(function*() {
+      const fiber = yield* runCollector({ intervalMs: 3_600_000 }).pipe(Effect.forkChild)
+      yield* TestClock.adjust("1 second")
+      const stopping = yield* Fiber.interrupt(fiber).pipe(Effect.forkChild)
+      yield* TestClock.adjust("6 seconds")
+      yield* Fiber.join(stopping)
+    }).pipe(Effect.provideService(CollectorDeviceGateway, { publish: () => Effect.never }), Effect.provide(TestClock.layer())))
+  })
+
+  it("uploads only categorized failures and retains prior successful sync timestamps", async () => {
+    const reports: import("@atape/domain").CLISyncReport[] = []
+    const page = collectionPage()
+    const capture = fixture({ pages: [page], page: { ...page, observations: [], sourceFailures: [{ source: "/private/session.jsonl", reason: "format" }] } })
+    await capture.run(Effect.gen(function*() {
+      const fiber = yield* runCollector({ intervalMs: 10_000 }).pipe(Effect.forkChild)
+      yield* TestClock.adjust("31 seconds")
+      yield* Fiber.interrupt(fiber)
+    }).pipe(Effect.provideService(CollectorDeviceGateway, { publish: report => Effect.sync(() => { reports.push(report) }) }), Effect.provide(TestClock.layer())))
+    expect(JSON.stringify(reports)).not.toContain("/private/")
+    expect(reports.at(-1)?.jobs[0]?.lastSuccessAt).toBeDefined()
+    expect(reports.at(-1)?.jobs[0]?.state).toBe("partial")
+  })
+
   it("uses global tools for collection and preserves its checkpoint while a tool is disabled", async () => {
     const original = clientConfig()
     let config: ClientConfig = original
