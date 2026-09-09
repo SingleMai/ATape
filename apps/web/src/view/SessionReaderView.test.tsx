@@ -64,6 +64,37 @@ const renderReader = (options: {
 )
 
 describe("SessionReaderView", () => {
+  it.each([
+    "/Users/liying/Downloads/report.md",
+    "/mnt/data/report.pdf",
+    "./reports/report.md",
+    "../report.md#L12",
+    "report.md",
+    "file:///Users/liying/report.md",
+    "sandbox:/mnt/data/report.pdf",
+    "artifact://report-1",
+    "vscode://file/Users/liying/report.ts:12",
+    "#local-heading",
+    "javascript:alert(1)"
+  ])("renders unavailable captured links as text: %s", (destination) => {
+    const html = renderReader({ value: conversation([
+      event("01", "message", "User", `[**Report**](${destination})`)
+    ]) })
+    expect(html).toContain('<span title="File and local links are unavailable in captured conversations."><strong>Report</strong></span>')
+    expect(html).not.toContain('<a ')
+  })
+
+  it.each([
+    "https://example.com/report.pdf",
+    "http://example.com/docs#section",
+    "mailto:hello@example.com"
+  ])("keeps externally hosted links usable: %s", (destination) => {
+    const html = renderReader({ value: conversation([
+      event("01", "message", "Codex", `[Report](${destination} "Source")`)
+    ]) })
+    expect(html).toContain(`<a href="${destination}" title="Source">Report</a>`)
+  })
+
   it("shows a Canonical prompt index only for two or more user messages", () => {
     expect(renderReader()).not.toContain('aria-label="User messages"')
     const html = renderReader({ value: conversation([
@@ -145,6 +176,8 @@ describe("SessionReaderView", () => {
     const html = renderReader({ value: ambiguous })
 
     expect(html).toContain("narrative-highlight-artifact")
+    expect(html).toContain('conversations.">Open report</span>')
+    expect(html).not.toContain('href="/report.md"')
     expect(html).toContain("narrative-highlight-notice")
     expect(html).toContain("narrative-highlight-message")
     expect(html).toContain("Unclassified message")

@@ -47,6 +47,12 @@ page-level hero typography. Long paths wrap, images fit the message width, and
 wide code blocks and tables scroll inside the message. Colors continue to use
 the shared theme tokens.
 
+Captured file and artifact links render as selectable text rather than navigation:
+local paths, relative paths, and source-app links have no uploaded artifact host
+or source-workspace base in the reader. Explicit HTTP(S) and email links remain
+clickable, including files hosted at public web URLs. Link labels and inline
+formatting are preserved.
+
 This increment changes presentation only; it preserves Markdown content and
 heading semantics. It does not restructure attachment metadata or audit every
 tool disclosure and search-highlight state. A broader reader visual review is

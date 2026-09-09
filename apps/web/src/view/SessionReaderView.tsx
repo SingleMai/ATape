@@ -51,6 +51,13 @@ const eventClassName = (base: string, event: CanonicalEvent, highlightedEventId?
   `${base}${event.id === highlightedEventId ? " event-highlighted" : ""}`
 
 const markdownComponents: Components = {
+  // Captured conversations have no artifact host or source-workspace URL base.
+  a: ({ href, title, children }) =>
+    href && /^(https?:\/\/|mailto:)/i.test(href) ? (
+      <a href={href} title={title}>{children}</a>
+    ) : (
+      <span title="File and local links are unavailable in captured conversations.">{children}</span>
+    ),
   pre: MarkdownCodeBlock,
   table: ({ children }) => (
     <div className="narrative-table-scroll" role="region" aria-label="Markdown table" tabIndex={0}>
