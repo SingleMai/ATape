@@ -75,3 +75,5 @@ pretending that staging acceptance passed.
 | [0039](0039-v0.3.1-manual-release-waiver.md) | Accepted by explicit user authorization | Separate candidate-bound v0.3.1 manual staging waiver for CLI self-test; all automated gates remain blocking |
 
 - [ADR-0047: Informational CLI device inventory](0047-cli-device-inventory.md)
+
+- [ADR-0048: Release requests authorize manual acceptance waivers](0048-release-request-manual-acceptance.md)

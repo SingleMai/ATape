@@ -26,3 +26,13 @@ If a change needs an exception, record the reason in an ADR before implementing 
   scope, remaining limitations and next increment in the relevant feature guide.
 - Merging code, publishing packages and deploying an instance are separate actions.
   Do not infer publication or deployment authorization from a request to merge.
+
+## Release authorization
+
+When the user explicitly requests package publication, that request also authorizes
+waiving incomplete manual staging acceptance for the requested release. Do not ask
+for a separate per-version waiver confirmation. Record the request in candidate-bound
+release evidence and disclose every unverified manual check in the release notes.
+Automated CI, integration tests and security gates must still pass. A generic coding
+or merge request does not authorize publication. Publication does not authorize
+Server deployment or database migration. See ADR-0048.
