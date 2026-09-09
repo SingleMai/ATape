@@ -1,23 +1,31 @@
 import type { AcpSessionUpdate, AdapterCollectRequest, AdapterCollectionPage, AdapterEvent, AdapterObservation, AdapterOpenContext } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
-import { createHash } from "node:crypto"
+import { createHash, type Hash } from "node:crypto"
 import { constants } from "node:fs"
-import { open, readdir, realpath } from "node:fs/promises"
+import { open, readdir, realpath, stat } from "node:fs/promises"
+import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { homedir } from "node:os"
 import { isAbsolute, join, relative, sep } from "node:path"
 
-const MaxSnapshotBytes = 4 * 1024 * 1024
-const MaxRecords = 10_000
+const MaxRecordBytes = 16 * 1024 * 1024
 const MaxDiscoveryEntries = 10_000
-const MaxHeaderBytes = 256 * 1024
-const MaxCursorBytes = 16_000
+const MaxHeaderBytes = 64 * 1024 * 1024
+const MaxCursorBytes = 1024 * 1024
+const MaxDecodedCursorBytes = 16 * 1024 * 1024
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
 const CursorSchema = Schema.Struct({
   v: Schema.Literal(1), sessionId: Schema.String, bytes: Schema.Number,
   digest: Schema.String, origin: Schema.String,
-  projectionRevision: Schema.optionalKey(Schema.Literal(2))
+  projectionRevision: Schema.optionalKey(Schema.Number),
+  observedAt: Schema.optionalKey(Schema.String),
+  publication: Schema.optionalKey(Schema.Number),
+  stream: Schema.optionalKey(Schema.Struct({
+    lastUuid: Schema.NullOr(Schema.String), seen: Schema.Array(Schema.String),
+    calls: Schema.Array(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
+    order: Schema.Number, eventSkip: Schema.Number, title: Schema.String
+  }))
 })
 type Cursor = typeof CursorSchema.Type
 const DiscoveryCursorSchema = Schema.Struct({
@@ -26,7 +34,7 @@ const DiscoveryCursorSchema = Schema.Struct({
 })
 type DiscoveryCursor = typeof DiscoveryCursorSchema.Type
 type RecordValue = Record<string, unknown>
-type Archive = { readonly context: AdapterOpenContext; readonly file: string | undefined; readonly projects: string; readonly project: string }
+type Archive = { readonly context: AdapterOpenContext; readonly file: string | undefined; readonly projects: string; readonly project: string; inventory?: Candidate[]; hashCache?: { file: string; stamp: string; bytes: number; digest: string; hash: Hash } }
 type Candidate = { readonly file: string; readonly sessionId: string }
 
 // Diagnostics do not acknowledge source bytes and are rebuilt on every scan.
@@ -76,7 +84,29 @@ export const openClaudeArchive = (context: AdapterOpenContext): Effect.Effect<Ar
 })
 
 export const collectClaudePage = (archive: Archive, request: AdapterCollectRequest): Effect.Effect<AdapterCollectionPage, ClaudeArchiveError> => Effect.tryPromise({
-  try: () => collect(archive, request),
+  try: async () => {
+    const page = await collect(archive, request)
+    const state = decodeDiscoveryCursor(page.nextCursor)
+    const inventory = archive.inventory ?? []
+    const acknowledged = new Map(request.rawProgress.filter(item => item.sourceObjectId.startsWith("claude-rollout-")).map(item => [item.sourceSessionId, item.sourceOffset]))
+    for (const observation of page.observations) for (const raw of observation.rawSegments)
+      acknowledged.set(observation.session.sourceSessionId, raw.sourceOffset + Buffer.byteLength(raw.content))
+    let pendingRawBytes = 0, pendingCanonicalSessions = 0
+    for (let start = 0; start < inventory.length; start += 8) {
+      const sizes = await Promise.all(inventory.slice(start, start + 8).map(async candidate => {
+        try { return { candidate, size: (await stat(candidate.file)).size } }
+        catch { return { candidate, size: undefined } }
+      }))
+      for (const { candidate, size } of sizes) {
+        if (size === undefined) continue
+        if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(candidate.sessionId) ?? 0))
+        const checkpoint = state.sessions.find(item => item.checkpoint.sessionId === candidate.sessionId)?.checkpoint
+        if (!checkpoint?.stream || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0) pendingCanonicalSessions++
+      }
+    }
+    return { ...page, progress: { sourceFiles: inventory.length, pendingRawBytes, pendingCanonicalSessions,
+      phase: !page.hasMore ? "idle" as const : page.observations.some(o => o.events.length) ? "canonical" as const : "raw" as const } }
+  },
   catch: cause => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "io", message: "Could not read the selected Claude session." })
 })
 
@@ -90,6 +120,7 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
   const candidates = archive.file
     ? [{ file: archive.file, sessionId: string(selected?.sessionId) ?? "" }]
     : await discover(archive, state, request.signal, diagnostics)
+  archive.inventory = candidates
   // Resume after the last publication so a busy Session cannot monopolize pages.
   const pivot = candidates.findIndex(c => c.sessionId === state.after)
   const ordered = [...candidates.slice(pivot + 1), ...candidates.slice(0, pivot + 1)]
@@ -113,69 +144,175 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
     const sessions = state.sessions.filter(s => s !== previous)
     sessions.push({ file: candidate.file, checkpoint })
     sessions.sort((a, b) => a.checkpoint.sessionId.localeCompare(b.checkpoint.sessionId))
-    const nextCursor = JSON.stringify({ v: 2, after: checkpoint.sessionId, sessions } satisfies DiscoveryCursor)
-    if (Buffer.byteLength(nextCursor) > MaxCursorBytes) fail("limit", "Claude discovery checkpoint exceeds 16 KB; no session progress was discarded.")
-    return diagnostics.attach({ ...page, nextCursor, hasMore: !archive.file && candidates.length > 1 })
+    const nextCursor = encodeDiscoveryCursor({ v: 2, after: checkpoint.sessionId, sessions } satisfies DiscoveryCursor)
+    if (Buffer.byteLength(nextCursor) > MaxCursorBytes) fail("limit", "Claude discovery checkpoint exceeds its bounded metadata capacity; no session progress was discarded.")
+    return diagnostics.attach({ ...page, nextCursor, hasMore: page.hasMore || !archive.file && candidates.length > 1 })
   }
   return diagnostics.attach(empty(request.cursor))
 }
 
 async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest): Promise<AdapterCollectionPage> {
   const cursor = decodeCursor(request.cursor)
-  // A fixed upper bound and one complete segment preserve Host redaction units.
-  // No payload spool, multi-page projection, or silent truncation of a session.
-  const bytes = await snapshot(file, request.signal)
-  const end = bytes.lastIndexOf(10) + 1
-  const source = bytes.subarray(0, end)
-  if (cursor && (source.length < cursor.bytes || digest(source.subarray(0, cursor.bytes)) !== cursor.digest)) {
-    fail("changed", "The captured Claude prefix changed or was truncated; append-only collection stopped.")
-  }
-  if (end === 0) return empty(request.cursor)
-  let text: string
-  try { text = new TextDecoder("utf-8", { fatal: true }).decode(source) }
-  catch { return fail("format", "Claude source contains invalid UTF-8.") }
-  const lines = text.split("\n").filter(line => line.trim().length > 0)
-  if (lines.length > MaxRecords) fail("limit", "Claude snapshot exceeds the record limit.")
-  const records = lines.map(line => {
-    try { return decodeRecord(JSON.parse(line)) }
-    catch { return fail("format", "Claude source contains a malformed complete JSONL record.") }
-  })
-  const graph = records.filter(r => typeof r.uuid === "string")
-  const root = graph[0]
+  const root = await readHeader(file, request.signal)
   if (!root || root.type !== "user" || root.parentUuid !== null || root.isMeta === true || typeof root.cwd !== "string" || typeof root.sessionId !== "string") {
+    if (cursor) fail("changed", "The captured Claude prefix changed or was truncated.")
     fail("unsupported", "Claude session has no supported original user root and CWD.")
   }
   const sessionId = root.sessionId as string, origin = root.cwd as string
   if (cursor && (cursor.sessionId !== sessionId || cursor.origin !== origin)) fail("changed", "Claude session identity or original CWD changed.")
   if (!await belongsToProject(archive, root, request.signal)) return empty(request.cursor)
-  // Refuse ambiguity instead of publishing branches that v1 cannot withdraw.
-  let previous: string | null = null
-  const seen = new Set<string>()
-  for (const record of records) {
-    request.signal.throwIfAborted()
-    if (record.sessionId !== undefined && record.sessionId !== sessionId) fail("unsupported", "Mixed Claude session identities are not supported.")
-    if (record.isSidechain === true || record.type === "system" && (record.subtype === "compact_boundary" || record.compactMetadata !== undefined)) {
-      fail("unsupported", "Claude subagent or compaction history requires a later Adapter capability.")
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const before = await handle.stat()
+    if (!before.isFile()) fail("format", "Claude source is not a regular file.")
+    if (cursor && before.size < cursor.bytes) fail("changed", "The captured Claude prefix changed or was truncated.")
+    const stamp = `${before.dev}:${before.ino}:${before.size}:${before.mtimeMs}:${before.ctimeMs}`
+    let hash = createHash("sha256")
+    if (cursor) {
+      const cached = archive.hashCache
+      if (cached?.file === file && cached.stamp === stamp && cached.bytes === cursor.bytes && cached.digest === cursor.digest) hash = cached.hash.copy()
+      else {
+        const block = Buffer.alloc(256 * 1024)
+        for (let at = 0; at < cursor.bytes;) {
+          request.signal.throwIfAborted()
+          const read = await handle.read(block, 0, Math.min(block.length, cursor.bytes - at), at)
+          if (!read.bytesRead) fail("changed", "The captured Claude prefix changed or was truncated.")
+          hash.update(block.subarray(0, read.bytesRead)); at += read.bytesRead
+        }
+        if (hash.copy().digest("hex") !== cursor.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
+      }
     }
-    if (typeof record.uuid !== "string") continue
-    if (seen.has(record.uuid) || record.parentUuid !== previous) fail("unsupported", "Claude history is not a single unambiguous append-only chain.")
-    seen.add(record.uuid); previous = record.uuid
+    const resume = cursor?.projectionRevision === 3 && cursor.observedAt ? cursor.stream : undefined
+    let at = resume ? cursor!.bytes : 0
+    if (!resume) hash = createHash("sha256")
+    let state: NonNullable<Cursor["stream"]> = resume ?? { lastUuid: null, seen: [], calls: [], order: 0, eventSkip: 0, title: rootTitle(root) }
+    const seen = new Set(state.seen)
+    let calls = new Map(state.calls.map(([id, name, uuid]) => [id, { name, uuid }]))
+    const sourceObjectId = `claude-rollout-${digest(Buffer.from(JSON.stringify([sessionId, origin, root.uuid])))}`
+    const generation = digest(Buffer.from(JSON.stringify([sessionId, origin, root.uuid])))
+    const events: AdapterEvent[] = []
+    const rawProgress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId && p.sourceGeneration === generation)
+    const acknowledged = rawProgress?.sourceOffset ?? 0
+    let rawBytes = 0, eventBytes = 0, partial = false, hasMore = false
+    for await (const line of readRecords(handle, at, before.size, request.signal)) {
+      if (line.content.length + rawBytes > Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation)) {
+        if (rawBytes === 0 && events.length === 0) fail("limit", "A Claude JSONL record exceeds the requested Raw page limit.")
+        hasMore = true; break
+      }
+      if (line.content.toString("utf8").trim() === "") {
+        hash.update(line.content); rawBytes += line.content.length; at = line.end
+        continue
+      }
+      let record: RecordValue
+      try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+      catch { fail("format", "Claude source contains a malformed complete JSONL record.") }
+      if (record.sessionId !== undefined && record.sessionId !== sessionId) fail("unsupported", "Mixed Claude session identities are not supported.")
+      if (record.isSidechain === true || record.type === "system" && (record.subtype === "compact_boundary" || record.compactMetadata !== undefined)) fail("unsupported", "Claude subagent or compaction history requires a later Adapter capability.")
+      if (typeof record.uuid === "string" && (seen.has(record.uuid) || record.parentUuid !== state.lastUuid)) fail("unsupported", "Claude history is not a single unambiguous append-only chain.")
+      const nextCalls = new Map(calls)
+      const projected = projectRecord(record, state.order, line.end, sourceObjectId, nextCalls)
+      partial ||= projected.partial
+      let skip = state.eventSkip
+      if (skip > projected.events.length) fail("cursor", "Claude record checkpoint exceeds its event count.")
+      while (skip < projected.events.length) {
+        const event = projected.events[skip]!
+        const size = Buffer.byteLength(JSON.stringify(event))
+        // Reserve bounded Session/Thread metadata headroom in each observation.
+        if (size > request.limits.canonicalBytesPerObservation - 8192) fail("limit", "A Claude event exceeds the Canonical observation limit.")
+        if (events.length === request.limits.eventsPerObservation || eventBytes + size > request.limits.canonicalBytesPerObservation - 8192) break
+        events.push(event); eventBytes += size; skip++
+      }
+      if (skip < projected.events.length) { state = { ...state, eventSkip: skip }; hasMore = true; break }
+      if (!state.title) {
+        const first = projected.events.find(e => e.update.sessionUpdate === "user_message_chunk")
+        if (first && "content" in first.update && first.update.content.type === "text") state = { ...state, title: first.update.content.text.replace(/\s+/g, " ").trim().slice(0, 80) }
+      }
+      if (typeof record.uuid === "string") seen.add(record.uuid)
+      calls = nextCalls
+      state = { ...state, lastUuid: typeof record.uuid === "string" ? record.uuid : state.lastUuid, order: state.order + 1, eventSkip: 0 }
+      hash.update(line.content); rawBytes += line.content.length; at = line.end
+      if (events.length === request.limits.eventsPerObservation) { hasMore = at < before.size; break }
+    }
+    if (events.length === 0 && rawBytes === 0 && (request.rawCaptureEnabled === false || acknowledged >= at)) return empty(request.cursor)
+    const capturedRaw = request.rawCaptureEnabled === false || acknowledged >= at ? undefined
+      : await readRawPrefix(handle, acknowledged, at, Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation), request.signal)
+    hasMore ||= capturedRaw !== undefined && acknowledged + Buffer.byteLength(capturedRaw) < at
+    const after = await handle.stat()
+    if (after.size < before.size || after.ino !== before.ino || after.size === before.size && after.mtimeMs !== before.mtimeMs) fail("changed", "Claude source changed during reading.")
+    const prefixDigest = hash.copy().digest("hex")
+    archive.hashCache = { file, stamp, bytes: at, digest: prefixDigest, hash: hash.copy() }
+    const observedAt = events.at(-1)?.occurredAt ?? cursor?.observedAt ?? timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
+    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: 3, observedAt,
+      publication: (cursor?.publication ?? 0) + 1,
+      stream: { ...state, seen: [...seen], calls: [...calls].map(([id, call]) => [id, call.name, call.uuid]) } }
+    const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 3
+    return { protocolVersion: request.protocolVersion, nextCursor: JSON.stringify(next), hasMore,
+      observations: [{ observationId: `claude-${digest(Buffer.from(JSON.stringify([next, events.map(e => e.sourceEventId)])))}`, observedAt,
+        session: { sourceSessionId: sessionId, revision, title: state.title || "Untitled Claude conversation", summary: "Claude Code conversation", insight: "",
+          actor: { name: "User", harness: "Claude Code" }, branch: string(root.gitBranch) ?? "", status: "active", captureStatus: "partial", updatedAt: observedAt, reportedEventCount: 0 },
+        threads: [{ sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" }], events,
+        rawSegments: capturedRaw !== undefined ? [{ sourceObjectId, sourceGeneration: generation, sourceOffset: acknowledged,
+          sourceName: `${sessionId}.jsonl`, mediaType: "application/x-ndjson", content: capturedRaw, final: false }] : []
+      }] }
+  } finally { await handle.close() }
+}
+
+async function readRawPrefix(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, limit: number, signal: AbortSignal): Promise<string> {
+  const bytes = Buffer.alloc(Math.min(end - start, limit))
+  let count = 0
+  while (count < bytes.length) {
+    signal.throwIfAborted()
+    const read = await handle.read(bytes, count, bytes.length - count, start + count)
+    if (!read.bytesRead) fail("changed", "Claude Raw source was truncated during reading.")
+    count += read.bytesRead
   }
-  const hash = digest(source)
-  if (cursor?.digest === hash && cursor.projectionRevision === 2) return empty(request.cursor)
-  const sourceObjectId = `claude-snapshot-${sessionId}-${hash}`
+  // A transport boundary can bisect a UTF-8 code point. Leave its bytes for
+  // the next Raw page without changing the independent Canonical checkpoint.
+  for (let trim = 0; trim <= 3 && count - trim > 0; trim++) {
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, count - trim)) }
+    catch { /* try the preceding complete code point */ }
+  }
+  return fail("format", "Claude Raw source contains invalid UTF-8.")
+}
+
+async function* readRecords(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, signal: AbortSignal) {
+  let at = start, pending = Buffer.alloc(0), lineStart = start
+  while (at < end) {
+    signal.throwIfAborted()
+    const block = Buffer.alloc(Math.min(64 * 1024, end - at))
+    const read = await handle.read(block, 0, block.length, at)
+    if (!read.bytesRead) fail("changed", "Claude source changed during reading.")
+    at += read.bytesRead
+    pending = Buffer.concat([pending, block.subarray(0, read.bytesRead)])
+    let newline: number
+    while ((newline = pending.indexOf(10)) !== -1) {
+      if (newline + 1 > MaxRecordBytes) fail("limit", "Claude JSONL record exceeds 16 MiB.")
+      const content = pending.subarray(0, newline + 1)
+      yield { content, end: lineStart + newline + 1 }
+      pending = pending.subarray(newline + 1); lineStart += newline + 1
+    }
+    if (pending.length > MaxRecordBytes) fail("limit", "Claude JSONL record exceeds 16 MiB.")
+  }
+}
+
+function rootTitle(root: RecordValue): string {
+  const content = object(root.message)?.content
+  const text = typeof content === "string" ? content : Array.isArray(content)
+    ? content.map(block => object(block)?.type === "text" ? string(object(block)?.text) ?? "" : "").join(" ") : ""
+  return text.replace(/\s+/g, " ").trim().slice(0, 80) || "Untitled Claude conversation"
+}
+
+function projectRecord(record: RecordValue, order: number, revision: number, sourceObjectId: string,
+  calls: Map<string, { name: string; uuid: string }>): { events: AdapterEvent[]; partial: boolean } {
   const events: AdapterEvent[] = []
-  const calls = new Map<string, { name: string; uuid: string }>()
   let partial = false
-  for (const [order, record] of records.entries()) {
-    if (!record.uuid || record.isMeta === true) continue
-    const message = object(record.message)
-    if (record.type !== "user" && record.type !== "assistant") continue
-    if (!message || message.role !== record.type) { partial = true; continue }
-    const occurredAt = timestamp(record.timestamp)
-    if (!occurredAt) fail("format", "Claude message has no valid timestamp.")
-    const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content
-    if (!Array.isArray(content)) { partial = true; continue }
+  if (!record.uuid || record.isMeta === true || record.type !== "user" && record.type !== "assistant") return { events, partial }
+  const message = object(record.message)
+  if (!message || message.role !== record.type) return { events, partial: true }
+  const occurredAt = timestamp(record.timestamp)
+  if (!occurredAt) fail("format", "Claude message has no valid timestamp.")
+  const content = typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content
+  if (!Array.isArray(content)) return { events, partial: true }
     for (const [slot, value] of content.entries()) {
       const block = object(value)
       let update: AcpSessionUpdate | undefined
@@ -200,43 +337,33 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         continue
       } else { partial = true; continue }
       if (!update) continue
-      events.push({
-        sourceEventId: `${record.uuid}:${slot}`, sourceThreadId: "root",
-        revision: source.length, projectionRevision: 2, sourceOrder: order, eventIndex: slot,
+      const message = update.sessionUpdate === "user_message_chunk" || update.sessionUpdate === "agent_message_chunk" ? update : undefined
+      const chunks = message?.content.type === "text" ? splitText(message.content.text) : [undefined]
+      for (const [part, text] of chunks.entries()) events.push({
+        sourceEventId: `${record.uuid}:${slot}${chunks.length > 1 ? `:${part}` : ""}`, sourceThreadId: "root",
+        revision, projectionRevision: 3, sourceOrder: order, eventIndex: slot * 128 + part,
         orderFidelity: "native", fidelity, occurredAt,
-        rawRef: { _tag: "object", sourceObjectId, fragment: `record=${record.uuid}&block=${slot}` }, update
+        rawRef: { _tag: "object", sourceObjectId, fragment: `record=${record.uuid}&block=${slot}` },
+        update: message && text !== undefined ? { ...message, messageId: `${record.uuid}:${slot}`, content: { type: "text", text } } : update
       })
     }
+  return { events, partial }
+}
+
+function splitText(text: string): string[] {
+  const bytes = Buffer.from(text), chunks: string[] = []
+  for (let at = 0; at < bytes.length;) {
+    let end = Math.min(at + 256 * 1024, bytes.length)
+    while (end < bytes.length && (bytes[end]! & 0xc0) === 0x80) end--
+    chunks.push(bytes.subarray(at, end).toString("utf8")); at = end
   }
-  if (events.length === 0) fail("unsupported", "Claude snapshot has no supported conversation events.")
-  const updatedAt = events.at(-1)!.occurredAt
-  const firstUser = events.find(e => e.update.sessionUpdate === "user_message_chunk")
-  const title = firstUser && "content" in firstUser.update && firstUser.update.content.type === "text"
-    ? firstUser.update.content.text.replace(/\s+/g, " ").trim().slice(0, 80) : "Untitled Claude conversation"
-  const progress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId)
-  if (progress && (progress.sourceGeneration !== hash || progress.sourceOffset !== source.length || !progress.finalized)) fail("changed", "Claude Raw snapshot progress is inconsistent.")
-  const observation: AdapterObservation = {
-    observationId: `claude-${hash}`, observedAt: updatedAt,
-    session: {
-      sourceSessionId: sessionId, revision: source.length, title, summary: "Claude Code conversation", insight: "",
-      actor: { name: "User", harness: "Claude Code" }, branch: string(root.gitBranch) ?? "",
-      status: "active", captureStatus: partial ? "partial" : "healthy", updatedAt, reportedEventCount: events.length
-    },
-    threads: [{ sourceThreadId: "root", revision: source.length, label: "Main", summary: "", captureStatus: partial ? "partial" : "healthy" }],
-    events,
-    rawSegments: progress ? [] : [{ sourceObjectId, sourceGeneration: hash, sourceOffset: 0,
-      sourceName: `${sessionId}.jsonl`, mediaType: "application/x-ndjson", content: text, final: true }]
-  }
-  const limits = request.limits
-  if (limits.observations < 1 || limits.threadsPerObservation < 1 || events.length > limits.eventsPerObservation ||
-    Buffer.byteLength(JSON.stringify({ ...observation, rawSegments: [] })) > limits.canonicalBytesPerObservation ||
-    !progress && (limits.rawSegmentsPerObservation < 1 || source.length > Math.min(limits.rawSegmentBytes, limits.rawBytesPerObservation))) {
-    fail("limit", "Claude snapshot exceeds the current single-observation Host limits.")
-  }
-  return {
-    protocolVersion: request.protocolVersion, hasMore: false, observations: [observation],
-    nextCursor: JSON.stringify({ v: 1, sessionId, bytes: source.length, digest: hash, origin, projectionRevision: 2 } satisfies Cursor)
-  }
+  return chunks
+}
+
+function encodeDiscoveryCursor(state: DiscoveryCursor): string {
+  const json = JSON.stringify(state)
+  if (Buffer.byteLength(json) > MaxDecodedCursorBytes) fail("limit", "Claude checkpoint exceeds its bounded decoded metadata capacity.")
+  return Buffer.byteLength(json) <= 16000 ? json : "z3:" + deflateRawSync(Buffer.from(json)).toString("base64url")
 }
 
 const empty = (cursor: string | null): AdapterCollectionPage => ({ protocolVersion: "atape.adapter.v1alpha1", nextCursor: cursor, hasMore: false, observations: [] })
@@ -244,7 +371,7 @@ function decodeDiscoveryCursor(value: string | null): DiscoveryCursor {
   if (value === null) return { v: 2, after: "", sessions: [] }
   try {
     if (Buffer.byteLength(value) > MaxCursorBytes) throw new Error()
-    const parsed: unknown = JSON.parse(value)
+    const parsed: unknown = JSON.parse(value.startsWith("z3:") ? inflateRawSync(Buffer.from(value.slice(3), "base64url"), { maxOutputLength: MaxDecodedCursorBytes }).toString("utf8") : value)
     if (object(parsed)?.v === 1) {
       const checkpoint = decodeCursor(value)!
       return { v: 2, after: checkpoint.sessionId, sessions: [{ file: "", checkpoint }] }
@@ -263,9 +390,15 @@ function decodeDiscoveryCursor(value: string | null): DiscoveryCursor {
 function decodeCursor(value: string | null): Cursor | undefined {
   if (value === null) return undefined
   try {
-    if (Buffer.byteLength(value) > MaxCursorBytes) throw new Error()
+    if (Buffer.byteLength(value) > MaxDecodedCursorBytes) throw new Error()
     const c = Schema.decodeUnknownSync(CursorSchema)(JSON.parse(value))
-    if (!c.sessionId || !isAbsolute(c.origin) || !Number.isSafeInteger(c.bytes) || c.bytes < 1 || c.bytes > MaxSnapshotBytes || !/^[a-f0-9]{64}$/.test(c.digest)) throw new Error()
+    if (!c.sessionId || !isAbsolute(c.origin) || !Number.isSafeInteger(c.bytes) || c.bytes < 0 || !/^[a-f0-9]{64}$/.test(c.digest)) throw new Error()
+    if (c.projectionRevision !== undefined && ![2, 3].includes(c.projectionRevision)) throw new Error()
+    if (c.stream && (!Number.isSafeInteger(c.stream.order) || c.stream.order < c.stream.seen.length ||
+      !Number.isSafeInteger(c.stream.eventSkip) || c.stream.eventSkip < 0 ||
+      new Set(c.stream.seen).size !== c.stream.seen.length ||
+      c.stream.lastUuid !== null && !c.stream.seen.includes(c.stream.lastUuid) ||
+      c.stream.title.length > 500 || c.stream.calls.some(call => call.some(value => value.length > 4096)))) throw new Error()
     return c
   } catch { return fail("cursor", "Claude checkpoint is invalid; it was not reset.") }
 }
@@ -328,44 +461,18 @@ async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortS
 async function readHeader(file: string, signal: AbortSignal): Promise<RecordValue | undefined> {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
-    if (!(await handle.stat()).isFile()) fail("format", "Claude source is not a regular file.")
-    const bytes = Buffer.alloc(MaxHeaderBytes)
-    let at = 0, start = 0
-    while (at < bytes.length) {
-      signal.throwIfAborted()
-      const read = await handle.read(bytes, at, Math.min(16384, bytes.length - at), at)
-      if (!read.bytesRead) break
-      at += read.bytesRead
-      let end: number
-      while ((end = bytes.subarray(0, at).indexOf(10, start)) !== -1) {
-        const line = bytes.subarray(start, end); start = end + 1
-        if (line.toString("utf8").trim().length === 0) continue
-        let record: RecordValue
-        try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line))) }
-        catch { return undefined }
-        if (typeof record.uuid === "string") return record
-      }
+    const details = await handle.stat()
+    if (!details.isFile()) fail("format", "Claude source is not a regular file.")
+    let records = 0
+    for await (const line of readRecords(handle, 0, Math.min(details.size, MaxHeaderBytes), signal)) {
+      if (++records > 256) return undefined
+      if (line.content.toString("utf8").trim().length === 0) continue
+      let record: RecordValue
+      try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+      catch { return undefined }
+      if (typeof record.uuid === "string") return record
     }
     return undefined
-  } finally { await handle.close() }
-}
-
-async function snapshot(file: string, signal: AbortSignal): Promise<Buffer> {
-  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
-  try {
-    const before = await handle.stat()
-    if (!before.isFile() || before.size > MaxSnapshotBytes) fail("limit", "Claude source must be a regular file no larger than 4 MiB.")
-    const bytes = Buffer.alloc(before.size)
-    let at = 0
-    while (at < bytes.length) {
-      signal.throwIfAborted()
-      const read = await handle.read(bytes, at, Math.min(65536, bytes.length - at), at)
-      if (!read.bytesRead) fail("changed", "Claude source changed during reading.")
-      at += read.bytesRead
-    }
-    const after = await handle.stat()
-    if (before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs) fail("changed", "Claude source changed during reading.")
-    return bytes
   } finally { await handle.close() }
 }
 async function belongsToProject(archive: Archive, root: RecordValue, signal: AbortSignal): Promise<boolean> {

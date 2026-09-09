@@ -156,7 +156,8 @@ export const AccountSecurityView = ({
   action,
   onRetry,
   onAction,
-  onSignOut
+  onSignOut,
+  rawCaptureSettings
 }: {
   readonly user: User
   readonly team?: { readonly slug: string; readonly displayName: string }
@@ -168,6 +169,7 @@ export const AccountSecurityView = ({
     readonly id?: string
   }) => void
   readonly onSignOut: () => void
+  readonly rawCaptureSettings?: ReactNode
 }) => {
   const { target } = useSettingsOverlay()
   const section = target.section === "team" ? "account" : target.section
@@ -206,6 +208,7 @@ export const AccountSecurityView = ({
         </header>
         {section === "account" && <div className="settings-profile-row"><Avatar name={user.displayName} src={user.avatarUrl} /><strong>{user.displayName}</strong></div>}
 
+        {section === "account" && rawCaptureSettings}
         <section className="settings-section" hidden={section !== "account"} aria-labelledby="signin-methods-title">
           <header><div><h2 id="signin-methods-title">Sign-in methods</h2><p>Connected identities reach this same ATape account.</p></div></header>
           <IdentityRows identities={snapshot.identities} providers={snapshot.providers} onRetry={onRetry} />
@@ -304,7 +307,8 @@ export const TeamAccessView = ({
   onRetry,
   onAction,
   onReauthenticate,
-  onSignOut
+  onSignOut,
+  rawCaptureSettings
 }: {
   readonly user: User
   readonly state: LoadView<TeamAccess>
@@ -313,6 +317,7 @@ export const TeamAccessView = ({
   readonly onAction: (input: TeamAccessAction) => void
   readonly onReauthenticate: () => void
   readonly onSignOut: () => void
+  readonly rawCaptureSettings?: ReactNode
 }) => {
   const [pendingConfirmation, setPendingConfirmation] = useState<{
     readonly copy: Confirmation
@@ -358,6 +363,7 @@ export const TeamAccessView = ({
           <p>Review members and keep at least one Owner responsible for this Team.</p>
         </header>
 
+        {rawCaptureSettings}
         {owner && joinCode !== undefined && (
           <section className="settings-section" aria-labelledby="join-code-title">
             <header>

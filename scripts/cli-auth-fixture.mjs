@@ -46,6 +46,13 @@ export async function startCLIAuthFixture(options = {}) {
     }
 
     switch (`${request.method} ${request.url}`) {
+      case `GET /api/v1/projects/${projectId}/raw-capture`:
+        if (request.headers.authorization !== `Bearer ${credential}`) {
+          send(401, { status: 401, code: "unauthenticated" }); return
+        }
+        send(200, { teamPolicy: "personal", userPreference: options.rawCaptureEnabled ? "enable" : "disable",
+          enabled: options.rawCaptureEnabled === true })
+        return
       case "POST /api/v1/ingestion/canonical/batches":
       case "POST /api/v1/ingestion/raw/chunks": {
         if (!options.capture) { send(404, { status: 404, code: "not_found" }); return }

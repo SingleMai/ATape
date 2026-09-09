@@ -178,6 +178,36 @@ VALUES ('other-team', $1, 'owner', 'active')`, eveID); err != nil {
 		if err != nil {
 			t.Fatalf("Alice Raw ingest: %v", err)
 		}
+		// Both admission and commit honor a later policy change, while reads remain available.
+		for _, policy := range []string{"force", "personal", "close"} {
+			for _, preference := range []string{"enable", "disable"} {
+				if _, err := pool.Exec(ctx, "UPDATE workspace_teams SET raw_capture_policy=$1 WHERE id=$2", policy, canonicalcontract.TestTeamID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := pool.Exec(ctx, "UPDATE auth_users SET raw_capture_preference=$1 WHERE id=$2", preference, canonicalcontract.TestUserID); err != nil {
+					t.Fatal(err)
+				}
+				probe := rawarchive.ChunkRecord{SessionID: created.SessionID}
+				err := store.AuthorizeChunk(ctx, aliceCLI, probe)
+				enabled := policy == "force" || policy == "personal" && preference == "enable"
+				var disabled *rawarchive.CaptureDisabledError
+				if enabled && err != nil || !enabled && !errors.As(err, &disabled) {
+					t.Fatalf("%s/%s admission: %v", policy, preference, err)
+				}
+				if !enabled {
+					_, err = store.CommitChunk(ctx, aliceCLI, probe)
+					if !errors.As(err, &disabled) {
+						t.Fatalf("%s/%s commit: %v", policy, preference, err)
+					}
+					if _, err := raw.Read(ctx, aliceWeb, aliceRaw.ObjectID, 1, "", 8); err != nil {
+						t.Fatalf("disabled Raw still readable: %v", err)
+					}
+				}
+			}
+		}
+		if _, err := pool.Exec(ctx, "UPDATE workspace_teams SET raw_capture_policy='force' WHERE id=$1", canonicalcontract.TestTeamID); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := raw.OpenSession(context.Background(), bobWeb, created.SessionID); err != nil {
 			t.Fatalf("same-Team Raw list: %v", err)
 		}
@@ -357,6 +387,16 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 		t.Fatalf("append first Raw chunk: %v", err)
 	}
 	rawObjectID := firstCommit.ObjectID
+	// Reproduce an existing installation's 256 KiB constraint, then upgrade it
+	// through the same Prepare Interface used by the executable.
+	if _, err := pool.Exec(ctx, `ALTER TABLE raw_chunks DROP CONSTRAINT raw_chunks_size_bytes_check;
+ALTER TABLE raw_chunks ADD CONSTRAINT raw_chunks_size_bytes_check CHECK (size_bytes >= 0 AND size_bytes <= 262144);
+DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgresadapter.Prepare(ctx, pool); err != nil {
+		t.Fatalf("upgrade existing Raw chunk capacity: %v", err)
+	}
 	if _, err := raw.Append(context.Background(), canonicalcontract.CLIPrincipal(), secondRaw); err != nil {
 		pool.Close()
 		t.Fatalf("append second Raw chunk: %v", err)
@@ -456,8 +496,22 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 11; got != want {
+	if got, want := migrationCount, 13; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
+	}
+	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))
+	large.SourceObjectID = "raw-capacity"
+	if receipt, err := reopenedRaw.Append(ctx, canonicalcontract.CLIPrincipal(), large); err != nil || receipt.SizeBytes != rawarchive.MaxChunkBytes {
+		t.Fatalf("append maximum Raw chunk after upgrade/restart: %+v %v", receipt, err)
+	}
+	if receipt, err := reopenedRaw.Append(ctx, canonicalcontract.CLIPrincipal(), large); err != nil || !receipt.Replayed {
+		t.Fatalf("replay maximum Raw chunk: %+v %v", receipt, err)
+	}
+	oversized := rawUpload(created.SessionID, "raw-oversized", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes+1))
+	oversized.SourceObjectID = "raw-oversized"
+	var validation *rawarchive.ValidationError
+	if _, err := reopenedRaw.Append(ctx, canonicalcontract.CLIPrincipal(), oversized); !errors.As(err, &validation) {
+		t.Fatalf("oversized Raw chunk error = %v, want ValidationError", err)
 	}
 }
 
@@ -485,8 +539,8 @@ ON CONFLICT (id) DO UPDATE SET status = 'active', disabled_at = NULL
 		t.Fatalf("seed authorization User: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
-INSERT INTO workspace_teams (id, slug, name, name_reported)
-VALUES ($1, 'acme-engineering', 'Acme Engineering', TRUE)
+INSERT INTO workspace_teams (id, slug, name, name_reported, raw_capture_policy)
+VALUES ($1, 'acme-engineering', 'Acme Engineering', TRUE, 'force')
 `, canonicalcontract.TestTeamID); err != nil {
 		t.Fatalf("seed authorization Team: %v", err)
 	}

@@ -1,7 +1,7 @@
 import type { GitSource, GitSourceDecision, LocalProject } from "@atape/domain"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ProjectLocator } from "./clientManagement.ts"
-import { ProjectSetupGateway, type SetupProjectMatch } from "./projectSetup.ts"
+import { ProjectSetupGateway } from "./projectSetup.ts"
 
 export class GitAttributionError extends Schema.TaggedError<GitAttributionError>()("GitAttributionError", {
   reason: Schema.Literals(["io", "unauthenticated", "transport", "contract"]),
@@ -38,30 +38,22 @@ export const makeGitSourceAttributionLayer = () => Layer.effect(GitSourceAttribu
   const bindings = yield* GitSourceBindings
   return GitSourceAttribution.of({
     forProject: (project, adapterId) => {
-      const origins = new Map<string, string | undefined>()
-      const matches = new Map<string, SetupProjectMatch | undefined>()
       const scope: GitBindingScope = { ...project, adapterId }
-      const findOrigin = (cwd: string) => origins.has(cwd)
-        ? Effect.succeed(origins.get(cwd))
-        : locator.locate(cwd, "git").pipe(
+      const findOrigin = memoized((cwd: string) => locator.locate(cwd, "git").pipe(
           Effect.map(local => local.repositoryRemote),
           Effect.catch(error => error.reason === "missing" || error.reason === "not_git" || error.reason === "not_directory"
             ? Effect.succeed(undefined)
-            : Effect.fail(new GitAttributionError({ reason: "io", message: "Could not inspect a source's original Git repository." }))),
-          Effect.tap(remote => Effect.sync(() => boundedSet(origins, cwd, remote)))
-        )
-      const matchRemote = (remote: string) => matches.has(remote)
-        ? Effect.succeed(matches.get(remote))
-        : gateway.matchGitProject(project.instanceOrigin, project.teamId, remote, project.userId).pipe(
+            : Effect.fail(new GitAttributionError({ reason: "io", message: "Could not inspect a source's original Git repository." })))
+        ))
+      const matchRemote = memoized((remote: string) => gateway.matchGitProject(project.instanceOrigin, project.teamId, remote, project.userId).pipe(
           Effect.catch(error => error.reason === "invalid_remote"
             ? Effect.succeed(undefined)
             : Effect.fail(new GitAttributionError({
               reason: error.reason === "unauthenticated" ? "unauthenticated"
                 : error.reason === "transport" || error.reason === "unavailable" ? "transport" : "contract",
               message: error.message
-            }))),
-          Effect.tap(match => Effect.sync(() => boundedSet(matches, remote, match)))
-        )
+            })))
+        ))
 
       return (source) => Effect.gen(function*() {
         if (project.type !== "git" || !source.sourceId || !source.originKey || !source.cwd ||
@@ -96,4 +88,20 @@ const sameOrigin = (binding: GitSourceBinding, source: GitSource) =>
 const boundedSet = <A>(map: Map<string, A>, key: string, value: A) => {
   if (map.size >= 256) map.clear()
   map.set(key, value)
+}
+
+
+// Share in-flight work as well as completed matches within this one collection
+// call. Creating a new resolver still discards every authorization decision.
+const memoized = <A, E>(compute: (key: string) => Effect.Effect<A, E>) => {
+  const entries = new Map<string, Effect.Effect<A, E>>()
+  return (key: string): Effect.Effect<A, E> => Effect.suspend(() => {
+    const existing = entries.get(key)
+    if (existing) return existing
+    return Effect.gen(function*() {
+      const cached = yield* Effect.cached(compute(key))
+      boundedSet(entries, key, cached)
+      return yield* cached
+    })
+  })
 }

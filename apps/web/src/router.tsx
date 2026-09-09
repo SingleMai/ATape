@@ -1,3 +1,5 @@
+import { UserRawCaptureSettingsView, TeamRawCaptureSettingsView } from "./view/RawCaptureSettingsView"
+import { useUserRawCapturePresenter, useTeamRawCapturePresenter } from "./presenters/accessPresenter"
 import {
   safeLocalReturnTo,
   selectDefaultWorkspaceProject,
@@ -565,6 +567,7 @@ const accountSettingsRoute = createRoute({
 function AccountSettingsContent({ onSignOut }: { readonly onSignOut: () => void }) {
   const session = useAuthenticatedSession()
   const account = useAccountSecurityPresenter()
+  const rawCapture = useUserRawCapturePresenter()
   const workspace = useWorkspacePresenter()
   const handled = useRef(false)
   useEffect(() => () => account.resetAction(), [account.resetAction])
@@ -577,6 +580,7 @@ function AccountSettingsContent({ onSignOut }: { readonly onSignOut: () => void 
   }, [account])
   const firstTeam = workspace.state._tag === "Ready" ? workspace.state.value.teams[0] : undefined
   return <AccountSecurityView
+    rawCaptureSettings={<UserRawCaptureSettingsView {...rawCapture} />}
     user={session.user}
     {...(firstTeam === undefined ? {} : { team: { slug: firstTeam.slug, displayName: firstTeam.name } })}
     state={account.state}
@@ -602,6 +606,7 @@ function TeamSettingsContent({ teamSlug, onSignOut }: { readonly teamSlug: strin
   const { closeSettings } = useSettingsOverlay()
   const session = useAuthenticatedSession()
   const access = useTeamAccessPresenter(teamSlug)
+  const rawCapture = useTeamRawCapturePresenter(teamSlug)
   const reauthentication = useReauthenticationPresenter()
   const workspace = useWorkspacePresenter()
   const navigate = useNavigate()
@@ -627,6 +632,7 @@ function TeamSettingsContent({ teamSlug, onSignOut }: { readonly teamSlug: strin
     if (reauthentication.action._tag === "Succeeded") window.location.assign(reauthentication.action.value)
   }, [reauthentication.action])
   return <TeamAccessView
+    rawCaptureSettings={<TeamRawCaptureSettingsView {...rawCapture} owner={access.state._tag === "Ready" && access.state.value.team.membership.role === "owner"} />}
     user={session.user}
     state={access.state}
     action={access.action}

@@ -12,7 +12,7 @@ pnpm atape collect --once --project YOUR_PROJECT --json
 
 For an offline packaged installation, `pnpm pack:release` now produces the CLI,
 Codex and Claude tarballs plus `SHA256SUMS` under `release/`. Install the CLI
-tarball, then use `atape adapters install ./release/atape-adapter-claude-0.4.6.tgz`.
+tarball, then use `atape adapters install ./release/atape-adapter-claude-0.4.7.tgz`.
 These local build commands do not publish to npm or deploy an instance.
 
 The Project must already be configured and authenticated normally. Discovery reads
@@ -33,8 +33,8 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
 ## Supported now
 
 - Automatic discovery under enabled Projects. Directory names do not determine
-  attribution. Discovery inspects up to 256 KiB per file for the first UUID record
-  and checks its original CWD before reading the complete snapshot. Symlinked
+  attribution. Discovery inspects up to 256 records / 64 MiB per file for the first UUID record
+  and checks its original CWD before streaming the Session. Symlinked
   files/directories and nested subagent histories are not traversed.
 - One changed Session per page, with round-robin scanning and per-Session progress
   in the existing Collector checkpoint. Reopening the Adapter preserves progress;
@@ -52,23 +52,26 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   retain their conservative partial status; this is not complete ACP content support.
 - Stable record UUID + physical block-slot Event identities; replay does not
   duplicate messages. Same-model-message split records remain distinct.
-- Complete-line eligibility, bounded whole-session observation and existing
+- Complete-line eligibility, bounded record pagination and existing
   Host secret redaction before Canonical/Raw network requests.
-- Immutable Raw snapshot per content digest. Snapshot finalization never marks
-  the Claude Session ended; appends produce another snapshot and update the same
-  Session/Event identities. Old Raw objects remain available.
+- Stable appendable Raw objects and per-record Canonical progress. Appends send
+  only new records; large text records split across bounded Canonical pages.
+  Existing immutable Raw snapshots remain available after checkpoint migration.
 
 ## Explicit limits
 
 No continuation/compaction, branching/rewind,
 subagent or spill collection yet. Ambiguous graphs, changed committed prefixes,
-corrupt checkpoints and snapshots exceeding 4 MiB / 10,000 records / the Host's
-500 Events or 3 MiB Canonical limit fail rather than truncate. A smaller Host
-limit is honored. One full Raw snapshot is kept per accepted source revision;
-this is opt-in bounded-session collection, not an efficient large-session watcher.
-Discovery scans at most 10,000 directory entries and keeps a checkpoint of at most
-16,000 bytes (capacity depends on path lengths and Session count). Capacity errors
-stop collection without evicting old progress. Only sources with readable identity
+corrupt checkpoints and JSONL records exceeding 16 MiB are isolated explicitly.
+Whole Session size and total record count are no longer limited to 4 MiB / 10,000.
+Each observation honors the Host's 500-event / 3 MiB Canonical budget and 16 MiB
+Raw budget. Text fragments are at most 256 KiB; smaller requested budgets fail
+explicitly if one record or fragment cannot fit. Prefix hashing detects edits to
+already captured bytes; a changed file requires streaming those bytes again for
+integrity, while parsing and publication resume at the saved record position.
+Discovery scans at most 10,000 directory entries. Metadata-only cursors are
+compressed above 16,000 bytes, with a 1 MiB wire / 16 MiB expanded bound. Capacity
+errors retain committed progress. Only sources with readable identity
 and original CWD in their bounded header are automatically attributable; use the
 single-file override to diagnose malformed or unrecognized headers. An unsupported
 attributed source is isolated without marking it captured; other sources continue.
@@ -77,7 +80,7 @@ Multiple files claiming the same Session identity are all isolated rather than m
 ## Partial collection
 
 Automatic discovery reports source read/format errors, unsupported histories,
-changed prefixes, oversized snapshots and duplicate identities as local
+changed prefixes, oversized records and duplicate identities as local
 `sourceFailures`. Unattributable headers are diagnosed locally; unrelated bodies
 are not uploaded. Healthy Sessions still advance; failed Sessions retain their
 committed progress and are retried next cycle. Repair a malformed source or restore

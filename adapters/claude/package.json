@@ -1,6 +1,6 @@
 {
   "name": "@atape/adapter-claude",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "ATape Adapter for project-scoped Claude Code local sessions",
   "license": "MIT",
   "type": "module",
@@ -47,6 +47,7 @@
   "atapeAdapter": {
     "protocolVersion": "atape.adapter.v1alpha1",
     "gitAttribution": "atape.git-attribution.v1",
+    "rawCapturePolicy": "atape.raw-capture.v1",
     "adapterId": "claude",
     "displayName": "Claude Code",
     "entry": "./dist/index.js",

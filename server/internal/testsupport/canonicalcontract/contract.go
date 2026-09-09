@@ -55,6 +55,48 @@ func MemoryControlPlane() canonical.MemoryControlPlane {
 
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
+	t.Run("accepts package and wire-profile upgrades only when Event content is unchanged", func(t *testing.T) {
+		store := factory(t)
+		ingestor := ingestion.NewIngestor(store)
+		batch := ValidBatch()
+		batch.Source.AdapterVersion = "0.2.0"
+		batch.CanonicalProfileVersion = ingestion.LegacyCanonicalProfileVersion
+		created, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		batch.BatchID = "upgraded-package-same-events"
+		batch.Source.AdapterVersion = "0.4.6"
+		batch.CanonicalProfileVersion = ingestion.CanonicalProfileVersion
+		upgraded, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), batch)
+		if err != nil || upgraded.UnchangedEvents != len(batch.Events) || upgraded.InsertedEvents != 0 || upgraded.UpdatedEvents != 0 {
+			t.Fatalf("unchanged package upgrade: %+v %v", upgraded, err)
+		}
+		snapshot, ok, err := store.Conversation(context.Background(), WebPrincipal(), created.SessionID, "root")
+		if err != nil || !ok || len(snapshot.Events) != len(batch.Events) {
+			t.Fatalf("snapshot: %+v %v", snapshot, err)
+		}
+		for _, event := range snapshot.Events {
+			if event.AdapterVersion != "0.2.0" {
+				t.Fatal("replay overwrote original provenance")
+			}
+		}
+		for name, change := range map[string]func(*ingestion.Batch){
+			"text":     func(b *ingestion.Batch) { b.Events[0].Text += " changed" },
+			"order":    func(b *ingestion.Batch) { b.Events[0].SourceOrder++ },
+			"fidelity": func(b *ingestion.Batch) { b.Events[0].Fidelity = "partial" },
+		} {
+			changed := batch
+			changed.Events = append([]ingestion.Event(nil), batch.Events...)
+			changed.BatchID = "changed-" + name
+			change(&changed)
+			_, err := ingestor.ApplyBatch(context.Background(), CLIPrincipal(), changed)
+			var conflict *canonical.ConflictError
+			if !errors.As(err, &conflict) {
+				t.Fatalf("%s did not conflict: %v", name, err)
+			}
+		}
+	})
 	t.Run("reprojects legacy tool Events without duplicating identities or losing JSON values", func(t *testing.T) {
 		store := factory(t)
 		ingestor := ingestion.NewIngestor(store)

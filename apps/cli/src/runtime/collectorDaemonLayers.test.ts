@@ -31,6 +31,8 @@ describe("Node Collector run status Adapter", () => {
         canonicalBatches: 2,
         rawChunks: 3,
         redactions: 1,
+        progress: { phase: "raw" as const, sourceFiles: 5, pendingRawBytes: 400 },
+        canonicalEvents: 100, rawBytes: 200, durationMs: 1000,
         hasMore: false
       }],
       failures: []
@@ -72,7 +74,9 @@ describe("Node Collector run status Adapter", () => {
       lastFailureAt: second.completedAt,
       failureMessage: "Server unavailable",
       failureReason: "transport",
-      retryable: true
+      retryable: true,
+      progress: first.jobs[0]!.progress
     })])
+    expect(status.jobs[0]).not.toHaveProperty("rawBytes")
   })
 })

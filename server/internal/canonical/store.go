@@ -189,7 +189,7 @@ func (s *MemoryStore) ApplyBatch(
 		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision < existing.Revision:
 			result.StaleEvents++
 			mutations = append(mutations, eventMutation{record: event})
-		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision == existing.Revision && event.Digest == existing.Digest:
+		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision == existing.Revision && (event.Digest == existing.Digest || SameEventContent(event, existing)):
 			result.UnchangedEvents++
 			mutations = append(mutations, eventMutation{record: event})
 		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision == existing.Revision:

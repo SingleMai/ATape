@@ -328,6 +328,10 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
       adapterId: success.adapterId,
       lastAttemptAt: report.completedAt,
       lastSuccessAt: report.completedAt,
+      ...(success.progress === undefined ? {} : { progress: success.progress }),
+      ...(success.canonicalEvents === undefined ? {} : { canonicalEvents: success.canonicalEvents }),
+      ...(success.rawBytes === undefined ? {} : { rawBytes: success.rawBytes }),
+      ...(success.durationMs === undefined ? {} : { durationMs: success.durationMs }),
       pages: success.pages,
       observations: success.observations,
       canonicalBatches: success.canonicalBatches,
@@ -341,6 +345,7 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
   for (const failure of report.failures) {
     const previous = jobs.get(jobKey(failure.projectId, failure.adapterId))
     const next: CollectorJobRunStatus = {
+      ...(previous?.progress === undefined ? {} : { progress: previous.progress }),
       projectId: failure.projectId,
       adapterId: failure.adapterId,
       lastAttemptAt: report.completedAt,

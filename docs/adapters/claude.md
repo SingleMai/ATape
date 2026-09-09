@@ -58,7 +58,7 @@ tool secrets and confirms they do not appear in Canonical or Raw responses.
 Deploy the server/migration before the new CLI; this turn does not publish a package
 or upgrade the user's running demo instance.
 
-Compaction, ambiguous branches and large histories remain explicitly rejected
+Compaction and ambiguous branches remain explicitly rejected
 until their production support lands. Discovery capacity and unsupported-header
 behavior are documented in the package README; this is not unrestricted Claude
 archive compatibility.
@@ -68,7 +68,8 @@ archive compatibility.
 This increment contains the production Claude Adapter, Project discovery, shared
 tool details, migration 000010 and the common reader integration. It is integrated
 with main's narrative reading/index controls and larger Raw transport chunks; the
-Claude source snapshot limit remains 4 MiB. Local research models are not shipped.
+original 4 MiB snapshot limit was subsequently replaced by streaming pagination
+(see the large-archive increment below). Local research models are not shipped.
 
 The first increment landed in PR #71. The next bounded increment implements
 [source failure isolation](../architecture/adr/0031-source-failure-isolation.md):
@@ -100,3 +101,24 @@ including independent clones. Established evidence survives changed origins and
 deleted directories; unknown historical identity becomes partial coverage.
 Git capture requires the new capability on both Host and Adapter. Directory
 matching and Claude's existing history-format limits remain unchanged.
+
+## Large-archive increment
+
+[ADR-0053](../architecture/adr/0053-large-archive-collection.md) replaces whole-file
+snapshots with resumable record parsing, stable appendable Raw objects and bounded
+text fragments. A 100 MiB fixture survives a fresh runtime on every page, preserves
+all Raw bytes, and publishes only an appended record afterward. A multi-MiB UTF-8
+message spans retryable Canonical pages without loss or duplicate fragments.
+Legacy checkpoints verify their committed prefix before one projection upgrade.
+
+This does not add compaction, subagent or ambiguous-branch support. Strict prefix
+verification still reads previously captured bytes after a file changes. Raw
+transport remains ordered within an object; compression and a persistent parser
+index are future increments requiring separate measurements and compatibility work.
+
+## Raw capture policy
+
+This Adapter declares `atape.raw-capture.v1` and honors the host's
+`rawCaptureEnabled` flag. Disabled Raw does not advance upload receipts;
+Canonical continues and re-enabling backfills retained sources.
+See [Raw capture configuration](../cli/raw-capture.md).

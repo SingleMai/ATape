@@ -7,7 +7,7 @@ import {
   type SetupWorkspace
 } from "@atape/application"
 import { randomUUID } from "node:crypto"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Random, Schema } from "effect"
 import {
   AuthenticatedHTTPClient,
   AuthenticatedHTTPError,
@@ -83,6 +83,7 @@ export const makeProjectSetupGatewayLayer = () => Layer.effect(
         method: "POST",
         body: { teamId, type: "git", remote }
       }).pipe(
+        retryProjectMatch,
         Effect.mapError(gatewayTransportError),
         Effect.flatMap((response) => expectDecoded(response, 200, WireProjectMatch, "Project match")),
         Effect.map((match): SetupProjectMatch => match.status === "none"
@@ -144,7 +145,7 @@ const statusError = (status: number, resource: string) => new ProjectSetupGatewa
     : status === 403 ? "forbidden"
     : status === 404 ? "not_found"
     : status === 409 ? "conflict"
-    : status >= 500 ? "unavailable"
+    : status === 429 || status >= 500 ? "unavailable"
     : "decode",
   message: status === 401
     ? "The CLI credential is no longer valid; run `atape login` again."
@@ -164,3 +165,22 @@ const retryNetworkOnce = <A>(
   onFailure: (error) => error.reason === "network" ? effect : Effect.fail(error),
   onSuccess: Effect.succeed
 }))
+
+// Matching is a read-only POST. Keep retries here so creation and other writes
+// do not inherit a retry policy without an idempotency contract.
+const retryProjectMatch = (
+  request: Effect.Effect<AuthenticatedHTTPResponse, AuthenticatedHTTPError>,
+  attempts = 3
+): Effect.Effect<AuthenticatedHTTPResponse, AuthenticatedHTTPError> => {
+  const again = (retryAfterSeconds = 0) => Effect.gen(function*() {
+    const jitter = yield* Random.next
+    const backoff = 500 * 2 ** (3 - attempts) * (1 + jitter)
+    yield* Effect.sleep(Math.min(60_000, Math.max(backoff, retryAfterSeconds * 1000)))
+    return yield* retryProjectMatch(request, attempts - 1)
+  })
+  return request.pipe(Effect.matchEffect({
+    onFailure: error => error.reason === "network" && attempts > 1 ? again() : Effect.fail(error),
+    onSuccess: response => attempts > 1 && (response.status === 429 || response.status >= 500)
+      ? again(response.retryAfterSeconds) : Effect.succeed(response)
+  }))
+}

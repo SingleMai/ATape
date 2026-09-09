@@ -54,10 +54,14 @@ const (
 	RawIngest
 	CapturedSessionDeleteOwn
 	CapturedSessionDeleteAny
+	TeamUpdateRawCapture
+	UserUpdateRawCapture
 	actionLimit
 )
 
 var actionNames = [...]string{
+	TeamUpdateRawCapture:       "team.update_raw_capture",
+	UserUpdateRawCapture:       "user.update_raw_capture",
 	WorkspaceListVisible:       "workspace.list_visible",
 	TeamCreate:                 "team.create",
 	UserReadSelf:               "user.read_self",
@@ -217,6 +221,8 @@ type rule struct {
 }
 
 var catalog = [...]rule{
+	TeamUpdateRawCapture:       {resource: TeamResource, media: webMedium, role: activeOwner},
+	UserUpdateRawCapture:       {resource: UserResource, media: webMedium},
 	WorkspaceListVisible:       {resource: InstanceResource, media: anyMedium},
 	TeamCreate:                 {resource: InstanceResource, media: webMedium},
 	UserReadSelf:               {resource: UserResource, media: anyMedium},

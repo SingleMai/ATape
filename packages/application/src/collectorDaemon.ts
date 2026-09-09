@@ -1,4 +1,5 @@
 import type {
+  AdapterCollectionProgress,
   AdapterSourceFailure,
   ClientConfig,
   CollectorJobRunStatus,
@@ -10,6 +11,7 @@ import { withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { inspectClient } from "./clientManagement.ts"
 import {
   CollectorConfigurationError,
+  hasPendingCollection,
   hasUnauthenticatedFailure,
   runCollectionCycle,
   type CollectionCycleReport
@@ -61,6 +63,10 @@ export class CollectorRunStatusStore extends Context.Service<CollectorRunStatusS
 }>()("atape/application/CollectorRunStatusStore") {}
 
 export type ManagedCollectorJobStatus = {
+  readonly progress?: AdapterCollectionProgress
+  readonly canonicalEvents?: number
+  readonly rawBytes?: number
+  readonly durationMs?: number
   readonly projectId: string
   readonly adapterId: string
   readonly state: "pending" | "healthy" | "partial" | "failed"
@@ -135,7 +141,7 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")((
   const options = yield* resolveDaemonOptions(requested)
   const statuses = yield* CollectorRunStatusStore
   while (true) {
-    yield* runCollectionCycle({ concurrency: options.concurrency }).pipe(
+    const pending = yield* runCollectionCycle({ concurrency: options.concurrency }).pipe(
       Effect.matchEffect({
         onFailure: (error) => Effect.gen(function*() {
           const occurredAt = new Date(yield* Clock.currentTimeMillis).toISOString()
@@ -144,8 +150,15 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")((
             message: error instanceof Error ? error.message : String(error)
           })
           yield* Effect.logError("ATape collection cycle could not start", { error: String(error) })
+          return false
         }),
         onSuccess: (report) => statuses.recordCycle(report).pipe(
+          Effect.tap(() => Effect.forEach(report.failures, failure => Effect.logWarning("ATape collection job failed", {
+            projectId: failure.projectId,
+            adapterId: failure.adapterId,
+            reason: failure.reason,
+            retryable: failure.retryable
+          }))),
           Effect.tap(() => Effect.logInfo("ATape collection cycle completed", {
             jobs: report.jobs.length,
             failures: report.failures.length,
@@ -158,11 +171,11 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")((
                 reason: "unauthenticated",
                 message: "The ATape Collector stopped because a CLI credential is missing, invalid, or expired. Run `atape login`."
               }))
-            : Effect.void)
+            : Effect.succeed(hasPendingCollection(report)))
         )
       })
     )
-    yield* Effect.sleep(options.intervalMs)
+    yield* pending ? Effect.yieldNow : Effect.sleep(options.intervalMs)
   }
 })))
 
@@ -214,6 +227,10 @@ const presentJob = (
   : {
       projectId,
       adapterId,
+      ...(recorded.progress === undefined ? {} : { progress: recorded.progress }),
+      ...(recorded.canonicalEvents === undefined ? {} : { canonicalEvents: recorded.canonicalEvents }),
+      ...(recorded.rawBytes === undefined ? {} : { rawBytes: recorded.rawBytes }),
+      ...(recorded.durationMs === undefined ? {} : { durationMs: recorded.durationMs }),
       state: recorded.failureMessage !== undefined ? "failed"
         : recorded.sourceFailures?.length || recorded.sourceFailuresTruncated ? "partial" : "healthy",
       ...(recorded.sourceFailures ? { sourceFailures: recorded.sourceFailures } : {}),

@@ -826,9 +826,19 @@ WHERE id = $1
 FOR UPDATE
 `
 
-func (q *Queries) GetUserForUpdate(ctx context.Context, id pgtype.UUID) (AuthUser, error) {
+type GetUserForUpdateRow struct {
+	ID          pgtype.UUID
+	Status      string
+	DisplayName string
+	AvatarUrl   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DisabledAt  pgtype.Timestamptz
+}
+
+func (q *Queries) GetUserForUpdate(ctx context.Context, id pgtype.UUID) (GetUserForUpdateRow, error) {
 	row := q.db.QueryRow(ctx, getUserForUpdate, id)
-	var i AuthUser
+	var i GetUserForUpdateRow
 	err := row.Scan(
 		&i.ID,
 		&i.Status,

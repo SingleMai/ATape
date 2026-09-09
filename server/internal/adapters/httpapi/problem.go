@@ -22,6 +22,7 @@ import (
 type problemCode string
 
 const (
+	problemRawCaptureDisabled         problemCode = "raw_capture_disabled"
 	problemInvalidRequest             problemCode = "invalid_request"
 	problemInvalidUserCode            problemCode = "invalid_user_code"
 	problemInvalidJoinCode            problemCode = "invalid_join_code"
@@ -66,6 +67,7 @@ type problemDefinition struct {
 }
 
 var problemRegistry = map[problemCode]problemDefinition{
+	problemRawCaptureDisabled:         {403, "Raw capture is disabled", "The current Team and User settings do not allow Raw uploads."},
 	problemInvalidRequest:             {400, "The request is invalid", "The request could not be understood."},
 	problemInvalidUserCode:            {400, "The user code is invalid", "The user code is invalid or no longer available."},
 	problemInvalidJoinCode:            {400, "The join code is invalid", "The join code is invalid or no longer available."},
@@ -196,6 +198,10 @@ func classifyError(err error) (problemCode, int, []fieldProblem) {
 			return problemUnsupportedProtocol, 0, nil
 		}
 		return problemValidationFailed, 0, []fieldProblem{{Field: canonicalValidation.Field, Code: "invalid"}}
+	}
+	var rawDisabled *rawarchive.CaptureDisabledError
+	if errors.As(err, &rawDisabled) {
+		return problemRawCaptureDisabled, 0, nil
 	}
 	var rawValidation *rawarchive.ValidationError
 	if errors.As(err, &rawValidation) {

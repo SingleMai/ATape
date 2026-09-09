@@ -1,4 +1,5 @@
 import {
+  AdapterCollectionLimits,
   AdapterProtocolVersion,
   RawTransportChunkBytes,
   emptyClientConfig,
@@ -7,8 +8,9 @@ import {
   type CollectorCheckpoint
 } from "@atape/domain"
 import { CollectorDeviceGateway } from "./collectorMonitoring.ts"
+import { CollectorRunStatusStore, runManagedCollector } from "./collectorDaemon.ts"
 import { TestClock } from "effect/testing"
-import { Effect, Fiber, Layer } from "effect"
+import { Deferred, Effect, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import { ClientConfigStore } from "./clientManagement.ts"
 import {
@@ -175,9 +177,12 @@ const clientConfig = (): ClientConfig => ({
 })
 
 const fixture = (options: {
+  readonly rawEnabled?: boolean
+  readonly policyFailure?: CollectionTransportError
   readonly config?: () => ClientConfig
   readonly page?: AdapterCollectionPage
   readonly pages?: ReadonlyArray<AdapterCollectionPage>
+  readonly rawGate?: (submission: RawSubmission) => Effect.Effect<void>
   readonly rawFailure?: CollectionTransportError
   readonly rawFailureAtServerOffset?: number
   readonly replayedRawAheadBytes?: number
@@ -208,6 +213,7 @@ const fixture = (options: {
       open: () => Effect.succeed({ collect: () => Effect.succeed(options.pages?.[pageIndex++] ?? options.page ?? collectionPage()) })
     })),
     Layer.succeed(CollectorTransport, CollectorTransport.of({
+      rawCaptureEnabled: () => options.policyFailure ? Effect.fail(options.policyFailure) : Effect.succeed(options.rawEnabled ?? true),
       submitCanonical: (submission) => Effect.sync(() => {
         canonical.push(structuredClone(submission))
         return {
@@ -220,9 +226,9 @@ const fixture = (options: {
           replayed: false
         }
       }),
-      appendRaw: (submission) => Effect.suspend(() => {
+      appendRaw: (submission) => (options.rawGate?.(submission) ?? Effect.void).pipe(Effect.andThen(Effect.suspend(() => {
         rawAttempts++
-        if (options.rawFailure || (rawBlocked && options.rawFailureAtServerOffset === submission.serverOffset)) {
+        if (options.rawFailure && options.rawFailureAtServerOffset === undefined || (rawBlocked && options.rawFailureAtServerOffset === submission.serverOffset)) {
           return Effect.fail(options.rawFailure ?? new CollectionTransportError({
             reason: "network",
             operation: "raw",
@@ -240,7 +246,7 @@ const fixture = (options: {
           finalized: options.replayedRawAheadBytes === undefined ? submission.final : true,
           replayed: options.replayedRawAheadBytes !== undefined
         })
-      })
+      })))
     })),
     makeSecretRedactorLayer(["supersecret"])
   )
@@ -254,11 +260,183 @@ const fixture = (options: {
     checkpoint: () => checkpoint,
     commits: () => commits,
     rawAttempts: () => rawAttempts,
+    pageReads: () => pageIndex,
     allowRaw: () => { rawBlocked = false }
   }
 }
 
 describe("Collector Module", () => {
+  it("preserves accepted Raw receipts when a later chunk is disabled", async () => {
+    const page = collectionPage(), observation = page.observations[0]!, segment = observation.rawSegments[0]!
+    const capture = fixture({
+      page: { ...page, observations: [{ ...observation, rawSegments: [
+        { ...segment, content: "first\n", final: false },
+        { ...segment, sourceOffset: 6, content: "last\n", final: true }
+      ] }] },
+      rawFailureAtServerOffset: 6,
+      rawFailure: new CollectionTransportError({ operation: "raw", reason: "raw_disabled", retryable: false, message: "disabled" })
+    })
+    await capture.run(runCollectionCycle())
+    expect(capture.raw).toHaveLength(1)
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect(capture.checkpoint()?.rawObjects[0]?.sourceOffset).toBe(6)
+    expect(capture.checkpoint()?.rawObjects[0]?.finalized).toBe(false)
+  })
+
+  it("continues Canonical without Raw or invented receipts when policy disables upload", async () => {
+    const capture = fixture({ rawEnabled: false })
+    await capture.run(runCollectionCycle())
+    expect(capture.canonical).toHaveLength(1)
+    expect(capture.rawAttempts()).toBe(0)
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect(capture.checkpoint()?.rawObjects).toEqual([])
+  })
+  it("fails closed when the authoritative policy cannot be read", async () => {
+    const capture = fixture({ policyFailure: new CollectionTransportError({
+      operation: "policy", reason: "invalid_response", retryable: false, message: "invalid policy"
+    }) })
+    await capture.run(runCollectionCycle())
+    expect(capture.canonical).toHaveLength(0)
+    expect(capture.rawAttempts()).toBe(0)
+    expect(capture.checkpoint()).toBeUndefined()
+  })
+  it("treats a server Raw policy change as a skip and commits Canonical progress", async () => {
+    const capture = fixture({ rawFailure: new CollectionTransportError({
+      operation: "raw", reason: "raw_disabled", retryable: false, message: "Raw capture disabled"
+    }) })
+    await capture.run(runCollectionCycle())
+    expect(capture.canonical).toHaveLength(1)
+    expect(capture.rawAttempts()).toBe(1)
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect(capture.checkpoint()?.rawObjects).toEqual([])
+  })
+
+  it("overlaps independent Raw objects while preserving each object order and all receipts", async () => {
+    await Effect.runPromise(Effect.gen(function*() {
+      const secondStarted = yield* Deferred.make<void>()
+      const page = collectionPage()
+      const segment = page.observations[0]!.rawSegments[0]!
+      const a = { ...segment, sourceObjectId: "a", content: "first\n" }
+      const b = { ...segment, sourceObjectId: "b", content: "other\n" }
+      const capture = fixture({ page: { ...page, observations: [{ ...page.observations[0]!,
+        rawSegments: [a, { ...a, sourceOffset: 6, content: "second\n", final: true }, b] }] },
+        rawGate: submission => submission.sourceObjectId === "a" && submission.serverOffset === 0
+          ? Deferred.await(secondStarted)
+          : submission.sourceObjectId === "b" ? Deferred.succeed(secondStarted, undefined).pipe(Effect.asVoid) : Effect.void })
+      const report = yield* Effect.promise(() => capture.run(runCollectionCycle()))
+      expect(report.failures).toEqual([])
+      expect(capture.raw.filter(chunk => chunk.sourceObjectId === "a").map(chunk => chunk.serverOffset)).toEqual([0, 6])
+      expect(capture.checkpoint()?.rawObjects).toEqual(expect.arrayContaining([
+        expect.objectContaining({ sourceObjectId: "a", sourceOffset: 13, finalized: true }),
+        expect.objectContaining({ sourceObjectId: "b", sourceOffset: 6 })
+      ]))
+    }))
+  })
+
+  it.each(["foreground", "managed"] as const)("%s drains bounded backlog immediately, then waits when idle", async mode => {
+    const count = AdapterCollectionLimits.pagesPerCycle
+    const capture = fixture({ pages: [
+      ...Array.from({ length: count }, (_, index) => ({ protocolVersion: AdapterProtocolVersion,
+        nextCursor: `backlog-${index}`, hasMore: true, observations: [],
+        sourceFailures: [{ source: "/unrelated/source", reason: "unsupported" as const }] })),
+      collectionPage()
+    ], page: { protocolVersion: AdapterProtocolVersion, nextCursor: "cursor-1", hasMore: false, observations: [] } })
+    await capture.run(Effect.gen(function*() {
+      const runner = mode === "managed" ? runManagedCollector : runCollector
+      const fiber = yield* runner({ intervalMs: 10_000 }).pipe(Effect.forkChild)
+      yield* TestClock.adjust("1 second")
+      expect(capture.pageReads()).toBe(count + 1)
+      expect(capture.canonical).toHaveLength(1)
+      yield* TestClock.adjust("9 seconds")
+      expect(capture.pageReads()).toBe(count + 2)
+      yield* Fiber.interrupt(fiber)
+      yield* TestClock.adjust("30 seconds")
+      expect(capture.pageReads()).toBe(count + 2)
+    }).pipe(Effect.provideService(CollectorRunStatusStore, {
+      read: () => Effect.succeed({ version: 1, jobs: [] }),
+      recordCycle: () => Effect.void,
+      recordCollectorFailure: () => Effect.void
+    }), Effect.provide(TestClock.layer())))
+  })
+
+  it.each(["foreground", "managed"] as const)("%s backs off after backlog upload fails", async mode => {
+    const capture = fixture({ pages: [], page: { ...collectionPage(), hasMore: true }, rawFailureAtServerOffset: 0 })
+    await capture.run(Effect.gen(function*() {
+      const runner = mode === "managed" ? runManagedCollector : runCollector
+      const fiber = yield* runner({ intervalMs: 10_000 }).pipe(Effect.forkChild)
+      yield* TestClock.adjust("3 seconds")
+      expect(capture.pageReads()).toBe(1)
+      expect(capture.checkpoint()).toBeUndefined()
+      yield* TestClock.adjust("8 seconds")
+      expect(capture.pageReads()).toBe(1)
+      yield* TestClock.adjust("3 seconds")
+      expect(capture.pageReads()).toBe(2)
+      yield* Fiber.interrupt(fiber)
+    }).pipe(Effect.provideService(CollectorRunStatusStore, {
+      read: () => Effect.succeed({ version: 1, jobs: [] }),
+      recordCycle: () => Effect.void,
+      recordCollectorFailure: () => Effect.void
+    }), Effect.provide(TestClock.layer())))
+  })
+
+  it("continues through an empty progress page before publishing history", async () => {
+    const capture = fixture({ pages: [
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "transition", hasMore: true, observations: [] },
+      collectionPage(),
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "cursor-1", hasMore: false, observations: [] }
+    ] })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures).toEqual([])
+    expect(report.jobs[0]).toMatchObject({ pages: 2, observations: 1, canonicalBatches: 1, rawChunks: 1, hasMore: false })
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect((await capture.run(runCollectionCycle())).failures).toEqual([])
+    expect(capture.canonical).toHaveLength(1)
+    expect(capture.raw).toHaveLength(1)
+  })
+
+  it.each([null, "", "transition"])("rejects a stalled empty continuation cursor %s", async nextCursor => {
+    const capture = fixture({ pages: [
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "transition", hasMore: true, observations: [] },
+      { protocolVersion: AdapterProtocolVersion, nextCursor, hasMore: true, observations: [] }
+    ] })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures[0]?.reason).toBe("contract")
+    expect(capture.checkpoint()?.cursor).toBe("transition")
+    expect(capture.commits()).toBe(1)
+    expect(capture.canonical).toEqual([])
+    expect(capture.raw).toEqual([])
+  })
+
+  it("bounds empty continuation pages and resumes their progress on the next cycle", async () => {
+    const count = AdapterCollectionLimits.pagesPerCycle
+    const capture = fixture({ pages: [
+      ...Array.from({ length: count }, (_, index) => ({ protocolVersion: AdapterProtocolVersion,
+        nextCursor: `empty-${index}`, hasMore: true, observations: [] })),
+      collectionPage()
+    ] })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures).toEqual([])
+    expect(report.jobs[0]).toMatchObject({ pages: count, observations: 0, canonicalBatches: 0, rawChunks: 0, hasMore: true })
+    expect(capture.checkpoint()?.cursor).toBe(`empty-${count - 1}`)
+    expect(capture.canonical).toEqual([])
+    expect(capture.raw).toEqual([])
+    expect((await capture.run(runCollectionCycle())).jobs[0]).toMatchObject({ observations: 1, hasMore: false })
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+  })
+
+  it("retains empty-page progress without acknowledging a later failed Raw upload", async () => {
+    const capture = fixture({ pages: [
+      { protocolVersion: AdapterProtocolVersion, nextCursor: "transition", hasMore: true, observations: [] },
+      collectionPage(), collectionPage()
+    ], rawFailureAtServerOffset: 0 })
+    expect((await capture.run(runCollectionCycle())).failures).toHaveLength(1)
+    expect(capture.checkpoint()).toMatchObject({ cursor: "transition", rawObjects: [] })
+    capture.allowRaw()
+    expect((await capture.run(runCollectionCycle())).failures).toEqual([])
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+    expect(capture.raw).toHaveLength(1)
+  })
+
   it("reports idle liveness without new content and stops its heartbeat on cancellation", async () => {
     const reports: import("@atape/domain").CLISyncReport[] = []
     const capture = fixture({ page: { protocolVersion: AdapterProtocolVersion, nextCursor: null, hasMore: false, observations: [] } })
@@ -409,6 +587,27 @@ describe("Collector Module", () => {
     expect(event.update).toMatchObject({ rawInput: { "[REDACTED]": ["[REDACTED]", { password: "[REDACTED]", fraction: 0.125, empty: "", null: null, flag: false }] }, rawOutput: "Output [REDACTED]" })
   })
 
+  it.each(["tool_call", "tool_call_update"] as const)("keeps a %s title within its UTF-8 limit when redaction expands it", async sessionUpdate => {
+    const original = collectionPage()
+    const title = `api_key=12345678 ${"x".repeat(480)}中`
+    expect(utf8Length(title)).toBe(500)
+    const page: AdapterCollectionPage = { ...original, observations: original.observations.map(o => ({ ...o,
+      events: o.events.map(e => e.update.sessionUpdate === "tool_call"
+        ? { ...e, update: sessionUpdate === "tool_call"
+          ? { ...e.update, title }
+          : { ...e.update, sessionUpdate: "tool_call_update" as const, title } } : e)
+    })) }
+    const capture = fixture({ page })
+
+    expect((await capture.run(runCollectionCycle())).failures).toEqual([])
+    const event = capture.canonical[0]!.observation.events[0]!
+    expect(event.update).toMatchObject({ sessionUpdate, title: `api_key=[REDACTED] ${"x".repeat(480)}` })
+    expect(event.fidelity).toBe("redacted")
+    expect(JSON.stringify(event)).not.toContain("12345678")
+    expect(capture.raw).toHaveLength(1)
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+  })
+
   it.each([undefined, Infinity, "x".repeat(65536)])("rejects inadmissible tool values before network or checkpoint writes", async rawInput => {
     const original = collectionPage()
     const page: AdapterCollectionPage = { ...original, observations: original.observations.map(o => ({ ...o,
@@ -462,6 +661,41 @@ describe("Collector Module", () => {
         serverOffset: new TextEncoder().encode("{\"token\":\"[REDACTED]\"}\n").byteLength
       }]
     })
+  })
+
+  it("honors server Retry-After without advancing an unacknowledged cursor", async () => {
+    const capture = fixture({ rawFailure: new CollectionTransportError({ reason: "rejected", operation: "raw",
+      retryable: true, status: 429, retryAfterSeconds: 5, message: "Busy" }) })
+    await capture.run(Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(runCollectionCycle())
+      yield* TestClock.adjust("1 second")
+      expect(capture.rawAttempts()).toBe(1)
+      yield* TestClock.adjust("3 seconds")
+      expect(capture.rawAttempts()).toBe(1)
+      yield* TestClock.adjust("1 second")
+      expect(capture.rawAttempts()).toBe(2)
+      yield* TestClock.adjust("5 seconds")
+      const report = yield* Fiber.join(fiber)
+      expect(report.failures).toHaveLength(1)
+      expect(capture.rawAttempts()).toBe(3)
+      expect(capture.checkpoint()).toBeUndefined()
+    }).pipe(Effect.provide(TestClock.layer())))
+  })
+
+  it("backs off transient uploads and cancels a pending retry without advancing the cursor", async () => {
+    const capture = fixture({ rawFailure: new CollectionTransportError({ reason: "network", operation: "raw",
+      retryable: true, message: "Offline" }) })
+    await capture.run(Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(runCollectionCycle())
+      yield* TestClock.adjust("400 millis")
+      expect(capture.rawAttempts()).toBe(1)
+      yield* TestClock.adjust("600 millis")
+      expect(capture.rawAttempts()).toBe(2)
+      yield* Fiber.interrupt(fiber)
+      yield* TestClock.adjust("1 minute")
+      expect(capture.rawAttempts()).toBe(2)
+      expect(capture.checkpoint()).toBeUndefined()
+    }).pipe(Effect.provide(TestClock.layer())))
   })
 
   it("does not advance the cursor when Raw remains unavailable after bounded retries", async () => {

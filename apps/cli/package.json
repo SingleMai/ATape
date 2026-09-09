@@ -1,6 +1,6 @@
 {
   "name": "@atape/cli",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "CLI and background Collector for ATape shared agent conversation history",
   "license": "MIT",
   "type": "module",

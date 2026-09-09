@@ -174,7 +174,7 @@ func (s *Store) ApplyBatch(
 			result.StaleEvents++
 		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision < existing.Revision:
 			result.StaleEvents++
-		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision == existing.Revision && event.Digest == existing.Digest:
+		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision == existing.Revision && (event.Digest == existing.Digest || canonical.SameEventContent(event, canonicalEvent(existing))):
 			result.UnchangedEvents++
 		case event.ProjectionRevision == existing.ProjectionRevision && event.Revision == existing.Revision:
 			return canonical.ApplyResult{}, conflict(event.SourceKey, "event revision has different content")

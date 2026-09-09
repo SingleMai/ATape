@@ -1,4 +1,5 @@
 import {
+  RawCaptureGateway, RawCaptureSettings, RawCapturePreference,
   AccessError,
   AuthenticationGateway,
   TeamAccessGateway
@@ -252,6 +253,16 @@ const teamGateway = TeamAccessGateway.of({
 })
 
 export const BrowserAccessLayer = Layer.mergeAll(
+  Layer.succeed(RawCaptureGateway, RawCaptureGateway.of({
+    readTeam: (slug) => requestDecoded(`/api/v1/teams/${encoded(slug)}/raw-capture`, RawCaptureSettings),
+    setTeam: (slug, policy) => requestDecoded(`/api/v1/teams/${encoded(slug)}/raw-capture`, RawCaptureSettings, {
+      method: "PUT", body: { policy }, csrf: true
+    }),
+    readUser: () => requestDecoded("/api/v1/users/me/raw-capture", Schema.Struct({ preference: RawCapturePreference })),
+    setUser: (preference) => requestDecoded("/api/v1/users/me/raw-capture", Schema.Struct({ preference: RawCapturePreference }), {
+      method: "PUT", body: { preference }, csrf: true
+    })
+  })),
   Layer.succeed(AuthenticationGateway, authenticationGateway),
   Layer.succeed(TeamAccessGateway, teamGateway)
 )

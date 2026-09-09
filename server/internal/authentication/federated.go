@@ -615,7 +615,7 @@ func (m *Module) verifyIdentityForUser(
 	})
 }
 
-func userFromRow(row authdb.AuthUser) User {
+func userFromRow(row authdb.GetUserForUpdateRow) User {
 	return User{
 		ID: domainUUID(row.ID), DisplayName: row.DisplayName,
 		AvatarURL: row.AvatarUrl, CreatedAt: row.CreatedAt,

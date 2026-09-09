@@ -82,6 +82,26 @@ type EventRecord struct {
 	ChildThreadID      *string
 }
 
+// SameEventContent compares an already normalized Event independently of transport
+// provenance. Package/profile upgrades alone must not invalidate an acknowledged
+// revision. Real projection changes (including tool details and Raw references)
+// still require a higher source or projection revision. Existing digests remain
+// readable, so this also handles records written before this comparison existed.
+func SameEventContent(left, right EventRecord) bool {
+	if !left.OccurredAt.Equal(right.OccurredAt) || !sameOptionalString(left.ChildThreadID, right.ChildThreadID) {
+		return false
+	}
+	left.Digest, right.Digest = "", ""
+	left.AdapterVersion, right.AdapterVersion = "", ""
+	left.SchemaVersion, right.SchemaVersion = "", ""
+	left.ObservedAt, right.ObservedAt = time.Time{}, time.Time{}
+	left.ReceivedAt, right.ReceivedAt = time.Time{}, time.Time{}
+	left.OccurredAt, right.OccurredAt = time.Time{}, time.Time{}
+	left.IngestSeq, right.IngestSeq = 0, 0
+	left.ChildThreadID, right.ChildThreadID = nil, nil
+	return left == right
+}
+
 type WriteBatch struct {
 	Key        string
 	Digest     string
