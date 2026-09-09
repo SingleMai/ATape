@@ -62,6 +62,7 @@ try {
   ], temporaryRoot)
   remote = await startCLIAuthFixture({
     capture: true,
+    rawCaptureEnabled: true,
     userId: "release-user",
     userName: "Release User",
     teamId: "release-team-id",
@@ -189,8 +190,8 @@ async function verifyClaudeUpgrade() {
   assert.equal(appended.observations, 1)
   assert.equal(appended.rawChunks, 1)
   const nextEvents = submitted()[1].body.events
-  assert.deepEqual(nextEvents.slice(0, 6).map(event => event.sourceEventId), firstEvents.map(event => event.sourceEventId))
-  assert.equal(nextEvents.length, 7)
+  assert.deepEqual(nextEvents.map(event => event.sourceEventId), ["packaged-upgrade-append:0"],
+    "append after package upgrade must capture only the new event without replaying history")
   assert.equal((await collect()).observations, 0)
 }
 
