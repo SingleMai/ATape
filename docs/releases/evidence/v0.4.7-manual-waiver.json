@@ -3,7 +3,7 @@
   "releaseVersion": "0.4.7",
   "authEpoch": "auth-v1",
   "status": "authorized",
-  "candidateCommit": "65543f24a5fca467a7c249eb454507d105504c48",
+  "candidateCommit": "239cc7ccad5d92f47bc44346e19e2c886841ddc2",
   "authorizedOn": "2026-09-09",
   "authorization": "The user explicitly requested: 好的 代码你都合并到 origin.main 然后发布个新包. Under AGENTS.md and ADR-0048 this authorizes manual staging acceptance waiver for this release candidate; automated CI, integration tests and security gates remain mandatory.",
   "scope": "manual-staging-only",
