@@ -10,7 +10,7 @@ import (
 
 // This bounded snapshot Seam is shared by the production and demo Adapters.
 // It contains Canonical facts only; never Raw bytes or Search documents.
-const OverviewFactLimit = 50000
+const OverviewFactLimit = 100000
 
 var ErrOverviewCapacity = errors.New("overview range exceeds the supported fact limit; choose a shorter range")
 

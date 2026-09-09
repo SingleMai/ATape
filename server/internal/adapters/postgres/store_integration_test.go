@@ -21,6 +21,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 	"github.com/jackc/pgx/v5"
@@ -65,6 +66,57 @@ func TestPostgresStoreContractAndRestartDurability(t *testing.T) {
 		t.Fatalf("prepare PostgreSQL: %v", err)
 	}
 	store := postgresadapter.NewStore(pool)
+	t.Run("overview supports the deployed Team volume and rejects incomplete totals", func(t *testing.T) {
+		seedControlPlane(t, pool)
+		created, err := ingestion.NewIngestor(store).ApplyBatch(ctx, canonicalcontract.CLIPrincipal(), canonicalcontract.ValidBatch())
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Seed scale in the real persistence Adapter, then exercise the same
+		// authorized Module Interface as the HTTP caller. Long bodies also cover
+		// the bounded preview payload used by a normal conversation history.
+		seedMessages := func(first, last int) {
+			t.Helper()
+			_, err := pool.Exec(ctx, `
+INSERT INTO canonical_events (id,session_id,thread_id,source_key,revision,projection_revision,digest,
+source_order,event_index,order_fidelity,fidelity,raw_ref,adapter_version,schema_version,
+observed_at,received_at,ingest_seq,kind,author,occurred_at,text,tool_label)
+SELECT 'volume-'||n,e.session_id,e.thread_id,'volume-'||n,1,1,e.digest,
+n+2,0,e.order_fidelity,e.fidelity,e.raw_ref,e.adapter_version,e.schema_version,
+e.observed_at,e.received_at,n+1000000,'message',
+CASE WHEN n=60000 THEN 'Codex' ELSE e.author END,e.occurred_at,
+CASE WHEN n=60000 THEN 'Intermediate sentence. Latest response.'
+     WHEN n=59999 THEN 'Latest request.' ELSE repeat('Earlier conversation. ',100) END,''
+FROM canonical_events e CROSS JOIN generate_series($2::integer,$3::integer) n
+WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID, first, last)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		seedMessages(1, 60000)
+		dashboard := teamoverview.New(store)
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04"}
+		started := time.Now()
+		view, err := dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("60,002-message Overview read: %s", time.Since(started))
+		if view.Metrics.Messages != 60000 || view.Metrics.Sessions != 1 || view.Metrics.ActiveMembers != 1 || view.Previous.Messages != 0 || len(view.Sessions) != 1 {
+			t.Fatalf("incomplete volume metrics: %+v", view.Metrics)
+		}
+		if view.Sessions[0].Input != "Latest request." || view.Sessions[0].Output != "Latest response." {
+			t.Fatalf("incorrect latest preview: %+v", view.Sessions[0])
+		}
+		seedMessages(60001, canonical.OverviewFactLimit)
+		if _, err = dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query); !errors.Is(err, canonical.ErrOverviewCapacity) {
+			t.Fatalf("over-capacity read must reject partial totals: %v", err)
+		}
+		query.From, query.To = "2026-09-07", "2026-09-07"
+		if empty, err := dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query); err != nil || empty.Metrics.Messages != 0 {
+			t.Fatalf("shorter range should recover: %+v, %v", empty.Metrics, err)
+		}
+	})
 	canonicalcontract.Run(t, func(t *testing.T) canonicalcontract.Store {
 		if _, err := pool.Exec(context.Background(), `
 TRUNCATE project_search_documents, project_search_checkpoints,
