@@ -43,7 +43,12 @@ jobs:
           # Playwright downloads its own pinned Chromium. The runner's unused
           # Chrome apt feed must not block OS dependency installation when its
           # package index and release hashes are temporarily out of sync.
-          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          for source in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            [ -f "$source" ] || continue
+            if grep -qE 'https?://dl\.google\.com/linux/chrome[^/ ]*/deb' "$source"; then
+              sudo mv "$source" "$source.disabled"
+            fi
+          done
           pnpm --filter @atape/web exec playwright install --with-deps chromium
 
       - name: Run repository checks
