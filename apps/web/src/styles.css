@@ -608,7 +608,7 @@ h3 { margin: 0; font-size: 20px; }
 
 .access-page { display: grid; place-items: center; }
 .access-brand { min-height: 44px; display: inline-flex; align-items: center; gap: 11px; color: var(--atape-color-text); font-size: 23px; font-weight: 950; text-decoration: none; }
-.access-brand-mark { width: 43px; height: 35px; color: var(--atape-color-yellow); filter: drop-shadow(0 1px 0 var(--atape-color-text-muted)); }
+.access-brand-mark { width: 43px; }
 .access-header { margin-bottom: clamp(34px, 7vw, 68px); display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .account-chip { min-height: 48px; padding: 4px 9px 4px 5px; border: 2px solid var(--atape-color-border-soft); border-radius: var(--atape-radius-pill); display: flex; align-items: center; gap: 8px; background: var(--atape-color-paper-translucent); }
 .account-chip > span:last-child { max-width: 210px; overflow: hidden; font-size: 13px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }

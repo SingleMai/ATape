@@ -1,3 +1,13 @@
+.atape-brand-mark {
+  display: inline-block;
+  width: 1em;
+  aspect-ratio: var(--atape-brand-mark-aspect-ratio);
+  flex-shrink: 0;
+  color: var(--atape-color-brand);
+  background-color: currentColor;
+  mask: var(--atape-brand-mark-image) center / contain no-repeat;
+}
+
 .atape-button {
   min-height: 44px;
   padding: 9px 16px;

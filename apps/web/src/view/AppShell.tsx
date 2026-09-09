@@ -1,10 +1,9 @@
 import type { User, Workspace } from "@atape/domain"
-import { Avatar, Button } from "@atape/ui"
+import { Avatar, BrandMark, Button } from "@atape/ui"
 import { Link } from "@tanstack/react-router"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
 import { useSettingsOverlay } from "../presenters/settingsOverlayContext"
-import { TapeMark } from "./AccessPrimitives"
 import { SearchIcon, PanelIcon } from "./WorkspaceIcons"
 
 type Props = {
@@ -58,7 +57,7 @@ export const AppShell = ({
       <aside className="sidebar project-sidebar" aria-label="Workspace">
         <div className="sidebar-brand-row">
           <Link className="brand" to="/" aria-label="ATape home">
-            <TapeMark className="brand-mark" />
+            <BrandMark className="brand-mark" />
             <span>ATape</span>
           </Link>
           <button

@@ -18,6 +18,9 @@
   --atape-color-navigation-border: #abd6ca;
 
   /* Brand and interaction */
+  --atape-brand-mark-image: url("./cozy-island/brand-mark.svg");
+  --atape-brand-mark-aspect-ratio: 1;
+  --atape-color-brand: var(--atape-color-yellow);
   --atape-color-accent: #237f70;
   --atape-color-accent-strong: #1d665b;
   --atape-color-accent-bright: #54c8ad;
