@@ -1,5 +1,6 @@
 import type {
   AdapterCollectionPage,
+  AdapterCollectionProgress,
   AdapterCollectionLimitValues,
   AdapterInstallation,
   AdapterObservation,
@@ -14,7 +15,7 @@ import type {
 } from "@atape/domain"
 import { AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { AdapterSourceFailure, MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
-import { Clock, Context, Effect, Layer, Schema, Scope } from "effect"
+import { Clock, Context, Effect, Layer, Random, Schema, Scope, Semaphore } from "effect"
 import { recordCollectorProgress, withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 
@@ -29,7 +30,7 @@ export class CollectorStateError extends Schema.TaggedError<CollectorStateError>
 }) {}
 
 export class AdapterRuntimeError extends Schema.TaggedError<AdapterRuntimeError>()("AdapterRuntimeError", {
-  reason: Schema.Literals(["load", "contract", "collect", "close", "unauthenticated"]),
+  reason: Schema.Literals(["load", "contract", "collect", "close", "unauthenticated", "transport"]),
   adapterId: Schema.String,
   retryable: Schema.Boolean,
   message: Schema.String
@@ -41,9 +42,10 @@ export class CollectionContractError extends Schema.TaggedError<CollectionContra
 }) {}
 
 export class CollectionTransportError extends Schema.TaggedError<CollectionTransportError>()("CollectionTransportError", {
-  reason: Schema.Literals(["network", "unauthenticated", "rejected", "invalid_response"]),
-  operation: Schema.Literals(["canonical", "raw"]),
+  reason: Schema.Literals(["network", "unauthenticated", "rejected", "invalid_response", "raw_disabled"]),
+  operation: Schema.Literals(["canonical", "raw", "policy"]),
   status: Schema.optionalKey(Schema.Number),
+  retryAfterSeconds: Schema.optionalKey(Schema.Number),
   retryable: Schema.Boolean,
   message: Schema.String
 }) {}
@@ -71,6 +73,7 @@ export class CollectorStateStore extends Context.Service<CollectorStateStore, {
 }>()("atape/application/CollectorStateStore") {}
 
 export type HostedCollectRequest = {
+  readonly rawCaptureEnabled?: boolean
   readonly protocolVersion: typeof AdapterProtocolVersion
   readonly cursor: string | null
   readonly previousAdapterVersion?: string
@@ -122,6 +125,7 @@ export type RawSubmission = {
 }
 
 export type CollectorTransportService = {
+  rawCaptureEnabled(project: Pick<LocalProject, "instanceOrigin" | "userId" | "id">): Effect.Effect<boolean, CollectionTransportError>
   submitCanonical(submission: CanonicalSubmission): Effect.Effect<CanonicalApplyReceipt, CollectionTransportError>
   appendRaw(submission: RawSubmission): Effect.Effect<RawAppendReceipt, CollectionTransportError>
 }
@@ -152,6 +156,10 @@ export const makeSecretRedactorLayer = (secretValues: ReadonlyArray<string> = []
 }
 
 export type AdapterCollectionReport = {
+  readonly progress?: AdapterCollectionProgress
+  readonly canonicalEvents?: number
+  readonly rawBytes?: number
+  readonly durationMs?: number
   readonly sourceFailures?: ReadonlyArray<AdapterSourceFailure>
   readonly sourceFailuresTruncated?: boolean
   readonly projectId: string
@@ -222,9 +230,12 @@ export const runCollector = Effect.fn("Collector.run")((options: RunCollectorOpt
       observations: report.jobs.reduce((sum, job) => sum + job.observations, 0),
       rawChunks: report.jobs.reduce((sum, job) => sum + job.rawChunks, 0)
     })
-    yield* Effect.sleep(intervalMs)
+    yield* hasPendingCollection(report) ? Effect.yieldNow : Effect.sleep(intervalMs)
   }
 })))
+
+export const hasPendingCollection = (report: CollectionCycleReport): boolean =>
+  report.failures.length === 0 && report.jobs.some(job => job.hasMore)
 
 type PreparedCycle = {
   readonly startedAt: string
@@ -306,6 +317,7 @@ const collectAdapter = (
   const runtimes = yield* AdapterRuntimes
   const transport = yield* CollectorTransport
   const redactor = yield* SecretRedactor
+  let rawCaptureEnabled = yield* retryTransport(transport.rawCaptureEnabled(project))
   const snapshot = yield* states.snapshot(
     project.instanceOrigin,
     project.userId,
@@ -319,6 +331,9 @@ const collectAdapter = (
   let cursor = checkpoint?.cursor ?? null
   let expectedRevision = snapshot.checkpoint?.revision ?? 0
   let rawObjects = [...(checkpoint?.rawObjects ?? [])]
+  const cycleStarted = yield* Clock.currentTimeMillis
+  let progress: AdapterCollectionProgress | undefined
+  let canonicalEvents = 0, rawBytes = 0
   let pages = 0
   let observations = 0
   let canonicalBatches = 0
@@ -359,6 +374,7 @@ const collectAdapter = (
 
   while (pages < AdapterCollectionLimits.pagesPerCycle) {
     const request: HostedCollectRequest = {
+      rawCaptureEnabled,
       protocolVersion: AdapterProtocolVersion,
       cursor,
       limits: AdapterCollectionLimits,
@@ -373,6 +389,7 @@ const collectAdapter = (
     }
     const page = yield* runtime.collect(request)
     yield* validatePage(adapter.adapterId, cursor, page)
+    progress = page.progress ? { ...page.progress, rawCaptureEnabled } : undefined
     pages++
     sourceFailuresTruncated ||= page.sourceFailuresTruncated === true
     for (const failure of page.sourceFailures ?? []) {
@@ -385,7 +402,7 @@ const collectAdapter = (
     }
 
     for (const observation of page.observations) {
-      const redacted = redactObservation(redactor, observation)
+      const redacted = redactObservation(redactor, rawCaptureEnabled ? observation : { ...observation, rawSegments: [] })
       if (!redacted.observation.events.every(event => validAcpUpdate(event.update))) {
         return yield* contractFailure(adapter.adapterId, "contains tool or content values exceeding limits after redaction.")
       }
@@ -404,12 +421,13 @@ const collectAdapter = (
         }
       }))
       canonicalBatches++
+      canonicalEvents += redacted.observation.events.length
       const appended = yield* appendRawSegments({
         transport,
         instanceOrigin: project.instanceOrigin,
         installationId: snapshot.installationId,
         adapter,
-        original: observation,
+        original: rawCaptureEnabled ? observation : { ...observation, rawSegments: [] },
         redacted: redacted.observation,
         serverSessionId: canonical.sessionId,
         rawObjects,
@@ -418,9 +436,15 @@ const collectAdapter = (
           nextRawObjects,
           checkpoint?.adapterVersion ?? adapter.version
         )
-      })
+      }).pipe(Effect.catch(error => {
+        if (!(error instanceof CollectionTransportError) || error.reason !== "raw_disabled") return Effect.fail(error)
+        rawCaptureEnabled = false
+        if (progress) progress = { ...progress, rawCaptureEnabled: false, pendingRawBytes: 0 }
+        return Effect.succeed({ rawObjects: [...(checkpoint?.rawObjects ?? rawObjects)], chunks: 0, bytes: 0 })
+      }))
       rawObjects = appended.rawObjects
       rawChunks += appended.chunks
+      rawBytes += appended.bytes
       observations++
     }
 
@@ -435,6 +459,8 @@ const collectAdapter = (
   }
 
   return {
+    ...(progress === undefined ? {} : { progress }),
+    canonicalEvents, rawBytes, durationMs: (yield* Clock.currentTimeMillis) - cycleStarted,
     projectId: project.id,
     adapterId: adapter.adapterId,
     pages,
@@ -448,7 +474,7 @@ const collectAdapter = (
   }
 }))
 
-const appendRawSegments = (input: {
+type RawSegmentsInput = {
   readonly transport: CollectorTransportService
   readonly instanceOrigin: string
   readonly installationId: string
@@ -460,9 +486,41 @@ const appendRawSegments = (input: {
   readonly persist: (
     rawObjects: ReadonlyArray<CollectorRawObjectProgress>
   ) => Effect.Effect<void, CollectorStateError>
-}) => Effect.gen(function*() {
+}
+
+const appendRawSegments = (input: RawSegmentsInput) => Effect.gen(function*() {
+  if (input.original.rawSegments.length !== input.redacted.rawSegments.length) {
+    return yield* new CollectionContractError({ adapterId: input.adapter.adapterId,
+      message: "Redaction changed the Raw segment topology." })
+  }
+  const groups = new Map<string, number[]>()
+  input.redacted.rawSegments.forEach((segment, index) => {
+    const indices = groups.get(segment.sourceObjectId) ?? []
+    indices.push(index)
+    groups.set(segment.sourceObjectId, indices)
+  })
+  const lock = yield* Semaphore.make(1)
+  let acknowledged = [...input.rawObjects]
+  const results = yield* Effect.forEach([...groups], ([objectId, indices]) => appendRawObjectSegments({
+    ...input,
+    original: { ...input.original, rawSegments: indices.map(index => input.original.rawSegments[index]!) },
+    redacted: { ...input.redacted, rawSegments: indices.map(index => input.redacted.rawSegments[index]!) },
+    persist: progress => lock.withPermit(Effect.gen(function*() {
+      const changed = progress.find(item => item.sourceSessionId === input.redacted.session.sourceSessionId && item.sourceObjectId === objectId)
+      if (changed === undefined) return
+      const next = acknowledged.filter(item => !(item.sourceSessionId === changed.sourceSessionId && item.sourceObjectId === objectId))
+      next.push(changed)
+      yield* input.persist(next)
+      acknowledged = next
+    }).pipe(Effect.uninterruptible))
+  }), { concurrency: 3 })
+  return { rawObjects: acknowledged, chunks: results.reduce((sum, result) => sum + result.chunks, 0),
+    bytes: results.reduce((sum, result) => sum + result.bytes, 0) }
+})
+
+const appendRawObjectSegments = (input: RawSegmentsInput) => Effect.gen(function*() {
   let rawObjects = [...input.rawObjects]
-  let chunks = 0
+  let chunks = 0, bytes = 0
   for (let index = 0; index < input.redacted.rawSegments.length; index++) {
     const segment = input.redacted.rawSegments[index]
     const original = input.original.rawSegments[index]
@@ -527,6 +585,7 @@ const appendRawSegments = (input: {
           message: `Raw receipt for ${segment.sourceObjectId} does not match the submitted append position.`
         })
       }
+      bytes += utf8Bytes(content)
       serverOffset = expectedServerOffset
     }
     const next: CollectorRawObjectProgress = {
@@ -545,7 +604,7 @@ const appendRawSegments = (input: {
       : rawObjects.map((item, itemIndex) => itemIndex === existingIndex ? next : item)
     yield* input.persist(rawObjects)
   }
-  return { rawObjects, chunks }
+  return { rawObjects, chunks, bytes }
 })
 
 const splitRawTransportChunks = (content: string): ReadonlyArray<string> => {
@@ -600,6 +659,8 @@ const validatePage = (
   page: AdapterCollectionPage
 ): Effect.Effect<void, CollectionContractError> => {
   const fail = (message: string) => contractFailure(adapterId, message)
+  if (page.progress && [page.progress.sourceFiles, page.progress.pendingCanonicalSessions, page.progress.pendingRawBytes]
+    .some(value => value !== undefined && (!Number.isSafeInteger(value) || value < 0))) return fail("returned invalid collection progress counters.")
   if ((page.sourceFailures?.length ?? 0) > MaxSourceFailures ||
     page.sourceFailures?.some(f => !Schema.is(AdapterSourceFailure)(f) || !boundedText(f.source, 4096, false))) {
     return fail("returned invalid or excessive source diagnostics.")
@@ -607,10 +668,10 @@ const validatePage = (
   if (page.observations.length > AdapterCollectionLimits.observations) {
     return fail(`returned ${page.observations.length} observations; limit is ${AdapterCollectionLimits.observations}.`)
   }
-  if (page.nextCursor !== null && (page.nextCursor.length === 0 || page.nextCursor.length > 16_384)) {
+  if (page.nextCursor !== null && (page.nextCursor.length === 0 || page.nextCursor.length > 1024 * 1024)) {
     return fail("returned an invalid next cursor.")
   }
-  if (page.hasMore && (page.observations.length === 0 || page.nextCursor === null || page.nextCursor === requestCursor)) {
+  if (page.hasMore && (page.nextCursor === null || page.nextCursor === requestCursor)) {
     return fail("must advance a non-empty cursor when hasMore is true.")
   }
   if (page.observations.length > 0 && (page.nextCursor === null || page.nextCursor === requestCursor)) {
@@ -774,7 +835,12 @@ const retryTransport = <A>(
   attempts = 3
 ): Effect.Effect<A, CollectionTransportError> => effect.pipe(Effect.matchEffect({
   onFailure: (error) => error.retryable && attempts > 1
-    ? Effect.sleep((4 - attempts) * 100).pipe(Effect.flatMap(() => retryTransport(effect, attempts - 1)))
+    ? Effect.gen(function*() {
+        const jitter = yield* Random.next
+        const backoff = 500 * 2 ** (3 - attempts) * (1 + jitter)
+        yield* Effect.sleep(Math.min(60_000, Math.max(backoff, (error.retryAfterSeconds ?? 0) * 1000)))
+        return yield* retryTransport(effect, attempts - 1)
+      })
     : Effect.fail(error),
   onSuccess: Effect.succeed
 }))
@@ -792,7 +858,7 @@ const collectionFailureReason = (error: CollectionJobError): AdapterCollectionFa
   error instanceof CollectionTransportError
     ? error.reason === "unauthenticated" ? "unauthenticated" : "transport"
     : error instanceof AdapterRuntimeError
-      ? error.reason === "unauthenticated" ? "unauthenticated" : "adapter"
+      ? error.reason === "unauthenticated" ? "unauthenticated" : error.reason === "transport" ? "transport" : "adapter"
       : error instanceof CollectorStateError
         ? "state"
         : "contract"
@@ -801,6 +867,16 @@ export const hasUnauthenticatedFailure = (report: CollectionCycleReport): boolea
   report.failures.some((failure) => failure.reason === "unauthenticated")
 
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength
+const boundedRedactedTitle = (value: string) => {
+  let bytes = 0
+  let title = ""
+  for (const character of value) {
+    bytes += utf8Bytes(character)
+    if (bytes > 500) break
+    title += character
+  }
+  return title
+}
 const positiveInteger = (value: number) => Number.isSafeInteger(value) && value >= 1
 const nonNegativeInteger = (value: number) => Number.isSafeInteger(value) && value >= 0
 const validTimestamp = (value: string) =>
@@ -873,12 +949,12 @@ const redactAcpUpdate = (
     case "agent_thought_chunk":
       return { ...update, content: redactAcpContentBlock(update.content, redact) }
     case "tool_call":
-      return { ...update, ...redactToolValues(update, redact), title: redact(update.title) }
+      return { ...update, ...redactToolValues(update, redact), title: boundedRedactedTitle(redact(update.title)) }
     case "tool_call_update":
       return {
         ...update,
         ...redactToolValues(update, redact),
-        ...(typeof update.title === "string" ? { title: redact(update.title) } : {})
+        ...(typeof update.title === "string" ? { title: boundedRedactedTitle(redact(update.title)) } : {})
       }
   }
 }

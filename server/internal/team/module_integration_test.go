@@ -72,6 +72,55 @@ func TestTeamPostgresContract(t *testing.T) {
 	moduleA := newTeamModule(t, poolA, pepper, team.DefaultPolicy())
 	moduleB := newTeamModule(t, poolB, pepper, team.DefaultPolicy())
 
+	t.Run("Raw policy defaults, overrides and write authorization", func(t *testing.T) {
+		resetTeamState(t, poolA)
+		insertUsers(t, poolA)
+		alice, bob := webPrincipal(aliceID, false), webPrincipal(bobID, false)
+		created := createTeam(t, moduleA, alice, "raw-policy", "Raw policy", operationKey(99))
+		if _, err := poolA.Exec(ctx, "INSERT INTO team_memberships (team_id,user_id,role,status) VALUES ($1,$2,'member','active')", created.Team.ID, bobID); err != nil {
+			t.Fatal(err)
+		}
+		initial, err := moduleA.RawCaptureForTeam(ctx, alice, "raw-policy")
+		if err != nil || initial.TeamPolicy != "personal" || initial.UserPreference != "disable" || initial.Enabled {
+			t.Fatalf("defaults: %+v %v", initial, err)
+		}
+		for _, policy := range []string{"force", "personal", "close"} {
+			for _, preference := range []string{"enable", "disable"} {
+				if _, err := moduleA.SetUserRawCapture(ctx, alice, preference, "raw-user"); err != nil {
+					t.Fatal(err)
+				}
+				got, err := moduleA.SetTeamRawCapture(ctx, alice, "raw-policy", policy, "raw-team")
+				want := policy == "force" || policy == "personal" && preference == "enable"
+				if err != nil || got.Enabled != want {
+					t.Fatalf("%s/%s: %+v %v", policy, preference, got, err)
+				}
+			}
+		}
+		if _, err := moduleB.SetTeamRawCapture(ctx, bob, "raw-policy", "force", "member-denied"); err == nil {
+			t.Fatal("member changed Team policy")
+		}
+		cli := authentication.Principal{UserID: aliceID, Method: authentication.CLIAuthentication}
+		if _, err := moduleA.SetTeamRawCapture(ctx, cli, "raw-policy", "force", "cli-denied"); err == nil {
+			t.Fatal("CLI changed Team policy")
+		}
+		if _, err := moduleA.SetUserRawCapture(ctx, cli, "enable", "cli-denied"); err == nil {
+			t.Fatal("CLI changed personal preference")
+		}
+		if _, err := moduleA.RawCaptureForTeam(ctx, webPrincipal(eveID, false), "raw-policy"); err == nil {
+			t.Fatal("outsider read Team policy")
+		}
+		if _, err := moduleA.SetTeamRawCapture(ctx, alice, "raw-policy", "invalid", "invalid"); err == nil {
+			t.Fatal("invalid policy accepted")
+		}
+		if _, err := moduleA.SetUserRawCapture(ctx, alice, "invalid", "invalid"); err == nil {
+			t.Fatal("invalid preference accepted")
+		}
+		value, err := moduleB.UserRawCapture(ctx, bob)
+		if err != nil || value.Preference != "disable" {
+			t.Fatalf("another user preference changed: %+v %v", value, err)
+		}
+	})
+
 	t.Run("Team create is idempotent and Workspace is filtered", func(t *testing.T) {
 		resetTeamState(t, poolA)
 		insertUsers(t, poolA)

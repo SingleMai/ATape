@@ -512,6 +512,55 @@ func (q *Queries) GetProjectForUpdate(ctx context.Context, id string) (GetProjec
 	return i, err
 }
 
+const getRawCaptureMembershipForShare = `-- name: GetRawCaptureMembershipForShare :one
+SELECT team_id, user_id, role, status, created_at, updated_at, removed_at FROM team_memberships WHERE team_id = $1 AND user_id = $2 FOR SHARE
+`
+
+type GetRawCaptureMembershipForShareParams struct {
+	TeamID string
+	UserID pgtype.UUID
+}
+
+func (q *Queries) GetRawCaptureMembershipForShare(ctx context.Context, arg GetRawCaptureMembershipForShareParams) (TeamMembership, error) {
+	row := q.db.QueryRow(ctx, getRawCaptureMembershipForShare, arg.TeamID, arg.UserID)
+	var i TeamMembership
+	err := row.Scan(
+		&i.TeamID,
+		&i.UserID,
+		&i.Role,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.RemovedAt,
+	)
+	return i, err
+}
+
+const getRawCaptureSettings = `-- name: GetRawCaptureSettings :one
+SELECT t.raw_capture_policy, u.raw_capture_preference
+FROM workspace_teams t CROSS JOIN auth_users u
+JOIN team_memberships m ON m.user_id = u.id
+WHERE t.id = $1 AND u.id = $2 AND m.team_id = t.id
+  AND m.status = 'active' AND u.status = 'active'
+`
+
+type GetRawCaptureSettingsParams struct {
+	ID   string
+	ID_2 pgtype.UUID
+}
+
+type GetRawCaptureSettingsRow struct {
+	RawCapturePolicy     string
+	RawCapturePreference string
+}
+
+func (q *Queries) GetRawCaptureSettings(ctx context.Context, arg GetRawCaptureSettingsParams) (GetRawCaptureSettingsRow, error) {
+	row := q.db.QueryRow(ctx, getRawCaptureSettings, arg.ID, arg.ID_2)
+	var i GetRawCaptureSettingsRow
+	err := row.Scan(&i.RawCapturePolicy, &i.RawCapturePreference)
+	return i, err
+}
+
 const getTeamByID = `-- name: GetTeamByID :one
 SELECT id, slug, name, created_at, updated_at
 FROM workspace_teams
@@ -620,6 +669,17 @@ func (q *Queries) GetTeamBySlugForUpdate(ctx context.Context, slug *string) (Get
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getUserRawCapturePreference = `-- name: GetUserRawCapturePreference :one
+SELECT raw_capture_preference FROM auth_users WHERE id = $1
+`
+
+func (q *Queries) GetUserRawCapturePreference(ctx context.Context, id pgtype.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, getUserRawCapturePreference, id)
+	var raw_capture_preference string
+	err := row.Scan(&raw_capture_preference)
+	return raw_capture_preference, err
 }
 
 const insertJoinCode = `-- name: InsertJoinCode :one
@@ -1193,6 +1253,15 @@ func (q *Queries) ListVisibleTeams(ctx context.Context, userID pgtype.UUID) ([]L
 	return items, nil
 }
 
+const lockRawCaptureUserForUpdate = `-- name: LockRawCaptureUserForUpdate :exec
+SELECT id FROM auth_users WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockRawCaptureUserForUpdate(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockRawCaptureUserForUpdate, id)
+	return err
+}
+
 const makeRepositoryAliasCurrent = `-- name: MakeRepositoryAliasCurrent :execrows
 UPDATE team_project_repository_aliases
 SET current = TRUE
@@ -1418,6 +1487,34 @@ func (q *Queries) SetMembershipRole(ctx context.Context, arg SetMembershipRolePa
 		&i.RemovedAt,
 	)
 	return i, err
+}
+
+const setTeamRawCapturePolicy = `-- name: SetTeamRawCapturePolicy :exec
+UPDATE workspace_teams SET raw_capture_policy = $2, updated_at = clock_timestamp() WHERE id = $1
+`
+
+type SetTeamRawCapturePolicyParams struct {
+	ID               string
+	RawCapturePolicy string
+}
+
+func (q *Queries) SetTeamRawCapturePolicy(ctx context.Context, arg SetTeamRawCapturePolicyParams) error {
+	_, err := q.db.Exec(ctx, setTeamRawCapturePolicy, arg.ID, arg.RawCapturePolicy)
+	return err
+}
+
+const setUserRawCapturePreference = `-- name: SetUserRawCapturePreference :exec
+UPDATE auth_users SET raw_capture_preference = $2 WHERE id = $1
+`
+
+type SetUserRawCapturePreferenceParams struct {
+	ID                   pgtype.UUID
+	RawCapturePreference string
+}
+
+func (q *Queries) SetUserRawCapturePreference(ctx context.Context, arg SetUserRawCapturePreferenceParams) error {
+	_, err := q.db.Exec(ctx, setUserRawCapturePreference, arg.ID, arg.RawCapturePreference)
+	return err
 }
 
 const softDeleteProject = `-- name: SoftDeleteProject :one

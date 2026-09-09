@@ -60,7 +60,10 @@ const listen = async () => {
   const raw: Array<Record<string, unknown>> = []
   const authorizations: Array<string | undefined> = []
   let origin = ""
+  let policy: unknown = {teamPolicy: "force", userPreference: "disable", enabled: true}
+  let policyStatus = 200
   let matchStatus = 200
+  let canonicalProblem: unknown = undefined
   const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/api/v1/instance") {
       response.setHeader("Content-Type", "application/json")
@@ -74,6 +77,12 @@ const listen = async () => {
         auth_epoch: "auth-v1",
         minimum_cli_version: "0.2.0"
       }))
+      return
+    }
+    if (request.url?.endsWith("/raw-capture")) {
+      response.setHeader("Content-Type", "application/json")
+      response.statusCode = policyStatus
+      response.end(JSON.stringify(policy))
       return
     }
     const chunks: Array<Buffer> = []
@@ -92,6 +101,7 @@ const listen = async () => {
     }
     if (request.url === "/api/v1/ingestion/canonical/batches") {
       canonical.push(body)
+      if (canonicalProblem !== undefined) { response.statusCode = 409; response.end(JSON.stringify(canonicalProblem)); return }
       response.statusCode = 201
       response.end(JSON.stringify({
         sessionId: "s_checkout",
@@ -130,7 +140,7 @@ const listen = async () => {
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("test server did not bind TCP")
   origin = `http://127.0.0.1:${address.port}`
-  return { url: origin, canonical, raw, authorizations, setMatchStatus: (status: number) => { matchStatus = status } }
+  return { setPolicy: (value: unknown, status = 200) => { policy = value; policyStatus = status }, url: origin, canonical, raw, authorizations, setCanonicalProblem: (problem: unknown) => { canonicalProblem = problem }, setMatchStatus: (status: number) => { matchStatus = status } }
 }
 
 const authorize = <A extends { readonly run: <T, E>(effect: Effect.Effect<T, E, CLICredentialStore>) => Promise<T> }>(
@@ -312,6 +322,15 @@ describe("Node Collector Layers", () => {
       type: "directory",
     }))
 
+    remote.setCanonicalProblem({ code: "idempotency_conflict", requestId: "request-123", detail: "private source text" })
+    const conflict = await client.run(runCollectionCycle())
+    expect(conflict.failures[0]?.message).toBe("ATape canonical endpoint returned 409. idempotency_conflict request request-123")
+    remote.setCanonicalProblem({ code: "private source text", requestId: "private\nsource" })
+    expect((await client.run(runCollectionCycle())).failures[0]?.message).toBe("ATape canonical endpoint returned 409.")
+    remote.setCanonicalProblem(undefined)
+    remote.canonical.splice(0)
+    remote.authorizations.splice(0)
+    await writeFile(join(project, "adapter-calls.jsonl"), "")
     const first = await client.run(runCollectionCycle())
     const second = await client.run(runCollectionCycle())
     const state = JSON.parse(await readFile(client.paths.collectorStateFile, "utf8")) as {
@@ -413,6 +432,11 @@ describe("Node Collector Layers", () => {
     expect(failed.failures[0]).toMatchObject({ reason: "unauthenticated", retryable: false })
     expect(JSON.parse(await readFile(client.paths.collectorStateFile, "utf8"))).toEqual(before)
     expect(remote.canonical).toHaveLength(1)
+    remote.setMatchStatus(503)
+    const unavailable = await client.run(runCollectionCycle())
+    expect(unavailable.failures[0]).toMatchObject({ reason: "transport", retryable: true })
+    expect(JSON.parse(await readFile(client.paths.collectorStateFile, "utf8"))).toEqual(before)
+    expect(remote.canonical).toHaveLength(1)
     remote.setMatchStatus(200)
     expect((await client.run(runCollectionCycle())).failures).toEqual([])
   })
@@ -488,4 +512,22 @@ describe("Node Collector Layers", () => {
       finalized: true
     })
   })
+})
+
+it("loads authoritative Raw policy and rejects absent or malformed policies", async () => {
+  const client = await fixture(), server = await listen()
+  await authorize(client, server.url)
+  const load = () => client.run(CollectorTransport.use(t => t.rawCaptureEnabled({
+    instanceOrigin: server.url, userId: "user-1", id: "payments"
+  })))
+  server.setPolicy({ teamPolicy: "personal", userPreference: "disable", enabled: false })
+  expect(await load()).toBe(false)
+  server.setPolicy({ teamPolicy: "close", userPreference: "enable", enabled: false })
+  expect(await load()).toBe(false)
+  server.setPolicy({ teamPolicy: "force", userPreference: "disable", enabled: true })
+  expect(await load()).toBe(true)
+  server.setPolicy({ enabled: true })
+  await expect(load()).rejects.toThrow()
+  server.setPolicy({ code: "not_found" }, 404)
+  await expect(load()).rejects.toThrow()
 })

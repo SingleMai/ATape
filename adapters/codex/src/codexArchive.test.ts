@@ -6,7 +6,9 @@ import {
   type AdapterSourceProgress,
   type AtapeAdapterRuntime
 } from "@atape/domain"
-import { appendFile, mkdir, mkdtemp, realpath, rename, rm, utimes, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
+import { deflateRawSync } from "node:zlib"
+import { appendFile, mkdir, mkdtemp, realpath, readFile, rename, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -22,6 +24,156 @@ afterEach(async () => {
 })
 
 describe("Codex Adapter", () => {
+  it("recovers Raw rejected after Canonical was checkpointed", async () => {
+    const root = await makeEmptyFixture()
+    const file = join(root.sessionsDirectory, "denied.jsonl")
+    await writeJsonl(file, [sessionMeta({ id: "denied", cwd: root.project }),
+      itemCompleted("2026-09-09T00:00:00Z", "denied", { type: "AgentMessage", id: "answer", content: [{ type: "output_text", text: "captured" }] })])
+    const runtime = await openAdapter(root.project, "directory")
+    let cursor: string | null = null
+    let offered = false
+    for (let i = 0; i < 20; i++) {
+      const page = await collect(runtime, cursor)
+      cursor = page.nextCursor
+      if (page.observations.some(o => o.rawSegments.length > 0)) { offered = true; break }
+    }
+    expect(offered).toBe(true)
+    // The server refused Raw; the host retained Canonical and no Raw receipt.
+    const off = await collect(runtime, cursor, [], AdapterCollectionLimits, false)
+    cursor = off.nextCursor
+    let progress: ReadonlyArray<AdapterSourceProgress> = []
+    let raw = ""
+    for (let i = 0; i < 20; i++) {
+      const page = await collect(runtime, cursor, progress)
+      for (const o of page.observations) {
+        expect(page.nextCursor).not.toBe(cursor)
+        raw += o.rawSegments.map(s => s.content).join("")
+        progress = mergeProgress(progress, o.session.sourceSessionId, o.rawSegments)
+      }
+      cursor = page.nextCursor
+      if (!page.hasMore) break
+    }
+    expect(raw).toBe(await readFile(file, "utf8"))
+  })
+
+  it("collects Canonical with Raw disabled and backfills Raw when enabled", async () => {
+    const root = await makeEmptyFixture()
+    const file = join(root.sessionsDirectory, "policy.jsonl")
+    await writeJsonl(file, [sessionMeta({ id: "policy", cwd: root.project }),
+      itemCompleted("2026-09-09T00:00:00Z", "policy", { type: "AgentMessage", id: "answer", content: [{ type: "output_text", text: "captured without Raw" }] })])
+    const runtime = await openAdapter(root.project, "directory")
+    let cursor: string | null = null
+    const events: string[] = []
+    for (let i = 0; i < 20; i++) {
+      const page = await collect(runtime, cursor, [], AdapterCollectionLimits, false)
+      for (const o of page.observations) { events.push(...o.events.map(e => e.sourceEventId)); expect(o.rawSegments).toEqual([]) }
+      expect(page.progress?.pendingRawBytes).toBe(0)
+      cursor = page.nextCursor
+      if (!page.hasMore) break
+    }
+    expect(events).toEqual(["answer"])
+    let progress: ReadonlyArray<AdapterSourceProgress> = []
+    let raw = ""
+    for (let i = 0; i < 20; i++) {
+      const page = await collect(runtime, cursor, progress)
+      for (const o of page.observations) {
+        expect(o.events).toEqual([])
+        raw += o.rawSegments.map(s => s.content).join("")
+        progress = mergeProgress(progress, o.session.sourceSessionId, o.rawSegments)
+      }
+      cursor = page.nextCursor
+      if (!page.hasMore) break
+    }
+    expect(raw).toBe(await readFile(file, "utf8"))
+  })
+
+  it("yields a large Session to new work and retains every unfinished page across restarts", async () => {
+    const root = await makeEmptyFixture()
+    const large = join(root.sessionsDirectory, "large.jsonl")
+    await writeJsonl(large, [sessionMeta({ id: "large", cwd: root.project }), ...Array.from({ length: 30 }, (_, i) =>
+      itemCompleted("2026-09-05T00:01:00Z", "large", { type: "AgentMessage", id: `large-${i}`, content: [{ type: "output_text", text: `answer ${i}` }] }))])
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: 1 }
+    let runtime = await openAdapter(root.project, "directory")
+    let page = await collect(runtime, null, [], limits)
+    const ids = page.observations.flatMap(o => o.events.map(e => e.sourceEventId))
+    await writeJsonl(join(root.sessionsDirectory, "new.jsonl"), [sessionMeta({ id: "new", cwd: root.project }),
+      itemCompleted("2026-09-09T00:01:00Z", "new", { type: "AgentMessage", id: "new-answer", content: [{ type: "output_text", text: "new answer" }] })])
+    let progress: ReadonlyArray<AdapterSourceProgress> = []
+    let newPage = -1
+    for (let i = 1; i < 100; i++) {
+      runtime = await openAdapter(root.project, "directory")
+      page = await collect(runtime, page.nextCursor, progress, limits)
+      for (const observation of page.observations) {
+        for (const event of observation.events) { ids.push(event.sourceEventId); if (event.sourceEventId === "new-answer") newPage = i }
+        progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments)
+      }
+      if (!page.hasMore) break
+    }
+    expect(newPage).toBeGreaterThan(0)
+    expect(newPage).toBeLessThanOrEqual(4)
+    expect(ids).toHaveLength(31)
+    expect(new Set(ids).size).toBe(31)
+    expect(page.hasMore).toBe(false)
+  })
+
+  it("continues older Canonical history while multiple newer Sessions stay busy", async () => {
+    const root = await makeEmptyFixture()
+    const writeSession = async (id: string, at: string) => {
+      const path = join(root.sessionsDirectory, `${id}.jsonl`)
+      await writeJsonl(path, [sessionMeta({ id, cwd: root.project }), ...Array.from({ length: 40 }, (_, i) =>
+        itemCompleted(at, id, { type: "AgentMessage", id: `${id}-${i}`, content: [{ type: "output_text", text: `${id} answer ${i}` }] }))])
+      await utimes(path, new Date(at), new Date(at))
+    }
+    await writeSession("old", "2026-09-05T00:00:00Z")
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: 1 }
+    const runtime = await openAdapter(root.project, "directory")
+    let page = await collect(runtime, null, [], limits)
+    await writeSession("hot-a", "2026-09-09T00:00:00Z")
+    await writeSession("hot-b", "2026-09-09T00:01:00Z")
+    const ids = page.observations.flatMap(o => o.events.map(e => e.sourceEventId))
+    for (let i = 0; i < 20; i++) {
+      page = await collect(runtime, page.nextCursor, [], limits)
+      ids.push(...page.observations.flatMap(o => o.events.map(e => e.sourceEventId)))
+    }
+    expect(ids).toContain("hot-a-0")
+    expect(ids).toContain("hot-b-0")
+    expect(ids).toContain("old-4")
+  })
+
+  it("isolates a broken large record and resumes it after repair without forgetting other Sessions", async () => {
+    const root = await makeEmptyFixture()
+    const bad = join(root.sessionsDirectory, "bad.jsonl")
+    await writeJsonl(bad, [sessionMeta({ id: "bad", cwd: root.project })])
+    await appendFile(bad, "x".repeat(16 * 1024 * 1024 + 1))
+    await writeJsonl(join(root.sessionsDirectory, "good.jsonl"), [sessionMeta({ id: "good", cwd: root.project }),
+      itemCompleted("2026-09-05T00:01:00Z", "good", { type: "AgentMessage", id: "good-answer", content: [{ type: "output_text", text: "good" }] })])
+    const runtime = await openAdapter(root.project, "directory")
+    let page = await collect(runtime)
+    expect(page.sourceFailures).toContainEqual({ source: await realpath(bad), reason: "limit" })
+    page = await collect(runtime, page.nextCursor)
+    expect(requiredObservation(page).events.map(e => e.sourceEventId)).toEqual(["good-answer"])
+    await writeJsonl(bad, [sessionMeta({ id: "bad", cwd: root.project }),
+      itemCompleted("2026-09-05T00:01:00Z", "bad", { type: "AgentMessage", id: "repaired-answer", content: [{ type: "output_text", text: "repaired" }] })])
+    const repaired = await collect(runtime, page.nextCursor)
+    expect(requiredObservation(repaired).events.map(e => e.sourceEventId)).toEqual(["repaired-answer"])
+  })
+
+  it("reprojects same-size rewrites rather than skipping them at an old byte offset", async () => {
+    const fixture = await makeFixture()
+    const runtime = await openAdapter(fixture.project, "directory")
+    const first = await collect(runtime)
+    const raw = await collect(runtime, first.nextCursor)
+    const observation = requiredObservation(raw)
+    const progress = rawProgress(observation.session.sourceSessionId, observation.rawSegments)
+    const before = await readFile(fixture.rootFile, "utf8")
+    expect(before).toContain("Why were there two charges?")
+    await writeFile(fixture.rootFile, before.replace("Why were there two charges?", "Why were there SIX charges?"))
+    const modified = new Date("2026-09-09T00:02:00Z")
+    await utimes(fixture.rootFile, modified, modified)
+    const changed = await collect(runtime, raw.nextCursor, progress)
+    expect(requiredObservation(changed).events.map(e => e.sourceEventId)).toContain("user-1")
+  })
+
   it("projects a Codex session and its subagent while keeping Raw records separate", async () => {
     const fixture = await makeFixture()
     const runtime = await openAdapter(fixture.project, "directory")
@@ -433,7 +585,7 @@ describe("Codex Adapter", () => {
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
     expect(firstObservation.rawSegments).toEqual([])
-    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 6)
+    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 8)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
     const secondObservation = requiredObservation(second)
@@ -503,7 +655,7 @@ describe("Codex Adapter", () => {
 
     expect(observation.session.title).toBe("Checkout accessibility review")
     expect(observation.session.updatedAt).toBe("2026-09-05T00:03:00.000Z")
-    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 6)
+    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 8)
   })
 
   it("collects a title-only rename without new rollout or Raw bytes", async () => {
@@ -568,7 +720,7 @@ describe("Codex Adapter", () => {
     const changed = await collect(runtime, unchanged.nextCursor, progress)
     const changedObservation = requiredObservation(changed)
     expect(changedObservation.events.map((event) => event.sourceEventId)).toContain("agent-2")
-    expect(changedObservation.events.map((event) => event.sourceEventId)).toContain("user-1")
+    expect(changedObservation.events.map((event) => event.sourceEventId)).not.toContain("user-1")
     expect(changedObservation.rawSegments).toEqual([])
     const changedRaw = await collect(runtime, changed.nextCursor, progress)
     const changedRawObservation = requiredObservation(changedRaw)
@@ -636,6 +788,80 @@ describe("Codex Adapter", () => {
     expect(requiredObservation(recovered).events.length).toBeGreaterThan(0)
     expect(requiredObservation(await collect(runtime, recovered.nextCursor)).rawSegments.length).toBeGreaterThan(0)
     await expect(openAdapter(root.project, "git")).rejects.toThrow("Upgrade")
+  })
+
+  it("attributes paginated files independently from their shared Thread and keeps identity after archival", async () => {
+    const root = await makeEmptyFixture()
+    const original = join(root.sessionsDirectory, "root.jsonl")
+    const segment = join(root.sessionsDirectory, "root_segment.jsonl")
+    const first = sessionMeta({ id: "shared-thread", cwd: root.project, repository: "git@github.com:example/project.git" })
+    const next = sessionMeta({ id: "shared-thread", cwd: root.project, repository: "git@github.com:example/project.git", timestamp: "2026-09-05T01:00:00.000Z" })
+    await writeJsonl(original, [first, itemCompleted("2026-09-05T00:01:00.000Z", "shared-thread", {
+      type: "AgentMessage", id: "original-event", content: [{ type: "output_text", text: "Original answer" }]
+    })])
+    await writeJsonl(segment, [{ ...next, payload: { ...next.payload, history_mode: "paginated",
+      history_base: { thread_id: "shared-thread", end_ordinal_exclusive: 10, end_byte_offset: 100 }
+    } }, itemCompleted("2026-09-05T01:01:00.000Z", "shared-thread", {
+      type: "AgentMessage", id: "segment-event", content: [{ type: "output_text", text: "Recent answer" }]
+    })])
+    const bindings = new Map<string, string>([["shared-thread", JSON.stringify(["shared-thread", first.payload.timestamp])]])
+    const sources = new Set<string>()
+    const attribution: NonNullable<import("@atape/domain").AdapterOpenContext["gitAttribution"]> = {
+      version: "atape.git-attribution.v1",
+      resolve: async source => {
+        sources.add(source.sourceId)
+        if (bindings.has(source.sourceId) && bindings.get(source.sourceId) !== source.originKey) return "unknown"
+        bindings.set(source.sourceId, source.originKey)
+        return "included"
+      }
+    }
+    const runtime = await openAdapter(root.project, "git", attribution)
+    const canonical = await collect(runtime)
+    expect(canonical.sourceFailures).toBeUndefined()
+    expect(requiredObservation(canonical).events.map(event => event.sourceEventId)).toEqual(["original-event", "segment-event"])
+    expect(sources.size).toBe(2)
+    expect(sources.has("shared-thread")).toBe(true)
+    const raw = await collect(runtime, canonical.nextCursor)
+    expect(requiredObservation(raw).rawSegments).toHaveLength(2)
+    const previousSources = new Set(sources)
+    await rename(segment, join(root.archivedDirectory, "root_segment.jsonl"))
+    const reopened = await openAdapter(root.project, "git", attribution)
+    const afterMove = await collect(reopened, raw.nextCursor, rawProgress("shared-thread", requiredObservation(raw).rawSegments))
+    expect(afterMove.sourceFailures).toBeUndefined()
+    expect(sources).toEqual(previousSources)
+  })
+
+  it("publishes newly attributable files behind the watermark in an already captured Session before Raw", async () => {
+    const root = await makeEmptyFixture()
+    const original = join(root.sessionsDirectory, "original.jsonl")
+    const segment = join(root.sessionsDirectory, "segment.jsonl")
+    for (const [path, id, paginated] of [[original, "old-event", false], [segment, "new-event", true]] as const) {
+      const meta = sessionMeta({ id: "known-session", cwd: root.project })
+      await writeJsonl(path, [{ ...meta, payload: { ...meta.payload, ...(paginated ? { history_mode: "paginated" } : {}) } },
+        itemCompleted("2026-09-05T00:01:00.000Z", "known-session", {
+          type: "AgentMessage", id, content: [{ type: "output_text", text: id }]
+        })])
+    }
+    await utimes(original, new Date("2026-09-05T01:00:00Z"), new Date("2026-09-05T01:00:00Z"))
+    await utimes(segment, new Date("2026-09-04T01:00:00Z"), new Date("2026-09-04T01:00:00Z"))
+    let includeSegment = false
+    const runtime = await openAdapter(root.project, "git", {
+      version: "atape.git-attribution.v1",
+      resolve: async source => source.sourceId === "known-session" || includeSegment ? "included" : "excluded"
+    })
+    const first = await collect(runtime)
+    const oldRaw = await collect(runtime, first.nextCursor)
+    const progress = rawProgress("known-session", requiredObservation(oldRaw).rawSegments)
+    expect(progress).toHaveLength(1)
+    includeSegment = true
+    const recovered = await collect(runtime, oldRaw.nextCursor, progress)
+    expect(requiredObservation(recovered).events.map(event => event.sourceEventId)).toContain("new-event")
+    expect(requiredObservation(recovered).rawSegments).toEqual([])
+    const newRaw = await collect(runtime, recovered.nextCursor, progress)
+    expect(requiredObservation(newRaw).rawSegments).toHaveLength(1)
+    expect(requiredObservation(newRaw).rawSegments[0]?.sourceName).toBe("segment.jsonl")
+    const complete = mergeProgress(progress, "known-session", requiredObservation(newRaw).rawSegments)
+    expect((await collect(runtime, newRaw.nextCursor, complete)).observations).toEqual([])
   })
 
   it("skips foreign and unknown Git sources while capturing and resuming healthy history", async () => {
@@ -749,6 +975,208 @@ describe("Codex Adapter", () => {
     expect(Buffer.byteLength(rawObservation.rawSegments[0]?.content ?? "")).toBeGreaterThan(4 * 1024 * 1024)
     expect(rawObservation.rawSegments[0]?.content).toContain('"type":"compacted"')
     expect(Buffer.byteLength(JSON.stringify(observation.events))).toBeLessThan(10_000)
+  })
+
+  it("publishes the last cumulative item update across page boundaries and advances its revision after append", async () => {
+    const root = await makeEmptyFixture()
+    const path = join(root.sessionsDirectory, "updates.jsonl")
+    const item = (text: string, at: string) => itemCompleted(at, "updates", { type: "Reasoning", id: "item-297", summary_text: [text] })
+    await writeJsonl(path, [sessionMeta({ id: "updates", cwd: root.project }),
+      item("first fragment", "2026-09-05T00:01:00Z"),
+      itemCompleted("2026-09-05T00:01:01Z", "updates", { type: "AgentMessage", id: "separator", content: [{ type: "output_text", text: "answer" }] }),
+      item("first fragment and the rest", "2026-09-05T00:01:02Z")])
+    await utimes(path, new Date("2026-09-05T00:02:00Z"), new Date("2026-09-05T00:02:00Z"))
+    let cursor: string | null = null
+    let progress: ReadonlyArray<AdapterSourceProgress> = []
+    const events: AdapterCollectionPage["observations"][number]["events"][number][] = []
+    for (let i = 0; i < 10; i++) {
+      const runtime = await openAdapter(root.project, "directory")
+      const page = await collect(runtime, cursor, progress, { ...AdapterCollectionLimits, eventsPerObservation: 1 })
+      for (const observation of page.observations) { events.push(...observation.events); progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments) }
+      cursor = page.nextCursor
+      if (!page.hasMore) break
+    }
+    expect(events.map(e => e.sourceEventId)).toEqual(["separator", "item-297"])
+    expect(events[1]?.update).toMatchObject({ content: { text: "first fragment and the rest" } })
+    await appendFile(path, JSON.stringify(item("final cumulative answer", "2026-09-05T00:03:00Z")) + "\n")
+    await utimes(path, new Date("2026-09-05T00:04:00Z"), new Date("2026-09-05T00:04:00Z"))
+    const appended = requiredObservation(await collect(await openAdapter(root.project, "directory"), cursor, progress))
+    expect(appended.events).toHaveLength(1)
+    expect(appended.events[0]?.sourceEventId).toBe("item-297")
+    expect(appended.events[0]!.revision).toBeGreaterThan(events[1]!.revision)
+    expect(appended.events[0]?.update).toMatchObject({ content: { text: "final cumulative answer" } })
+  })
+
+  it("replays old Canonical projection checkpoints while retaining acknowledged Raw bytes", async () => {
+    const fixture = await makeFixture()
+    const runtime = await openAdapter(fixture.project, "directory")
+    const first = await collect(runtime)
+    const raw = await collect(runtime, first.nextCursor)
+    const observation = requiredObservation(raw)
+    const progress = rawProgress(observation.session.sourceSessionId, observation.rawSegments)
+    const state = JSON.parse(Buffer.from(raw.nextCursor!, "base64url").toString("utf8"))
+    delete state.eventProjectionVersion
+    let page = await collect(await openAdapter(fixture.project, "directory"), Buffer.from(JSON.stringify(state)).toString("base64url"), progress)
+    expect(requiredObservation(page).events.map(e => e.sourceEventId)).toEqual(requiredObservation(first).events.map(e => e.sourceEventId))
+    for (let i = 0; i < 10; i++) {
+      expect(page.observations.flatMap(o => o.rawSegments)).toEqual([])
+      if (!page.hasMore) break
+      page = await collect(runtime, page.nextCursor, progress)
+    }
+    expect(page.hasMore).toBe(false)
+  })
+
+  it("reuses discovery across short Sessions but reauthorizes the selected source", async () => {
+    const root = await makeEmptyFixture()
+    for (const [index, id] of ["alpha", "beta", "gamma"].entries()) {
+      const path = join(root.sessionsDirectory, `${id}.jsonl`)
+      await writeJsonl(path, [sessionMeta({ id, cwd: root.project }), itemCompleted("2026-09-05T00:01:00Z", id,
+        { type: "AgentMessage", id: `${id}-answer`, content: [{ type: "output_text", text: id }] })])
+      await utimes(path, new Date(1788566400000 + index * 1000), new Date(1788566400000 + index * 1000))
+    }
+    const sources: string[] = []
+    let denied = ""
+    const runtime = await openAdapter(root.project, "git", { version: "atape.git-attribution.v1",
+      resolve: async source => { sources.push(source.sourceId); return source.sourceId === denied ? "excluded" : "included" } })
+    const first = await collect(runtime)
+    expect(requiredObservation(first).session.sourceSessionId).toBe("alpha")
+    expect(sources).toHaveLength(3)
+    sources.length = 0
+    const second = await collect(runtime, first.nextCursor)
+    expect(requiredObservation(second).session.sourceSessionId).toBe("gamma")
+    expect(sources).toEqual(["gamma"])
+    denied = "beta"
+    const next = await collect(runtime, second.nextCursor)
+    expect(sources).toContain("beta")
+    expect(next.observations.every(o => o.session.sourceSessionId !== "beta")).toBe(true)
+  })
+
+  it("refreshes only active sources while still honoring changed attribution on continuation pages", async () => {
+    const root = await makeEmptyFixture()
+    const hot = join(root.sessionsDirectory, "hot.jsonl")
+    await writeJsonl(hot, [sessionMeta({ id: "hot", cwd: root.project }), ...[1, 2, 3].map(i =>
+      itemCompleted(`2026-09-05T00:00:0${i}.000Z`, "hot", {
+        type: "AgentMessage", id: `hot-${i}`, content: [{ type: "output_text", text: `Answer ${i}` }]
+      }))])
+    await Promise.all(Array.from({ length: 20 }, (_, i) => writeJsonl(join(root.sessionsDirectory, `foreign-${i}.jsonl`), [
+      sessionMeta({ id: `foreign-${i}`, cwd: root.project })
+    ])))
+    let allowed = true
+    const sources: string[] = []
+    const runtime = await openAdapter(root.project, "git", {
+      version: "atape.git-attribution.v1",
+      resolve: async source => { sources.push(source.sourceId); return allowed && source.sourceId === "hot" ? "included" : "excluded" }
+    })
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: 1 }
+    const first = await collect(runtime, null, [], limits)
+    expect(requiredObservation(first).events.map(event => event.sourceEventId)).toEqual(["hot-1"])
+    expect(sources).toHaveLength(21)
+    sources.length = 0
+    const second = await collect(runtime, first.nextCursor, [], limits)
+    expect(requiredObservation(second).events.map(event => event.sourceEventId)).toEqual(["hot-2"])
+    expect(sources).toEqual(["hot"])
+    allowed = false
+    expect((await collect(runtime, second.nextCursor, [], limits)).observations).toEqual([])
+  })
+
+  it("finds archived active files and newly created Sessions at the next discovery boundary", async () => {
+    const root = await makeEmptyFixture()
+    const file = join(root.sessionsDirectory, "moving.jsonl")
+    await writeJsonl(file, [sessionMeta({ id: "moving", cwd: root.project }), ...[1, 2].map(i =>
+      itemCompleted(`2026-09-05T00:00:0${i}.000Z`, "moving", {
+        type: "AgentMessage", id: `moving-${i}`, content: [{ type: "output_text", text: `Answer ${i}` }]
+      }))])
+    const runtime = await openAdapter(root.project, "directory")
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: 1 }
+    const first = await collect(runtime, null, [], limits)
+    await rename(file, join(root.archivedDirectory, "moving.jsonl"))
+    await writeJsonl(join(root.sessionsDirectory, "new.jsonl"), [sessionMeta({ id: "new", cwd: root.project }),
+      itemCompleted("2026-09-05T01:00:00.000Z", "new", {
+        type: "AgentMessage", id: "new-event", content: [{ type: "output_text", text: "New conversation" }]
+      })])
+    let cursor = first.nextCursor
+    const ids: string[] = []
+    for (let i = 0; i < 4; i++) {
+      const next = await collect(runtime, cursor, [], limits)
+      ids.push(...next.observations.flatMap(o => o.events.map(e => e.sourceEventId)))
+      cursor = next.nextCursor
+      if (ids.includes("new-event")) break
+    }
+    expect(ids).toContain("moving-2")
+    expect(ids).toContain("new-event")
+  })
+
+  it("refreshes projection ownership when a file changes between continuation pages", async () => {
+    const root = await makeEmptyFixture()
+    await writeJsonl(join(root.sessionsDirectory, "a.jsonl"), [
+      sessionMeta({ id: "changing-session", cwd: root.project }),
+      itemCompleted("2026-09-05T00:01:00.000Z", "changing-session", {
+        type: "AgentMessage", id: "first", content: [{ type: "output_text", text: "First" }]
+      })
+    ])
+    const changing = join(root.sessionsDirectory, "b.jsonl")
+    const records = (id: string) => [
+      sessionMeta({ id: "changing-session", cwd: root.project }),
+      responseItem("2026-09-05T00:02:00.000Z", {
+        type: "message", role: "assistant", id, content: [{ type: "output_text", text: "Second" }]
+      })
+    ]
+    await writeJsonl(changing, records("before"))
+    const runtime = await openAdapter(root.project, "directory")
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: 1 }
+    const first = await collect(runtime, null, [], limits)
+    expect(requiredObservation(first).events.map(event => event.sourceEventId)).toEqual(["first"])
+    await writeJsonl(changing, records("after!"))
+    const changedAt = new Date(Date.now() + 1000)
+    await utimes(changing, changedAt, changedAt)
+    const next = await collect(runtime, first.nextCursor, [], limits)
+    expect(requiredObservation(next).events.map(event => event.sourceEventId)).toEqual(["after!"])
+  })
+
+  it("resumes a 100-file Session within the cursor limit and captures every event and Raw file", async () => {
+    const root = await makeEmptyFixture()
+    await Promise.all(Array.from({ length: 100 }, async (_, i) => {
+      await writeJsonl(join(root.sessionsDirectory, `rollout-2026-09-05T03-00-00-${randomUUID()}.jsonl`), [
+        sessionMeta({ id: "many-files", cwd: root.project }),
+        itemCompleted("2026-09-05T03:00:01.000Z", "many-files", {
+          type: "AgentMessage", id: `event-${i}`, content: [{ type: "output_text", text: `Answer ${i}` }]
+        })
+      ])
+    }))
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: 10 }
+    let cursor: string | null = null
+    let progress: ReadonlyArray<AdapterSourceProgress> = []
+    const events: Array<string> = []
+    let completed = false
+    let compressed = false
+    for (let i = 0; i < 30; i++) {
+      const runtime = await openAdapter(root.project, "directory")
+      const page = await collect(runtime, cursor, progress, limits)
+      expect(Buffer.byteLength(page.nextCursor ?? "")).toBeLessThanOrEqual(16_000)
+      compressed ||= page.nextCursor?.startsWith("z1:") === true
+      for (const observation of page.observations) {
+        events.push(...observation.events.map(event => event.sourceEventId))
+        progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments)
+      }
+      cursor = page.nextCursor
+      if (!page.hasMore) { completed = true; break }
+    }
+    expect(compressed).toBe(true)
+    expect(completed).toBe(true)
+    expect(events).toHaveLength(100)
+    expect(new Set(events).size).toBe(100)
+    expect(progress).toHaveLength(100)
+    expect(progress.every(file => file.sourceOffset > 0)).toBe(true)
+  })
+
+  it.each([
+    "z1:not-a-deflate-stream",
+    `z1:${deflateRawSync(Buffer.alloc(256 * 1024 + 1, 32)).toString("base64url")}`,
+    "x".repeat(16_001)
+  ])("rejects corrupt or oversized compressed cursor input", async cursor => {
+    const root = await makeEmptyFixture()
+    const runtime = await openAdapter(root.project, "directory")
+    await expect(collect(runtime, cursor)).rejects.toMatchObject({ reason: "cursor" })
   })
 
   it("paginates Canonical and Raw independently by byte limits", async () => {
@@ -905,12 +1333,14 @@ const collect = async (
   runtime: AtapeAdapterRuntime,
   cursor: string | null = null,
   rawProgressValue: ReadonlyArray<AdapterSourceProgress> = [],
-  limits: AdapterCollectionLimitValues = AdapterCollectionLimits
+  limits: AdapterCollectionLimitValues = AdapterCollectionLimits,
+  rawCaptureEnabled = true
 ) => await runtime.collect({
   protocolVersion: AdapterProtocolVersion,
   cursor,
   limits,
   rawProgress: rawProgressValue,
+  rawCaptureEnabled,
   signal: AbortSignal.timeout(5_000)
 }) as AdapterCollectionPage
 

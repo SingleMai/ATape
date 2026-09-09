@@ -4,7 +4,7 @@ import {
   CLICredentialStore
 } from "@atape/application"
 import type { InstanceMetadata, StoredCLICredential } from "@atape/domain"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   AuthenticatedHTTPClient,
@@ -36,8 +36,10 @@ const fixture = (options: {
   readonly stored?: StoredCLICredential
   readonly metadata?: InstanceMetadata
   readonly device?: import("@atape/domain").CLIDeviceMetadata
+  readonly fetch?: typeof fetch
 } = {}) => {
   let discoveries = 0
+  const logs: unknown[] = []
   const fetches: Array<{ readonly url: string; readonly init?: RequestInit }> = []
   const dependencies = Layer.mergeAll(
     Layer.succeed(CLICredentialStore, CLICredentialStore.of({
@@ -66,16 +68,35 @@ const fixture = (options: {
       headers: { "content-type": "application/json" }
     })
   }) as typeof fetch
-  const layer = makeAuthenticatedHTTPClientLayer(fetchImplementation, false, options.device === undefined ? undefined : Effect.succeed(options.device)).pipe(Layer.provide(dependencies))
+  const layer = makeAuthenticatedHTTPClientLayer(options.fetch ?? fetchImplementation, false, options.device === undefined ? undefined : Effect.succeed(options.device)).pipe(Layer.provide(dependencies))
   return {
     discoveries: () => discoveries,
     fetches,
+    logs,
     run: <A, E>(effect: Effect.Effect<A, E, AuthenticatedHTTPClient>) =>
-      effect.pipe(Effect.provide(layer), Effect.runPromise)
+      effect.pipe(Effect.provide(layer), Effect.provide(Logger.layer([Logger.make(options => { logs.push(options.message) })])), Effect.runPromise)
   }
 }
 
 describe("authenticated CLI HTTP boundary", () => {
+  it.each([
+    [new DOMException("private message", "TimeoutError"), "timeout", "TimeoutError"],
+    [new TypeError("private URL", { cause: Object.assign(new Error("private address"), { code: "ENOTFOUND" }) }), "dns", "ENOTFOUND"],
+    [new TypeError("private payload", { cause: new AggregateError([Object.assign(new Error("private IP"), { code: "ECONNRESET" })]) }), "connection", "ECONNRESET"],
+    [Object.assign(new Error("private certificate"), { code: "CERT_HAS_EXPIRED" }), "tls", "CERT_HAS_EXPIRED"],
+    [Object.assign(new Error("private exception"), { code: "private-code" }), "unknown", undefined]
+  ] as const)("retains bounded network diagnostics without leaking exception data (%#)", async (cause, kind, code) => {
+    const client = fixture({ fetch: (async () => { throw cause }) as typeof fetch })
+    await expect(client.run(AuthenticatedHTTPClient.use(http => http.request({
+      instanceOrigin: credential.instanceOrigin, path: "/api/v1/project-matches", method: "POST", body: { secret: "private-body" }
+    })))).rejects.toMatchObject({ reason: "network", networkKind: kind,
+      ...(code ? { networkCode: code } : {}), message: expect.stringContaining("project_match") })
+    const logs = JSON.stringify(client.logs)
+    expect(logs).toContain('"networkKind":"' + kind + '"')
+    expect(logs).toContain('"elapsedMs":')
+    expect(logs).not.toMatch(/private|Bearer|https:|secret/)
+  })
+
   it("reports Unicode device names and Adapter state without local paths or credentials", async () => {
     const device = { name: "Mai 的 Mac", platform: "darwin arm64", version: "0.4.5", adapters: [{ id: "codex", version: "0.4.5", enabled: false }] }
     const client = fixture({ device })

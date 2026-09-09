@@ -6,7 +6,7 @@ import { normalizeInstanceTopology, type StoredCLICredential } from "@atape/doma
 import { hostname, platform, arch } from "node:os"
 import { cliVersion } from "../version.ts"
 import type { CLIDeviceMetadata } from "@atape/domain"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
 
 const MaximumBodyBytes = 1024 * 1024
 const MetadataCacheMillis = 5 * 60 * 1_000
@@ -25,6 +25,8 @@ export class AuthenticatedHTTPError extends Schema.TaggedError<AuthenticatedHTTP
     ]),
     message: Schema.String,
     status: Schema.optionalKey(Schema.Number),
+    networkKind: Schema.optionalKey(Schema.Literals(["timeout", "dns", "connection", "tls", "redirect", "unknown"])),
+    networkCode: Schema.optionalKey(Schema.String),
     retryAfterSeconds: Schema.optionalKey(Schema.Number)
   }
 ) {}
@@ -64,21 +66,42 @@ export const makeAuthenticatedHTTPClientLayer = (
 
   return AuthenticatedHTTPClient.of({
     request: (input) => Effect.gen(function*() {
-      const credential = yield* credentials.read(input.instanceOrigin).pipe(
-        Effect.mapError(() => failure("local_store", "Could not read the local CLI credential."))
-      )
-      if (credential === undefined) {
-        return yield* failure("unauthenticated", `Sign in to ${input.instanceOrigin} with \`atape login\` first.`)
-      }
-      if (input.expectedUserId !== undefined && credential.user.id !== input.expectedUserId) {
-        return yield* failure(
-          "identity_changed",
-          "The active CLI account differs from this local Project; run setup again for the current account."
+      const startedAt = yield* Clock.currentTimeMillis
+      const operation = requestOperation(input.path)
+      return yield* Effect.gen(function*() {
+        const credential = yield* credentials.read(input.instanceOrigin).pipe(
+          Effect.mapError(() => failure("local_store", "Could not read the local CLI credential."))
         )
-      }
-      yield* verifyPinnedTopology(authentication, credential, verified, allowLoopbackHttp)
-      const device = input.deviceReport ?? (yield* cachedDeviceReport)
-      return yield* credentialedRequest(fetchImplementation, credential, input, device)
+        if (credential === undefined) {
+          return yield* failure("unauthenticated", `Sign in to ${input.instanceOrigin} with \`atape login\` first.`)
+        }
+        if (input.expectedUserId !== undefined && credential.user.id !== input.expectedUserId) {
+          return yield* failure(
+            "identity_changed",
+            "The active CLI account differs from this local Project; run setup again for the current account."
+          )
+        }
+        yield* verifyPinnedTopology(authentication, credential, verified, allowLoopbackHttp)
+        const device = input.deviceReport ?? (yield* cachedDeviceReport)
+        return yield* credentialedRequest(fetchImplementation, credential, input, device)
+      }).pipe(
+        Effect.tapError(error => Effect.gen(function*() {
+          // Never log exception messages, request URLs, bodies or credentials.
+          yield* Effect.logWarning("ATape API request failed", {
+            operation,
+            method: input.method,
+            reason: error.reason,
+            networkKind: error.networkKind,
+            networkCode: error.networkCode,
+            elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
+          })
+        })),
+        Effect.tap(response => response.status >= 400
+          ? Effect.logWarning("ATape API request rejected", {
+              operation, method: input.method, status: response.status,
+              retryAfterSeconds: response.retryAfterSeconds
+            }) : Effect.void)
+      )
     })
   })
 }))
@@ -134,7 +157,9 @@ const credentialedRequest = (
       headers,
       ...(body === undefined ? {} : { body }),
       redirect: "error",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+      signal: AbortSignal.any([signal, AbortSignal.timeout(
+        input.path === "/api/v1/ingestion/canonical/batches" || input.path === "/api/v1/ingestion/raw/chunks" ? 60_000 : 10_000
+      )])
     })
     const bytes = response.status === 204 ? new Uint8Array() : await readBounded(response)
     let responseBody: unknown = undefined
@@ -158,8 +183,51 @@ const credentialedRequest = (
   },
   catch: (cause) => cause instanceof InvalidHTTPResponse
     ? failure("invalid_response", "The ATape API returned an invalid response.")
-    : failure("network", "Could not reach the authenticated ATape API.")
+    : networkFailure(cause, input.path)
 })
+
+const requestOperation = (path: string) => {
+  switch (path) {
+    case "/api/v1/project-matches": return "project_match"
+    case "/api/v1/ingestion/canonical/batches": return "canonical_upload"
+    case "/api/v1/ingestion/raw/chunks": return "raw_upload"
+    default: return "control"
+  }
+}
+
+const networkCodes = new Map<string, NonNullable<AuthenticatedHTTPError["networkKind"]>>([
+  ["TimeoutError", "timeout"], ["ETIMEDOUT", "timeout"],
+  ["UND_ERR_CONNECT_TIMEOUT", "timeout"], ["UND_ERR_HEADERS_TIMEOUT", "timeout"], ["UND_ERR_BODY_TIMEOUT", "timeout"],
+  ["ENOTFOUND", "dns"], ["EAI_AGAIN", "dns"],
+  ["ECONNRESET", "connection"], ["ECONNREFUSED", "connection"], ["EPIPE", "connection"],
+  ["ENETUNREACH", "connection"], ["EHOSTUNREACH", "connection"], ["UND_ERR_SOCKET", "connection"],
+  ["CERT_HAS_EXPIRED", "tls"], ["DEPTH_ZERO_SELF_SIGNED_CERT", "tls"],
+  ["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "tls"], ["ERR_TLS_CERT_ALTNAME_INVALID", "tls"],
+  ["UND_ERR_REDIRECT", "redirect"]
+])
+
+const networkFailure = (cause: unknown, path: string): AuthenticatedHTTPError => {
+  // Node fetch may wrap a system error in TypeError.cause or AggregateError.
+  // Inspect bounded nodes and only emit known codes; arbitrary messages can
+  // contain destinations, query strings, credentials or source content.
+  const pending: unknown[] = [cause]
+  for (let inspected = 0; pending.length > 0 && inspected < 16; inspected++) {
+    const current = pending.shift()
+    if (typeof current !== "object" || current === null) continue
+    const error = current as { code?: unknown; name?: unknown; cause?: unknown; errors?: unknown }
+    for (const code of [error.code, error.name]) {
+      const kind = typeof code === "string" ? networkCodes.get(code) : undefined
+      if (kind) return new AuthenticatedHTTPError({
+        reason: "network", networkKind: kind, networkCode: code as string,
+        message: `ATape ${requestOperation(path)} request failed: ${kind} (${code}).`
+      })
+    }
+    pending.push(error.cause)
+    if (Array.isArray(error.errors)) pending.push(...error.errors.slice(0, 4))
+  }
+  return new AuthenticatedHTTPError({ reason: "network", networkKind: "unknown",
+    message: `ATape ${requestOperation(path)} request failed: unknown network error.` })
+}
 
 const readBounded = async (response: Response): Promise<Uint8Array> => {
   const declared = response.headers.get("content-length")

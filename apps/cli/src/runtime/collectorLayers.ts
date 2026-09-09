@@ -324,7 +324,8 @@ const loadAdapterRuntime = (
   let resolver = attribution.forProject(project, adapter.adapterId)
   let attributionFailure: GitAttributionError | undefined
   const attributionRuntimeFailure = () => runtimeFailure(adapter.adapterId,
-    attributionFailure?.reason === "unauthenticated" ? "unauthenticated" : "collect",
+    attributionFailure?.reason === "unauthenticated" ? "unauthenticated"
+      : attributionFailure?.reason === "transport" ? "transport" : "collect",
     attributionFailure?.reason === "transport" || attributionFailure?.reason === "io",
     attributionFailure?.message ?? "Could not determine Git source attribution.")
   const foreign = yield* Effect.tryPromise({
@@ -366,6 +367,10 @@ const loadAdapterRuntime = (
   }
   const hosted: HostedAdapter = {
     collect: (request) => Effect.suspend(() => {
+      if (request.rawCaptureEnabled === false && manifest.rawCapturePolicy !== "atape.raw-capture.v1") {
+        return Effect.fail(runtimeFailure(adapter.adapterId, "contract", false,
+          `Upgrade Adapter ${adapter.adapterId} to support the Team Raw capture policy.`))
+      }
       resolver = attribution.forProject(project, adapter.adapterId)
       attributionFailure = undefined
       return Effect.tryPromise({
@@ -415,6 +420,22 @@ export const makeCollectorTransportLayer = () => Layer.effect(
   Effect.gen(function*() {
     const client = yield* AuthenticatedHTTPClient
     return CollectorTransport.of({
+    rawCaptureEnabled: project => client.request({
+      instanceOrigin: project.instanceOrigin, expectedUserId: project.userId,
+      path: `/api/v1/projects/${encodeURIComponent(project.id)}/raw-capture`, method: "GET"
+    }).pipe(
+      Effect.mapError(error => transportError("policy", error)),
+      Effect.flatMap(response => response.status === 200
+        ? Schema.decodeUnknownEffect(Schema.Struct({ teamPolicy: Schema.Literals(["force", "personal", "close"]),
+            userPreference: Schema.Literals(["enable", "disable"]), enabled: Schema.Boolean }))(response.body).pipe(
+              Effect.mapError(() => new CollectionTransportError({ reason: "invalid_response", operation: "policy", retryable: false,
+                message: "ATape returned an invalid Raw capture policy." })),
+              Effect.map(policy => policy.enabled))
+        : Effect.fail(new CollectionTransportError({ reason: response.status === 401 ? "unauthenticated" : "rejected",
+            operation: "policy", status: response.status, retryable: response.status === 429 || response.status >= 500,
+            ...(response.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: response.retryAfterSeconds }),
+            message: `ATape Raw capture policy returned ${response.status}; update the server if this endpoint is unavailable.` })))
+    ),
     submitCanonical: (submission) => {
       const batch = canonicalBatch(submission)
       return postJSON(
@@ -573,14 +594,17 @@ const postJSON = <A, I>(
   Effect.flatMap((response) => response.status >= 200 && response.status < 300
     ? Effect.succeed(response)
     : Effect.fail(new CollectionTransportError({
-      reason: response.status === 401 ? "unauthenticated" : "rejected",
+      reason: operation === "raw" && response.status === 403 && typeof response.body === "object" && response.body !== null &&
+        "code" in response.body && response.body.code === "raw_capture_disabled" ? "raw_disabled"
+        : response.status === 401 ? "unauthenticated" : "rejected",
       operation,
       status: response.status,
+      ...(response.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: response.retryAfterSeconds }),
       retryable: response.status !== 401 &&
         (response.status === 408 || response.status === 429 || response.status >= 500),
       message: response.status === 401
         ? `ATape ${operation} authentication failed; run \`atape login\` again.`
-        : `ATape ${operation} endpoint returned ${response.status}.`
+        : `ATape ${operation} endpoint returned ${response.status}.${problemIdentity(response.body)}`
     }))),
   Effect.flatMap((response) => Schema.decodeUnknownEffect(schema)(response.body)),
   Effect.mapError((error) => error instanceof CollectionTransportError
@@ -593,8 +617,16 @@ const postJSON = <A, I>(
     }))
 )
 
+const problemIdentity = (body: unknown): string => {
+  if (typeof body !== "object" || body === null) return ""
+  const problem = body as Record<string, unknown>
+  const code = typeof problem.code === "string" && /^[a-z_]{1,80}$/.test(problem.code) ? problem.code : undefined
+  const requestId = typeof problem.requestId === "string" && /^[a-zA-Z0-9-]{1,100}$/.test(problem.requestId) ? problem.requestId : undefined
+  return [code, requestId === undefined ? undefined : `request ${requestId}`].filter(Boolean).map(value => ` ${value}`).join("")
+}
+
 const transportError = (
-  operation: "canonical" | "raw",
+  operation: "canonical" | "raw" | "policy",
   error: AuthenticatedHTTPError
 ) => new CollectionTransportError({
   reason: error.reason === "unauthenticated" || error.reason === "identity_changed"

@@ -1,4 +1,6 @@
 import {
+  loadTeamRawCapture, setTeamRawCapture, loadUserRawCapture, setUserRawCapture,
+  type RawCapturePolicy,
   presentCLIDevice,
   beginDefaultReauthentication,
   beginFederatedSignIn,
@@ -313,3 +315,29 @@ export const useTeamAccessPresenter = (teamSlug: string) => {
 }
 
 export type { TeamAccess }
+
+
+const userRawAtom = runtime.atom(loadUserRawCapture())
+const userRawActionAtom = runtime.fn(setUserRawCapture)
+const teamRawAtoms = Atom.family((slug: string) => runtime.atom(loadTeamRawCapture(slug)))
+const teamRawActionAtoms = Atom.family((slug: string) => runtime.fn((policy: RawCapturePolicy) => setTeamRawCapture(slug, policy)))
+
+export const useUserRawCapturePresenter = () => {
+  const result = useAtomValue(userRawAtom)
+  const reload = useAtomRefresh(userRawAtom)
+  const [action, save] = useAtom(userRawActionAtom)
+  useEffect(() => { reload(); return () => save(Atom.Reset) }, [reload, save])
+  useEffect(() => { if (action._tag === "Success" && !action.waiting) reload() }, [action, reload])
+  return { state: toLoadView(result, "Could not load Raw capture preference."),
+    action: toActionView(action, "Could not save Raw capture preference."), save, reload }
+}
+
+export const useTeamRawCapturePresenter = (slug: string) => {
+  const result = useAtomValue(teamRawAtoms(slug))
+  const reload = useAtomRefresh(teamRawAtoms(slug))
+  const [action, save] = useAtom(teamRawActionAtoms(slug))
+  useEffect(() => { reload(); return () => save(Atom.Reset) }, [reload, save])
+  useEffect(() => { if (action._tag === "Success" && !action.waiting) reload() }, [action, reload])
+  return { state: toLoadView(result, "Could not load Team Raw capture policy."),
+    action: toActionView(action, "Could not save Team Raw capture policy."), save, reload }
+}

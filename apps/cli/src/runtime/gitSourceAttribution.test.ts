@@ -121,8 +121,7 @@ describe("Git Source Attribution Interface with real Git and filesystem", () => 
     await Effect.gen(function*() {
       const attribution = yield* GitSourceAttribution
       const resolve = attribution.forProject(f.project, "claude")
-      yield* resolve(source(f.project.path, "first"))
-      yield* resolve(source(f.project.path, "second"))
+      yield* Effect.forEach(Array.from({ length: 32 }, (_, i) => source(f.project.path, `source-${i}`)), resolve, { concurrency: 8 })
     }).pipe(Effect.provide(f.layer), Effect.runPromise)
     expect(f.calls).toHaveLength(1)
     await f.resolve(source(f.project.path, "first"))

@@ -8,6 +8,8 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const acquireRawLock = `-- name: AcquireRawLock :exec
@@ -517,4 +519,49 @@ func (q *Queries) ListRawSessionObjects(ctx context.Context, sessionID string) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockRawCapturePolicy = `-- name: LockRawCapturePolicy :one
+SELECT t.raw_capture_policy, u.raw_capture_preference
+FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2
+FOR SHARE OF t, u
+`
+
+type LockRawCapturePolicyParams struct {
+	ID   string
+	ID_2 pgtype.UUID
+}
+
+type LockRawCapturePolicyRow struct {
+	RawCapturePolicy     string
+	RawCapturePreference string
+}
+
+func (q *Queries) LockRawCapturePolicy(ctx context.Context, arg LockRawCapturePolicyParams) (LockRawCapturePolicyRow, error) {
+	row := q.db.QueryRow(ctx, lockRawCapturePolicy, arg.ID, arg.ID_2)
+	var i LockRawCapturePolicyRow
+	err := row.Scan(&i.RawCapturePolicy, &i.RawCapturePreference)
+	return i, err
+}
+
+const readRawCapturePolicy = `-- name: ReadRawCapturePolicy :one
+SELECT t.raw_capture_policy, u.raw_capture_preference
+FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2
+`
+
+type ReadRawCapturePolicyParams struct {
+	ID   string
+	ID_2 pgtype.UUID
+}
+
+type ReadRawCapturePolicyRow struct {
+	RawCapturePolicy     string
+	RawCapturePreference string
+}
+
+func (q *Queries) ReadRawCapturePolicy(ctx context.Context, arg ReadRawCapturePolicyParams) (ReadRawCapturePolicyRow, error) {
+	row := q.db.QueryRow(ctx, readRawCapturePolicy, arg.ID, arg.ID_2)
+	var i ReadRawCapturePolicyRow
+	err := row.Scan(&i.RawCapturePolicy, &i.RawCapturePreference)
+	return i, err
 }

@@ -6,6 +6,8 @@ const now = "2026-09-05T00:00:00Z"
 const later = "2027-03-04T00:00:00Z"
 
 const initialState = () => ({
+  rawPolicy: "personal",
+  rawPreference: "disable",
   cliDecision: "none",
   cliResolveCount: 0,
   conversationRequests: 0,
@@ -126,6 +128,21 @@ const server = http.createServer(async (request, response) => {
 
   if (path === "/healthz") return json(response, 200, { status: "ok" })
   if (routeFixtureControl(request, response, url)) return
+
+  if (path === "/api/v1/users/me/raw-capture" || path === "/api/v1/teams/team-a/raw-capture") {
+    if (!requireWeb(request, response)) return
+    const personal = path.includes("/users/")
+    if (request.method === "PUT") {
+      if (!requireCSRF(request, response)) return
+      const body = await readBody(request)
+      if (personal) state.rawPreference = body.preference
+      else state.rawPolicy = body.policy
+    }
+    return json(response, 200, personal ? { preference: state.rawPreference } : {
+      teamPolicy: state.rawPolicy, userPreference: state.rawPreference,
+      enabled: state.rawPolicy === "force" || state.rawPolicy === "personal" && state.rawPreference === "enable"
+    })
+  }
 
   if (path === "/api/v1/instance" && request.method === "GET") {
     return json(response, 200, {

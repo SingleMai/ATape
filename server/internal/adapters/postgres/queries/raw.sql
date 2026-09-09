@@ -99,3 +99,12 @@ WHERE object_id = sqlc.arg(object_id)
   AND ordinal > sqlc.arg(after_ordinal)
 ORDER BY ordinal
 LIMIT sqlc.arg(result_limit);
+
+-- name: ReadRawCapturePolicy :one
+SELECT t.raw_capture_policy, u.raw_capture_preference
+FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2;
+
+-- name: LockRawCapturePolicy :one
+SELECT t.raw_capture_policy, u.raw_capture_preference
+FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2
+FOR SHARE OF t, u;

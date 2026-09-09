@@ -34,6 +34,17 @@ func (s *Store) AuthorizeChunk(
 	if access.projectState != "active" {
 		return &rawarchive.ProjectStateError{State: access.projectState}
 	}
+	userID, err := principalUUID(principal)
+	if err != nil {
+		return err
+	}
+	policy, err := s.queries.WithTx(tx).ReadRawCapturePolicy(ctx, db.ReadRawCapturePolicyParams{ID: access.teamID, ID_2: userID})
+	if err != nil {
+		return rawPersist("read Raw capture policy", err)
+	}
+	if !rawarchive.CaptureEnabled(policy.RawCapturePolicy, policy.RawCapturePreference) {
+		return &rawarchive.CaptureDisabledError{}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return rawPersist("commit chunk authorization", err)
 	}
@@ -62,6 +73,17 @@ func (s *Store) CommitChunk(
 	}
 	if access.projectState != "active" {
 		return rawarchive.CommitResult{}, &rawarchive.ProjectStateError{State: access.projectState}
+	}
+	userID, err := principalUUID(principal)
+	if err != nil {
+		return rawarchive.CommitResult{}, err
+	}
+	policy, err := queries.LockRawCapturePolicy(ctx, db.LockRawCapturePolicyParams{ID: access.teamID, ID_2: userID})
+	if err != nil {
+		return rawarchive.CommitResult{}, rawPersist("lock Raw capture policy", err)
+	}
+	if !rawarchive.CaptureEnabled(policy.RawCapturePolicy, policy.RawCapturePreference) {
+		return rawarchive.CommitResult{}, &rawarchive.CaptureDisabledError{}
 	}
 	chunk.ProjectID = access.projectID
 

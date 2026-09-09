@@ -13,6 +13,8 @@ sql:
       - "internal/adapters/postgres/migrations/000009_session_metadata_projection.sql"
       - "internal/adapters/postgres/migrations/000010_tool_details.sql"
       - "internal/adapters/postgres/migrations/000011_cli_device_inventory.sql"
+      - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
+      - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
@@ -39,6 +41,8 @@ sql:
       - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
       - "internal/adapters/postgres/migrations/000009_session_metadata_projection.sql"
       - "internal/adapters/postgres/migrations/000011_cli_device_inventory.sql"
+      - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
+      - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
     queries: "internal/authentication/queries"
     gen:
       go:
@@ -65,6 +69,8 @@ sql:
       - "internal/adapters/postgres/migrations/000008_auth_cutover.sql"
       - "internal/adapters/postgres/migrations/000009_session_metadata_projection.sql"
       - "internal/adapters/postgres/migrations/000011_cli_device_inventory.sql"
+      - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
+      - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
     queries: "internal/team/queries"
     gen:
       go:

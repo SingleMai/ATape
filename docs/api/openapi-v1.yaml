@@ -87,7 +87,117 @@ x-atape-authorization-actions:
   - raw.ingest
   - captured_session.delete_own
   - captured_session.delete_any
+  - team.update_raw_capture
+  - user.update_raw_capture
 paths:
+  /api/v1/projects/{projectId}/raw-capture:
+    parameters:
+      - {$ref: "#/components/parameters/ProjectId"}
+    get:
+      operationId: getRawCaptureSettingsProjectId
+      x-atape-authorization-actions: [project.read_metadata]
+      tags: [Teams]
+      summary: Read Raw capture policy
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200":
+          description: Current Raw capture settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawCaptureSettings"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamSlug}/raw-capture:
+    parameters:
+      - {$ref: "#/components/parameters/TeamSlug"}
+    get:
+      operationId: getRawCaptureSettingsTeamSlug
+      x-atape-authorization-actions: [team.read_metadata]
+      tags: [Teams]
+      summary: Read Raw capture policy
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200":
+          description: Current Raw capture settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawCaptureSettings"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    put:
+      operationId: putRawCaptureSettingsTeamSlug
+      x-atape-authorization-actions: [team.update_raw_capture]
+      tags: [Teams]
+      summary: Update Raw capture policy
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [policy]
+              properties:
+                policy: {type: string, enum: [force, personal, close]}
+      responses:
+        "200":
+          description: Current Raw capture settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawCaptureSettings"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/users/me/raw-capture:
+    get:
+      operationId: getRawCapturePreferenceUser
+      x-atape-authorization-actions: [user.read_self]
+      tags: [Teams]
+      summary: Read Raw capture preference
+      x-atape-route: {class: any_principal, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}, {cliCredential: []}]
+      responses:
+        "200":
+          description: Current Raw capture settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawCapturePreference"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+    put:
+      operationId: putRawCapturePreferenceUser
+      x-atape-authorization-actions: [user.update_raw_capture]
+      tags: [Teams]
+      summary: Update Raw capture preference
+      x-atape-route: {class: web_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: exact-web, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {$ref: "#/components/parameters/Origin"}
+        - {$ref: "#/components/parameters/CSRF"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [preference]
+              properties:
+                preference: {type: string, enum: [enable, disable]}
+      responses:
+        "200":
+          description: Current Raw capture settings
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawCapturePreference"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
   /healthz:
     get:
       operationId: getHealth
@@ -1365,6 +1475,18 @@ components:
       schema: {type: integer, minimum: 1}
       description: Present for retryable 409, 429, and 503 outcomes.
   schemas:
+    RawCaptureSettings:
+      type: object
+      required: [teamPolicy, userPreference, enabled]
+      properties:
+        teamPolicy: {type: string, enum: [force, personal, close], default: personal}
+        userPreference: {type: string, enum: [enable, disable], default: disable}
+        enabled: {type: boolean}
+    RawCapturePreference:
+      type: object
+      required: [preference]
+      properties:
+        preference: {type: string, enum: [enable, disable], default: disable}
     EmptyObject:
       type: object
       additionalProperties: false
@@ -1767,6 +1889,7 @@ components:
             - fresh_authentication_required
             - origin_rejected
             - csrf_rejected
+            - raw_capture_disabled
             - access_denied
             - membership_role_denied
             - credential_capability_denied

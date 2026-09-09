@@ -82,7 +82,7 @@ See [ADR-0037](../architecture/adr/0037-shared-git-source-attribution.md).
 - `rawProgress`, the Host's acknowledged provider generation and source offset for this Project/Adapter
 - `signal`, interrupted on cancellation
 
-An Adapter returns no more than the requested limits. When it emits observations it must advance to a non-empty replacement cursor. `hasMore: true` also requires at least one observation. Given the same committed cursor, an Adapter must reproduce the same observation identities, revisions, timestamps, segmentation, and source bytes until the Host advances it.
+An Adapter returns no more than the requested limits. When it emits observations it must advance to a non-empty replacement cursor. `hasMore: true` requires a non-empty replacement cursor different from the requested cursor, but may have no observations when traversal advances without new content. The Host commits that progress without uploading fabricated observations and continues within its per-cycle page limit. Given the same committed cursor, an Adapter must reproduce the same observation identities, revisions, timestamps, segmentation, and source bytes until the Host advances it.
 
 Pages may include local `sourceFailures: [{ source, reason }]` diagnostics and
 `sourceFailuresTruncated: true` when further failures were omitted. Reasons are
@@ -90,7 +90,7 @@ Pages may include local `sourceFailures: [{ source, reason }]` diagnostics and
 with nonempty source paths of at most 4096 UTF-8 bytes are accepted per page.
 The Host redacts and deduplicates them into a bounded job report. They are not
 Canonical/Raw payloads and never acknowledge source progress. Diagnostic-only
-pages must use `hasMore: false`; a failed source keeps its last committed cursor.
+pages without traversal progress must use `hasMore: false`; a failed source keeps its last committed cursor.
 The managed Collector exposes partial health and `collect --once` exits nonzero
 after printing partial results. Use an updated Host to retain these optional fields.
 
@@ -126,3 +126,10 @@ The opt-in [Claude Code Adapter](../../adapters/claude/README.md) now uses the
 same runtime, ingestion and reader Interfaces for bounded Project-scoped discovery
 and incremental Session collection. Its documented restrictions are not a claim
 of general Claude history support.
+
+### Raw capture capability
+
+`rawCapturePolicy: "atape.raw-capture.v1"` declares that the Adapter accepts
+`AdapterCollectRequest.rawCaptureEnabled`, continues Canonical without Raw when
+false, and can resume Raw from real host receipts on re-enable. The host requires
+this capability for disabled Raw; it never fabricates receipts to skip work.

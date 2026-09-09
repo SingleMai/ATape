@@ -59,7 +59,7 @@ SELECT
 `).Scan(&migrationCount, &phase, &installation); err != nil {
 		t.Fatalf("read migration status: %v", err)
 	}
-	if migrationCount != 11 || phase != "prepared" || installation != "mapped" {
+	if migrationCount != 13 || phase != "prepared" || installation != "mapped" {
 		t.Fatalf("upgraded ledger: migrations=%d phase=%s installation=%s", migrationCount, phase, installation)
 	}
 
@@ -193,5 +193,56 @@ func configureCutoverDockerHost(t *testing.T) {
 	}
 	if host := strings.TrimSpace(string(output)); host != "" {
 		t.Setenv("DOCKER_HOST", host)
+	}
+}
+
+func TestRawCaptureDefaultsApplyToExistingRows(t *testing.T) {
+	if testing.Short() || os.Getenv("ATAPE_INTEGRATION_TESTS") != "1" {
+		t.Skip("set ATAPE_INTEGRATION_TESTS=1 to run PostgreSQL integration tests")
+	}
+	configureCutoverDockerHost(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	container, err := postgrescontainer.Run(ctx,
+		"postgres:17-alpine",
+		postgrescontainer.WithDatabase("atape_test"),
+		postgrescontainer.WithUsername("atape"),
+		postgrescontainer.WithPassword("atape"),
+		postgrescontainer.BasicWaitStrategies(),
+		testcontainers.WithTmpfs(map[string]string{"/var/lib/postgresql/data": "rw"}),
+	)
+	if err != nil {
+		t.Fatalf("start PostgreSQL container: %v", err)
+	}
+	testcontainers.CleanupContainer(t, container)
+	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("PostgreSQL connection string: %v", err)
+	}
+	pool, err := NewPool(databaseURL)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	defer pool.Close()
+
+	applyMigrationsThrough(t, pool, 12)
+	if _, err := pool.Exec(ctx, "INSERT INTO workspace_teams(id,slug,name,name_reported) VALUES ('old-team','old-team','Old Team',TRUE)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, "INSERT INTO auth_users(id,status,display_name) VALUES ('00000000-0000-7000-8000-000000000001','active','Existing User')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prepare(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	var policy, preference string
+	if err := pool.QueryRow(ctx, "SELECT raw_capture_policy FROM workspace_teams WHERE id='old-team'").Scan(&policy); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, "SELECT raw_capture_preference FROM auth_users WHERE id='00000000-0000-7000-8000-000000000001'").Scan(&preference); err != nil {
+		t.Fatal(err)
+	}
+	if policy != "personal" || preference != "disable" {
+		t.Fatalf("migrated defaults = %s/%s", policy, preference)
 	}
 }

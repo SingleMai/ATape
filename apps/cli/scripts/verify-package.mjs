@@ -136,6 +136,9 @@ async function startFixtureServer() {
         teamsEnabled = JSON.parse(Buffer.concat(chunks).toString("utf8")).enabled
         send(200, {})
         return
+      case "GET /api/v1/projects/package-project/raw-capture":
+        send(200, {teamPolicy: "personal", userPreference: "disable", enabled: false})
+        return
       case "GET /api/v1/instance":
         send(200, {
           protocol: "atape.instance.v1",
@@ -225,6 +228,7 @@ async function writeSmokeAdapter() {
     version: "1.0.0",
     type: "module",
     atapeAdapter: {
+      rawCapturePolicy: "atape.raw-capture.v1",
       protocolVersion: "atape.adapter.v1alpha1",
       adapterId: "smoke",
       displayName: "Package smoke Adapter",

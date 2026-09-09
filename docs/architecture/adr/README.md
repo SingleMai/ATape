@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0049](0049-empty-collector-page-progress.md) accepts bounded empty-page
+continuations that advance the cursor without fabricating uploaded observations.
+
 [ADR-0046](0046-v0.4.5-manual-release-waiver.md) records the explicitly authorized,
 candidate-bound v0.4.5 manual staging waiver; automated gates remain required.
 
@@ -77,3 +80,17 @@ pretending that staging acceptance passed.
 - [ADR-0047: Informational CLI device inventory](0047-cli-device-inventory.md)
 
 - [ADR-0048: Release requests authorize manual acceptance waivers](0048-release-request-manual-acceptance.md)
+
+- [ADR-0050: Bounded compressed Codex cursors](0050-bounded-compressed-codex-cursors.md)
+
+- [ADR-0051: Codex paginated source attribution](0051-codex-paginated-source-attribution.md)
+
+- [ADR-0052: Active Session collection scans](0052-active-session-collection-scans.md)
+
+- [ADR-0053: Bounded collection of large archives](0053-large-archive-collection.md)
+
+- [ADR-0054: Canonical replay across Adapter upgrades](0054-canonical-replay-provenance.md)
+
+- [ADR-0055: Codex item updates across collection pages](0055-codex-item-update-revisions.md)
+
+- [ADR-0056: Team and personal Raw capture policy](0056-configurable-raw-capture.md)

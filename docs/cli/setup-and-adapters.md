@@ -196,7 +196,25 @@ pnpm atape status
 pnpm atape stop
 ```
 
-On macOS and Linux, the process runs every 30 seconds by default and stays alive after the starting terminal closes. `status` reports whether the process is running plus each configured Project/Adapter's last success time, current failure reason, and latest bounded counters. It does not expose conversation bodies. The managed process does not promise restart after logout or reboot; an external supervisor may still invoke `collect --once` when boot persistence is required. Windows retains foreground `collect` until ATape can verify managed process ownership without relying on a reusable PID alone.
+On macOS and Linux, the process immediately continues successful cycles with remaining pages and stays alive after the starting terminal closes. When caught up or after a job failure, it waits 30 seconds by default before retrying. `status` reports whether the process is running plus each configured Project/Adapter's last success time, current failure reason, and latest bounded counters. It does not expose conversation bodies. The managed process does not promise restart after logout or reboot; an external supervisor may still invoke `collect --once` when boot persistence is required. Windows retains foreground `collect` until ATape can verify managed process ownership without relying on a reusable PID alone.
+
+Git Project matching and ingestion each allow at most three attempts for transient
+failures. Matching retries network failures, HTTP 429 and 5xx responses; it never
+turns an unavailable authority into an unknown/excluded source. Delays use
+exponential backoff with jitter (0.5–1 seconds, then 1–2 seconds), respect a longer
+`Retry-After`, and cap each wait at 60 seconds. Authentication, permission and
+invalid response failures are not retried by matching. Cancellation interrupts
+requests and retry waits. After attempts are exhausted, the ordinary cycle delay
+applies and unacknowledged data remains eligible for replay.
+
+The authenticated HTTP Adapter writes bounded operation diagnostics to the
+background log: operation, failure category, known network error code and elapsed
+time, or HTTP status and retry delay. It omits request bodies, destinations,
+credentials and raw exception messages. These log entries remain after a later
+successful cycle replaces the current status. Git attribution network failures
+are reported as `transport`, rather than as Adapter parsing failures. Unknown
+network causes remain explicit; the next diagnostic increment is correlating
+client failures with server traces before tuning deadlines or upload concurrency.
 
 Run one bounded cycle for diagnosis or an external scheduler:
 

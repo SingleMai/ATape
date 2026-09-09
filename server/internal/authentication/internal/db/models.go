@@ -3,19 +3,3 @@
 //   sqlc v1.29.0
 
 package db
-
-import (
-	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
-)
-
-type AuthUser struct {
-	ID          pgtype.UUID
-	Status      string
-	DisplayName string
-	AvatarUrl   string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	DisabledAt  pgtype.Timestamptz
-}

@@ -453,7 +453,7 @@ const collectCommand = (options: CLIOptions) => Effect.gen(function*() {
     return yield* failUsage("--json requires --once for collect.")
   }
   if (!options.once) {
-    yield* print(`ATape collector is running every ${intervalSeconds ?? 30}s. Press Ctrl+C to stop.`)
+    yield* print(`ATape collector is running; idle/retry interval ${intervalSeconds ?? 30}s. Press Ctrl+C to stop.`)
   }
   const report = yield* runCollector({
     once: options.once === true,
@@ -484,7 +484,7 @@ const startCommand = (options: CLIOptions) => Effect.gen(function*() {
   yield* print([
     started.created ? "ATape Collector started." : "ATape Collector is already running.",
     `  PID: ${started.pid}`,
-    `  Every ${started.intervalMs / 1_000}s · concurrency ${started.concurrency}`,
+    `  Idle/retry interval ${started.intervalMs / 1_000}s · concurrency ${started.concurrency}`,
     `  Logs: ${started.logFile}`
   ].join("\n"))
 })
@@ -516,7 +516,7 @@ const printCollectorStatus = (status: ManagedCollectorStatus) => {
       ? `ATape Collector is running · PID ${status.pid} · started ${formatAge(status.startedAt)}`
       : "ATape Collector is stopped.",
     ...(status.running
-      ? [`Every ${(status.intervalMs ?? 0) / 1_000}s · concurrency ${status.concurrency}`, `Logs: ${status.logFile}`]
+      ? [`Idle/retry interval ${(status.intervalMs ?? 0) / 1_000}s · concurrency ${status.concurrency}`, `Logs: ${status.logFile}`]
       : []),
     ...(status.collectorFailure === undefined
       ? []
@@ -544,6 +544,8 @@ const printCollectorStatus = (status: ManagedCollectorStatus) => {
     lines.push(
       `- ${job.projectId}/${job.adapterId} · ${job.state} · last completed cycle ${formatAge(job.lastSuccessAt)}`,
       `  ${job.observations ?? 0} observations · ${job.rawChunks ?? 0} Raw chunks · ${job.redactions ?? 0} redactions`,
+      ...(job.canonicalEvents === undefined ? [] : [`  Last cycle: ${job.canonicalEvents} events acknowledged · ${((job.rawBytes ?? 0) / 1048576).toFixed(1)} MiB Raw · ${((job.durationMs ?? 0) / 1000).toFixed(1)}s`]),
+      ...(job.progress === undefined ? [] : [`  ${job.progress.sourceFiles} sources · ${job.progress.pendingCanonicalSessions ?? "unknown"} Sessions pending · Raw backlog estimate ${job.progress.pendingRawBytes === undefined ? "unknown" : `${(job.progress.pendingRawBytes / 1048576).toFixed(1)} MiB`}`]),
       ...sourceDiagnosticLines(job)
     )
   }
@@ -647,7 +649,7 @@ Login options:
 Collector options:
   --once                Run one bounded collection cycle and exit
   --project <id>        Collect only one configured Project
-  --interval <seconds>  Continuous interval from 10 to 3600 (default: 30)
+  --interval <seconds>  Idle/retry interval from 10 to 3600 (default: 30)
   --concurrency <count> Project/Adapter jobs from 1 to 8 (default: 4)
 
 Background Collector:

@@ -54,7 +54,8 @@ export const AdapterManifest = Schema.Struct({
   displayName: Schema.String,
   entry: Schema.String,
   harnesses: Schema.Array(Schema.String),
-  gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion))
+  gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion)),
+  rawCapturePolicy: Schema.optionalKey(Schema.Literal("atape.raw-capture.v1"))
 })
 export type AdapterManifest = typeof AdapterManifest.Type
 

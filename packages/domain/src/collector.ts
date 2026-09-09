@@ -248,7 +248,17 @@ const SourceDiagnostics = {
   sourceFailuresTruncated: Schema.optionalKey(Schema.Boolean)
 }
 
+export const AdapterCollectionProgress = Schema.Struct({
+  rawCaptureEnabled: Schema.optionalKey(Schema.Boolean),
+  phase: Schema.Literals(["canonical", "raw", "idle"]),
+  sourceFiles: Schema.Number,
+  pendingCanonicalSessions: Schema.optionalKey(Schema.Number),
+  pendingRawBytes: Schema.optionalKey(Schema.Number)
+})
+export type AdapterCollectionProgress = typeof AdapterCollectionProgress.Type
+
 export const AdapterCollectionPage = Schema.Struct({
+  progress: Schema.optionalKey(AdapterCollectionProgress),
   protocolVersion: Schema.Literal(AdapterProtocolVersion),
   nextCursor: Schema.NullOr(Schema.String),
   hasMore: Schema.Boolean,
@@ -293,6 +303,7 @@ export type AdapterSourceProgress = {
 }
 
 export type AdapterCollectRequest = {
+  readonly rawCaptureEnabled?: boolean
   readonly protocolVersion: typeof AdapterProtocolVersion
   readonly cursor: string | null
   readonly previousAdapterVersion?: string
@@ -353,6 +364,10 @@ export const emptyCollectorState = (installationId: string): CollectorState => (
 })
 
 export const CollectorJobRunStatus = Schema.Struct({
+  progress: Schema.optionalKey(AdapterCollectionProgress),
+  canonicalEvents: Schema.optionalKey(Schema.Number),
+  rawBytes: Schema.optionalKey(Schema.Number),
+  durationMs: Schema.optionalKey(Schema.Number),
   ...SourceDiagnostics,
   projectId: Schema.String,
   adapterId: Schema.String,

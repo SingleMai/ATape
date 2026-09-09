@@ -154,6 +154,8 @@
     {"action": "canonical.ingest", "resource": "project", "profile": "cli_member"},
     {"action": "raw.ingest", "resource": "conversation", "profile": "cli_member"},
     {"action": "captured_session.delete_own", "resource": "captured_session", "profile": "web_member"},
-    {"action": "captured_session.delete_any", "resource": "captured_session", "profile": "web_owner_fresh"}
+    {"action": "captured_session.delete_any", "resource": "captured_session", "profile": "web_owner_fresh"},
+    { "action": "team.update_raw_capture", "resource": "team", "profile": "web_owner" },
+    { "action": "user.update_raw_capture", "resource": "user", "profile": "web_self" }
   ]
 }

@@ -16,3 +16,5 @@ export * from "./toolUpdates.ts"
 
 export { CollectorDeviceGateway, scopeCollectorReport } from "./collectorMonitoring.ts"
 export * from "./cliDeviceView.ts"
+
+export * from "./rawCapture.ts"
