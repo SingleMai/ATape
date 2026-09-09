@@ -3,6 +3,7 @@ import {
   AdapterPackages,
   ClientConfigStore,
   ClientConfigStoreError,
+  CollectorRunStatusStore,
   ProjectLocator,
   ProjectLocatorError,
   makeGitSourceAttributionLayer,
@@ -20,7 +21,8 @@ import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { access, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
-import { homedir } from "node:os"
+import { cliVersion } from "../version.ts"
+import { homedir, hostname, platform, arch } from "node:os"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import {
@@ -29,8 +31,9 @@ import {
   type AdapterPackageFetch
 } from "./adapterPackageSource.ts"
 import { makeNodeCollectorLayer } from "./collectorLayers.ts"
-import { makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
+import { makeNodeCollectorDaemonLayer, makeCollectorRunStatusLayer } from "./collectorDaemonLayers.ts"
 import { makeNodeAuthenticationLayer } from "./authenticationLayers.ts"
+import { makeDeviceMonitoringLayer } from "./deviceMonitoring.ts"
 import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
 import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
@@ -76,7 +79,16 @@ export const makeNodeClientLayer = (
   })
   const authenticatedHTTP = makeAuthenticatedHTTPClientLayer(
     fetchAuthentication,
-    environment.ATAPE_DEVELOPMENT_ALLOW_HTTP === "true"
+    environment.ATAPE_DEVELOPMENT_ALLOW_HTTP === "true",
+    Effect.gen(function*() {
+      const config = yield* readClientConfig(paths.configFile).pipe(
+        Effect.catch(() => Effect.succeed(undefined))
+      )
+      return { name: hostname(), platform: `${platform()} ${arch()}`, version: cliVersion,
+        ...(config === undefined ? {} : { adapters: config.adapters.map((adapter) => ({
+          id: adapter.adapterId, version: adapter.version, enabled: config.enabledAdapterIds.includes(adapter.adapterId)
+        })) }) }
+    })
   ).pipe(
     Layer.provide(authentication)
   )
@@ -93,6 +105,8 @@ export const makeNodeClientLayer = (
   return Layer.mergeAll(
     authentication,
     authenticatedHTTP,
+    makeDeviceMonitoringLayer(paths.atapeHome, readClientConfig(paths.configFile), globalThis.fetch,
+      CollectorRunStatusStore.use(store => store.read()).pipe(Effect.provide(makeCollectorRunStatusLayer(paths.collectorStatusFile)))).pipe(Layer.provide(authenticatedHTTP)),
     makeConfigStoreLayer(paths.configFile),
     makeCLISetupPlatformLayer(paths, environment),
     makeCLIUpgradePlatformLayer(paths.atapeHome, process.argv[1] ?? "", environment),

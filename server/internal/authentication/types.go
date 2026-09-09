@@ -251,7 +251,45 @@ type CLICredentialGrant struct {
 	User             User
 }
 
+type CLISyncJob struct {
+	ProjectID     string `json:"projectId"`
+	ProjectName   string `json:"projectName"`
+	AdapterID     string `json:"adapterId"`
+	State         string `json:"state"`
+	Reason        string `json:"reason,omitempty"`
+	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
+	LastAttemptAt string `json:"lastAttemptAt,omitempty"`
+	HasMore       bool   `json:"hasMore"`
+}
+type CLISyncReport struct {
+	Phase         string       `json:"phase"`
+	Jobs          []CLISyncJob `json:"jobs"`
+	JobsTruncated bool         `json:"jobsTruncated"`
+}
+
+type CLIDeviceAdapter struct {
+	PackageName   string `json:"packageName,omitempty"`
+	LatestVersion string `json:"latestVersion,omitempty"`
+	ID            string `json:"id"`
+	Version       string `json:"version"`
+	Enabled       bool   `json:"enabled"`
+}
+
+type CLIDeviceMetadata struct {
+	AdaptersTruncated bool                `json:"adaptersTruncated,omitempty"`
+	Sync              *CLISyncReport      `json:"sync,omitempty"`
+	LatestVersion     string              `json:"latestVersion,omitempty"`
+	VersionCheckedAt  string              `json:"versionCheckedAt,omitempty"`
+	Name              string              `json:"name"`
+	Platform          string              `json:"platform"`
+	Version           string              `json:"version"`
+	Adapters          *[]CLIDeviceAdapter `json:"adapters,omitempty"`
+}
+
 type CLICredentialView struct {
+	Sync       *CLISyncReport
+	ReportedAt *time.Time
+	Device     *CLIDeviceMetadata
 	ID         string
 	Capability string
 	CreatedAt  time.Time

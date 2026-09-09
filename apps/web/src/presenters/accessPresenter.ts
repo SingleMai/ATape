@@ -1,4 +1,5 @@
 import {
+  presentCLIDevice,
   beginDefaultReauthentication,
   beginFederatedSignIn,
   createTeam,
@@ -28,7 +29,8 @@ import type {
   TeamRole
 } from "@atape/domain"
 import { useAtom, useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { useCallback, useEffect } from "react"
+import { Effect, Fiber } from "effect"
+import { useCallback, useEffect, useRef } from "react"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { BrowserAccessLayer } from "../runtime/accessGateway"
 import { subscribeAuthenticationInvalidation } from "../runtime/http"
@@ -67,7 +69,7 @@ export type SectionView<A> =
 export type AccountSecurityViewModel = {
   readonly providers: SectionView<import("@atape/domain").ProviderRegistration[] | ReadonlyArray<import("@atape/domain").ProviderRegistration>>
   readonly identities: SectionView<ReadonlyArray<import("@atape/domain").ExternalIdentity>>
-  readonly cliCredentials: SectionView<ReadonlyArray<import("@atape/domain").CLICredential>>
+  readonly cliCredentials: SectionView<ReadonlyArray<import("@atape/application").CLIDeviceView>>
 }
 
 const friendlyFailure = (error: AccessError): FailureView => {
@@ -219,6 +221,14 @@ export const useLogoutPresenter = () => {
 export const useAccountSecurityPresenter = () => {
   const result = useAtomValue(accountAtom)
   const reload = useAtomRefresh(accountAtom)
+  const reloadRef = useRef(reload)
+  reloadRef.current = reload
+  useEffect(() => {
+    const fiber = Effect.runFork(Effect.sleep(30_000).pipe(
+      Effect.andThen(Effect.sync(() => reloadRef.current())), Effect.forever
+    ))
+    return () => { Effect.runFork(Fiber.interrupt(fiber)) }
+  }, [])
   const [action, run] = useAtom(accountActionAtom)
   const resetAction = useCallback(() => run(Atom.Reset), [run])
   return {
@@ -234,7 +244,7 @@ export const useAccountSecurityPresenter = () => {
         value: {
           providers: section(loaded.value.providers),
           identities: section(loaded.value.identities),
-          cliCredentials: section(loaded.value.cliCredentials)
+          cliCredentials: section(loaded.value.cliCredentials._tag === "Ready" ? { _tag: "Ready", value: loaded.value.cliCredentials.value.map(credential => presentCLIDevice(credential, Date.now())) } : loaded.value.cliCredentials)
         } satisfies AccountSecurityViewModel
       }
     })(),

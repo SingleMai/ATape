@@ -6,6 +6,7 @@ import type {
   CollectorRunState
 } from "@atape/domain"
 import { Clock, Context, Effect, Schema } from "effect"
+import { withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { inspectClient } from "./clientManagement.ts"
 import {
   CollectorConfigurationError,
@@ -128,9 +129,9 @@ export const inspectManagedCollector = Effect.fn("CollectorDaemon.inspect")(func
   } satisfies ManagedCollectorStatus
 })
 
-export const runManagedCollector = Effect.fn("CollectorDaemon.run")(function*(
+export const runManagedCollector = Effect.fn("CollectorDaemon.run")((
   requested: CollectorDaemonOptions = {}
-) {
+) => withCollectorMonitoring(Effect.gen(function*() {
   const options = yield* resolveDaemonOptions(requested)
   const statuses = yield* CollectorRunStatusStore
   while (true) {
@@ -163,7 +164,7 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")(function*(
     )
     yield* Effect.sleep(options.intervalMs)
   }
-})
+})))
 
 const resolveDaemonOptions = (
   requested: CollectorDaemonOptions

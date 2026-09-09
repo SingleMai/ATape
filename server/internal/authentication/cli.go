@@ -3,6 +3,7 @@ package authentication
 import (
 	"context"
 	"crypto/hmac"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -548,6 +549,15 @@ func (m *Module) AuthenticateCLI(
 	ctx context.Context,
 	credentialSecret string,
 ) (AuthenticatedCLICredential, error) {
+	return m.AuthenticateCLIWithDevice(ctx, credentialSecret, nil)
+}
+
+// AuthenticateCLIWithDevice stores bounded informational metadata after authenticating.
+// A device report never confers authority or proves remote invocation readiness.
+func (m *Module) AuthenticateCLIWithDevice(ctx context.Context, credentialSecret string, device *CLIDeviceMetadata) (AuthenticatedCLICredential, error) {
+	if !validCLIDeviceMetadata(device) {
+		device = nil
+	}
 	if !validateOpaqueSecret(credentialSecret, "atc_v1_") {
 		return AuthenticatedCLICredential{}, domainError(CodeUnauthenticated)
 	}
@@ -584,6 +594,24 @@ func (m *Module) AuthenticateCLI(
 		}
 		userID := domainUUID(row.UserID)
 		credentialID := domainUUID(row.ID)
+		if device != nil {
+			metadata := *device
+			metadata.Sync = nil
+			encoded, encodeErr := json.Marshal(metadata)
+			if encodeErr != nil {
+				return AuthenticatedCLICredential{}, encodeErr
+			}
+			var sync []byte
+			if device.Sync != nil {
+				sync, encodeErr = json.Marshal(device.Sync)
+				if encodeErr != nil {
+					return AuthenticatedCLICredential{}, encodeErr
+				}
+			}
+			if updateErr := queries.UpdateCLIDeviceMetadata(ctx, authdb.UpdateCLIDeviceMetadataParams{ID: row.ID, Metadata: encoded, Sync: sync}); updateErr != nil {
+				return AuthenticatedCLICredential{}, updateErr
+			}
+		}
 		return AuthenticatedCLICredential{
 			Principal: Principal{
 				UserID: userID, Method: CLIAuthentication,
@@ -625,8 +653,26 @@ func (m *Module) ListCLICredentials(ctx context.Context, principal Principal) ([
 			if row.CapabilityVersion != CLICapabilityVersion {
 				return nil, domainError(CodeMisconfigured)
 			}
+			var device *CLIDeviceMetadata
+			if len(row.DeviceMetadata) > 0 {
+				if err := json.Unmarshal(row.DeviceMetadata, &device); err != nil {
+					return nil, err
+				}
+			}
+			var sync *CLISyncReport
+			if len(row.DeviceSync) > 0 {
+				if err := json.Unmarshal(row.DeviceSync, &sync); err != nil {
+					return nil, err
+				}
+			}
+			var reportedAt *time.Time
+			if row.DeviceReportedAt.Valid {
+				reportedAt = &row.DeviceReportedAt.Time
+			}
 			result = append(result, CLICredentialView{
-				ID: domainUUID(row.ID), Capability: row.CapabilityVersion,
+				Sync: sync, ReportedAt: reportedAt,
+				Device: device,
+				ID:     domainUUID(row.ID), Capability: row.CapabilityVersion,
 				CreatedAt: row.CreatedAt, LastUsedAt: row.LastUsedAt,
 			})
 		}
@@ -831,4 +877,83 @@ func positiveCeilingSeconds(duration time.Duration) int {
 		return 1
 	}
 	return int(math.Ceil(duration.Seconds()))
+}
+
+func validCLIDeviceMetadata(device *CLIDeviceMetadata) bool {
+	if device == nil {
+		return false
+	}
+	valid := func(value string) bool {
+		return len(value) > 0 && len(value) <= 200 && !strings.ContainsAny(value, "\r\n\x00")
+	}
+	if !valid(device.Name) || !valid(device.Platform) || !valid(device.Version) {
+		return false
+	}
+	if device.LatestVersion != "" && !valid(device.LatestVersion) {
+		return false
+	}
+	if device.VersionCheckedAt != "" && !validReportTime(device.VersionCheckedAt) {
+		return false
+	}
+	if !validSyncReport(device.Sync) {
+		return false
+	}
+	if device.Adapters == nil {
+		return true
+	}
+	if len(*device.Adapters) > 32 {
+		return false
+	}
+	for _, adapter := range *device.Adapters {
+		if (adapter.PackageName != "" && !valid(adapter.PackageName)) || !valid(adapter.ID) || !valid(adapter.Version) || (adapter.LatestVersion != "" && !valid(adapter.LatestVersion)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validReportTime(value string) bool {
+	if len(value) > 64 {
+		return false
+	}
+	_, err := time.Parse(time.RFC3339Nano, value)
+	return err == nil
+}
+
+func validSyncReport(report *CLISyncReport) bool {
+	if report == nil {
+		return true
+	}
+	switch report.Phase {
+	case "starting", "syncing", "waiting", "stopped", "error":
+	default:
+		return false
+	}
+	if report.Jobs == nil || len(report.Jobs) > 20 {
+		return false
+	}
+	for _, job := range report.Jobs {
+		for _, value := range []string{job.ProjectID, job.ProjectName, job.AdapterID} {
+			if len(value) == 0 || len(value) > 200 || strings.ContainsAny(value, "\r\n\x00") {
+				return false
+			}
+		}
+		switch job.State {
+		case "pending", "synced", "partial", "failed":
+		default:
+			return false
+		}
+		switch job.Reason {
+		case "", "unauthenticated", "transport", "adapter", "state", "contract", "partial":
+		default:
+			return false
+		}
+		if job.LastSuccessAt != "" && !validReportTime(job.LastSuccessAt) {
+			return false
+		}
+		if job.LastAttemptAt != "" && !validReportTime(job.LastAttemptAt) {
+			return false
+		}
+	}
+	return true
 }

@@ -765,6 +765,48 @@ WHERE id = $1
 			listedCredentials[0].Capability != authentication.CLICapabilityVersion {
 			t.Fatalf("listed CLI Credentials = %+v, %v", listedCredentials, err)
 		}
+		adapters := []authentication.CLIDeviceAdapter{{ID: "codex", PackageName: "@atape/adapter-codex", Version: "0.4.5", Enabled: true}}
+		report := &authentication.CLIDeviceMetadata{Name: "Mai 的 Mac", Platform: "darwin arm64", Version: "0.4.5", Adapters: &adapters, Sync: &authentication.CLISyncReport{Phase: "waiting", Jobs: []authentication.CLISyncJob{}}}
+		if _, err := moduleB.AuthenticateCLIWithDevice(ctx, credential.CredentialSecret, report); err != nil {
+			t.Fatal(err)
+		}
+		// Legacy clients and invalid reports must not erase a valid snapshot.
+		if _, err := moduleB.AuthenticateCLI(ctx, credential.CredentialSecret); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := moduleB.AuthenticateCLIWithDevice(ctx, credential.CredentialSecret, &authentication.CLIDeviceMetadata{Name: "bad"}); err != nil {
+			t.Fatal(err)
+		}
+		inventory, err := moduleA.ListCLICredentials(ctx, web.Principal)
+		if err != nil || len(inventory) != 1 || inventory[0].Device == nil {
+			t.Fatalf("device inventory: %+v, %v", inventory, err)
+		}
+		device := inventory[0].Device
+		if device.Name != report.Name || device.Version != report.Version || device.Adapters == nil || len(*device.Adapters) != 1 || !(*device.Adapters)[0].Enabled || (*device.Adapters)[0].PackageName != "@atape/adapter-codex" {
+			t.Fatalf("device report: %+v", device)
+		}
+		if inventory[0].Sync == nil || inventory[0].ReportedAt == nil || inventory[0].Sync.Phase != "waiting" {
+			t.Fatalf("missing sync receipt: %+v", inventory[0])
+		}
+		received := *inventory[0].ReportedAt
+		basic := *report
+		basic.Sync = nil
+		if _, err := moduleB.AuthenticateCLIWithDevice(ctx, credential.CredentialSecret, &basic); err != nil {
+			t.Fatal(err)
+		}
+		unchanged, err := moduleA.ListCLICredentials(ctx, web.Principal)
+		if err != nil || unchanged[0].ReportedAt == nil || !unchanged[0].ReportedAt.Equal(received) || unchanged[0].Sync == nil {
+			t.Fatalf("ordinary request refreshed liveness or erased sync: %+v, %v", unchanged, err)
+		}
+		invalid := *report
+		invalid.Sync = &authentication.CLISyncReport{Phase: "invented", Jobs: []authentication.CLISyncJob{}}
+		if _, err := moduleB.AuthenticateCLIWithDevice(ctx, credential.CredentialSecret, &invalid); err != nil {
+			t.Fatal(err)
+		}
+		unchanged, err = moduleA.ListCLICredentials(ctx, web.Principal)
+		if err != nil || unchanged[0].ReportedAt == nil || !unchanged[0].ReportedAt.Equal(received) {
+			t.Fatalf("invalid report refreshed liveness: %+v, %v", unchanged, err)
+		}
 		if err := moduleA.RevokeCLICredentials(ctx, authentication.RevokeCLICredentialsInput{
 			Principal: cli.Principal, CredentialID: credential.CredentialID,
 			Reason: "test_revoke", RequestID: "request-cli-revoke",

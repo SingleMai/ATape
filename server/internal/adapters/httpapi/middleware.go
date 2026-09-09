@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"crypto/subtle"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -214,7 +216,15 @@ func (h *Handler) authenticateCLI(
 	request *http.Request,
 	secret string,
 ) (requestAuthentication, problemCode, error) {
-	result, err := h.auth.AuthenticateCLI(request.Context(), secret)
+	var device *authentication.CLIDeviceMetadata
+	if report := request.Header.Get("X-Atape-Device"); len(report) > 0 && len(report) <= 8192 {
+		if decoded, err := base64.RawURLEncoding.DecodeString(report); err == nil {
+			if json.Unmarshal(decoded, &device) != nil {
+				device = nil
+			}
+		}
+	}
+	result, err := h.auth.AuthenticateCLIWithDevice(request.Context(), secret, device)
 	if err != nil {
 		return requestAuthentication{}, "", err
 	}

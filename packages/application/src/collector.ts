@@ -15,6 +15,7 @@ import type {
 import { AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { AdapterSourceFailure, MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Context, Effect, Layer, Schema, Scope } from "effect"
+import { recordCollectorProgress, withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 
 export class CollectorConfigurationError extends Schema.TaggedError<CollectorConfigurationError>()("CollectorConfigurationError", {
@@ -191,11 +192,14 @@ export type RunCollectorOptions = CollectionCycleOptions & {
 type CollectionJobError = CollectorStateError | AdapterRuntimeError | CollectionContractError | CollectionTransportError
 
 export const runCollectionCycle = Effect.fn("Collector.runCycle")(function*(options: CollectionCycleOptions = {}) {
-  const input = yield* prepareCycle(options)
-  return yield* collectPreparedCycle(input)
+  yield* recordCollectorProgress("started")
+  return yield* Effect.gen(function*() {
+    const input = yield* prepareCycle(options)
+    return yield* collectPreparedCycle(input)
+  }).pipe(Effect.tap(recordCollectorProgress), Effect.tapError(() => recordCollectorProgress("failed")))
 })
 
-export const runCollector = Effect.fn("Collector.run")(function*(options: RunCollectorOptions = {}) {
+export const runCollector = Effect.fn("Collector.run")((options: RunCollectorOptions = {}) => withCollectorMonitoring(Effect.gen(function*() {
   const intervalMs = options.intervalMs ?? 30_000
   if (!Number.isInteger(intervalMs) || intervalMs < 10_000 || intervalMs > 3_600_000) {
     return yield* new CollectorConfigurationError({
@@ -220,7 +224,7 @@ export const runCollector = Effect.fn("Collector.run")(function*(options: RunCol
     })
     yield* Effect.sleep(intervalMs)
   }
-})
+})))
 
 type PreparedCycle = {
   readonly startedAt: string
