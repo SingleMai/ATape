@@ -176,9 +176,12 @@ Controlled browser fixtures provide layout examples, not claimed live Team data.
   coverage covers the active selection. Conversation preview excerpts are bounded
   to 1,500 source characters in PostgreSQL, then 360 visible characters. A request
   hidden beyond an unusually long source wrapper may have no usable preview.
-- No packages were published and no deployed database was migrated as part of
-  local implementation. The server migration must accompany later deployment;
-  adapters must be upgraded to collect supported usage from available history.
+- The v0.4.8 CLI and official Adapter release contains usage collection and history
+  backfill. Installations must upgrade the CLI and Adapters to collect supported
+  usage from available history. The receiving Server must include migration
+  000014 before these uploads; package publication does not perform deployment.
+  The atape.net dogfood Server was upgraded and migrated on 2026-09-10; its initial
+  dashboard verification had no usage records from the previously installed clients.
 
 The next increment is large-Team aggregation and broader source-coverage
 fixtures, followed by configurable Team timezone if needed. Cost conversion and
