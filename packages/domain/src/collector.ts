@@ -215,6 +215,21 @@ export const AdapterEvent = Schema.Struct({
 })
 export type AdapterEvent = typeof AdapterEvent.Type
 
+// Independent from ACP messages: input includes cache components; output
+// includes reasoning. Missing counters remain unknown, never implicit zero.
+export const AdapterUsage = Schema.Struct({
+  sourceUsageId: Schema.String,
+  sourceThreadId: Schema.String,
+  revision: Schema.Number,
+  occurredAt: Schema.String,
+  model: Schema.String,
+  inputTokens: Schema.optionalKey(Schema.Number),
+  outputTokens: Schema.optionalKey(Schema.Number),
+  cacheReadTokens: Schema.optionalKey(Schema.Number),
+  cacheWriteTokens: Schema.optionalKey(Schema.Number)
+})
+export type AdapterUsage = typeof AdapterUsage.Type
+
 export const AdapterRawSegment = Schema.Struct({
   sourceObjectId: Schema.String,
   sourceGeneration: Schema.String,
@@ -232,6 +247,7 @@ export const AdapterObservation = Schema.Struct({
   session: AdapterSession,
   threads: Schema.Array(AdapterThread),
   events: Schema.Array(AdapterEvent),
+  usage: Schema.optionalKey(Schema.Array(AdapterUsage)),
   rawSegments: Schema.Array(AdapterRawSegment)
 })
 export type AdapterObservation = typeof AdapterObservation.Type
@@ -454,7 +470,8 @@ export const CanonicalBatch = Schema.Struct({
   projectId: Schema.String,
   session: AdapterSession,
   threads: Schema.Array(AdapterThread),
-  events: Schema.Array(CanonicalIngestionEvent)
+  events: Schema.Array(CanonicalIngestionEvent),
+  usage: Schema.optionalKey(Schema.Array(AdapterUsage))
 })
 export type CanonicalBatch = typeof CanonicalBatch.Type
 

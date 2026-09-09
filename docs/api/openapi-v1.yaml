@@ -108,6 +108,34 @@ paths:
               schema: {$ref: "#/components/schemas/RawCaptureSettings"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamId}/overview:
+    parameters:
+      - {name: teamId, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getTeamOverview
+      x-atape-authorization-actions: [team.read_metadata]
+      tags: [Teams]
+      summary: Read authorized Team statistics and paginated conversation detail
+      description: Source-time statistics in Asia/Singapore. Input Tokens include cache subdivisions. Coverage denotes reported records, not guaranteed complete usage. Ranges exceeding the bounded snapshot capacity return validation_failed rather than partial statistics.
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: days, in: query, schema: {type: integer, minimum: 1, maximum: 366, default: 30}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: project, in: query, schema: {type: string}}
+        - {name: member, in: query, schema: {type: string}}
+        - {name: agent, in: query, schema: {type: string}}
+        - {name: model, in: query, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 10}}
+      responses:
+        "200":
+          description: Consistent authorized overview snapshot
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TeamOverview"}
+        default: {$ref: "#/components/responses/Problem"}
   /api/v1/teams/{teamSlug}/raw-capture:
     parameters:
       - {$ref: "#/components/parameters/TeamSlug"}
@@ -1838,6 +1866,106 @@ components:
           type: array
           maxItems: 500
           items: {$ref: "#/components/schemas/CanonicalEvent"}
+        usage:
+          type: array
+          maxItems: 500
+          items: {$ref: "#/components/schemas/CanonicalUsage"}
+    CanonicalUsage:
+      type: object
+      additionalProperties: false
+      required: [sourceUsageId, sourceThreadId, revision, occurredAt, model]
+      properties:
+        sourceUsageId: {type: string, minLength: 1, maxLength: 500}
+        sourceThreadId: {type: string}
+        revision: {type: integer, minimum: 1, maximum: 9007199254740991}
+        occurredAt: {$ref: "#/components/schemas/Timestamp"}
+        model: {type: string, maxLength: 200}
+        inputTokens: {type: integer, minimum: 0, maximum: 9007199254740991, description: Inclusive of cache read and write}
+        outputTokens: {type: integer, minimum: 0, maximum: 9007199254740991, description: Inclusive of reasoning}
+        cacheReadTokens: {type: integer, minimum: 0, maximum: 9007199254740991}
+        cacheWriteTokens: {type: integer, minimum: 0, maximum: 9007199254740991}
+    OverviewTokens:
+      type: object
+      required: [input, output, cacheRead, cacheWrite, total, records, sessions]
+      properties:
+        input: {type: [integer, "null"]}
+        output: {type: [integer, "null"]}
+        cacheRead: {type: [integer, "null"]}
+        cacheWrite: {type: [integer, "null"]}
+        total: {type: [integer, "null"]}
+        records: {type: integer}
+        sessions: {type: integer}
+    OverviewMetrics:
+      type: object
+      required: [members, activeMembers, projects, sessions, messages, tokens]
+      properties:
+        members: {type: integer}
+        activeMembers: {type: integer}
+        projects: {type: integer}
+        sessions: {type: integer}
+        messages: {type: integer}
+        tokens: {$ref: "#/components/schemas/OverviewTokens"}
+    OverviewDetail:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        current: {type: boolean}
+        sessions: {type: integer}
+        projects: {type: integer}
+        tokens: {$ref: "#/components/schemas/OverviewTokens"}
+    TeamOverview:
+      type: object
+      required: [teamId, teamName, timezone, from, to, updatedAt, metrics, previous, trend, options, members, projects, models, sessions, totalSessions, page, limit, unknownTimeSessions]
+      properties:
+        teamId: {type: string}
+        teamName: {type: string}
+        timezone: {type: string}
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+        metrics: {$ref: "#/components/schemas/OverviewMetrics"}
+        previous: {$ref: "#/components/schemas/OverviewMetrics"}
+        trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date: {type: string, format: date}
+              agent: {type: string}
+              sessions: {type: integer}
+              members: {type: integer}
+              tokens: {$ref: "#/components/schemas/OverviewTokens"}
+        options:
+          type: object
+          properties:
+            projects: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+            members: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+            agents: {type: array, items: {type: string}}
+            models: {type: array, items: {type: string}}
+        members: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+        projects: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+        models: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+        sessions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              projectId: {type: string}
+              projectName: {type: string}
+              memberId: {type: string}
+              memberName: {type: string}
+              agent: {type: string}
+              title: {type: string}
+              updatedAt: {$ref: "#/components/schemas/Timestamp"}
+              input: {type: string}
+              output: {type: string}
+              tokens: {$ref: "#/components/schemas/OverviewTokens"}
+        totalSessions: {type: integer}
+        page: {type: integer}
+        limit: {type: integer}
+        unknownTimeSessions: {type: integer}
     RawChunk:
       type: object
       additionalProperties: false

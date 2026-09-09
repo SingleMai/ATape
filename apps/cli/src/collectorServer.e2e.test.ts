@@ -16,7 +16,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, it } from "vitest"
-import { RawTransportChunkBytes } from "@atape/domain"
+import { RawTransportChunkBytes, type TeamOverview } from "@atape/domain"
 
 const repositoryRoot = resolve(import.meta.dirname, "../../..")
 const cliEntry = join(repositoryRoot, "apps/cli/src/main.ts")
@@ -184,6 +184,9 @@ it("discovers and incrementally collects native Claude sessions into existing co
     expect(raw.text).not.toContain(fixture.secret)
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
     expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(1)
+    const overview = await getJSON<TeamOverview>(serverUrl, "/api/v1/teams/acme-engineering/overview?from=2026-09-07&to=2026-09-07&project=support-notes")
+    expect(overview.metrics).toMatchObject({ sessions: 1, tokens: { input: 1926, output: 84, cacheRead: 768, cacheWrite: 0, total: 2010, records: 2, sessions: 1 } })
+    expect(overview.models).toEqual([expect.objectContaining({ name: "deepseek-v4-pro", sessions: 1, tokens: expect.objectContaining({ total: 2010 }) })])
     let indexed = false
     for (let attempt = 0; attempt < 100; attempt++) {
       const page = await getJSON<SearchPage>(serverUrl, "/api/v1/projects/support-notes/search?q=ATAPE_TOOL_DONE")

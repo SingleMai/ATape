@@ -38,6 +38,7 @@ type MemoryStore struct {
 	threads                  map[string]ThreadRecord
 	threadIDsBySession       map[string]map[string]struct{}
 	events                   map[string]EventRecord
+	usage                    map[string]UsageRecord
 	eventBySource            map[string]string
 	eventVersions            map[string][]EventRecord
 	eventIDsByThread         map[string]map[string]struct{}
@@ -74,6 +75,7 @@ func NewMemoryStoreWithControlPlane(controlPlane MemoryControlPlane) *MemoryStor
 		threads:                  make(map[string]ThreadRecord),
 		threadIDsBySession:       make(map[string]map[string]struct{}),
 		events:                   make(map[string]EventRecord),
+		usage:                    make(map[string]UsageRecord),
 		eventBySource:            make(map[string]string),
 		eventVersions:            make(map[string][]EventRecord),
 		eventIDsByThread:         make(map[string]map[string]struct{}),
@@ -200,6 +202,16 @@ func (s *MemoryStore) ApplyBatch(
 		}
 	}
 
+	for _, value := range batch.Usage {
+		if old, ok := s.usage[value.SourceKey]; ok && old.Revision == value.Revision && old.Digest != value.Digest {
+			return ApplyResult{}, &ConflictError{Identity: value.SourceKey, Reason: "usage revision has different content"}
+		}
+	}
+	for _, value := range batch.Usage {
+		if old, ok := s.usage[value.SourceKey]; !ok || value.Revision > old.Revision {
+			s.usage[value.SourceKey] = value
+		}
+	}
 	if !sessionExists || batch.Session.Revision > existingSession.Revision {
 		s.sessions[batch.Session.ID] = batch.Session
 	}
@@ -512,6 +524,11 @@ func (s *MemoryStore) DeleteSession(
 		return nil
 	}
 	delete(s.sessions, sessionID)
+	for key, value := range s.usage {
+		if value.SessionID == sessionID {
+			delete(s.usage, key)
+		}
+	}
 	s.deletedSessions[sessionID] = session
 	delete(s.sessionIDsByProject[session.ProjectID], sessionID)
 	delete(s.sessionEventCounts, sessionID)

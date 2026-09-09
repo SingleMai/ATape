@@ -31,6 +31,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 	"github.com/SingleMai/ATape/server/internal/team"
+	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
@@ -272,6 +273,7 @@ type persistenceAdapters struct {
 	ProjectionIndex projectsearch.ProjectionIndex
 	QueryIndex      projectsearch.QueryIndex
 	DirectoryStore  workspace.DirectoryStore
+	OverviewStore   teamoverview.Store
 	RawArchive      *rawarchive.Archive
 	Pool            *pgxpool.Pool
 }
@@ -286,7 +288,7 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 		}
 		slog.Info("using in-memory Canonical development Adapter")
 		return persistenceAdapters{
-			BatchStore: store, SnapshotStore: store, ChangeSource: store,
+			BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store,
 			ProjectionIndex: index, QueryIndex: index, DirectoryStore: store, RawArchive: raw,
 		}, nil
 	}
@@ -326,7 +328,7 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 		},
 	})
 	return persistenceAdapters{
-		BatchStore: store, SnapshotStore: store, ChangeSource: store,
+		BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store,
 		ProjectionIndex: store, QueryIndex: store, DirectoryStore: store,
 		RawArchive: rawarchive.NewArchive(store, chunkStore), Pool: pool,
 	}, nil
@@ -410,12 +412,13 @@ func provideHTTPHandler(
 	ingestor *ingestion.Ingestor,
 	searcher *projectsearch.Searcher,
 	directory *workspace.Directory,
+	overview *teamoverview.Module,
 	raw *rawarchive.Archive,
 ) (*httpapi.Handler, error) {
 	return httpapi.NewHandler(config.http, httpapi.Modules{
 		Authentication: authenticationModule, Teams: teamModule, Memory: memory,
 		Ingestor: ingestor, Searcher: searcher, Directory: directory, Raw: raw,
-		Cutover: cutoverModule,
+		Cutover: cutoverModule, Overview: overview,
 	})
 }
 
@@ -530,6 +533,7 @@ func main() {
 			projectsearch.NewProjector,
 			projectsearch.NewSearcher,
 			workspace.NewDirectory,
+			teamoverview.New,
 			provideHTTPHandler,
 			newHTTPServer,
 		),

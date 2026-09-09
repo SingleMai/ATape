@@ -291,6 +291,10 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 	}
 
 	title, summary, insight := sessionMemory(batch.Session)
+	usage, err := normalizeUsage(batch, sessionID, scope, threadIDs)
+	if err != nil {
+		return canonical.WriteBatch{}, err
+	}
 	sessionSourceKey := sourceKey(scope, "session")
 	session := canonical.SessionRecord{
 		ID:                 sessionID,
@@ -325,6 +329,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 		Session:    session,
 		Threads:    threads,
 		Events:     events,
+		Usage:      usage,
 	}, nil
 }
 

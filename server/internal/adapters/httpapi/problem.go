@@ -17,6 +17,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/team"
+	"github.com/SingleMai/ATape/server/internal/teamoverview"
 )
 
 type problemCode string
@@ -211,6 +212,10 @@ func classifyError(err error) (problemCode, int, []fieldProblem) {
 		return problemValidationFailed, 0, []fieldProblem{{Field: rawValidation.Field, Code: "invalid"}}
 	}
 	var searchValidation *projectsearch.InvalidQueryError
+	var overviewValidation *teamoverview.InvalidQuery
+	if errors.As(err, &overviewValidation) || errors.Is(err, canonical.ErrOverviewCapacity) {
+		return problemValidationFailed, 0, []fieldProblem{{Field: "range", Code: "invalid"}}
+	}
 	if errors.As(err, &searchValidation) {
 		return problemValidationFailed, 0, []fieldProblem{{Field: searchValidation.Field, Code: "invalid"}}
 	}

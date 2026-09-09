@@ -104,7 +104,7 @@ export type CanonicalSubmission = {
   readonly projectId: string
   readonly adapterId: string
   readonly adapterVersion: string
-  readonly observation: Pick<AdapterObservation, "observedAt" | "session" | "threads" | "events">
+  readonly observation: Pick<AdapterObservation, "observedAt" | "session" | "threads" | "events" | "usage">
 }
 
 export type RawSubmission = {
@@ -417,7 +417,8 @@ const collectAdapter = (
           observedAt: redacted.observation.observedAt,
           session: redacted.observation.session,
           threads: redacted.observation.threads,
-          events: redacted.observation.events
+          events: redacted.observation.events,
+          ...(redacted.observation.usage === undefined ? {} : { usage: redacted.observation.usage })
         }
       }))
       canonicalBatches++
@@ -700,7 +701,8 @@ const validatePage = (
     if (utf8Bytes(JSON.stringify({
       session: observation.session,
       threads: observation.threads,
-      events: observation.events
+      events: observation.events,
+      usage: observation.usage
     })) > AdapterCollectionLimits.canonicalBytesPerObservation) {
       return fail(`observation ${observation.observationId} exceeds the Canonical byte limit.`)
     }
@@ -727,6 +729,23 @@ const validatePage = (
       return fail(`observation ${observation.observationId} has an invalid Thread topology.`)
     }
     const eventIds = new Set<string>()
+    const usageIds = new Set<string>()
+    if ((observation.usage?.length ?? 0) > AdapterCollectionLimits.eventsPerObservation) {
+      return fail(`observation ${observation.observationId} exceeds usage limits.`)
+    }
+    for (const usage of observation.usage ?? []) {
+      const key = `${usage.sourceThreadId}\0${usage.sourceUsageId}`
+      const counters = [usage.inputTokens, usage.outputTokens, usage.cacheReadTokens, usage.cacheWriteTokens]
+      if (!boundedIdentity(usage.sourceUsageId, 500) || usageIds.has(key) ||
+        !threadIds.has(usage.sourceThreadId) || !positiveInteger(usage.revision) ||
+        !validTimestamp(usage.occurredAt) || !boundedText(usage.model, 200, true) ||
+        counters.every(value => value === undefined) ||
+        counters.some(value => value !== undefined && !nonNegativeInteger(value)) ||
+        (usage.inputTokens !== undefined && (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) > usage.inputTokens)) {
+        return fail(`observation ${observation.observationId} contains invalid usage.`)
+      }
+      usageIds.add(key)
+    }
     for (const event of observation.events) {
       const eventKey = `${event.sourceThreadId}\0${event.sourceEventId}`
       if (!boundedIdentity(event.sourceEventId, 500) || eventIds.has(eventKey) ||
@@ -798,6 +817,7 @@ const redactObservation = (redactor: SecretRedactorService, observation: Adapter
       summary: redact(thread.summary)
     })),
     events,
+    ...(observation.usage === undefined ? {} : { usage: observation.usage.map(sample => ({ ...sample, model: redact(sample.model) })) }),
     rawSegments: observation.rawSegments.map((segment) => ({
       ...segment,
       sourceName: redact(segment.sourceName),

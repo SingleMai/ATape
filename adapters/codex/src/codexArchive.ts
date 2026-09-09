@@ -7,6 +7,7 @@ import type {
   AdapterRawSegment,
   AdapterSourceProgress,
   AdapterThread,
+  AdapterUsage,
   AcpSessionUpdate
 } from "@atape/domain"
 import { createHash } from "node:crypto"
@@ -116,6 +117,7 @@ type ActiveCursor = {
 type CodexCursor = {
   readonly v: typeof CursorVersion
   readonly eventProjectionVersion?: number
+  readonly usageVersion?: number
   readonly watermarkModifiedMs: number
   readonly watermarkSessionId: string
   readonly commitSequence?: number
@@ -163,6 +165,7 @@ const ActiveCursorSchema = Schema.Struct({
 
 const CursorSchema = Schema.Struct({
   eventProjectionVersion: Schema.optionalKey(Schema.Number),
+  usageVersion: Schema.optionalKey(Schema.Literal(1)),
   v: Schema.Literal(CursorVersion),
   watermarkModifiedMs: Schema.Number,
   watermarkSessionId: Schema.String,
@@ -309,13 +312,14 @@ const collectPage = async (
   throwIfAborted(request.signal)
   archive.inventoryPages = (archive.inventoryPages ?? 0) + 1
   const decoded = decodeCursor(request.cursor)
-  const projectionUpgrade = decoded.eventProjectionVersion !== 3
+  const projectionUpgrade = decoded.eventProjectionVersion !== 3 || decoded.usageVersion !== 1
   const rewindCanonical = (active: ActiveCursor): ActiveCursor => active.phase !== "canonical" ? active : {
     ...active, spawnOffset: 0, eventFileIndex: 0, eventOffset: 0, emitted: false, step: 0, quantum: 0,
     files: active.files.map(({ startOffset: _start, ...file }) => file)
   }
   let cursor: CodexCursor = { ...decoded,
     eventProjectionVersion: 3,
+    usageVersion: 1,
     ...(projectionUpgrade ? { pending: decoded.pending?.map(rewindCanonical) ?? [],
       ...(decoded.active ? { active: rewindCanonical(decoded.active) } : {}) } : {}),
     ...(decoded.active?.emitted && decoded.canonicalProgress === undefined
@@ -568,7 +572,7 @@ const collectActiveSession = async (
       request.signal
     )
     : { segments: [], complete: true }
-  const shouldEmit = eventPage.events.length > 0 || rawPage.segments.length > 0 || !active.emitted
+  const shouldEmit = eventPage.events.length > 0 || eventPage.usage.length > 0 || rawPage.segments.length > 0 || !active.emitted
   const complete = eventPage.complete && rawPage.complete
   let nextCursor: CodexCursor = complete
     ? completeActive(cursor, active)
@@ -614,6 +618,7 @@ const collectActiveSession = async (
     session,
     threads: root === undefined ? synthesizeRootThread(active.sessionId, active.revision, threads) : threads,
     events: eventPage.events,
+    usage: eventPage.usage,
     rawSegments: rawPage.segments
   }
   return {
@@ -628,6 +633,7 @@ const collectActiveSession = async (
 
 const completedEventPage = (active: ActiveCursor): EventPage => ({
   events: [],
+  usage: [],
   spawnOffset: active.spawnOffset,
   fileIndex: active.eventFileIndex,
   offset: active.eventOffset,
@@ -860,6 +866,7 @@ const synthesizeRootThread = (
 
 type EventPage = {
   readonly events: ReadonlyArray<AdapterEvent>
+  readonly usage: ReadonlyArray<AdapterUsage>
   readonly spawnOffset: number
   readonly fileIndex: number
   readonly offset: number
@@ -869,6 +876,7 @@ type EventPage = {
 type ProjectionFormat = "item_completed" | "event_msg" | "response_item"
 
 type CanonicalProjection = {
+  readonly usageByCoordinate: ReadonlyMap<string, AdapterUsage>
   readonly completedItemOwnerById: ReadonlyMap<string, { sourceObjectId: string; offset: number; order: number }>
   readonly formatBySourceObjectId: ReadonlyMap<string, ProjectionFormat>
   readonly responseItemOwnerById: ReadonlyMap<string, { sourceObjectId: string; offset: number }>
@@ -897,6 +905,8 @@ const inspectCanonicalProjection = async (
   signal: AbortSignal
 ): Promise<CanonicalProjection> => {
   const legacyMessageOwnerById = new Map<string, { sourceObjectId: string; offset: number }>()
+  const usageByCoordinate = new Map<string, AdapterUsage>()
+  const usageByIdentity = new Map<string, string>()
   const completedItemOwnerById = new Map<string, { sourceObjectId: string; offset: number; order: number }>()
   const inspected: Array<{
     readonly sourceObjectId: string
@@ -914,6 +924,7 @@ const inspectCanonicalProjection = async (
     let acceptsLegacySupplements = false
     const responseItemIds: Array<[string, number]> = []
     const legacySupplementIds: Array<[string, number]> = []
+    const models = new Map<string, string>()
     for await (const line of readLines(current.path, 0, snapshot.size, signal)) {
       const completed = mapCompletedItem(line.content, line.start, snapshot, active.sessionId)
       if (completed !== undefined) {
@@ -927,6 +938,35 @@ const inspectCanonicalProjection = async (
       const parsed = record(parseJSON(line.content))
       const topLevelType = stringValue(parsed?.type)
       const payload = record(parsed?.payload)
+      if (topLevelType === "turn_context" && typeof payload?.turn_id === "string" && typeof payload.model === "string") {
+        models.set(payload.turn_id, payload.model)
+      }
+      if (topLevelType === "token_usage_record" && payload?.thread_id === snapshot.threadId) {
+        const value = record(payload.usage)
+        const id = stringValue(payload.response_id), at = stringValue(parsed?.timestamp)
+        const integer = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0
+        if (value && id && id.length <= 500 && at && Number.isFinite(Date.parse(at)) &&
+          integer(value.input_tokens) && integer(value.output_tokens) && integer(value.cached_input_tokens) &&
+          integer(value.cache_write_input_tokens ?? 0) &&
+          value.cached_input_tokens + Number(value.cache_write_input_tokens ?? 0) <= value.input_tokens &&
+          (value.reasoning_output_tokens === undefined || integer(value.reasoning_output_tokens) && value.reasoning_output_tokens <= value.output_tokens) &&
+          integer(value.total_tokens) && value.total_tokens === value.input_tokens + value.output_tokens) {
+          const sample: AdapterUsage = { sourceUsageId: id, sourceThreadId: snapshot.threadId,
+            revision: 1, occurredAt: new Date(at).toISOString(), model: (models.get(stringValue(payload.turn_id) ?? "") ?? "").slice(0, 200),
+            inputTokens: value.input_tokens, outputTokens: value.output_tokens,
+            cacheReadTokens: value.cached_input_tokens, cacheWriteTokens: Number(value.cache_write_input_tokens ?? 0) }
+          const identity = `${sample.sourceThreadId}\0${id}`
+          const content = JSON.stringify({ ...sample, occurredAt: undefined })
+          const previous = usageByIdentity.get(identity)
+          if (previous !== undefined && previous !== content) {
+            throw new CodexArchiveError({ reason: "format", message: "Codex response usage has conflicting source records." })
+          }
+          if (previous === undefined) {
+            usageByIdentity.set(identity, content)
+            usageByCoordinate.set(`${snapshot.sourceObjectId}:${line.start}`, sample)
+          }
+        }
+      }
       const eventType = topLevelType === "event_msg" ? stringValue(payload?.type) : undefined
       if (topLevelType === "session_meta" || eventType === "task_started") acceptsLegacySupplements = false
       if (topLevelType === "turn_context") acceptsLegacySupplements = true
@@ -971,7 +1011,7 @@ const inspectCanonicalProjection = async (
       if (!responseItemOwnerById.has(itemId)) responseItemOwnerById.set(itemId, { sourceObjectId: file.sourceObjectId, offset })
     }
   }
-  return { formatBySourceObjectId, responseItemOwnerById, completedItemOwnerById, legacyMessageOwnerById }
+  return { formatBySourceObjectId, responseItemOwnerById, completedItemOwnerById, legacyMessageOwnerById, usageByCoordinate }
 }
 
 const collectEvents = async (
@@ -984,6 +1024,7 @@ const collectEvents = async (
   signal: AbortSignal
 ): Promise<EventPage> => {
   const events: Array<AdapterEvent> = []
+  const usage: Array<AdapterUsage> = []
   let eventBytes = 0
   const appendEvent = (event: AdapterEvent) => {
     const additionalBytes = Buffer.byteLength(JSON.stringify(event)) + (events.length === 0 ? 0 : 1)
@@ -1046,6 +1087,12 @@ const collectEvents = async (
     offset = Math.max(offset, snapshot.startOffset ?? 0)
     let reachedEnd = true
     for await (const line of readLines(current.path, offset, snapshot.size, signal)) {
+      const sample = projection.usageByCoordinate.get(`${snapshot.sourceObjectId}:${line.start}`)
+      if (sample) {
+        const bytes = Buffer.byteLength(JSON.stringify(sample)) + 1
+        if (usage.length >= limit || eventBytes + bytes > byteLimit) { reachedEnd = false; break }
+        usage.push(sample); eventBytes += bytes
+      }
       const mapped = mapProjectedItem(line.content, line.start, snapshot, active.sessionId, projection)
       const event = mapped ? { ...mapped, revision: active.revision } : undefined
       if (event === undefined) {
@@ -1072,6 +1119,7 @@ const collectEvents = async (
   }
   return {
     events,
+    usage,
     spawnOffset,
     fileIndex,
     offset,

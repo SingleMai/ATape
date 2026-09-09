@@ -56,7 +56,7 @@ export const AppShell = ({
       </a>
       <aside className="sidebar project-sidebar" aria-label="Workspace">
         <div className="sidebar-brand-row">
-          <Link className="brand" to="/" aria-label="ATape home">
+          <Link className="brand" to={team ? "/teams/$teamId" : "/"} params={team ? { teamId: team.id } : {}} aria-label="ATape home">
             <BrandMark className="brand-mark" />
             <span>ATape</span>
           </Link>
@@ -148,6 +148,7 @@ export const AppShell = ({
           </div>
         )}
         <div id="project-directory" className="project-directory">
+          {team && <button type="button" className="workspace-overview-link" aria-current={!currentProjectId ? "page" : undefined} onClick={() => onOpenTeam(team.id)}><PanelIcon />Overview</button>}
           <label className="project-filter">
             <span>Projects</span>
             <input

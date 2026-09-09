@@ -65,6 +65,20 @@ it("projects native Read success/error into common events without flattening too
   expect((await collect(request(page.nextCursor))).observations).toEqual([])
 })
 
+it("deduplicates repeated message usage and includes cache input with Raw disabled", async () => {
+  const page = await collect({ ...request(), rawCaptureEnabled: false })
+  const usage = page.observations.flatMap(o => o.usage ?? [])
+  expect(usage).toHaveLength(2)
+  expect(usage.map(u => [u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens])).toEqual([[872, 77, 0, 0], [1054, 7, 768, 0]])
+  expect(usage.every(u => u.model === "deepseek-v4-pro")).toBe(true)
+  expect(page.observations.flatMap(o => o.rawSegments)).toEqual([])
+  expect((await collect({ ...request(page.nextCursor), rawCaptureEnabled: false })).observations).toEqual([])
+  const old = JSON.parse(page.nextCursor!)
+  for (const item of old.sessions) delete item.checkpoint.usageVersion
+  const backfilled = await collect({ ...request(JSON.stringify(old)), rawCaptureEnabled: false })
+  expect(backfilled.observations.flatMap(o => o.usage ?? [])).toEqual(usage)
+})
+
 it("keeps stable event IDs on append and defers an incomplete line", async () => {
   const first = await collect(), old = first.observations[0]!
   const last = records.filter(r => r.uuid).at(-1)!

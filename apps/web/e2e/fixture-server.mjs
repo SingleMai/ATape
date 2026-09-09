@@ -1,4 +1,5 @@
 import http from "node:http"
+import { overviewFixture } from "./overview-fixture.mjs"
 
 const address = "127.0.0.1"
 const port = 8080
@@ -12,6 +13,8 @@ const initialState = () => ({
   cliResolveCount: 0,
   conversationRequests: 0,
   failConversation: false,
+  failOverview: false,
+  overviewRevision: 0,
   projectMemoryRequests: 0,
   failCredentials: false,
   fresh: false,
@@ -128,6 +131,18 @@ const server = http.createServer(async (request, response) => {
 
   if (path === "/healthz") return json(response, 200, { status: "ok" })
   if (routeFixtureControl(request, response, url)) return
+  if (path === "/__fixture/overview" && request.method === "POST") {
+    state.failOverview = url.searchParams.get("fail") === "1"
+    state.overviewRevision = Number(url.searchParams.get("revision") || 0)
+    return empty(response)
+  }
+  if (/^\/api\/v1\/teams\/[^/]+\/overview$/.test(path)) {
+    if (!requireWeb(request, response)) return
+    if (state.failOverview) return problem(response, 503, "service_unavailable")
+    const selected = path.includes("/created-team/") ? state.createdTeam : team
+    if (!selected) return problem(response, 404, "not_found")
+    return json(response, 200, overviewFixture(selected, url.searchParams, { revision: state.overviewRevision, empty: selected.id === "created-team" && !state.createdProjectVisible }))
+  }
 
   if (path === "/api/v1/users/me/raw-capture" || path === "/api/v1/teams/team-a/raw-capture") {
     if (!requireWeb(request, response)) return

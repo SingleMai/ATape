@@ -130,6 +130,7 @@ func (h *Handler) register(candidate route) error {
 
 func (h *Handler) registerRoutes() error {
 	routes := []route{
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/teams/{teamId}/overview", WebOnly}, handler: h.teamOverview, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.TeamReadMetadata}},
 		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/projects/{projectId}/raw-capture", AnyPrincipal}, handler: h.rawCaptureProject, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.ProjectReadMetadata}},
 		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/teams/{teamSlug}/raw-capture", AnyPrincipal}, handler: h.rawCaptureTeam, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.TeamReadMetadata}},
 		{RouteSpec: RouteSpec{http.MethodPut, "/api/v1/teams/{teamSlug}/raw-capture", WebOnly}, handler: h.updateRawCaptureTeam, body: controlPlaneJSONRequest, cache: noStore, actions: []authorization.Action{authorization.TeamUpdateRawCapture}},

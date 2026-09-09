@@ -38,6 +38,14 @@
   --atape-color-lavender-border: #b6a5df;
   --atape-color-green: #8fc98d;
 
+  /* Categorical data: independent of success/warning/danger semantics.
+     Pale fills use stronger edges and icon strokes on paper surfaces. */
+  --atape-color-chart-1: var(--atape-color-accent);
+  --atape-color-chart-1-strong: var(--atape-color-accent-strong);
+  --atape-color-chart-2: var(--atape-color-coral);
+  --atape-color-chart-2-strong: color-mix(in srgb, var(--atape-color-coral) 65%, var(--atape-color-text));
+  --atape-color-chart-neutral: var(--atape-color-text-muted);
+
   /* Semantic states */
   --atape-color-success: #4f9e59;
   --atape-color-success-text: #316b3c;

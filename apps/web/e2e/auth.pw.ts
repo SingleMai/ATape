@@ -29,7 +29,8 @@ const expectNoBrowserSecrets = async (page: Page) => {
   expect(result.html).not.toMatch(/csrf-fixture|grant-view-one|atc_v1_|credential-secret/)
   expect(result.href).not.toMatch(/csrf-fixture|grant-view-one|atc_v1_|credential-secret/)
   expect(result.localKeys).toEqual([])
-  expect(result.sessionKeys).toEqual([])
+  // Router-owned position-only state supports returning from an Overview drilldown.
+  expect(result.sessionKeys.filter(key => key !== "tsr-scroll-restoration-v1_3")).toEqual([])
 }
 
 test.beforeEach(async ({ context, request }) => {
@@ -155,7 +156,7 @@ test("recovers fresh authentication and scopes one-time Team codes locally", asy
   await page.getByRole("dialog").getByRole("button", { name: "Rotate code" }).click()
   await expect(page.getByRole("alert")).toContainText("Confirm your sign-in")
   await expect(page.getByRole("button", { name: "Confirm sign-in" })).toBeVisible()
-  await expect(page).toHaveURL(`${appOrigin}/teams/team-id/projects/project-1`)
+  await expect(page).toHaveURL(`${appOrigin}/teams/team-id`)
 
   await request.post(`${fixtureOrigin}/__fixture/fresh?value=1`)
   await page.getByRole("button", { name: "Rotate" }).click()
@@ -196,7 +197,7 @@ test("normalizes first-Team create and join input through the same Web Interface
   expect((await fixtureState(page)).teamCreateIdempotencyKey).toMatch(/^[A-Za-z0-9_-]{22}$/)
 })
 
-test("selects a newly created Team and opens its first captured Project", async ({ context, page, request }) => {
+test("keeps a newly created Team on Overview when its first Project arrives", async ({ context, page, request }) => {
   await authenticate(context)
   await request.post(`${fixtureOrigin}/__fixture/workspace?value=empty`)
   await page.goto("/onboarding/create-team")
@@ -206,13 +207,13 @@ test("selects a newly created Team and opens its first captured Project", async 
 
   await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
   await expect(page.locator(".team-trigger-name")).toHaveText("Tape Makers")
-  await expect(page.getByRole("heading", { name: "Open guided setup" })).toBeVisible()
-  await expect(page.getByText("atape setup /path/to/project", { exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Bring in the first conversation" })).toBeVisible()
 
   await request.post(`${fixtureOrigin}/__fixture/created-project?value=1`)
-  await page.getByRole("button", { name: "Check again" }).click()
-  await expect(page).toHaveURL(`${appOrigin}/teams/created-team/projects/created-project`)
-  await expect(page.getByRole("navigation", { name: "Projects", exact: true }).locator('[aria-current="page"]')).toContainText("Captured Project")
+  await page.getByRole("button", { name: "Refresh", exact: true }).click()
+  await expect(page).toHaveURL(`${appOrigin}/teams/created-team`)
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Bring in the first conversation" })).toHaveCount(0)
 })
 
 test("keeps each narrative exchange focused on the prompt and primary response", async ({ context, page }) => {

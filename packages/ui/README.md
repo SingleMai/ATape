@@ -22,6 +22,12 @@ The default theme is `cozy-island`. Its semantic token map lives in `src/styles/
 
 A future theme should provide the same `--atape-*` token Interface. It must not override product selectors or duplicate page layouts. Theme selection belongs to an application Composition Root; product Views should continue to consume semantic tokens and primitives unchanged.
 
+Categorical charts use `--atape-color-chart-1`, `--atape-color-chart-2`, their
+`-strong` variants for edges/hover/icon strokes, and `--atape-color-chart-neutral`
+for unclassified series. Cozy Island maps these to teal and coral from its island
+palette. Keep success, warning and danger tokens for state meaning. Pale chart
+fills need the stronger outline; legend text continues to use content tokens.
+
 ### Brand assets
 
 Keep theme assets beside their stylesheet, in the matching theme directory:

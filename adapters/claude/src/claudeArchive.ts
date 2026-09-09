@@ -1,4 +1,4 @@
-import type { AcpSessionUpdate, AdapterCollectRequest, AdapterCollectionPage, AdapterEvent, AdapterObservation, AdapterOpenContext } from "@atape/domain"
+import type { AcpSessionUpdate, AdapterCollectRequest, AdapterCollectionPage, AdapterEvent, AdapterObservation, AdapterOpenContext, AdapterUsage } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
 import { createHash, type Hash } from "node:crypto"
@@ -19,6 +19,7 @@ const CursorSchema = Schema.Struct({
   v: Schema.Literal(1), sessionId: Schema.String, bytes: Schema.Number,
   digest: Schema.String, origin: Schema.String,
   projectionRevision: Schema.optionalKey(Schema.Number),
+  usageVersion: Schema.optionalKey(Schema.Literal(1)),
   observedAt: Schema.optionalKey(Schema.String),
   publication: Schema.optionalKey(Schema.Number),
   stream: Schema.optionalKey(Schema.Struct({
@@ -101,7 +102,7 @@ export const collectClaudePage = (archive: Archive, request: AdapterCollectReque
         if (size === undefined) continue
         if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(candidate.sessionId) ?? 0))
         const checkpoint = state.sessions.find(item => item.checkpoint.sessionId === candidate.sessionId)?.checkpoint
-        if (!checkpoint?.stream || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0) pendingCanonicalSessions++
+        if (!checkpoint?.stream || checkpoint.usageVersion !== 1 || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0) pendingCanonicalSessions++
       }
     }
     return { ...page, progress: { sourceFiles: inventory.length, pendingRawBytes, pendingCanonicalSessions,
@@ -182,7 +183,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (hash.copy().digest("hex") !== cursor.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
       }
     }
-    const resume = cursor?.projectionRevision === 3 && cursor.observedAt ? cursor.stream : undefined
+    const resume = cursor?.projectionRevision === 3 && cursor.usageVersion === 1 && cursor.observedAt ? cursor.stream : undefined
     let at = resume ? cursor!.bytes : 0
     if (!resume) hash = createHash("sha256")
     let state: NonNullable<Cursor["stream"]> = resume ?? { lastUuid: null, seen: [], calls: [], order: 0, eventSkip: 0, title: rootTitle(root) }
@@ -191,6 +192,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     const sourceObjectId = `claude-rollout-${digest(Buffer.from(JSON.stringify([sessionId, origin, root.uuid])))}`
     const generation = digest(Buffer.from(JSON.stringify([sessionId, origin, root.uuid])))
     const events: AdapterEvent[] = []
+    const usage = new Map<string, AdapterUsage>()
     const rawProgress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId && p.sourceGeneration === generation)
     const acknowledged = rawProgress?.sourceOffset ?? 0
     let rawBytes = 0, eventBytes = 0, partial = false, hasMore = false
@@ -223,6 +225,14 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         events.push(event); eventBytes += size; skip++
       }
       if (skip < projected.events.length) { state = { ...state, eventSkip: skip }; hasMore = true; break }
+      const sample = projectUsage(record, line.end)
+      if (sample) {
+        const bytes = Buffer.byteLength(JSON.stringify(sample))
+        if (usage.size >= request.limits.eventsPerObservation || eventBytes + bytes > request.limits.canonicalBytesPerObservation - 8192) {
+          state = { ...state, eventSkip: skip }; hasMore = true; break
+        }
+        usage.set(sample.sourceUsageId, sample); eventBytes += bytes
+      }
       if (!state.title) {
         const first = projected.events.find(e => e.update.sessionUpdate === "user_message_chunk")
         if (first && "content" in first.update && first.update.content.type === "text") state = { ...state, title: first.update.content.text.replace(/\s+/g, " ").trim().slice(0, 80) }
@@ -242,7 +252,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     const prefixDigest = hash.copy().digest("hex")
     archive.hashCache = { file, stamp, bytes: at, digest: prefixDigest, hash: hash.copy() }
     const observedAt = events.at(-1)?.occurredAt ?? cursor?.observedAt ?? timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
-    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: 3, observedAt,
+    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: 3, usageVersion: 1, observedAt,
       publication: (cursor?.publication ?? 0) + 1,
       stream: { ...state, seen: [...seen], calls: [...calls].map(([id, call]) => [id, call.name, call.uuid]) } }
     const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 3
@@ -251,10 +261,34 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         session: { sourceSessionId: sessionId, revision, title: state.title || "Untitled Claude conversation", summary: "Claude Code conversation", insight: "",
           actor: { name: "User", harness: "Claude Code" }, branch: string(root.gitBranch) ?? "", status: "active", captureStatus: "partial", updatedAt: observedAt, reportedEventCount: 0 },
         threads: [{ sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" }], events,
+        usage: [...usage.values()],
         rawSegments: capturedRaw !== undefined ? [{ sourceObjectId, sourceGeneration: generation, sourceOffset: acknowledged,
           sourceName: `${sessionId}.jsonl`, mediaType: "application/x-ndjson", content: capturedRaw, final: false }] : []
       }] }
   } finally { await handle.close() }
+}
+
+function projectUsage(record: RecordValue, revision: number): AdapterUsage | undefined {
+  if (record.type !== "assistant") return undefined
+  const message = object(record.message), source = object(message?.usage)
+  const sourceUsageId = string(message?.id), occurredAt = timestamp(record.timestamp)
+  if (!source || !sourceUsageId || sourceUsageId.length > 500 || !occurredAt) return undefined
+  const count = (key: string): number | undefined => {
+    const value = source[key]
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+  }
+  const input = count("input_tokens"), outputTokens = count("output_tokens")
+  const cacheReadTokens = count("cache_read_input_tokens"), cacheWriteTokens = count("cache_creation_input_tokens")
+  // Claude input_tokens excludes cache hits and writes. Unknown cache counters
+  // must not be silently replaced with zero when constructing inclusive input.
+  const inputTokens = input !== undefined && cacheReadTokens !== undefined && cacheWriteTokens !== undefined
+    ? input + cacheReadTokens + cacheWriteTokens : undefined
+  if ((inputTokens === undefined || !Number.isSafeInteger(inputTokens)) && outputTokens === undefined) return undefined
+  return { sourceUsageId, sourceThreadId: "root", revision, occurredAt, model: (string(message?.model) ?? "").slice(0, 200),
+    ...(inputTokens === undefined || !Number.isSafeInteger(inputTokens) ? {} : { inputTokens }),
+    ...(outputTokens === undefined ? {} : { outputTokens }),
+    ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }) }
 }
 
 async function readRawPrefix(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, limit: number, signal: AbortSignal): Promise<string> {
