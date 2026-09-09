@@ -7,6 +7,7 @@ import "@atape/ui/styles.css"
 import "./styles.css"
 import "./workspace.css"
 import "./settings.css"
+import "./overview.css"
 
 const root = document.getElementById("root")
 

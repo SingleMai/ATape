@@ -4,19 +4,24 @@ import {
   safeLocalReturnTo,
   selectDefaultWorkspaceProject,
   selectDefaultWorkspaceTeam,
+  overviewSelection,
+  type OverviewSelection,
   type AuthenticatedSession
 } from "@atape/domain"
-import { Option, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import {
   Navigate,
   Outlet,
   createRootRoute,
   createRoute,
   createRouter,
+  stripSearchParams,
+  useElementScrollRestoration,
   useNavigate,
   useRouterState
 } from "@tanstack/react-router"
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from "react"
+import type { SearchSchemaInput } from "@tanstack/react-router"
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, useCallback } from "react"
 import {
   useAccountSecurityPresenter,
   useCLIAuthorizationPresenter,
@@ -45,6 +50,8 @@ import { AccountSecurityView, TeamAccessView } from "./view/SecuritySettingsView
 import { SessionReaderView } from "./view/SessionReaderView"
 import { CreateTeamView, JoinTeamView, TeamChoiceView } from "./view/TeamOnboardingView"
 import { WorkspaceHomeView } from "./view/WorkspaceHomeView"
+import { TeamOverviewView } from "./view/TeamOverviewView"
+import { useOverviewPresenter } from "./presenters/overviewPresenter"
 
 const SessionSearch = Schema.Struct({
   thread: Schema.optionalKey(Schema.String),
@@ -330,7 +337,7 @@ function WorkspaceHomeRoute() {
     }
     const target = selectDefaultWorkspaceProject(workspace.state.value)
     if (target !== undefined) {
-      return <Navigate to="/teams/$teamId/projects/$projectId" params={target} replace />
+      return <Navigate to="/teams/$teamId" params={{ teamId: target.teamId }} replace />
     }
     const team = selectDefaultWorkspaceTeam(workspace.state.value)
     if (team !== undefined) return <Navigate to="/teams/$teamId" params={team} replace />
@@ -341,26 +348,36 @@ function WorkspaceHomeRoute() {
 const teamRoute = createRoute({
   getParentRoute: () => workspaceLayoutRoute,
   path: "/teams/$teamId",
+  validateSearch: (search: Partial<OverviewSelection> & SearchSchemaInput) => overviewSelection(search),
+  search: { middlewares: [stripSearchParams(overviewSelection({}))] },
   component: TeamWorkspaceRoute
 })
 
 function TeamWorkspaceRoute() {
   const params = teamRoute.useParams()
-  const workspace = useWorkspacePresenter()
-  const team = workspace.state._tag === "Ready"
-    ? workspace.state.value.teams.find((candidate) => candidate.id === params.teamId)
-    : undefined
-  if (team !== undefined) {
-    const target = selectDefaultWorkspaceProject({ teams: [team] })
-    if (target !== undefined) {
-      return <Navigate to="/teams/$teamId/projects/$projectId" params={target} replace />
+  const selection = teamRoute.useSearch()
+  const session = useAuthenticatedSession()
+  const navigate = useNavigate()
+  const { view: _view, metric: _metric, ...query } = selection
+  const presenter = useOverviewPresenter(session.user.id, params.teamId, query)
+  const savedScroll = useElementScrollRestoration({ getElement: () => window })
+  const restore = useRef(savedScroll ? { ...savedScroll } : undefined)
+  const ready = presenter.state._tag === "Ready"
+  useLayoutEffect(() => {
+    // The router can restore before the remote dashboard has its full height.
+    // Apply its saved position once the content is actually mounted.
+    if (ready && restore.current) {
+      const position = restore.current
+      const frame = Effect.runSync(Effect.sync(() => requestAnimationFrame(() => {
+        window.scrollTo(position.scrollX, position.scrollY)
+        restore.current = undefined
+      })))
+      return () => { Effect.runSync(Effect.sync(() => cancelAnimationFrame(frame))) }
     }
-  }
-  return <WorkspaceHomeView
-    state={workspace.state}
-    {...(team === undefined ? {} : { teamSlug: team.slug })}
-    onRetry={workspace.reload}
-  />
+  }, [ready])
+  return <TeamOverviewView presenter={presenter} selection={selection}
+    onChange={patch => { void navigate({ to: "/teams/$teamId", params, search: { ...selection, ...patch }, resetScroll: false }) }}
+    onOpenSession={value => { void navigate({ to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params: { teamId: params.teamId, projectId: value.projectId, sessionId: value.id }, search: { thread: "root" } }) }} />
 }
 
 const projectRoute = createRoute({
@@ -660,7 +677,7 @@ const routeTree = rootRoute.addChildren([
   ])
 ])
 
-export const router = createRouter({ routeTree, defaultPreload: "intent" })
+export const router = createRouter({ routeTree, defaultPreload: "intent", scrollRestoration: true })
 
 declare module "@tanstack/react-router" {
   interface Register {

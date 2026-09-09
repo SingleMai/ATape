@@ -24,6 +24,27 @@ afterEach(async () => {
 })
 
 describe("Codex Adapter", () => {
+  it("reads owned per-response usage without summing repeated or cumulative snapshots", async () => {
+    const root = await makeEmptyFixture()
+    const counters = { input_tokens: 100, output_tokens: 10, cached_input_tokens: 40, cache_write_input_tokens: 60, reasoning_output_tokens: 5, total_tokens: 110 }
+    const usage = { timestamp: "2026-09-09T00:00:00Z", type: "token_usage_record", payload: { thread_id: "usage", session_id: "usage", turn_id: "turn", root_turn_id: "turn", response_id: "response", usage: counters, turn_token_usage: counters, thread_token_usage: counters } }
+    await writeJsonl(join(root.sessionsDirectory, "usage.jsonl"), [sessionMeta({ id: "usage", cwd: root.project }),
+      { type: "turn_context", payload: { turn_id: "turn", model: "model-a" } },
+      itemCompleted("2026-09-09T00:00:00Z", "usage", { type: "AgentMessage", id: "answer", content: [{ type: "output_text", text: "done" }] }),
+      usage, usage,
+      { ...usage, payload: { ...usage.payload, thread_id: "copied-parent", response_id: "other" } },
+      { type: "event_msg", payload: { type: "token_count", info: { last_token_usage: counters, total_token_usage: counters } } }])
+    const runtime = await openAdapter(root.project, "directory")
+    let cursor: string | null = null
+    const samples = []
+    for (let i = 0; i < 20; i++) {
+      const page = await collect(runtime, cursor, [], { ...AdapterCollectionLimits, eventsPerObservation: 1 }, false)
+      samples.push(...page.observations.flatMap(o => o.usage ?? [])); cursor = page.nextCursor
+      if (!page.hasMore) break
+    }
+    expect(samples).toHaveLength(1)
+    expect(samples[0]).toMatchObject({ sourceThreadId: "usage", sourceUsageId: "response", inputTokens: 100, outputTokens: 10, cacheReadTokens: 40, cacheWriteTokens: 60, model: "model-a" })
+  })
   it("recovers Raw rejected after Canonical was checkpointed", async () => {
     const root = await makeEmptyFixture()
     const file = join(root.sessionsDirectory, "denied.jsonl")

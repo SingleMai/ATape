@@ -18,10 +18,12 @@ import (
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 	"github.com/SingleMai/ATape/server/internal/team"
+	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 )
 
 type Modules struct {
+	Overview       *teamoverview.Module
 	Authentication *authentication.Module
 	Teams          *team.Module
 	Memory         *conversation.Memory
@@ -33,6 +35,7 @@ type Modules struct {
 }
 
 type Handler struct {
+	overview  *teamoverview.Module
 	auth      *authentication.Module
 	teams     *team.Module
 	memory    *conversation.Memory
@@ -63,7 +66,8 @@ func NewHandler(config Config, modules Modules) (*Handler, error) {
 		return nil, errors.New("HTTP Adapter requires the Auth Cutover Module")
 	}
 	handler := &Handler{
-		auth: modules.Authentication, teams: modules.Teams,
+		overview: modules.Overview,
+		auth:     modules.Authentication, teams: modules.Teams,
 		memory: modules.Memory, ingestor: modules.Ingestor, searcher: modules.Searcher,
 		directory: modules.Directory, raw: modules.Raw, cutover: modules.Cutover, config: prepared,
 		mux: http.NewServeMux(), routeKeys: make(map[string]struct{}),

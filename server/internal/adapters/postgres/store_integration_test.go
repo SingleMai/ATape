@@ -72,7 +72,7 @@ TRUNCATE project_search_documents, project_search_checkpoints,
          team_operation_receipts, team_project_repository_aliases,
          team_join_code_attempt_windows, team_join_codes, team_memberships,
          canonical_projection_changes, canonical_batch_receipts, canonical_event_versions, canonical_events,
-         canonical_threads, canonical_sessions, canonical_projects, workspace_teams`); err != nil {
+         canonical_usage, canonical_threads, canonical_sessions, canonical_projects, workspace_teams`); err != nil {
 			t.Fatalf("reset PostgreSQL contract state: %v", err)
 		}
 		seedControlPlane(t, pool)
@@ -86,7 +86,7 @@ TRUNCATE project_search_documents, project_search_checkpoints,
          team_operation_receipts, team_project_repository_aliases,
          team_join_code_attempt_windows, team_join_codes, team_memberships,
          canonical_projection_changes, canonical_batch_receipts, canonical_event_versions, canonical_events,
-         canonical_threads, canonical_sessions, canonical_projects, workspace_teams`); err != nil {
+         canonical_usage, canonical_threads, canonical_sessions, canonical_projects, workspace_teams`); err != nil {
 			t.Fatalf("reset authorization fixture: %v", err)
 		}
 		seedControlPlane(t, pool)
@@ -324,7 +324,7 @@ TRUNCATE project_search_documents, project_search_checkpoints,
          team_operation_receipts, team_project_repository_aliases,
          team_join_code_attempt_windows, team_join_codes, team_memberships,
          canonical_projection_changes, canonical_batch_receipts, canonical_event_versions, canonical_events,
-         canonical_threads, canonical_sessions, canonical_projects, workspace_teams`); err != nil {
+         canonical_usage, canonical_threads, canonical_sessions, canonical_projects, workspace_teams`); err != nil {
 		pool.Close()
 		t.Fatalf("reset PostgreSQL restart state: %v", err)
 	}
@@ -496,7 +496,7 @@ DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 13; got != want {
+	if got, want := migrationCount, 14; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))

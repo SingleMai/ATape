@@ -15,6 +15,7 @@ sql:
       - "internal/adapters/postgres/migrations/000011_cli_device_inventory.sql"
       - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
       - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
+      - "internal/adapters/postgres/migrations/000014_canonical_usage.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:

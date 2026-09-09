@@ -224,6 +224,20 @@ func (s *Store) ApplyBatch(
 		}
 	}
 
+	for _, value := range batch.Usage {
+		old, err := queries.GetUsageForUpdate(ctx, value.SourceKey)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return canonical.ApplyResult{}, persist("read usage", err)
+		}
+		if err == nil && old.Revision == value.Revision && old.Digest != value.Digest {
+			return canonical.ApplyResult{}, conflict(value.SourceKey, "usage revision has different content")
+		}
+		if err := queries.UpsertUsage(ctx, db.UpsertUsageParams{SourceKey: value.SourceKey, SessionID: value.SessionID,
+			ThreadID: value.ThreadID, Revision: value.Revision, Digest: value.Digest, OccurredAt: value.OccurredAt, Model: value.Model,
+			InputTokens: value.InputTokens, OutputTokens: value.OutputTokens, CacheReadTokens: value.CacheReadTokens, CacheWriteTokens: value.CacheWriteTokens}); err != nil {
+			return canonical.ApplyResult{}, persist("write usage", err)
+		}
+	}
 	if err := queries.AdvanceProjectCapture(ctx, db.AdvanceProjectCaptureParams{
 		ObservedAt: batch.ObservedAt,
 		ProjectID:  batch.ProjectID,

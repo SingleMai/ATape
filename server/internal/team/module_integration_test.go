@@ -697,7 +697,7 @@ TRUNCATE security_audit_events,
          auth_user_code_attempt_windows, auth_cli_credentials, auth_cli_device_authorizations,
          auth_federated_login_transactions, auth_web_session_secrets, auth_web_sessions,
          auth_external_identities, canonical_projection_changes, canonical_batch_receipts,
-         canonical_event_versions, canonical_events, canonical_threads, canonical_sessions,
+         canonical_event_versions, canonical_events, canonical_usage, canonical_threads, canonical_sessions,
          project_search_documents, project_search_checkpoints,
          raw_chunks, raw_generations, raw_objects,
          canonical_projects, workspace_teams, auth_users`); err != nil {

@@ -18,3 +18,4 @@ export { CollectorDeviceGateway, scopeCollectorReport } from "./collectorMonitor
 export * from "./cliDeviceView.ts"
 
 export * from "./rawCapture.ts"
+export * from "./teamOverview.ts"

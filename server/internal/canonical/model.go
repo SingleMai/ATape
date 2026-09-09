@@ -110,6 +110,23 @@ type WriteBatch struct {
 	Session    SessionRecord
 	Threads    []ThreadRecord
 	Events     []EventRecord
+	Usage      []UsageRecord
+}
+
+// Usage is independent of event content and Search. Input includes cache
+// subdivisions, output includes reasoning, and nil means not reported.
+type UsageRecord struct {
+	SourceKey        string
+	SessionID        string
+	ThreadID         string
+	Revision         int64
+	Digest           string
+	OccurredAt       time.Time
+	Model            string
+	InputTokens      *int64
+	OutputTokens     *int64
+	CacheReadTokens  *int64
+	CacheWriteTokens *int64
 }
 
 type ApplyResult struct {

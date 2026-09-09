@@ -14,10 +14,12 @@ import (
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
+	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 )
 
 type Store interface {
+	teamoverview.Store
 	ingestion.BatchStore
 	conversation.SnapshotStore
 	workspace.DirectoryStore
@@ -55,6 +57,106 @@ func MemoryControlPlane() canonical.MemoryControlPlane {
 
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
+	t.Run("Team overview usage, replay, model filtering, child ownership and deletion", func(t *testing.T) {
+		store := factory(t)
+		writer := ingestion.NewIngestor(store)
+		dashboard := teamoverview.New(store)
+		batch := ValidBatch()
+		root := "provider-root"
+		batch.Threads = append(batch.Threads, ingestion.Thread{SourceThreadID: "child", ParentSourceThreadID: &root, Revision: 1, Label: "Worker", CaptureStatus: "healthy"})
+		child := batch.Events[0]
+		child.SourceEventID = "delegation"
+		child.SourceThreadID = "child"
+		child.Text = "Internal delegated prompt"
+		batch.Events = append(batch.Events, child)
+		count := func(v int64) *int64 { return &v }
+		batch.Usage = []ingestion.Usage{
+			{SourceUsageID: "response-a", SourceThreadID: root, Revision: 1, OccurredAt: batch.Events[1].OccurredAt, Model: "model-a", InputTokens: count(100), OutputTokens: count(10), CacheReadTokens: count(40), CacheWriteTokens: count(60)},
+			{SourceUsageID: "response-b", SourceThreadID: "child", Revision: 1, OccurredAt: batch.Events[1].OccurredAt, Model: "model-b", InputTokens: count(50), OutputTokens: count(5), CacheReadTokens: count(20), CacheWriteTokens: count(0)},
+		}
+		created, err := writer.ApplyBatch(t.Context(), CLIPrincipal(), batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = writer.ApplyBatch(t.Context(), CLIPrincipal(), batch); err != nil {
+			t.Fatal(err)
+		}
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04"}
+		view, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if view.Metrics.Sessions != 1 || view.Metrics.Messages != 1 || view.Metrics.ActiveMembers != 1 || view.Metrics.Tokens.Total == nil || *view.Metrics.Tokens.Total != 165 || *view.Metrics.Tokens.CacheRead != 60 || len(view.Sessions) != 1 {
+			t.Fatalf("overview: %+v", view)
+		}
+		if view.Sessions[0].Input != "Which layer should own retries?" || view.Sessions[0].Output != "The retry needs one durable key." {
+			t.Fatalf("root preview: %+v", view.Sessions[0])
+		}
+		query.Model = "model-b"
+		filtered, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || filtered.Metrics.Sessions != 1 || filtered.Metrics.Tokens.Total == nil || *filtered.Metrics.Tokens.Total != 55 {
+			t.Fatalf("model filter: %+v %v", filtered, err)
+		}
+		query.Model = ""
+		query.From = "2026-09-05"
+		query.To = "2026-09-05"
+		historical, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || historical.Metrics.Sessions != 0 {
+			t.Fatalf("historical import must not be current activity: %+v %v", historical, err)
+		}
+		conflict := batch
+		conflict.BatchID = "conflicting-usage"
+		conflict.Usage = append([]ingestion.Usage{}, batch.Usage...)
+		conflict.Usage[0].OutputTokens = count(99)
+		if _, err = writer.ApplyBatch(t.Context(), CLIPrincipal(), conflict); err == nil {
+			t.Fatal("accepted conflicting usage revision")
+		}
+		query.From, query.To = "2026-09-04", "2026-09-04"
+		unchanged, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || unchanged.Metrics.Tokens.Total == nil || *unchanged.Metrics.Tokens.Total != 165 {
+			t.Fatalf("conflict changed usage: %+v %v", unchanged, err)
+		}
+		correction := batch
+		correction.BatchID = "usage-correction"
+		correction.Usage = append([]ingestion.Usage{}, batch.Usage...)
+		correction.Usage[0].Revision = 2
+		correction.Usage[0].InputTokens = count(130)
+		correction.Usage[1].Revision = 2
+		correction.Usage[1].OutputTokens = nil
+		correction.Usage[1].Model = ""
+		last := batch.Events[1]
+		last.SourceEventID = "assistant-final-chunk"
+		last.EventIndex = 1
+		last.Text = "First sentence. Final response sentence."
+		correction.Events = append(append([]ingestion.Event{}, batch.Events...), last)
+		if _, err = writer.ApplyBatch(t.Context(), CLIPrincipal(), correction); err != nil {
+			t.Fatal(err)
+		}
+		corrected, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || corrected.Metrics.Tokens.Total != nil || corrected.Metrics.Tokens.Output != nil || corrected.Metrics.Tokens.Input == nil || *corrected.Metrics.Tokens.Input != 180 || corrected.Metrics.Tokens.Records != 2 || corrected.Sessions[0].Output != "Final response sentence." {
+			t.Fatalf("usage correction/unknown/chunk preview: %+v %v", corrected, err)
+		}
+		query.Model = "__unknown__"
+		unknown, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || unknown.Metrics.Tokens.Input == nil || *unknown.Metrics.Tokens.Input != 50 {
+			t.Fatalf("unknown model drilldown: %+v %v", unknown, err)
+		}
+		query.Model = ""
+		if err = store.DeleteSession(t.Context(), WebPrincipal(), created.SessionID, ""); err != nil {
+			t.Fatal(err)
+		}
+		query.From = "2026-09-04"
+		query.To = "2026-09-04"
+		deleted, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || deleted.Metrics.Sessions != 0 || deleted.Metrics.Tokens.Total != nil {
+			t.Fatalf("deleted data: %+v %v", deleted, err)
+		}
+		outsider := WebPrincipal()
+		outsider.UserID = "01991b70-4d2b-7c96-a532-5818faba2e79"
+		if _, err = dashboard.Open(t.Context(), outsider, TestTeamID, query); err == nil {
+			t.Fatal("outsider read overview")
+		}
+	})
 	t.Run("accepts package and wire-profile upgrades only when Event content is unchanged", func(t *testing.T) {
 		store := factory(t)
 		ingestor := ingestion.NewIngestor(store)

@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0057](0057-team-overview-and-structured-usage.md) adds structured Canonical
+usage, authorized Team aggregation and the management Overview.
+
 [ADR-0049](0049-empty-collector-page-progress.md) accepts bounded empty-page
 continuations that advance the cursor without fabricating uploaded observations.
 

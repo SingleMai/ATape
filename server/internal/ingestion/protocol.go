@@ -77,6 +77,19 @@ type Batch struct {
 	Session                 Session  `json:"session"`
 	Threads                 []Thread `json:"threads"`
 	Events                  []Event  `json:"events"`
+	Usage                   []Usage  `json:"usage,omitempty"`
+}
+
+type Usage struct {
+	SourceUsageID    string `json:"sourceUsageId"`
+	SourceThreadID   string `json:"sourceThreadId"`
+	Revision         int64  `json:"revision"`
+	OccurredAt       string `json:"occurredAt"`
+	Model            string `json:"model"`
+	InputTokens      *int64 `json:"inputTokens,omitempty"`
+	OutputTokens     *int64 `json:"outputTokens,omitempty"`
+	CacheReadTokens  *int64 `json:"cacheReadTokens,omitempty"`
+	CacheWriteTokens *int64 `json:"cacheWriteTokens,omitempty"`
 }
 
 type ValidationError struct {

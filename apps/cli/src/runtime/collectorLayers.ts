@@ -503,7 +503,8 @@ const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
     projectId: submission.projectId,
     session: submission.observation.session,
     threads: submission.observation.threads,
-    events
+    events,
+    ...(submission.observation.usage === undefined ? {} : { usage: submission.observation.usage })
   }
   return { ...base, batchId: `b_${digest(JSON.stringify(base))}` }
 }
