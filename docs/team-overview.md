@@ -161,12 +161,17 @@ Controlled browser fixtures provide layout examples, not claimed live Team data.
   and [protocol definitions](https://github.com/openai/codex/blob/ce2c2759ebee2d64565922f6f7365082284f9570/codex-rs/protocol/src/protocol.rs).
 - Team timezone is fixed to `Asia/Singapore` in this increment; there is no
   timezone settings UI. Custom ranges are bounded to 366 days.
-- Aggregation uses one consistent bounded snapshot, with a 50,000-record cap per
+- Aggregation uses one consistent bounded snapshot, with a 100,000-record cap per
   fact category, including the comparison period. The limit applies before
   dimension filtering. Too-large ranges fail explicitly with HTTP 422; no partial
   totals are presented as complete. Very large Teams need a subsequent SQL
   aggregation/read-model increment; shorter ranges cannot fix a Team exceeding
-  the all-time Session-directory cap. Load testing at that scale is outstanding.
+  the all-time Session-directory cap. Deployment preflight found 57,707 messages
+  in the dogfood Team's default comparison window, exceeding the original 50,000
+  cap. A real PostgreSQL regression now verifies complete metrics and recent
+  previews with 60,002 messages, and explicit rejection beyond the new cap.
+  This bounded increase supports the current installation; it does not replace
+  the planned large-Team aggregation work.
 - Unknown-time disclosure currently covers retained Team messages, while usage
   coverage covers the active selection. Conversation preview excerpts are bounded
   to 1,500 source characters in PostgreSQL, then 360 visible characters. A request
