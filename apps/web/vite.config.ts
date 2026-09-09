@@ -3,6 +3,7 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   plugins: [react()],
+  publicDir: "../../packages/ui/src/styles/themes/cozy-island",
   server: {
     host: "127.0.0.1",
     port: 4187,

@@ -39,10 +39,7 @@
   color: var(--atape-color-text);
 }
 .project-sidebar .brand-mark {
-  color: var(--atape-color-yellow);
   width: 30px;
-  height: 25px;
-  filter: none;
 }
 .quiet-icon {
   display: inline-flex;

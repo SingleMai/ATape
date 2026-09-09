@@ -1,20 +1,10 @@
-import { Avatar, Button } from "@atape/ui"
+import { Avatar, BrandMark, Button } from "@atape/ui"
 import { useEffect, useRef, type ReactNode } from "react"
 import type { FailureView } from "../presenters/accessPresenter"
 
-export const TapeMark = ({ className }: { readonly className?: string }) => (
-  <svg aria-hidden="true" className={className} viewBox="0 0 48 38">
-    <path d="M8 4h32l5 7v16l-5 7H8l-5-7V11z" fill="currentColor" />
-    <circle cx="18" cy="19" r="6" fill="var(--atape-color-paper)" />
-    <circle cx="30" cy="19" r="6" fill="var(--atape-color-paper)" />
-    <circle cx="18" cy="19" r="2" fill="var(--atape-color-text-muted)" />
-    <circle cx="30" cy="19" r="2" fill="var(--atape-color-text-muted)" />
-  </svg>
-)
-
 export const AccessBrand = ({ home = "/" }: { readonly home?: string }) => (
   <a className="access-brand" href={home} aria-label="ATape home">
-    <TapeMark className="access-brand-mark" />
+    <BrandMark className="access-brand-mark" />
     <span>ATape</span>
   </a>
 )

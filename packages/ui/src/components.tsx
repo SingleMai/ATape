@@ -8,6 +8,10 @@ import type {
 const classNames = (...values: ReadonlyArray<string | undefined>) =>
   values.filter((value): value is string => value !== undefined && value.length > 0).join(" ")
 
+export const BrandMark = ({ className }: { readonly className?: string }) => (
+  <span aria-hidden="true" className={classNames("atape-brand-mark", className)} />
+)
+
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   readonly variant?: "primary" | "secondary" | "ghost"
   readonly pending?: boolean
