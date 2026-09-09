@@ -1,7 +1,7 @@
 name: atape
 
 x-atape-server-image: &atape-server-image
-  image: ${ATAPE_SERVER_IMAGE:-atape-server:0.4.7}
+  image: ${ATAPE_SERVER_IMAGE:-atape-server:0.4.8}
 
 services:
   database:
@@ -72,9 +72,9 @@ services:
       context: .
       dockerfile: deploy/server.Dockerfile
       args:
-        ATAPE_RELEASE_VERSION: 0.4.7
+        ATAPE_RELEASE_VERSION: 0.4.8
         ATAPE_RELEASE_EPOCH: auth-v1
-        ATAPE_MINIMUM_CLI_VERSION: 0.4.7
+        ATAPE_MINIMUM_CLI_VERSION: 0.4.8
     restart: unless-stopped
     init: true
     security_opt:
@@ -115,9 +115,9 @@ services:
       context: .
       dockerfile: deploy/web.Dockerfile
       args:
-        ATAPE_RELEASE_VERSION: 0.4.7
+        ATAPE_RELEASE_VERSION: 0.4.8
         ATAPE_RELEASE_EPOCH: auth-v1
-        ATAPE_MINIMUM_CLI_VERSION: 0.4.7
+        ATAPE_MINIMUM_CLI_VERSION: 0.4.8
         VITE_ATAPE_API_ORIGIN: ${ATAPE_API_PUBLIC_URL:-}
     restart: unless-stopped
     ports:
