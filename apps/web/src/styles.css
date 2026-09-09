@@ -311,16 +311,34 @@ h3 { margin: 0; font-size: 20px; }
 .narrative-prompt > header strong, .narrative-response > header strong { font-size: 13px; }
 .narrative-response > header strong { color: var(--atape-color-accent-strong); }
 
-.narrative-markdown { margin-top: 9px; font-size: 15px; line-height: 1.68; overflow-wrap: anywhere; }
+.narrative-markdown { min-width: 0; max-width: 100%; margin-top: 9px; font-size: 15px; line-height: 1.68; overflow-wrap: anywhere; }
 .narrative-response .narrative-markdown { font-size: 16px; }
+/* Message headings belong to the reading scale, not the page-level hero scale. */
+.narrative-markdown :is(h1, h2, h3, h4, h5, h6) {
+  max-width: none;
+  margin: 1.25em 0 .5em;
+  color: inherit;
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-wrap: pretty;
+}
+.narrative-markdown h1 { font-size: 1.25em; }
+.narrative-markdown h2 { font-size: 1.125em; }
+.narrative-markdown h3 { font-size: 1.0625em; }
+.narrative-markdown :is(h4, h5, h6) { font-size: 1em; }
 .narrative-markdown > :first-child { margin-top: 0; }
 .narrative-markdown > :last-child { margin-bottom: 0; }
 .narrative-markdown p { margin: 0 0 10px; white-space: pre-wrap; }
+.narrative-markdown strong { font-weight: 700; }
+.narrative-markdown hr { margin: 1.25em 0; border: 0; border-top: 1px solid var(--atape-color-border); }
+.narrative-markdown img { display: block; max-width: 100%; height: auto; margin: .75em 0; border-radius: 8px; }
 .narrative-markdown ul, .narrative-markdown ol { margin: 9px 0; padding-left: 23px; }
 .narrative-markdown li + li { margin-top: 5px; }
 .narrative-markdown blockquote { margin: 11px 0; padding-left: 13px; border-left: 3px solid var(--atape-color-navigation-border); color: var(--atape-color-text-muted); }
 .narrative-markdown code { padding: 2px 5px; border-radius: 5px; background: var(--atape-color-surface-muted); font: .88em/1.5 var(--atape-font-mono); }
-.narrative-markdown pre { overflow-x: auto; padding: 13px 14px; border-radius: 10px; background: var(--atape-color-code); color: var(--atape-color-code-text); }
+.narrative-markdown pre { max-width: 100%; overflow-x: auto; padding: 13px 14px; border-radius: 10px; background: var(--atape-color-code); color: var(--atape-color-code-text); white-space: pre; overflow-wrap: normal; }
 .narrative-markdown pre code { padding: 0; background: transparent; color: inherit; }
 .narrative-code-block { margin: 12px 0; border-radius: 10px; background: var(--atape-color-code); color: var(--atape-color-code-text); overflow: hidden; }
 .narrative-code-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 14px; border-bottom: 1px solid color-mix(in srgb, var(--atape-color-code-text) 20%, transparent); font: 12px/1.5 var(--atape-font-mono); }
