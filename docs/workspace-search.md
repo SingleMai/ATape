@@ -39,6 +39,19 @@ server-side filtering, and latency improvements for very large project directori
 belong to the next Search API increment. Project pinning/recent-visit persistence
 is also outside this increment; the current directory uses stable name ordering.
 
+## Conversation Markdown
+
+Message headings use a local reading scale (1–1.25 times the message body size)
+with consistent weight, line height, and spacing. They no longer inherit the
+page-level hero typography. Long paths wrap, images fit the message width, and
+wide code blocks and tables scroll inside the message. Colors continue to use
+the shared theme tokens.
+
+This increment changes presentation only; it preserves Markdown content and
+heading semantics. It does not restructure attachment metadata or audit every
+tool disclosure and search-highlight state. A broader reader visual review is
+the next increment if those states need refinement.
+
 ## Settings overlay
 
 Account and Team settings open in a lightweight dialog over the current page.
