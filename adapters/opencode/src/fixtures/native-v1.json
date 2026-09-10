@@ -13,7 +13,10 @@
     "CREATE INDEX `part_session_idx` ON `part` (`session_id`)",
     "CREATE INDEX `session_parent_idx` ON `session` (`parent_id`)",
     "CREATE INDEX `session_project_idx` ON `session` (`project_id`)",
-    "CREATE INDEX `session_workspace_idx` ON `session` (`workspace_id`)"
+    "CREATE INDEX `session_workspace_idx` ON `session` (`workspace_id`)",
+    "CREATE TABLE `event` (\n          `id` text PRIMARY KEY,\n          `aggregate_id` text NOT NULL,\n          `seq` integer NOT NULL,\n          `type` text NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_event_aggregate_id_event_sequence_aggregate_id_fk` FOREIGN KEY (`aggregate_id`) REFERENCES `event_sequence`(`aggregate_id`) ON DELETE CASCADE\n        )",
+    "CREATE UNIQUE INDEX `event_aggregate_seq_idx` ON `event` (`aggregate_id`,`seq`)",
+    "CREATE INDEX `event_aggregate_type_seq_idx` ON `event` (`aggregate_id`,`type`,`seq`)"
   ],
   "rows": {
     "session": [
@@ -264,6 +267,29 @@
         "time_created": 1789021604194,
         "time_updated": 1789021604196,
         "data": "{\"reason\":\"stop\",\"type\":\"step-finish\",\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":0}},\"cost\":0}"
+      }
+    ],
+    "event": [
+      {
+        "id": "evt_089ff488c002ZJCALLChv7lyBo",
+        "aggregate_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "seq": 0,
+        "type": "session.created.1",
+        "data": "{\"sessionID\":\"ses_f7600b773ffeF1AP4d1I82Avi5\",\"info\":{\"id\":\"ses_f7600b773ffeF1AP4d1I82Avi5\",\"slug\":\"quick-squid\",\"projectID\":\"global\",\"directory\":\"/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"path\":\"private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"title\":\"ATape native fixture 根 🧪 (fork #1)\",\"version\":\"1.18.30\",\"time\":{\"created\":1789021603980,\"updated\":1789021603980}}}"
+      },
+      {
+        "id": "evt_089ff48240026JYJuaOQZZ4XUT",
+        "aggregate_id": "ses_f7600b7dbffeaiDw2c5adNiAFm",
+        "seq": 0,
+        "type": "session.created.1",
+        "data": "{\"sessionID\":\"ses_f7600b7dbffeaiDw2c5adNiAFm\",\"info\":{\"id\":\"ses_f7600b7dbffeaiDw2c5adNiAFm\",\"slug\":\"mighty-comet\",\"projectID\":\"global\",\"directory\":\"/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"path\":\"private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"parentID\":\"ses_f7600baf7ffePlLjL8sABQ16MN\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"title\":\"Native child 子会话\",\"version\":\"1.18.30\",\"time\":{\"created\":1789021603876,\"updated\":1789021603876}}}"
+      },
+      {
+        "id": "evt_089ff45080024C0a3eEvJH1yEV",
+        "aggregate_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "seq": 0,
+        "type": "session.created.1",
+        "data": "{\"sessionID\":\"ses_f7600baf7ffePlLjL8sABQ16MN\",\"info\":{\"id\":\"ses_f7600baf7ffePlLjL8sABQ16MN\",\"slug\":\"lucky-cabin\",\"projectID\":\"global\",\"directory\":\"/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"path\":\"private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"title\":\"ATape native fixture 根 🧪\",\"version\":\"1.18.30\",\"time\":{\"created\":1789021603080,\"updated\":1789021603080}}}"
       }
     ]
   },
