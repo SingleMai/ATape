@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+import { SourceCaptureLimits, type SourceDiscoveryPage, MaxSourceFailures } from "@atape/domain"
 import { lstat } from "node:fs/promises"
 import { isAbsolute } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -129,10 +131,10 @@ const open = (path: string) => Effect.acquireRelease(Effect.tryPromise({
 const sessionColumns = "id,project_id,parent_id,directory,title,version,time_created,time_updated,time_archived,revert"
 // Check SQLite byte lengths before returning variable-sized columns to JavaScript.
 const sessionBytes = "coalesce(length(cast(id as blob)),0)+coalesce(length(cast(project_id as blob)),0)+coalesce(length(cast(parent_id as blob)),0)+coalesce(length(cast(directory as blob)),0)+coalesce(length(cast(title as blob)),0)+coalesce(length(cast(version as blob)),0)+coalesce(length(cast(revert as blob)),0)"
-const session = (db: DatabaseSync, id: string): OpenCodeSession => {
+const session = (db: DatabaseSync, id: string, byteLimit = 16 * 1024): OpenCodeSession => {
   const size = db.prepare(`SELECT ${sessionBytes} bytes FROM session WHERE id=?`).get(identifier(id))
   if (!size) throw fail("missing", "An OpenCode Session or its parent is missing.")
-  if (count(size.bytes) > 16 * 1024) throw fail("limit", "OpenCode Session metadata exceeds its bounds.")
+  if (count(size.bytes) > byteLimit) throw fail("limit", "OpenCode Session metadata exceeds its bounds.")
   const row = db.prepare(`SELECT ${sessionColumns} FROM session WHERE id=?`).get(id)!
   const rev = row.revert === null ? null : json(row.revert)
   const directory = identifier(row.directory, 4096)
@@ -143,6 +145,31 @@ const session = (db: DatabaseSync, id: string): OpenCodeSession => {
     archivedAt: row.time_archived === null ? null : count(row.time_archived),
     revert: rev === null ? null : { messageID: identifier(rev.messageID), ...(rev.partID === undefined ? {} : { partID: identifier(rev.partID) }) } }
 }
+
+const creationOrigin = ({ db, schema }: { db: DatabaseSync; schema: ReturnType<typeof probe> }, root: OpenCodeSession, rowBytes: number) => {
+      if (db.prepare("SELECT type FROM sqlite_schema WHERE name='event'").get()?.type !== "table")
+        throw fail("attribution", "OpenCode creation evidence is unavailable.")
+      const info = db.prepare("SELECT * FROM pragma_table_info('event') LIMIT 101").all()
+      if (info.length > 100 || ["id", "aggregate_id", "seq", "type", "data"].some(key => !info.some(column => column.name === key)) ||
+        info.filter(column => Number(column.pk) > 0).length !== 1 || !info.some(column => column.name === "id" && column.pk === 1) ||
+        !schema.hasIndex("event", ["aggregate_id", "type", "seq"]))
+        throw fail("unsupported", "OpenCode creation evidence has no supported bounded read path.")
+      const rows = db.prepare(`SELECT CASE WHEN length(cast(id as blob))<=500 THEN id END id,seq,
+        length(cast(data as blob)) bytes FROM event WHERE aggregate_id=? AND type='session.created.1' LIMIT 2`).all(root.id)
+      if (rows.length !== 1 || rows[0]!.seq !== 0) throw fail("attribution", "OpenCode creation evidence is missing or ambiguous.")
+      const row = rows[0]!, id = identifier(row.id)
+      if (count(row.bytes) > rowBytes) throw fail("limit", "OpenCode creation evidence exceeds its byte bound.")
+      if (db.prepare("SELECT CASE WHEN typeof(data)='text' AND json_valid(data) THEN json_type(data) END shape FROM event WHERE id=?").get(id)?.shape !== "object")
+        throw fail("format", "OpenCode creation evidence JSON is invalid.")
+      const data = json(db.prepare(`SELECT json_object('sessionID',json_extract(data,'$.sessionID'),'info',
+        json_object('id',json_extract(data,'$.info.id'),'parentID',json_extract(data,'$.info.parentID'),
+        'directory',json_extract(data,'$.info.directory'),'time',json_object('created',data -> '$.info.time.created'))) projected FROM event WHERE id=?`).get(id)?.projected), created = object(data.info)
+      const directory = identifier(created.directory, 4096), createdAt = count(object(created.time).created)
+      if (data.sessionID !== root.id || created.id !== root.id || created.parentID != null ||
+        createdAt !== root.timeCreated || !isAbsolute(directory)) throw fail("attribution", "OpenCode creation evidence does not prove this root's Origin.")
+  return { eventId: id, directory, createdAt }
+}
+export const openCodeOriginKey = (sourceId: string, eventId: string) => "oc_" + createHash("sha256").update(JSON.stringify(["origin", sourceId, eventId])).digest("hex")
 
 /** Discovery returns native Session IDs, including children. Capture resolves their proven root.
  * Every call opens/closes its own read transaction; missing/unsupported is never empty history.
@@ -286,28 +313,9 @@ export const openOpenCodeSource = (options: { readonly path: string; readonly se
     return { root, threads: family, origin: () => attempt(() => {
       check()
       if (failed) throw fail("closed", "A failed source view must be abandoned and reopened.")
-      if (db.prepare("SELECT type FROM sqlite_schema WHERE name='event'").get()?.type !== "table")
-        throw fail("attribution", "OpenCode creation evidence is unavailable.")
-      const info = db.prepare("SELECT * FROM pragma_table_info('event') LIMIT 101").all()
-      if (info.length > 100 || ["id", "aggregate_id", "seq", "type", "data"].some(key => !info.some(column => column.name === key)) ||
-        info.filter(column => Number(column.pk) > 0).length !== 1 || !info.some(column => column.name === "id" && column.pk === 1) ||
-        !schema.hasIndex("event", ["aggregate_id", "type", "seq"]))
-        throw fail("unsupported", "OpenCode creation evidence has no supported bounded read path.")
-      const rows = db.prepare(`SELECT CASE WHEN length(cast(id as blob))<=500 THEN id END id,seq,
-        length(cast(data as blob)) bytes FROM event WHERE aggregate_id=? AND type='session.created.1' LIMIT 2`).all(root.id)
-      if (rows.length !== 1 || rows[0]!.seq !== 0) throw fail("attribution", "OpenCode creation evidence is missing or ambiguous.")
-      const row = rows[0]!, id = identifier(row.id)
-      if (count(row.bytes) > limits.rowBytes) throw fail("limit", "OpenCode creation evidence exceeds its byte bound.")
-      if (db.prepare("SELECT CASE WHEN typeof(data)='text' AND json_valid(data) THEN json_type(data) END shape FROM event WHERE id=?").get(id)?.shape !== "object")
-        throw fail("format", "OpenCode creation evidence JSON is invalid.")
-      const data = json(db.prepare(`SELECT json_object('sessionID',json_extract(data,'$.sessionID'),'info',
-        json_object('id',json_extract(data,'$.info.id'),'parentID',json_extract(data,'$.info.parentID'),
-        'directory',json_extract(data,'$.info.directory'),'time',json_object('created',data -> '$.info.time.created'))) projected FROM event WHERE id=?`).get(id)?.projected), created = object(data.info)
-      const directory = identifier(created.directory, 4096), createdAt = count(object(created.time).created)
-      if (data.sessionID !== root.id || created.id !== root.id || created.parentID != null ||
-        createdAt !== root.timeCreated || !isAbsolute(directory)) throw fail("attribution", "OpenCode creation evidence does not prove this root's Origin.")
+      const origin = creationOrigin(handle, root, limits.rowBytes)
       check()
-      return { eventId: id, directory, createdAt }
+      return origin
     }), rewind: () => attempt(() => {
       check()
       if (failed || !done || rewound) throw fail("closed", "Only one complete planning rescan is allowed.")
@@ -341,3 +349,50 @@ export const openOpenCodeSource = (options: { readonly path: string; readonly se
     }) }
   })
 })
+
+/** Bounded ID scan, then indexed metadata reads. Children are checked for a
+ * proven parent chain but only roots in this ID page are emitted as sources.
+ * The transaction ends before Host attribution or publication control HTTP. */
+export const discoverOpenCodeSources = (path: string, request: { readonly cursor: string | null; readonly limits: OpenCodeSourceLimits }) => Effect.scoped(Effect.gen(function*() {
+  const limits = yield* Schema.decodeUnknownEffect(SourceCaptureLimits)(request.limits).pipe(
+    Effect.mapError(() => fail("limit", "OpenCode discovery requires explicit bounded admission.")))
+  if (limits.pageBytes < limits.rowBytes) return yield* fail("limit", "OpenCode discovery page is smaller than its row admission.")
+  const handle = yield* open(path)
+  return yield* attempt((): SourceDiscoveryPage => {
+    const started = performance.now(), { db } = handle
+    const check = () => { if (performance.now() - started > limits.durationMs) throw fail("limit", "OpenCode discovery exceeded its deadline.") }
+    if (request.cursor !== null) identifier(request.cursor)
+    const ids = (request.cursor === null
+      ? db.prepare("SELECT CASE WHEN length(cast(id as blob))<=500 THEN id END id FROM session ORDER BY id LIMIT ?").all(limits.pageRows)
+      : db.prepare("SELECT CASE WHEN length(cast(id as blob))<=500 THEN id END id FROM session WHERE id>? ORDER BY id LIMIT ?").all(request.cursor, limits.pageRows)
+    ).map(row => identifier(row.id))
+    const sources: Array<SourceDiscoveryPage["sources"][number]> = [], failures: Array<SourceDiscoveryPage["sourceFailures"][number]> = []
+    let truncated = false
+    for (const id of ids) {
+      check()
+      try {
+        const selected = session(db, id, Math.min(limits.rowBytes, 16 * 1024))
+        let root = selected
+        const ancestors = new Set([root.id])
+        while (root.parentId !== null) {
+          check()
+          if (ancestors.has(root.parentId) || ancestors.size >= limits.threads) throw fail("attribution", "OpenCode discovery found an unproven parent chain.")
+          ancestors.add(root.parentId); root = session(db, root.parentId, Math.min(limits.rowBytes, 16 * 1024))
+        }
+        if (root.id !== id) continue
+        const origin = creationOrigin(handle, root, limits.rowBytes)
+        sources.push({ sourceId: root.id, originKey: openCodeOriginKey(root.id, origin.eventId), cwd: origin.directory })
+      } catch (cause) {
+        const failed = error(cause)
+        const reason = failed.reason === "missing" || failed.reason === "closed" ? "attribution" : failed.reason
+        if (failures.length < MaxSourceFailures) failures.push({ source: id, reason })
+        else truncated = true
+      }
+    }
+    check()
+    const done = ids.length < limits.pageRows
+    const result = { sources, cursor: done ? null : ids.at(-1)!, done, sourceFailures: failures, sourceFailuresTruncated: truncated }
+    if (Buffer.byteLength(JSON.stringify(result)) > limits.pageBytes) throw fail("limit", "OpenCode discovery metadata exceeds its page admission.")
+    return result
+  })
+}))

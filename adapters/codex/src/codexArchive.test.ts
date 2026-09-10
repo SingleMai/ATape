@@ -4,7 +4,7 @@ import {
   AdapterProtocolVersion,
   type AdapterCollectionPage,
   type AdapterSourceProgress,
-  type AtapeAdapterRuntime
+  type LegacyAdapterRuntime
 } from "@atape/domain"
 import { randomUUID } from "node:crypto"
 import { deflateRawSync } from "node:zlib"
@@ -1351,7 +1351,7 @@ const openAdapter = (project: string, type: "git" | "directory", gitAttribution?
 })
 
 const collect = async (
-  runtime: AtapeAdapterRuntime,
+  runtime: LegacyAdapterRuntime,
   cursor: string | null = null,
   rawProgressValue: ReadonlyArray<AdapterSourceProgress> = [],
   limits: AdapterCollectionLimitValues = AdapterCollectionLimits,

@@ -1,4 +1,5 @@
 import type {
+  SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage,
   AdapterCollectionPage,
   AdapterCollectionProgress,
   AdapterCollectionLimitValues,
@@ -15,6 +16,7 @@ import type {
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { AdapterSourceFailure, MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Context, Effect, Layer, Random, Schema, Scope, Semaphore } from "effect"
+import type { PublicationDraftView } from "./publicationPreparation.ts"
 import { recordCollectorProgress, withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 
@@ -86,9 +88,14 @@ export type HostedCollectRequest = {
   }>
 }
 
+export type HostedSourceCapture = {
+  readonly discover: (request: { readonly cursor: string | null; readonly limits: SourceCaptureLimits }) => Effect.Effect<SourceDiscoveryPage, AdapterRuntimeError>
+  readonly open: (request: { readonly sourceId: string; readonly rawEnabled: boolean; readonly limits: SourceCaptureLimits; readonly projection: SourceProjectionLimits }) =>
+    Effect.Effect<PublicationDraftView<AdapterRuntimeError>, AdapterRuntimeError, Scope.Scope>
+}
 export type HostedAdapter = {
   readonly collect: (request: HostedCollectRequest) => Effect.Effect<AdapterCollectionPage, AdapterRuntimeError>
-}
+} | { readonly sourceCapture: HostedSourceCapture }
 
 export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
   open(
@@ -324,6 +331,8 @@ const collectAdapter = (
     adapter.adapterId
   )
   const runtime = yield* runtimes.open(project, adapter)
+  if ("sourceCapture" in runtime) return yield* new AdapterRuntimeError({ reason: "contract", adapterId: adapter.adapterId, retryable: false,
+    message: "Source capture requires publication scheduling; this Collector does not enable that capability yet." })
   let checkpoint = snapshot.checkpoint?.projectCreatedAt === project.createdAt
     ? snapshot.checkpoint
     : undefined

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto"
 import type { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, AcpSessionUpdate } from "@atape/domain"
 import { Effect } from "effect"
-import { openOpenCodeSource, OpenCodeSourceError, type OpenCodeSourceLimits, type OpenCodeSourceRecord, type OpenCodeSession } from "./source.ts"
+import { openOpenCodeSource, openCodeOriginKey, OpenCodeSourceError, type OpenCodeSourceLimits, type OpenCodeSourceRecord, type OpenCodeSession } from "./source.ts"
 
 export const OpenCodeProjectionVersion = "opencode.v1.sqlite.1"
+const pageEnvelopeBytes = Buffer.byteLength(JSON.stringify({ frames: [], done: false }))
 export type OpenCodeEventDraft = Omit<AdapterEvent, "revision" | "projectionRevision" | "rawRef">
 export type OpenCodeUsageDraft = Omit<AdapterUsage, "revision">
 export type OpenCodeCaptureFrame = {
@@ -181,7 +182,7 @@ export const openOpenCodeCapture = (options: {
     const page = yield* source.read()
     yield* attempt(() => { for (const row of page.records) {
       const frame = project(row)
-      if (Buffer.byteLength(JSON.stringify(frame)) + 2 > options.projection.pageBytes) throw fail("OpenCode projection frame exceeds the page bound.", "limit")
+      if (Buffer.byteLength(JSON.stringify(frame)) + pageEnvelopeBytes > options.projection.pageBytes) throw fail("OpenCode projection frame exceeds the page bound.", "limit")
     } })
     if (page.done) break
   }
@@ -196,19 +197,25 @@ export const openOpenCodeCapture = (options: {
     captureStatus: [...stats.values()].some(state => state.partial) ? "partial" : "healthy",
     updatedAt: iso(Math.max(...[...stats.values()].map(state => state.latestTime))), reportedEventCount: target.events
   }))
+  const metadata = {
+    profile: OpenCodeProjectionVersion,
+    origin: { sourceId: source.root.id, originKey: openCodeOriginKey(source.root.id, creation.eventId), cwd: creation.directory },
+    session: header, threads, target
+  }
+  yield* attempt(() => {
+    if (Buffer.byteLength(JSON.stringify(metadata)) > options.projection.pageBytes) throw fail("OpenCode capture headers exceed the page bound.", "limit")
+  })
   yield* source.rewind()
   reset()
   let buffered: ReadonlyArray<OpenCodeSourceRecord> = [], cursor = 0, sourceDone = false, failed = false
   let pending: { frame: OpenCodeCaptureFrame; bytes: number } | undefined
   return {
-    profile: OpenCodeProjectionVersion,
-    origin: { sourceId: source.root.id, originKey: identity("origin", source.root.id, creation.eventId), cwd: creation.directory },
-    session: header, threads, target,
+    ...metadata,
     read: () => Effect.gen(function*() {
       if (failed || closed) return yield* Effect.fail(fail("A failed or closed capture must be abandoned.", "closed"))
       yield* attempt(check)
       const frames: OpenCodeCaptureFrame[] = []
-      let bytes = 2
+      let bytes = pageEnvelopeBytes
       while (frames.length < options.projection.pageItems) {
         if (!pending) {
           if (cursor === buffered.length && !sourceDone) {
@@ -217,7 +224,7 @@ export const openOpenCodeCapture = (options: {
           if (cursor === buffered.length) break
           pending = yield* attempt(() => {
             const frame = project(buffered[cursor++]!), size = Buffer.byteLength(JSON.stringify(frame))
-            if (size + 2 > options.projection.pageBytes) throw fail("OpenCode projection frame exceeds the page bound.", "limit")
+            if (size + pageEnvelopeBytes > options.projection.pageBytes) throw fail("OpenCode projection frame exceeds the page bound.", "limit")
             return { frame, bytes: size }
           })
         }

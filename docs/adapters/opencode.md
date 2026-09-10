@@ -383,6 +383,26 @@ the production Host in separate Node processes, removes the source before delive
 loses a successful Raw response and recovers actual receipts, then prepares a fresh
 changed observation after off/on. See [ADR-0066](../architecture/adr/0066-host-raw-preparation.md).
 
+## Landed source capability: installed runtime boundary
+
+The explicit `atape.source-capture.v1` manifest capability now connects package
+factories to Host-managed discovery and scoped draft views. `AdapterRuntimes.open`
+validates the selected capability, page/header admission, cursor progress, Raw-off
+frames and resource lifetime. A late open after cancellation is closed; failed or
+closed views cannot resume. Existing Codex and Claude runtimes keep `collect`.
+
+OpenCode discovery emits proven native roots and forks once through bounded ID
+pages, validates child ancestry, and shares original creation Origin with capture.
+SDK paging includes the complete response envelope in its byte bound. Controlled
+native tests load the actual source runtime through an installed package entry.
+See [ADR-0068](../architecture/adr/0068-source-capture-runtime.md).
+
+The package remains private and unregistered. Automatic Collector scheduling does
+not select this capability yet; source recovery, attribution and unchanged-content
+handling must be connected before enabling it. Stable-channel database discovery
+uses the native XDG data location and respects `OPENCODE_DB`; non-stable channels
+require that explicit override. No private history is read during verification.
+
 ## Bounds and remaining integration work
 
 `CaptureJournals.open` keeps a bounded installation registry so losing both an
@@ -420,8 +440,10 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment connects the explicit source capability, attribution
-and Collector scheduling to the prepared publication and recovery Modules.
+The next increment connects attribution and Collector scheduling to the source,
+prepared publication and recovery Modules. Unchanged observations must be compared
+before writing full per-record capture metadata; skipping activation alone still
+retains duplicate local membership records.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
 The first usable OpenCode release also needs real source mutation, rewind,
