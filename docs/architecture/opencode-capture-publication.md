@@ -22,6 +22,25 @@ It does not return a collection of transport/retry steps for Presentation to run
 TypeScript side effects, failures, requirements and resource scope use Effect;
 the Go Server uses ordinary Modules with Fx only at its executable root.
 
+The first delivery Implementation exposes `beginPublicationCapture`,
+`sealPublicationCapture` and `deliverPublicationCapture`. Preparation writes final
+units through `CaptureJournal`; the recovery operation hides remote status,
+renewal, bounded upload/validation, receipt verification and checkpoint commit.
+This was selected over returning transport steps for callers to execute: the
+latter would move distributed ordering and uncertainty back into every Collector
+caller, reducing Depth and Locality. `PublicationTransport` is the owned remote
+Seam with a bearer-private Node HTTP Adapter; tests use that same Interface and
+real SQLite, plus the real PostgreSQL/HTTP contract.
+
+The persisted Begin intent binds protocol, account/installation, source scope,
+server-issued reservation, immutable Begin request and negotiated capacities.
+The local seal stores the original writer fence and ordered part manifest.
+Canonical part ACKs checkpoint delivery only; activation alone advances source
+coverage. A recovery slice explicitly permits 3–64 remote operations. It queries
+one metadata page at a time and never loads a whole target of payloads. Old
+successful proof is checked against its immutable manifest, not the remaining
+server-body count, which may decrease during reclamation.
+
 ## 1. Source identity and content
 
 Use the native root Session ID for the source Session identity, scoped by the

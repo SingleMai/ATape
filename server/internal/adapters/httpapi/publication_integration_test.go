@@ -2,14 +2,18 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
@@ -20,7 +24,7 @@ import (
 
 // Runs against the authenticated HTTP fixture's real PostgreSQL, CLI credential
 // and Web session. No publication operation is replaced by a mock.
-func assertHTTPPublicationContract(t *testing.T, h *Handler, pool *pgxpool.Pool, projectID, userID, credential string, cookie *http.Cookie) {
+func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool, projectID, userID, credential string, cookie *http.Cookie) {
 	t.Helper()
 	send := func(method, path string, body []byte, web bool, want int) *httptest.ResponseRecorder {
 		t.Helper()
@@ -245,6 +249,36 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 	unknown := send("GET", prefix+"attempts/00000000-0000-4000-8000-000000000000", nil, false, 404)
 	assertProblemEnvelope(t, unknown, "publication_unknown")
 
+	// Exercise the shipped Collector and Node HTTP Adapter in independent
+	// processes, including old successful proof after replacement and body GC.
+	nodeBatch := batch
+	nodeBatch.Session.Revision++
+	nodeBatch.Session.ReportedEventCount = 2
+	nodeBatch.Events = nil
+	for n := 0; n < 2; n++ {
+		event := original
+		event.SourceEventID = fmt.Sprintf("node-event-%d", n)
+		event.SourceOrder = int64(n)
+		event.Text = fmt.Sprintf("Node publication %d", n)
+		nodeBatch.Events = append(nodeBatch.Events, event)
+	}
+	assertNodePublicationRecovery(t, modules, userID, credential, next.ID, nodeBatch, func(base string) {
+		batch.Session.Revision += 2
+		newer := stage(batch, base)
+		send("POST", prefix+"attempts/"+newer.ID+"/activate", nil, false, 200)
+		send("POST", prefix+"reclaim?limit=32", nil, false, 200)
+		var collected publication.Page
+		decodeResponse(t, send("GET", prefix+"attempts/"+base, nil, false, 200), &collected)
+		if collected.Attempt.Parts != 0 || collected.Attempt.RetainedBytes != 0 || collected.Attempt.Activation == nil {
+			t.Fatal("old Collector bodies were not reclaimed while retaining activation proof")
+		}
+		next = newer
+	})
+	decodeResponse(t, send("GET", pagePath+"?limit=100", nil, true, 200), &current)
+	if current.Head != next.ID || len(current.Events) != 0 {
+		t.Fatal("Collector recovery selected an old head")
+	}
+
 	// Recovery reauthorizes current membership, including historical success proof.
 	if _, err := pool.Exec(t.Context(), "UPDATE team_memberships SET status='removed',removed_at=clock_timestamp() WHERE user_id=$1", userID); err != nil {
 		t.Fatal(err)
@@ -256,4 +290,58 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 	}()
 	send("POST", activatePath, nil, false, 404)
 	send("GET", pagePath+"?limit=100&head="+first.Head, nil, true, 404)
+}
+
+func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, credential, baseHead string, batch ingestion.Batch, replace func(string)) {
+	t.Helper()
+	server := httptest.NewUnstartedServer(nil)
+	origin := "http://" + server.Listener.Addr().String()
+	handler, err := NewHandler(Config{InstanceOrigin: origin, WebOrigin: origin, APIOrigin: origin, DevelopmentAllowHTTP: true}, modules)
+	if err != nil {
+		server.Close()
+		t.Fatal(err)
+	}
+	server.Config.Handler = handler
+	server.Start()
+	defer server.Close()
+	root, err := filepath.Abs("../../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(t.TempDir(), "capture.sqlite")
+	run := func(phase string) map[string]any {
+		t.Helper()
+		input, err := json.Marshal(map[string]any{"phase": phase, "origin": origin, "credential": credential, "userId": userID, "journal": journal, "baseHead": baseHead, "batch": batch})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, "node", "apps/cli/src/runtime/fixtures/publication-contract.ts")
+		command.Dir = root
+		command.Stdin = bytes.NewReader(input)
+		var stderr bytes.Buffer
+		command.Stderr = &stderr
+		output, err := command.Output()
+		if err != nil {
+			t.Fatalf("Node publication phase %s failed: %v\n%s", phase, err, stderr.String())
+		}
+		var result map[string]any
+		if err := json.Unmarshal(output, &result); err != nil {
+			t.Fatalf("Node publication output: %v", err)
+		}
+		return result
+	}
+	prepared := run("prepare")
+	attemptID, ok := prepared["attemptId"].(string)
+	if !ok || attemptID == "" {
+		t.Fatal("Node capture did not reserve an attempt")
+	}
+	run("lose-put")
+	run("lose-activation")
+	replace(attemptID)
+	recovered := run("recover")
+	if recovered["state"] != "activated" {
+		t.Fatal("Node capture did not recover activation")
+	}
 }

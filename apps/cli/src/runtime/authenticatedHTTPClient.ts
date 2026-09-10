@@ -35,11 +35,10 @@ export type AuthenticatedHTTPRequest = {
   readonly instanceOrigin: string
   readonly expectedUserId?: string
   readonly path: `/${string}`
-  readonly method: "GET" | "POST" | "DELETE"
-  readonly body?: unknown
+  readonly method: "GET" | "POST" | "PUT" | "DELETE"
   readonly idempotencyKey?: string
   readonly deviceReport?: CLIDeviceMetadata & { readonly sync: import("@atape/domain").CLISyncReport }
-}
+} & ({ readonly body?: unknown; readonly encodedJson?: never } | { readonly encodedJson: Uint8Array; readonly body?: never })
 
 export type AuthenticatedHTTPResponse = {
   readonly status: number
@@ -146,7 +145,13 @@ const credentialedRequest = (
     })
     const report = Buffer.from(JSON.stringify(device)).toString("base64url")
     if (report.length <= 8192) headers.set("X-Atape-Device", report)
-    let body: string | undefined
+    let body: string | Uint8Array<ArrayBuffer> | undefined
+    if (input.encodedJson !== undefined) {
+      if (input.body !== undefined || input.method !== "PUT" || !/^\/api\/v1\/publications\/attempts\/[^/]+\/parts\/\d+\?sha256=[a-f0-9]{64}$/.test(input.path) ||
+        input.encodedJson.byteLength < 1 || input.encodedJson.byteLength > 4 * 1024 * 1024) throw new InvalidHTTPRequest()
+      headers.set("Content-Type", "application/json")
+      body = new Uint8Array(input.encodedJson)
+    }
     if (input.body !== undefined) {
       headers.set("Content-Type", "application/json")
       body = JSON.stringify(input.body)
@@ -158,7 +163,7 @@ const credentialedRequest = (
       ...(body === undefined ? {} : { body }),
       redirect: "error",
       signal: AbortSignal.any([signal, AbortSignal.timeout(
-        input.path === "/api/v1/ingestion/canonical/batches" || input.path === "/api/v1/ingestion/raw/chunks" ? 60_000 : 10_000
+        input.path === "/api/v1/ingestion/canonical/batches" || input.path === "/api/v1/ingestion/raw/chunks" || input.path.startsWith("/api/v1/publications/") ? 60_000 : 10_000
       )])
     })
     const bytes = response.status === 204 ? new Uint8Array() : await readBounded(response)
@@ -181,7 +186,9 @@ const credentialedRequest = (
       ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds })
     }
   },
-  catch: (cause) => cause instanceof InvalidHTTPResponse
+  catch: (cause) => cause instanceof InvalidHTTPRequest
+    ? failure("rejected", "The prepared publication request exceeds its transport contract.")
+    : cause instanceof InvalidHTTPResponse
     ? failure("invalid_response", "The ATape API returned an invalid response.")
     : networkFailure(cause, input.path)
 })
@@ -269,6 +276,7 @@ const retryAfter = (value: string | null): number | undefined => {
 }
 
 class InvalidHTTPResponse extends Error {}
+class InvalidHTTPRequest extends Error {}
 
 const failure = (
   reason: AuthenticatedHTTPError["reason"],
