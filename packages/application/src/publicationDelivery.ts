@@ -1,9 +1,11 @@
 import { Context, Effect, Schema } from "effect"
 import {
   PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities,
-  PublicationManifest, PublicationProtocol, PublicationScope,
+  PublicationManifest, PublicationProtocol, PublicationScope, RawAuthority, RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority,
+  type RawPublicationReceipt,
   type PublicationPart, type PublicationReservation
 } from "@atape/domain"
+import { RawPublicationError, RawPublicationTransport } from "./rawPublicationTransport.ts"
 import { CaptureJournal, type CaptureClaim, type CaptureOwner, type CaptureSummary } from "./captureJournal.ts"
 
 export class PublicationError extends Schema.TaggedError<PublicationError>()("PublicationError", {
@@ -27,7 +29,8 @@ export class PublicationTransport extends Context.Service<PublicationTransport, 
 }>()("atape/application/PublicationTransport") {}
 
 const Intent = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), binding: PublicationBinding,
-  scope: PublicationScope, sessionId: Schema.String, begin: PublicationBegin, capabilities: PublicationCapabilities })
+  scope: PublicationScope, sessionId: Schema.String, begin: PublicationBegin, capabilities: PublicationCapabilities,
+  rawAuthority: Schema.optionalKey(RawAuthority) })
 const Seal = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), fence: PublicationAttempt.fields.fence, manifest: PublicationManifest })
 type Intent = typeof Intent.Type
 type Seal = typeof Seal.Type
@@ -72,18 +75,20 @@ const checkActivation = (intent: Intent, seal: Seal, receipt: PublicationActivat
  * never completed with newly read source pages after a restart.
  */
 export const beginPublicationCapture = (owner: CaptureClaim, input: {
-  readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean
+  readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean; readonly rawAuthority?: RawAuthority
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal, remote = yield* PublicationTransport
   // Check the owner before consuming remote reservation quota.
   yield* journal.pending(owner, undefined, 1)
   const binding = journal.binding
   const scope = yield* decode(PublicationScope, { ...owner.scope, installationId: binding.installationId })
+  const rawAuthority = input.rawEnabled ? yield* decode(RawAuthority, input.rawAuthority) : undefined
   const capabilities = yield* remote.capabilities(binding)
   const reservation = yield* remote.reserve(binding, scope)
   const begin = yield* decode(PublicationBegin, { reservationId: reservation.id, captureId: input.captureId,
     baseHead: input.baseHead, transformVersion: input.transformVersion })
-  const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities }
+  const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities,
+    ...(rawAuthority === undefined ? {} : { rawAuthority }) }
   yield* journal.reserve(owner, { id: input.captureId, expectedCheckpoint: owner.checkpoint,
     beginJson: JSON.stringify(intent), rawEnabled: input.rawEnabled })
   const attempt = yield* checkAttempt(intent, yield* remote.begin(binding, begin))
@@ -212,5 +217,98 @@ export const deliverPublicationCapture = (owner: CaptureOwner, id: string, maxOp
       const receipt = yield* activateLocally(yield* remote.activate(binding, attemptId))
       return { state: "activated", operations, receipt } as PublicationDeliveryResult
     }
+  }
+})
+
+export type RawPublicationDeliveryResult = { readonly state: "pending" | "completed"; readonly operations: number }
+const rawFailure = (reason: RawPublicationError["reason"], message: string) => new RawPublicationError({ reason, message })
+const timestampKey = (value: string) => {
+  const [seconds, fraction = ""] = value.slice(0, -1).split(".")
+  return `${seconds}.${fraction.padEnd(6, "0")}`
+}
+const checkRawReceipt = (chunk: RawPublicationChunk, receipt: RawPublicationReceipt) => Effect.gen(function*() {
+  const fields = ["protocolVersion", "sessionId", "installationId", "adapterId", "sourceObjectId", "sourceChunkId",
+    "sourceName", "mediaType", "adapterVersion", "clientRedacted", "generation", "offset", "sha256", "final"] as const
+  const size = chunk.contentBase64.length / 4 * 3 - (chunk.contentBase64.endsWith("==") ? 2 : chunk.contentBase64.endsWith("=") ? 1 : 0)
+  if (fields.some(field => chunk[field] !== receipt[field]) || receipt.sizeBytes !== size ||
+    timestampKey(chunk.capturedAt) !== timestampKey(receipt.capturedAt) || receipt.publication.head !== chunk.publication.head ||
+    !sameRawAuthority(chunk.publication.authority, receipt.publication.authority))
+    return yield* rawFailure("invalid_response", "Raw receipt does not prove the frozen observation.")
+  return receipt
+})
+
+/** Bounded Raw recovery over the same journal. A policy change durably starts
+ * cancellation; every remaining unit first reconciles its actual receipt. No
+ * source read, transformation, re-encoding or Canonical checkpoint advance.
+ */
+export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperations: number) => Effect.gen(function*() {
+  if (!Number.isSafeInteger(maxOperations) || maxOperations < 3 || maxOperations > 64)
+    return yield* rawFailure("invalid", "Raw recovery needs an explicit operation budget between 3 and 64.")
+  const journal = yield* CaptureJournal, remote = yield* RawPublicationTransport
+  const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
+  const intent = yield* boundIntent(journal, owner, capture)
+  if (capture.activationReceipt === null || capture.seal === null)
+    return yield* rawFailure("invalid", "Raw delivery requires a sealed, activated capture.")
+  const seal = yield* parse(Seal, capture.seal.manifestJson)
+  const activation = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
+  if (capture.state === "completed") return { state: "completed", operations: 0 } satisfies RawPublicationDeliveryResult
+  if (!capture.rawEnabled || intent.rawAuthority === undefined)
+    return yield* rawFailure("invalid", "Prepared Raw capture lacks its original policy authority.")
+  const binding = journal.binding
+  let operations = 0, cancelReason = capture.rawCancelReason
+  const startCancellation = (reason: string) => journal.settle(owner, id, { _tag: "RawCancellationStarted", reason }).pipe(
+    Effect.tap(() => Effect.sync(() => { cancelReason = reason })))
+  if (cancelReason === null) {
+    operations++
+    const policy = yield* remote.policy(binding, owner.scope.projectId)
+    if (!policy.enabled || !sameRawAuthority(policy.authority, intent.rawAuthority))
+      yield* startCancellation(policy.enabled ? "Raw authority changed" : "Raw capture disabled")
+  }
+  while (true) {
+    const page = yield* journal.inspect(owner, id, { kind: "raw", pendingOnly: true, limit: 1 })
+    const unit = page.units[0]
+    if (unit === undefined) return { state: "completed", operations } satisfies RawPublicationDeliveryResult
+    if (operations >= maxOperations) return { state: "pending", operations } satisfies RawPublicationDeliveryResult
+    if (unit.byteCount > RawPublicationWireBytes) return yield* rawFailure("invalid", "Frozen Raw unit exceeds its wire bound.")
+    const bytes = yield* journal.read(owner, id, "raw", unit.ordinal)
+    const chunk = yield* Effect.try({ try: () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown,
+      catch: () => rawFailure("invalid", "Frozen Raw unit is not valid JSON.") }).pipe(
+      Effect.flatMap(value => Schema.decodeUnknownEffect(RawPublicationChunk)(value)),
+      Effect.mapError(() => rawFailure("invalid", "Frozen Raw unit failed wire validation.")))
+    if (chunk.sessionId !== activation.sessionId || chunk.installationId !== binding.installationId || chunk.adapterId !== owner.scope.adapterId ||
+      chunk.publication.head !== activation.head || !sameRawAuthority(chunk.publication.authority, intent.rawAuthority))
+      return yield* rawFailure("binding", "Frozen Raw observation differs from its capture authority.")
+    // The journal digest protects the entire envelope, not the content digest
+    // declared inside it. Verify both before accepting a metadata-only receipt.
+    const content = yield* Effect.try({ try: () => {
+      const decoded = globalThis.atob(chunk.contentBase64)
+      if (globalThis.btoa(decoded) !== chunk.contentBase64 || (decoded.length === 0 && !chunk.final)) throw new Error()
+      return Uint8Array.from(decoded, char => char.charCodeAt(0))
+    }, catch: () => rawFailure("invalid", "Frozen Raw content is not canonical Base64.") })
+    const digest = yield* Effect.tryPromise({
+      try: async () => Array.from(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", content)))
+        .map(byte => byte.toString(16).padStart(2, "0")).join(""),
+      catch: () => rawFailure("unavailable", "Could not verify frozen Raw content.")
+    })
+    if (digest !== chunk.sha256) return yield* rawFailure("invalid", "Frozen Raw content differs from its declared digest.")
+    const acknowledge = (receipt: RawPublicationReceipt) => checkRawReceipt(chunk, receipt).pipe(Effect.flatMap(verified =>
+      journal.settle(owner, id, { _tag: "RawAcknowledged", ordinal: unit.ordinal, receiptJson: JSON.stringify(verified) })))
+    operations++
+    const receipt = yield* remote.receipt(binding, { sessionId: chunk.sessionId, installationId: chunk.installationId,
+      adapterId: chunk.adapterId, sourceObjectId: chunk.sourceObjectId, sourceChunkId: chunk.sourceChunkId }).pipe(
+      Effect.catchIf(error => error.reason === "unknown", () => Effect.succeed(null)))
+    if (receipt !== null) { yield* acknowledge(receipt); continue }
+    if (cancelReason !== null) {
+      yield* journal.settle(owner, id, { _tag: "RawUnitCanceled", ordinal: unit.ordinal })
+      continue
+    }
+    if (operations >= maxOperations) return { state: "pending", operations } satisfies RawPublicationDeliveryResult
+    operations++
+    const appended = yield* remote.append(binding, bytes).pipe(Effect.catchIf(
+      error => error.reason === "disabled" || error.reason === "authority_changed",
+      error => startCancellation(error.reason).pipe(Effect.as(null))))
+    if (appended !== null) yield* acknowledge(appended)
+    // A rejected append cannot substitute for receipt reconciliation: another
+    // writer may have completed it before the policy changed.
   }
 })

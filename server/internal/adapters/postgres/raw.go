@@ -280,38 +280,38 @@ func sameRawPublication(head pgtype.UUID, team, user *int64, proof *rawarchive.P
 	return head.Valid && domainUUID(head) == proof.Head && team != nil && user != nil && *team == proof.Authority.TeamRevision && *user == proof.Authority.UserRevision
 }
 
-func (s *Store) LookupChunk(ctx context.Context, principal authentication.Principal, identity rawarchive.ChunkIdentity) (rawarchive.ChunkReceipt, error) {
+func (s *Store) LookupChunk(ctx context.Context, principal authentication.Principal, identity rawarchive.ChunkIdentity) (*rawarchive.ChunkReceipt, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
-		return rawarchive.ChunkReceipt{}, rawPersist("begin Raw receipt lookup", err)
+		return nil, rawPersist("begin Raw receipt lookup", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	q := s.queries.WithTx(tx)
 	if _, err := resolveSessionAccess(ctx, q, principal, identity.SessionID, authorization.RawIngest, false); err != nil {
-		return rawarchive.ChunkReceipt{}, err
+		return nil, err
 	}
 	objectID := sourceidentity.RawObjectID(principal.UserID, identity.SessionID, identity.InstallationID, identity.AdapterID, identity.SourceObjectID)
 	chunkID := sourceidentity.RawChunkID(objectID, identity.SourceChunkID)
 	row, err := q.GetRawChunkForReplay(ctx, chunkID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return rawarchive.ChunkReceipt{}, &rawarchive.NotFoundError{Resource: "chunk", ID: identity.SourceChunkID}
+		return nil, nil
 	}
 	if err != nil {
-		return rawarchive.ChunkReceipt{}, rawPersist("read Raw receipt", err)
+		return nil, rawPersist("read Raw receipt", err)
 	}
 	receipt := rawarchive.ChunkReceipt{ChunkIdentity: identity, ObjectID: row.ObjectID, Generation: row.Generation, Offset: row.ByteOffset, SizeBytes: row.SizeBytes, SHA256: row.Sha256, Final: row.Final,
 		ProtocolVersion: rawarchive.ProtocolVersion, SourceName: row.SourceName, MediaType: row.MediaType, AdapterVersion: row.ChunkAdapterVersion,
 		CapturedAt: row.ChunkCapturedAt.UTC().Format(time.RFC3339Nano), ClientRedacted: row.ClientRedacted}
 	if row.PublicationHead.Valid {
 		if row.RawTeamRevision == nil || row.RawUserRevision == nil {
-			return rawarchive.ChunkReceipt{}, rawPersist("read Raw publication binding", errors.New("incomplete publication binding"))
+			return nil, rawPersist("read Raw publication binding", errors.New("incomplete publication binding"))
 		}
 		receipt.Publication = &rawarchive.PublicationProof{Head: domainUUID(row.PublicationHead), Authority: rawarchive.Authority{Protocol: rawarchive.PublicationProtocol, TeamRevision: *row.RawTeamRevision, UserRevision: *row.RawUserRevision}}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return rawarchive.ChunkReceipt{}, rawPersist("commit Raw receipt lookup", err)
+		return nil, rawPersist("commit Raw receipt lookup", err)
 	}
-	return receipt, nil
+	return &receipt, nil
 }
 
 func (s *Store) ListSessionObjects(

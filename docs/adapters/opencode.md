@@ -3,7 +3,7 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-still requires source preparation/scheduling, Collector Raw recovery and native acceptance. See the
+still requires source preparation/scheduling, revision and coverage allocation, and native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -169,7 +169,7 @@ no Server schema migration or deployment is part of this increment.
 
 Tests cover 205 parts with a three-operation slice, exact retry bytes, local
 fencing, changed remote identities, unknown outcomes and independent Raw. A real
-HTTP/PostgreSQL contract starts four independent Node processes: seal, lose a
+HTTP/PostgreSQL contract starts independent Node processes: seal, lose a
 successful part response, lose successful activation, then recover the original
 proof after another writer publishes a newer head and reclaims the old bodies.
 The recovered checkpoint advances without restoring the old Server head.
@@ -205,6 +205,41 @@ personal and Team off/on, forced capture, lost-result receipt lookup, unavailabl
 blob storage, revoked membership and a policy change between blob write and
 manifest commit. See [ADR-0060](../architecture/adr/0060-publication-raw-authority-and-receipts.md).
 
+## Landed foundation: Collector Raw recovery and resumable cancellation
+
+`deliverPublicationRaw` hides policy reconciliation, immutable receipt checks and
+bounded upload/cancellation behind the publication Module Interface. Begin stores
+the Host's authenticated Raw authority when Raw is enabled. Each recovery slice
+uses 3–64 HTTP operations and reads one sealed unit, without a source or converter.
+The authenticated Node Adapter sends the original JSON bytes to the Raw endpoint;
+it never serializes a replacement upload during retry.
+
+A receipt must match the complete frozen observation: source identity, metadata,
+microsecond timestamp, offset, length, digest, final marker and original activation
+and Raw authority. A newer Canonical head does not invalidate this obligation.
+Authorized absence (`204`) can trigger an upload only under the original current
+authority. Concealed `404` responses remain unresolved, including during cancellation.
+Network, authorization and invalid-response failures retain unresolved bytes.
+
+Policy disable or a revision change persists cancellation intent before resolving
+units. Every remaining unit first looks up its actual receipt; a real ACK is
+retained, while an unknown receipt permits explicit per-unit cancellation. Neither
+cancellation nor its intent creates an ACK, advances a Canonical checkpoint or
+asserts Raw coverage. Re-enabling during restart cannot resume canceled work.
+Resolved units are independently reclaimable; indexed pending scans resume at the
+next unresolved unit. Existing journal format 2 supports these settlements without
+changing stored payloads or requiring a schema migration.
+
+Real SQLite tests exercise 205 Raw units with three-request slices, exact-byte
+retries, lost acknowledgements, newer Canonical checkpoints, policy races, receipt
+mismatches and restart during cancellation. The authenticated HTTP/PostgreSQL
+contract additionally loses an actual Raw append response in a Node process,
+disables Raw, recovers the receipt and partially cancels in a second process,
+revokes membership and proves that concealed receipt lookup retains the remaining
+bytes, then restores access, re-enables and finishes cancellation without an upload.
+This foundation still requires Host preparation and scheduling; it does not yet
+create fresh Raw-only captures or maintain the per-source coverage ledger.
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -226,8 +261,8 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment connects Collector Raw recovery to this independent proof and
-receipt Interface. OpenCode source projection, Host preparation, revision/coverage allocation and
+The next increment connects source revision/coverage allocation and fresh Raw-only
+observations. OpenCode source projection, Host preparation and
 Collector scheduling then connect these foundations into the explicit capability.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.

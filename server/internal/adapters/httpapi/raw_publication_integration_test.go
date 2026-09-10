@@ -111,7 +111,7 @@ func assertHTTPPublicationRaw(t *testing.T, h *Handler, modules Modules, pool *p
 	tooPrecise := first
 	tooPrecise.CapturedAt = "2026-09-10T00:00:00.123456789Z"
 	send(h, "POST", appendPath, tooPrecise, false, 422)
-	send(h, "POST", lookupPath, identity, false, 404)
+	send(h, "POST", lookupPath, identity, false, 204)
 	send(h, "POST", lookupPath, identity, true, 401)
 
 	var accepted rawarchive.AppendResult
@@ -174,7 +174,7 @@ func assertHTTPPublicationRaw(t *testing.T, h *Handler, modules Modules, pool *p
 	raceIdentity := identity
 	raceIdentity.SourceObjectID = raceUpload.SourceObjectID
 	raceIdentity.SourceChunkID = raceUpload.SourceChunkID
-	send(h, "POST", lookupPath, raceIdentity, false, 404)
+	send(h, "POST", lookupPath, raceIdentity, false, 204)
 
 	setTeam("force")
 	forced := settings()

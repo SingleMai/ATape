@@ -116,7 +116,7 @@ type ManifestStore interface {
 	CommitChunk(context.Context, authentication.Principal, ChunkRecord) (CommitResult, error)
 	ListSessionObjects(context.Context, authentication.Principal, string) ([]ObjectRecord, error)
 	PlanContent(context.Context, authentication.Principal, string, int64, int64, int) (ContentPlan, error)
-	LookupChunk(context.Context, authentication.Principal, ChunkIdentity) (ChunkReceipt, error)
+	LookupChunk(context.Context, authentication.Principal, ChunkIdentity) (*ChunkReceipt, error)
 }
 
 // ChunkStore is the immutable byte Seam consumed by Archive. Put must be
@@ -266,11 +266,12 @@ func ReceiptForChunk(record ChunkRecord) ChunkReceipt {
 }
 
 // Receipt recovers accepted metadata without a blob read or new upload grant.
+// A nil receipt with no error means authorized absence; concealed access is an error.
 // Current source ownership/access is still checked by the manifest transaction.
-func (a *Archive) Receipt(ctx context.Context, principal authentication.Principal, identity ChunkIdentity) (ChunkReceipt, error) {
+func (a *Archive) Receipt(ctx context.Context, principal authentication.Principal, identity ChunkIdentity) (*ChunkReceipt, error) {
 	for _, value := range []string{identity.SessionID, identity.InstallationID, identity.AdapterID, identity.SourceObjectID, identity.SourceChunkID} {
 		if strings.TrimSpace(value) == "" || len(value) > 512 || strings.ContainsRune(value, 0) {
-			return ChunkReceipt{}, &ValidationError{Field: "chunkIdentity", Reason: "requires bounded nonempty source identity"}
+			return nil, &ValidationError{Field: "chunkIdentity", Reason: "requires bounded nonempty source identity"}
 		}
 	}
 	receipt, err := a.manifests.LookupChunk(ctx, principal, identity)

@@ -33,7 +33,7 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, po
 			r.Header.Set("Content-Type", "application/json")
 		}
 		if web {
-			r.AddCookie(cookie)
+			addWebProof(r, cookie, csrf)
 		} else {
 			r.Header.Set("Authorization", "Bearer "+credential)
 		}
@@ -262,7 +262,17 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, po
 		event.Text = fmt.Sprintf("Node publication %d", n)
 		nodeBatch.Events = append(nodeBatch.Events, event)
 	}
-	assertNodePublicationRecovery(t, modules, userID, credential, next.ID, nodeBatch, func(base string) {
+	assertNodePublicationRecovery(t, modules, userID, credential, next.ID, nodeBatch, func(preference string) {
+		send("PUT", "/api/v1/users/me/raw-capture", encode(map[string]string{"preference": preference}), true, 200)
+	}, func(active bool) {
+		status := "removed"
+		if active {
+			status = "active"
+		}
+		if _, err := pool.Exec(t.Context(), "UPDATE team_memberships SET status=$2,removed_at=CASE WHEN $2='removed' THEN clock_timestamp() ELSE NULL END WHERE user_id=$1", userID, status); err != nil {
+			t.Fatal(err)
+		}
+	}, func(base string) {
 		batch.Session.Revision += 2
 		newer := stage(batch, base)
 		send("POST", prefix+"attempts/"+newer.ID+"/activate", nil, false, 200)
@@ -294,7 +304,7 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, po
 	send("POST", "/api/v1/ingestion/raw/receipts/lookup", encode(lookup), false, 404)
 }
 
-func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, credential, baseHead string, batch ingestion.Batch, replace func(string)) {
+func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, credential, baseHead string, batch ingestion.Batch, setPreference func(string), setMembership func(bool), replace func(string)) {
 	t.Helper()
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
@@ -334,6 +344,8 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 		}
 		return result
 	}
+	setPreference("enable")
+	defer setPreference("disable")
 	prepared := run("prepare")
 	attemptID, ok := prepared["attemptId"].(string)
 	if !ok || attemptID == "" {
@@ -346,4 +358,13 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 	if recovered["state"] != "activated" {
 		t.Fatal("Node capture did not recover activation")
 	}
+	run("lose-raw")
+	setPreference("disable")
+	run("cancel-raw")
+	defer setMembership(true)
+	setMembership(false)
+	run("revoked-raw")
+	setMembership(true)
+	setPreference("enable")
+	run("finish-raw")
 }

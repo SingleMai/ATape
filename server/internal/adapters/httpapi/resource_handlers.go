@@ -70,6 +70,10 @@ func (h *Handler) rawReceipt(response http.ResponseWriter, request *http.Request
 		writeError(response, request, err)
 		return
 	}
+	if receipt == nil {
+		writeNoContent(response, http.StatusNoContent)
+		return
+	}
 	writeJSON(response, request, http.StatusOK, receipt)
 }
 

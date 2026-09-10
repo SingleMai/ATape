@@ -1026,7 +1026,7 @@ paths:
       x-atape-authorization-actions: [raw.ingest]
       tags: [Ingestion]
       summary: Read one caller-owned immutable chunk receipt without Raw content
-      description: Rechecks current source ownership and Session access. Current upload policy does not hide an already committed receipt. Not found is unknown, never acknowledgement.
+      description: Rechecks current source ownership and Session access. Current upload policy does not hide an already committed receipt. Authorized absence returns 204; a concealed 404 is unresolved and must not trigger acknowledgement or cancellation.
       x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{cliCredential: []}]
       requestBody:
@@ -1040,6 +1040,8 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/RawChunkReceipt"}
+        "204":
+          description: Current access was verified and no committed chunk exists for this caller-scoped identity.
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/publications/capabilities:

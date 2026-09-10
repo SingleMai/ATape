@@ -308,10 +308,22 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
           complete(key,id)
           return
         }
+        case "RawUnitCanceled": {
+          integer(settlement.ordinal,0,1_000_000)
+          if (row.activation_receipt === null || row.raw_cancel_reason === null)
+            throw failure("state","Per-unit cancellation requires activation and a durable cancellation intent.")
+          const found=one("SELECT disposition FROM units WHERE scope_key=? AND capture_id=? AND kind='raw' AND ordinal=?",key,id,settlement.ordinal)
+          if (!found) throw failure("missing","Raw unit does not exist.")
+          // An actual receipt always wins over cancellation, including retries.
+          update("UPDATE units SET disposition='canceled' WHERE scope_key=? AND capture_id=? AND kind='raw' AND ordinal=? AND disposition='pending'",key,id,settlement.ordinal)
+          complete(key,id)
+          return
+        }
+        case "RawCancellationStarted":
         case "RawCanceled": {
           text(settlement.reason,MetadataBytes)
           update("UPDATE captures SET raw_cancel_reason=COALESCE(raw_cancel_reason,?) WHERE scope_key=? AND id=?",settlement.reason,key,id)
-          update("UPDATE units SET disposition='canceled' WHERE scope_key=? AND capture_id=? AND kind='raw' AND disposition='pending'",key,id)
+          if (settlement._tag === "RawCanceled") update("UPDATE units SET disposition='canceled' WHERE scope_key=? AND capture_id=? AND kind='raw' AND disposition='pending'",key,id)
           complete(key,id)
           return
         }
