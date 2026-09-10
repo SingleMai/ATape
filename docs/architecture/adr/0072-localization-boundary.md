@@ -1,4 +1,4 @@
-# ADR-0071: Localization boundary for Web and CLI
+# ADR-0072: Localization boundary for Web and CLI
 
 - Status: Accepted; implemented for Web and CLI
 - Date: 2026-09-11
