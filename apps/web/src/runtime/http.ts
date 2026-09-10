@@ -28,7 +28,7 @@ export class BrowserHTTPError extends Error {
 }
 
 type RequestOptions = {
-  readonly responseProfile?: "conversation-page"
+  readonly responseProfile?: "conversation-page" | "raw-content-page"
   readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
   readonly body?: unknown
   readonly csrf?: boolean
@@ -191,7 +191,7 @@ export const browserRequest = (path: string, options: RequestOptions = {}): Effe
       })
       let payload: unknown
       try {
-        payload = await readResponseBody(response, response.ok && options.responseProfile === "conversation-page" ? 8 * 1024 * 1024 : responseBodyLimit)
+        payload = await readResponseBody(response, response.ok && options.responseProfile === "conversation-page" ? 8 * 1024 * 1024 : response.ok && options.responseProfile === "raw-content-page" ? 5 * 1024 * 1024 : responseBodyLimit)
       } catch (error) {
         // An unreadable 401 cannot be proven to be the recoverable
         // fresh-authentication case, so fail closed and restore the Session.

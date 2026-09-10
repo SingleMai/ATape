@@ -967,11 +967,25 @@ paths:
       operationId: listCapturedSessionRawObjects
       x-atape-authorization-actions: [raw_session.list]
       tags: [Captured sessions]
-      summary: List Raw manifests without content bytes
+      summary: List bounded Raw manifests without content bytes
+      description: Explicit limit opts into first-receipt-time and ID descending pages. Each page reauthorizes access. The cursor is opaque and Session-scoped; cursor requires limit. Legacy requests without limit return a complete list up to 100 objects or 409 pagination_required. Duplicate, unknown and empty query values are rejected.
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: cursor, in: query, required: false, schema: {type: string, minLength: 1, maxLength: 2048}}
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       responses:
-        "200": {$ref: "#/components/responses/GenericJSON"}
+        "200":
+          description: One authorized Raw manifest page, with nextCursor only when more objects remain.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessionId, objects]
+                properties:
+                  sessionId: {type: string}
+                  objects: {type: array, maxItems: 100, items: {type: object}}
+                  nextCursor: {type: string, minLength: 1, maxLength: 2048}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/raw-objects/{objectId}/content:

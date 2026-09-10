@@ -77,7 +77,7 @@ type problemDefinition struct {
 }
 
 var problemRegistry = map[problemCode]problemDefinition{
-	problemPaginationRequired:         {409, "The conversation requires pagination", "Read this conversation using bounded pages."},
+	problemPaginationRequired:         {409, "The resource requires pagination", "Read this resource using bounded pages."},
 	problemRefreshRequired:            {409, "The conversation version changed", "Reload the conversation before continuing to another page."},
 	problemPublicationUnknown:         {404, "The publication proof is unavailable", "This response does not prove that activation never occurred. Retain unresolved obligations."},
 	problemPublicationCapacity:        {429, "The publication capacity is exhausted", "Reclaim eligible candidates or reduce the capture before retrying."},
@@ -209,6 +209,10 @@ func classifyError(err error) (problemCode, int, []fieldProblem) {
 	var refresh *canonical.RefreshRequiredError
 	if errors.As(err, &refresh) {
 		return problemRefreshRequired, 0, nil
+	}
+	var rawPages *rawarchive.PaginationRequiredError
+	if errors.As(err, &rawPages) {
+		return problemPaginationRequired, 0, nil
 	}
 	var pages *canonical.PaginationRequiredError
 	if errors.As(err, &pages) {

@@ -6,8 +6,8 @@ import {
 import { Effect, Layer, Schema } from "effect"
 import { BrowserHTTPError, browserRequest } from "./http"
 
-const requestJSON = (path: string): Effect.Effect<unknown, RawGatewayError> =>
-  browserRequest(path).pipe(Effect.mapError((cause: BrowserHTTPError) => new RawGatewayError({
+const requestJSON = (path: string, responseProfile?: "raw-content-page"): Effect.Effect<unknown, RawGatewayError> =>
+  browserRequest(path, responseProfile === undefined ? {} : { responseProfile }).pipe(Effect.mapError((cause: BrowserHTTPError) => new RawGatewayError({
     reason: cause.reason === "transport" ? "transport" : cause.reason === "decode" ? "decode" : "http",
     message: cause.message,
     ...(cause.status === undefined ? {} : { status: cause.status })
@@ -30,14 +30,15 @@ const decodeContent = (payload: unknown) =>
   )
 
 export const BrowserRawGatewayLayer = Layer.succeed(RawGateway, RawGateway.of({
-  listSession: (sessionId) =>
-    requestJSON(`/api/v1/sessions/${encodeURIComponent(sessionId)}/raw`).pipe(
-      Effect.flatMap(decodeArchive)
-    ),
-  readContent: ({ objectId, generation, cursor }) => {
-    const query = new URLSearchParams({ generation: String(generation), limit: "4" })
+  listSession: (sessionId, cursor) => {
+    const query = new URLSearchParams({ limit: "50" })
     if (cursor) query.set("cursor", cursor)
-    return requestJSON(`/api/v1/raw-objects/${encodeURIComponent(objectId)}/content?${query}`).pipe(
+    return requestJSON(`/api/v1/sessions/${encodeURIComponent(sessionId)}/raw?${query}`).pipe(Effect.flatMap(decodeArchive))
+  },
+  readContent: ({ objectId, generation, cursor }) => {
+    const query = new URLSearchParams({ generation: String(generation), limit: "1" })
+    if (cursor) query.set("cursor", cursor)
+    return requestJSON(`/api/v1/raw-objects/${encodeURIComponent(objectId)}/content?${query}`, "raw-content-page").pipe(
       Effect.flatMap(decodeContent)
     )
   }

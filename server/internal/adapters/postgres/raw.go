@@ -318,6 +318,8 @@ func (s *Store) ListSessionObjects(
 	ctx context.Context,
 	principal authentication.Principal,
 	sessionID string,
+	after rawarchive.ObjectPosition,
+	limit int,
 ) ([]rawarchive.ObjectRecord, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
@@ -330,7 +332,7 @@ func (s *Store) ListSessionObjects(
 	); err != nil {
 		return nil, err
 	}
-	rows, err := queries.ListRawSessionObjects(ctx, sessionID)
+	rows, err := queries.ListRawSessionObjects(ctx, db.ListRawSessionObjectsParams{SessionID: sessionID, FirstPage: after.ObjectID == "", AfterCreatedAt: after.CreatedAt, AfterID: after.ObjectID, ResultLimit: int32(limit)})
 	if err != nil {
 		return nil, rawPersist("list Session objects", err)
 	}
@@ -339,7 +341,7 @@ func (s *Store) ListSessionObjects(
 		objects = append(objects, rawarchive.ObjectRecord{
 			ObjectID: row.ID, ProjectID: row.ProjectID, SessionID: row.SessionID,
 			SourceName: row.SourceName, MediaType: row.MediaType, AdapterID: row.AdapterID,
-			AdapterVersion: row.AdapterVersion, CapturedAt: row.CapturedAt, ClientRedacted: row.ClientRedacted,
+			AdapterVersion: row.AdapterVersion, CapturedAt: row.CapturedAt, CreatedAt: row.CreatedAt, ClientRedacted: row.ClientRedacted,
 			CurrentGeneration: row.CurrentGeneration, GenerationCount: row.GenerationCount,
 			CurrentSizeBytes: row.CurrentSizeBytes, CurrentFinalized: row.CurrentFinalized,
 		})

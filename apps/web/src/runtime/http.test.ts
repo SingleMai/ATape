@@ -150,6 +150,18 @@ describe("browser HTTP Adapter", () => {
     await expect(run(browserRequest("/api/v1/sessions/one?limit=100", { responseProfile: "conversation-page" }))).rejects.toMatchObject({ reason: "decode" })
   })
 
+  it("cancels oversized Raw content streams and keeps Raw error responses at the default bound", async () => {
+    const cancel = vi.fn()
+    const bytes = new Uint8Array(5 * 1024 * 1024 + 1)
+    fetchMock.mockResolvedValueOnce(new Response(new ReadableStream({ start(controller) { controller.enqueue(bytes) }, cancel })))
+    await expect(run(browserRequest("/api/v1/raw-objects/one/content?limit=1", { responseProfile: "raw-content-page" })))
+      .rejects.toMatchObject({ reason: "decode" })
+    expect(cancel).toHaveBeenCalledOnce()
+    fetchMock.mockResolvedValueOnce(new Response("x".repeat(2 * 1024 * 1024 + 1), { status: 503 }))
+    await expect(run(browserRequest("/api/v1/raw-objects/one/content?limit=1", { responseProfile: "raw-content-page" })))
+      .rejects.toMatchObject({ reason: "decode" })
+  })
+
   it("generates server-compatible 128-bit replay keys", () => {
     const first = newIdempotencyKey()
     const second = newIdempotencyKey()

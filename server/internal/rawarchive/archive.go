@@ -88,6 +88,7 @@ type ObjectRecord struct {
 	AdapterID         string
 	AdapterVersion    string
 	CapturedAt        time.Time
+	CreatedAt         time.Time // Immutable first receipt time; used only for manifest ordering.
 	ClientRedacted    bool
 	CurrentGeneration int64
 	GenerationCount   int64
@@ -114,7 +115,7 @@ type ContentPlan struct {
 type ManifestStore interface {
 	AuthorizeChunk(context.Context, authentication.Principal, ChunkRecord) error
 	CommitChunk(context.Context, authentication.Principal, ChunkRecord) (CommitResult, error)
-	ListSessionObjects(context.Context, authentication.Principal, string) ([]ObjectRecord, error)
+	ListSessionObjects(context.Context, authentication.Principal, string, ObjectPosition, int) ([]ObjectRecord, error)
 	PlanContent(context.Context, authentication.Principal, string, int64, int64, int) (ContentPlan, error)
 	LookupChunk(context.Context, authentication.Principal, ChunkIdentity) (*ChunkReceipt, error)
 }
@@ -171,8 +172,9 @@ type ObjectSummary struct {
 }
 
 type SessionArchive struct {
-	SessionID string          `json:"sessionId"`
-	Objects   []ObjectSummary `json:"objects"`
+	SessionID  string          `json:"sessionId"`
+	Objects    []ObjectSummary `json:"objects"`
+	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
 type ContentChunk struct {
@@ -283,18 +285,11 @@ func (a *Archive) OpenSession(
 	principal authentication.Principal,
 	sessionID string,
 ) (SessionArchive, error) {
-	if strings.TrimSpace(sessionID) == "" {
-		return SessionArchive{}, &ValidationError{Field: "sessionId", Reason: "must not be empty"}
+	page, err := a.OpenSessionPage(ctx, principal, sessionID, "", MaxManifestPageSize)
+	if err == nil && page.NextCursor != "" {
+		return SessionArchive{}, &PaginationRequiredError{}
 	}
-	objects, err := a.manifests.ListSessionObjects(ctx, principal, sessionID)
-	if err != nil {
-		return SessionArchive{}, concealedAsNotFound(err, "session", sessionID)
-	}
-	result := SessionArchive{SessionID: sessionID, Objects: make([]ObjectSummary, 0, len(objects))}
-	for _, object := range objects {
-		result.Objects = append(result.Objects, summarize(object))
-	}
-	return result, nil
+	return page, err
 }
 
 func (a *Archive) Read(
