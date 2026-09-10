@@ -357,7 +357,7 @@ func TestPublicationCandidateRecovery(t *testing.T) {
 		// Fault injection is at the real database boundary; assertions use only the
 		// same publication Interface as callers, not private SQL call sequencing.
 		shortLimits := limits
-		shortLimits.LeaseLifetime = 100 * time.Millisecond
+		shortLimits.LeaseLifetime = time.Second
 		short, e := postgresadapter.NewPublicationStore(pool, shortLimits)
 		if e != nil {
 			t.Fatal(e)
@@ -372,7 +372,7 @@ func TestPublicationCandidateRecovery(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		_, e = pool.Exec(ctx, `CREATE FUNCTION delay_publication_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.15); RETURN NEW; END $$;
+		_, e = pool.Exec(ctx, `CREATE FUNCTION delay_publication_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(1.1); RETURN NEW; END $$;
 CREATE TRIGGER delay_publication_test BEFORE INSERT ON canonical_publication_parts FOR EACH ROW EXECUTE FUNCTION delay_publication_test();`)
 		if e != nil {
 			t.Fatal(e)
