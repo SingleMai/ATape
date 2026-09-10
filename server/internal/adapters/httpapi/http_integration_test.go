@@ -381,6 +381,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	t.Run("publication transport", func(t *testing.T) {
 		assertHTTPPublicationContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
+	t.Run("native OpenCode Collector", func(t *testing.T) {
+		assertOpenCodeCollectorContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
+	})
 
 	batch := canonicalcontract.ValidBatch()
 	batch.ProjectID = project.ID
@@ -398,7 +401,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	if applied.SessionID == "" {
 		t.Fatal("ingestion response omitted Session identity")
 	}
-	if projected, err := projectsearch.NewProjector(store, store).ProjectOnce(ctx); err != nil || projected != 8 { // Six native OpenCode Events plus two legacy fixture Events.
+	if projected, err := projectsearch.NewProjector(store, store).ProjectOnce(ctx); err != nil || projected != 2 { // Native fixture Search was already verified through the Collector contract.
 		t.Fatalf("project captured Session for Search = %d, %v", projected, err)
 	}
 
