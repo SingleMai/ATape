@@ -600,3 +600,25 @@ also exercise the shipped entry and its manifest. No personal history is read.
 This increment verifies the private Adapter artifact. Installed CLI background
 execution and platform-specific admission evidence are the next increments;
 publication, server deployment and production migration are separate actions.
+
+### Physical disk exhaustion and recovery
+
+The journal now preserves SQLite's `SQLITE_FULL` capacity failure when SQLite
+automatically rolls back a transaction. A second unconditional rollback formerly
+replaced that failure with a generic I/O error; frozen content was retained, but
+the caller lost the capacity classification.
+
+`pnpm test:collector-disk` runs the production journal Interface in a dedicated
+16 MiB tmpfs within a network-disabled Docker container. It fills that filesystem
+to actual `ENOSPC`, verifies capacity rejection without a partial new unit, and
+compares a sealed, unacknowledged 512 KiB unit, its source revision and progress
+before/after failure and across fresh Node processes. Removing only the filler
+permits a new 2 MiB append; old bytes and unconfirmed progress stay unchanged.
+The contract never supplies an ACK or activation receipt. CI runs it separately
+from ordinary unit tests with a pinned Node 24 bookworm multiarch image.
+
+The regression failed with `io` before the fix and passed with `capacity` after it
+on Linux arm64. Closing SQLite can release filesystem space, so reopening before
+removing the filler does not promise successful writes at strictly zero free
+bytes. This test establishes failure preservation and recovery, not a physical
+disk quota, a release default or general OS capacity evidence.
