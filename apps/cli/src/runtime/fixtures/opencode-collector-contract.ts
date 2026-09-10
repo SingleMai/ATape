@@ -29,7 +29,7 @@ const secondMessage = native.rows.message!.filter(row => row.session_id === nati
 const project = { id: input.batch.projectId, instanceOrigin: input.origin, userId: input.userId,
   teamId: "fixture", teamSlug: "fixture", teamName: "Fixture", name: "Native Collector", type: "directory" as const,
   path: workspace, createdAt: at, adapterIds: [adapterId] }
-if (input.phase === "initial") {
+if (["initial", "daemon-source"].includes(input.phase)) {
   mkdirSync(workspace, { recursive: true })
   mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 })
   const db = new DatabaseSync(path)
@@ -41,12 +41,14 @@ if (input.phase === "initial") {
   }
   db.prepare("UPDATE event SET data=json_set(data,'$.info.directory',?) WHERE type='session.created.1'").run(tmpdir())
   db.prepare("UPDATE event SET data=json_set(data,'$.info.directory',?) WHERE type='session.created.1' AND aggregate_id=?").run(workspace, native.rootID)
-  db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id=?").run(`CollectorInitialNeedle ${secret}`, initialPart.id!)
+  db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id=?").run(`${input.phase === "initial" ? "CollectorInitialNeedle" : "CollectorDaemonInitialNeedle"} ${secret}`, initialPart.id!)
   db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE session_id=? AND json_extract(data,'$.type')='text'").run("CollectorChildNeedle", native.childID)
   db.prepare("UPDATE part SET data=json_set(data,'$.text','CollectorSummaryNeedle ' || json_extract(data,'$.text')) WHERE session_id=? AND json_extract(data,'$.type')='text' AND message_id IN (SELECT id FROM message WHERE json_extract(data,'$.summary')=1)").run(native.rootID)
   db.prepare("UPDATE part SET data=json_set(data,'$.state.output',?,'$.state.metadata.output',?) WHERE session_id=? AND json_extract(data,'$.type')='tool'")
     .run(`CollectorToolNeedle ${secret}`, `CollectorToolNeedle ${secret}`, native.rootID)
   db.close()
+}
+if (input.phase === "initial") {
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", paths.adapterDirectory, input.tarball],
     { cwd: home, timeout: 120000, stdio: ["ignore", "pipe", "pipe"] })
   mkdirSync(dirname(paths.configFile), { recursive: true })
@@ -60,10 +62,11 @@ if (input.phase === "raw-only") {
   renameSync(`${path}.offline`, path); mkdirSync(workspace)
 }
 if (input.phase === "recover-raw") { rmSync(path); rmSync(workspace, { recursive: true }) }
-if (["edit", "rewind", "unrevert", "fork", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
+if (input.phase === "daemon-missing") rmSync(path)
+if (["edit", "rewind", "unrevert", "fork", "raw-off", "lose-activation", "raw-only", "daemon-edit", "daemon-live-edit"].includes(input.phase)) {
   const db = new DatabaseSync(path)
-  if (["edit", "raw-off", "lose-activation"].includes(input.phase)) {
-    const needle = input.phase === "edit" ? "CollectorEditedNeedle" : input.phase === "raw-off" ? "CollectorPolicyNeedle" : "CollectorFinalNeedle"
+  if (["edit", "raw-off", "lose-activation", "daemon-edit", "daemon-live-edit"].includes(input.phase)) {
+    const needle = input.phase === "daemon-live-edit" ? "CollectorDaemonLiveNeedle" : input.phase === "daemon-edit" ? "CollectorDaemonUpdatedNeedle" : input.phase === "edit" ? "CollectorEditedNeedle" : input.phase === "raw-off" ? "CollectorPolicyNeedle" : "CollectorFinalNeedle"
     db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id=?").run(`${needle} ${secret}`, initialPart.id!)
   }
   if (input.phase === "rewind") db.prepare("UPDATE session SET revert=? WHERE id=?").run(JSON.stringify({ messageID: secondMessage.id }), native.rootID)
@@ -71,6 +74,11 @@ if (["edit", "rewind", "unrevert", "fork", "raw-off", "lose-activation", "raw-on
   if (input.phase === "fork") db.prepare("UPDATE event SET data=json_set(data,'$.info.directory',?) WHERE type='session.created.1' AND aggregate_id=?").run(workspace, native.forkID)
   if (input.phase === "raw-only") db.prepare("UPDATE part SET data=json_set(data,'$.freshArchive',?) WHERE id=?").run("CollectorFreshRawNeedle", initialPart.id!)
   db.close()
+}
+if (["daemon-source", "daemon-edit", "daemon-live-edit", "daemon-missing"].includes(input.phase)) {
+  // Control only the external source. The installed CLI owns all collection.
+  process.stdout.write(JSON.stringify({ atapeHome: paths.atapeHome, sourcePath: path, sourceLimits: limits }))
+  process.exit(0)
 }
 
 let lost = false, uploads = 0, contentPuts = 0
@@ -99,7 +107,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   }
   let observations = 0, events = 0, failures = 0
   const missing = input.phase.startsWith("recover-")
-  for (let cycle = 0; cycle < 10; cycle++) {
+  for (let cycle = 0; cycle < (input.phase === "daemon-snapshot" ? 0 : 10); cycle++) {
     const report = yield* runCollectionCycle()
     failures += report.failures.length
     if (!missing) assert.deepEqual(report.failures, [])

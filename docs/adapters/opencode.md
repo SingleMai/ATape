@@ -454,9 +454,9 @@ Bounded archive browsing now pages observation-per-object history through the
 Raw Module; the legacy listing explicitly refuses archives above 100 objects.
 The native Collector acceptance below covers source mutation, rewind, compaction,
 tools, child/fork identity, off/on Raw policy and Search through production
-Interfaces. Private Adapter installation is verified below; installed CLI background
-acceptance, supported-platform capacity and remaining failure/admission evidence
-still gate the first usable release. Research prototypes remain on their separate
+Interfaces. Private Adapter installation and installed CLI background acceptance
+are verified below; supported-platform capacity and remaining failure/admission
+evidence still gate the first usable release. Research prototypes remain on their separate
 branch and are not bundled with the CLI.
 
 ## Landed Host capability: source collection and scheduling
@@ -513,10 +513,10 @@ unavailable. Raw receipt recovery performs zero uploads, and final Raw browsing
 contains both original and later observed rows without the controlled secret.
 
 This is production Interface acceptance of a locally packed and installed private
-Adapter. It does not establish installed CLI background-daemon acceptance or a
-general version/platform claim. The package stays private and unregistered.
+Adapter. The installed CLI background extension is described below; neither
+contract establishes a general native version/platform claim. The package stays private and unregistered.
 Bounded Raw object browsing and metadata admission are implemented below; physical
-admission, retention and supported-platform/background checks remain release gates.
+admission, retention and the final supported-platform scope remain release gates.
 
 ## Verification
 
@@ -543,8 +543,8 @@ Legacy all-manifest callers receive `pagination_required` above 100 objects.
 See [ADR-0071](../architecture/adr/0071-bounded-raw-manifest-browsing.md).
 
 This closes the unbounded manifest-list gap. OpenCode remains private/unregistered;
-physical capacity measurements, retention and supported-platform
-and installed CLI background acceptance still precede enablement. No package
+physical capacity/deadline defaults, retention and the final supported-platform
+scope still precede enablement. No package
 publication, server deployment or production migration is part of this increment.
 
 ### Account journal metadata admission
@@ -569,8 +569,8 @@ SQLite file, demonstrating why metadata admission is separate. That fixture had
 ten records and one 256-byte unit per capture; its local 2.7-second run and about
 1.1 MiB WAL do not define platform-independent latency, memory or disk defaults.
 See [ADR-0073](../architecture/adr/0073-capture-journal-metadata-admission.md).
-Physical capacity/deadline defaults, retention and supported installed CLI
-background acceptance remain required before OpenCode registration or enablement.
+Physical capacity/deadline defaults, retention and the final supported-platform
+scope remain required before OpenCode registration or enablement.
 
 
 ### Private installable Adapter artifact
@@ -598,8 +598,9 @@ been removed, so rewriting history, response-loss recovery and exact Raw referen
 also exercise the shipped entry and its manifest. No personal history is read.
 
 This increment verifies the private Adapter artifact. Installed CLI background
-execution and platform-specific admission evidence are the next increments;
-publication, server deployment and production migration are separate actions.
+execution is verified below. Platform-specific admission evidence remains a
+release gate; publication, server deployment and production migration are separate
+actions.
 
 ### Physical disk exhaustion and recovery
 
@@ -622,3 +623,34 @@ on Linux arm64. Closing SQLite can release filesystem space, so reopening before
 removing the filler does not promise successful writes at strictly zero free
 bytes. This test establishes failure preservation and recovery, not a physical
 disk quota, a release default or general OS capacity evidence.
+
+
+### Installed CLI background acceptance
+
+The authenticated HTTP/PostgreSQL contract now also packs and installs the CLI
+outside the checkout and runs its actual `start`, `status` and `stop` commands
+against the previously installed private OpenCode Adapter. It keeps the same
+account credentials and journal across separate managed processes. Source-control
+fixture phases only recreate, edit or remove the controlled native database;
+they perform no collection. Snapshot phases inspect the existing journal after
+the daemon stops, without running a hidden collection cycle.
+
+The contract verifies one process for repeated start, background Canonical and
+Raw delivery, a new process after stop, capture of a source changed while stopped,
+and automatic capture of a later source update while that process remains running.
+It observes both bounded status and the actual paginated selected-head reader;
+Search indexes the latest update and withdraws the earlier text. New background
+Raw observations have distinct identities, and each selected Event's actual Raw
+HTTP reference resolves to its own new source text with the secret masked. Earlier
+Raw reference bytes remain unchanged. Removing the source produces a failed job in a still-owned
+running daemon, and stopping it preserves the selected head, source checkpoint,
+record references and empty pending backlog. Cleanup uses the production process
+ownership check even if the parent test times out.
+
+This is installed CLI/Adapter background acceptance with a real Server and
+PostgreSQL, using the controlled native fixture. It does not replace the separate
+[official native platform evidence](https://github.com/SingleMai/ATape/blob/855b9661858e67aa541d8b2e7b642d795cc99d7f/docs/research/opencode-platform/OBSERVATIONS.md),
+which records exactly tested binary/platform combinations and the distinction
+between unchanged DB/WAL data and SQLite SHM read-lock metadata. OpenCode remains
+private, explicitly configured and outside the default tool registry. Final
+release admission and support boundaries remain to be accepted.
