@@ -76,15 +76,27 @@ test("keeps main reading position, multiple child tabs, nested navigation and ke
 })
 
 test("isolates a child load failure and retries in place", async ({ page, request }) => {
+  let childReads = 0
+  page.on("request", request => {
+    const url = new URL(request.url())
+    if (url.pathname === "/api/v1/sessions/session-reader" && url.searchParams.get("thread") === "alpha") childReads++
+  })
   await page.goto(path)
   await expect(page.locator(".session-main-reader .narrative-prompt").getByText("Review Root", { exact: true })).toBeVisible()
   await request.post("http://127.0.0.1:8080/__fixture/fail-conversation?value=1")
   await page.getByRole("button", { name: /Alpha · child thread/ }).click()
   await expect(page.getByRole("tabpanel").getByRole("alert")).toBeVisible()
   await expect(page.locator(".session-main-reader .narrative-prompt").getByText("Review Root", { exact: true })).toBeVisible()
+  await expect(page.locator(".session-reader-workspace")).toHaveAttribute("data-motion", "open")
+  await page.requestGC()
+  await page.setViewportSize({ width: 800, height: 900 })
+  await expect(page.locator(".session-reader-workspace")).toHaveAttribute("data-direction", "vertical")
+  await expect(page.getByRole("tabpanel").getByRole("alert")).toBeVisible()
+  expect(childReads).toBe(1)
   await request.post("http://127.0.0.1:8080/__fixture/fail-conversation?value=0")
   await page.getByRole("tabpanel").getByRole("button", { name: "Try again" }).click()
   await expect(page.getByRole("tabpanel").getByRole("heading", { name: "Alpha", exact: true })).toBeVisible()
+  expect(childReads).toBe(2)
   await expect(page).toHaveURL(path)
 })
 
