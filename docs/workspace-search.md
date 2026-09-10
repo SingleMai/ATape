@@ -73,3 +73,43 @@ validation, expiration, and revocation APIs remain unchanged.
 Legacy account and Team settings URLs open the dialog above the default workspace.
 Settings selection is ephemeral; a reload returns to the underlying workspace.
 Existing account and Team Effect presenters still own remote data and actions.
+
+## Child conversation tabs
+
+Child conversation cards open a tab in a right-hand reading panel without changing
+the main Session/Thread/Event URL. Opening the same child selects its existing tab;
+children reached inside a tab open alongside it. Each mounted reader retains its
+scroll position and disclosures. The existing Effect conversation presenter owns
+loading, refresh, failures, and cleanup independently for each tab. A child failure
+can be retried without replacing the main conversation.
+
+Each tab also retains its own versioned page cursor. Next page and Read from the
+beginning operate inside that tab; replacing a publication uses the existing
+presenter reload flow without changing the main URL.
+
+Tabs support Left/Right, Home/End, and Delete while focused. Closing the active tab
+selects its neighbor; closing the last tab or the entire panel restores focus to
+the main reader's opener. The root breadcrumb returns focus to that main reader.
+On screens up to 1100px wide the split is vertical, initially giving the child
+panel the lower half of the reading area.
+Direct links and Search results still open their requested thread in the main
+reader. Navigating to another main thread/session clears the panel.
+
+The presentation uses the `Group`, `Panel`, and `Separator` Interface from
+`react-resizable-panels` (4.12.4). Its Implementation owns size constraints,
+pointer/touch resizing, and keyboard access to the divider. This replaces the
+fixed sidebar layout without adding another workflow runtime or a custom drag
+implementation. Both sides have independent scroll viewports; the main prompt
+index and reading anchor use that viewport's bounds. Panel proportions are
+remembered separately for horizontal and vertical layouts during this visit.
+
+Opening and closing animate panel sizes over 220ms; tab content fades in over
+160ms. Dragging remains immediate. Closing keeps content mounted until its
+transition completes. The system's reduced-motion preference disables these
+transitions, including when that preference changes while the reader is open.
+The toolbar contains tabs and a close button, with no additional section title.
+
+Tab state and panel proportions are ephemeral and do not survive a reload.
+Reordering, durable tab restoration, and a prompt index within each child panel
+are possible follow-up work. Canonical conversation and Raw source data remain
+behind their existing separate Interfaces.

@@ -47,7 +47,7 @@ import { FailureNotice, FullPageState } from "./view/AccessPrimitives"
 import { ProjectMemoryView } from "./view/ProjectMemoryView"
 import { RawDrawer } from "./view/RawDrawer"
 import { AccountSecurityView, TeamAccessView } from "./view/SecuritySettingsView"
-import { SessionReaderView } from "./view/SessionReaderView"
+import { SessionReaderWorkspace } from "./view/SessionReaderWorkspace"
 import { CreateTeamView, JoinTeamView, TeamChoiceView } from "./view/TeamOnboardingView"
 import { WorkspaceHomeView } from "./view/WorkspaceHomeView"
 import { TeamOverviewView } from "./view/TeamOverviewView"
@@ -433,7 +433,9 @@ function SessionRoute() {
   const presenter = useConversationPresenter(params.sessionId, search.thread, page, restart)
   return (
     <>
-      <SessionReaderView
+      <SessionReaderWorkspace
+        key={`${params.sessionId}:${search.thread}`}
+        sessionId={params.sessionId}
         state={presenter.state}
         refresh={presenter.refresh}
         {...(search.after || search.event ? { onFirstPage: restart } : {})}
@@ -453,11 +455,6 @@ function SessionRoute() {
         onBack={() => void navigate({
           to: "/teams/$teamId/projects/$projectId",
           params: { teamId: params.teamId, projectId: params.projectId }
-        })}
-        onOpenThread={(threadId) => void navigate({
-          to: "/teams/$teamId/projects/$projectId/sessions/$sessionId",
-          params,
-          search: search.from === "search" ? { thread: threadId, from: "search", q: search.q ?? "" } : { thread: threadId }
         })}
       />
       {search.raw === "open" && <RawDrawerRoute sessionId={params.sessionId} onClose={() => {

@@ -5,7 +5,7 @@ import {
   type NarrativeExchange
 } from "@atape/domain"
 import { Avatar, Button } from "@atape/ui"
-import { useEffect, useMemo } from "react"
+import { createContext, useContext, useEffect, useId, useMemo } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import { useMarkdownPlugins } from "../presenters/markdownPresenter"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
@@ -13,22 +13,26 @@ import { RefreshControl } from "./RefreshControl"
 import { ConversationReadingFrame } from "./UserMessageIndex"
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock"
 
-type Props = {
+export type SessionReaderProps = {
   readonly state: LoadableView<Conversation>
   readonly refresh: RefreshSettingsView
   readonly projectName: string
   readonly onBack: () => void
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
   readonly onRetry: () => void
   readonly onOpenRaw: () => void
   readonly onNextPage?: (head: string, after: string) => void
   readonly onFirstPage?: () => void
   readonly highlightedEventId?: string
+  readonly embedded?: boolean
   readonly searchOrigin?: {
     readonly query: string
     readonly onReturn: () => void
   }
 }
+
+const EventPrefix = createContext("")
+const useEventId = (id: string) => `${useContext(EventPrefix)}event-${id}`
 
 const formatTime = (value: string) =>
   new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(
@@ -107,18 +111,18 @@ const ChildThreadButton = ({
   onOpenThread
 }: {
   readonly event: CanonicalEvent
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
 }) => {
   const childThread = event.childThread
   return childThread ? (
-    <button className="child-thread" type="button" onClick={() => onOpenThread(childThread.id)}>
+    <button className="child-thread" type="button" onClick={() => onOpenThread(childThread.id, childThread.label)}>
       <span>
         <strong>{childThread.label} · child thread</strong>
         <small>
           {childThread.summary} · {childThread.captureStatus} · {childThread.eventCount} events
         </small>
       </span>
-      <strong>Follow thread</strong>
+      <strong>Open in side panel ↗</strong>
     </button>
   ) : null
 }
@@ -136,12 +140,13 @@ const PromptView = ({
   highlightedEventId
 }: {
   readonly event: CanonicalEvent
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
   readonly highlightedEventId: string | undefined
 }) => (
   <article
     className={eventClassName("narrative-prompt", event, highlightedEventId)}
-    id={`event-${event.id}`}
+    id={useEventId(event.id)}
+    data-event-id={event.id}
     tabIndex={0}
   >
     <MarkdownText text={event.text} />
@@ -157,12 +162,13 @@ const PrimaryResponseView = ({
   highlightedEventId
 }: {
   readonly event: CanonicalEvent
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
   readonly highlightedEventId: string | undefined
 }) => (
   <article
     className={eventClassName("narrative-response", event, highlightedEventId)}
-    id={`event-${event.id}`}
+    id={useEventId(event.id)}
+    data-event-id={event.id}
     tabIndex={0}
   >
     <MarkdownText text={event.text} />
@@ -193,7 +199,7 @@ const ActivityEventView = ({
   highlightedEventId
 }: {
   readonly event: CanonicalEvent
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
   readonly highlightedEventId: string | undefined
 }) => (
   <article
@@ -202,7 +208,8 @@ const ActivityEventView = ({
       event,
       highlightedEventId
     )}
-    id={`event-${event.id}`}
+    id={useEventId(event.id)}
+    data-event-id={event.id}
     tabIndex={0}
   >
     {event.kind !== "message" && <header>
@@ -224,7 +231,7 @@ const ActivityDetails = ({
   highlightedEventId
 }: {
   readonly exchange: NarrativeExchange
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
   readonly highlightedEventId: string | undefined
 }) => {
   if (exchange.activity.length === 0) return null
@@ -261,7 +268,7 @@ const HighlightView = ({
   highlightedEventId
 }: {
   readonly event: CanonicalEvent
-  readonly onOpenThread: (threadId: string) => void
+  readonly onOpenThread: (threadId: string, label?: string) => void
   readonly highlightedEventId: string | undefined
 }) => (
   <article
@@ -270,7 +277,8 @@ const HighlightView = ({
       event,
       highlightedEventId
     )}
-    id={`event-${event.id}`}
+    id={useEventId(event.id)}
+    data-event-id={event.id}
     tabIndex={0}
   >
     <header>
@@ -294,8 +302,12 @@ export const SessionReaderView = ({
   onNextPage,
   onFirstPage,
   highlightedEventId,
-  searchOrigin
-}: Props) => {
+  searchOrigin,
+  embedded = false
+}: SessionReaderProps) => {
+  const readerId = useId()
+  const titleId = `${readerId}-title`
+  const prefix = embedded ? `${readerId}-` : ""
   const ready = state._tag === "Ready"
   const threadId = ready ? state.value.thread.id : undefined
   const value = ready ? state.value : undefined
@@ -306,13 +318,13 @@ export const SessionReaderView = ({
   )
   useEffect(() => {
     if (!ready || !highlightedEventId) return
-    const event = document.getElementById(`event-${highlightedEventId}`)
+    const event = document.getElementById(`${prefix}event-${highlightedEventId}`)
     event?.scrollIntoView({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
       block: "center"
     })
     event?.focus({ preventScroll: true })
-  }, [highlightedEventId, ready, threadId, value])
+  }, [highlightedEventId, ready, threadId, value, prefix])
 
   if (state._tag === "Loading") {
     return (
@@ -326,7 +338,7 @@ export const SessionReaderView = ({
     return (
       <section className="state-card error-card" role="alert">
         <Button className="back-link" variant="ghost" onClick={searchOrigin?.onReturn ?? onBack}>
-          {searchOrigin ? "Back to search results" : `Back to ${projectName}`}
+          {embedded ? "Close thread tab" : searchOrigin ? "Back to search results" : `Back to ${projectName}`}
         </Button>
         <h1>{state.refreshRequired ? "Conversation has changed" : "Conversation is unavailable"}</h1>
         <p>{state.message}</p>
@@ -337,14 +349,15 @@ export const SessionReaderView = ({
 
   const conversation = state.value
   return (
-    <section aria-labelledby="session-title">
+    <EventPrefix.Provider value={prefix}>
+    <section aria-labelledby={titleId}>
       <header className="clean-reader-heading">
         <div className="clean-reader-title">
-          <Button className="back-link" variant="ghost" onClick={onBack} aria-label="Back to conversations">
-            ←
+          <Button className="back-link" variant="ghost" onClick={onBack} aria-label={embedded ? "Close thread tab" : "Back to conversations"}>
+            {embedded ? "×" : "←"}
           </Button>
           <div>
-            <h1 id="session-title">{conversation.session.title}</h1>
+            <h1 id={titleId}>{embedded ? conversation.thread.label : conversation.session.title}</h1>
             <p className="reader-user">
               <Avatar name={conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} src={conversation.session.capturedBy?.avatarUrl} size="small" />
               <span>{conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} · {conversation.session.actor.harness}
@@ -404,7 +417,7 @@ export const SessionReaderView = ({
               <button
                 className={thread.id === conversation.thread.id ? "current" : ""}
                 type="button"
-                onClick={() => onOpenThread(thread.id)}
+                onClick={() => onOpenThread(thread.id, thread.label)}
                 aria-current={thread.id === conversation.thread.id ? "page" : undefined}
               >
                 {thread.label}
@@ -415,7 +428,7 @@ export const SessionReaderView = ({
       )}
 
       {onFirstPage && <Button variant="ghost" onClick={onFirstPage}>Read from the beginning</Button>}
-      <ConversationReadingFrame key={`${conversation.thread.id}:${conversation.events[0]?.id ?? "empty"}`} prompts={prompts}>
+      <ConversationReadingFrame key={`${conversation.thread.id}:${conversation.events[0]?.id ?? "empty"}`} prompts={prompts} embedded={embedded}>
         <div className="conversation-stream">
           {narrative.map((exchange, index) => (
             <section
@@ -466,5 +479,6 @@ export const SessionReaderView = ({
         </nav>
       )}
     </section>
+    </EventPrefix.Provider>
   )
 }

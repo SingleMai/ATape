@@ -34,11 +34,13 @@ const projectAtoms = Atom.family((projectId: string) =>
   runtime.atom(openProjectMemory(projectId))
 )
 
-const conversationAtoms = Atom.family((sessionId: string) =>
-  Atom.family((threadId: string) =>
-    Atom.family((page: string) => runtime.atom(openConversation(sessionId, threadId, JSON.parse(page) as ConversationPageRequest)))
-  )
-)
+// A single family keeps the mounted atom reachable by its complete read key.
+// Nested weak families can be collected while their leaf atom is still mounted,
+// causing an unrelated render to create a new request and replace its current read state.
+const conversationAtoms = Atom.family((key: string) => {
+  const [sessionId, threadId, page] = JSON.parse(key) as [string, string, ConversationPageRequest]
+  return runtime.atom(openConversation(sessionId, threadId, page))
+})
 
 export const refreshCadenceMilliseconds = (cadence: RefreshCadence): number | undefined => {
   switch (cadence) {
@@ -182,12 +184,12 @@ export const useConversationPresenter = (sessionId: string, threadId: string, pa
   readonly reload: () => void
   readonly refresh: RefreshSettingsView
 } => {
-  const pageKey = JSON.stringify(page)
-  const atom = conversationAtoms(sessionId)(threadId)(pageKey)
+  const pageKey = JSON.stringify([sessionId, threadId, page])
+  const atom = conversationAtoms(pageKey)
   const result = useAtomValue(atom)
   const refreshAtom = useAtomRefresh(atom)
   const reload = (page.head !== undefined || page.at !== undefined) && restart !== undefined ? restart : refreshAtom
-  const state = useCachedLoadableView(`${sessionId}\u0000${threadId}\u0000${pageKey}`, result)
+  const state = useCachedLoadableView(pageKey, result)
   const refresh = useRefreshSettings(reload, result.waiting)
   return {
     state,
