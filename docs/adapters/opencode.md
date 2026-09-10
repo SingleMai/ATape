@@ -237,8 +237,32 @@ contract additionally loses an actual Raw append response in a Node process,
 disables Raw, recovers the receipt and partially cancels in a second process,
 revokes membership and proves that concealed receipt lookup retains the remaining
 bytes, then restores access, re-enables and finishes cancellation without an upload.
-This foundation still requires Host preparation and scheduling; it does not yet
-create fresh Raw-only captures or maintain the per-source coverage ledger.
+This foundation still requires Host preparation and scheduling. The following
+increment supplies fresh Raw observations; source coverage allocation remains open.
+
+## Landed foundation: independent fresh Raw observations
+
+A new Raw observation can reuse a genuine activation of the same source after
+re-enabling, including an older head whose Canonical bodies were reclaimed. The
+Collector verifies the existing proof and freezes it with the new observation
+identity and current Raw authority before the Host prepares any source content.
+It creates no new Canonical attempt and changes neither the selected head nor old
+Canonical references. The Host still has to freshly observe and redact the source.
+
+Journal format 3 adds immutable capture purpose. Verified format 1 and 2 journals
+upgrade without changing bytes, receipts, ownership or Canonical checkpoints.
+Raw observations permit only Raw units and require a nonempty, complete local seal
+with an unchanged checkpoint. A restart discards an unsealed observation; a sealed
+one resumes through the same Raw receipt and cancellation operation. Raw manifest
+hashing retains one 100-unit metadata page at a time. Both purposes share journal
+capacity, owner fencing and payload reclamation.
+
+SQLite tests cover Raw-off Canonical history, old-body cleanup, independently sealed
+fresh content, lost ACK, newer Canonical coverage, immutable purpose, wrong routing,
+incomplete seals, unsealed restart and format upgrades. The actual HTTP/PostgreSQL
+contract adds fresh observation preparation, a lost successful append response,
+and a separate recovery process, while the newer Canonical head stays selected.
+See [ADR-0061](../architecture/adr/0061-independent-raw-observations.md).
 
 ## Bounds and remaining integration work
 
@@ -261,8 +285,8 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment connects source revision/coverage allocation and fresh Raw-only
-observations. OpenCode source projection, Host preparation and
+The next increment connects source revision/coverage allocation. OpenCode source
+projection, Host preparation and
 Collector scheduling then connect these foundations into the explicit capability.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.

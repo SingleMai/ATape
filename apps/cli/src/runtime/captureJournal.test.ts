@@ -33,11 +33,27 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
 })
 
 describe("Capture journal Interface", () => {
+  it("upgrades v2 without changing existing bytes, receipts, or publication purpose", async () => {
+    const path = await setup()
+    await run(path, "create", Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope); yield* fill(j, owner)
+      yield* j.settle(owner, "capture", { _tag: "Activated", receiptJson: '{"head":1}' })
+    }))
+    const db = new DatabaseSync(path)
+    db.exec("ALTER TABLE captures DROP COLUMN purpose; PRAGMA user_version=2"); db.close()
+    await run(path, "open", Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      const page = yield* j.inspect(owner, "capture", { kind: "raw" })
+      expect(page.capture).toMatchObject({ purpose: "publication", activationReceipt: '{"head":1}', state: "activated" })
+      expect(owner.checkpoint).toBe("cursor-1")
+      expect(yield* j.read(owner, "capture", "raw", 0)).toEqual(bytes("Raw A"))
+    }))
+  })
   it("migrates a bound v1 journal and persists Canonical receipts without advancing coverage or GC", async () => {
     const path = await setup()
     await run(path,"create",Effect.gen(function*(){ const j=yield* CaptureJournal; yield* fill(j,yield* j.claim(scope)) }))
     const db = new DatabaseSync(path)
-    db.exec("DROP INDEX pending_units; PRAGMA user_version=1"); db.close()
+    db.exec("ALTER TABLE captures DROP COLUMN purpose; DROP INDEX pending_units; PRAGMA user_version=1"); db.close()
     await run(path,"open",Effect.gen(function*(){
       const j=yield* CaptureJournal, owner=yield* j.claim(scope)
       expect(j.binding).toEqual(binding)

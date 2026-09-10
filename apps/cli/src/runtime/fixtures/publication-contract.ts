@@ -4,7 +4,7 @@ import { createHash } from "node:crypto"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { CaptureJournal, CLICredentialStore, PublicationTransport,
-  beginPublicationCapture, sealPublicationCapture, deliverPublicationCapture, deliverPublicationRaw, RawPublicationTransport } from "@atape/application"
+  beginPublicationCapture, sealPublicationCapture, deliverPublicationCapture, deliverPublicationRaw, RawPublicationTransport, beginRawObservation, sealRawObservation } from "@atape/application"
 import { PublicationTargetProfile, type CanonicalBatch, type StoredCLICredential } from "@atape/domain"
 import { Effect, Layer, Logger } from "effect"
 import { makeCaptureJournalLayer } from "../captureJournal.ts"
@@ -14,7 +14,7 @@ import { makeRawPublicationTransportLayer } from "../rawPublicationTransport.ts"
 import { makePublicationTransportLayer } from "../publicationTransport.ts"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as {
-  phase: "prepare" | "lose-put" | "lose-activation" | "recover" | "lose-raw" | "cancel-raw" | "finish-raw" | "revoked-raw"
+  phase: "prepare" | "lose-put" | "lose-activation" | "recover" | "lose-raw" | "cancel-raw" | "finish-raw" | "revoked-raw" | "prepare-observation" | "lose-observation" | "recover-observation"
   origin: string; credential: string; userId: string; journal: string; baseHead: string; batch: CanonicalBatch
 }
 const binding = { instanceOrigin: input.origin, userId: input.userId, installationId: input.batch.source.installationId }
@@ -29,7 +29,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init)
   if (!discarded && (response.status === 200 || response.status === 201) && ((input.phase === "lose-put" && init?.method === "PUT") ||
     (input.phase === "lose-activation" && String(url).endsWith("/activate")) ||
-    (input.phase === "lose-raw" && String(url).endsWith("/ingestion/raw/chunks")))) {
+    ((input.phase === "lose-raw" || input.phase === "lose-observation") && String(url).endsWith("/ingestion/raw/chunks")))) {
     discarded = true
     await response.arrayBuffer() // Server has completed the actual request.
     throw new TypeError("Simulated response loss")
@@ -70,6 +70,39 @@ const result = await Effect.runPromise(Effect.gen(function*() {
     }
     yield* sealPublicationCapture(owner, "node-process-capture", { nextCheckpoint: "node-capture-covered", rawUnits: 5 })
     return { state: "sealed", ...started }
+  }
+  if (input.phase === "prepare-observation") {
+    const started = yield* beginRawObservation(owner, { observationId: "fresh-raw", canonicalCaptureId: "node-process-capture" })
+    const content = '{"observation":"fresh after re-enable"}\n'
+    const chunk = { protocolVersion: "atape.raw.v1", sessionId: started.sessionId, installationId: binding.installationId,
+      adapterId: scope.adapterId, sourceObjectId: "fresh-raw-object", sourceChunkId: "fresh-raw-chunk",
+      sourceName: "observation.jsonl", mediaType: "application/x-ndjson", adapterVersion: "node-fixture-v1",
+      capturedAt: "2026-09-10T00:01:00.123456Z", clientRedacted: true, generation: 1, offset: 0, final: true,
+      contentBase64: Buffer.from(content).toString("base64"), sha256: createHash("sha256").update(content).digest("hex"),
+      publication: { head: started.head, authority: started.rawAuthority } }
+    yield* j.append(owner, "fresh-raw", { kind: "raw", ordinal: 0, bytes: new TextEncoder().encode(` \n${JSON.stringify(chunk)}\n`) })
+    yield* sealRawObservation(owner, "fresh-raw", 1)
+    assert.equal(owner.checkpoint, "node-capture-covered")
+    assert.equal((yield* j.inspect(owner, "fresh-raw", { kind: "canonical" })).units.length, 0)
+    return { state: "sealed", ...started }
+  }
+  if (input.phase === "lose-observation" || input.phase === "recover-observation") {
+    const outcome = yield* deliverPublicationRaw(owner, "fresh-raw", 3).pipe(
+      Effect.match({ onFailure: error => ({ state: error.reason }), onSuccess: result => result }))
+    assert.equal(owner.checkpoint, "node-capture-covered")
+    if (input.phase === "lose-observation") {
+      assert.equal(outcome.state, "network"); assert.equal(discarded, true); assert.equal(rawUploads, 1)
+      assert.equal(yield* j.reclaim(owner, "fresh-raw"), 0)
+    } else {
+      assert.equal(outcome.state, "completed"); assert.equal(rawUploads, 0)
+      const fresh = yield* j.inspect(owner, "fresh-raw", { kind: "raw" })
+      assert.equal(fresh.capture.purpose, "raw-observation")
+      assert.equal(fresh.capture.seal!.nextCheckpoint, "node-capture-covered")
+      assert.equal(fresh.units[0]!.disposition, "acknowledged")
+      assert.equal(yield* j.reclaim(owner, "fresh-raw"), 1)
+      assert.equal((yield* j.pending(owner)).length, 0)
+    }
+    return outcome
   }
   if (input.phase === "lose-put" || input.phase === "lose-activation") {
     const outcome = yield* deliverPublicationCapture(owner, "node-process-capture", 64).pipe(

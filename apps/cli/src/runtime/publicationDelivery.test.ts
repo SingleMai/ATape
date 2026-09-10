@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { CaptureJournal, PublicationError, PublicationTransport, beginPublicationCapture, sealPublicationCapture,
-  deliverPublicationCapture, deliverPublicationRaw, RawPublicationTransport, RawPublicationError, type CaptureOwner } from "@atape/application"
+  deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError, type CaptureOwner } from "@atape/application"
 import { PublicationProtocol, PublicationTargetProfile, type PublicationAttempt, type PublicationCapabilities, type PublicationPart, type RawPublicationChunk, type RawPublicationReceipt, type RawPublicationPolicy } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -125,10 +125,25 @@ const fixture = async () => {
     const j = yield* CaptureJournal
     return yield* deliverPublicationCapture(yield* j.claim(scope), id, budget)
   }))
-  const deliverRaw = (budget = 64) => run(Effect.gen(function*() {
-    const j = yield* CaptureJournal; return yield* deliverPublicationRaw(yield* j.claim(scope), "capture", budget)
+  const deliverRaw = (budget = 64, id = "capture") => run(Effect.gen(function*() {
+    const j = yield* CaptureJournal; return yield* deliverPublicationRaw(yield* j.claim(scope), id, budget)
   }))
-  return { path, run, prepare, deliver, sent, deliverRaw, rawSent, rawReceipts, rawRequests: () => rawRequests,
+  const observe = (count = 1, seal = true, id = "raw-observation", canonicalCaptureId = "capture") => run(Effect.gen(function*() {
+    const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+    const started = yield* beginRawObservation(owner, { observationId: id, canonicalCaptureId })
+    for (let ordinal = 0; ordinal < count; ordinal++) {
+      const content = `fresh B ${ordinal}`
+      const chunk: RawPublicationChunk = { protocolVersion: "atape.raw.v1", sessionId: started.sessionId, installationId: binding.installationId,
+        adapterId: scope.adapterId, sourceObjectId: `${id}-object-${ordinal}`, sourceChunkId: `${id}-chunk-${ordinal}`,
+        sourceName: "observation.json", mediaType: "application/json", adapterVersion: "0.1.0", capturedAt: "2026-09-10T00:01:00.123456Z",
+        clientRedacted: true, generation: 1, offset: 0, final: true, contentBase64: Buffer.from(content).toString("base64"),
+        sha256: createHash("sha256").update(content).digest("hex"), publication: { head: started.head, authority: started.rawAuthority } }
+      yield* j.append(owner, id, { kind: "raw", ordinal, bytes: new TextEncoder().encode(` \n${JSON.stringify(chunk)}\n`) })
+    }
+    if (seal) yield* sealRawObservation(owner, id, count)
+    return started
+  }))
+  return { path, run, prepare, deliver, sent, deliverRaw, observe, rawSent, rawReceipts, rawRequests: () => rawRequests,
     rawFault: (value: typeof rawFault) => { rawFault = value },
     receiptError: (value: typeof receiptError) => { receiptError = value },
     receiptPatch: (patch: Partial<RawPublicationReceipt>) => { receiptPatch = patch },
@@ -321,5 +336,90 @@ describe("Collector Raw publication recovery", () => {
   it("requires activation before any Raw request", async () => {
     const f = await fixture(); await f.prepare(1, true)
     await expect(f.deliverRaw()).rejects.toMatchObject({ reason: "invalid" }); expect(f.rawRequests()).toBe(0)
+  })
+})
+
+
+describe("Independent fresh Raw observations", () => {
+  it("refuses a fresh observation while Raw is off before reserving source content", async () => {
+    const f = await fixture(); await f.prepare(); await f.deliver(); f.policy(false)
+    const canonicalRequests = f.requests()
+    await expect(f.observe()).rejects.toMatchObject({ reason: "disabled" })
+    expect(f.requests()).toBe(canonicalRequests); expect(f.rawSent).toHaveLength(0)
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect((yield* j.pending(owner)).some(capture => capture.purpose === "raw-observation")).toBe(false)
+    }))
+  })
+  it("seals a multi-page fresh observation and resumes 205 units with bounded slices", async () => {
+    const f = await fixture(); await f.prepare(); await f.deliver(); await f.observe(205)
+    let result
+    for (let n = 0; n < 205; n++) {
+      const before = f.rawRequests(); result = await f.deliverRaw(3, "raw-observation")
+      expect(f.rawRequests() - before).toBeLessThanOrEqual(3)
+    }
+    expect(result).toMatchObject({ state: "completed" }); expect(f.rawSent).toHaveLength(205)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal; expect((yield* j.claim(scope)).checkpoint).toBe("capture-next") }))
+  }, 30000)
+  it("archives fresh Raw after an off capture without replacing Canonical or rolling later coverage back", async () => {
+    const f = await fixture(); await f.prepare(); await f.deliver()
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal; expect(yield* j.reclaim(yield* j.claim(scope), "capture")).toBe(1) }))
+    f.change({ parts: 0, retainedBytes: 0 }); f.policy(true, 3)
+    const before = f.snapshot(), requests = f.requests()
+    const observation = await f.observe(2)
+    expect(observation.head).toBe(before.id); expect(f.snapshot()).toEqual(before)
+    expect(f.requests() - requests).toBe(1) // Only checks the old proof, no Begin/activation.
+    f.rawFault("lose-after")
+    await expect(f.deliverRaw(3, "raw-observation")).rejects.toMatchObject({ reason: "network" })
+    await f.prepare(1, false, true, "later", before.id); await f.deliver(64, "later")
+    const after = f.snapshot(), canonicalRequests = f.requests()
+    expect(await f.deliverRaw(64, "raw-observation")).toMatchObject({ state: "completed" })
+    expect(f.requests()).toBe(canonicalRequests); expect(f.snapshot()).toEqual(after); expect(f.rawSent).toHaveLength(2)
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect(owner.checkpoint).toBe("later-next")
+      const original = yield* j.inspect(owner, "capture", { kind: "raw" })
+      expect(original.capture.rawEnabled).toBe(false); expect(original.units).toHaveLength(0)
+      const fresh = yield* j.inspect(owner, "raw-observation", { kind: "canonical" })
+      expect(fresh.units).toHaveLength(0); expect(fresh.capture).toMatchObject({ purpose: "raw-observation", state: "completed", expectedCheckpoint: "capture-next" })
+      expect(yield* j.reclaim(owner, "raw-observation")).toBe(2)
+    }))
+    const rawRequests = f.rawRequests()
+    expect(await f.deliverRaw(3, "raw-observation")).toEqual({ state: "completed", operations: 0 })
+    expect(f.rawRequests()).toBe(rawRequests)
+  })
+  it("abandons an unsealed fresh view after reopening without upload or coverage", async () => {
+    const f = await fixture(); await f.prepare(); await f.deliver(); await f.observe(2, false)
+    const requests = f.rawRequests()
+    expect(await f.deliverRaw(3, "raw-observation")).toEqual({ state: "abandoned", operations: 0 })
+    expect(f.rawRequests()).toBe(requests)
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect(owner.checkpoint).toBe("capture-next"); expect(yield* j.reclaim(owner, "raw-observation")).toBe(2)
+    }))
+  })
+  it("requires genuine activation and retains uncertainty instead of reserving a new Raw view", async () => {
+    const f = await fixture(); await f.prepare()
+    await expect(f.observe()).rejects.toMatchObject({ reason: "invalid" })
+    await f.deliver(); f.failStatus("unknown")
+    await expect(f.observe()).rejects.toMatchObject({ reason: "unknown" })
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect((yield* j.pending(owner)).some(c => c.purpose === "raw-observation")).toBe(false)
+    }))
+  })
+  it("rejects Canonical routing and an incomplete or coverage-changing Raw seal", async () => {
+    const f = await fixture(); await f.prepare(); await f.deliver(); await f.observe(1, false)
+    const operation = <A, E>(work: (owner: CaptureOwner) => Effect.Effect<A, E, CaptureJournal | PublicationTransport>) => f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal; return yield* work(yield* j.claim(scope))
+    }))
+    await expect(operation(owner => deliverPublicationCapture(owner, "raw-observation", 3))).rejects.toMatchObject({ reason: "invalid" })
+    await expect(operation(owner => sealRawObservation(owner, "raw-observation", 2))).rejects.toMatchObject({ reason: "invalid" })
+    await expect(operation(owner => CaptureJournal.use(j => j.append(owner, "raw-observation", {
+      kind: "canonical", ordinal: 0, bytes: new TextEncoder().encode("invalid") })))).rejects.toMatchObject({ reason: "state" })
+    await expect(operation(owner => CaptureJournal.use(j => j.seal(owner, "raw-observation", {
+      canonicalUnits: 0, rawUnits: 1, nextCheckpoint: "forbidden", manifestJson: "{}" })))).rejects.toMatchObject({ reason: "state" })
+    await operation(owner => sealRawObservation(owner, "raw-observation", 1))
+    expect(await f.deliverRaw(3, "raw-observation")).toMatchObject({ state: "completed" })
   })
 })

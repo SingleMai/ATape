@@ -41,14 +41,17 @@ const parse = <A>(schema: Schema.ConstraintDecoder<A>, value: string) => Effect.
   try: () => JSON.parse(value) as unknown, catch: () => failure("invalid", "Stored publication metadata is not JSON.")
 }).pipe(Effect.flatMap(value => decode(schema, value)))
 const sameManifest = (a: PublicationManifest, b: PublicationManifest) => a.parts === b.parts && a.bytes === b.bytes && a.sha256 === b.sha256
-const boundIntent = (journal: CaptureJournal["Service"], owner: CaptureOwner, capture: CaptureSummary) => Effect.gen(function*() {
-  const intent = yield* parse(Intent, capture.beginJson)
+const checkIntentBinding = (journal: CaptureJournal["Service"], owner: CaptureOwner, intent: Intent, captureId: string) => Effect.gen(function*() {
   const b = journal.binding, s = owner.scope
   if (intent.binding.instanceOrigin !== b.instanceOrigin || intent.binding.userId !== b.userId || intent.binding.installationId !== b.installationId ||
     intent.scope.installationId !== b.installationId || intent.scope.projectId !== s.projectId || intent.scope.adapterId !== s.adapterId ||
-    intent.scope.sourceSessionId !== s.sourceSessionId || intent.scope.originKey !== s.originKey || intent.begin.captureId !== capture.id)
+    intent.scope.sourceSessionId !== s.sourceSessionId || intent.scope.originKey !== s.originKey || intent.begin.captureId !== captureId)
     return yield* failure("binding", "Publication metadata differs from the journal owner.")
   return intent
+})
+const boundIntent = (journal: CaptureJournal["Service"], owner: CaptureOwner, capture: CaptureSummary) => Effect.gen(function*() {
+  if (capture.purpose !== "publication") return yield* failure("invalid", "This operation requires a Canonical publication capture.")
+  return yield* checkIntentBinding(journal, owner, yield* parse(Intent, capture.beginJson), capture.id)
 })
 const checkAttempt = (intent: Intent, attempt: PublicationAttempt, seal?: Seal) => Effect.gen(function*() {
   if (attempt.id !== intent.begin.reservationId || attempt.sessionId !== intent.sessionId || attempt.captureId !== intent.begin.captureId ||
@@ -96,6 +99,36 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   return { sessionId: attempt.sessionId, attemptId: attempt.id, limits: capabilities.limits }
 })
 
+const hashManifestText = (value: string) => Effect.tryPromise({
+  try: async () => Array.from(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))
+    .map(byte => byte.toString(16).padStart(2, "0")).join(""),
+  catch: () => failure("unavailable", "Could not hash the prepared manifest.")
+})
+const preparedManifest = (journal: CaptureJournal["Service"], owner: CaptureOwner, id: string, kind: "canonical" | "raw",
+  limits: { readonly unitBytes: number; readonly units: number; readonly targetBytes: number }) => Effect.gen(function*() {
+  const lines: string[] = []
+  let ordinal = 0, bytes = 0, rawDigest = "0".repeat(64)
+  while (true) {
+    const page = yield* journal.inspect(owner, id, { kind, afterOrdinal: ordinal - 1, limit: 100 })
+    for (const unit of page.units) {
+      if (unit.ordinal !== ordinal || !unit.retained || unit.byteCount > limits.unitBytes || ordinal >= limits.units)
+        return yield* failure("capacity", "Prepared publication units exceed the negotiated bounds.")
+      lines.push(`${ordinal}:${unit.byteCount}:${unit.digest}\n`)
+      ordinal++; bytes += unit.byteCount
+      if (bytes > limits.targetBytes) return yield* failure("capacity", "Prepared target exceeds publication capacity.")
+    }
+    if (kind === "raw" && lines.length > 0) {
+      // Raw has no Server aggregate manifest. Chain fixed 100-unit metadata
+      // pages so even a large local observation retains only one page here.
+      rawDigest = yield* hashManifestText(`${rawDigest}\n${lines.join("")}`)
+      lines.length = 0
+    }
+    if (page.units.length < 100) break
+  }
+  const sha256 = kind === "raw" ? rawDigest : yield* hashManifestText(lines.join(""))
+  return { parts: ordinal, bytes, sha256 }
+})
+
 /** Close the source view before calling. Only metadata is read while computing
  * the ordered manifest; payloads remain in SQLite. This is the content-send gate.
  */
@@ -111,27 +144,11 @@ export const sealPublicationCapture = (owner: CaptureOwner, id: string, input: {
     return
   }
   if (capture.state !== "preparing") return yield* failure("conflict", "Capture is not preparing.")
-  const lines: string[] = []
-  let ordinal = 0, bytes = 0
-  while (true) {
-    const page = yield* journal.inspect(owner, id, { kind: "canonical", afterOrdinal: ordinal - 1, limit: 100 })
-    for (const unit of page.units) {
-      if (unit.ordinal !== ordinal || !unit.retained || unit.byteCount > intent.capabilities.limits.partBytes || ordinal >= intent.capabilities.limits.parts)
-        return yield* failure("capacity", "Prepared publication units exceed the negotiated bounds.")
-      lines.push(`${ordinal}:${unit.byteCount}:${unit.digest}\n`)
-      ordinal++; bytes += unit.byteCount
-      if (bytes > intent.capabilities.limits.targetBytes) return yield* failure("capacity", "Prepared target exceeds publication capacity.")
-    }
-    if (page.units.length < 100) break
-  }
-  const sha256 = yield* Effect.tryPromise({
-    try: async () => Array.from(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(lines.join(""))))),
-    catch: () => failure("unavailable", "Could not hash the prepared publication manifest.")
-  }).pipe(Effect.map(bytes => bytes.map(byte => byte.toString(16).padStart(2, "0")).join("")))
-  const manifest = yield* decode(PublicationManifest, { parts: ordinal, bytes, sha256 })
+  const manifest = yield* decode(PublicationManifest, yield* preparedManifest(journal, owner, id, "canonical", {
+    unitBytes: intent.capabilities.limits.partBytes, units: intent.capabilities.limits.parts, targetBytes: intent.capabilities.limits.targetBytes }))
   const attempt = yield* checkAttempt(intent, yield* remote.status(journal.binding, intent.begin.reservationId))
   if (attempt.state !== "open" || attempt.parts !== 0) return yield* failure("conflict", "An unsealed capture cannot already have remote content.")
-  yield* journal.seal(owner, id, { canonicalUnits: ordinal, rawUnits: input.rawUnits, nextCheckpoint: input.nextCheckpoint,
+  yield* journal.seal(owner, id, { canonicalUnits: manifest.parts, rawUnits: input.rawUnits, nextCheckpoint: input.nextCheckpoint,
     manifestJson: JSON.stringify({ protocol: PublicationProtocol, fence: attempt.fence, manifest } satisfies Seal) })
 })
 
@@ -220,7 +237,73 @@ export const deliverPublicationCapture = (owner: CaptureOwner, id: string, maxOp
   }
 })
 
-export type RawPublicationDeliveryResult = { readonly state: "pending" | "completed"; readonly operations: number }
+const RawObservationProtocol = "atape.raw-observation.v1"
+const CanonicalProof = Schema.Struct({ intent: Intent, seal: Seal, receipt: PublicationActivation })
+const RawObservationIntent = Schema.Struct({ protocol: Schema.Literal(RawObservationProtocol), observationId: Schema.String,
+  rawAuthority: RawAuthority, canonical: CanonicalProof })
+const boundedCount = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
+const RawObservationSeal = Schema.Struct({ protocol: Schema.Literal(RawObservationProtocol), manifest: Schema.Struct({
+  parts: boundedCount, bytes: boundedCount, sha256: PublicationManifest.fields.sha256 }) })
+const checkCanonicalProof = (journal: CaptureJournal["Service"], owner: CaptureOwner, proof: typeof CanonicalProof.Type) => Effect.gen(function*() {
+  yield* checkIntentBinding(journal, owner, proof.intent, proof.intent.begin.captureId)
+  yield* checkActivation(proof.intent, proof.seal, proof.receipt)
+  return proof
+})
+const boundObservation = (journal: CaptureJournal["Service"], owner: CaptureOwner, capture: CaptureSummary) => Effect.gen(function*() {
+  if (capture.purpose !== "raw-observation" || capture.expectedCheckpoint === null || !capture.rawEnabled)
+    return yield* failure("invalid", "This operation requires an independent Raw observation.")
+  const intent = yield* parse(RawObservationIntent, capture.beginJson)
+  if (intent.observationId !== capture.id) return yield* failure("binding", "Raw observation identity changed.")
+  yield* checkCanonicalProof(journal, owner, intent.canonical)
+  return intent
+})
+
+/** Starts a fresh source observation under current Raw authority. Its existing
+ * Canonical proof is rechecked remotely, but no new Canonical attempt is created.
+ * Host must freshly observe and redact the source before appending Raw units.
+ */
+export const beginRawObservation = (owner: CaptureClaim, input: {
+  readonly observationId: string; readonly canonicalCaptureId: string
+}) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal, remote = yield* PublicationTransport, raw = yield* RawPublicationTransport
+  const { capture } = yield* journal.inspect(owner, input.canonicalCaptureId, { kind: "canonical", limit: 1 })
+  const intent = yield* boundIntent(journal, owner, capture)
+  if (capture.seal === null || capture.activationReceipt === null || owner.checkpoint === null)
+    return yield* failure("invalid", "A fresh Raw observation requires existing Canonical activation and coverage.")
+  const seal = yield* parse(Seal, capture.seal.manifestJson)
+  const saved = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
+  const policy = yield* raw.policy(journal.binding, owner.scope.projectId)
+  if (!policy.enabled) return yield* rawFailure("disabled", "Raw is disabled; no fresh source observation can begin.")
+  const rawAuthority = yield* decode(RawAuthority, policy.authority)
+  const attempt = yield* checkAttempt(intent, yield* remote.status(journal.binding, saved.head), seal)
+  if (attempt.activation === null) return yield* failure("invalid_response", "The original Canonical activation proof is unavailable.")
+  const receipt = yield* checkActivation(intent, seal, attempt.activation)
+  const observation = { protocol: RawObservationProtocol, observationId: input.observationId, rawAuthority,
+    canonical: { intent, seal, receipt } } satisfies typeof RawObservationIntent.Type
+  yield* journal.reserve(owner, { id: input.observationId, purpose: "raw-observation", expectedCheckpoint: owner.checkpoint,
+    beginJson: JSON.stringify(observation), rawEnabled: true })
+  return { sessionId: receipt.sessionId, head: receipt.head, rawAuthority }
+})
+
+/** Close the source view first. Zero Canonical units and an unchanged checkpoint
+ * are enforced by the journal, independently of the workflow metadata.
+ */
+export const sealRawObservation = (owner: CaptureOwner, id: string, rawUnits: number) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal
+  const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
+  yield* boundObservation(journal, owner, capture)
+  if (capture.seal !== null) {
+    if (capture.seal.rawUnits !== rawUnits) return yield* failure("conflict", "Raw observation seal cannot change.")
+    return
+  }
+  const manifest = yield* preparedManifest(journal, owner, id, "raw", {
+    unitBytes: RawPublicationWireBytes, units: 1_000_000, targetBytes: Number.MAX_SAFE_INTEGER })
+  if (manifest.parts !== rawUnits) return yield* failure("invalid", "Raw observation does not contain every promised unit.")
+  const seal = yield* decode(RawObservationSeal, { protocol: RawObservationProtocol, manifest })
+  yield* journal.seal(owner, id, { canonicalUnits: 0, rawUnits, nextCheckpoint: capture.expectedCheckpoint!, manifestJson: JSON.stringify(seal) })
+})
+
+export type RawPublicationDeliveryResult = { readonly state: "pending" | "completed" | "abandoned"; readonly operations: number }
 const rawFailure = (reason: RawPublicationError["reason"], message: string) => new RawPublicationError({ reason, message })
 const timestampKey = (value: string) => {
   const [seconds, fraction = ""] = value.slice(0, -1).split(".")
@@ -246,13 +329,33 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
     return yield* rawFailure("invalid", "Raw recovery needs an explicit operation budget between 3 and 64.")
   const journal = yield* CaptureJournal, remote = yield* RawPublicationTransport
   const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
-  const intent = yield* boundIntent(journal, owner, capture)
-  if (capture.activationReceipt === null || capture.seal === null)
-    return yield* rawFailure("invalid", "Raw delivery requires a sealed, activated capture.")
-  const seal = yield* parse(Seal, capture.seal.manifestJson)
-  const activation = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
+  let activation: PublicationActivation, rawAuthority: RawAuthority | undefined
+  if (capture.purpose === "raw-observation") {
+    const observation = yield* boundObservation(journal, owner, capture)
+    if (capture.state === "preparing") {
+      yield* journal.settle(owner, id, { _tag: "AbandonUnsealed" })
+      return { state: "abandoned", operations: 0 } satisfies RawPublicationDeliveryResult
+    }
+    if (capture.state === "abandoned") return { state: "abandoned", operations: 0 } satisfies RawPublicationDeliveryResult
+    if (capture.seal === null) return yield* rawFailure("invalid", "Raw observation lacks its local seal.")
+    const seal = yield* parse(RawObservationSeal, capture.seal.manifestJson)
+    if (seal.manifest.parts !== capture.seal.rawUnits || capture.seal.canonicalUnits !== 0 || capture.seal.nextCheckpoint !== capture.expectedCheckpoint)
+      return yield* rawFailure("invalid", "Raw observation seal changed its unit set or Canonical coverage.")
+    activation = observation.canonical.receipt
+    rawAuthority = observation.rawAuthority
+    // This settlement records the original proof; the Raw purpose prevents any
+    // Canonical checkpoint advancement, even after process restart.
+    yield* journal.settle(owner, id, { _tag: "Activated", receiptJson: JSON.stringify(activation) })
+  } else {
+    const intent = yield* boundIntent(journal, owner, capture)
+    if (capture.activationReceipt === null || capture.seal === null)
+      return yield* rawFailure("invalid", "Raw delivery requires a sealed, activated capture.")
+    const seal = yield* parse(Seal, capture.seal.manifestJson)
+    activation = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
+    rawAuthority = intent.rawAuthority
+  }
   if (capture.state === "completed") return { state: "completed", operations: 0 } satisfies RawPublicationDeliveryResult
-  if (!capture.rawEnabled || intent.rawAuthority === undefined)
+  if (!capture.rawEnabled || rawAuthority === undefined)
     return yield* rawFailure("invalid", "Prepared Raw capture lacks its original policy authority.")
   const binding = journal.binding
   let operations = 0, cancelReason = capture.rawCancelReason
@@ -261,7 +364,7 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
   if (cancelReason === null) {
     operations++
     const policy = yield* remote.policy(binding, owner.scope.projectId)
-    if (!policy.enabled || !sameRawAuthority(policy.authority, intent.rawAuthority))
+    if (!policy.enabled || !sameRawAuthority(policy.authority, rawAuthority))
       yield* startCancellation(policy.enabled ? "Raw authority changed" : "Raw capture disabled")
   }
   while (true) {
@@ -276,7 +379,7 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
       Effect.flatMap(value => Schema.decodeUnknownEffect(RawPublicationChunk)(value)),
       Effect.mapError(() => rawFailure("invalid", "Frozen Raw unit failed wire validation.")))
     if (chunk.sessionId !== activation.sessionId || chunk.installationId !== binding.installationId || chunk.adapterId !== owner.scope.adapterId ||
-      chunk.publication.head !== activation.head || !sameRawAuthority(chunk.publication.authority, intent.rawAuthority))
+      chunk.publication.head !== activation.head || !sameRawAuthority(chunk.publication.authority, rawAuthority))
       return yield* rawFailure("binding", "Frozen Raw observation differs from its capture authority.")
     // The journal digest protects the entire envelope, not the content digest
     // declared inside it. Verify both before accepting a metadata-only receipt.
