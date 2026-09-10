@@ -77,7 +77,8 @@ Each `step-finish` supplies one independent usage record. Assistant/Session
 aggregate counters are not summed or used as fallbacks. ATape input is native
 input plus cache read/write, output is native output plus reasoning. A missing
 component leaves that total unknown. Invalid counters and overflow fail rather
-than becoming zero. Step occurrence uses the source part creation timestamp when
+than becoming zero. A wholly unknown sample is omitted, as the shared Canonical
+contract requires at least one actual counter. Step occurrence uses the source part creation timestamp when
 no native part time is present, rather than a later message completion timestamp.
 
 External/file attachment URIs are resource links and cause no fetch or file read.

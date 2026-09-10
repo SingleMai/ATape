@@ -149,6 +149,9 @@ export const openOpenCodeCapture = (options: {
         const input = get(tokens.input), output = get(tokens.output), reasoning = get(tokens.reasoning), read = get(cache.read), write = get(cache.write)
         const sum = (...values: Array<number | undefined>) => values.some(value => value === undefined) ? undefined : count(values.reduce<number>((a, b) => a + b!, 0))
         const totalInput = sum(input, read, write), totalOutput = sum(output, reasoning)
+        // An absent sample represents wholly unknown usage. The shared Canonical
+        // contract requires at least one actual counter in a usage record.
+        if ([totalInput, totalOutput, read, write].every(value => value === undefined)) break
         if (++usageCount > options.projection.usage) throw fail("OpenCode projection exceeds its usage bound.", "limit")
         usage.push({ sourceUsageId: identity("usage", session.id, message.id, row.id), sourceThreadId: session.id,
           occurredAt: iso(optionalObject(data.time).end ?? row.timeCreated),

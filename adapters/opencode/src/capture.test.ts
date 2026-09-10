@@ -105,6 +105,7 @@ describe("OpenCode scoped projection", () => {
     f.message("m2", "assistant", { modelID: "model", providerID: "provider", tokens: { input: 99999 } })
     f.part("p2", "m2", { type: "step-finish", tokens: { input: 10, output: 20, reasoning: 3, cache: { read: 4, write: 5 } } })
     f.part("p3", "m2", { type: "step-finish", tokens: { input: 2, output: 1, cache: { read: 1 } } })
+    f.part("p4", "m2", { type: "step-finish" })
     const usage = (await capture(f.path)).frames.flatMap(frame => frame.usage)
     expect(usage).toHaveLength(2)
     expect(usage[0]).toMatchObject({ inputTokens: 19, outputTokens: 23, cacheReadTokens: 4, cacheWriteTokens: 5, model: "model" })
