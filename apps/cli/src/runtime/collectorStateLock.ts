@@ -36,10 +36,11 @@ const acquire = (stateFile: string) => Effect.tryPromise({
     const db = new DatabaseSync(coordinationPath)
     let held = false
     try {
-      db.exec("PRAGMA busy_timeout=0; PRAGMA synchronous=FULL")
       const deadline = Date.now() + 5000
       for (;;) {
-        try { db.exec("BEGIN IMMEDIATE"); held = true; break }
+        // Connection setup can read the schema and meet another opener's
+        // exclusive lock too. Keep it inside the same bounded acquisition retry.
+        try { db.exec("PRAGMA busy_timeout=0; PRAGMA synchronous=FULL; BEGIN IMMEDIATE"); held = true; break }
         catch (cause) {
           if (!busy(cause) || Date.now() >= deadline) throw cause
           await new Promise(resolve => setTimeout(resolve, 25))

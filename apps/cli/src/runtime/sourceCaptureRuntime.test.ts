@@ -1,4 +1,4 @@
-import { AdapterRuntimes } from "@atape/application"
+import { AdapterRuntimes, SourceCaptureCollector, makeSourceCaptureCollectorLayer, runCollectionCycle } from "@atape/application"
 import { AdapterProtocolVersion, SourceCaptureVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage } from "@atape/domain"
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { execFile } from "node:child_process"
@@ -6,13 +6,15 @@ import { promisify } from "node:util"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeNodeClientLayer, type NodeClientPaths } from "./clientLayers.ts"
+import { sourceCollectionLimits } from "./fixtures/source-collection-test-support.ts"
+import { fixture as publicationFixture, directories as publicationDirectories } from "./fixtures/publication-test-support.ts"
 import { hostSourceCapture } from "./sourceCaptureRuntime.ts"
 
 const directories: string[] = []
-afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all([...directories.splice(0), ...publicationDirectories.splice(0)].map(path => rm(path, { recursive: true, force: true }))) })
 const limits = { rowBytes: 64 * 1024, pageBytes: 256 * 1024, pageRows: 2, records: 1000, threads: 20, durationMs: 10000 }
 const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 256 * 1024 }
 const fixture = async () => {
@@ -75,6 +77,57 @@ describe("Host source runtime capability", () => {
     const { stdout } = await promisify(execFile)(process.execPath, [new URL("./fixtures/source-runtime-contract.ts", import.meta.url).pathname,
       JSON.stringify({ paths: f.paths, project: f.project, adapter: f.adapter, sourceId: f.evidence.rootID, limits, projection })])
     expect(JSON.parse(stdout)).toEqual({ events: 6, rawFrames: 0 })
+  })
+  it("runs an installed native source through the Collector entry and Host directory ownership", async () => {
+    const f = await fixture(), remote = await publicationFixture(16384)
+    const project = { ...f.project, path: join(f.root, "workspace") }
+    await mkdir(project.path)
+    const db = new DatabaseSync(join(f.root, "opencode.db"))
+    db.prepare("UPDATE event SET data=json_set(data,'$.info.directory',?) WHERE type='session.created.1'").run(tmpdir())
+    db.prepare("UPDATE event SET data=json_set(data,'$.info.directory',?) WHERE type='session.created.1' AND aggregate_id=?").run(project.path, f.evidence.rootID)
+    db.close()
+    await writeFile(f.paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: ["opencode"],
+      projects: [project], adapters: [f.adapter] }))
+    const node = makeNodeClientLayer(f.paths, {})
+    const collector = makeSourceCaptureCollectorLayer(sourceCollectionLimits).pipe(Layer.provide(Layer.mergeAll(node, remote.remote, remote.rawRemote)))
+    const layer = Layer.merge(node, collector)
+    const sweep = async () => {
+      let observations = 0, canonicalEvents = 0
+      for (let n = 0; n < 10; n++) {
+        const report = await Effect.runPromise(runCollectionCycle().pipe(Effect.provide(layer)))
+        expect(report.failures).toEqual([]); expect(report.jobs[0]!.sourceFailures).toEqual([])
+        observations += report.jobs[0]!.observations; canonicalEvents += report.jobs[0]!.canonicalEvents ?? 0
+        if (!report.jobs[0]!.hasMore) return { observations, canonicalEvents }
+      }
+      throw new Error("Collector did not reach a bounded sweep boundary")
+    }
+    expect(await sweep()).toEqual({ observations: 1, canonicalEvents: 6 })
+    const count = remote.sent.length
+    expect(await sweep()).toEqual({ observations: 0, canonicalEvents: 0 })
+    expect(remote.sent).toHaveLength(count)
+    // The real executable composition exposes the service only with explicit
+    // validated admission; constructing it does not open any private history.
+    expect(await Effect.runPromise(SourceCaptureCollector.pipe(Effect.as(true), Effect.provide(makeNodeClientLayer(f.paths, {
+      ATAPE_SOURCE_COLLECTION_LIMITS: JSON.stringify(sourceCollectionLimits)
+    }))))).toBe(true)
+    await expect(Effect.runPromise(f.open.pipe(Effect.scoped, Effect.provide(makeNodeClientLayer(f.paths, {
+      ATAPE_SOURCE_COLLECTION_LIMITS: "invalid"
+    }))))).rejects.toMatchObject({ reason: "limits" })
+    const changed = new DatabaseSync(join(f.root, "opencode.db"))
+    changed.prepare("UPDATE part SET data=json_set(data,'$.text','changed Canonical') WHERE json_extract(data,'$.type')='text'").run(); changed.close()
+    remote.loseActivation()
+    let prepared = false
+    for (let n = 0; n < 10 && !prepared; n++) {
+      const report = await Effect.runPromise(runCollectionCycle().pipe(Effect.provide(layer)))
+      expect(report.failures).toEqual([]); prepared = report.jobs[0]!.observations === 1
+    }
+    expect(prepared).toBe(true)
+    const archived = remote.rawSent.length
+    await rm(project.path, { recursive: true })
+    const recovered = await Effect.runPromise(runCollectionCycle().pipe(Effect.provide(layer)))
+    expect(recovered.failures).toEqual([])
+    expect(remote.rawSent.length).toBeGreaterThan(archived)
+
   })
   it("never selects a source runtime without the matching explicit manifest capability", async () => {
     const f = await fixture()

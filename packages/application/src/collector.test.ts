@@ -8,6 +8,7 @@ import {
   type CollectorCheckpoint
 } from "@atape/domain"
 import { CollectorDeviceGateway } from "./collectorMonitoring.ts"
+import { SourceCaptureCollector } from "./sourceCollector.ts"
 import { CollectorRunStatusStore, runManagedCollector } from "./collectorDaemon.ts"
 import { TestClock } from "effect/testing"
 import { Deferred, Effect, Fiber, Layer } from "effect"
@@ -375,6 +376,43 @@ describe("Collector Module", () => {
     }).pipe(Effect.provideService(CollectorRunStatusStore, {
       read: () => Effect.succeed({ version: 1, jobs: [] }),
       recordCycle: () => Effect.void,
+      recordCollectorFailure: () => Effect.void
+    }), Effect.provide(TestClock.layer())))
+  })
+
+  it.each(["foreground", "managed"] as const)("%s pauses and resumes two source projects whose scans stay out of phase", async mode => {
+    const original = clientConfig(), first = original.projects[0]!
+    const capture = fixture({ config: () => ({ ...original, projects: [first, { ...first, id: "second" }] }) })
+    const reads = new Map<string, number>(), reports: boolean[][] = []
+    const firstBurst = Deferred.makeUnsafe<void>(), secondBurst = Deferred.makeUnsafe<void>()
+    await capture.run(Effect.gen(function*() {
+      const runner = mode === "managed" ? runManagedCollector : runCollector
+      const fiber = yield* runner({ intervalMs: 10_000 }).pipe(Effect.forkChild)
+      yield* Deferred.await(firstBurst)
+      yield* TestClock.adjust("1 second")
+      expect([...reads.values()]).toEqual([16, 16])
+      yield* TestClock.adjust("8 seconds")
+      expect([...reads.values()]).toEqual([16, 16])
+      yield* TestClock.adjust("1 second")
+      yield* Deferred.await(secondBurst)
+      expect([...reads.values()]).toEqual([32, 32])
+      yield* Fiber.interrupt(fiber)
+      if (mode === "managed") expect(reports.slice(0, 4)).toEqual([[true, false], [false, true], [true, false], [false, true]])
+    }).pipe(Effect.provideService(AdapterRuntimes, { open: () => Effect.succeed({
+      attribute: () => Effect.succeed("included"), sourceCapture: {
+        discover: () => Effect.die("The controlled collector owns this fixture."),
+        open: () => Effect.die("The controlled collector owns this fixture.")
+      }
+    }) }), Effect.provideService(SourceCaptureCollector, { collect: (project, adapter) => Effect.gen(function*() {
+      const count = (reads.get(project.id) ?? 0) + 1; reads.set(project.id, count)
+      if (reads.size === 2 && [...reads.values()].every(value => value === 16)) yield* Deferred.succeed(firstBurst, undefined)
+      if (reads.size === 2 && [...reads.values()].every(value => value === 32)) yield* Deferred.succeed(secondBurst, undefined)
+      return { projectId: project.id, adapterId: adapter.adapterId, pages: 1, observations: 0, canonicalBatches: 0,
+        canonicalEvents: 0, rawChunks: 0, rawBytes: 0, redactions: 0, durationMs: 0,
+        hasMore: count % 2 === (project.id === first.id ? 1 : 0) }
+    }) }), Effect.provideService(CollectorRunStatusStore, {
+      read: () => Effect.succeed({ version: 1, jobs: [] }),
+      recordCycle: report => Effect.sync(() => { reports.push(report.jobs.map(job => job.hasMore)) }),
       recordCollectorFailure: () => Effect.void
     }), Effect.provide(TestClock.layer())))
   })

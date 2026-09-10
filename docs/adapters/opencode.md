@@ -3,7 +3,7 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-still requires runtime capability/scheduling and native acceptance. See the
+now has explicitly admitted runtime scheduling and still requires native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -11,8 +11,8 @@ still requires runtime capability/scheduling and native acceptance. See the
 `CaptureJournal` is an application Interface with a Node SQLite Adapter. It
 persists final delivery bytes that the Host has already validated, redacted and
 encoded. This Module has no source-reading, conversion or network behavior;
-those responsibilities stay in the Collector workflow. The existing Collector
-does not use this journal yet, so its previous recovery behavior is unchanged.
+those responsibilities stay in the Collector workflow. The explicitly configured
+source Collector uses this journal; legacy Adapter recovery remains unchanged.
 
 The Interface hides transactional byte accounting, identity checks, local owner
 epochs and payload reclamation. Its operations support these behaviors:
@@ -144,8 +144,8 @@ for native OpenCode/Collector end-to-end acceptance.
 The application publication Module now owns reserve/Begin, local manifest sealing
 and bounded recovery through the secured Server Interface. Host preparation still
 has to validate, redact and encode every unit, persist it in `CaptureJournal`,
-and close its source view before sealing. The existing Adapter collection loop
-does not select this capability yet.
+and close its source view before sealing. The explicitly configured source
+Collector now selects this capability as described below.
 
 Recovery derives its account/installation binding from the opened journal. It
 never opens a source or invokes a converter. Each slice has an explicit budget
@@ -357,7 +357,7 @@ incomplete/oversized input and Origin mismatch. The existing Collector transport
 reuses the extracted ACP mapping without changing its wire behavior.
 
 The initial operation required Raw-off Begin; the following increment adds
-Raw-enabled preparation. It is not selected by installed Adapters or the scheduler yet.
+Raw-enabled preparation. The explicitly admitted source scheduler now selects both.
 See [ADR-0065](../architecture/adr/0065-host-canonical-preparation.md).
 
 ## Landed Host capability: Raw preparation and receipt-aware reuse
@@ -397,9 +397,9 @@ SDK paging includes the complete response envelope in its byte bound. Controlled
 native tests load the actual source runtime through an installed package entry.
 See [ADR-0068](../architecture/adr/0068-source-capture-runtime.md).
 
-The package remains private and unregistered. Automatic Collector scheduling does
-not select this capability yet; source recovery, attribution and unchanged-content
-handling must be connected before enabling it. Stable-channel database discovery
+The package remains private and unregistered. Source recovery, attribution and
+unchanged-content handling are connected through the explicitly admitted Host
+workflow described below. Stable-channel database discovery
 uses the native XDG data location and respects `OPENCODE_DB`; non-stable channels
 require that explicit override. No private history is read during verification.
 
@@ -440,8 +440,7 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment connects attribution and Collector scheduling to the source,
-prepared publication and recovery Modules. `comparePublicationSource` now compares a disposable source view before writing
+`comparePublicationSource` compares a disposable source view before writing
 per-record capture metadata. It shares formal preparation's masking/fingerprints,
 compares actual published membership and independent Raw outcomes, and returns
 unchanged without capture/version/unit/checkpoint writes or HTTP. A changed result
@@ -455,6 +454,35 @@ The first usable OpenCode release also needs real source mutation, rewind,
 compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
 the production public Interfaces. Research prototypes remain on their separate
 branch and are not bundled with the CLI.
+
+## Landed Host capability: source collection and scheduling
+
+`runCollectionCycle` now dispatches explicit source runtimes to the Host-owned
+`SourceCaptureCollector`. Node composition requires a validated 16 KiB-bounded
+`ATAPE_SOURCE_COLLECTION_LIMITS` JSON object with source, projection, journal, Raw,
+comparison, recovery and cycle limits. Absence leaves source collection unavailable;
+this internal admission switch does not install or register OpenCode.
+
+Each cycle recovers frozen journal obligations before discovery, then attributes
+fresh sources, compares actual coverage and prepares only necessary Canonical or
+independent Raw work. Recovery works after deleting the source or Project directory.
+Its cursor is independent of discovery and uses CAS in existing Collector state;
+legacy cursors are rejected. The journal's format-5 indexed `unactivated` lookup
+finds a new Canonical attempt behind older pending Raw. Upgrades preserve bytes,
+receipts and account binding. Raw network failure no longer delays reclamation of
+confirmed Canonical payloads.
+
+Per-source deadlines isolate slow requests. Discovery finishes with interval
+backoff while recovery continues from its own persisted position. Both Collector
+loops pause after at most 16 consecutive catch-up cycles, including multiple
+Projects whose scan ends never coincide. Cursors survive every pause.
+
+Native SQLite, installed runtime and real Node Collector tests cover initial and
+unchanged collection, source edits, Raw-only changes, policy off/on, response loss,
+deleted directories, fairness and bounded recovery. The next increment exercises
+this complete Collector path against actual authenticated HTTP/PostgreSQL, then
+addresses bounded Raw browsing and measured release admission. See
+[ADR-0070](../architecture/adr/0070-source-collector-recovery-and-scheduling.md).
 
 ## Verification
 

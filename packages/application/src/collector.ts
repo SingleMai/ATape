@@ -1,5 +1,5 @@
 import type {
-  SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage,
+  SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage, GitSource, GitSourceDecision,
   AdapterCollectionPage,
   AdapterCollectionProgress,
   AdapterCollectionLimitValues,
@@ -15,7 +15,8 @@ import type {
 } from "@atape/domain"
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { AdapterSourceFailure, MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
-import { Clock, Context, Effect, Layer, Random, Schema, Scope, Semaphore } from "effect"
+import { Clock, Context, Effect, Layer, Option, Random, Schema, Scope, Semaphore } from "effect"
+import { SourceCaptureCollector } from "./sourceCollector.ts"
 import type { PublicationDraftView } from "./publicationPreparation.ts"
 import { recordCollectorProgress, withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
@@ -95,7 +96,11 @@ export type HostedSourceCapture = {
 }
 export type HostedAdapter = {
   readonly collect: (request: HostedCollectRequest) => Effect.Effect<AdapterCollectionPage, AdapterRuntimeError>
-} | { readonly sourceCapture: HostedSourceCapture }
+} | {
+  readonly sourceCapture: HostedSourceCapture
+  /** Host-owned ownership check after discovery has released its source view. */
+  readonly attribute: (source: GitSource) => Effect.Effect<GitSourceDecision, AdapterRuntimeError>
+}
 
 export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
   open(
@@ -220,6 +225,7 @@ export const runCollector = Effect.fn("Collector.run")((options: RunCollectorOpt
       reason: "limits", message: "Collector interval must be between 10 seconds and 1 hour."
     })
   }
+  const continueImmediately = makeCollectionContinuation()
   while (true) {
     const report = yield* runCollectionCycle(options)
     if (options.once === true) return report
@@ -236,12 +242,21 @@ export const runCollector = Effect.fn("Collector.run")((options: RunCollectorOpt
       observations: report.jobs.reduce((sum, job) => sum + job.observations, 0),
       rawChunks: report.jobs.reduce((sum, job) => sum + job.rawChunks, 0)
     })
-    yield* hasPendingCollection(report) ? Effect.yieldNow : Effect.sleep(intervalMs)
+    yield* continueImmediately(report) ? Effect.yieldNow : Effect.sleep(intervalMs)
   }
 })))
 
-export const hasPendingCollection = (report: CollectionCycleReport): boolean =>
-  report.failures.length === 0 && report.jobs.some(job => job.hasMore)
+/** Bound catch-up across all jobs: independently restarting scans need not
+ * reach their end in the same cycle. Durable cursors survive each interval. */
+export const makeCollectionContinuation = () => {
+  let cycles = 0
+  return (report: CollectionCycleReport): boolean => {
+    cycles++
+    if (report.failures.length === 0 && report.jobs.some(job => job.hasMore) && cycles < 16) return true
+    cycles = 0
+    return false
+  }
+}
 
 type PreparedCycle = {
   readonly startedAt: string
@@ -323,7 +338,6 @@ const collectAdapter = (
   const runtimes = yield* AdapterRuntimes
   const transport = yield* CollectorTransport
   const redactor = yield* SecretRedactor
-  let rawCaptureEnabled = yield* retryTransport(transport.rawCaptureEnabled(project))
   const snapshot = yield* states.snapshot(
     project.instanceOrigin,
     project.userId,
@@ -331,8 +345,13 @@ const collectAdapter = (
     adapter.adapterId
   )
   const runtime = yield* runtimes.open(project, adapter)
-  if ("sourceCapture" in runtime) return yield* new AdapterRuntimeError({ reason: "contract", adapterId: adapter.adapterId, retryable: false,
-    message: "Source capture requires publication scheduling; this Collector does not enable that capability yet." })
+  if ("sourceCapture" in runtime) {
+    const collector = yield* Effect.serviceOption(SourceCaptureCollector)
+    if (Option.isNone(collector)) return yield* new AdapterRuntimeError({ reason: "contract", adapterId: adapter.adapterId, retryable: false,
+      message: "Source collection requires explicit Host admission before this capability can run." })
+    return yield* collector.value.collect(project, adapter, runtime, snapshot)
+  }
+  let rawCaptureEnabled = yield* retryTransport(transport.rawCaptureEnabled(project))
   let checkpoint = snapshot.checkpoint?.projectCreatedAt === project.createdAt
     ? snapshot.checkpoint
     : undefined

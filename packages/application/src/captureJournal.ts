@@ -126,6 +126,8 @@ export class CaptureJournal extends Context.Service<CaptureJournal, {
   /** Pointers only; page the immutable record membership to inspect actual outcomes. */
   coverage(owner: CaptureOwner): Effect.Effect<CaptureCoverage, CaptureJournalError>
   seal(owner: CaptureOwner, id: string, manifest: CaptureSeal): Effect.Effect<void, CaptureJournalError>
+  /** At most one preparing/sealed capture, independently of older Raw obligations. */
+  unactivated(owner: CaptureOwner): Effect.Effect<CaptureSummary | null, CaptureJournalError>
   /** Metadata only: unresolved captures or terminal captures awaiting reclamation. At most 100 entries. */
   pending(owner: CaptureOwner, afterId?: string, limit?: number): Effect.Effect<ReadonlyArray<CaptureSummary>, CaptureJournalError>
   /** Bounded metadata and receipts, including terminal/reclaimed captures. No payloads. */
