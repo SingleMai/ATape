@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { spawn } from "node:child_process"
+import { DatabaseSync } from "node:sqlite"
 import { Effect, Layer } from "effect"
 import { CaptureJournals, CollectorStateStore } from "@atape/application"
 import { afterEach, describe, expect, it } from "vitest"
@@ -38,6 +39,18 @@ const runChild = (fixture: string, stateFile: string) => new Promise<{ installat
 })
 
 describe("Collector capture bootstrap", () => {
+  it("waits for a competing exclusive lock during connection initialization without replacing installation identity", async () => {
+    const f = await fixture(), initial = await f.initialize()
+    const blocker = new DatabaseSync(`${f.stateFile}.lock.sqlite`)
+    blocker.exec("BEGIN EXCLUSIVE")
+    let released = false
+    const release = () => { if (!released) { released = true; blocker.exec("COMMIT"); blocker.close() } }
+    const timer = setTimeout(release, 100)
+    try {
+      expect(await f.initialize()).toEqual(initial)
+      expect(released).toBe(true)
+    } finally { clearTimeout(timer); release() }
+  })
   it("preserves existing installation and legacy checkpoints while reopening immutable pending bytes", async () => {
     const f = await fixture()
     const initial = await f.run(CollectorStateStore.use(store => store.snapshot(account.instanceOrigin, account.userId, "legacy-project", "codex")))

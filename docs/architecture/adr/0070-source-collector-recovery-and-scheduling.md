@@ -89,6 +89,11 @@ tests cover format-4 binding-before-upgrade, old Raw plus new Canonical, and sta
 owners. Both background loop Interfaces test two permanently out-of-phase source
 jobs, interval pause and continuation.
 
+Linux CI also exposed lock contention during SQLite connection configuration,
+before `BEGIN IMMEDIATE`. Connection configuration now participates in the same
+five-second acquisition retry; an actual exclusive-lock regression verifies that
+opening waits and preserves the original installation identity.
+
 Native source-to-production HTTP/PostgreSQL Collector acceptance, bounded archive
 browsing, physical capacity/deadline defaults and supported-platform acceptance
 remain required before registration or enablement. This increment publishes no
