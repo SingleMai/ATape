@@ -108,6 +108,8 @@ export class CaptureJournal extends Context.Service<CaptureJournal, {
   /** Reserve monotonic observed versions; this is not publication or Raw coverage. */
   record(owner: CaptureOwner, id: string, record: CaptureRecordInput): Effect.Effect<CaptureRecordVersion, CaptureJournalError>
   bindRecord(owner: CaptureOwner, id: string, record: CaptureRecordKey, binding: CaptureRecordBinding): Effect.Effect<void, CaptureJournalError>
+  /** Indexed metadata lookup for chronological source observations and receipt-aware reuse. */
+  recordStatus(owner: CaptureOwner, id: string, record: CaptureRecordKey): Effect.Effect<CaptureRecordSummary | null, CaptureJournalError>
   records(owner: CaptureOwner, id: string, page: { readonly kind: CaptureRecordKind; readonly afterKey?: string; readonly limit?: number }): Effect.Effect<ReadonlyArray<CaptureRecordSummary>, CaptureJournalError>
   /** Pointers only; page the immutable record membership to inspect actual outcomes. */
   coverage(owner: CaptureOwner): Effect.Effect<CaptureCoverage, CaptureJournalError>

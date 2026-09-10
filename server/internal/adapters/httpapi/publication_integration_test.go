@@ -321,7 +321,7 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 		t.Fatal(err)
 	}
 	journal := filepath.Join(t.TempDir(), "capture.sqlite")
-	run := func(phase string) map[string]any {
+	runFile := func(phase, fixture, journal string) map[string]any {
 		t.Helper()
 		input, err := json.Marshal(map[string]any{"phase": phase, "origin": origin, "credential": credential, "userId": userID, "journal": journal, "baseHead": baseHead, "batch": batch})
 		if err != nil {
@@ -329,7 +329,7 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 		}
 		ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 		defer cancel()
-		command := exec.CommandContext(ctx, "node", "apps/cli/src/runtime/fixtures/publication-contract.ts")
+		command := exec.CommandContext(ctx, "node", "apps/cli/src/runtime/fixtures/"+fixture)
 		command.Dir = root
 		command.Stdin = bytes.NewReader(input)
 		var stderr bytes.Buffer
@@ -344,6 +344,7 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 		}
 		return result
 	}
+	run := func(phase string) map[string]any { return runFile(phase, "publication-contract.ts", journal) }
 	setPreference("enable")
 	defer setPreference("disable")
 	prepared := run("prepare")
@@ -370,4 +371,15 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 	run("prepare-observation")
 	run("lose-observation")
 	run("recover-observation")
+
+	// Exercise actual native SQLite and the production Host preparation boundary,
+	// rather than supplying manually encoded publication/Raw units.
+	nativeJournal := filepath.Join(t.TempDir(), "native.sqlite")
+	for _, phase := range []string{"prepare", "canonical", "lose-raw", "recover-raw"} {
+		runFile(phase, "opencode-host-contract.ts", nativeJournal)
+	}
+	setPreference("disable")
+	setPreference("enable")
+	runFile("prepare-observation", "opencode-host-contract.ts", nativeJournal)
+	runFile("recover-observation", "opencode-host-contract.ts", nativeJournal)
 }

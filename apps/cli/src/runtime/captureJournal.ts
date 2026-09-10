@@ -1,6 +1,6 @@
 import {
   CaptureJournal, CaptureJournalError, type CaptureScope, type CaptureOwner,
-  type CaptureSeal, type CaptureSummary, type CaptureRecordKind, type CaptureRecordVersion, type CaptureRecordInput, type CaptureRecordManifest
+  type CaptureSeal, type CaptureSummary, type CaptureRecordKind, type CaptureRecordVersion, type CaptureRecordInput, type CaptureRecordManifest, type CaptureRecordSummary
 } from "@atape/application"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, open } from "node:fs/promises"
@@ -220,6 +220,14 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     if (!row) throw failure("missing","Captured source record does not exist.")
     return { ...decode(RecordRow,row), ...decode(RecordBindingRow,row) }
   }
+  const recordSummary = (row: typeof CaptureRow.Type, value: unknown): CaptureRecordSummary => {
+    const record = decode(RecordRow,value), binding = decode(RecordBindingRow,value)
+    const disposition = row.state === "abandoned" ? "abandoned" : binding.unavailable_reason !== null ? "unavailable" :
+      binding.unit_capture === null ? "unbound" : record.kind !== "raw" ? row.activation_receipt === null ? "pending" : "published" :
+      decode(UnitDisposition,(value as { disposition: unknown }).disposition)
+    return { ...recordVersion(record), disposition, unavailableReason:binding.unavailable_reason,
+      unit:binding.unit_capture === null ? null : {captureId:binding.unit_capture,ordinal:binding.unit_ordinal!} }
+  }
   const recordManifest = (key: string, id: string, row: typeof CaptureRow.Type, value: CaptureRecordManifest | undefined) => {
     if (row.track_records === 0) {
       if (value !== undefined) throw failure("state","An untracked capture cannot assert record coverage.")
@@ -404,6 +412,14 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       update("UPDATE capture_records SET unit_capture=?,unit_kind=?,unit_ordinal=?,unavailable_reason=? WHERE scope_key=? AND capture_id=? AND kind=? AND record_key=?",
         unitCapture,unitKind,unitOrdinal,unavailable,key,id,identity.kind,identity.key)
     }),
+    recordStatus: (owner,id,identity) => transaction(() => {
+      const {key} = ownerScope(owner), row = capture(key,id)
+      recordKind(identity.kind); text(identity.key)
+      const value = one(`SELECT r.*,u.disposition FROM capture_records r LEFT JOIN units u
+        ON u.scope_key=r.scope_key AND u.capture_id=r.unit_capture AND u.kind=r.unit_kind AND u.ordinal=r.unit_ordinal
+        WHERE r.scope_key=? AND r.capture_id=? AND r.kind=? AND r.record_key=?`,key,id,identity.kind,identity.key)
+      return value === undefined ? null : recordSummary(row,value)
+    }),
     records: (owner,id,page) => transaction(() => {
       const {key} = ownerScope(owner), row = capture(key,id)
       recordKind(page.kind); integer(page.limit ?? 32,1,100)
@@ -411,14 +427,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       return db.prepare(`SELECT r.*,u.disposition FROM capture_records r LEFT JOIN units u
         ON u.scope_key=r.scope_key AND u.capture_id=r.unit_capture AND u.kind=r.unit_kind AND u.ordinal=r.unit_ordinal
         WHERE r.scope_key=? AND r.capture_id=? AND r.kind=? AND r.record_key>? ORDER BY r.record_key LIMIT ?`)
-        .all(key,id,page.kind,page.afterKey ?? "",page.limit ?? 32).map(value => {
-          const record = decode(RecordRow,value), binding = decode(RecordBindingRow,value)
-          const disposition = row.state === "abandoned" ? "abandoned" : binding.unavailable_reason !== null ? "unavailable" :
-            binding.unit_capture === null ? "unbound" : record.kind !== "raw" ? row.activation_receipt === null ? "pending" : "published" :
-            decode(UnitDisposition,value.disposition)
-          return { ...recordVersion(record), disposition, unavailableReason:binding.unavailable_reason,
-            unit:binding.unit_capture === null ? null : {captureId:binding.unit_capture,ordinal:binding.unit_ordinal!} }
-        })
+        .all(key,id,page.kind,page.afterKey ?? "",page.limit ?? 32).map(value => recordSummary(row,value))
     }),
     coverage: owner => transaction(() => {
       const scope = ownerScope(owner)

@@ -3,6 +3,8 @@
 - Status: Accepted implementation detail of ADR-0059
 - Date: 2026-09-10
 
+Raw-enabled preparation is subsequently implemented by [ADR-0066](0066-host-raw-preparation.md).
+
 The OpenCode Adapter now supplies complete target counts and bounded pre-revision
 drafts. The Host must turn these into final bytes before delivery, without moving
 masking, revision allocation or recovery into the provider Adapter.
