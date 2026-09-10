@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -335,4 +337,66 @@ func TestUnconfiguredPublicationIsNotAdvertised(t *testing.T) {
 		t.Fatalf("unconfigured publication: %d", response.Code)
 	}
 	assertProblemEnvelope(t, response, "service_unavailable")
+}
+
+func TestRawManifestHTTPPaginationAndStrictQueries(t *testing.T) {
+	handler := testHandler(t)
+	content := []byte("redacted")
+	sum := sha256.Sum256(content)
+	for n := 0; n < 101; n++ {
+		value := rawarchive.UploadChunk{ProtocolVersion: rawarchive.ProtocolVersion, SourceChunkID: fmt.Sprintf("page-%d", n), SourceObjectID: fmt.Sprintf("page-%d", n), SessionID: "checkout", InstallationID: "http-installation", Generation: 1, SourceName: "fixture.txt", MediaType: "text/plain", AdapterID: "atape-adapter-test", AdapterVersion: "1", CapturedAt: "2026-09-11T00:00:00Z", ClientRedacted: true, Final: true, ContentBase64: base64.StdEncoding.EncodeToString(content), SHA256: hex.EncodeToString(sum[:])}
+		body, _ := json.Marshal(value)
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/ingestion/raw/chunks", bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusCreated {
+			t.Fatalf("seed manifest: %d %s", response.Code, response.Body.String())
+		}
+	}
+	read := func(query string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/sessions/checkout/raw"+query, nil))
+		return response
+	}
+	if response := read(""); response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"pagination_required"`) {
+		t.Fatalf("legacy: %d %s", response.Code, response.Body.String())
+	}
+	for _, query := range []string{"?limit=0", "?limit=101", "?limit=", "?limit=1&limit=2", "?cursor=abc", "?limit=2&cursor=", "?limit=2&unknown=1"} {
+		if response := read(query); response.Code != http.StatusBadRequest {
+			t.Fatalf("strict query %s: %d", query, response.Code)
+		}
+	}
+	if response := read("?limit=2&cursor=bad"); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid cursor: %d", response.Code)
+	}
+	seen := map[string]bool{}
+	query := "?limit=50"
+	for {
+		response := read(query)
+		if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("page: %d %s", response.Code, response.Body.String())
+		}
+		var page rawarchive.SessionArchive
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Objects) > 50 {
+			t.Fatal("page overflow")
+		}
+		for _, object := range page.Objects {
+			if seen[object.ObjectID] {
+				t.Fatal("duplicate")
+			}
+			seen[object.ObjectID] = true
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		query = "?limit=50&cursor=" + url.QueryEscape(page.NextCursor)
+	}
+	// The demo archive contributes one existing source in addition to the 101 uploads.
+	if len(seen) != 102 {
+		t.Fatalf("paged objects: %d", len(seen))
+	}
 }

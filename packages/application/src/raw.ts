@@ -10,7 +10,7 @@ export class RawGatewayError extends Schema.TaggedError<RawGatewayError>()("RawG
 // RawGateway is deliberately separate from MemoryGateway: opening a Canonical
 // conversation never fetches Raw manifests or bytes.
 export class RawGateway extends Context.Service<RawGateway, {
-  listSession(sessionId: string): Effect.Effect<SessionRawArchive, RawGatewayError>
+  listSession(sessionId: string, cursor: string): Effect.Effect<SessionRawArchive, RawGatewayError>
   readContent(input: {
     readonly objectId: string
     readonly generation: number
@@ -18,9 +18,9 @@ export class RawGateway extends Context.Service<RawGateway, {
   }): Effect.Effect<RawContentPage, RawGatewayError>
 }>()("atape/application/RawGateway") {}
 
-export const listSessionRaw = Effect.fn("Raw.listSession")(function*(sessionId: string) {
+export const listSessionRaw = Effect.fn("Raw.listSession")(function*(sessionId: string, cursor = "") {
   const gateway = yield* RawGateway
-  return yield* gateway.listSession(sessionId).pipe(
+  return yield* gateway.listSession(sessionId, cursor).pipe(
     Effect.withSpan("Raw.listSession", { attributes: { sessionId } })
   )
 })

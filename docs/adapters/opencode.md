@@ -4,7 +4,7 @@ The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
 now has explicitly admitted runtime scheduling and native Collector/HTTP acceptance.
-Bounded archive browsing and release admission remain required. See the
+Bounded archive browsing is implemented; release admission remains required. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -449,8 +449,8 @@ requires a fresh view after Begin; Raw-only changes use an independent observati
 Exact identity/frame counts and the entire operation have explicit bounds. Raw
 capacity gaps stay stable under matching packing admission and are retried when
 admission changes. See [ADR-0069](../architecture/adr/0069-source-comparison-before-capture.md).
-Bounded archive browsing is also required before enabling observation-per-object
-capture, since the legacy Session archive listing currently loads all objects.
+Bounded archive browsing now pages observation-per-object history through the
+Raw Module; the legacy listing explicitly refuses archives above 100 objects.
 The native Collector acceptance below covers source mutation, rewind, compaction,
 tools, child/fork identity, off/on Raw policy and Search through production
 Interfaces. Artifact installation, supported-platform capacity and remaining
@@ -512,8 +512,7 @@ contains both original and later observed rows without the controlled secret.
 
 This is production Interface acceptance of controlled native data, not a published
 tarball, a background-daemon acceptance run or a general version/platform claim.
-The package stays private and unregistered. The next increment bounds Raw object
-browsing before repeated observations can be enabled; physical admission, metadata
+The package stays private and unregistered. Bounded Raw object browsing is implemented below; physical admission, metadata
 retention and supported-platform/artifact checks remain release gates.
 
 ## Verification
@@ -530,3 +529,17 @@ Run the focused suite with:
 ```sh
 pnpm --filter @atape/cli exec vitest run src/runtime/captureJournal.test.ts
 ```
+
+### Bounded Raw browsing
+
+The Raw drawer now reads 50-object manifest pages ordered by immutable server
+first receipt time and ID. Existing objects do not move when their contents grow;
+first/next and browser back/forward replace the displayed page. Content reads one
+chunk with a 5 MiB successful-response bound, including legal 3 MiB source chunks.
+Legacy all-manifest callers receive `pagination_required` above 100 objects.
+See [ADR-0071](../architecture/adr/0071-bounded-raw-manifest-browsing.md).
+
+This closes the unbounded manifest-list gap. OpenCode remains private/unregistered;
+journal metadata admission and physical capacity measurements, supported-platform
+and installed-artifact/background acceptance still precede enablement. No package
+publication, server deployment or production migration is part of this increment.

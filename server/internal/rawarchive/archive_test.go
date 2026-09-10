@@ -13,6 +13,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/testsupport/rawcontract"
 )
 
 const rawUserID = "01991b70-4d2b-7c96-a532-5818faba2e71"
@@ -187,4 +188,9 @@ func upload(chunkID string, generation int64, offset int64, final bool, content 
 		AdapterVersion: "0.1.0", CapturedAt: "2026-09-04T10:52:18+08:00", ClientRedacted: true,
 		Final: final, ContentBase64: base64.StdEncoding.EncodeToString([]byte(content)), SHA256: hex.EncodeToString(sum[:]),
 	}
+}
+
+func TestManifestPagesRemainBoundedAndStable(t *testing.T) {
+	store := rawStore()
+	rawcontract.Manifest(t, rawarchive.NewArchive(store, store), rawCLIPrincipal(), rawWebPrincipal(), "checkout")
 }

@@ -36,14 +36,16 @@ WHERE o.id = $1;
 
 -- name: ListRawSessionObjects :many
 SELECT o.id, o.project_id, o.session_id, o.source_name, o.media_type,
-       o.adapter_id, o.adapter_version, o.captured_at, o.client_redacted,
+       o.adapter_id, o.adapter_version, o.captured_at, o.created_at, o.client_redacted,
        o.current_generation, o.generation_count,
        g.size_bytes AS current_size_bytes, g.finalized AS current_finalized
 FROM raw_objects o
 JOIN raw_generations g
   ON g.object_id = o.id AND g.generation = o.current_generation
-WHERE o.session_id = $1
-ORDER BY o.captured_at DESC, o.id;
+WHERE o.session_id = sqlc.arg(session_id)
+  AND (sqlc.arg(first_page)::boolean OR (o.created_at, o.id) < (sqlc.arg(after_created_at)::timestamptz, sqlc.arg(after_id)::text))
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT sqlc.arg(result_limit);
 
 -- name: InsertRawObject :exec
 INSERT INTO raw_objects (

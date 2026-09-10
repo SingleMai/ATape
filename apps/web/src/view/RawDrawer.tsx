@@ -7,6 +7,8 @@ import { useRawContentPresenter } from "../presenters/rawPresenter"
 type Props = {
   readonly state: LoadableView<SessionRawArchive>
   readonly onClose: () => void
+  readonly cursor: string
+  readonly onPage: (cursor: string) => void
   readonly onRetry: () => void
 }
 
@@ -64,7 +66,7 @@ const RawContentPane = ({ object }: { readonly object: RawObject }) => {
       <pre className="raw-code" tabIndex={0}>{text || "(empty finalized source)"}</pre>
 
       <footer className="raw-page-controls">
-        <span>Page {cursors.length} · at most 4 chunks loaded</span>
+        <span>Page {cursors.length} · 1 chunk loaded</span>
         <div>
           <Button
             variant="ghost"
@@ -85,7 +87,7 @@ const RawContentPane = ({ object }: { readonly object: RawObject }) => {
   )
 }
 
-export const RawDrawer = ({ state, onClose, onRetry }: Props) => {
+export const RawDrawer = ({ state, cursor, onPage, onClose, onRetry }: Props) => {
   const closeButton = useRef<HTMLButtonElement>(null)
   const drawer = useRef<HTMLElement>(null)
   const [selectedObjectId, setSelectedObjectId] = useState("")
@@ -156,9 +158,18 @@ export const RawDrawer = ({ state, onClose, onRetry }: Props) => {
             {state.retryable && <Button onClick={onRetry}>Try again</Button>}
           </div>
         )}
+        {state._tag === "Ready" && (cursor || state.value.nextCursor) && (
+          <nav className="raw-page-controls" aria-label="Raw archive pages">
+            <span>{objects.length} sources on this page · newest received first</span>
+            <div>
+              <Button variant="ghost" disabled={!cursor} onClick={() => onPage("")}>First sources</Button>
+              <Button disabled={!state.value.nextCursor} onClick={() => state.value.nextCursor && onPage(state.value.nextCursor)}>Next sources</Button>
+            </div>
+          </nav>
+        )}
         {state._tag === "Ready" && objects.length === 0 && (
           <div className="raw-drawer-state">
-            <strong>No Raw source was captured for this Session.</strong>
+            <strong>{cursor ? "No more Raw sources on this page." : "No Raw source was captured for this Session."}</strong>
             <span>The Canonical conversation remains available above the source archive.</span>
           </div>
         )}
