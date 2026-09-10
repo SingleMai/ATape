@@ -291,7 +291,7 @@ const configureClient = async (fixture: Fixture, serverUrl: string, adapterId: "
   }
   const now = new Date().toISOString()
   await writeFile(fixture.configFile, `${JSON.stringify({
-    version: 4,
+    version: 3,
     toolsConfigured: true,
     enabledAdapterIds: [adapterId],
     activeInstanceOrigin: serverUrl,

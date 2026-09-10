@@ -196,7 +196,7 @@ describe("atape CLI", () => {
     expect(JSON.parse(preview.stdout)).toMatchObject({ ids: [] })
     expect(JSON.parse((await exec(process.execPath, [cli, "tools", "list", "--json"], { env: environment })).stdout)).toMatchObject({ configured: false })
     const applied = await exec(process.execPath, [cli, "tools", "configure", "--none", "--apply", "--json"], { env: environment })
-    expect(JSON.parse(applied.stdout)).toMatchObject({ version: 4, enabledAdapterIds: [] })
+    expect(JSON.parse(applied.stdout)).toMatchObject({ version: 3, enabledAdapterIds: [] })
     const requestsBefore = remote.requests.length
     await expect(exec(process.execPath, [cli, "setup", project, "--team", "acme", "--create", "--adapter", "codex", "--json"], { env: environment }))
       .rejects.toMatchObject({ stderr: expect.stringContaining("Tools are global") })
