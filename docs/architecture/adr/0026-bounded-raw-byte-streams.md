@@ -2,6 +2,7 @@
 
 - Status: Accepted design; Implementation pending
 - Date: 2026-09-07
+- The metadata-only content constraint has a scoped OpenCode exception in [ADR-0058](0058-opencode-sqlite-and-bounded-capture.md); this byte-stream protocol remains pending.
 
 Whole-record string segments cannot retain arbitrarily large transcript records, no-newline outputs or non-text artifacts while applying safe cross-segment masking with bounded memory. ATape will add an explicit byte-framed Adapter capability and a Host-owned, versioned streaming masker. This preserves original bytes outside declared masking spans without adding a local payload spool or treating a transport/read-frame boundary as a redaction boundary.
 

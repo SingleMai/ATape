@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-09
 - Amends ADR-0007, ADR-0009 and ADR-0022
+- [ADR-0059](0059-opencode-publication-and-recovery.md) clarifies the planned OpenCode mutable-source backfill/reference boundary; policy precedence and existing Adapter behavior remain unchanged.
 
 ## Decision
 

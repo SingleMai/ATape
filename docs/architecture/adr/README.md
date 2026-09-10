@@ -1,5 +1,13 @@
 # Architecture Decision Records
 
+[ADR-0059](0059-opencode-publication-and-recovery.md) selects common atomic
+publication and the OpenCode capture/recovery contract for the first increment;
+Implementation and native acceptance remain pending.
+
+[ADR-0058](0058-opencode-sqlite-and-bounded-capture.md) records the accepted
+OpenCode read-only SQLite route and scoped permission for bounded pending
+content; ADR-0059 records the detailed contract, with Implementation pending.
+
 [ADR-0057](0057-team-overview-and-structured-usage.md) adds structured Canonical
 usage, authorized Team aggregation and the management Overview.
 
