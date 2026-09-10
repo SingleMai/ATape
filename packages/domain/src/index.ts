@@ -1,6 +1,7 @@
 export * from "./client.ts"
 export * from "./cliAuthentication.ts"
 export * from "./collector.ts"
+export * from "./publication.ts"
 export * from "./toolValues.ts"
 export * from "./conversationNarrative.ts"
 export * from "./authentication.ts"

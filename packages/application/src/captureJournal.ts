@@ -11,6 +11,7 @@ export type CaptureScope = {
   readonly originKey: string
 }
 export type CaptureOwner = { readonly scope: CaptureScope; readonly epoch: number }
+export type CaptureBinding = { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
 export type CaptureClaim = CaptureOwner & { readonly checkpoint: string | null }
 export type CaptureUnitKind = "canonical" | "raw"
 export type CaptureReservation = {
@@ -43,6 +44,8 @@ export type CaptureUnitSummary = {
 }
 export type CaptureSettlement =
   | { readonly _tag: "Activated"; readonly receiptJson: string }
+  /** A verified part receipt advances delivery only, never coverage or reclamation. */
+  | { readonly _tag: "CanonicalAcknowledged"; readonly ordinal: number; readonly receiptJson: string }
   | { readonly _tag: "RawAcknowledged"; readonly ordinal: number; readonly receiptJson: string }
   | { readonly _tag: "RawCanceled"; readonly reason: string }
   | { readonly _tag: "AbandonUnsealed" }
@@ -55,6 +58,7 @@ export class CaptureJournalError extends Schema.TaggedError<CaptureJournalError>
 }) {}
 
 export class CaptureJournal extends Context.Service<CaptureJournal, {
+  readonly binding: CaptureBinding
   /** A new owner fences every earlier owner for this source, including reads/GC. */
   claim(scope: CaptureScope): Effect.Effect<CaptureClaim, CaptureJournalError>
   reserve(owner: CaptureOwner, capture: CaptureReservation): Effect.Effect<void, CaptureJournalError>
@@ -66,7 +70,7 @@ export class CaptureJournal extends Context.Service<CaptureJournal, {
   pending(owner: CaptureOwner, afterId?: string, limit?: number): Effect.Effect<ReadonlyArray<CaptureSummary>, CaptureJournalError>
   /** Bounded metadata and receipts, including terminal/reclaimed captures. No payloads. */
   inspect(owner: CaptureOwner, id: string, page: {
-    readonly kind: CaptureUnitKind; readonly afterOrdinal?: number; readonly limit?: number
+    readonly kind: CaptureUnitKind; readonly afterOrdinal?: number; readonly limit?: number; readonly pendingOnly?: boolean
   }): Effect.Effect<{ readonly capture: CaptureSummary; readonly units: ReadonlyArray<CaptureUnitSummary> }, CaptureJournalError>
   /** One bounded unit. Canonical requires seal; Raw additionally requires activation. */
   read(owner: CaptureOwner, id: string, kind: CaptureUnitKind, ordinal: number): Effect.Effect<Uint8Array, CaptureJournalError>

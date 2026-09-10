@@ -95,14 +95,15 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := NewHandler(Config{
-		InstanceOrigin: "https://web.example.test", WebOrigin: "https://web.example.test",
-		APIOrigin: "https://api.example.test", CookieDomain: "example.test",
-	}, Modules{
+	modules := Modules{
 		Authentication: authenticationModule, Teams: teamModule, Cutover: cutoverModule, Publication: publisher,
 		Memory: conversation.NewMemory(store), Ingestor: ingestion.NewIngestor(store),
 		Searcher: projectsearch.NewSearcher(store), Directory: workspace.NewDirectory(store), Raw: archive,
-	})
+	}
+	handler, err := NewHandler(Config{
+		InstanceOrigin: "https://web.example.test", WebOrigin: "https://web.example.test",
+		APIOrigin: "https://api.example.test", CookieDomain: "example.test",
+	}, modules)
 	if err != nil {
 		t.Fatalf("construct HTTP Adapter: %v", err)
 	}
@@ -378,7 +379,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	decodeResponse(t, createProjectResponse, &project)
 
 	t.Run("publication transport", func(t *testing.T) {
-		assertHTTPPublicationContract(t, handler, pool, project.ID, session.User.ID, token.Credential, sessionCookie)
+		assertHTTPPublicationContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie)
 	})
 
 	batch := canonicalcontract.ValidBatch()

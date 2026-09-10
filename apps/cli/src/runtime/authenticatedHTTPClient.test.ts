@@ -79,6 +79,18 @@ const fixture = (options: {
 }
 
 describe("authenticated CLI HTTP boundary", () => {
+  it("sends sealed publication JSON bytes verbatim and bounds the encoded path", async () => {
+    const client = fixture(), bytes = new TextEncoder().encode(' \n{ "text": "原样", "n": 1.0 }\n')
+    const path = `/api/v1/publications/attempts/id/parts/0?sha256=${"a".repeat(64)}` as const
+    await client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      expectedUserId: credential.user.id, method: "PUT", path, encodedJson: bytes })))
+    expect(client.fetches[0]?.init?.body).toEqual(bytes)
+    expect(client.fetches[0]?.init?.body).not.toBe(bytes)
+    expect(new Headers(client.fetches[0]?.init?.headers).get("content-type")).toBe("application/json")
+    await expect(client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      method: "PUT", path, encodedJson: new Uint8Array(4 * 1024 * 1024 + 1) })))).rejects.toMatchObject({ reason: "rejected" })
+    expect(client.fetches).toHaveLength(1)
+  })
   it.each([
     [new DOMException("private message", "TimeoutError"), "timeout", "TimeoutError"],
     [new TypeError("private URL", { cause: Object.assign(new Error("private address"), { code: "ENOTFOUND" }) }), "dns", "ENOTFOUND"],

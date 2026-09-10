@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { CaptureJournal, CaptureJournalError, type CaptureOwner } from "@atape/application"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -32,6 +33,27 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
 })
 
 describe("Capture journal Interface", () => {
+  it("migrates a bound v1 journal and persists Canonical receipts without advancing coverage or GC", async () => {
+    const path = await setup()
+    await run(path,"create",Effect.gen(function*(){ const j=yield* CaptureJournal; yield* fill(j,yield* j.claim(scope)) }))
+    const db = new DatabaseSync(path)
+    db.exec("DROP INDEX pending_units; PRAGMA user_version=1"); db.close()
+    await run(path,"open",Effect.gen(function*(){
+      const j=yield* CaptureJournal, owner=yield* j.claim(scope)
+      expect(j.binding).toEqual(binding)
+      yield* j.settle(owner,"capture",{_tag:"CanonicalAcknowledged",ordinal:0,receiptJson:'{"ordinal":0}'})
+      expect((yield* j.inspect(owner,"capture",{kind:"canonical",pendingOnly:true})).units).toEqual([])
+      expect(yield* j.reclaim(owner,"capture")).toBe(0)
+      expect(owner.checkpoint).toBeNull()
+    }))
+    await run(path,"open",Effect.gen(function*(){
+      const j=yield* CaptureJournal, owner=yield* j.claim(scope)
+      expect(owner.checkpoint).toBeNull()
+      expect((yield* j.inspect(owner,"capture",{kind:"canonical"})).units[0]).toMatchObject({disposition:"acknowledged",retained:true,receiptJson:'{"ordinal":0}'})
+      expect(yield* reason(j.settle(owner,"capture",{_tag:"CanonicalAcknowledged",ordinal:0,receiptJson:'{"ordinal":1}'}))).toBe("conflict")
+      expect(yield* j.read(owner,"capture","canonical",0)).toEqual(bytes("Canonical A"))
+    }))
+  })
   it("recovers exactly the sealed bytes in a fresh runtime and preserves unfinished Raw", async () => {
     const path = await setup()
     await run(path, "create", Effect.gen(function*() { const j = yield* CaptureJournal; yield* fill(j, yield* j.claim(scope)) }))
