@@ -44,7 +44,8 @@
     "test": "vitest run --exclude src/collectorServer.e2e.test.ts",
     "test:e2e": "vitest run src/collectorServer.e2e.test.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "verify:package": "node scripts/verify-package.mjs"
+    "verify:package": "node scripts/verify-package.mjs",
+    "verify:capture-disk": "node scripts/verify-capture-disk.mjs"
   },
   "devDependencies": {
     "@atape/application": "workspace:*",

@@ -58,7 +58,8 @@ const RecordBindingRow = Schema.Struct({ unit_capture: Schema.NullOr(Schema.Stri
 const storageError = (cause: unknown): CaptureJournalError => {
   if (cause instanceof CaptureJournalError) return cause
   const code = (cause as { errcode?: number; code?: string })?.errcode
-  return failure(code === 13 ? "capacity" : code === 11 || code === 26 ? "corrupt" : "io", "Capture journal storage operation failed.")
+  if (code === 13) return failure("capacity", "Capture journal storage is full. Free disk space and retry without removing pending capture state.")
+  return failure(code === 11 || code === 26 ? "corrupt" : "io", "Capture journal storage operation failed.")
 }
 
 export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer.effect(CaptureJournal, openCaptureJournal(options))
@@ -179,7 +180,12 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
   const transaction = <A>(work: () => A) => Effect.try({ try: () => {
     db.exec("BEGIN IMMEDIATE")
     try { const result = work(); db.exec("COMMIT"); return result }
-    catch (cause) { db.exec("ROLLBACK"); throw cause }
+    catch (cause) {
+      // SQLITE_FULL may already have rolled back. Preserve its typed capacity
+      // failure instead of replacing it with "no transaction is active".
+      if (db.isTransaction) db.exec("ROLLBACK")
+      throw cause
+    }
   }, catch: storageError })
   const decode = <A>(schema: Schema.ConstraintDecoder<A>, value: unknown): A => {
     try { return Schema.decodeUnknownSync(schema)(value) }

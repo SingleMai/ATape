@@ -65,3 +65,6 @@ jobs:
 
       - name: Run PostgreSQL integration tests
         run: pnpm test:go:integration
+
+      - name: Verify Collector recovery after physical disk exhaustion
+        run: pnpm test:collector-disk
