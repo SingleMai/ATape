@@ -1,6 +1,6 @@
 import {
   CaptureJournal, CaptureJournalError, type CaptureScope, type CaptureOwner,
-  type CaptureSeal, type CaptureSummary
+  type CaptureSeal, type CaptureSummary, type CaptureRecordKind, type CaptureRecordVersion, type CaptureRecordInput, type CaptureRecordManifest
 } from "@atape/application"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, open } from "node:fs/promises"
@@ -13,7 +13,7 @@ export type CaptureJournalOptions = {
   /** Creation is an explicit bootstrap action. Opening never recreates lost state. */
   readonly mode: "create" | "open"
   readonly binding: { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
-  readonly limits: { readonly unitBytes: number; readonly targetBytes: number; readonly pendingBytes: number; readonly unitsPerTarget: number }
+  readonly limits: { readonly unitBytes: number; readonly targetBytes: number; readonly pendingBytes: number; readonly unitsPerTarget: number; readonly recordsPerTarget?: number }
 }
 const MetadataBytes = 32 * 1024
 const failure = (reason: CaptureJournalError["reason"], message: string) => new CaptureJournalError({ reason, message })
@@ -33,16 +33,27 @@ const json = (value: string) => {
 }
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex")
 const scopeKey = (scope: CaptureScope) => JSON.stringify([text(scope.projectId), text(scope.adapterId), text(scope.sourceSessionId)])
-const SealSchema = Schema.Struct({ canonicalUnits: Schema.Number, rawUnits: Schema.Number,
+const RecordCounts = Schema.Struct({ session: Schema.Number, thread: Schema.Number, event: Schema.Number, usage: Schema.Number })
+const RecordManifest = Schema.Struct({ canonical: Schema.optionalKey(RecordCounts),
+  raw: Schema.optionalKey(Schema.Struct({ records: Schema.Number, scopeComplete: Schema.Boolean })) })
+const SealSchema = Schema.Struct({ records: Schema.optionalKey(RecordManifest), canonicalUnits: Schema.Number, rawUnits: Schema.Number,
   nextCheckpoint: Schema.String, manifestJson: Schema.String })
 const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
-const CaptureRow = Schema.Struct({ purpose: Schema.Literals(["publication", "raw-observation"]), id: Schema.String, expected_checkpoint: Schema.NullOr(Schema.String), begin_json: Schema.String,
+const CaptureRow = Schema.Struct({ track_records: Schema.Literals([0, 1]), record_count: Count, purpose: Schema.Literals(["publication", "raw-observation"]), id: Schema.String, expected_checkpoint: Schema.NullOr(Schema.String), begin_json: Schema.String,
   raw_enabled: Schema.Literals([0, 1]), state: Schema.Literals(["preparing", "sealed", "activated", "completed", "abandoned"]),
   seal_json: Schema.NullOr(Schema.String), activation_receipt: Schema.NullOr(Schema.String), retained_bytes: Count,
   raw_cancel_reason: Schema.NullOr(Schema.String), rejection_receipt: Schema.NullOr(Schema.String) })
-const ScopeRow = Schema.Struct({ epoch: Count, checkpoint: Schema.NullOr(Schema.String), origin_key: Schema.String })
+const ScopeRow = Schema.Struct({ records_initialized: Schema.Literals([0, 1]), canonical_coverage: Schema.NullOr(Schema.String),
+  observed_canonical: Schema.NullOr(Schema.String), observed_raw: Schema.NullOr(Schema.String), epoch: Count, checkpoint: Schema.NullOr(Schema.String), origin_key: Schema.String })
+const UnitDisposition = Schema.Literals(["pending", "acknowledged", "canceled"])
 const UnitRow = Schema.Struct({ ordinal: Count, byte_count: Count, digest: Schema.String,
-  disposition: Schema.Literals(["pending", "acknowledged", "canceled"]), receipt_json: Schema.NullOr(Schema.String) })
+  disposition: UnitDisposition, receipt_json: Schema.NullOr(Schema.String) })
+
+const RecordKind = Schema.Literals(["session", "thread", "event", "usage", "raw"])
+const RecordRow = Schema.Struct({ kind: RecordKind, record_key: Schema.String, fingerprint: Schema.String, projection_version: Schema.String,
+  revision: Count, raw_reference: Schema.NullOr(Schema.String), version_capture: Schema.String })
+const RecordBindingRow = Schema.Struct({ unit_capture: Schema.NullOr(Schema.String), unit_kind: Schema.NullOr(Schema.String),
+  unit_ordinal: Schema.NullOr(Count), unavailable_reason: Schema.NullOr(Schema.Literals(["limit", "redaction"])) })
 
 const storageError = (cause: unknown): CaptureJournalError => {
   if (cause instanceof CaptureJournalError) return cause
@@ -59,6 +70,7 @@ export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer
       integer(limits.targetBytes, limits.unitBytes, Number.MAX_SAFE_INTEGER)
       integer(limits.pendingBytes, limits.targetBytes, Number.MAX_SAFE_INTEGER)
       integer(limits.unitsPerTarget, 1, 1_000_000)
+      if (limits.recordsPerTarget !== undefined) integer(limits.recordsPerTarget, 1, 1_000_000)
       const identity = JSON.stringify([binding.instanceOrigin, binding.userId, binding.installationId])
       if (options.mode === "create") {
         await mkdir(dirname(options.path), { recursive: true, mode: 0o700 })
@@ -95,7 +107,7 @@ export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer
           db.exec("COMMIT")
         }
         const version = db.prepare("PRAGMA user_version").get()
-        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
+        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
         const stored = db.prepare("SELECT identity,retained_bytes FROM binding").all()
         if (stored.length !== 1 || stored[0]?.identity !== identity) throw failure("binding", "Capture journal belongs to a different account or installation.")
         // Upgrade only a verified binding. Concurrent openers serialize and recheck.
@@ -105,6 +117,27 @@ export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer
         }
         if (db.prepare("PRAGMA user_version").get()?.user_version === 2) {
           db.exec("ALTER TABLE captures ADD COLUMN purpose TEXT NOT NULL DEFAULT 'publication' CHECK(purpose IN ('publication','raw-observation')); PRAGMA user_version=3")
+        }
+        if (db.prepare("PRAGMA user_version").get()?.user_version === 3) {
+          db.exec(`ALTER TABLE captures ADD COLUMN track_records INTEGER NOT NULL DEFAULT 0 CHECK(track_records IN (0,1));
+            ALTER TABLE captures ADD COLUMN record_count INTEGER NOT NULL DEFAULT 0 CHECK(record_count>=0);
+            ALTER TABLE scopes ADD COLUMN records_initialized INTEGER NOT NULL DEFAULT 0 CHECK(records_initialized IN (0,1));
+            ALTER TABLE scopes ADD COLUMN canonical_coverage TEXT;
+            ALTER TABLE scopes ADD COLUMN observed_canonical TEXT;
+            ALTER TABLE scopes ADD COLUMN observed_raw TEXT;
+            CREATE TABLE source_record_versions(scope_key TEXT NOT NULL, kind TEXT NOT NULL, record_key TEXT NOT NULL,
+              fingerprint TEXT NOT NULL, projection_version TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
+              raw_reference TEXT, version_capture TEXT NOT NULL, comparison_capture TEXT,
+              PRIMARY KEY(scope_key,kind,record_key), FOREIGN KEY(scope_key,version_capture) REFERENCES captures(scope_key,id));
+            CREATE TABLE capture_records(scope_key TEXT NOT NULL, capture_id TEXT NOT NULL, kind TEXT NOT NULL, record_key TEXT NOT NULL,
+              fingerprint TEXT NOT NULL, projection_version TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0),
+              raw_reference TEXT, version_capture TEXT NOT NULL,
+              unit_capture TEXT, unit_kind TEXT, unit_ordinal INTEGER, unavailable_reason TEXT CHECK(unavailable_reason IN ('limit','redaction')),
+              PRIMARY KEY(scope_key,capture_id,kind,record_key), FOREIGN KEY(scope_key,capture_id) REFERENCES captures(scope_key,id),
+              FOREIGN KEY(scope_key,unit_capture,unit_kind,unit_ordinal) REFERENCES units(scope_key,capture_id,kind,ordinal));
+            CREATE INDEX unbound_capture_records ON capture_records(scope_key,capture_id) WHERE unit_capture IS NULL AND unavailable_reason IS NULL;
+            CREATE INDEX known_source_scopes ON scopes(json_extract(scope_key,'$[0]'),json_extract(scope_key,'$[1]'),json_extract(scope_key,'$[2]'));
+            PRAGMA user_version=4;`)
         }
         db.exec("COMMIT")
         return db
@@ -148,7 +181,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     try { return decode(SealSchema,JSON.parse(value)) } catch { throw failure("corrupt","Capture seal failed validation.") }
   }
   const summary = (row: typeof CaptureRow.Type): CaptureSummary => ({
-    purpose: row.purpose, id: row.id, expectedCheckpoint: row.expected_checkpoint, beginJson: row.begin_json,
+    trackRecords: row.track_records === 1, purpose: row.purpose, id: row.id, expectedCheckpoint: row.expected_checkpoint, beginJson: row.begin_json,
     rawEnabled: row.raw_enabled === 1, state: row.state, seal: row.seal_json === null ? null : parsedSeal(row.seal_json),
     activationReceipt: row.activation_receipt, retainedBytes: row.retained_bytes,
     rawCancelReason: row.raw_cancel_reason, rejectionReceipt: row.rejection_receipt
@@ -160,6 +193,61 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
   const kind = (value: string) => {
     if (value !== "canonical" && value !== "raw") throw failure("invalid","Unknown capture unit kind.")
     return value
+  }
+  const recordKind = (value: CaptureRecordKind) => {
+    if (!["session","thread","event","usage","raw"].includes(value)) throw failure("invalid","Unknown source record kind.")
+    return value
+  }
+  const reference = (value: CaptureRecordInput["rawReference"]) => {
+    if (value === undefined) return null
+    if (value._tag === "unavailable") return JSON.stringify({ _tag: value._tag, reason: text(value.reason) })
+    if (value._tag === "object") return JSON.stringify({ _tag: value._tag, sourceObjectId: text(value.sourceObjectId),
+      ...(value.fragment === undefined ? {} : { fragment: text(value.fragment) }) })
+    throw failure("invalid","Unknown Raw reference provenance.")
+  }
+  const recordVersion = (row: typeof RecordRow.Type): CaptureRecordVersion => {
+    let rawReference: CaptureRecordInput["rawReference"]
+    if (row.raw_reference !== null) {
+      try { rawReference = JSON.parse(row.raw_reference); reference(rawReference) }
+      catch { throw failure("corrupt","Stored record provenance is invalid.") }
+    }
+    return { kind: row.kind, key: row.record_key, fingerprint: row.fingerprint, projectionVersion: row.projection_version,
+      revision: row.revision, ...(rawReference === undefined ? {} : { rawReference }) }
+  }
+  const getRecord = (key: string, id: string, kind: CaptureRecordKind, recordKey: string) => {
+    recordKind(kind); text(recordKey)
+    const row = one("SELECT * FROM capture_records WHERE scope_key=? AND capture_id=? AND kind=? AND record_key=?",key,id,kind,recordKey)
+    if (!row) throw failure("missing","Captured source record does not exist.")
+    return { ...decode(RecordRow,row), ...decode(RecordBindingRow,row) }
+  }
+  const recordManifest = (key: string, id: string, row: typeof CaptureRow.Type, value: CaptureRecordManifest | undefined) => {
+    if (row.track_records === 0) {
+      if (value !== undefined) throw failure("state","An untracked capture cannot assert record coverage.")
+      return undefined
+    }
+    if (value === undefined || limits.recordsPerTarget === undefined) throw failure("state","Tracked capture requires an explicit complete record manifest.")
+    const result = decode(RecordManifest,value)
+    if (row.purpose === "publication" && result.canonical === undefined || row.purpose === "raw-observation" && result.canonical !== undefined)
+      throw failure("state","Record manifest does not match capture purpose.")
+    if (result.raw !== undefined && row.raw_enabled !== 1 || row.purpose === "raw-observation" && result.raw === undefined)
+      throw failure("state","Raw record manifest does not match capture policy.")
+    const counts = new Map(db.prepare("SELECT kind,count(*) total FROM capture_records WHERE scope_key=? AND capture_id=? GROUP BY kind").all(key,id)
+      .map(entry => [String(entry.kind), Number(entry.total)]))
+    for (const kind of ["session","thread","event","usage"] as const) {
+      const expected = result.canonical?.[kind] ?? 0
+      integer(expected,0,limits.recordsPerTarget)
+      if (expected !== (counts.get(kind) ?? 0)) throw failure("state","Source record manifest is incomplete.")
+    }
+    if (result.canonical !== undefined && (result.canonical.session !== 1 || result.canonical.thread < 1))
+      throw failure("state","A Canonical source manifest requires one Session and its Thread topology.")
+    const rawCount = result.raw?.records ?? 0
+    integer(rawCount,0,limits.recordsPerTarget)
+    if (row.purpose === "raw-observation" && rawCount === 0 && !result.raw?.scopeComplete)
+      throw failure("state","An empty Raw observation must prove a complete source comparison.")
+    if (rawCount !== (counts.get("raw") ?? 0)) throw failure("state","Raw record manifest is incomplete.")
+    if (one("SELECT record_key FROM capture_records WHERE scope_key=? AND capture_id=? AND unit_capture IS NULL AND unavailable_reason IS NULL LIMIT 1",key,id))
+      throw failure("state","Every observed record needs frozen content or an explicit Raw gap.")
+    return result
   }
   return {
     binding: Object.freeze({ ...options.binding }),
@@ -173,8 +261,18 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
         update("UPDATE scopes SET epoch=epoch+1 WHERE scope_key=?",key)
         return { scope, epoch:old.epoch+1, checkpoint:old.checkpoint }
       }
-      update("INSERT INTO scopes VALUES(?,?,1,NULL)",key,scope.originKey)
+      update("INSERT INTO scopes(scope_key,origin_key,epoch,checkpoint) VALUES(?,?,1,NULL)",key,scope.originKey)
       return { scope, epoch:1, checkpoint:null }
+    }),
+    sources: (projectId,adapterId,page) => transaction(() => {
+      text(projectId); text(adapterId); integer(page.limit ?? 20,1,100)
+      if (page.afterSessionId !== undefined) text(page.afterSessionId)
+      return db.prepare("SELECT scope_key,origin_key FROM scopes WHERE json_extract(scope_key,'$[0]')=? AND json_extract(scope_key,'$[1]')=? AND json_extract(scope_key,'$[2]')>? ORDER BY json_extract(scope_key,'$[2]') LIMIT ?")
+        .all(projectId,adapterId,page.afterSessionId ?? "",page.limit ?? 20).map(row => {
+          const identity: unknown = JSON.parse(String(row.scope_key))
+          if (!Array.isArray(identity) || identity.length !== 3) throw failure("corrupt","Stored source identity is invalid.")
+          return { projectId: text(identity[0]), adapterId: text(identity[1]), sourceSessionId: text(identity[2]), originKey: text(row.origin_key) }
+        })
     }),
     reserve: (owner,input) => transaction(() => {
       const scope=ownerScope(owner); text(input.id); json(input.beginJson)
@@ -184,18 +282,26 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (purpose !== "publication" && purpose !== "raw-observation") throw failure("invalid","Unknown capture purpose.")
       if (purpose === "raw-observation" && (!input.rawEnabled || input.expectedCheckpoint === null))
         throw failure("state","A Raw observation requires Raw permission and existing Canonical coverage.")
+      const track = input.trackRecords ?? false
+      if (typeof track !== "boolean") throw failure("invalid","Source tracking must be explicit.")
+      if (track && limits.recordsPerTarget === undefined) throw failure("capacity","Source record admission is not configured.")
       const old=one("SELECT * FROM captures WHERE scope_key=? AND id=?",scope.key,input.id)
       if (old) {
         const previous=decode(CaptureRow,old)
-        if (previous.purpose !== purpose || previous.expected_checkpoint !== input.expectedCheckpoint || previous.begin_json !== input.beginJson || previous.raw_enabled !== Number(input.rawEnabled))
+        if (previous.track_records !== Number(track) || previous.purpose !== purpose || previous.expected_checkpoint !== input.expectedCheckpoint || previous.begin_json !== input.beginJson || previous.raw_enabled !== Number(input.rawEnabled))
           throw failure("conflict","Capture reservation identity was reused with different content.")
         return
       }
       if (scope.checkpoint !== input.expectedCheckpoint) throw failure("conflict","Source checkpoint advanced before reservation.")
+      if (track && scope.records_initialized === 0 && scope.checkpoint !== null)
+        throw failure("state","Existing untracked coverage cannot silently initialize source versions.")
+      if (!track && purpose === "publication" && scope.records_initialized === 1)
+        throw failure("state","A tracked source cannot publish without its record manifest.")
+      if (track) update("UPDATE scopes SET records_initialized=1 WHERE scope_key=?",scope.key)
       if (one("SELECT id FROM captures WHERE scope_key=? AND state IN ('preparing','sealed') LIMIT 1",scope.key))
         throw failure("conflict","Resolve the existing unactivated capture before reserving another.")
-      update("INSERT INTO captures(scope_key,id,expected_checkpoint,begin_json,raw_enabled,state,purpose) VALUES(?,?,?,?,?,'preparing',?)",
-        scope.key,input.id,input.expectedCheckpoint,input.beginJson,Number(input.rawEnabled),purpose)
+      update("INSERT INTO captures(scope_key,id,expected_checkpoint,begin_json,raw_enabled,state,purpose,track_records) VALUES(?,?,?,?,?,'preparing',?,?)",
+        scope.key,input.id,input.expectedCheckpoint,input.beginJson,Number(input.rawEnabled),purpose,Number(track))
     }),
     append: (owner,id,unit) => transaction(() => {
       const {key}=ownerScope(owner), row=capture(key,id)
@@ -214,7 +320,9 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       }
       if (row.state !== "preparing") throw failure("state","A sealed capture cannot acquire new content.")
       if (unit.kind === "raw" && row.raw_cancel_reason !== null) throw failure("state","Raw was canceled for this capture.")
-      const counts=one("SELECT count(*) total,count(*) FILTER(WHERE kind=?) channel FROM units WHERE scope_key=? AND capture_id=?",unit.kind,key,id)!
+      const last = (channel: string) => Number(one("SELECT ordinal FROM units WHERE scope_key=? AND capture_id=? AND kind=? ORDER BY ordinal DESC LIMIT 1",key,id,channel)?.ordinal ?? -1) + 1
+      const canonicalCount = last("canonical"), rawCount = last("raw")
+      const counts = { total: canonicalCount + rawCount, channel: unit.kind === "canonical" ? canonicalCount : rawCount }
       if (counts.channel !== unit.ordinal) throw failure("state","Prepared units must be appended contiguously.")
       const total=one("SELECT retained_bytes FROM binding")?.retained_bytes
       if (typeof total !== "number" || total<0 || !Number.isSafeInteger(total)) throw failure("corrupt","Journal byte accounting is invalid.")
@@ -225,14 +333,107 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       update("UPDATE captures SET retained_bytes=retained_bytes+? WHERE scope_key=? AND id=?",unit.bytes.byteLength,key,id)
       update("UPDATE binding SET retained_bytes=retained_bytes+?",unit.bytes.byteLength)
     }),
+    record: (owner,id,input) => transaction(() => {
+      const scope = ownerScope(owner), row = capture(scope.key,id), kind = recordKind(input.kind)
+      text(input.key); text(input.projectionVersion)
+      if (typeof input.fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(input.fingerprint)) throw failure("invalid","A source fingerprint must be SHA-256 metadata.")
+      const proposedReference = reference(input.rawReference)
+      if ((kind === "event") !== (proposedReference !== null)) throw failure("invalid","Only Events carry required Raw reference provenance.")
+      if (row.track_records !== 1 || limits.recordsPerTarget === undefined) throw failure("state","Capture is not tracking source records.")
+      if (row.purpose === "raw-observation" && kind !== "raw" || kind === "raw" && row.raw_enabled !== 1)
+        throw failure("state","Record observation is outside this capture purpose or Raw policy.")
+      const existing = one("SELECT * FROM capture_records WHERE scope_key=? AND capture_id=? AND kind=? AND record_key=?",scope.key,id,kind,input.key)
+      if (existing) {
+        const previous = decode(RecordRow,existing)
+        if (previous.fingerprint !== input.fingerprint || previous.projection_version !== input.projectionVersion)
+          throw failure("conflict","A capture cannot stitch different source observations under one record identity.")
+        return recordVersion(previous)
+      }
+      if (row.state !== "preparing") throw failure("state","Source observations require an unsealed capture.")
+      if (row.record_count >= limits.recordsPerTarget) throw failure("capacity","Source record capacity is exhausted.")
+      const old = one("SELECT * FROM source_record_versions WHERE scope_key=? AND kind=? AND record_key=?",scope.key,kind,input.key)
+      const previous = old === undefined ? undefined : decode(RecordRow,old)
+      const lastComplete = kind === "raw" ? scope.observed_raw : scope.observed_canonical
+      const comparison = old === undefined ? null : decode(Schema.Struct({ comparison_capture: Schema.NullOr(Schema.String) }),old).comparison_capture
+      const wasAbsent = lastComplete !== null && lastComplete !== comparison && !one("SELECT 1 FROM capture_records WHERE scope_key=? AND capture_id=? AND kind=? AND record_key=?",scope.key,lastComplete,kind,input.key)
+      const orphanedReference = previous?.raw_reference !== null && previous?.raw_reference !== undefined &&
+        recordVersion(previous).rawReference?._tag === "object" && capture(scope.key,previous.version_capture).activation_receipt === null
+      const changed = previous === undefined || previous.fingerprint !== input.fingerprint || previous.projection_version !== input.projectionVersion || wasAbsent || orphanedReference
+      const revision = changed ? integer((previous?.revision ?? 0)+1,1,Number.MAX_SAFE_INTEGER) : previous.revision
+      const actualReference = changed ? proposedReference : previous.raw_reference
+      if (changed && row.raw_enabled !== 1 && input.rawReference?._tag === "object")
+        throw failure("state","A new Raw-off Event version cannot acquire a Raw object reference.")
+      const versionCapture = changed ? id : previous.version_capture
+      if (changed) update(`INSERT INTO source_record_versions(scope_key,kind,record_key,fingerprint,projection_version,revision,raw_reference,version_capture,comparison_capture)
+        VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(scope_key,kind,record_key) DO UPDATE SET fingerprint=excluded.fingerprint,projection_version=excluded.projection_version,
+        revision=excluded.revision,raw_reference=excluded.raw_reference,version_capture=excluded.version_capture,comparison_capture=excluded.comparison_capture`,scope.key,kind,input.key,input.fingerprint,input.projectionVersion,revision,actualReference,versionCapture,lastComplete)
+      update("INSERT INTO capture_records(scope_key,capture_id,kind,record_key,fingerprint,projection_version,revision,raw_reference,version_capture) VALUES(?,?,?,?,?,?,?,?,?)",
+        scope.key,id,kind,input.key,input.fingerprint,input.projectionVersion,revision,actualReference,versionCapture)
+      update("UPDATE captures SET record_count=record_count+1 WHERE scope_key=? AND id=?",scope.key,id)
+      return recordVersion({ kind,record_key:input.key,fingerprint:input.fingerprint,projection_version:input.projectionVersion,
+        revision,raw_reference:actualReference,version_capture:versionCapture })
+    }),
+    bindRecord: (owner,id,identity,binding) => transaction(() => {
+      const {key} = ownerScope(owner), row = capture(key,id), record = getRecord(key,id,identity.kind,identity.key)
+      let unitCapture: string | null = null, unitOrdinal: number | null = null, unitKind: string | null = null, unavailable: string | null = null
+      if (binding._tag === "Unavailable") {
+        if (identity.kind !== "raw" || !["limit","redaction"].includes(binding.reason)) throw failure("invalid","Only Raw can declare an explicit record gap.")
+        unavailable = binding.reason
+      } else if (binding._tag === "Unit") {
+        integer(binding.ordinal,0,1_000_000); unitCapture = binding.captureId ?? id; unitOrdinal = binding.ordinal
+        unitKind = identity.kind === "raw" ? "raw" : "canonical"
+        if (unitCapture !== id) {
+          if (identity.kind !== "raw") throw failure("state","Canonical replacement requires its own frozen units.")
+          const previous = getRecord(key,unitCapture,"raw",identity.key)
+          if (previous.revision !== record.revision || previous.fingerprint !== record.fingerprint || previous.projection_version !== record.projection_version ||
+            previous.unit_capture === null || previous.unit_ordinal !== binding.ordinal || capture(key,unitCapture).activation_receipt === null)
+            throw failure("conflict","Raw reuse requires the same observed version and an activated owning capture.")
+          unitCapture = previous.unit_capture; unitOrdinal = previous.unit_ordinal
+        }
+        const unit = one("SELECT disposition,body IS NOT NULL AS retained FROM units WHERE scope_key=? AND capture_id=? AND kind=? AND ordinal=?",key,unitCapture,unitKind,unitOrdinal)
+        if (!unit) throw failure("missing","The record's prepared unit does not exist.")
+        if (unitCapture !== id && (capture(key,unitCapture).activation_receipt === null || unit.disposition === "canceled" || unit.disposition === "pending" && unit.retained !== 1))
+          throw failure("state","Raw reuse cannot reconstruct canceled or missing content.")
+      } else throw failure("invalid","Unknown record binding.")
+      if (record.unit_capture !== null || record.unavailable_reason !== null) {
+        if (record.unit_capture !== unitCapture || record.unit_ordinal !== unitOrdinal || record.unit_kind !== unitKind || record.unavailable_reason !== unavailable)
+          throw failure("conflict","Source record binding is immutable.")
+        return
+      }
+      if (row.state !== "preparing") throw failure("state","Only an unsealed record can acquire content.")
+      update("UPDATE capture_records SET unit_capture=?,unit_kind=?,unit_ordinal=?,unavailable_reason=? WHERE scope_key=? AND capture_id=? AND kind=? AND record_key=?",
+        unitCapture,unitKind,unitOrdinal,unavailable,key,id,identity.kind,identity.key)
+    }),
+    records: (owner,id,page) => transaction(() => {
+      const {key} = ownerScope(owner), row = capture(key,id)
+      recordKind(page.kind); integer(page.limit ?? 32,1,100)
+      if (page.afterKey !== undefined) text(page.afterKey)
+      return db.prepare(`SELECT r.*,u.disposition FROM capture_records r LEFT JOIN units u
+        ON u.scope_key=r.scope_key AND u.capture_id=r.unit_capture AND u.kind=r.unit_kind AND u.ordinal=r.unit_ordinal
+        WHERE r.scope_key=? AND r.capture_id=? AND r.kind=? AND r.record_key>? ORDER BY r.record_key LIMIT ?`)
+        .all(key,id,page.kind,page.afterKey ?? "",page.limit ?? 32).map(value => {
+          const record = decode(RecordRow,value), binding = decode(RecordBindingRow,value)
+          const disposition = row.state === "abandoned" ? "abandoned" : binding.unavailable_reason !== null ? "unavailable" :
+            binding.unit_capture === null ? "unbound" : record.kind !== "raw" ? row.activation_receipt === null ? "pending" : "published" :
+            decode(UnitDisposition,value.disposition)
+          return { ...recordVersion(record), disposition, unavailableReason:binding.unavailable_reason,
+            unit:binding.unit_capture === null ? null : {captureId:binding.unit_capture,ordinal:binding.unit_ordinal!} }
+        })
+    }),
+    coverage: owner => transaction(() => {
+      const scope = ownerScope(owner)
+      return {canonicalCaptureId:scope.canonical_coverage,observedCanonicalCaptureId:scope.observed_canonical,observedRawCaptureId:scope.observed_raw}
+    }),
     seal: (owner,id,manifest) => transaction(() => {
       const {key}=ownerScope(owner), row=capture(key,id)
       integer(manifest.canonicalUnits,row.purpose === "publication" ? 1 : 0,row.purpose === "publication" ? limits.unitsPerTarget : 0)
-      integer(manifest.rawUnits,row.purpose === "raw-observation" ? 1 : 0,limits.unitsPerTarget)
+      integer(manifest.rawUnits,row.purpose === "raw-observation" && row.track_records === 0 ? 1 : 0,limits.unitsPerTarget)
       if (row.purpose === "raw-observation" && manifest.nextCheckpoint !== row.expected_checkpoint)
         throw failure("state","A Raw observation cannot change Canonical coverage.")
       text(manifest.nextCheckpoint,MetadataBytes); json(manifest.manifestJson)
-      const encoded=JSON.stringify({canonicalUnits:manifest.canonicalUnits,rawUnits:manifest.rawUnits,nextCheckpoint:manifest.nextCheckpoint,manifestJson:manifest.manifestJson})
+      const records = recordManifest(key,id,row,manifest.records)
+      const encoded=JSON.stringify({canonicalUnits:manifest.canonicalUnits,rawUnits:manifest.rawUnits,nextCheckpoint:manifest.nextCheckpoint,manifestJson:manifest.manifestJson,
+        ...(records === undefined ? {} : { records })})
       if (row.seal_json !== null) {
         if (row.seal_json !== encoded) throw failure("conflict","Sealed manifest identity cannot change.")
         return
@@ -242,6 +443,8 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (counts.canonical !== manifest.canonicalUnits || counts.raw !== manifest.rawUnits)
         throw failure("state","A capture cannot seal with missing or extra prepared units.")
       update("UPDATE captures SET state='sealed',seal_json=? WHERE scope_key=? AND id=?",encoded,key,id)
+      if (records?.canonical !== undefined) update("UPDATE scopes SET observed_canonical=? WHERE scope_key=?",id,key)
+      if (records?.raw?.scopeComplete) update("UPDATE scopes SET observed_raw=? WHERE scope_key=?",id,key)
     }),
     pending: (owner,afterId,limit=20) => transaction(() => {
       const {key}=ownerScope(owner); integer(limit,1,100)
@@ -304,7 +507,10 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
           if (scope.checkpoint !== row.expected_checkpoint) throw failure("conflict","Source checkpoint changed before activation.")
           const manifest=parsedSeal(row.seal_json)
           update("UPDATE captures SET state='activated',activation_receipt=? WHERE scope_key=? AND id=?",settlement.receiptJson,key,id)
-          if (row.purpose === "publication") update("UPDATE scopes SET checkpoint=? WHERE scope_key=?",manifest.nextCheckpoint,key)
+          if (row.purpose === "publication") {
+            update("UPDATE scopes SET checkpoint=? WHERE scope_key=?",manifest.nextCheckpoint,key)
+            if (row.track_records === 1) update("UPDATE scopes SET canonical_coverage=? WHERE scope_key=?",id,key)
+          }
           complete(key,id)
           return
         }

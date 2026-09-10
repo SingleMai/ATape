@@ -110,3 +110,4 @@ pretending that staging acceptance passed.
 - [ADR-0056: Team and personal Raw capture policy](0056-configurable-raw-capture.md)
 
 - [ADR-0061: Independent fresh Raw observations](0061-independent-raw-observations.md)
+- [ADR-0062: Source record versions and independent coverage](0062-source-record-versions-and-coverage.md)

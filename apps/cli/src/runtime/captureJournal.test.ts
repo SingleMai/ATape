@@ -32,7 +32,35 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
   yield* journal.seal(owner, "capture", { canonicalUnits: 1, rawUnits: 1, nextCheckpoint: "cursor-1", manifestJson: '{"head":"target"}' })
 })
 
+const downgradeToV3 = (db: DatabaseSync) => db.exec(`DROP TABLE capture_records; DROP TABLE source_record_versions;
+  DROP INDEX known_source_scopes; ALTER TABLE captures DROP COLUMN track_records; ALTER TABLE captures DROP COLUMN record_count;
+  ALTER TABLE scopes DROP COLUMN records_initialized; ALTER TABLE scopes DROP COLUMN canonical_coverage;
+  ALTER TABLE scopes DROP COLUMN observed_canonical; ALTER TABLE scopes DROP COLUMN observed_raw; PRAGMA user_version=3`)
+
 describe("Capture journal Interface", () => {
+  it("verifies binding before upgrading v3 and preserves its independent Raw obligations", async () => {
+    const path = await setup()
+    await run(path, "create", Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      yield* fill(j, owner)
+      yield* j.settle(owner, "capture", { _tag: "Activated", receiptJson: '{"head":1}' })
+      yield* j.settle(owner, "capture", { _tag: "RawCancellationStarted", reason: "disabled" })
+    }))
+    const old = new DatabaseSync(path); downgradeToV3(old); old.close()
+    await expect(Effect.runPromise(CaptureJournal.pipe(Effect.provide(makeCaptureJournalLayer({ path, mode: "open",
+      binding: { ...binding, userId: "other" }, limits }))))).rejects.toMatchObject({ reason: "binding" })
+    const unchanged = new DatabaseSync(path)
+    expect(unchanged.prepare("PRAGMA user_version").get()?.user_version).toBe(3); unchanged.close()
+    await run(path, "open", Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect(owner.checkpoint).toBe("cursor-1")
+      expect((yield* j.inspect(owner, "capture", { kind: "raw" })).capture).toMatchObject({
+        trackRecords: false, activationReceipt: '{"head":1}', rawCancelReason: "disabled" })
+      expect(yield* j.read(owner, "capture", "raw", 0)).toEqual(bytes("Raw A"))
+      expect(yield* j.coverage(owner)).toEqual({ canonicalCaptureId: null, observedCanonicalCaptureId: null, observedRawCaptureId: null })
+      expect(yield* j.sources(scope.projectId, scope.adapterId, {})).toEqual([scope])
+    }))
+  })
   it("upgrades v2 without changing existing bytes, receipts, or publication purpose", async () => {
     const path = await setup()
     await run(path, "create", Effect.gen(function*() {
@@ -40,6 +68,7 @@ describe("Capture journal Interface", () => {
       yield* j.settle(owner, "capture", { _tag: "Activated", receiptJson: '{"head":1}' })
     }))
     const db = new DatabaseSync(path)
+    downgradeToV3(db)
     db.exec("ALTER TABLE captures DROP COLUMN purpose; PRAGMA user_version=2"); db.close()
     await run(path, "open", Effect.gen(function*() {
       const j = yield* CaptureJournal, owner = yield* j.claim(scope)
@@ -53,6 +82,7 @@ describe("Capture journal Interface", () => {
     const path = await setup()
     await run(path,"create",Effect.gen(function*(){ const j=yield* CaptureJournal; yield* fill(j,yield* j.claim(scope)) }))
     const db = new DatabaseSync(path)
+    downgradeToV3(db)
     db.exec("ALTER TABLE captures DROP COLUMN purpose; DROP INDEX pending_units; PRAGMA user_version=1"); db.close()
     await run(path,"open",Effect.gen(function*(){
       const j=yield* CaptureJournal, owner=yield* j.claim(scope)
