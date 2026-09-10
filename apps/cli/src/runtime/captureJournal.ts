@@ -1,6 +1,6 @@
 import {
   CaptureJournal, CaptureJournalError, type CaptureScope, type CaptureOwner,
-  type CaptureSeal, type CaptureSummary, type CaptureRecordKind, type CaptureRecordVersion, type CaptureRecordInput, type CaptureRecordManifest, type CaptureRecordSummary
+  type CaptureSeal, type CaptureSummary, type CaptureRecordKind, type CaptureRecordVersion, type CaptureRecordInput, type CaptureRecordManifest, type CaptureRecordSummary, type CaptureJournalLimits
 } from "@atape/application"
 import { createHash } from "node:crypto"
 import { lstat, mkdir, open } from "node:fs/promises"
@@ -13,7 +13,7 @@ export type CaptureJournalOptions = {
   /** Creation is an explicit bootstrap action. Opening never recreates lost state. */
   readonly mode: "create" | "open"
   readonly binding: { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
-  readonly limits: { readonly unitBytes: number; readonly targetBytes: number; readonly pendingBytes: number; readonly unitsPerTarget: number; readonly recordsPerTarget?: number }
+  readonly limits: CaptureJournalLimits
 }
 const MetadataBytes = 32 * 1024
 const failure = (reason: CaptureJournalError["reason"], message: string) => new CaptureJournalError({ reason, message })
@@ -61,7 +61,9 @@ const storageError = (cause: unknown): CaptureJournalError => {
   return failure(code === 13 ? "capacity" : code === 11 || code === 26 ? "corrupt" : "io", "Capture journal storage operation failed.")
 }
 
-export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer.effect(CaptureJournal,
+export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer.effect(CaptureJournal, openCaptureJournal(options))
+
+export const openCaptureJournal = (options: CaptureJournalOptions) =>
   Effect.acquireRelease(Effect.tryPromise({
     try: async () => {
       const { limits, binding } = options
@@ -148,8 +150,6 @@ export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer
       }
     }, catch: storageError
   }), db => Effect.sync(() => db.close())).pipe(Effect.map(db => implementation(db, options)))
-)
-
 function implementation(db: DatabaseSync, options: CaptureJournalOptions): CaptureJournal["Service"] {
   const { limits } = options
   const one = (sql: string, ...parameters: SQLInputValue[]) => db.prepare(sql).get(...parameters)
