@@ -143,7 +143,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 		batch.Source.AdapterID,
 		batch.Session.SourceSessionID,
 	)
-	sessionID := stableID("s_", scope)
+	sessionID := sourceidentity.SessionID(batch.ProjectID, principal.UserID, batch.Source.InstallationID, batch.Source.AdapterID, batch.Session.SourceSessionID)
 	threadIDs, err := normalizeThreadIDs(scope, batch.Threads)
 	if err != nil {
 		return canonical.WriteBatch{}, err
@@ -295,7 +295,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 	if err != nil {
 		return canonical.WriteBatch{}, err
 	}
-	sessionSourceKey := sourceKey(scope, "session")
+	sessionSourceKey := sourceidentity.SessionSourceKey(batch.ProjectID, principal.UserID, batch.Source.InstallationID, batch.Source.AdapterID, batch.Session.SourceSessionID)
 	session := canonical.SessionRecord{
 		ID:                 sessionID,
 		ProjectID:          batch.ProjectID,

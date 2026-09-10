@@ -119,7 +119,9 @@ WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID, first, last)
 	})
 	canonicalcontract.Run(t, func(t *testing.T) canonicalcontract.Store {
 		if _, err := pool.Exec(context.Background(), `
-TRUNCATE project_search_documents, project_search_checkpoints,
+TRUNCATE canonical_publication_parts, canonical_publication_attempts,
+         canonical_publication_reservations, canonical_publication_sources,
+         project_search_documents, project_search_checkpoints,
          raw_chunks, raw_generations, raw_objects,
          team_operation_receipts, team_project_repository_aliases,
          team_join_code_attempt_windows, team_join_codes, team_memberships,
@@ -133,7 +135,9 @@ TRUNCATE project_search_documents, project_search_checkpoints,
 
 	t.Run("authoritative resource authorization", func(t *testing.T) {
 		if _, err := pool.Exec(context.Background(), `
-TRUNCATE project_search_documents, project_search_checkpoints,
+TRUNCATE canonical_publication_parts, canonical_publication_attempts,
+         canonical_publication_reservations, canonical_publication_sources,
+         project_search_documents, project_search_checkpoints,
          raw_chunks, raw_generations, raw_objects,
          team_operation_receipts, team_project_repository_aliases,
          team_join_code_attempt_windows, team_join_codes, team_memberships,
@@ -378,7 +382,9 @@ WHERE id = $1`, canonicalcontract.TestProjectID); err != nil {
 	})
 
 	if _, err := pool.Exec(context.Background(), `
-TRUNCATE project_search_documents, project_search_checkpoints,
+TRUNCATE canonical_publication_parts, canonical_publication_attempts,
+         canonical_publication_reservations, canonical_publication_sources,
+         project_search_documents, project_search_checkpoints,
          raw_chunks, raw_generations, raw_objects,
          team_operation_receipts, team_project_repository_aliases,
          team_join_code_attempt_windows, team_join_codes, team_memberships,
@@ -555,7 +561,7 @@ DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 14; got != want {
+	if got, want := migrationCount, 15; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))

@@ -57,6 +57,14 @@ func (s *Store) ApplyBatch(
 		return canonical.ApplyResult{}, conflict(batch.Session.ID, "server capture scope is inconsistent")
 	}
 
+	// Both write paths use the same authenticated source identity and Session
+	// lock. A reserved publication source cannot fall back to visible upserts.
+	if _, modeErr := queries.GetPublicationSource(ctx, batch.Session.ID); modeErr == nil {
+		return canonical.ApplyResult{}, conflict(batch.Session.ID, "Session uses publication mode")
+	} else if !errors.Is(modeErr, pgx.ErrNoRows) {
+		return canonical.ApplyResult{}, persist("read Session write mode", modeErr)
+	}
+
 	if receipt, err := queries.GetBatchReceipt(ctx, batch.Key); err == nil {
 		if receipt.Digest != batch.Digest {
 			return canonical.ApplyResult{}, conflict(batch.Key, "batchId was reused with different content")

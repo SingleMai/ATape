@@ -29,3 +29,12 @@ func stableID(prefix, value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return prefix + hex.EncodeToString(sum[:12])
 }
+
+// SessionID and SessionSourceKey use the same authenticated source scope as
+// incremental Canonical ingestion, so both write paths share one mode boundary.
+func SessionID(projectID, userID, installationID, adapterID, sourceSessionID string) string {
+	return stableID("s_", key(projectID, userID, installationID, adapterID, sourceSessionID))
+}
+func SessionSourceKey(projectID, userID, installationID, adapterID, sourceSessionID string) string {
+	return key(key(projectID, userID, installationID, adapterID, sourceSessionID), "session")
+}
