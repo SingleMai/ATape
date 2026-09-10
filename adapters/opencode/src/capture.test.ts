@@ -91,6 +91,7 @@ describe("OpenCode scoped projection", () => {
     expect(events[1]!.childSourceThreadId).toBe("child"); expect(events[2]!.childSourceThreadId).toBeUndefined()
     expect(events[2]!.update).toMatchObject({ sessionUpdate: "tool_call_update", status: "completed", rawOutput: "done" })
     expect(complete.session.status).toBe("idle")
+    expect(complete.session.actor).toEqual({ name: "User", harness: "OpenCode" })
     f.db.prepare("UPDATE part SET data=? WHERE id='p2'").run(JSON.stringify(tool("error", "fork")))
     const error = (await capture(f.path)).frames.flatMap(frame => frame.events)
     expect(error[1]!.childSourceThreadId).toBeUndefined(); expect(error[2]!.update).toMatchObject({ status: "failed", rawOutput: "failed" })

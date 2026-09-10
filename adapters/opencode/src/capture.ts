@@ -188,7 +188,7 @@ export const openOpenCodeCapture = (options: {
     label: thread.title, summary: "", captureStatus: stats.get(thread.id)!.partial ? "partial" : "healthy"
   }))
   const header = yield* attempt((): Omit<AdapterSession, "revision"> => ({
-    sourceSessionId: source.root.id, title: source.root.title, summary: "", insight: "", actor: { name: "OpenCode", harness: "OpenCode" }, branch: "",
+    sourceSessionId: source.root.id, title: source.root.title, summary: "", insight: "", actor: { name: "User", harness: "OpenCode" }, branch: "",
     status: source.root.archivedAt !== null ? "ended" : [...stats.values()].some(state => state.active) ? "active" : "idle",
     captureStatus: [...stats.values()].some(state => state.partial) ? "partial" : "healthy",
     updatedAt: iso(Math.max(...[...stats.values()].map(state => state.latestTime))), reportedEventCount: target.events
