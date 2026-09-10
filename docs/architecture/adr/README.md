@@ -122,3 +122,5 @@ pretending that staging acceptance passed.
 - [ADR-0070: Source Collector recovery and scheduling](0070-source-collector-recovery-and-scheduling.md)
 
 - [ADR-0071: Bounded Raw manifest browsing](0071-bounded-raw-manifest-browsing.md)
+
+- [ADR-0072: Capture journal metadata admission](0072-capture-journal-metadata-admission.md)

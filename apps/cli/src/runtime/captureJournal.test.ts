@@ -13,7 +13,7 @@ afterEach(async () => { await Promise.all(temporary.splice(0).map(path => rm(pat
 const binding = { instanceOrigin: "https://atape.test", userId: "user", installationId: "installation" }
 const scope = { projectId: "project", adapterId: "opencode", sourceSessionId: "root", originKey: "created-root" }
 const bytes = (text: string) => new TextEncoder().encode(text)
-const limits = { unitBytes: 128, targetBytes: 256, pendingBytes: 384, unitsPerTarget: 8 }
+const limits = { unitBytes: 128, targetBytes: 256, pendingBytes: 384, metadataEntries: 100_000, unitsPerTarget: 8 }
 const setup = async () => {
   const directory = await mkdtemp(join(tmpdir(), "atape-journal-test-")); temporary.push(directory)
   return join(directory, "capture.sqlite")
@@ -32,10 +32,17 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
   yield* journal.seal(owner, "capture", { canonicalUnits: 1, rawUnits: 1, nextCheckpoint: "cursor-1", manifestJson: '{"head":"target"}' })
 })
 
-const downgradeToV3 = (db: DatabaseSync) => db.exec(`DROP TABLE capture_records; DROP TABLE source_record_versions;
+const downgradeToV5 = (db: DatabaseSync) => {
+  for (const table of ["scopes", "captures", "units", "source_record_versions", "capture_records"]) {
+    db.exec(`DROP TRIGGER metadata_${table}_insert; DROP TRIGGER metadata_${table}_delete`)
+  }
+  db.exec("ALTER TABLE binding DROP COLUMN metadata_entries; PRAGMA user_version=5")
+}
+
+const downgradeToV3 = (db: DatabaseSync) => { downgradeToV5(db); db.exec(`DROP TABLE capture_records; DROP TABLE source_record_versions;
   DROP INDEX known_source_scopes; ALTER TABLE captures DROP COLUMN track_records; ALTER TABLE captures DROP COLUMN record_count;
   ALTER TABLE scopes DROP COLUMN records_initialized; ALTER TABLE scopes DROP COLUMN canonical_coverage;
-  DROP INDEX unactivated_source_capture; ALTER TABLE scopes DROP COLUMN observed_canonical; ALTER TABLE scopes DROP COLUMN observed_raw; PRAGMA user_version=3`)
+  DROP INDEX unactivated_source_capture; ALTER TABLE scopes DROP COLUMN observed_canonical; ALTER TABLE scopes DROP COLUMN observed_raw; PRAGMA user_version=3`) }
 
 describe("Capture journal Interface", () => {
   it("upgrades v4 after binding verification and finds the new Canonical attempt behind older Raw obligations", async () => {
@@ -47,6 +54,7 @@ describe("Capture journal Interface", () => {
       yield* reserve(j, owner, "later", "cursor-1", false)
     }))
     const old = new DatabaseSync(path)
+    downgradeToV5(old)
     old.exec("DROP INDEX unactivated_source_capture; PRAGMA user_version=4"); old.close()
     await expect(Effect.runPromise(CaptureJournal.pipe(Effect.provide(makeCaptureJournalLayer({ path, mode: "open",
       binding: { ...binding, userId: "other" }, limits }))))).rejects.toMatchObject({ reason: "binding" })
@@ -65,7 +73,7 @@ describe("Capture journal Interface", () => {
       expect(yield* j.unactivated(current)).toBeNull()
     }))
     const upgraded = new DatabaseSync(path)
-    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(5); upgraded.close()
+    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(6); upgraded.close()
   })
   it("verifies binding before upgrading v3 and preserves its independent Raw obligations", async () => {
     const path = await setup()

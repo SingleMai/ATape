@@ -16,7 +16,7 @@ const Transform = "atape.host-redaction.v1"
 export const SourceCollectionLimits = Schema.Struct({
   source: SourceCaptureLimits, projection: SourceProjectionLimits,
   journal: Schema.Struct({ unitBytes: count(16 * 1024 * 1024), targetBytes: count(Number.MAX_SAFE_INTEGER), pendingBytes: count(Number.MAX_SAFE_INTEGER),
-    unitsPerTarget: count(1_000_000), recordsPerTarget: count(1_000_000) }),
+    unitsPerTarget: count(1_000_000), recordsPerTarget: count(1_000_000), metadataEntries: count(1_000_000) }),
   raw: Schema.Struct({ objectBytes: count(3 * 1024 * 1024), wireBytes: count(5 * 1024 * 1024), targetBytes: count(Number.MAX_SAFE_INTEGER), units: count(1_000_000) }),
   comparison: Schema.Struct({ records: count(1_000_000), durationMs: count(300_000) }),
   recovery: Schema.Struct({ sources: count(100), captures: count(100), operations: count(64, 3), reclaimUnits: count(32), sourceMs: count(60000) }),

@@ -42,7 +42,7 @@ const auth = makeAuthenticatedHTTPClientLayer(faultFetch, true).pipe(Layer.provi
   })))))
 const dependencies = Layer.mergeAll(makePublicationTransportLayer().pipe(Layer.provide(auth)), makeRawPublicationTransportLayer().pipe(Layer.provide(auth)), makeCaptureJournalLayer({
   path: input.journal, mode: input.phase === "prepare" ? "create" : "open", binding,
-  limits: { unitBytes: 4 * 1024 * 1024, targetBytes: 32 * 1024 * 1024, pendingBytes: 64 * 1024 * 1024, unitsPerTarget: 32 }
+  limits: { unitBytes: 4 * 1024 * 1024, targetBytes: 32 * 1024 * 1024, pendingBytes: 64 * 1024 * 1024, metadataEntries: 100_000, unitsPerTarget: 32 }
 }))
 const result = await Effect.runPromise(Effect.gen(function*() {
   const j = yield* CaptureJournal, owner = yield* j.claim(scope)

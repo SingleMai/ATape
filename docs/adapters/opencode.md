@@ -540,6 +540,31 @@ Legacy all-manifest callers receive `pagination_required` above 100 objects.
 See [ADR-0071](../architecture/adr/0071-bounded-raw-manifest-browsing.md).
 
 This closes the unbounded manifest-list gap. OpenCode remains private/unregistered;
-journal metadata admission and physical capacity measurements, supported-platform
+physical capacity measurements, retention and supported-platform
 and installed-artifact/background acceptance still precede enablement. No package
 publication, server deployment or production migration is part of this increment.
+
+### Account journal metadata admission
+
+Source Collector now requires explicit `journal.metadataEntries` (1–1,000,000),
+covering scopes, captures, units, source versions and observation membership across
+the account journal. This is additional to payload-byte and per-target limits;
+there is no production default. Journal format 6 upgrades verified format 1–5
+bindings transactionally and counts existing metadata without discarding it.
+
+At capacity, new metadata is rejected with used/limit/required counts. Existing
+receipts, activation, cancellation and payload reclamation remain available even
+when reopening below current usage. Increasing explicit admission permits new
+captures. Completed or abandoned metadata remains charged after its body is
+reclaimed; no automatic version/receipt pruning or state reset is introduced.
+Stop older Collector processes before a format upgrade; mixed-version writers
+are unsupported. Concurrent current-version writers must use the same admitted
+configuration, as with existing payload budgets.
+
+The controlled 1,000-capture probe retained zero payload bytes but a 4,153,344-byte
+SQLite file, demonstrating why metadata admission is separate. That fixture had
+ten records and one 256-byte unit per capture; its local 2.7-second run and about
+1.1 MiB WAL do not define platform-independent latency, memory or disk defaults.
+See [ADR-0072](../architecture/adr/0072-capture-journal-metadata-admission.md).
+Physical capacity/deadline defaults, retention and supported installed-artifact
+acceptance remain required before OpenCode registration or enablement.

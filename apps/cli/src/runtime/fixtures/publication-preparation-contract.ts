@@ -58,7 +58,7 @@ if (input.mode === "bound") {
       }
       return { parts, prepared, userId: binding.userId }
     }).pipe(Effect.provide(Layer.mergeAll(remote, makeSecretRedactorLayer(), makeCaptureJournalLayer({ path: join(directory, "journal.db"), mode: "create", binding,
-      limits: { unitBytes: input.partBytes, targetBytes: 1048576, pendingBytes: 2097152, unitsPerTarget: 100, recordsPerTarget: 1000 } })))))
+      limits: { unitBytes: input.partBytes, targetBytes: 1048576, pendingBytes: 2097152, metadataEntries: 100_000, unitsPerTarget: 100, recordsPerTarget: 1000 } })))))
     process.stdout.write(JSON.stringify(result))
   } finally { await rm(directory, { recursive: true, force: true }) }
 }
