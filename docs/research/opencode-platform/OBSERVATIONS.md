@@ -92,4 +92,4 @@ rtk proxy node "$NEW_BUILD_OUTPUT/max-pages.mjs"
 归档时实际重新运行了 Linux 新 runner、ENOSPC 原 bundle、新参数化脚本重建的 bundle，全部符合各自期望；没有用新结果覆盖旧失败。[replay-validation.json](replay-validation.json) 记录这一检查。
 
 [Linux provenance](linux-native/provenance.json)、[ENOSPC provenance](enospc/provenance.json) 中的绝对路径仅标识原始研究目录。归档仅含脚本、摘要及 hash，不提交 binary、tarball、bundle、数据库或大段模型/用户数据。
-此证据供 issue 115/114 链接；不是安装版 CLI 注册、后台同步、Canonical/Raw HTTP delivery、Server 或产品发布验收。
+此证据供 [验证 OpenCode 有界采集在改写与重启后的可重放性](https://github.com/SingleMai/ATape/issues/115) 与 [确定 OpenCode 首个可用增量与验收证据](https://github.com/SingleMai/ATape/issues/114) 链接；不是安装版 CLI 注册、后台同步、Canonical/Raw HTTP delivery、Server 或产品发布验收。
