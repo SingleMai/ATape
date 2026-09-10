@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenCode 待确认内容恢复演示</title>
+<style>
+body{font:16px/1.6 system-ui,sans-serif;color:#202020;background:#fafafa;max-width:1100px;margin:36px auto;padding:0 24px}h1{font-size:28px;margin-bottom:8px}h2{font-size:20px;margin-top:30px}p{max-width:900px}small{color:#555}.state{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;padding:20px 0;border-top:1px solid #ccc;border-bottom:1px solid #ccc}.state section{min-width:0}dl{margin:0}dt{font-size:13px;color:#666;margin-top:10px}dd{margin:0;overflow-wrap:anywhere}.actions,.tabs{display:flex;flex-wrap:wrap;gap:8px}button{font:inherit;padding:7px 12px;background:white;border:1px solid #aaa;cursor:pointer}button:hover,button[aria-selected=true]{border-color:#2455a4;color:#2455a4;background:#edf2fa}button:disabled{opacity:.4;cursor:default}#notice{padding:14px 0;color:#204b90;min-height:26px}#steps{display:flex;gap:8px;flex-wrap:wrap}#history{font-size:14px;max-height:200px;overflow:auto;padding-left:24px}@media(max-width:700px){.state{grid-template-columns:1fr}body{padding:0 16px}}
+</style>
+<h1>源已经变了，上一次上传还能恢复吗？</h1>
+<p>这是一次性逻辑原型：比较“保存最小待确认内容”与“仅保存摘要”。源从 A 改成 B 后，重启必须完成已经开始的 A，不能把 B 当成 A 重传。这里模拟单个有界投递单元，不连接真实历史，也不证明整会话多页快照或断电持久性。</p>
+<label>恢复方式 <select id="mode"><option value="content">保存待确认内容（已接受的方向）</option><option value="metadata">只保存摘要（对照）</option></select></label>
+<div id="notice" role="status" aria-live="polite"></div>
+<div class="state"><section><h2>OpenCode 来源</h2><dl id="source"></dl></section><section><h2>本机恢复状态</h2><dl id="local"></dl></section><section><h2>远端已接受</h2><dl id="remote"></dl></section></div>
+<h2>自由操作</h2><div id="actions" class="actions"></div>
+<h2>按场景查看</h2><div id="tabs" class="tabs" role="tablist"></div><p id="description"></p><div id="steps"></div>
+<h2>操作记录</h2><ol id="history"></ol>
+<small>“Raw 取消”与“Raw 已确认”分开显示。关闭政策会停止待归档义务；不会删除远端已经保存的历史，也不会生成确认记录。所有状态只在当前页面内存中，刷新页面会重置。</small>
+<script>
+// Pure, throwaway model. It has no DOM, network, filesystem or timer dependency.
+const RecoveryModel=(()=>{
+ const initial=mode=>({mode,source:'A',policy:true,full:false,cursor:0,pending:null,canonical:[],raw:[],notice:'尚未开始采集。',history:[]});
+ const apply=(before,action)=>{
+  const s=structuredClone(before);let note='';const p=s.pending;
+  const payload=()=>p?.body??(p&&p.source===s.source?s.source:null);
+  switch(action){
+   case 'capture':
+    if(p){note='先恢复上一份待确认内容，不能覆盖它。';break;}
+    if(s.full){note='暂存额度已满，停止新增捕获；已有义务仍可继续投递。';break;}
+    s.pending={id:'unit-'+(s.cursor+1),source:s.source,body:s.mode==='content'?s.source:null,canonicalAck:false,rawState:s.policy?'pending':'not-requested'};
+    note='固定一次观察；此时尚未产生远端写入。';break;
+   case 'mutate':s.source=s.source==='A'?'B':'C';note='来源已改写；本机固定的观察不会随之变化。';break;
+   case 'canonical':{
+    if(!p){note='没有待确认观察。';break;}const body=payload();
+    if(body===null){note='只有摘要，旧正文已消失：必须报错，不能改发当前来源。';break;}
+    const old=s.canonical.find(x=>x.id===p.id);if(!old)s.canonical.push({id:p.id,body});
+    note=old?'远端识别重复请求，没有重复事件；本机仍需记录确认。':'远端已接受对话；故意尚未写本机确认。';break;}
+   case 'canonicalAck':if(p&&s.canonical.some(x=>x.id===p.id)){p.canonicalAck=true;note='对话确认已在本机保存。';}else note='尚无远端对话确认，不能推进。';break;
+   case 'raw':{
+    if(!p||!p.canonicalAck){note='先确认对话，才可上传 Raw。';break;}
+    if(!s.policy||p.rawState==='canceled'||p.rawState==='not-requested'){note='当前没有获准的 Raw 义务。';break;}
+    const body=payload();if(body===null){note='旧 Raw 正文无法恢复，停止此项投递。';break;}
+    const old=s.raw.find(x=>x.id===p.id);if(!old)s.raw.push({id:p.id,body});
+    note=old?'Raw 重复请求返回原确认。':'远端已接受 Raw；故意尚未写本机确认。';break;}
+   case 'rawAck':if(p&&p.rawState==='pending'&&s.raw.some(x=>x.id===p.id)){p.rawState='acknowledged';note='Raw 真实确认已记录。';}else note='没有可记录的 Raw 确认。';break;
+   case 'rawFail':note='模拟网络失败：未确认的 Raw 保持待处理，进度不前移。';break;
+   case 'restart':note='进程重启：保留本机持久状态，丢失内存信息；远端结果可能尚未记录在本机。';break;
+   case 'disable':s.policy=false;if(p&&p.rawState==='pending')p.rawState='canceled';note='Raw 已关闭：取消未完成归档，不伪造确认；保留已接受的远端历史。';break;
+   case 'enable':s.policy=true;note='Raw 已开启；下一次从仍存在的来源捕获，不恢复已取消义务或虚构旧原文。';break;
+   case 'full':s.full=!s.full;note=s.full?'暂存额度已满。':'暂存额度恢复可用。';break;
+   case 'finish':
+    if(!p||!p.canonicalAck||p.rawState==='pending'){note='存在未完成义务，不能提交进度或回收。';break;}
+    s.cursor++;s.pending=null;note='一次本地原子提交：推进进度并释放已完成的待确认内容。';break;
+   default:note='未知操作。';
+  }
+  s.notice=note;s.history.push(note);return s;
+ };
+ return{initial,apply};
+})();
+</script>
+<script>
+const labels={capture:'固定一次观察',mutate:'修改来源',canonical:'上传对话',canonicalAck:'记录对话确认',raw:'上传 Raw',rawAck:'记录 Raw 确认',rawFail:'模拟 Raw 失败',restart:'重启进程',disable:'关闭 Raw',enable:'开启 Raw',full:'切换额度状态',finish:'提交进度并回收'};
+const scenarios=[
+ ['常规完成','确认对话与 Raw 后才回收；提前提交会被拒绝。',['capture','finish','canonical','canonicalAck','raw','rawAck','finish']],
+ ['失败后改写','对话成功、Raw 失败，然后来源变为 B。重启应继续上传原先固定的 A。',['capture','canonical','canonicalAck','rawFail','mutate','restart','raw','rawAck','finish']],
+ ['确认来不及记录','远端成功后立即崩溃，重试应返回相同结果，不制造重复。',['capture','canonical','mutate','restart','canonical','canonicalAck','raw','restart','raw','rawAck','finish']],
+ ['中途关闭 Raw','取消未完成归档与成功确认是不同状态；开启后不能假定旧原文仍存在。',['capture','canonical','canonicalAck','rawFail','disable','mutate','finish','enable','capture']],
+ ['额度耗尽','保留已捕获义务，停止新捕获；不能靠删除未确认数据恢复容量。',['capture','full','canonical','canonicalAck','raw','rawAck','finish','capture','full','capture']]
+];
+let state=RecoveryModel.initial('content'),selected=0,step=0;
+const el=id=>document.getElementById(id);
+function fields(id,items){const node=el(id);node.replaceChildren();for(const[k,v]of items){const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=k;dd.textContent=v;node.append(dt,dd);}}
+function render(){const p=state.pending;
+ el('notice').textContent=state.notice;
+ fields('source',[['当前内容',state.source],['Raw 政策',state.policy?'允许':'关闭']]);
+ fields('local',[['已提交进度',state.cursor],['待确认观察',p?p.id+' / 来源版本 '+p.source:'无'],['固定正文',p?(p.body??'只保存摘要，需重读来源'):'无'],['对话确认',p?.canonicalAck?'已记录':'无'],['Raw 义务',p?.rawState??'无'],['暂存额度',state.full?'已满':'可用']]);
+ fields('remote',[['对话内容',state.canonical.map(x=>x.id+': '+x.body).join('；')||'无'],['Raw 内容',state.raw.map(x=>x.id+': '+x.body).join('；')||'无']]);
+ el('history').replaceChildren(...state.history.map(t=>{const n=document.createElement('li');n.textContent=t;return n;}));
+ el('description').textContent=scenarios[selected][1];
+ el('steps').replaceChildren(...scenarios[selected][2].map((a,i)=>{const b=document.createElement('button');b.textContent=(i+1)+'. '+labels[a];b.disabled=i!==step;b.onclick=()=>{state=RecoveryModel.apply(state,a);step++;render();};return b;}));
+ [...el('tabs').children].forEach((b,i)=>b.setAttribute('aria-selected',i===selected));
+}
+for(const[a,label]of Object.entries(labels)){const b=document.createElement('button');b.textContent=label;b.onclick=()=>{state=RecoveryModel.apply(state,a);render();};el('actions').append(b);}
+scenarios.forEach(([title],i)=>{const b=document.createElement('button');b.textContent=title;b.setAttribute('role','tab');b.onclick=()=>{selected=i;step=0;state=RecoveryModel.initial(el('mode').value);render();};el('tabs').append(b);});
+el('mode').onchange=()=>{step=0;state=RecoveryModel.initial(el('mode').value);render();};render();
+</script></html>
