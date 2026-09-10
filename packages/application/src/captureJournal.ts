@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, Schema, Scope } from "effect"
 import type { AdapterRawReference } from "@atape/domain"
 
 /** Private local storage for already validated, redacted, final delivery bytes.
@@ -13,6 +13,10 @@ export type CaptureScope = {
 }
 export type CaptureOwner = { readonly scope: CaptureScope; readonly epoch: number }
 export type CaptureBinding = { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
+export type CaptureJournalLimits = {
+  readonly unitBytes: number; readonly targetBytes: number; readonly pendingBytes: number
+  readonly unitsPerTarget: number; readonly recordsPerTarget?: number
+}
 export type CaptureClaim = CaptureOwner & { readonly checkpoint: string | null }
 export type CaptureUnitKind = "canonical" | "raw"
 export type CapturePurpose = "publication" | "raw-observation"
@@ -94,6 +98,14 @@ export class CaptureJournalError extends Schema.TaggedError<CaptureJournalError>
   reason: Schema.Literals(["invalid", "binding", "missing", "conflict", "state", "capacity", "corrupt", "io"]),
   message: Schema.String
 }) {}
+
+/** Opens account-bound journals under the existing Collector installation.
+ * Initialization is local and versioned; missing established state is an error.
+ * Every returned journal lives in the caller's Scope. */
+export class CaptureJournals extends Context.Service<CaptureJournals, {
+  open(account: Pick<CaptureBinding, "instanceOrigin" | "userId">, limits: CaptureJournalLimits):
+    Effect.Effect<CaptureJournal["Service"], CaptureJournalError, Scope.Scope>
+}>()("atape/application/CaptureJournals") {}
 
 export class CaptureJournal extends Context.Service<CaptureJournal, {
   readonly binding: CaptureBinding

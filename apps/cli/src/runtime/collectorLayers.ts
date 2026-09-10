@@ -38,7 +38,7 @@ import {
   type RawUploadChunk
 } from "@atape/domain"
 import { createHash, randomUUID } from "node:crypto"
-import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
+import { link, mkdir, open, readFile, realpath, rename, rm, stat } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect, Layer, Schema } from "effect"
@@ -46,6 +46,8 @@ import {
   AuthenticatedHTTPClient,
   AuthenticatedHTTPError
 } from "./authenticatedHTTPClient.ts"
+import { withCollectorStateLock } from "./collectorStateLock.ts"
+import { captureInstallationPath, capturePathState, captureRoot, readCaptureInstallation } from "./captureBinding.ts"
 
 export type NodeCollectorPaths = {
   readonly collectorStateFile: string
@@ -136,62 +138,28 @@ type CollectorStateChange<A> = {
 const withCollectorState = <A>(
   stateFile: string,
   change: (state: CollectorState) => CollectorStateChange<A>
-): Effect.Effect<A, CollectorStateError> => Effect.acquireUseRelease(
-  acquireStateLock(stateFile),
-  () => readCollectorState(stateFile).pipe(
+): Effect.Effect<A, CollectorStateError> => withCollectorStateLock(stateFile,
+  readCollectorState(stateFile).pipe(
     Effect.flatMap((loaded) => Effect.try({
       try: () => ({ loaded, result: change(loaded.state) }),
-      catch: (cause) => cause instanceof CollectorStateError
-        ? cause
-        : new CollectorStateError({
-          reason: "io", message: errorMessage("Could not update the collector state", cause)
-        })
+      catch: (cause) => cause instanceof CollectorStateError ? cause : new CollectorStateError({
+        reason: "io", message: errorMessage("Could not update the collector state", cause)
+      })
     })),
     Effect.flatMap(({ loaded, result }) => result.state === undefined && !loaded.created
       ? Effect.succeed(result.value)
-      : writeCollectorState(stateFile, result.state ?? loaded.state).pipe(Effect.as(result.value)))
-  ),
-  (lock) => Effect.promise(async () => {
-    await lock.close().catch(() => undefined)
-    await rm(lock.path, { force: true }).catch(() => undefined)
-  })
+      : writeCollectorState(stateFile, result.state ?? loaded.state, loaded.created).pipe(Effect.as(result.value)))
+  )
 )
 
-const acquireStateLock = (stateFile: string) => Effect.tryPromise({
-  try: async () => {
-    await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 })
-    const lockPath = `${stateFile}.lock`
-    const deadline = Date.now() + 5_000
-    while (true) {
-      try {
-        const handle = await open(lockPath, "wx", 0o600)
-        try {
-          await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
-          await handle.sync()
-          return { path: lockPath, close: () => handle.close() }
-        } catch (cause) {
-          await handle.close().catch(() => undefined)
-          await rm(lockPath, { force: true }).catch(() => undefined)
-          throw cause
-        }
-      } catch (cause) {
-        if (!hasCode(cause, "EEXIST")) throw cause
-        if (await staleLock(lockPath)) {
-          await rm(lockPath, { force: true })
-          continue
-        }
-        if (Date.now() >= deadline) throw cause
-        await new Promise((done) => setTimeout(done, 50))
-      }
-    }
-  },
-  catch: (cause) => new CollectorStateError({
-    reason: "io",
-    message: hasCode(cause, "EEXIST")
-      ? "Another ATape collector is updating local progress."
-      : errorMessage("Could not lock the collector state", cause)
-  })
-})
+/** Bootstrap uses the same installation and lock as legacy checkpoint writes.
+ * The callback's resources stay in its caller Scope; only the metadata lock ends. */
+export const withCollectorInstallation = <A, E, R>(stateFile: string, use: (installationId: string) => Effect.Effect<A, E, R>) =>
+  withCollectorStateLock(stateFile, Effect.gen(function*() {
+    const loaded = yield* readCollectorState(stateFile)
+    if (loaded.created) yield* writeCollectorState(stateFile, loaded.state, true)
+    return yield* use(loaded.state.installationId)
+  }))
 
 const readCollectorState = (
   stateFile: string
@@ -202,18 +170,27 @@ const readCollectorState = (
         return { value: JSON.parse(await readFile(stateFile, "utf8")) as unknown, created: false }
       } catch (cause) {
         if (hasCode(cause, "ENOENT")) {
-          return { value: emptyCollectorState(`i_${randomUUID()}`) as unknown, created: true }
+          return { value: undefined as unknown, created: true }
         }
         throw cause
       }
     },
-    catch: (cause) => new CollectorStateError({
+    catch: (cause) => cause instanceof CollectorStateError ? cause : new CollectorStateError({
       reason: "io", message: errorMessage("Could not read the collector state", cause)
     })
   }).pipe(
+    Effect.flatMap(loaded => !loaded.created ? Effect.succeed(loaded) : Effect.gen(function*() {
+      const bound = yield* capturePathState(captureInstallationPath(stateFile)), root = yield* capturePathState(captureRoot(stateFile))
+      if (bound !== null || root !== null) return yield* new CollectorStateError({ reason: "decode",
+        message: "Collector state is missing while bound captures exist; restore the original installation state." })
+      return { value: emptyCollectorState(`i_${randomUUID()}`) as unknown, created: true }
+    })),
     Effect.flatMap(({ value, created }) => Schema.decodeUnknownEffect(CollectorStateSchema)(value).pipe(
       Effect.map((state) => ({ state, created }))
     )),
+    Effect.tap(({ state }) => readCaptureInstallation(stateFile).pipe(Effect.flatMap(binding =>
+      binding === null || binding.installationId === state.installationId ? Effect.void :
+        Effect.fail(new CollectorStateError({ reason: "conflict", message: "Collector installation identity differs from its established capture binding." }))))),
     Effect.mapError((error) => error instanceof CollectorStateError
       ? error
       : new CollectorStateError({
@@ -221,7 +198,7 @@ const readCollectorState = (
       }))
   )
 
-const writeCollectorState = (stateFile: string, state: CollectorState): Effect.Effect<void, CollectorStateError> =>
+const writeCollectorState = (stateFile: string, state: CollectorState, initialize = false): Effect.Effect<void, CollectorStateError> =>
   Schema.decodeUnknownEffect(CollectorStateSchema)(state).pipe(
     Effect.mapError((error) => new CollectorStateError({
       reason: "decode", message: `ATape refused to persist invalid collector state: ${String(error)}`
@@ -231,8 +208,12 @@ const writeCollectorState = (stateFile: string, state: CollectorState): Effect.E
         await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 })
         const temporary = `${stateFile}.${process.pid}.${randomUUID()}.tmp`
         try {
-          await writeFile(temporary, `${JSON.stringify(validated, null, 2)}\n`, { mode: 0o600, flag: "wx" })
-          await rename(temporary, stateFile)
+          const file = await open(temporary, "wx", 0o600)
+          try { await file.writeFile(`${JSON.stringify(validated, null, 2)}\n`); await file.sync() } finally { await file.close() }
+          if (initialize) await link(temporary, stateFile)
+          else await rename(temporary, stateFile)
+          const directory = await open(dirname(stateFile), "r")
+          try { await directory.sync() } finally { await directory.close() }
         } finally {
           await rm(temporary, { force: true }).catch(() => undefined)
         }
@@ -550,27 +531,6 @@ const transportError = (
 
 const checkpointKey = (checkpoint: CollectorCheckpoint) =>
   `${checkpoint.instanceOrigin}\0${checkpoint.userId}\0${checkpoint.projectId}\0${checkpoint.adapterId}`
-
-const staleLock = async (lockPath: string) => {
-  try {
-    const value = JSON.parse(await readFile(lockPath, "utf8")) as { pid?: unknown }
-    if (typeof value.pid === "number" && Number.isSafeInteger(value.pid) && value.pid > 0) {
-      try {
-        process.kill(value.pid, 0)
-        return false
-      } catch (cause) {
-        return hasCode(cause, "ESRCH")
-      }
-    }
-  } catch {
-    // A newly-created lock may not contain its owner yet.
-  }
-  try {
-    return Date.now() - (await stat(lockPath)).mtimeMs > 30_000
-  } catch (cause) {
-    return hasCode(cause, "ENOENT")
-  }
-}
 
 const runtimeFailure = (
   adapterId: string,

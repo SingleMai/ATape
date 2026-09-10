@@ -115,3 +115,4 @@ pretending that staging acceptance passed.
 - [ADR-0064: OpenCode projection and creation Origin](0064-opencode-projection-and-creation-origin.md)
 - [ADR-0065: Host Canonical publication preparation](0065-host-canonical-preparation.md)
 - [ADR-0066: Host Raw preparation and receipt-aware reuse](0066-host-raw-preparation.md)
+- [ADR-0067: Collector installation binding and capture journal bootstrap](0067-collector-capture-bootstrap.md)

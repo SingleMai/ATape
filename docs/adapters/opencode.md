@@ -385,6 +385,22 @@ changed observation after off/on. See [ADR-0066](../architecture/adr/0066-host-r
 
 ## Bounds and remaining integration work
 
+`CaptureJournals.open` keeps a bounded installation registry so losing both an
+account database and its marker cannot silently reset that account. Metadata writes
+and legacy checkpoints share a SQLite writer lock; interruption waits for actual
+filesystem writes to settle before releasing it. Stop the pre-upgrade Collector
+before a new binary writes this state; overlapping old PID-lock writers and new
+SQLite-lock writers is unsupported.
+
+`CaptureJournals.open` now binds lazy account journal initialization to the existing
+Collector installation and its metadata lock. Versioned installation/account
+markers distinguish never-exposed initialization from established state. Valid
+interrupted initialization can finish; missing established databases or mismatched
+identities fail without replacing recovery evidence. Missing Collector JSON state
+also cannot generate a new installation while bound captures exist. Legacy
+checkpoints remain unchanged. Real SQLite/filesystem tests include four concurrent
+first-open Node processes. See [ADR-0067](../architecture/adr/0067-collector-capture-bootstrap.md).
+
 Limits cover each payload unit, retained bytes per target, total retained
 payload bytes and unit count per target. Metadata input strings are bounded;
 list calls return at most 100 records and cleanup handles at most 32 units.
@@ -404,7 +420,7 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment connects the explicit source capability, attribution/bootstrap
+The next increment connects the explicit source capability, attribution
 and Collector scheduling to the prepared publication and recovery Modules.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
