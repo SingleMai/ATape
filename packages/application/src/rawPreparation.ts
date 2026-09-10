@@ -105,15 +105,42 @@ const maskRow = (redactor: SecretRedactorService, input: unknown): { row: unknow
   } catch (cause) { return { gap: cause instanceof Gap ? cause.reason : "redaction" } }
 }
 
-/** Internal collaborator of source preparation. Holds one object and at most 100
- * bindings; only final wire chunks enter the journal. It never performs HTTP. */
-export const createRawPreparation = (owner: CaptureOwner, captureId: string, input: {
+/** Shared masked Raw identity for preparation and read-only comparison. */
+export const rawSourceRecord = (recordKey: string, raw: unknown) => Effect.gen(function*() {
+  if (typeof recordKey !== "string" || !recordKey || recordKey.includes("\0") || new TextEncoder().encode(recordKey).byteLength > 500 || raw === undefined)
+    return yield* fail("Raw-enabled source omitted a bounded record identity or archive row.")
+  const redactor = yield* SecretRedactor
+  const masked = maskRow(redactor, raw)
+  return { key: yield* hash(recordKey), masked, fingerprint: yield* hash(masked) }
+})
+export const rawProjectionProfile = (profile: string) => `${Version}:${profile}`
+type RawPreparationInput = {
   readonly profile: string; readonly sessionId: string; readonly head: string; readonly authority: RawAuthority
   readonly adapterVersion: string; readonly observedAt: string; readonly limits: RawPreparationLimits
-}) => Effect.gen(function*() {
+}
+const rawMetadata = (installationId: string, adapterId: string, input: RawPreparationInput, sourceObjectId: string) => ({
+  protocolVersion: "atape.raw.v1" as const, sessionId: input.sessionId, installationId, adapterId, sourceObjectId,
+  sourceChunkId: `${sourceObjectId}_0`, sourceName: "source-records.json", mediaType: "application/json",
+  adapterVersion: input.adapterVersion, capturedAt: input.observedAt, clientRedacted: true as const, generation: 1 as const,
+  offset: 0, final: true, publication: { head: input.head, authority: input.authority }
+})
+export const rawAdmissionFingerprint = (owner: CaptureOwner, input: RawPreparationInput) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal
+  const metadata = rawMetadata(journal.binding.installationId, owner.scope.adapterId, input, `r_${"0".repeat(64)}`)
+  // Only envelope byte widths enter admission. Clock values themselves must not
+  // turn every unchanged scan into another durable Raw observation.
+  return yield* hash([input.limits.objectBytes, input.limits.wireBytes, input.limits.targetBytes, input.limits.units,
+    encode({ profile: rawProjectionProfile(input.profile), observedAt: input.observedAt, records: {} }).byteLength,
+    encode({ ...metadata, sha256: "0".repeat(64), contentBase64: "" }).byteLength])
+})
+
+/** Internal collaborator of source preparation. Holds one object and at most 100
+ * bindings; only final wire chunks enter the journal. It never performs HTTP. */
+export const createRawPreparation = (owner: CaptureOwner, captureId: string, input: RawPreparationInput) => Effect.gen(function*() {
   yield* validateRawPreparationLimits(input.limits)
-  const journal = yield* CaptureJournal, redactor = yield* SecretRedactor
-  const profile = `${Version}:${input.profile}`
+  const journal = yield* CaptureJournal
+  const profile = rawProjectionProfile(input.profile)
+  const admission = yield* rawAdmissionFingerprint(owner, input)
   if (new TextEncoder().encode(profile).byteLength > 500) return yield* fail("Raw projection profile exceeds its bound.")
   const previousId = (yield* journal.coverage(owner)).observedRawCaptureId
   const previous = previousId === null ? null : (yield* journal.inspect(owner, previousId, { kind: "raw", limit: 1 })).capture
@@ -125,10 +152,7 @@ export const createRawPreparation = (owner: CaptureOwner, captureId: string, inp
   const envelope = () => ({ profile, observedAt: input.observedAt, records: entries })
   const emptyBytes = encode(envelope()).byteLength
   let contentBytes = emptyBytes
-  const metadata = () => ({ protocolVersion: "atape.raw.v1" as const, sessionId: input.sessionId, installationId: journal.binding.installationId,
-    adapterId: owner.scope.adapterId, sourceObjectId: currentObjectId, sourceChunkId: `${currentObjectId}_0`,
-    sourceName: "source-records.json", mediaType: "application/json", adapterVersion: input.adapterVersion, capturedAt: input.observedAt,
-    clientRedacted: true as const, generation: 1 as const, offset: 0, final: true, publication: { head: input.head, authority: input.authority } })
+  const metadata = () => rawMetadata(journal.binding.installationId, owner.scope.adapterId, input, currentObjectId)
   for (const value of Object.values(metadata())) if (typeof value === "string" &&
     (!value.trim() || value.includes("\0") || new TextEncoder().encode(value).byteLength > 512))
     return yield* fail("Raw observation metadata exceeds its byte bounds.")
@@ -153,10 +177,7 @@ export const createRawPreparation = (owner: CaptureOwner, captureId: string, inp
     currentObjectId = yield* objectId(profile, captureId, ordinal)
   })
   const record = (recordKey: string, raw: unknown) => Effect.gen(function*() {
-    if (typeof recordKey !== "string" || !recordKey || recordKey.includes("\0") || new TextEncoder().encode(recordKey).byteLength > 500 || raw === undefined)
-      return yield* fail("Raw-enabled source omitted a bounded record identity or archive row.")
-    const key = yield* hash(recordKey), masked = maskRow(redactor, raw)
-    const fingerprint = yield* hash(masked)
+    const { key, masked, fingerprint } = yield* rawSourceRecord(recordKey, raw)
     const allocated = yield* journal.record(owner, captureId, { kind: "raw", key, fingerprint, projectionVersion: profile })
     records++
     const unavailable = (reason: "limit" | "redaction") => journal.bindRecord(owner, captureId, { kind: "raw", key }, { _tag: "Unavailable", reason }).pipe(
@@ -187,5 +208,5 @@ export const createRawPreparation = (owner: CaptureOwner, captureId: string, inp
     entries[key] = entry; keys.push(key); contentBytes = size
     return { _tag: "object", sourceObjectId: currentObjectId, fragment: `/records/${key}` } satisfies AdapterRawReference
   })
-  return { record, finish: () => flush().pipe(Effect.map(() => ({ units: ordinal, bytes: totalBytes, records, reused, gaps }))) }
+  return { record, finish: () => flush().pipe(Effect.map(() => ({ units: ordinal, bytes: totalBytes, records, reused, gaps, admission }))) }
 })
