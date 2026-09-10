@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>撤回后的对话如何切换</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:1080px;margin:36px auto;padding:0 24px;background:#fafafa;color:#242424}h1{font-size:28px}h2{font-size:20px}.panels{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;border-block:1px solid #ccc;padding:16px 0}ul{padding-left:22px}button{font:inherit;background:white;border:1px solid #aaa;padding:7px 12px;cursor:pointer}button:hover,button[aria-selected=true]{color:#2455a4;border-color:#2455a4;background:#edf2fa}button:disabled{opacity:.4;cursor:default}.buttons{display:flex;gap:8px;flex-wrap:wrap}#notice{color:#2455a4;min-height:30px;padding:16px 0}#log{max-height:210px;overflow:auto;font-size:14px}small{color:#555}@media(max-width:750px){.panels{grid-template-columns:1fr}}</style>
+<h1>撤回 MySQL，改用 PostgreSQL</h1>
+<p>一次性逻辑原型：新版对话准备期间，大家继续看到旧版；准备完成后一次切换。被撤回的消息不再混进当前时间线或搜索结果，已归档原文仍保留。这演示已接受的产品方向，不连接真实服务器，也不是生产实现。</p>
+<div id="notice" role="status" aria-live="polite"></div>
+<div class="panels"><section><h2>当前可见对话</h2><p id="head"></p><ul id="visible"></ul></section><section><h2>正在准备的新版</h2><p id="phase"></p><ul id="candidate"></ul></section><section><h2>搜索与原文</h2><p>当前可搜到：</p><ul id="search"></ul><p>归档仍保留：</p><ul id="raw"></ul></section></div>
+<h2>自由操作</h2><div id="actions" class="buttons"></div>
+<h2>按场景查看</h2><div id="tabs" class="buttons" role="tablist"></div><p id="description"></p><div id="steps" class="buttons"></div>
+<h2>操作记录</h2><ol id="log"></ol>
+<small>搜索由当前对话成员与对应内容版本约束，新的索引可以晚一点完成。这里的版本是演示标签；生产协议还需权限、租约、配额、真实持久化与并发验证。</small>
+<script>
+const PublicationModel=(()=>{
+ const initial=()=>({head:1,current:['question','mysql','mysql-tool'],index:['question','mysql','mysql-tool'],raw:['mysql','mysql-tool'],fence:1,candidate:null,receipt:null,notice:'旧版 MySQL 对话目前可见。',log:[]});
+ const apply=(old,action)=>{const s=structuredClone(old);let n='';const c=s.candidate;
+  switch(action){
+   case'begin':if(c&&!s.receipt){n='已有尚未完成的候选，先恢复或明确取消。';break;}s.candidate={base:s.head,fence:s.fence,items:[],sealed:false};s.receipt=null;n='为一次更新绑定当前版本；没有改变可见对话。';break;
+   case'first':if(!c||c.sealed){n='先开始一次可写候选。';break;}if(!c.items.includes('question'))c.items.push('question');n='问题已准备好；新版尚不完整。';break;
+   case'second':if(!c||c.sealed){n='先开始一次可写候选。';break;}if(!c.items.includes('postgres'))c.items.push('postgres');n='PostgreSQL 回答已准备好，旧对话仍可见。';break;
+   case'seal':if(!c||c.items.length!==2){n='新版内容不完整，拒绝封存；可见对话不变。';break;}c.sealed=true;n='校验完整成员和内容，候选可以切换。';break;
+   case'activate':if(s.receipt){n='返回此前切换成功的确认；当前版本不回滚。';break;}if(!c?.sealed){n='尚未封存，拒绝切换。';break;}if(c.base!==s.head||c.fence!==s.fence){n='其他更新已先成功，拒绝旧候选覆盖它；需要重新捕获。';break;}s.head++;s.current=[...c.items];s.receipt={head:s.head};n='一次切换成功；旧 MySQL 消息退出当前时间线和搜索，PostgreSQL 等待索引。';break;
+   case'index':if(!s.current.includes('postgres')){n='PostgreSQL 尚未成为当前对话，不添加当前搜索结果。';break;}if(!s.index.includes('postgres'))s.index.push('postgres');n='新回答索引完成，搜索现在可以找到 PostgreSQL。';break;
+   case'raw':if(!s.receipt){n='先取得对话切换确认，才开始相关原文归档。';break;}if(!s.raw.includes('postgres'))s.raw.push('postgres');n='新原文已归档；旧 MySQL 原文没有删除。';break;
+   case'fail':n='准备或网络失败：不会切换到半份新版。已有候选可恢复。';break;
+   case'restart':n='客户端重启：查询/重发相同请求恢复；不会把超时直接当作未成功。';break;
+   case'other':s.fence++;s.head++;s.current=['question','sqlite'];if(!s.index.includes('sqlite'))s.index.push('sqlite');n='模拟另一次完整更新已成功为 SQLite；旧请求不得覆盖它。';break;
+  }s.notice=n;s.log.push(n);return s;};
+ return{initial,apply};
+})();
+</script><script>
+const names={question:'请实现数据库访问层',mysql:'使用 MySQL 的旧回答','mysql-tool':'MySQL 旧工具结果',postgres:'改为 PostgreSQL 的新回答',sqlite:'后来改为 SQLite 的回答'};
+const actions={begin:'开始新版',first:'准备问题',second:'准备新回答',seal:'封存完整新版',activate:'切换或重试确认',index:'完成新索引',raw:'归档新原文',fail:'模拟失败',restart:'客户端重启',other:'另一更新先成功'};
+const scenarios=[['正常切换','观察准备过程、切换、异步索引与原文保留。',['begin','first','second','seal','activate','index','raw']],['不完整时失败','只准备了一半，不允许用它替换当前对话。',['begin','first','seal','activate','fail','second','seal','activate']],['确认前重启','切换已成功但客户端没拿到确认，重试也不重复切换。',['begin','first','second','seal','activate','restart','activate','index']],['旧确认不能回滚','后来的 SQLite 更新成功后，旧的 PostgreSQL 确认重试不能切回旧版本。',['begin','first','second','seal','activate','other','restart','activate','raw']],['并发更新冲突','候选基于的旧版已过期，拒绝覆盖其他已成功更新。',['begin','first','second','seal','other','activate']]];
+let s=PublicationModel.initial(),tab=0,step=0;const e=id=>document.getElementById(id);
+function list(id,items){e(id).replaceChildren(...items.map(x=>{const n=document.createElement('li');n.textContent=names[x]||x;return n;}));}
+function render(){e('notice').textContent=s.notice;e('head').textContent='当前版本 '+s.head;e('phase').textContent=s.candidate?(s.candidate.sealed?'已封存':'准备中')+'；基于版本 '+s.candidate.base+(s.receipt?'；已确认版本 '+s.receipt.head:''):'无';list('visible',s.current);list('candidate',s.candidate?.items||[]);list('search',s.index.filter(x=>s.current.includes(x)));list('raw',s.raw);list('log',s.log);e('description').textContent=scenarios[tab][1];e('steps').replaceChildren(...scenarios[tab][2].map((a,i)=>{const b=document.createElement('button');b.textContent=(i+1)+'. '+actions[a];b.disabled=i!==step;b.onclick=()=>{s=PublicationModel.apply(s,a);step++;render();};return b;}));[...e('tabs').children].forEach((b,i)=>b.setAttribute('aria-selected',i===tab));}
+Object.entries(actions).forEach(([a,label])=>{const b=document.createElement('button');b.textContent=label;b.onclick=()=>{s=PublicationModel.apply(s,a);render();};e('actions').append(b);});
+scenarios.forEach(([label],i)=>{const b=document.createElement('button');b.textContent=label;b.setAttribute('role','tab');b.onclick=()=>{tab=i;step=0;s=PublicationModel.initial();render();};e('tabs').append(b);});render();
+</script></html>

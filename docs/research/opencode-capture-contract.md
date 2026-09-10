@@ -1,6 +1,6 @@
 # OpenCode 身份、观察记录与待确认内容契约
 
-状态：讨论提案与一次性恢复实验，不是已接受的完整协议或生产实现。
+状态：历史讨论提案与一次性实验。负责人已接受首版包含通用 Canonical 原子发布；最终选择以 [ADR-0059](https://github.com/SingleMai/ATape/blob/2989ab656f4720fa7cb0e0e02cb3037df4a63350/docs/architecture/adr/0059-opencode-publication-and-recovery.md) 和[详细契约](https://github.com/SingleMai/ATape/blob/2989ab656f4720fa7cb0e0e02cb3037df4a63350/docs/architecture/opencode-capture-publication.md) 为准。下文保留比较过程，不代表这些选择仍待批准；生产实现与原生验收仍未完成。
 
 采集路线已接受：只读 SQLite、现有 Collector、最小有界待确认内容；见
 [ADR-0058](https://github.com/SingleMai/ATape/blob/d945efb3e72ff69b1925e7de181cdf58b6f2422f/docs/architecture/adr/0058-opencode-sqlite-and-bounded-capture.md)。
@@ -46,7 +46,7 @@ Origin 优先来自与当前来源身份一致、可验证的创建证据，再�
 
 推荐完整方向：以通用 target membership / atomic publication 实现新视图，准备期间保留上次成功视图；激活后旧成员退出默认时间线及 Search eligibility，新 Search 索引允许异步完成。Raw 已保存的旧观察继续保留。采用 [ADR-0025](https://github.com/SingleMai/ATape/blob/cac0467f72eb086de9d049cd3d242af19493e8ac/docs/architecture/adr/0025-atomic-canonical-publication.md) 的领域方向，需要真正落地相应 Interface、持久化与恢复，不能假定该 ADR 已实现。
 
-有限首版的实质替代：检测到无法安全表达的路径撤回时暂停该 Session 更新，明确上次成功视图已经过时，普通会话继续；这缩小交付范围。不能通过空消息、全新 Session 或伪 subagent 表示历史分支。两者的首版范围问题已提交负责人讨论，当前不把推荐自动记为已接受。
+有限首版的实质替代：检测到无法安全表达的路径撤回时暂停该 Session 更新，明确上次成功视图已经过时，普通会话继续；这缩小交付范围。不能通过空消息、全新 Session 或伪 subagent 表示历史分支。负责人已明确选择前述完整方向：首版同时包含通用原子发布；暂停撤回会话的有限首版未选中。
 
 ## Raw：不可变的来源状态观察
 
@@ -129,11 +129,31 @@ python3 packages/application/prototypes/opencode-recovery-probe.py
 
 这个实验使用真实 SQLite WAL、FULL synchronous 和子进程 SIGKILL，但“remote”也是 scratch SQLite，并非 HTTP Server。脱敏只替换一个合成 literal，不是生产 SecretRedactor。它未调用生产 `collect` Interface、未运行原生 OpenCode、未验证断电/Windows/Node SQLite/多进程 writer fencing，也没有证明跨页 Session 一致性。它提供状态与持久化方向的有限证据，不关闭[正式有界采集原型验收](https://github.com/SingleMai/ATape/issues/115)。
 
-## 当前待定与下一步
+## 原子发布的补充证据
 
-目前需要负责人选择的是完整首版是否同时包含通用 Canonical 原子发布。准确来源版本、legacy/v2-only/巨型 part 支持矩阵仍由后续首个可用增量依据 native fixture 定清楚。Origin/parent 无证据时不猜测，沿用已有诊断与隔离规则，不额外扩大成人工归属产品。
+[原子发布交互演示](../../packages/application/prototypes/opencode-publication-prototype.html)通过浏览器 DOM 控件走通五条场景：正常切换、不完整时失败、确认前重启、旧确认不能回滚、并发更新冲突。验证切换前保留 MySQL，切换后旧结果退出搜索，新索引随后加入；后来更新为 SQLite 后，旧确认重试保持 SQLite，旧捕获的 Raw 仍可完成归档。此 HTML 状态在内存中，重启按钮只是语义演示。
 
-技术上还要完成 Raw 版本引用与 policy backfill 的可用性表示、capture manifest 与实际 wire unit 的封存关系、事务存储/配额/清理方案，然后针对选定的完整 Interface 做真实源、实际网络、并发和重启验证。此时才有依据接受完整契约并推进生产增量。
+[原子发布进程崩溃实验](../../packages/application/prototypes/opencode-publication-probe.py)独立使用 scratch SQLite WAL/FULL 与真实子进程 SIGKILL；已运行，全部模型断言通过：
+
+- staging、seal 与 validation 期间保留 A/B/C；缺失 part、篡改重放、未校验 target 不得激活。
+- 激活事务提交前杀进程：head、receipt、Search outbox 一起回滚。
+- 提交后确认前杀进程：A/D 已可见，重试得到原 receipt；B/C 立即退出搜索，D 异步加入。
+- A/E 后重放 A/D 的旧激活：返回旧 receipt，head 保持 A/E。
+- stale fence/base 被拒绝；同 Event 的旧索引 descriptor 不可命中新版本；历史 Raw A/B/C/D 保留。
+
+运行命令：
+
+```sh
+python3 packages/application/prototypes/opencode-publication-probe.py
+```
+
+这仍非 PostgreSQL、真实 HTTP 或 OpenCode 接口验证；不覆盖断电、权限、租约与 receipt 过期、配额、GC、patch 或完整 Search worker。两个 Python 模型与两个 HTML 都只保留在一次性原型分支，不进入生产实现提交。
+
+## 下一步验收
+
+身份与 Raw 映射、完整 target 封存、SQLite journal、原子发布和 Raw policy 恢复的工程选择已记录在最终契约。Raw-off 版本保持 unavailable，重开仅新增可用源行的独立观察；不存在等待负责人再次批准的同一项范围问题。
+
+准确来源版本、legacy/v2-only/巨型 part、平台与数值配额仍需原生 fixture 和压力证据定清楚。[正式有界采集原型验收](https://github.com/SingleMai/ATape/issues/115)继续验证真实来源、public Interface、HTTP/PostgreSQL、并发和重启；不能凭这些模型直接关闭。Origin/parent 无证据时沿用诊断与隔离规则，不扩大成人工归属产品。
 
 ## 代码证据定位
 
