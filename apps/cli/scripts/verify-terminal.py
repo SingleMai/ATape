@@ -234,7 +234,9 @@ try:
     terminal.send("/")
     terminal.send("Package")
     terminal.send("\r")
-    terminal.wait("Package Project")
+    # The Project name is also present in the list. Wait for a detail-only
+    # action before sending keys to the asynchronously loaded detail screen.
+    terminal.wait("Disconnect project")
     terminal.send("\x1b")
     terminal.wait("/ Package")
     terminal.send("r")
@@ -242,7 +244,7 @@ try:
     assert b"/ Package" in terminal.output, "refresh discarded the search"
     assert b"Working" not in terminal.output, "refresh replaced the Project list"
     terminal.send("\r")
-    terminal.wait("Package Project")
+    terminal.wait("Disconnect project")
     assert b"Open Project in Web" not in terminal.output, "Project details still offer Web navigation"
     terminal.send("r")
     terminal.wait("Status updated. Sync timing is unchanged.")
