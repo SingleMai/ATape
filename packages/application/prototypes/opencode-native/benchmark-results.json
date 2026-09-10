@@ -1,0 +1,230 @@
+{
+  "schema": "atape.opencode.native-route-benchmark.v1",
+  "sourceVersion": "1.18.30",
+  "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "binarySHA256": "2d0c9c339bb91046c6ea951c97664bc2f8a8eaca707f31fbfbb7bc73c4eddc62",
+  "platform": "macOS-26.3.2-arm64-arm-64bit",
+  "pythonVersion": "3.9.6",
+  "fixtureManifest": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/manifest.json",
+  "sqliteMainFileBytes": 274432,
+  "rawTimingDirectory": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/benchmark-kon8fqix",
+  "runs": [
+    {
+      "run": 1,
+      "order": [
+        "sqlite",
+        "export"
+      ],
+      "sqlite": {
+        "routeWallMs": 124.74,
+        "sumProcessWallMs": 124.132,
+        "peakProcessRSSBytes": 22380544,
+        "stdoutBytes": 6090,
+        "normalizedMessagesBytes": 6021,
+        "normalizedSHA256": "7077887af63c2f9e6a5d42cd624e9d24315b9dd076d1ca326dd334c53ebf1866",
+        "processes": [
+          {
+            "label": "1-sqlite",
+            "wallMs": 124.132,
+            "timeRealSeconds": 0.12,
+            "peakRSSBytes": 22380544,
+            "stdoutBytes": 6090,
+            "stderrBytes": 0,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          }
+        ],
+        "sourceRowJSONBytes": 3646,
+        "messageRows": 9,
+        "partRows": 11
+      },
+      "export": {
+        "routeWallMs": 1516.433,
+        "sumProcessWallMs": 1514.601,
+        "peakProcessRSSBytes": 339099648,
+        "stdoutBytes": 12215,
+        "normalizedMessagesBytes": 6021,
+        "normalizedSHA256": "7077887af63c2f9e6a5d42cd624e9d24315b9dd076d1ca326dd334c53ebf1866",
+        "processes": [
+          {
+            "label": "1-export-root",
+            "wallMs": 460.85,
+            "timeRealSeconds": 0.45,
+            "peakRSSBytes": 331956224,
+            "stdoutBytes": 6772,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          },
+          {
+            "label": "1-export-child",
+            "wallMs": 591.374,
+            "timeRealSeconds": 0.58,
+            "peakRSSBytes": 339099648,
+            "stdoutBytes": 1521,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          },
+          {
+            "label": "1-export-fork",
+            "wallMs": 462.377,
+            "timeRealSeconds": 0.45,
+            "peakRSSBytes": 330104832,
+            "stdoutBytes": 3922,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          }
+        ]
+      },
+      "messagesExactlyEqual": true
+    },
+    {
+      "run": 2,
+      "order": [
+        "export",
+        "sqlite"
+      ],
+      "export": {
+        "routeWallMs": 1302.645,
+        "sumProcessWallMs": 1301.519,
+        "peakProcessRSSBytes": 331415552,
+        "stdoutBytes": 12215,
+        "normalizedMessagesBytes": 6021,
+        "normalizedSHA256": "7077887af63c2f9e6a5d42cd624e9d24315b9dd076d1ca326dd334c53ebf1866",
+        "processes": [
+          {
+            "label": "2-export-root",
+            "wallMs": 452.085,
+            "timeRealSeconds": 0.44,
+            "peakRSSBytes": 331415552,
+            "stdoutBytes": 6772,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          },
+          {
+            "label": "2-export-child",
+            "wallMs": 407.121,
+            "timeRealSeconds": 0.4,
+            "peakRSSBytes": 331038720,
+            "stdoutBytes": 1521,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          },
+          {
+            "label": "2-export-fork",
+            "wallMs": 442.313,
+            "timeRealSeconds": 0.43,
+            "peakRSSBytes": 330498048,
+            "stdoutBytes": 3922,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          }
+        ]
+      },
+      "sqlite": {
+        "routeWallMs": 50.007,
+        "sumProcessWallMs": 49.375,
+        "peakProcessRSSBytes": 15613952,
+        "stdoutBytes": 6090,
+        "normalizedMessagesBytes": 6021,
+        "normalizedSHA256": "7077887af63c2f9e6a5d42cd624e9d24315b9dd076d1ca326dd334c53ebf1866",
+        "processes": [
+          {
+            "label": "2-sqlite",
+            "wallMs": 49.375,
+            "timeRealSeconds": 0.04,
+            "peakRSSBytes": 15613952,
+            "stdoutBytes": 6090,
+            "stderrBytes": 0,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          }
+        ],
+        "sourceRowJSONBytes": 3646,
+        "messageRows": 9,
+        "partRows": 11
+      },
+      "messagesExactlyEqual": true
+    },
+    {
+      "run": 3,
+      "order": [
+        "sqlite",
+        "export"
+      ],
+      "sqlite": {
+        "routeWallMs": 41.728,
+        "sumProcessWallMs": 41.296,
+        "peakProcessRSSBytes": 15613952,
+        "stdoutBytes": 6090,
+        "normalizedMessagesBytes": 6021,
+        "normalizedSHA256": "7077887af63c2f9e6a5d42cd624e9d24315b9dd076d1ca326dd334c53ebf1866",
+        "processes": [
+          {
+            "label": "3-sqlite",
+            "wallMs": 41.296,
+            "timeRealSeconds": 0.03,
+            "peakRSSBytes": 15613952,
+            "stdoutBytes": 6090,
+            "stderrBytes": 0,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          }
+        ],
+        "sourceRowJSONBytes": 3646,
+        "messageRows": 9,
+        "partRows": 11
+      },
+      "export": {
+        "routeWallMs": 1748.908,
+        "sumProcessWallMs": 1747.154,
+        "peakProcessRSSBytes": 331710464,
+        "stdoutBytes": 12215,
+        "normalizedMessagesBytes": 6021,
+        "normalizedSHA256": "7077887af63c2f9e6a5d42cd624e9d24315b9dd076d1ca326dd334c53ebf1866",
+        "processes": [
+          {
+            "label": "3-export-root",
+            "wallMs": 646.101,
+            "timeRealSeconds": 0.64,
+            "peakRSSBytes": 331710464,
+            "stdoutBytes": 6772,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          },
+          {
+            "label": "3-export-child",
+            "wallMs": 649.417,
+            "timeRealSeconds": 0.64,
+            "peakRSSBytes": 327221248,
+            "stdoutBytes": 1521,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          },
+          {
+            "label": "3-export-fork",
+            "wallMs": 451.636,
+            "timeRealSeconds": 0.44,
+            "peakRSSBytes": 327565312,
+            "stdoutBytes": 3922,
+            "stderrBytes": 50,
+            "blockInputs": 0,
+            "blockOutputs": 0
+          }
+        ]
+      },
+      "messagesExactlyEqual": true
+    }
+  ],
+  "scope": "Small cached fixture; 3 fresh-process runs, alternating route order; no cold-cache flush, no production-scale claim.",
+  "rssMeaning": "Darwin time -l per child process, bytes. Route peak is max sequential child peak, never cumulative children max.",
+  "bytesMeaning": "sourceRowJSONBytes counts SQLite JSON data columns only; stdoutBytes counts producer output; normalizedMessagesBytes uses identical hydrated messages. None is physical disk bytes read.",
+  "fairnessLimits": "SQLite Python process hydrates all three sessions; export starts one native process per session and additionally emits session info. Parent normalization/checking memory excluded for both. No persistent server/SDK baseline."
+}

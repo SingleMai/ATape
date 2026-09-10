@@ -1,0 +1,113 @@
+{
+  "status": "passed",
+  "model": "standalone-prototype-not-production-interface",
+  "postgres_image": "postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73",
+  "host": "macOS-26.3.2-arm64-arm-64bit",
+  "container_removed": true,
+  "started_at": "2026-09-10T06:27:40.376719+00:00",
+  "python": "3.9.6",
+  "psycopg": "3.2.10",
+  "scenarios": [
+    {
+      "name": "replacement-staging-and-incomplete-target",
+      "status": "passed",
+      "evidence": {
+        "old_head": 1,
+        "candidate": 2,
+        "visible_during_prepare": [
+          "A",
+          "B",
+          "C"
+        ],
+        "first_publication_invisible": true
+      }
+    },
+    {
+      "name": "activation-backend-terminated-before-commit",
+      "status": "passed",
+      "evidence": {
+        "backend_pid": 127,
+        "pointer_receipt_search_work_rolled_back": true
+      }
+    },
+    {
+      "name": "http-response-lost-after-commit",
+      "status": "passed",
+      "evidence": {
+        "recovered_receipt": 2,
+        "receipt_count": 1,
+        "durable_search_work": 2,
+        "search_before_index": [
+          "A"
+        ],
+        "search_after_index": [
+          "A",
+          "D"
+        ]
+      }
+    },
+    {
+      "name": "old-receipt-and-old-reader-after-new-head",
+      "status": "passed",
+      "evidence": {
+        "old_receipt": 2,
+        "current_head": 3,
+        "stale_reader": "refresh required",
+        "delayed_worker_cannot_revive": "D"
+      }
+    },
+    {
+      "name": "independent-connections-compete",
+      "status": "passed",
+      "evidence": {
+        "winner": 5,
+        "rejected": 4,
+        "race_conflict": "stale fence",
+        "winner_backend_pid": 164,
+        "contender_backend_pids": [
+          164,
+          165
+        ],
+        "two_connections_synchronized_before_session_lock": true,
+        "separate_stale_fence_and_base_assertions": true
+      }
+    },
+    {
+      "name": "search-current-membership-and-descriptor",
+      "status": "passed",
+      "evidence": {
+        "changed_event": "A",
+        "old_descriptor": "v1",
+        "current_descriptor": "v2",
+        "stale_index_filtered": true,
+        "asynchronous_new_index": true
+      }
+    },
+    {
+      "name": "old-activated-capture-retains-independent-raw-authority",
+      "status": "passed",
+      "evidence": {
+        "capture": 2,
+        "current_head": 6,
+        "raw_fence": 1,
+        "unactivated_capture_rejected": true,
+        "stale_raw_fence_rejected": true,
+        "object_store_used": false
+      }
+    }
+  ],
+  "not_covered": [
+    "ATape production Interface/authorization",
+    "native OpenCode/Collector",
+    "lease/reservation/receipt expiry and unknown reconciliation",
+    "quotas and bounded/resumable validation",
+    "PostgreSQL host restart/power loss",
+    "Raw object bytes/storage/recovery",
+    "patch targets",
+    "full Search outbox worker progress",
+    "large scale performance and supported-platform acceptance"
+  ],
+  "postgres_version": "PostgreSQL 17.11 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+  "postgres_isolation": "read committed",
+  "finished_at": "2026-09-10T06:27:42.998852+00:00"
+}

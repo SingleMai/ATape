@@ -1,0 +1,141 @@
+{
+  "status": "expected existing-interface recovery gap reproduced; basic integration passed",
+  "runtime": "v24.18.0",
+  "sqlite": {
+    "version": "3.53.1"
+  },
+  "nativeFixture": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/manifest.json",
+  "checks": [
+    "real Collector + checkpoint + redactor + final wire + loopback HTTP",
+    "SIGKILL after Canonical acceptance before Raw acceptance keeps cursor uncommitted",
+    "same source ID/time; source A to B generates newer revision but cannot replay lost A",
+    "Raw-off sends Canonical only, no Raw-only sentinel or fabricated receipts",
+    "A to B to A reserves an increasing revision",
+    "missing Origin is an attribution diagnostic",
+    "oversized source values report a limit"
+  ],
+  "measurements": {
+    "resumed": {
+      "report": {
+        "startedAt": "2026-09-10T06:33:17.788Z",
+        "completedAt": "2026-09-10T06:33:17.894Z",
+        "jobs": [
+          {
+            "canonicalEvents": 6,
+            "rawBytes": 4379,
+            "durationMs": 92,
+            "projectId": "prototype",
+            "adapterId": "opencode-prototype",
+            "pages": 4,
+            "observations": 4,
+            "canonicalBatches": 4,
+            "rawChunks": 8,
+            "redactions": 2,
+            "hasMore": false
+          }
+        ],
+        "failures": []
+      },
+      "pageMetrics": [
+        {
+          "sourceQueries": 10,
+          "projectedRows": 2,
+          "wholeDataReads": 2,
+          "largestSourceRecordBytes": 202,
+          "sourceReadOnly": true,
+          "rawEnabled": true
+        },
+        {
+          "sourceQueries": 10,
+          "projectedRows": 2,
+          "wholeDataReads": 2,
+          "largestSourceRecordBytes": 424,
+          "sourceReadOnly": true,
+          "rawEnabled": true
+        },
+        {
+          "sourceQueries": 10,
+          "projectedRows": 2,
+          "wholeDataReads": 2,
+          "largestSourceRecordBytes": 465,
+          "sourceReadOnly": true,
+          "rawEnabled": true
+        },
+        {
+          "sourceQueries": 10,
+          "projectedRows": 2,
+          "wholeDataReads": 2,
+          "largestSourceRecordBytes": 465,
+          "sourceReadOnly": true,
+          "rawEnabled": true
+        }
+      ],
+      "peakRssKiB": 165136
+    },
+    "rawOff": {
+      "report": {
+        "startedAt": "2026-09-10T06:33:18.054Z",
+        "completedAt": "2026-09-10T06:33:18.114Z",
+        "jobs": [
+          {
+            "canonicalEvents": 6,
+            "rawBytes": 0,
+            "durationMs": 46,
+            "projectId": "prototype",
+            "adapterId": "opencode-prototype",
+            "pages": 4,
+            "observations": 4,
+            "canonicalBatches": 4,
+            "rawChunks": 0,
+            "redactions": 1,
+            "hasMore": false
+          }
+        ],
+        "failures": []
+      },
+      "pageMetrics": [
+        {
+          "sourceQueries": 8,
+          "projectedRows": 2,
+          "wholeDataReads": 0,
+          "largestSourceRecordBytes": 202,
+          "sourceReadOnly": true,
+          "rawEnabled": false
+        },
+        {
+          "sourceQueries": 8,
+          "projectedRows": 2,
+          "wholeDataReads": 0,
+          "largestSourceRecordBytes": 424,
+          "sourceReadOnly": true,
+          "rawEnabled": false
+        },
+        {
+          "sourceQueries": 8,
+          "projectedRows": 2,
+          "wholeDataReads": 0,
+          "largestSourceRecordBytes": 465,
+          "sourceReadOnly": true,
+          "rawEnabled": false
+        },
+        {
+          "sourceQueries": 8,
+          "projectedRows": 2,
+          "wholeDataReads": 0,
+          "largestSourceRecordBytes": 465,
+          "sourceReadOnly": true,
+          "rawEnabled": false
+        }
+      ],
+      "peakRssKiB": 160224
+    }
+  },
+  "notProven": [
+    "full pending target/final-wire journal",
+    "atomic publication or production server",
+    "package manifest/import/close",
+    "authentication",
+    "arbitrary source coverage, platforms or bounds"
+  ],
+  "sourceMutations": "Controlled native database copy; A/B, secret and unknown-field additions are synthetic perturbations, not native OpenCode actions."
+}

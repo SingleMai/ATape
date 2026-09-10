@@ -151,6 +151,8 @@ python3 packages/application/prototypes/opencode-publication-probe.py
 
 ## 下一步验收
 
+后续实际结果见[原生来源与恢复实验记录](opencode-native-acceptance.md)：已取得受控 native SQLite/API/export 三方对照、现有 Collector 真实 SIGKILL 反例，以及真实 PostgreSQL/HTTP 发布原型证据。该报告逐项区分已测行为与尚未实现的交付门槛。
+
 身份与 Raw 映射、完整 target 封存、SQLite journal、原子发布和 Raw policy 恢复的工程选择已记录在最终契约。Raw-off 版本保持 unavailable，重开仅新增可用源行的独立观察；不存在等待负责人再次批准的同一项范围问题。
 
 准确来源版本、legacy/v2-only/巨型 part、平台与数值配额仍需原生 fixture 和压力证据定清楚。[正式有界采集原型验收](https://github.com/SingleMai/ATape/issues/115)继续验证真实来源、public Interface、HTTP/PostgreSQL、并发和重启；不能凭这些模型直接关闭。Origin/parent 无证据时沿用诊断与隔离规则，不扩大成人工归属产品。

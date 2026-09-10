@@ -1,0 +1,149 @@
+{
+  "schema": "atape.opencode.native-revert-continuation.v1",
+  "version": "1.18.30",
+  "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "fixtureManifest": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-5v4cf6q9/manifest.json",
+  "rootID": "ses_f75f84f3bffeISC7uWyGRosP78",
+  "revertMessageID": "msg_08a07b0d600127HXx82vpzlcGK",
+  "before": {
+    "root": {
+      "messages": [
+        "msg_08a07b0d600127HXx82vpzlcGK",
+        "msg_08a07b1c4001su0SIlhbHXWwn8",
+        "msg_08a07b1c6001WdVfgg4n7T2Q9E",
+        "msg_08a07b201001G6lYkinxjT3zZQ",
+        "msg_08a07b206001iYRwmZZ3T7Ran1"
+      ],
+      "parts": [
+        "prt_08a07b0d9001mmX46U1HfvpmJO",
+        "prt_08a07b1c5001EvlyF5RekEEdk2",
+        "prt_08a07b1c6002xMtE6FS9jZZQDU",
+        "prt_08a07b201002a1j49tF7ONjyZN",
+        "prt_08a07b21b001iVl0QqxfuXXrbp",
+        "prt_08a07b21d001qoQyVHqA81IcaP",
+        "prt_08a07b2210019Dma0jEtPcaOJV"
+      ]
+    },
+    "child": {
+      "messages": [
+        "msg_08a07b1b8001eT6AOi4Oe76EC5"
+      ],
+      "parts": [
+        "prt_08a07b1ba0011jLEBQazSMI4Nd"
+      ]
+    },
+    "fork": {
+      "messages": [
+        "msg_08a07b1e7001tjrgNZl6SsUeLm",
+        "msg_08a07b1e80023K5JnbW7g2g373",
+        "msg_08a07b1e9001KR9HKwFz4R5gjo"
+      ],
+      "parts": [
+        "prt_08a07b1e8001XST5fMEnh3fdRP",
+        "prt_08a07b1e80036Bvrl3kZsfKjQ2",
+        "prt_08a07b1e9002Q8DIx33ywmmoLm"
+      ]
+    },
+    "rootEventTypes": {
+      "message.part.updated.1": 11,
+      "message.updated.1": 8,
+      "session.created.1": 1,
+      "session.updated.1": 5
+    }
+  },
+  "afterRevertMarker": {
+    "root": {
+      "messages": [
+        "msg_08a07b0d600127HXx82vpzlcGK",
+        "msg_08a07b1c4001su0SIlhbHXWwn8",
+        "msg_08a07b1c6001WdVfgg4n7T2Q9E",
+        "msg_08a07b201001G6lYkinxjT3zZQ",
+        "msg_08a07b206001iYRwmZZ3T7Ran1"
+      ],
+      "parts": [
+        "prt_08a07b0d9001mmX46U1HfvpmJO",
+        "prt_08a07b1c5001EvlyF5RekEEdk2",
+        "prt_08a07b1c6002xMtE6FS9jZZQDU",
+        "prt_08a07b201002a1j49tF7ONjyZN",
+        "prt_08a07b21b001iVl0QqxfuXXrbp",
+        "prt_08a07b21d001qoQyVHqA81IcaP",
+        "prt_08a07b2210019Dma0jEtPcaOJV"
+      ]
+    },
+    "child": {
+      "messages": [
+        "msg_08a07b1b8001eT6AOi4Oe76EC5"
+      ],
+      "parts": [
+        "prt_08a07b1ba0011jLEBQazSMI4Nd"
+      ]
+    },
+    "fork": {
+      "messages": [
+        "msg_08a07b1e7001tjrgNZl6SsUeLm",
+        "msg_08a07b1e80023K5JnbW7g2g373",
+        "msg_08a07b1e9001KR9HKwFz4R5gjo"
+      ],
+      "parts": [
+        "prt_08a07b1e8001XST5fMEnh3fdRP",
+        "prt_08a07b1e80036Bvrl3kZsfKjQ2",
+        "prt_08a07b1e9002Q8DIx33ywmmoLm"
+      ]
+    },
+    "rootEventTypes": {
+      "message.part.updated.1": 11,
+      "message.updated.1": 8,
+      "session.created.1": 1,
+      "session.updated.1": 6
+    }
+  },
+  "afterContinuation": {
+    "root": {
+      "messages": [
+        "msg_08a07ba3c001pw458UbByXJjPH"
+      ],
+      "parts": [
+        "prt_08a07ba3d0012xARkNrRWxxf1R"
+      ]
+    },
+    "child": {
+      "messages": [
+        "msg_08a07b1b8001eT6AOi4Oe76EC5"
+      ],
+      "parts": [
+        "prt_08a07b1ba0011jLEBQazSMI4Nd"
+      ]
+    },
+    "fork": {
+      "messages": [
+        "msg_08a07b1e7001tjrgNZl6SsUeLm",
+        "msg_08a07b1e80023K5JnbW7g2g373",
+        "msg_08a07b1e9001KR9HKwFz4R5gjo"
+      ],
+      "parts": [
+        "prt_08a07b1e8001XST5fMEnh3fdRP",
+        "prt_08a07b1e80036Bvrl3kZsfKjQ2",
+        "prt_08a07b1e9002Q8DIx33ywmmoLm"
+      ]
+    },
+    "rootEventTypes": {
+      "message.part.updated.1": 12,
+      "message.removed.1": 5,
+      "message.updated.1": 9,
+      "session.created.1": 1,
+      "session.updated.1": 8
+    }
+  },
+  "revertMarker": {
+    "messageID": "msg_08a07b0d600127HXx82vpzlcGK"
+  },
+  "newMessageID": "msg_08a07ba3c001pw458UbByXJjPH",
+  "oldExportSHA256": "ca9d9cedd08ff264a9d88ae78611d58cee6cf39074f9f7d34c5a29de2450b16f",
+  "oldExportUnchanged": true,
+  "oldExportMessageCount": 5,
+  "sourceMessageCountAfterContinuation": 1,
+  "oldExportIsATapeRaw": false,
+  "scope": "Official APIs only; noReply continuation, no real model, first-message revert removes entire root suffix; no file diff rollback claim.",
+  "newOfficialExportMatchesAPI": true,
+  "apiEvidence": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-5v4cf6q9/continuation-api-evidence.json"
+}
