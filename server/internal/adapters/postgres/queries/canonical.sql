@@ -240,3 +240,6 @@ SELECT id, session_id, thread_id, source_key, revision, projection_revision,
 FROM canonical_events
 WHERE session_id = $1 AND thread_id = $2
 ORDER BY source_order, event_index, id;
+
+-- name: GetConversationUser :one
+SELECT id, display_name, avatar_url FROM auth_users WHERE id = $1;

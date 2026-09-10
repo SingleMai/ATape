@@ -64,6 +64,18 @@ const renderReader = (options: {
 )
 
 describe("SessionReaderView", () => {
+  it("shows the capturing user's profile without rewriting message authors", () => {
+    const html = renderReader({ value: { ...value, session: { ...value.session,
+      capturedBy: { id: "owner", displayName: "Jackson", avatarUrl: "https://example.com/avatar.png" }
+    } } })
+    expect(html).toContain("Jackson")
+    expect(html).toContain('src="https://example.com/avatar.png"')
+    expect(html).toContain('class="message-metadata"><span>User</span>')
+  })
+  it("falls back to the source actor when a profile is unavailable", () => {
+    expect(renderReader()).toContain("User")
+  })
+
   it.each([
     "/Users/liying/Downloads/report.md",
     "/mnt/data/report.pdf",

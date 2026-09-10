@@ -35,14 +35,14 @@ test("lands on Team Overview, exposes cache, drills down and restores navigation
   await expect(page).not.toHaveURL(/model=model-a/)
   await expect(page.getByText("24 sessions · Page 1")).toBeVisible()
 })
-test("holds conversation cards during refresh and retains successful data on failure", async ({ page, request }) => {
+test("updates conversation cards on manual refresh and retains successful data on failure", async ({ page, request }) => {
   await page.goto("/teams/team-id")
   await expect(page.locator(".overview-session").first()).toContainText("Conversation hierarchy")
+  await page.clock.install()
   await request.post("http://127.0.0.1:8080/__fixture/overview?revision=1")
-  await page.getByRole("button", { name: "Refresh", exact: true }).click()
-  await expect(page.getByRole("button", { name: "Show updated conversations" })).toBeVisible()
+  await page.clock.fastForward(60_000)
   await expect(page.locator(".overview-session").first()).toContainText("Conversation hierarchy")
-  await page.getByRole("button", { name: "Show updated conversations" }).click()
+  await page.getByRole("button", { name: "Refresh", exact: true }).click()
   await expect(page.locator(".overview-session").first()).toContainText("New conversation arrived")
   await request.post("http://127.0.0.1:8080/__fixture/overview?fail=1")
   await page.getByRole("button", { name: "Refresh", exact: true }).click()

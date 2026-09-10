@@ -194,8 +194,15 @@ VALUES ('other-team', $1, 'owner', 'active')`, eveID); err != nil {
 		if _, err := reader.OpenProject(context.Background(), bobWeb, canonicalcontract.TestProjectID); err != nil {
 			t.Fatalf("same-Team Project read: %v", err)
 		}
-		if _, err := reader.OpenConversation(context.Background(), bobWeb, created.SessionID, "root"); err != nil {
+		if _, err := pool.Exec(context.Background(), "UPDATE auth_users SET display_name = 'Capture owner', avatar_url = 'https://example.com/avatar.png' WHERE id = $1", aliceWeb.UserID); err != nil {
+			t.Fatal(err)
+		}
+		opened, err := reader.OpenConversation(context.Background(), bobWeb, created.SessionID, "root")
+		if err != nil {
 			t.Fatalf("same-Team Conversation read: %v", err)
+		}
+		if user := opened.Session.CapturedBy; user == nil || user.ID != aliceWeb.UserID || user.DisplayName != "Capture owner" || user.AvatarURL != "https://example.com/avatar.png" {
+			t.Fatalf("conversation must identify its capturer, not the viewer: %+v", user)
 		}
 		if _, err := projectsearch.NewSearcher(store).Search(
 			context.Background(), bobWeb, canonicalcontract.TestProjectID, "durable key", "", 20,

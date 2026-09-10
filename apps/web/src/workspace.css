@@ -465,6 +465,11 @@
   color: var(--atape-color-text-muted);
   overflow-wrap: anywhere;
 }
+.clean-reader-title .reader-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .clean-reader-title .back-link {
   min-width: 32px;
   min-height: 32px;

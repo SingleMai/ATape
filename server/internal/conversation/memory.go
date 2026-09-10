@@ -46,15 +46,22 @@ type ProjectMemory struct {
 	Trail           []SessionSummary `json:"trail"`
 }
 
+type CapturedUser struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	AvatarURL   string `json:"avatarUrl"`
+}
+
 type Session struct {
-	ID            string `json:"id"`
-	ProjectID     string `json:"projectId"`
-	Title         string `json:"title"`
-	Actor         Actor  `json:"actor"`
-	Branch        string `json:"branch"`
-	Status        string `json:"status"`
-	CaptureStatus string `json:"captureStatus"`
-	UpdatedAt     string `json:"updatedAt"`
+	CapturedBy    *CapturedUser `json:"capturedBy,omitempty"`
+	ID            string        `json:"id"`
+	ProjectID     string        `json:"projectId"`
+	Title         string        `json:"title"`
+	Actor         Actor         `json:"actor"`
+	Branch        string        `json:"branch"`
+	Status        string        `json:"status"`
+	CaptureStatus string        `json:"captureStatus"`
+	UpdatedAt     string        `json:"updatedAt"`
 }
 
 type Thread struct {
@@ -219,8 +226,13 @@ func (m *Memory) OpenConversation(
 		}
 		events = append(events, event)
 	}
+	var capturedBy *CapturedUser
+	if user := snapshot.CapturedBy; user != nil {
+		capturedBy = &CapturedUser{ID: user.ID, DisplayName: user.DisplayName, AvatarURL: user.AvatarURL}
+	}
 	return Conversation{
 		Session: Session{
+			CapturedBy:    capturedBy,
 			ID:            snapshot.Session.ID,
 			ProjectID:     snapshot.Session.ProjectID,
 			Title:         snapshot.Session.Title,
