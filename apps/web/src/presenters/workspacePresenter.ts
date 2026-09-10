@@ -2,7 +2,7 @@ import { openWorkspace, type WorkspaceGatewayError } from "@atape/application"
 import type { Workspace } from "@atape/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
-import type { LoadableView } from "./memoryPresenter"
+import { gatewayFailureMessageKey, type LoadableView } from "./memoryPresenter"
 import { BrowserWorkspaceGatewayLayer } from "../runtime/workspaceGateway"
 
 const runtime = Atom.runtime(BrowserWorkspaceGatewayLayer)
@@ -14,12 +14,12 @@ const toLoadableView = (
   onInitial: () => ({ _tag: "Loading" as const }),
   onError: (error) => ({
     _tag: "Failed" as const,
-    message: error.message,
+    messageKey: gatewayFailureMessageKey(error.reason, error.status),
     retryable: error.reason !== "decode"
   }),
   onDefect: () => ({
     _tag: "Failed" as const,
-    message: "ATape could not render the Workspace directory safely.",
+    messageKey: "errors.defect.workspace" as const,
     retryable: false
   }),
   onSuccess: (success) => ({

@@ -3,6 +3,7 @@ import { Badge, Button } from "@atape/ui"
 import { useState } from "react"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
+import { formatDate, t } from "../i18n"
 
 type Props = {
   readonly state: LoadableView<ProjectMemory>
@@ -12,18 +13,18 @@ type Props = {
 }
 
 const formatAbsoluteTime = (value: string) =>
-  new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+  formatDate(new Date(value), { dateStyle: "medium", timeStyle: "short" })
 
 const formatRelativeTime = (value: string) => {
   const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 1_000))
-  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 10) return "just now"
-  if (elapsedSeconds < 60) return `${elapsedSeconds}s ago`
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 10) return t("time.justNow", "just now")
+  if (elapsedSeconds < 60) return t("time.secondsAgo", "{count}s ago", { count: elapsedSeconds })
   const minutes = Math.floor(elapsedSeconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) return t("time.minutesAgo", "{count}m ago", { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return t("time.hoursAgo", "{count}h ago", { count: hours })
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days}d ago`
+  if (days < 30) return t("time.daysAgo", "{count}d ago", { count: days })
   return formatAbsoluteTime(value)
 }
 
@@ -61,7 +62,7 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
   if (state._tag === "Loading") {
     return (
       <section className="state-card" aria-live="polite">
-        Gathering project memory…
+        {t("memory.loading", "Gathering project memory…")}
       </section>
     )
   }
@@ -69,9 +70,9 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
   if (state._tag === "Failed") {
     return (
       <section className="state-card error-card" role="alert">
-        <h1>Project memory is unavailable</h1>
-        <p>{state.message}</p>
-        {state.retryable && <Button onClick={onRetry}>Try again</Button>}
+        <h1>{t("memory.unavailableTitle", "Project memory is unavailable")}</h1>
+        <p>{t(state.messageKey)}</p>
+        {state.retryable && <Button onClick={onRetry}>{t("common.tryAgain", "Try again")}</Button>}
       </section>
     )
   }
@@ -87,18 +88,18 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
       <header className="project-page-heading">
         <div>
           <p className="project-page-context">{memory.project.name}</p>
-          <h1 id="project-memory-title">Conversations</h1>
+          <h1 id="project-memory-title">{t("memory.conversationsTitle", "Conversations")}</h1>
         </div>
         <details className="quiet-disclosure">
-          <summary>Updates</summary>
+          <summary>{t("memory.updates", "Updates")}</summary>
           <div className="quiet-disclosure-panel">
             <RefreshControl
               settings={refresh}
               refreshing={state.refreshing}
-              refreshFailure={state.refreshFailure}
+              refreshFailure={state.refreshFailureKey === undefined ? undefined : t(state.refreshFailureKey)}
               status={
                 <>
-                  Updated <PresenceTime value={memory.capturedThrough} />
+                  {t("memory.updatedLabel", "Updated")} <PresenceTime value={memory.capturedThrough} />
                 </>
               }
               onRefresh={onRetry}
@@ -106,22 +107,22 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
           </div>
         </details>
       </header>
-      {state.refreshFailure && (
+      {state.refreshFailureKey && (
         <p className="compact-warning" role="status">
-          Refresh failed · showing previous conversations
+          {t("memory.refreshFailed", "Refresh failed · showing previous conversations")}
         </p>
       )}
       <div className="conversation-list-toolbar">
-        <div role="group" aria-label="Conversation status">
+        <div role="group" aria-label={t("memory.conversationStatus", "Conversation status")}>
           <button type="button" aria-pressed={!activeOnly} onClick={() => setActiveOnly(false)}>
-            All conversations
+            {t("memory.allConversations", "All conversations")}
           </button>
           <button type="button" aria-pressed={activeOnly} onClick={() => setActiveOnly(true)}>
-            Active <span>{memory.active.length}</span>
+            {t("memory.active", "Active")} <span>{memory.active.length}</span>
           </button>
         </div>
         <span>
-          {sessions.length} {sessions.length === 1 ? "conversation" : "conversations"}
+          {t("memory.conversationCount", "{count, plural, one {# conversation} other {# conversations}}", { count: sessions.length })}
         </span>
       </div>
       <div className="trail-list">
@@ -130,11 +131,11 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
         ))}
         {sessions.length === 0 && (
           <div className="empty-memory empty-trail">
-            <strong>{activeOnly ? "No active conversations" : "No conversations yet"}</strong>
+            <strong>{activeOnly ? t("memory.noActiveConversations", "No active conversations") : t("memory.noConversations", "No conversations yet")}</strong>
             <span>
               {activeOnly
-                ? "Choose All conversations to browse captured work."
-                : "Conversations will appear after this project is captured."}
+                ? t("memory.noActiveBody", "Choose All conversations to browse captured work.")
+                : t("memory.noConversationsBody", "Conversations will appear after this project is captured.")}
             </span>
           </div>
         )}

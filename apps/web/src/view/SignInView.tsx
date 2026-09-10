@@ -2,6 +2,7 @@ import { Button } from "@atape/ui"
 import type { ActionView, LoadView } from "../presenters/accessPresenter"
 import type { SignInOptions } from "@atape/domain"
 import { AccessBrand, FailureNotice } from "./AccessPrimitives"
+import { t, type WebMessageKey } from "../i18n"
 
 const ProviderMark = () => (
   <svg className="provider-mark" aria-hidden="true" viewBox="0 0 24 24">
@@ -34,19 +35,19 @@ export const SignInView = ({
           {flash !== undefined && <div className="access-notice access-notice--success" role="status">{flash}</div>}
           {cliReturn && (
             <div className="return-context">
-              <strong>CLI sign-in in progress</strong>
-              <span>After signing in, review the request from <code>atape-cli</code>.</span>
+              <strong>{t("signIn.cliInProgress", "CLI sign-in in progress")}</strong>
+              <span>{t("signIn.cliAfter", "After signing in, review the request from atape-cli.")}</span>
             </div>
           )}
-          <h1 id="sign-in-title">Sign in to ATape</h1>
-          <p className="login-copy">Choose an enabled sign-in method to continue.</p>
+          <h1 id="sign-in-title">{t("signIn.title", "Sign in to ATape")}</h1>
+          <p className="login-copy">{t("signIn.subtitle", "Choose an enabled sign-in method to continue.")}</p>
 
-          {options._tag === "Loading" && <p className="inline-status" role="status">Loading sign-in methods…</p>}
+          {options._tag === "Loading" && <p className="inline-status" role="status">{t("signIn.loading", "Loading sign-in methods…")}</p>}
           {options._tag === "Failed" && <FailureNotice failure={options.failure} onRetry={onRetry} />}
           {options._tag === "Ready" && options.value.providers.length === 0 && (
             <div className="access-notice access-notice--warning" role="status">
-              <strong>No sign-in method is enabled on this instance.</strong>
-              <span>Ask the instance operator to configure a Provider.</span>
+              <strong>{t("signIn.noMethodsTitle", "No sign-in method is enabled on this instance.")}</strong>
+              <span>{t("signIn.noMethodsBody", "Ask the instance operator to configure a Provider.")}</span>
             </div>
           )}
           {options._tag === "Ready" && options.value.providers.map((provider) => (
@@ -55,15 +56,15 @@ export const SignInView = ({
               className="provider-button"
               variant="primary"
               pending={pending}
-              pendingLabel="Opening sign-in…"
+              pendingLabel={t("signIn.opening", "Opening sign-in…")}
               onClick={() => onSignIn(provider.id)}
             >
-              <ProviderMark /> Continue with {provider.label}
+              <ProviderMark /> {t("signIn.continueWith", "Continue with {provider}", { provider: provider.label })}
             </Button>
           ))}
           {action._tag === "Failed" && <FailureNotice failure={action.failure} />}
           {options._tag === "Ready" && (
-            <p className="login-instance">Instance <code>{options.value.instance.instanceOrigin}</code></p>
+            <p className="login-instance">{t("signIn.instance", "Instance")} <code>{options.value.instance.instanceOrigin}</code></p>
           )}
         </section>
       </main>
@@ -71,26 +72,26 @@ export const SignInView = ({
   )
 }
 
-const callbackMessages: Readonly<Record<string, { readonly title: string; readonly message: string }>> = {
+const callbackMessages: Readonly<Record<string, { readonly titleKey: WebMessageKey; readonly messageKey: WebMessageKey }>> = {
   access_denied: {
-    title: "Sign-in was cancelled",
-    message: "No ATape session was created. You can try again whenever you are ready."
+    titleKey: "authError.access_denied.title",
+    messageKey: "authError.access_denied.message"
   },
   login_expired: {
-    title: "This sign-in request expired",
-    message: "Start again to receive a new, short-lived sign-in request."
+    titleKey: "authError.login_expired.title",
+    messageKey: "authError.login_expired.message"
   },
   identity_conflict: {
-    title: "This identity belongs to another account",
-    message: "ATape did not change either account. Contact the instance operator if this is unexpected."
+    titleKey: "authError.identity_conflict.title",
+    messageKey: "authError.identity_conflict.message"
   },
   provider_unavailable: {
-    title: "The sign-in method is unavailable",
-    message: "The Provider could not complete the request. Try again in a moment."
+    titleKey: "authError.provider_unavailable.title",
+    messageKey: "authError.provider_unavailable.message"
   },
   login_failed: {
-    title: "ATape could not complete sign-in",
-    message: "The request was rejected safely. Start a new sign-in attempt."
+    titleKey: "authError.login_failed.title",
+    messageKey: "authError.login_failed.message"
   }
 }
 
@@ -105,10 +106,10 @@ export const AuthenticationErrorView = ({ code, incident }: {
         <div className="login-brand"><AccessBrand /></div>
         <section className="auth-card" aria-labelledby="auth-error-title">
           <div className="outcome-mark outcome-mark--danger" aria-hidden="true">!</div>
-          <h1 id="auth-error-title">{copy.title}</h1>
-          <p>{copy.message}</p>
-          {incident !== undefined && <p className="incident-reference">Incident {incident}</p>}
-          <a className="atape-button atape-button--primary provider-button" href="/auth/sign-in">Try sign-in again</a>
+          <h1 id="auth-error-title">{t(copy.titleKey)}</h1>
+          <p>{t(copy.messageKey)}</p>
+          {incident !== undefined && <p className="incident-reference">{t("authError.incident", "Incident {incident}", { incident })}</p>}
+          <a className="atape-button atape-button--primary provider-button" href="/auth/sign-in">{t("authError.tryAgain", "Try sign-in again")}</a>
         </section>
       </main>
     </div>

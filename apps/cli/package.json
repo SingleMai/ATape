@@ -38,6 +38,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "dev": "node src/main.ts",
+    "i18n:extract": "i18next",
     "pack:release": "node scripts/pack.mjs",
     "prepack": "node scripts/build.mjs",
     "test": "vitest run --exclude src/collectorServer.e2e.test.ts",
@@ -48,11 +49,13 @@
   "devDependencies": {
     "@atape/application": "workspace:*",
     "@atape/domain": "workspace:*",
+    "@atape/i18n": "workspace:*",
     "@inkjs/ui": "2.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "catalog:build",
     "effect": "catalog:",
     "esbuild": "catalog:build",
+    "i18next-parser": "9.4.0",
     "ink": "7.1.1",
     "react": "catalog:",
     "string-width": "8.2.2",

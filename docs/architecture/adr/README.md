@@ -120,3 +120,5 @@ pretending that staging acceptance passed.
 
 - [ADR-0069: Read-only source comparison before durable capture](0069-source-comparison-before-capture.md)
 - [ADR-0070: Source Collector recovery and scheduling](0070-source-collector-recovery-and-scheduling.md)
+
+- [ADR-0071: Localization boundary for Web and CLI](0071-localization-boundary.md)

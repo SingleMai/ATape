@@ -24,6 +24,7 @@ const binary = join(
 )
 const environment = {
   ...process.env,
+  ATAPE_LANG: "en",
   ATAPE_HOME: stateDirectory,
   ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
   XDG_CONFIG_HOME: join(temporaryRoot, "xdg-config"),
@@ -69,7 +70,7 @@ try {
     fixtureServer = remote.server
     environment.ATAPE_INSTANCE_URL = remote.origin
     await writeSmokeAdapter()
-    process.stdout.write((await run("python3", [fileURLToPath(new URL("verify-terminal.py", import.meta.url)), binary, join(temporaryRoot, "terminal"), adapterSource, remote.origin], temporaryRoot)).stdout)
+    process.stdout.write((await run("python3", [fileURLToPath(new URL("verify-terminal.py", import.meta.url)), binary, join(temporaryRoot, "terminal"), adapterSource, remote.origin], temporaryRoot, environment)).stdout)
     const login = await atape(["login", "--no-browser", "--json"])
     assert.deepEqual(JSON.parse(login.stdout), {
       instanceOrigin: remote.origin,

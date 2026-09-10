@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const ClientConfigVersion = 3 as const
+export const ClientConfigVersion = 4 as const
 export const AdapterProtocolVersion = "atape.adapter.v1alpha1" as const
 export const SourceCaptureVersion = "atape.source-capture.v1" as const
 export const GitAttributionVersion = "atape.git-attribution.v1" as const
@@ -41,6 +41,7 @@ export type AdapterInstallation = typeof AdapterInstallation.Type
 
 export const ClientConfig = Schema.Struct({
   version: Schema.Literal(ClientConfigVersion),
+  locale: Schema.optionalKey(Schema.String),
   activeInstanceOrigin: Schema.optionalKey(Schema.String),
   projects: Schema.Array(ProjectRegistration),
   adapters: Schema.Array(AdapterInstallation),

@@ -94,7 +94,7 @@ describe("access views", () => {
       resolution={{
         _tag: "Failed",
         failure: {
-          message: "The code is unavailable.",
+          messageKey: "errors.invalidInput",
           code: "invalid_user_code",
           reason: "invalid_input",
           retryable: false

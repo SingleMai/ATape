@@ -36,11 +36,12 @@ import { useCallback, useEffect, useRef } from "react"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { BrowserAccessLayer } from "../runtime/accessGateway"
 import { subscribeAuthenticationInvalidation } from "../runtime/http"
+import { hasWebMessage, type WebMessageKey } from "../i18n"
 
 const runtime = Atom.runtime(BrowserAccessLayer)
 
 export type FailureView = {
-  readonly message: string
+  readonly messageKey: WebMessageKey
   readonly code: string
   readonly reason: AccessError["reason"]
   readonly retryable: boolean
@@ -74,33 +75,40 @@ export type AccountSecurityViewModel = {
   readonly cliCredentials: SectionView<ReadonlyArray<import("@atape/application").CLIDeviceView>>
 }
 
-const friendlyFailure = (error: AccessError): FailureView => {
-  const message = (() => {
-    switch (error.reason) {
-      case "unauthenticated": return "Please sign in again to continue."
-      case "fresh_authentication_required": return "Confirm your sign-in before making this security change."
-      case "forbidden": return "Your current Team role does not allow this action."
-      case "not_found": return "This item is unavailable or you no longer have access to it."
-      case "provider_unavailable": return "The sign-in method is temporarily unavailable."
-      case "rate_limited": return "Too many attempts were made. Wait briefly and try again."
-      case "transport": return "ATape could not reach the server. Check your connection and try again."
-      case "decode": return "ATape received a response it could not safely read."
-      default: return error.message
-    }
-  })()
-  return {
-    message,
-    code: error.code,
-    reason: error.reason,
-    retryable: error.reason === "transport" || error.reason === "unavailable" ||
-      error.reason === "fresh_authentication_required" ||
-      error.reason === "provider_unavailable" || error.reason === "rate_limited",
-    ...(error.incident === undefined ? {} : { incident: error.incident })
+const problemMessageKey = (code: string): WebMessageKey | undefined => {
+  const key = `problems.${code}`
+  return hasWebMessage(key) ? key : undefined
+}
+
+const reasonMessageKey = (reason: AccessError["reason"]): WebMessageKey => {
+  switch (reason) {
+    case "unauthenticated": return "errors.unauthenticated"
+    case "fresh_authentication_required": return "errors.freshAuthenticationRequired"
+    case "forbidden": return "errors.forbidden"
+    case "not_found": return "errors.notFound"
+    case "provider_unavailable": return "errors.providerUnavailable"
+    case "rate_limited": return "errors.rateLimited"
+    case "transport": return "errors.transport"
+    case "decode": return "errors.decode"
+    case "invalid_input": return "errors.invalidInput"
+    case "conflict": return "errors.conflict"
+    case "unavailable": return "errors.unavailable"
+    default: return "errors.unknown"
   }
 }
 
-const defectFailure = (message: string): FailureView => ({
-  message,
+const friendlyFailure = (error: AccessError): FailureView => ({
+  messageKey: problemMessageKey(error.code) ?? reasonMessageKey(error.reason),
+  code: error.code,
+  reason: error.reason,
+  retryable: error.reason === "transport" || error.reason === "unavailable" ||
+    error.reason === "fresh_authentication_required" ||
+    error.reason === "provider_unavailable" || error.reason === "rate_limited",
+  ...(error.incident === undefined ? {} : { incident: error.incident })
+})
+
+const defectFailure = (messageKey: WebMessageKey): FailureView => ({
+  messageKey,
   code: "client_failure",
   reason: "unknown",
   retryable: false
@@ -108,7 +116,7 @@ const defectFailure = (message: string): FailureView => ({
 
 const toLoadView = <A>(
   result: AsyncResult.AsyncResult<A, AccessError>,
-  defectMessage: string
+  defectMessage: WebMessageKey
 ): LoadView<A> => AsyncResult.matchWithError(result, {
   onInitial: () => ({ _tag: "Loading" as const }),
   onError: (error) => ({ _tag: "Failed" as const, failure: friendlyFailure(error) }),
@@ -122,7 +130,7 @@ const toLoadView = <A>(
 
 const toActionView = <A>(
   result: AsyncResult.AsyncResult<A, AccessError>,
-  defectMessage: string
+  defectMessage: WebMessageKey
 ): ActionView<A> => {
   if (result.waiting) return { _tag: "Pending" }
   return AsyncResult.matchWithError(result, {
@@ -184,7 +192,7 @@ export const useSessionPresenter = (): {
       : { _tag: "Failed", failure: friendlyFailure(error) },
     onDefect: (): SessionView => ({
       _tag: "Failed",
-      failure: defectFailure("ATape could not verify your sign-in. Please try again.")
+      failure: defectFailure("errors.defect.session")
     }),
     onSuccess: (success): SessionView => ({
       _tag: "Authenticated",
@@ -200,8 +208,8 @@ export const useSignInPresenter = () => {
   const reloadOptions = useAtomRefresh(signInOptionsAtom)
   const [action, signIn] = useAtom(signInAtom)
   return {
-    options: toLoadView(options, "ATape could not load the enabled sign-in methods."),
-    action: toActionView(action, "ATape could not begin sign-in safely."),
+    options: toLoadView(options, "errors.defect.signInOptions"),
+    action: toActionView(action, "errors.defect.signIn"),
     reloadOptions,
     signIn
   }
@@ -210,14 +218,14 @@ export const useSignInPresenter = () => {
 export const useReauthenticationPresenter = () => {
   const [action, reauthenticate] = useAtom(reauthenticationAtom)
   return {
-    action: toActionView(action, "ATape could not begin confirmation safely."),
+    action: toActionView(action, "errors.defect.reauthenticate"),
     reauthenticate
   }
 }
 
 export const useLogoutPresenter = () => {
   const [action, logout] = useAtom(logoutAtom)
-  return { action: toActionView(action, "ATape could not sign out safely."), logout }
+  return { action: toActionView(action, "errors.defect.logout"), logout }
 }
 
 export const useAccountSecurityPresenter = () => {
@@ -235,7 +243,7 @@ export const useAccountSecurityPresenter = () => {
   const resetAction = useCallback(() => run(Atom.Reset), [run])
   return {
     state: (() => {
-      const loaded = toLoadView(result, "ATape could not load account security safely.")
+      const loaded = toLoadView(result, "errors.defect.accountSecurity")
       if (loaded._tag !== "Ready") return loaded
       const section = <A>(value: import("@atape/application").SettledSection<A>): SectionView<A> =>
         value._tag === "Ready"
@@ -250,7 +258,7 @@ export const useAccountSecurityPresenter = () => {
         } satisfies AccountSecurityViewModel
       }
     })(),
-    action: toActionView<void>(action, "ATape could not complete the security change safely."),
+    action: toActionView<void>(action, "errors.defect.accountAction"),
     reload,
     run,
     resetAction
@@ -261,7 +269,7 @@ export const useCreateTeamPresenter = () => {
   const [action, submit] = useAtom(createTeamAtom)
   const reset = useCallback(() => submit(Atom.Reset), [submit])
   return {
-    action: toActionView<Team>(action, "ATape could not create the Team safely."),
+    action: toActionView<Team>(action, "errors.defect.createTeam"),
     submit,
     reset
   }
@@ -271,7 +279,7 @@ export const useJoinTeamPresenter = () => {
   const [action, submit] = useAtom(joinTeamAtom)
   const reset = useCallback(() => submit(Atom.Reset), [submit])
   return {
-    action: toActionView<Team>(action, "ATape could not join the Team safely."),
+    action: toActionView<Team>(action, "errors.defect.joinTeam"),
     submit,
     reset
   }
@@ -290,8 +298,8 @@ export const useCLIAuthorizationPresenter = () => {
     resolve(userCode)
   }, [decide, resolve])
   return {
-    resolution: toActionView<CLIDeviceGrantView>(resolveResult, "ATape could not open the CLI request safely."),
-    decision: toActionView<"approve" | "deny">(decisionResult, "ATape could not decide the CLI request safely."),
+    resolution: toActionView<CLIDeviceGrantView>(resolveResult, "errors.defect.cliResolve"),
+    decision: toActionView<"approve" | "deny">(decisionResult, "errors.defect.cliDecide"),
     open,
     decide,
     reset
@@ -306,8 +314,8 @@ export const useTeamAccessPresenter = (teamSlug: string) => {
   const [action, run] = useAtom(actionAtom)
   const resetAction = useCallback(() => run(Atom.Reset), [run])
   return {
-    state: toLoadView<TeamAccess>(result, "ATape could not load Team access safely."),
-    action: toActionView<void | JoinCodeGrant>(action, "ATape could not complete the Team change safely."),
+    state: toLoadView<TeamAccess>(result, "errors.defect.teamAccess"),
+    action: toActionView<void | JoinCodeGrant>(action, "errors.defect.teamAction"),
     reload,
     run,
     resetAction
@@ -328,8 +336,8 @@ export const useUserRawCapturePresenter = () => {
   const [action, save] = useAtom(userRawActionAtom)
   useEffect(() => { reload(); return () => save(Atom.Reset) }, [reload, save])
   useEffect(() => { if (action._tag === "Success" && !action.waiting) reload() }, [action, reload])
-  return { state: toLoadView(result, "Could not load Raw capture preference."),
-    action: toActionView(action, "Could not save Raw capture preference."), save, reload }
+  return { state: toLoadView(result, "errors.defect.userRawLoad"),
+    action: toActionView(action, "errors.defect.userRawSave"), save, reload }
 }
 
 export const useTeamRawCapturePresenter = (slug: string) => {
@@ -338,6 +346,6 @@ export const useTeamRawCapturePresenter = (slug: string) => {
   const [action, save] = useAtom(teamRawActionAtoms(slug))
   useEffect(() => { reload(); return () => save(Atom.Reset) }, [reload, save])
   useEffect(() => { if (action._tag === "Success" && !action.waiting) reload() }, [action, reload])
-  return { state: toLoadView(result, "Could not load Team Raw capture policy."),
-    action: toActionView(action, "Could not save Team Raw capture policy."), save, reload }
+  return { state: toLoadView(result, "errors.defect.teamRawLoad"),
+    action: toActionView(action, "errors.defect.teamRawSave"), save, reload }
 }

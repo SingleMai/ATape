@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react"
+import { t } from "../i18n"
 
 export const SettingsDialog = ({
   children,
@@ -70,12 +71,12 @@ export const SettingsDialog = ({
       }}
     >
       <header className="settings-dialog-header">
-        <h2 id="settings-dialog-title">Settings</h2>
+        <h2 id="settings-dialog-title">{t("settings.title", "Settings")}</h2>
         <button
           type="button"
           className="settings-close"
           onClick={onClose}
-          aria-label="Close settings"
+          aria-label={t("settings.close", "Close settings")}
           autoFocus
         >
           <svg

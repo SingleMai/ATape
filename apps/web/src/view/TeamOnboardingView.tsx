@@ -3,6 +3,7 @@ import { Button, Eyebrow } from "@atape/ui"
 import { useState } from "react"
 import type { ActionView } from "../presenters/accessPresenter"
 import { AccessHeader, FailureNotice } from "./AccessPrimitives"
+import { t } from "../i18n"
 
 export const TeamChoiceView = ({ user }: { readonly user: User }) => (
   <div className="onboarding-page">
@@ -10,22 +11,22 @@ export const TeamChoiceView = ({ user }: { readonly user: User }) => (
       <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
       <main id="main-content">
         <section className="choice-heading" aria-labelledby="team-choice-title">
-          <Eyebrow>Welcome, {user.displayName}</Eyebrow>
-          <h1 id="team-choice-title">Start with a Team</h1>
-          <p>A Team is the shared boundary for Projects and people. You can create or join more Teams later.</p>
+          <Eyebrow>{t("onboarding.welcome", "Welcome, {name}", { name: user.displayName })}</Eyebrow>
+          <h1 id="team-choice-title">{t("onboarding.startWithTeam", "Start with a Team")}</h1>
+          <p>{t("onboarding.startWithTeamBody", "A Team is the shared boundary for Projects and people. You can create or join more Teams later.")}</p>
         </section>
         <div className="choice-grid">
           <article className="choice-card choice-card--primary">
             <div className="choice-icon" aria-hidden="true">＋</div>
-            <h2>Create a Team</h2>
-            <p>Start a new space, then connect your first local Project from the CLI.</p>
-            <a className="atape-button atape-button--primary" href="/onboarding/create-team">Create a Team</a>
+            <h2>{t("onboarding.createTeam", "Create a Team")}</h2>
+            <p>{t("onboarding.createTeamBody", "Start a new space, then connect your first local Project from the CLI.")}</p>
+            <a className="atape-button atape-button--primary" href="/onboarding/create-team">{t("onboarding.createTeam", "Create a Team")}</a>
           </article>
           <article className="choice-card">
             <div className="choice-icon choice-icon--secondary" aria-hidden="true">↗</div>
-            <h2>Join with a code</h2>
-            <p>Use the six-character code an Owner shared with you. Letter case does not matter.</p>
-            <a className="atape-button atape-button--secondary" href="/onboarding/join-team">Join a Team</a>
+            <h2>{t("onboarding.joinWithCode", "Join with a code")}</h2>
+            <p>{t("onboarding.joinWithCodeBody", "Use the six-character code an Owner shared with you. Letter case does not matter.")}</p>
+            <a className="atape-button atape-button--secondary" href="/onboarding/join-team">{t("onboarding.joinTeam", "Join a Team")}</a>
           </article>
         </div>
       </main>
@@ -54,7 +55,7 @@ export const CreateTeamView = ({
       <div className="onboarding-wrap">
         <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
         <main className="access-form-page" id="main-content">
-          <a className="back-link" href="/onboarding">← Back</a>
+          <a className="back-link" href="/onboarding">{t("onboarding.back", "← Back")}</a>
           <form
             className="access-form-card"
             onSubmit={(event) => {
@@ -62,12 +63,12 @@ export const CreateTeamView = ({
               onSubmit({ displayName, slug })
             }}
           >
-            <Eyebrow>New Team</Eyebrow>
-            <h1>Name your shared space</h1>
-            <p className="muted-copy">You will be its first Owner. Team settings and members stay manageable from the Web.</p>
+            <Eyebrow>{t("onboarding.newTeam", "New Team")}</Eyebrow>
+            <h1>{t("onboarding.nameTitle", "Name your shared space")}</h1>
+            <p className="muted-copy">{t("onboarding.nameBody", "You will be its first Owner. Team settings and members stay manageable from the Web.")}</p>
             {action._tag === "Failed" && <FailureNotice failure={action.failure} />}
             <div className="access-field">
-              <label htmlFor="team-name">Team name</label>
+              <label htmlFor="team-name">{t("onboarding.teamName", "Team name")}</label>
               <input
                 id="team-name"
                 name="teamName"
@@ -82,10 +83,10 @@ export const CreateTeamView = ({
                   if (!slugEdited) setSlug(slugifyTeamName(value))
                 }}
               />
-              <small id="team-name-help">Use the name people on this Team will recognize.</small>
+              <small id="team-name-help">{t("onboarding.teamNameHelp", "Use the name people on this Team will recognize.")}</small>
             </div>
             <div className="access-field">
-              <label htmlFor="team-slug">Web address</label>
+              <label htmlFor="team-slug">{t("onboarding.webAddress", "Web address")}</label>
               <input
                 id="team-slug"
                 name="teamSlug"
@@ -100,16 +101,16 @@ export const CreateTeamView = ({
                   setSlug(slugifyTeamName(event.target.value))
                 }}
               />
-              <small id="team-slug-help">Lowercase letters, numbers, and single hyphens.</small>
+              <small id="team-slug-help">{t("onboarding.webAddressHelp", "Lowercase letters, numbers, and single hyphens.")}</small>
               <div className="slug-preview" id="team-url-preview">
-                {instanceOrigin}/teams/<strong>{slug || "your-team"}</strong>
+                {instanceOrigin}/teams/<strong>{slug || t("onboarding.yourTeam", "your-team")}</strong>
               </div>
             </div>
             <div className="access-form-actions">
-              <Button type="submit" variant="primary" pending={pending} pendingLabel="Creating Team…">
-                Create Team
+              <Button type="submit" variant="primary" pending={pending} pendingLabel={t("onboarding.creatingTeam", "Creating Team…")}>
+                {t("onboarding.createTeamButton", "Create Team")}
               </Button>
-              <a className="atape-button atape-button--ghost" href="/onboarding">Cancel</a>
+              <a className="atape-button atape-button--ghost" href="/onboarding">{t("common.cancel", "Cancel")}</a>
             </div>
           </form>
         </main>
@@ -134,7 +135,7 @@ export const JoinTeamView = ({
       <div className="onboarding-wrap">
         <AccessHeader displayName={user.displayName} avatarUrl={user.avatarUrl} />
         <main className="access-form-page" id="main-content">
-          <a className="back-link" href="/onboarding">← Back</a>
+          <a className="back-link" href="/onboarding">{t("onboarding.back", "← Back")}</a>
           <form
             className="access-form-card"
             onSubmit={(event) => {
@@ -142,12 +143,12 @@ export const JoinTeamView = ({
               onSubmit(joinCode)
             }}
           >
-            <Eyebrow>Join a Team</Eyebrow>
-            <h1>Enter your join code</h1>
-            <p className="muted-copy">Codes contain six letters and numbers. Letter case and spaces do not matter.</p>
+            <Eyebrow>{t("onboarding.joinTeam", "Join a Team")}</Eyebrow>
+            <h1>{t("onboarding.enterCode", "Enter your join code")}</h1>
+            <p className="muted-copy">{t("onboarding.enterCodeBody", "Codes contain six letters and numbers. Letter case and spaces do not matter.")}</p>
             {action._tag === "Failed" && <FailureNotice failure={action.failure} />}
             <div className="access-field">
-              <label htmlFor="join-code">Team join code</label>
+              <label htmlFor="join-code">{t("onboarding.teamJoinCode", "Team join code")}</label>
               <input
                 className="join-code-input"
                 id="join-code"
@@ -157,7 +158,7 @@ export const JoinTeamView = ({
                 autoComplete="one-time-code"
                 value={joinCode}
                 maxLength={16}
-                placeholder="K7M4PX"
+                placeholder={t("onboarding.joinCodeExample", "K7M4PX")}
                 required
                 pattern="[A-HJ-NP-Z2-9]{6}"
                 aria-describedby="join-code-help"
@@ -165,13 +166,13 @@ export const JoinTeamView = ({
                   event.target.value.replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 6)
                 )}
               />
-              <small id="join-code-help">Ask a Team Owner if the code has expired or was rotated.</small>
+              <small id="join-code-help">{t("onboarding.joinCodeHelp", "Ask a Team Owner if the code has expired or was rotated.")}</small>
             </div>
             <div className="access-form-actions">
-              <Button type="submit" variant="primary" pending={pending} pendingLabel="Joining Team…">
-                Join Team
+              <Button type="submit" variant="primary" pending={pending} pendingLabel={t("onboarding.joiningTeam", "Joining Team…")}>
+                {t("onboarding.joinTeamButton", "Join Team")}
               </Button>
-              <a className="atape-button atape-button--ghost" href="/onboarding">Cancel</a>
+              <a className="atape-button atape-button--ghost" href="/onboarding">{t("common.cancel", "Cancel")}</a>
             </div>
           </form>
         </main>

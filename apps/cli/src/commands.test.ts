@@ -11,6 +11,8 @@ const exec = promisify(execFile)
 const temporaryDirectories: Array<string> = []
 const servers: Array<Server> = []
 const cli = fileURLToPath(new URL("./main.ts", import.meta.url))
+// Pin the spawned CLI to English so assertions do not depend on the developer's LANG.
+const englishEnvironment = { ...process.env, ATAPE_LANG: "en" }
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
@@ -113,14 +115,36 @@ const authenticationServer = async () => {
 
 describe("atape CLI", () => {
   it("reports a development version when run from TypeScript source", async () => {
-    const result = await exec(process.execPath, [cli, "--version"])
+    const result = await exec(process.execPath, [cli, "--version"], { env: englishEnvironment })
     expect(result.stdout.trim()).toBe("ATape development")
   })
 
   it("exposes upgrade and rejects development self-installation without entering the TUI", async () => {
-    expect((await exec(process.execPath, [cli, "--help"])).stdout).toContain("atape upgrade")
-    await expect(exec(process.execPath, [cli, "upgrade", "--json"]))
+    expect((await exec(process.execPath, [cli, "--help"], { env: englishEnvironment })).stdout).toContain("atape upgrade")
+    await expect(exec(process.execPath, [cli, "upgrade", "--json"], { env: englishEnvironment }))
       .rejects.toMatchObject({ stdout: "", stderr: expect.stringContaining("Development builds cannot upgrade themselves") })
+  })
+
+  it("shows and persists the interface language", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atape-cli-language-"))
+    temporaryDirectories.push(root)
+    const environment: NodeJS.ProcessEnv = { ...process.env, LANG: "en", LC_ALL: "en", ATAPE_HOME: join(root, ".atape") }
+    delete environment.ATAPE_LANG
+
+    const initial = await exec(process.execPath, [cli, "language", "--json"], { env: environment })
+    expect(JSON.parse(initial.stdout)).toEqual({ locale: "en" })
+
+    await expect(exec(process.execPath, [cli, "language", "fr"], { env: environment }))
+      .rejects.toMatchObject({ stderr: expect.stringContaining("Unsupported language") })
+
+    const set = await exec(process.execPath, [cli, "language", "zh-CN", "--json"], { env: environment })
+    expect(JSON.parse(set.stdout)).toEqual({ locale: "zh-CN" })
+
+    const persisted = await exec(process.execPath, [cli, "language", "--json"], { env: environment })
+    expect(JSON.parse(persisted.stdout)).toEqual({ locale: "zh-CN" })
+
+    // The persisted preference outranks the ambient LANG.
+    expect((await exec(process.execPath, [cli, "--help"], { env: environment })).stdout).toContain("用法")
   })
 
   // This integration scenario starts ten real CLI processes on shared CI runners.
@@ -133,6 +157,7 @@ describe("atape CLI", () => {
     const remote = await authenticationServer()
     const environment = {
       ...process.env,
+      ATAPE_LANG: "en",
       ATAPE_HOME: join(root, ".atape"),
       ATAPE_INSTANCE_URL: remote.origin,
       ATAPE_DEVELOPMENT_ALLOW_HTTP: "true"
@@ -171,7 +196,7 @@ describe("atape CLI", () => {
     expect(JSON.parse(preview.stdout)).toMatchObject({ ids: [] })
     expect(JSON.parse((await exec(process.execPath, [cli, "tools", "list", "--json"], { env: environment })).stdout)).toMatchObject({ configured: false })
     const applied = await exec(process.execPath, [cli, "tools", "configure", "--none", "--apply", "--json"], { env: environment })
-    expect(JSON.parse(applied.stdout)).toMatchObject({ version: 3, enabledAdapterIds: [] })
+    expect(JSON.parse(applied.stdout)).toMatchObject({ version: 4, enabledAdapterIds: [] })
     const requestsBefore = remote.requests.length
     await expect(exec(process.execPath, [cli, "setup", project, "--team", "acme", "--create", "--adapter", "codex", "--json"], { env: environment }))
       .rejects.toMatchObject({ stderr: expect.stringContaining("Tools are global") })

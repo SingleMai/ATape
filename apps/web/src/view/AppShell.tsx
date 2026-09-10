@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
 import { useSettingsOverlay } from "../presenters/settingsOverlayContext"
 import { SearchIcon, PanelIcon } from "./WorkspaceIcons"
+import { t } from "../i18n"
 
 type Props = {
   readonly children: ReactNode
@@ -52,18 +53,18 @@ export const AppShell = ({
   return (
     <div className={`app-shell workspace-shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">
-        Skip to conversations
+        {t("appShell.skipToConversations", "Skip to conversations")}
       </a>
-      <aside className="sidebar project-sidebar" aria-label="Workspace">
+      <aside className="sidebar project-sidebar" aria-label={t("appShell.workspace", "Workspace")}>
         <div className="sidebar-brand-row">
-          <Link className="brand" to={team ? "/teams/$teamId" : "/"} params={team ? { teamId: team.id } : {}} aria-label="ATape home">
+          <Link className="brand" to={team ? "/teams/$teamId" : "/"} params={team ? { teamId: team.id } : {}} aria-label={t("common.home", "ATape home")}>
             <BrandMark className="brand-mark" />
             <span>ATape</span>
           </Link>
           <button
             type="button"
             className="quiet-icon"
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? t("appShell.expandSidebar", "Expand sidebar") : t("appShell.collapseSidebar", "Collapse sidebar")}
             aria-expanded={!collapsed}
             aria-controls="project-directory"
             onClick={() => {
@@ -78,11 +79,11 @@ export const AppShell = ({
           type="button"
           className="workspace-search"
           onClick={onOpenSearch}
-          aria-label="Search all conversations"
-          title="Search all conversations (⌘K)"
+          aria-label={t("appShell.searchAllConversations", "Search all conversations")}
+          title={t("appShell.searchAllConversationsHint", "Search all conversations ({shortcut})", { shortcut: "⌘K" })}
         >
           <SearchIcon />
-          <span>Search everything</span>
+          <span>{t("appShell.searchEverything", "Search everything")}</span>
           <kbd>⌘ K</kbd>
         </button>
         {team && (
@@ -101,8 +102,8 @@ export const AppShell = ({
             <button
               className="workspace-team-trigger"
               type="button"
-              aria-label={`Team options for ${team.name}`}
-              title={`${team.name} · Team settings`}
+              aria-label={t("appShell.teamOptionsFor", "Team options for {name}", { name: team.name })}
+              title={t("appShell.teamSettingsFor", "{name} · Team settings", { name: team.name })}
               aria-expanded={teamOpen}
               aria-controls="workspace-team-options"
               onClick={() => setTeamOpen(!teamOpen)}
@@ -116,13 +117,13 @@ export const AppShell = ({
               </span>
             </button>
             {teamOpen && (
-              <nav id="workspace-team-options" className="workspace-team-options" aria-label="Team options">
+              <nav id="workspace-team-options" className="workspace-team-options" aria-label={t("appShell.teamOptions", "Team options")}>
                 <strong>{team.name}</strong>
                 {teams.length > 1 && (
                   <label>
-                    Switch team
+                    {t("appShell.switchTeam", "Switch team")}
                     <select
-                      aria-label="Team"
+                      aria-label={t("appShell.team", "Team")}
                       value={team.id}
                       onChange={(event) => {
                         setProjectFilter("")
@@ -142,24 +143,24 @@ export const AppShell = ({
                   teamControl.current?.querySelector<HTMLButtonElement>(".workspace-team-trigger")?.focus()
                   setTeamOpen(false)
                   openSettings({ section: "team", teamSlug: team.slug })
-                }}>Team settings</button>
+                }}>{t("appShell.teamSettings", "Team settings")}</button>
               </nav>
             )}
           </div>
         )}
         <div id="project-directory" className="project-directory">
-          {team && <button type="button" className="workspace-overview-link" aria-current={!currentProjectId ? "page" : undefined} onClick={() => onOpenTeam(team.id)}><PanelIcon />Overview</button>}
+          {team && <button type="button" className="workspace-overview-link" aria-current={!currentProjectId ? "page" : undefined} onClick={() => onOpenTeam(team.id)}><PanelIcon />{t("appShell.overview", "Overview")}</button>}
           <label className="project-filter">
-            <span>Projects</span>
+            <span>{t("appShell.projects", "Projects")}</span>
             <input
               type="search"
-              aria-label="Filter projects"
-              placeholder="Find a project…"
+              aria-label={t("appShell.filterProjects", "Filter projects")}
+              placeholder={t("appShell.findProject", "Find a project…")}
               value={projectFilter}
               onChange={(event) => setProjectFilter(event.target.value)}
             />
           </label>
-          <nav className="project-navigation" aria-label="Projects">
+          <nav className="project-navigation" aria-label={t("appShell.projects", "Projects")}>
             {projects.map((project) => (
               <button
                 type="button"
@@ -177,37 +178,37 @@ export const AppShell = ({
                 {project.activeSessionCount > 0 && (
                   <span
                     className="project-active-dot"
-                    aria-label={`${project.activeSessionCount} active conversations`}
+                    aria-label={t("appShell.activeConversations", "{count} active conversations", { count: project.activeSessionCount })}
                   />
                 )}
               </button>
             ))}
-            {workspace._tag === "Loading" && <p role="status">Loading projects…</p>}
+            {workspace._tag === "Loading" && <p role="status">{t("appShell.loadingProjects", "Loading projects…")}</p>}
             {workspace._tag === "Failed" && (
               <div role="alert">
-                <p>{workspace.message}</p>
-                <Button onClick={onRetryWorkspace}>Try again</Button>
+                <p>{t(workspace.messageKey)}</p>
+                <Button onClick={onRetryWorkspace}>{t("common.tryAgain", "Try again")}</Button>
               </div>
             )}
             {workspace._tag === "Ready" && projects.length === 0 && (
-              <p>{projectFilter ? "No matching projects" : "No captured projects yet"}</p>
+              <p>{projectFilter ? t("appShell.noMatchingProjects", "No matching projects") : t("appShell.noCapturedProjects", "No captured projects yet")}</p>
             )}
           </nav>
         </div>
-        <nav className="workspace-account" aria-label="Settings">
+        <nav className="workspace-account" aria-label={t("appShell.settings", "Settings")}>
           <button
             type="button"
             className="workspace-profile"
             onClick={() => openSettings()}
-            title={`Account security · ${currentUser.displayName}`}
-            aria-label={`Open account security for ${currentUser.displayName}`}
+            title={t("appShell.accountSecurityFor", "Account security · {name}", { name: currentUser.displayName })}
+            aria-label={t("appShell.openAccountSecurityFor", "Open account security for {name}", { name: currentUser.displayName })}
           >
             <span className="workspace-profile-avatar">
               <Avatar name={currentUser.displayName} src={currentUser.avatarUrl} size="small" />
             </span>
             <span className="workspace-profile-copy">
               <strong>{currentUser.displayName}</strong>
-              <small>Account &amp; security</small>
+              <small>{t("appShell.accountAndSecurity", "Account & security")}</small>
             </span>
             <span className="workspace-profile-chevron" aria-hidden="true">
               ›

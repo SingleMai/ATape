@@ -221,6 +221,26 @@ const readClientConfig = (configFile: string): Effect.Effect<ClientConfig, Clien
       }))
   )
 
+// Locale is a presentation preference; a missing or unreadable configuration
+// must never prevent the CLI from starting with the default locale.
+export const readClientConfigLocale = (configFile: string): Effect.Effect<string | undefined> =>
+  readClientConfig(configFile).pipe(
+    Effect.map((config) => config.locale),
+    Effect.catch(() => Effect.succeed(undefined))
+  )
+
+export const setClientConfigLocale = (configFile: string, locale: string): Effect.Effect<void, ClientConfigStoreError> =>
+  Effect.acquireUseRelease(
+    acquireConfigLock(configFile),
+    () => readClientConfig(configFile).pipe(
+      Effect.flatMap((config) => writeClientConfig(configFile, { ...config, locale }))
+    ),
+    (lock) => Effect.promise(async () => {
+      await lock.close().catch(() => undefined)
+      await rm(lock.path, { force: true }).catch(() => undefined)
+    })
+  )
+
 const writeClientConfig = (configFile: string, config: ClientConfig): Effect.Effect<void, ClientConfigStoreError> =>
   Schema.decodeUnknownEffect(ClientConfigSchema)(config).pipe(
     Effect.mapError((error) => new ClientConfigStoreError({

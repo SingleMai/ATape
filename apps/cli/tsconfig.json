@@ -3,6 +3,7 @@
   "compilerOptions": {
     "allowImportingTsExtensions": true,
     "lib": ["ES2023"],
+    "resolveJsonModule": true,
     "types": ["node"]
   },
   "include": ["src"]
