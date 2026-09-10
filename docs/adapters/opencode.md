@@ -339,6 +339,27 @@ The controlled native fixture now includes its three actual creation events.
 SQLite tests cover these semantics, source mutation between passes, bounds and
 scope closure. See [ADR-0064](../architecture/adr/0064-opencode-projection-and-creation-origin.md).
 
+## Landed Host capability: Canonical preparation under Raw-off policy
+
+The Host can now consume a lazy scoped source, validate/mask each slice, allocate
+record versions and freeze complete Canonical parts in the journal. It verifies
+fresh Origin against the persisted claim, fixes Session/Thread headers across
+parts, and seals only after the source closes. Event fingerprints include final
+derived authors, and Thread-scoped native IDs remain independent. Interrupted
+preparation with existing records must be abandoned before any new source read.
+
+Packing admits both actual wire bytes and a conservative bound for the Server's
+larger normalized records. Cross-language tests pass actual native-source Host
+parts through Go normalization with maximum-width receive provenance. Real journal
+tests recover frozen bytes after source deletion and response loss. These tests
+also cover masking, changed versions, repeated native IDs in different Threads,
+incomplete/oversized input and Origin mismatch. The existing Collector transport
+reuses the extracted ACP mapping without changing its wire behavior.
+
+This operation explicitly requires Raw-off Begin; Raw-enabled preparation is the
+next increment. It is not selected by installed Adapters or the scheduler yet.
+See [ADR-0065](../architecture/adr/0065-host-canonical-preparation.md).
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -360,8 +381,8 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment connects Host preparation, revision allocation, validation,
-redaction and final byte packing. Collector scheduling then selects the explicit capability.
+The next increment adds Host Raw packing, independent fresh observations and
+receipt-aware record reuse. Collector scheduling then selects the explicit capability.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
 The first usable OpenCode release also needs real source mutation, rewind,

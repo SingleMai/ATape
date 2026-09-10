@@ -113,3 +113,4 @@ pretending that staging acceptance passed.
 - [ADR-0062: Source record versions and independent coverage](0062-source-record-versions-and-coverage.md)
 - [ADR-0063: OpenCode scoped source views](0063-opencode-scoped-source-views.md)
 - [ADR-0064: OpenCode projection and creation Origin](0064-opencode-projection-and-creation-origin.md)
+- [ADR-0065: Host Canonical publication preparation](0065-host-canonical-preparation.md)

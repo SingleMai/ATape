@@ -1,14 +1,16 @@
 import { createHash } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DatabaseSync } from "node:sqlite"
+import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { CaptureJournal, PublicationError, PublicationTransport, beginPublicationCapture, sealPublicationCapture,
-  deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError, type CaptureOwner } from "@atape/application"
+  deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError, type CaptureOwner,
+  preparePublicationCanonical, SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
 import { PublicationProtocol, PublicationTargetProfile, type PublicationAttempt, type PublicationCapabilities, type PublicationPart, type RawPublicationChunk, type RawPublicationReceipt, type RawPublicationPolicy } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCaptureJournalLayer } from "./captureJournal.ts"
+import { openOpenCodeCapture } from "../../../../adapters/opencode/src/capture.ts"
 
 const binding = { instanceOrigin: "https://atape.test", userId: "user", installationId: "installation" }
 const scope = { projectId: "project", adapterId: "opencode", sourceSessionId: "root", originKey: "origin" }
@@ -21,7 +23,7 @@ afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(p
 const failure = (reason: PublicationError["reason"]) => new PublicationError({ reason, message: "injected remote failure" })
 
 // Test Adapter for the real owned remote Seam. Local storage is always SQLite.
-const fixture = async () => {
+const fixture = async (partBytes = 4096) => {
   const directory = await mkdtemp(join(tmpdir(), "atape-delivery-")); directories.push(directory)
   const path = join(directory, "capture.sqlite")
   let serial = 0, mode: "create" | "open" = "create", requests = 0
@@ -32,7 +34,7 @@ const fixture = async () => {
   const operation = <A>(body: () => A) => Effect.try({ try: () => { requests++; return body() }, catch: cause => cause as PublicationError })
   const snapshot = () => structuredClone(attempt)
   const remote = Layer.succeed(PublicationTransport, PublicationTransport.of({
-    capabilities: () => operation(() => capabilities),
+    capabilities: () => operation(() => ({ ...capabilities, limits: { ...capabilities.limits, partBytes } })),
     reserve: () => operation(() => ({ id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp })),
     begin: (_, input) => operation(() => {
       parts.clear()
@@ -101,10 +103,10 @@ const fixture = async () => {
       return { ...receipt, ...receiptPatch }
     })
   }))
-  const run = async <A, E>(work: Effect.Effect<A, E, CaptureJournal | PublicationTransport | RawPublicationTransport>) => {
+  const run = async <A, E>(work: Effect.Effect<A, E, CaptureJournal | PublicationTransport | RawPublicationTransport | SecretRedactor>) => {
     const currentMode = mode; mode = "open"
-    return Effect.runPromise(work.pipe(Effect.provide(Layer.mergeAll(remote, rawRemote, makeCaptureJournalLayer({ path, mode: currentMode, binding,
-      limits: { unitBytes: 4096, targetBytes: 1024 * 1024, pendingBytes: 2 * 1024 * 1024, unitsPerTarget: 4096, recordsPerTarget: 4096 } })))))
+    return Effect.runPromise(work.pipe(Effect.provide(Layer.mergeAll(remote, rawRemote, makeSecretRedactorLayer(["SENSITIVE_TEST_TOKEN"]), makeCaptureJournalLayer({ path, mode: currentMode, binding,
+      limits: { unitBytes: partBytes, targetBytes: 1024 * 1024, pendingBytes: 2 * 1024 * 1024, unitsPerTarget: 4096, recordsPerTarget: 4096 } })))))
   }
   const prepare = (count = 1, raw = false, seal = true, id = "capture", baseHead = "", rawCount = 1, rawContent = "raw A") => run(Effect.gen(function*() {
     const j = yield* CaptureJournal, owner = yield* j.claim(scope)
@@ -452,5 +454,180 @@ describe("Independent fresh Raw observations", () => {
       canonicalUnits: 0, rawUnits: 1, nextCheckpoint: "forbidden", manifestJson: "{}" })))).rejects.toMatchObject({ reason: "state" })
     await operation(owner => sealRawObservation(owner, "raw-observation", 1))
     expect(await f.deliverRaw(3, "raw-observation")).toMatchObject({ state: "completed" })
+  })
+})
+
+
+const nativePreparationSource = async () => {
+  const evidence = JSON.parse(await readFile(new URL("../../../../adapters/opencode/src/fixtures/native-v1.json", import.meta.url), "utf8")) as {
+    rootID: string; ddl: string[]; rows: Record<string, Record<string, SQLInputValue>[]>
+  }
+  const directory = await mkdtemp(join(tmpdir(), "atape-host-native-")); directories.push(directory)
+  const path = join(directory, "opencode.db"), db = new DatabaseSync(path)
+  db.exec("PRAGMA foreign_keys=OFF; PRAGMA journal_mode=WAL")
+  for (const ddl of evidence.ddl) db.exec(ddl)
+  for (const [table, rows] of Object.entries(evidence.rows)) for (const row of rows) {
+    const keys = Object.keys(row)
+    db.prepare(`INSERT INTO "${table}" (${keys.map(key => `"${key}"`).join(",")}) VALUES (${keys.map(() => "?").join(",")})`).run(...Object.values(row))
+  }
+  db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE json_extract(data,'$.type')='text'").run("SENSITIVE_TEST_TOKEN " + "native text ".repeat(30))
+  db.close()
+  const source = () => openOpenCodeCapture({ path, sessionId: evidence.rootID, rawEnabled: false,
+    limits: { rowBytes: 65536, pageBytes: 262144, pageRows: 2, records: 1000, threads: 20, durationMs: 10000 },
+    projection: { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 } })
+  const metadata = await Effect.runPromise(Effect.scoped(source()))
+  const ownerScope = { ...scope, sourceSessionId: metadata.origin.sourceId, originKey: metadata.origin.originKey }
+  return { path, source, metadata, ownerScope }
+}
+
+describe("Host Canonical publication preparation", () => {
+  it("freezes native projections after masking, keeps headers fixed and recovers exact bytes after source deletion", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    let escaped!: Effect.Success<ReturnType<typeof native.source>>
+    const prepared = await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: "host-native", baseHead: "", transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+      return yield* preparePublicationCanonical(owner, "host-native", { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "native-covered",
+        source: native.source().pipe(Effect.tap(view => Effect.sync(() => { escaped = view }))) })
+    }))
+    expect(prepared.units).toBeGreaterThan(1)
+    await expect(Effect.runPromise(escaped.read())).rejects.toMatchObject({ reason: "closed" })
+    const frozen = await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      const bodies: Uint8Array[] = []
+      for (let n = 0; n < prepared.units; n++) bodies.push(yield* j.read(owner, "host-native", "canonical", n))
+      expect(owner.checkpoint).toBeNull()
+      expect((yield* j.records(owner, "host-native", { kind: "event" })).every(row => row.disposition === "pending")).toBe(true)
+      return bodies
+    }))
+    const pages = frozen.map(bytes => JSON.parse(new TextDecoder().decode(bytes)))
+    expect(JSON.stringify(pages)).not.toContain("SENSITIVE_TEST_TOKEN")
+    expect(JSON.stringify(pages)).toContain("[REDACTED]")
+    expect(JSON.stringify(pages)).not.toContain("atapeFixtureUnknown")
+    expect(pages.every(page => JSON.stringify(page.batch.session) === JSON.stringify(pages[0].batch.session) && JSON.stringify(page.batch.threads) === JSON.stringify(pages[0].batch.threads))).toBe(true)
+    expect(pages.flatMap(page => page.batch.events)).toHaveLength(native.metadata.target.events)
+    expect(pages.flatMap(page => page.batch.events).every(event => event.rawRef.type === "unavailable")).toBe(true)
+    await rm(native.path)
+    f.losePut()
+    const deliver = () => f.run(Effect.gen(function*() { const j = yield* CaptureJournal; return yield* deliverPublicationCapture(yield* j.claim(native.ownerScope), "host-native", 64) }))
+    await expect(deliver()).rejects.toMatchObject({ reason: "network" })
+    expect(await deliver()).toMatchObject({ state: "activated" })
+    expect(f.sent.map(bytes => Buffer.from(bytes).toString())).toEqual([frozen[0]!, ...frozen].map(bytes => Buffer.from(bytes).toString()))
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect(owner.checkpoint).toBe("native-covered")
+      expect((yield* j.records(owner, "host-native", { kind: "event" })).every(row => row.disposition === "published")).toBe(true)
+    }))
+  })
+  it("allocates changed source versions while retaining unchanged Event provenance", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    const prepare = (id: string, baseHead: string) => f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: id, baseHead, transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+      yield* preparePublicationCanonical(owner, id, { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: id, source: native.source() })
+      const records = yield* j.records(owner, id, { kind: "event" })
+      yield* deliverPublicationCapture(owner, id, 64)
+      return records
+    }))
+    const before = await prepare("native-a", "")
+    const db = new DatabaseSync(native.path)
+    db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id=(SELECT id FROM part WHERE json_extract(data,'$.type')='text' ORDER BY id LIMIT 1)").run("changed source")
+    db.close()
+    const after = await prepare("native-b", f.snapshot().id)
+    expect(after.some(row => row.revision === 2)).toBe(true)
+    expect(after.some(row => row.revision === 1)).toBe(true)
+    expect(after.map(row => row.rawReference)).toEqual(before.map(row => row.rawReference))
+  })
+  it("versions the final derived author and scopes shared native IDs to their Thread", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    const prepare = (id: string, name: string, baseHead: string) => f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: id, baseHead, transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+      yield* preparePublicationCanonical(owner, id, { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: id,
+        source: native.source().pipe(Effect.map(view => ({ ...view, session: { ...view.session, actor: { ...view.session.actor, name } },
+          target: { ...view.target, usage: view.target.usage + 1 },
+          read: () => view.read().pipe(Effect.map(page => ({ ...page, frames: page.frames.map(frame => {
+            const child = frame.events.find(event => event.sourceThreadId !== view.session.sourceSessionId)
+            return { ...frame, events: frame.events.map(event => ({ ...event,
+              sourceEventId: event.eventIndex === 0 || event.sourceThreadId !== view.session.sourceSessionId ? "shared-native-id" : event.sourceEventId })),
+              usage: [...frame.usage.map(sample => ({ ...sample, sourceUsageId: "shared-usage-id" })),
+                ...(child ? [{ sourceUsageId: "shared-usage-id", sourceThreadId: child.sourceThreadId, occurredAt: timestamp, model: "fixture", inputTokens: 1 }] : [])] }
+          }) })))
+        }))) })
+      const records = yield* j.records(owner, id, { kind: "event" })
+      expect((yield* j.records(owner, id, { kind: "usage" })).length).toBe(2)
+      yield* deliverPublicationCapture(owner, id, 64)
+      return records
+    }))
+    const before = await prepare("actor-a", "User", ""), after = await prepare("actor-b", "Renamed user", f.snapshot().id)
+    expect(before.every(record => record.revision === 1)).toBe(true)
+    expect(after.some(record => record.revision === 2)).toBe(true)
+    expect(after.some(record => record.revision === 1)).toBe(true)
+    expect(f.sent.some(bytes => new TextDecoder().decode(bytes).includes('"author":"Renamed user"'))).toBe(true)
+  })
+  it("refuses Raw-enabled preparation before opening a source and does not seal changed Origin", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource(); let opened = false
+    await expect(f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: "raw-wrong", baseHead: "", transformVersion: "host-v1", rawEnabled: true, trackRecords: true,
+        rawAuthority: { protocol: "atape.raw-publication.v1", teamRevision: 1, userRevision: 1 } })
+      return yield* preparePublicationCanonical(owner, "raw-wrong", { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "bad",
+        source: native.source().pipe(Effect.tap(() => Effect.sync(() => { opened = true }))) })
+    }))).rejects.toMatchObject({ reason: "unsupported" })
+    expect(opened).toBe(false)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal; yield* j.settle(yield* j.claim(native.ownerScope), "raw-wrong", { _tag: "AbandonUnsealed" }) }))
+    await expect(f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: "wrong-origin", baseHead: "", transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+      return yield* preparePublicationCanonical(owner, "wrong-origin", { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "bad",
+        source: native.source().pipe(Effect.map(view => ({ ...view, origin: { ...view.origin, originKey: "different" } }))) })
+    }))).rejects.toMatchObject({ reason: "binding" })
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect((yield* j.inspect(owner, "wrong-origin", { kind: "canonical" })).capture.seal).toBeNull()
+      expect(owner.checkpoint).toBeNull()
+    }))
+  })
+  it("rejects incomplete or unordered targets without publishing a prefix or advancing coverage", async () => {
+    for (const problem of ["incomplete", "order", "oversize"] as const) {
+      const f = await fixture(16384), native = await nativePreparationSource()
+      await expect(f.run(Effect.gen(function*() {
+        const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+        yield* beginPublicationCapture(owner, { captureId: problem, baseHead: "", transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+        return yield* preparePublicationCanonical(owner, problem, { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "bad",
+          source: native.source().pipe(Effect.map(view => ({ ...view,
+            ...(problem === "incomplete" ? { target: { ...view.target, events: view.target.events + 1 }, session: { ...view.session, reportedEventCount: view.target.events + 1 } } : {}),
+            read: () => view.read().pipe(Effect.map(page => ({ ...page, frames: page.frames.map(frame => ({ ...frame,
+              events: frame.events.map(event => problem === "order" ? { ...event, eventIndex: 99 } : problem === "oversize" && "content" in event.update ?
+                { ...event, update: { ...event.update, content: { type: "text" as const, text: "x".repeat(10000) } } } : event) })) })))
+          }))) })
+      }))).rejects.toMatchObject({ reason: problem === "oversize" ? "capacity" : "invalid" })
+      expect(f.sent).toHaveLength(0)
+      await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+        expect(owner.checkpoint).toBeNull()
+        expect((yield* j.coverage(owner)).canonicalCaptureId).toBeNull()
+        expect((yield* j.inspect(owner, problem, { kind: "canonical" })).capture.seal).toBeNull()
+        expect(yield* deliverPublicationCapture(owner, problem, 3)).toMatchObject({ state: "abandoned", operations: 0 })
+      }))
+    }
+  })
+  it("does not reopen a fresh source to finish an interrupted preparing capture", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource(); let reads = 0, reopened = false
+    await expect(f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: "interrupted", baseHead: "", transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+      yield* preparePublicationCanonical(owner, "interrupted", { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "bad",
+        source: native.source().pipe(Effect.map(view => ({ ...view,
+          read: () => view.read().pipe(Effect.flatMap(page => ++reads > 2 ? Effect.fail(failure("invalid")) : Effect.succeed(page)))
+        }))) })
+    }))).rejects.toMatchObject({ reason: "invalid" })
+    await expect(f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* preparePublicationCanonical(owner, "interrupted", { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "bad",
+        source: native.source().pipe(Effect.tap(() => Effect.sync(() => { reopened = true }))) })
+    }))).rejects.toMatchObject({ reason: "conflict" })
+    expect(reopened).toBe(false)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect(yield* deliverPublicationCapture(owner, "interrupted", 3)).toMatchObject({ state: "abandoned", operations: 0 })
+      expect(owner.checkpoint).toBeNull()
+    }))
   })
 })

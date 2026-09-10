@@ -3,7 +3,6 @@ import type {
   AdapterCollectionProgress,
   AdapterCollectionLimitValues,
   AdapterInstallation,
-  AdapterObservation,
   AdapterRawSegment,
   AcpContentBlock,
   AcpSessionUpdate,
@@ -13,7 +12,7 @@ import type {
   LocalProject,
   RawAppendReceipt
 } from "@atape/domain"
-import { AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
+import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { AdapterSourceFailure, MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Context, Effect, Layer, Random, Schema, Scope, Semaphore } from "effect"
 import { recordCollectorProgress, withCollectorMonitoring } from "./collectorMonitoring.ts"
@@ -774,6 +773,20 @@ const validatePage = (
   }
   return Effect.void
 }
+
+/** Shared Host boundary for a bounded slice, including headers repeated across a
+ * larger publication target. Validate before and after masking; never persist drafts. */
+export const prepareCanonicalSlice = (adapterId: string, input: unknown) => Effect.gen(function*() {
+  const redactor = yield* SecretRedactor
+  const observation = yield* Schema.decodeUnknownEffect(AdapterObservation)(input).pipe(
+    Effect.mapError(() => new CollectionContractError({ adapterId, message: "Canonical slice has an invalid Adapter shape." })))
+  const page = (value: AdapterObservation) => ({ protocolVersion: AdapterProtocolVersion, nextCursor: "prepared", hasMore: false, observations: [value] })
+  if (observation.rawSegments.length !== 0) return yield* contractFailure(adapterId, "must prepare Raw through its independent capture path.")
+  yield* validatePage(adapterId, null, page(observation))
+  const result = redactObservation(redactor, observation)
+  yield* validatePage(adapterId, null, page(result.observation))
+  return result
+})
 
 const redactObservation = (redactor: SecretRedactorService, observation: AdapterObservation) => {
   let replacements = 0
