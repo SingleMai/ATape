@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { CaptureJournal, PublicationError, PublicationTransport, beginPublicationCapture, sealPublicationCapture,
   deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError, type CaptureOwner,
-  preparePublicationCanonical, SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
+  preparePublicationCanonical, prepareRawObservation, SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
 import { PublicationProtocol, PublicationTargetProfile, type PublicationAttempt, type PublicationCapabilities, type PublicationPart, type RawPublicationChunk, type RawPublicationReceipt, type RawPublicationPolicy } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -472,7 +472,7 @@ const nativePreparationSource = async () => {
   }
   db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE json_extract(data,'$.type')='text'").run("SENSITIVE_TEST_TOKEN " + "native text ".repeat(30))
   db.close()
-  const source = () => openOpenCodeCapture({ path, sessionId: evidence.rootID, rawEnabled: false,
+  const source = (rawEnabled = false) => openOpenCodeCapture({ path, sessionId: evidence.rootID, rawEnabled,
     limits: { rowBytes: 65536, pageBytes: 262144, pageRows: 2, records: 1000, threads: 20, durationMs: 10000 },
     projection: { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 } })
   const metadata = await Effect.runPromise(Effect.scoped(source()))
@@ -629,5 +629,219 @@ describe("Host Canonical publication preparation", () => {
       expect(yield* deliverPublicationCapture(owner, "interrupted", 3)).toMatchObject({ state: "abandoned", operations: 0 })
       expect(owner.checkpoint).toBeNull()
     }))
+  })
+})
+
+const rawLimits = { objectBytes: 4000, wireBytes: 8192, targetBytes: 100_000, units: 100 }
+const prepareNative = (f: Awaited<ReturnType<typeof fixture>>, native: Awaited<ReturnType<typeof nativePreparationSource>>,
+  id: string, raw = true, limits = rawLimits, baseHead = "") => f.run(Effect.gen(function*() {
+  const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+  yield* beginPublicationCapture(owner, { captureId: id, baseHead, transformVersion: "host-v1", rawEnabled: raw, trackRecords: true,
+    ...(raw ? { rawAuthority: { protocol: "atape.raw-publication.v1", teamRevision: 1, userRevision: 1 } as const } : {}) })
+  return yield* preparePublicationCanonical(owner, id, { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: id,
+    source: native.source(raw), ...(raw ? { rawLimits: limits } : {}) })
+}))
+const nativeDelivery = (f: Awaited<ReturnType<typeof fixture>>, native: Awaited<ReturnType<typeof nativePreparationSource>>, id: string, raw = false) =>
+  f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+    return raw ? yield* deliverPublicationRaw(owner, id, 64) : yield* deliverPublicationCapture(owner, id, 64)
+  }))
+
+describe("Host Raw preparation", () => {
+  it("packs native rows after decoding escaped secrets and retries frozen bytes after source deletion", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    const db = new DatabaseSync(native.path)
+    const row = db.prepare("SELECT id,data FROM part ORDER BY id LIMIT 1").get()!
+    const data = JSON.parse(row.data as string)
+    data.nested = JSON.stringify({ password: "another-long-password", secretValue: "SENSITIVE_TEST_TOKEN" }).replace("SENSITIVE_TEST_TOKEN", "SENSITIVE_TEST_\\u0054OKEN")
+    db.prepare("UPDATE part SET data=? WHERE id=?").run(JSON.stringify(data), row.id as string); db.close()
+    const prepared = await prepareNative(f, native, "raw-native")
+    expect(prepared.raw!.units).toBeGreaterThan(1)
+    expect(prepared.raw!.records).toBeGreaterThan(prepared.raw!.units)
+    expect(f.rawSent).toHaveLength(0)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect((yield* j.read(owner, "raw-native", "raw", 0).pipe(Effect.flip)).reason).toBe("state")
+    }))
+    await nativeDelivery(f, native, "raw-native")
+    const frozen = await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      const result: Uint8Array[] = []
+      for (let n = 0; n < prepared.raw!.units; n++) result.push(yield* j.read(owner, "raw-native", "raw", n))
+      return result
+    }))
+    const content = frozen.map(bytes => Buffer.from(JSON.parse(Buffer.from(bytes).toString()).contentBase64, "base64").toString()).join("\n")
+    expect(content).toContain("atapeFixtureUnknown")
+    expect(content).toContain("[REDACTED]")
+    expect(content).not.toContain("SENSITIVE_TEST_TOKEN")
+    expect(content).not.toContain("another-long-password")
+    expect(content).not.toContain("u0054OKEN")
+    await rm(native.path)
+    f.rawFault("lose-before")
+    await expect(nativeDelivery(f, native, "raw-native", true)).rejects.toMatchObject({ reason: "network" })
+    expect(await nativeDelivery(f, native, "raw-native", true)).toMatchObject({ state: "completed" })
+    expect(f.rawSent.map(bytes => Buffer.from(bytes).toString())).toEqual([frozen[0]!, ...frozen].map(bytes => Buffer.from(bytes).toString()))
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      const records = yield* j.records(owner, "raw-native", { kind: "raw", limit: 100 })
+      expect(records.every(record => record.disposition === "acknowledged")).toBe(true)
+      const envelopes = frozen.map(bytes => JSON.parse(Buffer.from(JSON.parse(Buffer.from(bytes).toString()).contentBase64, "base64").toString()))
+      for (const record of records) expect(envelopes[record.unit!.ordinal].records[record.key].revision).toBe(record.revision)
+      expect((yield* j.records(owner, "raw-native", { kind: "event" })).every(record => record.rawReference?._tag === "object")).toBe(true)
+    }))
+  })
+  it("reuses acknowledged objects after payload GC and versions only changed Raw rows", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "raw-a"); await nativeDelivery(f, native, "raw-a"); await nativeDelivery(f, native, "raw-a", true)
+    const before = await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      while ((yield* j.reclaim(owner, "raw-a")) > 0) { /* bounded calls */ }
+      return yield* j.records(owner, "raw-a", { kind: "event" })
+    }))
+    const repeated = await prepareNative(f, native, "raw-b", true, rawLimits, f.snapshot().id)
+    expect(repeated.raw!.units).toBe(0); expect(repeated.raw!.reused).toBe(repeated.raw!.records)
+    await nativeDelivery(f, native, "raw-b")
+    const db = new DatabaseSync(native.path)
+    db.prepare("UPDATE part SET data=json_set(data,'$.rawOnlyChange',?) WHERE id=(SELECT id FROM part ORDER BY id LIMIT 1)").run("fresh archive value"); db.close()
+    const changed = await prepareNative(f, native, "raw-c", true, rawLimits, f.snapshot().id)
+    expect(changed.raw!.units).toBe(1); expect(changed.raw!.reused).toBe(changed.raw!.records - 1)
+    await nativeDelivery(f, native, "raw-c")
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      const after = yield* j.records(owner, "raw-c", { kind: "event" })
+      expect(after.map(record => [record.revision, record.rawReference])).toEqual(before.map(record => [record.revision, record.rawReference]))
+      const rows = yield* j.records(owner, "raw-c", { kind: "raw" })
+      expect(rows.filter(record => record.revision === 2)).toHaveLength(1)
+      expect(rows.filter(record => record.disposition === "acknowledged")).toHaveLength(rows.length - 1)
+    }))
+  })
+  it("freshly observes after Raw-off and re-enable without changing Canonical references or checkpoint", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "off", false); await nativeDelivery(f, native, "off")
+    const head = f.snapshot().id
+    const observe = (id: string) => f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginRawObservation(owner, { observationId: id, canonicalCaptureId: "off" })
+      return yield* prepareRawObservation(owner, id, { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits, source: native.source(true) })
+    }))
+    f.policy(true, 2)
+    expect((await observe("enabled")).units).toBeGreaterThan(0)
+    f.rawFault("lose-before")
+    await expect(nativeDelivery(f, native, "enabled", true)).rejects.toMatchObject({ reason: "network" })
+    f.policy(false, 3)
+    expect(await nativeDelivery(f, native, "enabled", true)).toMatchObject({ state: "completed" })
+    f.policy(true, 4)
+    const fresh = await observe("re-enabled")
+    expect(fresh.reused).toBe(0); expect(fresh.units).toBeGreaterThan(0)
+    await nativeDelivery(f, native, "re-enabled", true)
+    expect(f.snapshot().id).toBe(head)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect(owner.checkpoint).toBe("off")
+      expect((yield* j.coverage(owner)).canonicalCaptureId).toBe("off")
+      expect((yield* j.records(owner, "off", { kind: "event" })).every(record => record.revision === 1 && record.rawReference?._tag === "unavailable")).toBe(true)
+      expect(yield* j.records(owner, "re-enabled", { kind: "event" })).toEqual([])
+      expect((yield* j.records(owner, "enabled", { kind: "raw" })).every(record => record.disposition === "canceled")).toBe(true)
+      expect((yield* j.records(owner, "re-enabled", { kind: "raw" })).every(record => record.disposition === "acknowledged")).toBe(true)
+    }))
+  })
+  it("records limit and redaction gaps while allowing complete Canonical activation", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    const limited = await prepareNative(f, native, "limited", true, { ...rawLimits, objectBytes: 1 })
+    expect(limited.raw!.units).toBe(0); expect(limited.raw!.gaps).toBe(limited.raw!.records)
+    await nativeDelivery(f, native, "limited")
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect((yield* j.records(owner, "limited", { kind: "raw" })).every(record => record.unavailableReason === "limit")).toBe(true)
+      yield* beginRawObservation(owner, { observationId: "redaction", canonicalCaptureId: "limited" })
+      const result = yield* prepareRawObservation(owner, "redaction", { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits,
+        source: native.source(true).pipe(Effect.map(view => ({ ...view,
+          read: () => view.read().pipe(Effect.map(page => ({ ...page, frames: page.frames.map(frame => ({ ...frame,
+            raw: { SENSITIVE_TEST_TOKEN: "one", "[REDACTED]": "two" } })) })))
+        }))) })
+      expect(result.units).toBe(0); expect(result.gaps).toBe(result.records)
+      yield* deliverPublicationRaw(owner, "redaction", 64)
+      expect((yield* j.records(owner, "redaction", { kind: "raw" })).every(record => record.disposition === "unavailable" && record.unavailableReason === "redaction")).toBe(true)
+      expect(owner.checkpoint).toBe("limited")
+    }))
+    expect(f.rawSent).toHaveLength(0)
+  })
+  it("abandons interrupted Raw preparation before a new owner can reopen the source", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "base", false); await nativeDelivery(f, native, "base")
+    let reads = 0, reopened = false
+    await expect(f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginRawObservation(owner, { observationId: "interrupted-raw", canonicalCaptureId: "base" })
+      yield* prepareRawObservation(owner, "interrupted-raw", { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits,
+        source: native.source(true).pipe(Effect.map(view => ({ ...view,
+          read: () => view.read().pipe(Effect.flatMap(page => ++reads > 2 ? Effect.fail(failure("invalid")) : Effect.succeed(page)))
+        }))) })
+    }))).rejects.toMatchObject({ reason: "invalid" })
+    await expect(f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* prepareRawObservation(owner, "interrupted-raw", { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits,
+        source: native.source(true).pipe(Effect.tap(() => Effect.sync(() => { reopened = true }))) })
+    }))).rejects.toMatchObject({ reason: "conflict" })
+    expect(reopened).toBe(false)
+    expect(await nativeDelivery(f, native, "interrupted-raw", true)).toMatchObject({ state: "abandoned", operations: 0 })
+    expect(f.rawSent).toHaveLength(0)
+  })
+})
+
+describe("Raw source preparation edge cases", () => {
+  it("does not archive a hidden escaped secret in duplicate JSON TEXT members", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "base", false); await nativeDelivery(f, native, "base")
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginRawObservation(owner, { observationId: "duplicates", canonicalCaptureId: "base" })
+      const result = yield* prepareRawObservation(owner, "duplicates", { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits,
+        source: native.source(true).pipe(Effect.map(view => ({ ...view,
+          read: () => view.read().pipe(Effect.map(page => ({ ...page, frames: page.frames.map(frame => ({ ...frame,
+            raw: { data: JSON.stringify({ nested: '{"x":"SENSITIVE_TEST_\\u0054OKEN","\\u0078":"safe"}' }) } })) })))
+        }))) })
+      expect(result.gaps).toBe(result.records); expect(result.units).toBe(0)
+      yield* deliverPublicationRaw(owner, "duplicates", 64)
+      expect((yield* j.records(owner, "duplicates", { kind: "raw" })).every(record => record.unavailableReason === "redaction")).toBe(true)
+    }))
+    expect(f.rawSent).toHaveLength(0)
+  })
+  it("keeps reused pending obligations pending until their original receipt arrives", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "pending-a"); await nativeDelivery(f, native, "pending-a")
+    const second = await prepareNative(f, native, "pending-b", true, rawLimits, f.snapshot().id)
+    expect(second.raw!.reused).toBe(second.raw!.records); expect(second.raw!.units).toBe(0)
+    await nativeDelivery(f, native, "pending-b")
+    expect(await nativeDelivery(f, native, "pending-b", true)).toMatchObject({ state: "completed" })
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect((yield* j.records(owner, "pending-b", { kind: "raw" })).every(record => record.disposition === "pending")).toBe(true)
+    }))
+    await nativeDelivery(f, native, "pending-a", true)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect((yield* j.records(owner, "pending-b", { kind: "raw" })).every(record => record.disposition === "acknowledged")).toBe(true)
+    }))
+  })
+  it("does not borrow pending uploads under superseded Raw authority", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "old-authority"); await nativeDelivery(f, native, "old-authority")
+    f.policy(true, 2)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginRawObservation(owner, { observationId: "new-authority", canonicalCaptureId: "old-authority" })
+      const result = yield* prepareRawObservation(owner, "new-authority", { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits, source: native.source(true) })
+      expect(result.reused).toBe(0); expect(result.units).toBeGreaterThan(0)
+    }))
+    expect(await nativeDelivery(f, native, "old-authority", true)).toMatchObject({ state: "completed" })
+    expect(f.rawSent).toHaveLength(0)
+    await nativeDelivery(f, native, "new-authority", true)
+  })
+})
+
+describe("Raw preparation admission", () => {
+  it("keeps Raw wire and unit exhaustion as per-record gaps within a complete Canonical capture", async () => {
+    for (const limits of [{ ...rawLimits, units: 1 }, { ...rawLimits, targetBytes: rawLimits.wireBytes }]) {
+      const f = await fixture(16384), native = await nativePreparationSource()
+      const prepared = await prepareNative(f, native, "budget", true, limits)
+      expect(prepared.raw!.units).toBeLessThanOrEqual(limits.units)
+      expect(prepared.raw!.bytes).toBeLessThanOrEqual(limits.targetBytes)
+      expect(prepared.raw!.gaps).toBeGreaterThan(0)
+      expect(prepared.raw!.units).toBeGreaterThan(0)
+      await nativeDelivery(f, native, "budget")
+      await nativeDelivery(f, native, "budget", true)
+      await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+        expect(owner.checkpoint).toBe("budget")
+        const rows = yield* j.records(owner, "budget", { kind: "raw" })
+        expect(rows.filter(row => row.disposition === "unavailable")).toHaveLength(prepared.raw!.gaps)
+        expect(rows.filter(row => row.disposition === "acknowledged")).toHaveLength(rows.length - prepared.raw!.gaps)
+      }))
+    }
   })
 })

@@ -3,7 +3,7 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-still requires source preparation/scheduling and native acceptance. See the
+still requires runtime capability/scheduling and native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -356,9 +356,32 @@ also cover masking, changed versions, repeated native IDs in different Threads,
 incomplete/oversized input and Origin mismatch. The existing Collector transport
 reuses the extracted ACP mapping without changing its wire behavior.
 
-This operation explicitly requires Raw-off Begin; Raw-enabled preparation is the
-next increment. It is not selected by installed Adapters or the scheduler yet.
+The initial operation required Raw-off Begin; the following increment adds
+Raw-enabled preparation. It is not selected by installed Adapters or the scheduler yet.
 See [ADR-0065](../architecture/adr/0065-host-canonical-preparation.md).
+
+## Landed Host capability: Raw preparation and receipt-aware reuse
+
+The Host now prepares Raw-enabled Canonical captures and independent fresh Raw
+observations through the same scoped source Interface. It masks actual source
+rows, including nested JSON TEXT, and packs at most 100 records per admitted
+archive object. Duplicate decoded JSON keys and masking collisions produce an
+explicit redaction gap; oversized rows or exhausted Raw admission produce limit
+gaps. Only final validated Base64 wire bytes enter the private journal.
+
+Matching acknowledged records reuse their original object after payload cleanup.
+Pending records retain the original upload obligation only under matching authority
+and without cancellation intent; they remain pending until a real receipt arrives.
+Indexed metadata lookup avoids repeatedly scanning hash-ordered membership. New
+Raw observations after policy off/on never rewrite Canonical references or advance
+its checkpoint. Existing Event versions keep their original provenance.
+
+Tests cover native SQLite rows, escaped secrets and duplicate keys, changed and
+unchanged versions, ACK/GC reuse, pending outcomes, policy changes, explicit gaps
+and interrupted preparation. The real authenticated HTTP/PostgreSQL contract runs
+the production Host in separate Node processes, removes the source before delivery,
+loses a successful Raw response and recovers actual receipts, then prepares a fresh
+changed observation after off/on. See [ADR-0066](../architecture/adr/0066-host-raw-preparation.md).
 
 ## Bounds and remaining integration work
 
@@ -381,8 +404,8 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment adds Host Raw packing, independent fresh observations and
-receipt-aware record reuse. Collector scheduling then selects the explicit capability.
+The next increment connects the explicit source capability, attribution/bootstrap
+and Collector scheduling to the prepared publication and recovery Modules.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
 The first usable OpenCode release also needs real source mutation, rewind,

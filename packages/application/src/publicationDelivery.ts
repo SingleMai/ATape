@@ -276,6 +276,25 @@ const boundObservation = (journal: CaptureJournal["Service"], owner: CaptureOwne
   return intent
 })
 
+/** Bound, local-only preparation metadata for a fresh independent Raw view. */
+export const rawObservationPreparationContext = (owner: CaptureOwner, id: string) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal
+  const { capture, units } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
+  const intent = yield* boundObservation(journal, owner, capture)
+  if (capture.state !== "preparing" || !capture.trackRecords || units.length > 0 ||
+    (yield* journal.records(owner, id, { kind: "raw", limit: 1 })).length > 0)
+    return yield* failure("conflict", "Raw source preparation requires a fresh tracked observation; interrupted preparation must be abandoned.")
+  return intent
+})
+
+/** The original authority remains attached to pending borrowed Raw obligations. */
+export const captureRawAuthority = (owner: CaptureOwner, id: string) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal
+  const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
+  return capture.purpose === "raw-observation" ? (yield* boundObservation(journal, owner, capture)).rawAuthority :
+    (yield* boundIntent(journal, owner, capture)).rawAuthority
+})
+
 /** Starts a fresh source observation under current Raw authority. Its existing
  * Canonical proof is rechecked remotely, but no new Canonical attempt is created.
  * Host must freshly observe and redact the source before appending Raw units.

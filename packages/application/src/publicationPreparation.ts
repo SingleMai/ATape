@@ -1,9 +1,11 @@
 import { Effect, Schema, Scope } from "effect"
-import { PublicationTargetProfile, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage } from "@atape/domain"
+import { PublicationTargetProfile, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./captureJournal.ts"
 import { prepareCanonicalSlice } from "./collector.ts"
 import { canonicalMaterializationBound, projectCanonicalSubmission } from "./canonicalProjection.ts"
-import { publicationPreparationContext, sealPublicationCapture } from "./publicationDelivery.ts"
+import { publicationPreparationContext, rawObservationPreparationContext, sealPublicationCapture, sealRawObservation } from "./publicationDelivery.ts"
+import { createRawPreparation, validateRawPreparationLimits, type RawPreparationLimits } from "./rawPreparation.ts"
+export type { RawPreparationLimits } from "./rawPreparation.ts"
 
 export type PublicationDraftFrame = {
   readonly recordKey: string
@@ -31,15 +33,16 @@ const hash = (value: unknown) => Effect.tryPromise({
 const positive = (value: number, minimum = 0) => Number.isSafeInteger(value) && value >= minimum
 export const PublicationPreparationVersion = "atape.host-canonical.v1"
 
-/** Prepare a complete Canonical replacement under an explicitly Raw-off Begin.
+/** Prepare a complete Canonical replacement under the persisted capture policy.
  * The lazy external source Effect stays in this operation's scope. Only final
  * validated/masked/encoded bytes enter the journal; sealing occurs after close.
- * Raw-enabled preparation has a separate admission contract and is rejected here.
+ * Raw-enabled captures additionally require independent explicit Raw admission.
  */
 export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId: string, input: {
   readonly adapterVersion: string
   readonly observedAt: string
   readonly nextCheckpoint: string
+  readonly rawLimits?: RawPreparationLimits
   readonly source: Effect.Effect<PublicationDraftView<E, R>, E, R | Scope.Scope>
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal
@@ -47,7 +50,9 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
     if (typeof value !== "string" || !value.trim() || value.includes("\0") || new TextEncoder().encode(value).byteLength > maximum)
       return yield* fail("invalid", "Canonical source metadata exceeds its wire bounds.")
   const context = yield* publicationPreparationContext(owner, captureId)
-  if (context.rawEnabled) return yield* fail("unsupported", "This preparation operation requires an explicit Raw-off capture.")
+  if (context.rawEnabled && input.rawLimits === undefined) return yield* fail("unsupported", "Raw-enabled preparation requires explicit Raw admission.")
+  if (!context.rawEnabled && input.rawLimits !== undefined) return yield* fail("invalid", "Raw-off preparation cannot request archive admission.")
+  if (input.rawLimits !== undefined) yield* validateRawPreparationLimits(input.rawLimits)
   const limits = context.intent.capabilities.limits
   const prepared = yield* Effect.scoped(Effect.gen(function*() {
     const view = yield* input.source
@@ -64,11 +69,15 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
       threads: view.threads.map(thread => ({ ...thread, revision: 1 })), events, usage, rawSegments: []
     })
     const masked = (yield* prepareCanonicalSlice(owner.scope.adapterId, observation([], []))).observation
-    const version = (kind: CaptureRecordKey["kind"], key: string, value: unknown) => Effect.gen(function*() {
+    const version = (kind: CaptureRecordKey["kind"], key: string, value: unknown, rawReference: AdapterRawReference = placeholder) => Effect.gen(function*() {
       return yield* journal.record(owner, captureId, { kind, key, fingerprint: yield* hash(value), projectionVersion: profile,
-        ...(kind === "event" ? { rawReference: placeholder } : {}) })
+        ...(kind === "event" ? { rawReference } : {}) })
     })
     const sessionVersion = yield* version("session", masked.session.sourceSessionId, { ...masked.session, revision: undefined })
+    const raw = context.rawEnabled ? yield* createRawPreparation(owner, captureId, {
+      profile, sessionId: context.intent.sessionId, head: context.intent.begin.reservationId, authority: context.intent.rawAuthority!,
+      adapterVersion: input.adapterVersion, observedAt: input.observedAt, limits: input.rawLimits!
+    }) : undefined
     const session = { ...masked.session, revision: sessionVersion.revision }
     const batchKey = yield* hash([PublicationPreparationVersion, captureId])
     const threads: AdapterThread[] = []
@@ -105,7 +114,8 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
       if (++pages > 1_000_001 || page.frames.length > 100 || !page.done && page.frames.length === 0)
         return yield* fail("capacity", "Source frame pagination exceeds its contract.")
       for (const frame of page.frames) {
-        if (frame.raw !== undefined) return yield* fail("invalid", "Raw-off source preparation returned archive content.")
+        if (!raw && frame.raw !== undefined) return yield* fail("invalid", "Raw-off source preparation returned archive content.")
+        const rawReference = raw ? yield* raw.record(frame.recordKey, frame.raw) : placeholder
         if (frame.events.length > 500 || frame.usage.length > 500) return yield* fail("capacity", "Source frame exceeds Canonical slice admission.")
         if (frame.events.length === 0 && frame.usage.length === 0) continue
         const ready = (yield* prepareCanonicalSlice(owner.scope.adapterId, observation(
@@ -118,7 +128,7 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
           lastSourceOrder = event.sourceOrder
           const recordKey = yield* hash([event.sourceThreadId, event.sourceEventId])
           const semantic = project([event], []).events[0]!
-          const allocated = yield* version("event", recordKey, { ...semantic, revision: undefined, projectionRevision: undefined, rawRef: undefined })
+          const allocated = yield* version("event", recordKey, { ...semantic, revision: undefined, projectionRevision: undefined, rawRef: undefined }, rawReference)
           const next = { ...event, revision: allocated.revision, projectionRevision: allocated.revision, rawRef: allocated.rawReference! }
           events.push(next)
           if (events.length > 500 || partFull()) { events.pop(); yield* flush(); events.push(next) }
@@ -138,8 +148,43 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
     }
     if (eventCount !== view.target.events || usageCount !== view.target.usage) return yield* fail("invalid", "Source ended before its complete declared target.")
     if (events.length > 0 || usage.length > 0 || ordinal === 0) yield* flush()
-    return { units: ordinal, bytes: totalBytes, materializedBytes, records: { canonical: { session: 1, thread: threads.length, event: eventCount, usage: usageCount } } }
+    const archive = raw ? yield* raw.finish() : undefined
+    return { units: ordinal, bytes: totalBytes, materializedBytes, raw: archive,
+      records: { canonical: { session: 1, thread: threads.length, event: eventCount, usage: usageCount },
+        ...(archive === undefined ? {} : { raw: { records: archive.records, scopeComplete: true } }) } }
   }))
-  yield* sealPublicationCapture(owner, captureId, { nextCheckpoint: input.nextCheckpoint, rawUnits: 0, records: prepared.records })
+  yield* sealPublicationCapture(owner, captureId, { nextCheckpoint: input.nextCheckpoint, rawUnits: prepared.raw?.units ?? 0, records: prepared.records })
   return prepared
+})
+
+/** Fresh Raw capture under an existing genuine activation. Canonical records,
+ * references, selected head and checkpoint are never rewritten by this operation. */
+export const prepareRawObservation = <E, R>(owner: CaptureOwner, observationId: string, input: {
+  readonly adapterVersion: string; readonly observedAt: string; readonly limits: RawPreparationLimits
+  readonly source: Effect.Effect<PublicationDraftView<E, R>, E, R | Scope.Scope>
+}) => Effect.gen(function*() {
+  const context = yield* rawObservationPreparationContext(owner, observationId)
+  yield* validateRawPreparationLimits(input.limits)
+  const result = yield* Effect.scoped(Effect.gen(function*() {
+    const view = yield* input.source
+    if (!view.profile || new TextEncoder().encode(view.profile).byteLength > 500) return yield* fail("invalid", "Raw source profile exceeds its bound.")
+    if (view.origin.sourceId !== owner.scope.sourceSessionId || view.origin.originKey !== owner.scope.originKey ||
+      view.session.sourceSessionId !== owner.scope.sourceSessionId) return yield* fail("binding", "Fresh Raw source Origin differs from the claimed capture.")
+    const raw = yield* createRawPreparation(owner, observationId, {
+      profile: `${PublicationPreparationVersion}:${context.canonical.intent.begin.transformVersion}:${view.profile}`,
+      sessionId: context.canonical.receipt.sessionId, head: context.canonical.receipt.head, authority: context.rawAuthority,
+      adapterVersion: input.adapterVersion, observedAt: input.observedAt, limits: input.limits
+    })
+    let pages = 0
+    for (;;) {
+      const page = yield* view.read()
+      if (++pages > 1_000_001 || page.frames.length > 100 || !page.done && page.frames.length === 0)
+        return yield* fail("capacity", "Raw source pagination exceeds its contract.")
+      for (const frame of page.frames) yield* raw.record(frame.recordKey, frame.raw)
+      if (page.done) break
+    }
+    return yield* raw.finish()
+  }))
+  yield* sealRawObservation(owner, observationId, result.units, { raw: { records: result.records, scopeComplete: true } })
+  return result
 })

@@ -398,7 +398,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	if applied.SessionID == "" {
 		t.Fatal("ingestion response omitted Session identity")
 	}
-	if projected, err := projectsearch.NewProjector(store, store).ProjectOnce(ctx); err != nil || projected != 2 {
+	if projected, err := projectsearch.NewProjector(store, store).ProjectOnce(ctx); err != nil || projected != 8 { // Six native OpenCode Events plus two legacy fixture Events.
 		t.Fatalf("project captured Session for Search = %d, %v", projected, err)
 	}
 
