@@ -1,5 +1,9 @@
 # Architecture Decision Records
 
+[ADR-0058](0058-opencode-sqlite-and-bounded-capture.md) records the accepted
+OpenCode read-only SQLite route and scoped permission for bounded pending
+content; the detailed capture contract and Implementation remain pending.
+
 [ADR-0057](0057-team-overview-and-structured-usage.md) adds structured Canonical
 usage, authorized Team aggregation and the management Overview.
 

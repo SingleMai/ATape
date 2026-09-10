@@ -1,5 +1,10 @@
 # ADR-0053: Bounded collection of large archives
 
+[ADR-0058](0058-opencode-sqlite-and-bounded-capture.md) scopes an exception to the
+payload-outbox deferral for OpenCode pending capture. Its detailed contract and
+Implementation remain pending; the prohibition on content inside cursors below
+continues to apply.
+
 Status: Accepted
 
 ## Decision

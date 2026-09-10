@@ -2,6 +2,7 @@
 
 - Status: Accepted design; Implementation pending
 - Date: 2026-09-07
+- The no-payload-spool constraint has a scoped OpenCode exception in [ADR-0058](0058-opencode-sqlite-and-bounded-capture.md); this checkpoint Implementation remains pending.
 
 The new publication/Raw capabilities require atomic identity pins, delivery receipts and source/scanner checkpoints; the legacy JSON cursor and per-operation file lock cannot provide that joint transaction or fence concurrent remote writes. Select a metadata-only SQLite journal behind the Collector state Interface, preserving legacy installation identity and Codex state. Independently add owner-scoped Raw metadata reconciliation and fenced, idempotent delivery units; never derive source offsets from redacted output size.
 
