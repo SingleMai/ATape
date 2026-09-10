@@ -77,7 +77,7 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 	tarball := filepath.Join(artifactDirectory, artifacts[0].Filename)
 	batch := canonicalcontract.ValidBatch()
 	batch.ProjectID = projectID
-	run := func(phase string) nativeCollectorSnapshot {
+	invoke := func(phase string) []byte {
 		t.Helper()
 		input, err := json.Marshal(map[string]any{"phase": phase, "origin": origin, "credential": credential, "userId": userID, "journal": journal, "tarball": tarball, "batch": batch})
 		if err != nil {
@@ -94,8 +94,12 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 		if err != nil {
 			t.Fatalf("native Collector %s: %v\n%s", phase, err, stderr.String())
 		}
+		return output
+	}
+	run := func(phase string) nativeCollectorSnapshot {
+		t.Helper()
 		var snapshot nativeCollectorSnapshot
-		if err := json.Unmarshal(output, &snapshot); err != nil {
+		if err := json.Unmarshal(invoke(phase), &snapshot); err != nil {
 			t.Fatalf("native Collector %s output: %v", phase, err)
 		}
 		if snapshot.SessionID == "" || snapshot.Head == "" || snapshot.Checkpoint == "" {
@@ -331,5 +335,17 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 	}
 	if strings.Contains(content.String(), "SENSITIVE_TEST_TOKEN") || !strings.Contains(content.String(), "CollectorFreshRawNeedle") || !strings.Contains(content.String(), "CollectorInitialNeedle") {
 		t.Fatal("Raw recovery lost an observation or bypassed Host masking")
+	}
+	assertOpenCodeInstalledDaemon(t, root, origin, projectID, finished, invoke, run, func() (string, []conversation.Event) {
+		return read(finished.SessionID, 5)
+	}, func() []byte {
+		return rawMember(firstReference(finished.SessionID))
+	})
+	if !bytes.Equal(rawMember(initialReference), initialRow) {
+		t.Fatal("installed background collection changed historical Raw provenance")
+	}
+	projectSearch()
+	if len(search("CollectorDaemonLiveNeedle").Results) != 1 || len(search("CollectorDaemonUpdatedNeedle").Results) != 0 {
+		t.Fatal("installed background collection did not reach the actual Search Interface")
 	}
 }
