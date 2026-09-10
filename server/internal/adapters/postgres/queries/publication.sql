@@ -175,5 +175,6 @@ WHERE attempt_id=$1 AND kind='event' AND thread_id=$2 AND record_id=$3;
 -- name: ListPublicationThreadMembers :many
 SELECT record_id,part_ordinal,entry_index FROM canonical_publication_members
 WHERE attempt_id=$1 AND kind='event' AND thread_id=$2
- AND (NOT sqlc.arg(has_after)::boolean OR (source_order,event_index,record_id)>(sqlc.arg(after_order)::bigint,sqlc.arg(after_index)::bigint,sqlc.arg(after_id)::text))
+ AND (source_order,event_index,record_id)>=(sqlc.arg(after_order)::bigint,sqlc.arg(after_index)::bigint,sqlc.arg(after_id)::text)
+ AND (sqlc.arg(include_anchor)::boolean OR record_id<>sqlc.arg(after_id)::text)
 ORDER BY source_order,event_index,record_id LIMIT sqlc.arg(page_limit);

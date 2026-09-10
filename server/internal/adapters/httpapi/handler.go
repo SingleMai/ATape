@@ -23,6 +23,7 @@ import (
 )
 
 type Modules struct {
+	Publication    Publication
 	Overview       *teamoverview.Module
 	Authentication *authentication.Module
 	Teams          *team.Module
@@ -35,19 +36,20 @@ type Modules struct {
 }
 
 type Handler struct {
-	overview  *teamoverview.Module
-	auth      *authentication.Module
-	teams     *team.Module
-	memory    *conversation.Memory
-	ingestor  *ingestion.Ingestor
-	searcher  *projectsearch.Searcher
-	directory *workspace.Directory
-	raw       *rawarchive.Archive
-	cutover   *authcutover.Module
-	config    preparedConfig
-	mux       *http.ServeMux
-	routes    []route
-	routeKeys map[string]struct{}
+	publication Publication
+	overview    *teamoverview.Module
+	auth        *authentication.Module
+	teams       *team.Module
+	memory      *conversation.Memory
+	ingestor    *ingestion.Ingestor
+	searcher    *projectsearch.Searcher
+	directory   *workspace.Directory
+	raw         *rawarchive.Archive
+	cutover     *authcutover.Module
+	config      preparedConfig
+	mux         *http.ServeMux
+	routes      []route
+	routeKeys   map[string]struct{}
 }
 
 func NewHandler(config Config, modules Modules) (*Handler, error) {
@@ -66,8 +68,8 @@ func NewHandler(config Config, modules Modules) (*Handler, error) {
 		return nil, errors.New("HTTP Adapter requires the Auth Cutover Module")
 	}
 	handler := &Handler{
-		overview: modules.Overview,
-		auth:     modules.Authentication, teams: modules.Teams,
+		overview: modules.Overview, publication: modules.Publication,
+		auth: modules.Authentication, teams: modules.Teams,
 		memory: modules.Memory, ingestor: modules.Ingestor, searcher: modules.Searcher,
 		directory: modules.Directory, raw: modules.Raw, cutover: modules.Cutover, config: prepared,
 		mux: http.NewServeMux(), routeKeys: make(map[string]struct{}),
@@ -159,10 +161,14 @@ type instanceDocument struct {
 }
 
 func (h *Handler) instance(response http.ResponseWriter, request *http.Request) {
+	protocols := []string{"atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"}
+	if h.publication != nil {
+		protocols = append(protocols, h.publication.Capabilities().Protocol)
+	}
 	writePublicMetadata(response, request, instanceDocument{
 		Protocol: "atape.instance.v1", InstanceOrigin: h.config.instanceOrigin,
 		WebOrigin: h.config.webOrigin, APIOrigin: h.config.apiOrigin,
-		Protocols:         []string{"atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"},
+		Protocols:         protocols,
 		ReleaseVersion:    releaseinfo.Version,
 		AuthEpoch:         releaseinfo.AuthEpoch,
 		MinimumCLIVersion: releaseinfo.MinimumCLIVersion,

@@ -321,3 +321,18 @@ func TestCanonicalBatchEndpointIsReadableAndReplaySafe(t *testing.T) {
 		t.Fatalf("ingested session is not readable: %s", projectResponse.Body.String())
 	}
 }
+
+func TestUnconfiguredPublicationIsNotAdvertised(t *testing.T) {
+	handler := testHandler(t)
+	instance := httptest.NewRecorder()
+	handler.ServeHTTP(instance, httptest.NewRequest("GET", "/api/v1/instance", nil))
+	if instance.Code != 200 || strings.Contains(instance.Body.String(), "atape.publication.v1") {
+		t.Fatal(instance.Body.String())
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest("GET", "/api/v1/publications/capabilities", nil))
+	if response.Code != 503 {
+		t.Fatalf("unconfigured publication: %d", response.Code)
+	}
+	assertProblemEnvelope(t, response, "service_unavailable")
+}

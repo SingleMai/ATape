@@ -3,7 +3,8 @@
 These are the candidate preparation, bounded validation and atomic activation
 increments of [ADR-0059](adr/0059-opencode-publication-and-recovery.md). The Module
 stores and validates candidates separately, then selects a complete head for
-Canonical reads. It is not wired into HTTP or the Server Composition Root yet.
+Canonical reads. The HTTP Adapter and Server Composition Root expose it only
+when explicit candidate limits are configured.
 The full [publication contract](opencode-capture-publication.md) remains the
 acceptance baseline; OpenCode is not enabled by this increment.
 
@@ -116,8 +117,8 @@ continuation supplies Head and the preceding page's NextEventID. A changed head
 returns `RefreshRequiredError` before resolving a potentially withdrawn Thread.
 Each response owns one repeatable-read transaction and loads fixed units one at
 a time. The older whole-conversation Interface handles small publication Threads;
-it returns `PaginationRequiredError` when more than 100 Events remain, rather than
-silently truncating them. HTTP/Web pagination support remains required work.
+it returns `PaginationRequiredError` when further Events remain (count or byte
+bound), rather than silently truncating them.
 
 Validation prepares body-free Search work; leasing exposes it only for the
 current activated head. Existing worker Interfaces process at most 500 records
@@ -176,8 +177,8 @@ Activation integration tests cover replacement visibility, withdrawn Events and
 child usage, head-bound pages, stale Search workers, full-descriptor indexing
 progress, empty targets, first-activation fencing, mid-write lease expiry,
 expired receipt replay, bounded old-body cleanup, Session deletion and revoked
-membership. HTTP lost-response and supported-platform acceptance remain separate
-evidence.
+membership. HTTP recovery fixtures are described below; native source and
+supported-platform acceptance remain separate evidence.
 
 An isolated PostgreSQL 17 query-plan check used a 2 MiB fixed part with 500
 Events and 20,000 unrelated parts. The selected-part primary-key lookup loaded
@@ -186,6 +187,76 @@ The measured Event/Usage queries took about 8.7/6.8 ms and the indexed membershi
 count about 0.08 ms. These controlled measurements guard against query
 amplification; they do not establish production throughput or release limits.
 
-Before release: expose and secure the HTTP Interface and Web pagination; connect
-Collector recovery, independent Raw activation proof and OpenCode projection;
+Before release: connect Collector recovery, independent Raw activation proof and OpenCode projection;
 then run the native-source and supported-platform acceptance in ADR-0059.
+
+## HTTP transport
+
+The consumer-owned `httpapi.Publication` Seam has one operation per lifecycle
+step. It hides the PostgreSQL Implementation from Presentation; the HTTP Adapter
+translates credentials, exact bytes, bounded query fields and typed outcomes.
+A competing design used one command-dispatch endpoint. Explicit resource routes
+were selected because each operation can declare its body policy and bounded
+response in the closed security registry and OpenAPI without a second dispatcher.
+
+All routes below require a CLI Bearer credential and return `no-store` JSON.
+Control objects are camelCase JSON, capped at 64 KiB. Body-free operations reject
+request bodies. Unknown/duplicate/empty query fields are invalid. No operation
+implicitly retries or performs multiple validation steps.
+
+| Method and path under `/api/v1/publications` | Input / result |
+| --- | --- |
+| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. |
+| `POST /reservations` | Project, installation, Adapter, source Session and Origin; finite server reservation. |
+| `POST /attempts` | Reservation ID, capture ID, base head, transform version; immutable attempt. |
+| `PUT /attempts/{id}/parts/{ordinal}?sha256=…` | Exact frozen `CanonicalPart` JSON bytes, at most the configured part limit (hard ceiling 4 MiB); original part receipt. |
+| `POST /attempts/{id}/seal` | Manifest `{parts, bytes, sha256}`; sealed attempt. |
+| `POST /attempts/{id}/validate` | No body; one validation step and persisted progress. |
+| `POST /attempts/{id}/activate` | No body; original durable activation proof, including on retries. |
+| `GET /attempts/{id}?after=-1&limit=100` | Attempt plus part receipts after the exclusive ordinal; no payload bodies. An empty/short page is complete. |
+| `POST /attempts/{id}/renew` | No body; renewed live attempt. |
+| `POST /attempts/{id}/reject` | No body; explicit known rejection. |
+| `POST /reclaim?limit=32` | No body; bounded reclaimed counts/bytes for this account. |
+
+`publication_unknown` is a 404 with explicit unresolved-proof meaning; it never
+confirms non-activation. `publication_conflict`, `publication_superseded` and
+`publication_expired` preserve distinct recovery categories. Capacity returns
+`publication_capacity` (429); the caller must address capacity rather than assume
+backoff alone will resolve it. Other authorization and lifecycle errors retain
+the existing Problem contract. Transport/storage uncertainty requires status
+recovery under the original attempt identity.
+
+Operators opt in with `ATAPE_PUBLICATION_LIMITS` as one strict JSON object:
+`partBytes`, `targetBytes`, `userPendingBytes`, `parts`, `reservations`,
+`reservationLifetimeMs`, `leaseLifetimeMs`. Every bound is required and must meet
+the ranges above; invalid configuration fails startup. Without this setting,
+instance discovery omits `atape.publication.v1` and the routes return 503 after
+authentication. Configuring this in ephemeral demo mode is an error. This switch
+exposes a transport capability; it does not install or enable an OpenCode Adapter.
+
+`GET /api/v1/sessions/{id}?thread=root&limit=100` opts into bounded reads with the
+existing Web credential. Publication responses add `head` and optional
+`nextEventId`. Continue with `head` plus `after=nextEventId`; an `at` Event ID is an
+inclusive anchor, useful for Search. `at` and `after` are mutually exclusive.
+A changed head returns `refresh_required` (409), including when the old Thread
+has been withdrawn. Reauthorize before reporting a refresh or any head details.
+The Web replaces pages instead of accumulating them and clears cached content
+on this refresh outcome. Legacy Sessions return their existing complete snapshot
+without a head. Omitting `limit` preserves the older whole-conversation contract.
+
+The persistence read uses a 6 MiB soft Event budget and always admits the first
+Event; the conversation Module caps full encoded publication pages at 8 MiB.
+This covers the maximum admitted Event/tool data after JSON escaping. The Browser
+uses an 8 MiB success-response profile for conversation reads only, retaining the
+ordinary 2 MiB error/other-response ceiling. These bounds do not establish capture
+throughput or change legacy Session paging semantics.
+
+A subsequent PostgreSQL 17 experiment used 500,000 membership rows and an anchor
+near row 490,000. Disjunctive cursor conditions scanned roughly 490,000 rows and
+11,159 buffers under a generic plan (or an inclusive-anchor custom plan). The
+fixed tuple lower bound now appears in `Index Cond` for both inclusive and
+exclusive generic plans: six buffers and at most one excluded anchor row.
+Page reads group bounded membership coordinates by part, decode each required
+part once, retain only a byte-bounded Event prefix, then restore source order.
+HTTP integration fixtures interleave source ordering across parts and exercise
+both count and byte boundaries. No ordering constraint is imposed on captures.

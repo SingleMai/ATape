@@ -747,3 +747,16 @@ func cloneEvent(event EventRecord) EventRecord {
 	}
 	return event
 }
+
+// The development Adapter retains its complete legacy snapshot. It never claims
+// a publication head or accepts continuations for a head it cannot preserve.
+func (s *MemoryStore) ConversationPage(ctx context.Context, p authentication.Principal, sessionID, threadID string, page ConversationPageRequest) (ConversationSnapshot, bool, error) {
+	snapshot, ok, err := s.Conversation(ctx, p, sessionID, threadID)
+	if err != nil || !ok {
+		return snapshot, ok, err
+	}
+	if page.Head != "" || page.AfterEventID != "" {
+		return ConversationSnapshot{}, false, &RefreshRequiredError{}
+	}
+	return snapshot, ok, nil
+}

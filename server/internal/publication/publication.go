@@ -13,11 +13,11 @@ import (
 )
 
 type Scope struct {
-	ProjectID       string
-	InstallationID  string
-	AdapterID       string
-	SourceSessionID string
-	OriginKey       string
+	ProjectID       string `json:"projectId"`
+	InstallationID  string `json:"installationId"`
+	AdapterID       string `json:"adapterId"`
+	SourceSessionID string `json:"sourceSessionId"`
+	OriginKey       string `json:"originKey"`
 }
 type Limits struct {
 	PartBytes           int64
@@ -29,46 +29,46 @@ type Limits struct {
 	LeaseLifetime       time.Duration
 }
 type Reservation struct {
-	ID        string
-	SessionID string
-	ExpiresAt time.Time
+	ID        string    `json:"id"`
+	SessionID string    `json:"sessionId"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 type Begin struct {
-	ReservationID    string
-	CaptureID        string
-	BaseHead         string
-	TransformVersion string
+	ReservationID    string `json:"reservationId"`
+	CaptureID        string `json:"captureId"`
+	BaseHead         string `json:"baseHead"`
+	TransformVersion string `json:"transformVersion"`
 }
 type Attempt struct {
-	ID               string
-	SessionID        string
-	CaptureID        string
-	BaseHead         string
-	TransformVersion string
-	Fence            int64
-	LeaseUntil       time.Time
-	ExpiresAt        time.Time
-	State            string
-	Parts            int
-	RetainedBytes    int64
-	Seal             *Manifest
-	ValidatedParts   int
-	CandidateEvents  int
-	CandidateUsage   int
-	Activation       *Activation
+	ID               string      `json:"id"`
+	SessionID        string      `json:"sessionId"`
+	CaptureID        string      `json:"captureId"`
+	BaseHead         string      `json:"baseHead"`
+	TransformVersion string      `json:"transformVersion"`
+	Fence            int64       `json:"fence"`
+	LeaseUntil       time.Time   `json:"leaseUntil"`
+	ExpiresAt        time.Time   `json:"expiresAt"`
+	State            string      `json:"state"`
+	Parts            int         `json:"parts"`
+	RetainedBytes    int64       `json:"retainedBytes"`
+	Seal             *Manifest   `json:"seal"`
+	ValidatedParts   int         `json:"validatedParts"`
+	CandidateEvents  int         `json:"candidateEvents"`
+	CandidateUsage   int         `json:"candidateUsage"`
+	Activation       *Activation `json:"activation"`
 }
 
 // Activation is durable proof of the first successful head selection. Replays
 // return this exact receipt even after another head or an expired writer lease.
 type Activation struct {
-	Head             string
-	SessionID        string
-	CaptureID        string
-	BaseHead         string
-	Fence            int64
-	TransformVersion string
-	Manifest         Manifest
-	ActivatedAt      time.Time
+	Head             string    `json:"head"`
+	SessionID        string    `json:"sessionId"`
+	CaptureID        string    `json:"captureId"`
+	BaseHead         string    `json:"baseHead"`
+	Fence            int64     `json:"fence"`
+	TransformVersion string    `json:"transformVersion"`
+	Manifest         Manifest  `json:"manifest"`
+	ActivatedAt      time.Time `json:"activatedAt"`
 }
 
 // CanonicalPart repeats the complete bounded Session/Thread header and declares
@@ -87,23 +87,23 @@ type CanonicalPart struct {
 }
 
 type Part struct {
-	Ordinal int
-	SHA256  string
-	Bytes   int64
+	Ordinal int    `json:"ordinal"`
+	SHA256  string `json:"sha256"`
+	Bytes   int64  `json:"bytes"`
 }
 type Manifest struct {
-	Parts  int
-	Bytes  int64
-	SHA256 string
+	Parts  int    `json:"parts"`
+	Bytes  int64  `json:"bytes"`
+	SHA256 string `json:"sha256"`
 }
 type Page struct {
-	Attempt Attempt
-	Parts   []Part
+	Attempt Attempt `json:"attempt"`
+	Parts   []Part  `json:"parts"`
 }
 type Reclaimed struct {
-	Parts        int
-	Reservations int
-	Bytes        int64
+	Parts        int   `json:"parts"`
+	Reservations int   `json:"reservations"`
+	Bytes        int64 `json:"bytes"`
 }
 
 // ManifestHasher binds the ordered numbered part set without retaining bodies.
@@ -133,3 +133,24 @@ type Error struct {
 }
 
 func (e *Error) Error() string { return "publication " + e.Code + ": " + e.Message }
+
+// Protocol is advertised only by instances configured with explicit candidate bounds.
+const Protocol = "atape.publication.v1"
+
+// Capacity uses milliseconds on the wire, avoiding Go duration encoding.
+type Capacity struct {
+	PartBytes             int64 `json:"partBytes"`
+	TargetBytes           int64 `json:"targetBytes"`
+	UserPendingBytes      int64 `json:"userPendingBytes"`
+	Parts                 int   `json:"parts"`
+	Reservations          int   `json:"reservations"`
+	ReservationLifetimeMS int64 `json:"reservationLifetimeMs"`
+	LeaseLifetimeMS       int64 `json:"leaseLifetimeMs"`
+}
+type Capabilities struct {
+	Protocol        string   `json:"protocol"`
+	TargetProfile   string   `json:"targetProfile"`
+	Limits          Capacity `json:"limits"`
+	StatusPageSize  int      `json:"statusPageSize"`
+	ReclaimPageSize int      `json:"reclaimPageSize"`
+}

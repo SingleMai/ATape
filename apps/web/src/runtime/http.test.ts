@@ -140,6 +140,16 @@ describe("browser HTTP Adapter", () => {
       .rejects.toMatchObject({ reason: "decode" })
   })
 
+  it("bounds conversation pages separately while keeping error bodies small", async () => {
+    const content = JSON.stringify({ text: "x".repeat(3 * 1024 * 1024) })
+    fetchMock.mockResolvedValueOnce(new Response(content, { status: 200 }))
+    expect(await run(browserRequest("/api/v1/sessions/one?limit=100", { responseProfile: "conversation-page" }))).toHaveProperty("text")
+    fetchMock.mockResolvedValueOnce(new Response("x".repeat(8 * 1024 * 1024 + 1), { status: 200 }))
+    await expect(run(browserRequest("/api/v1/sessions/one?limit=100", { responseProfile: "conversation-page" }))).rejects.toMatchObject({ reason: "decode" })
+    fetchMock.mockResolvedValueOnce(new Response(content, { status: 409 }))
+    await expect(run(browserRequest("/api/v1/sessions/one?limit=100", { responseProfile: "conversation-page" }))).rejects.toMatchObject({ reason: "decode" })
+  })
+
   it("generates server-compatible 128-bit replay keys", () => {
     const first = newIdempotencyKey()
     const second = newIdempotencyKey()

@@ -21,6 +21,8 @@ type Props = {
   readonly onOpenThread: (threadId: string) => void
   readonly onRetry: () => void
   readonly onOpenRaw: () => void
+  readonly onNextPage?: (head: string, after: string) => void
+  readonly onFirstPage?: () => void
   readonly highlightedEventId?: string
   readonly searchOrigin?: {
     readonly query: string
@@ -289,6 +291,8 @@ export const SessionReaderView = ({
   onOpenThread,
   onRetry,
   onOpenRaw,
+  onNextPage,
+  onFirstPage,
   highlightedEventId,
   searchOrigin
 }: Props) => {
@@ -308,7 +312,7 @@ export const SessionReaderView = ({
       block: "center"
     })
     event?.focus({ preventScroll: true })
-  }, [highlightedEventId, ready, threadId])
+  }, [highlightedEventId, ready, threadId, value])
 
   if (state._tag === "Loading") {
     return (
@@ -324,9 +328,9 @@ export const SessionReaderView = ({
         <Button className="back-link" variant="ghost" onClick={searchOrigin?.onReturn ?? onBack}>
           {searchOrigin ? "Back to search results" : `Back to ${projectName}`}
         </Button>
-        <h1>Conversation is unavailable</h1>
+        <h1>{state.refreshRequired ? "Conversation has changed" : "Conversation is unavailable"}</h1>
         <p>{state.message}</p>
-        {state.retryable && <Button onClick={onRetry}>Try again</Button>}
+        {state.retryable && <Button onClick={onRetry}>{state.refreshRequired ? "Reload conversation" : "Try again"}</Button>}
       </section>
     )
   }
@@ -410,7 +414,8 @@ export const SessionReaderView = ({
         </nav>
       )}
 
-      <ConversationReadingFrame key={conversation.thread.id} prompts={prompts}>
+      {onFirstPage && <Button variant="ghost" onClick={onFirstPage}>Read from the beginning</Button>}
+      <ConversationReadingFrame key={`${conversation.thread.id}:${conversation.events[0]?.id ?? "empty"}`} prompts={prompts}>
         <div className="conversation-stream">
           {narrative.map((exchange, index) => (
             <section
@@ -455,6 +460,11 @@ export const SessionReaderView = ({
           )}
         </div>
       </ConversationReadingFrame>
+      {conversation.head && conversation.nextEventId && onNextPage && (
+        <nav aria-label="Conversation pages">
+          <Button disabled={state.refreshing} onClick={() => onNextPage(conversation.head!, conversation.nextEventId!)}>Next page</Button>
+        </nav>
+      )}
     </section>
   )
 }

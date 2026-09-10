@@ -726,18 +726,19 @@ func (q *Queries) ListPublicationParts(ctx context.Context, arg ListPublicationP
 const listPublicationThreadMembers = `-- name: ListPublicationThreadMembers :many
 SELECT record_id,part_ordinal,entry_index FROM canonical_publication_members
 WHERE attempt_id=$1 AND kind='event' AND thread_id=$2
- AND (NOT $3::boolean OR (source_order,event_index,record_id)>($4::bigint,$5::bigint,$6::text))
+ AND (source_order,event_index,record_id)>=($3::bigint,$4::bigint,$5::text)
+ AND ($6::boolean OR record_id<>$5::text)
 ORDER BY source_order,event_index,record_id LIMIT $7
 `
 
 type ListPublicationThreadMembersParams struct {
-	AttemptID  pgtype.UUID
-	ThreadID   string
-	HasAfter   bool
-	AfterOrder int64
-	AfterIndex int64
-	AfterID    string
-	PageLimit  int32
+	AttemptID     pgtype.UUID
+	ThreadID      string
+	AfterOrder    int64
+	AfterIndex    int64
+	AfterID       string
+	IncludeAnchor bool
+	PageLimit     int32
 }
 
 type ListPublicationThreadMembersRow struct {
@@ -750,10 +751,10 @@ func (q *Queries) ListPublicationThreadMembers(ctx context.Context, arg ListPubl
 	rows, err := q.db.Query(ctx, listPublicationThreadMembers,
 		arg.AttemptID,
 		arg.ThreadID,
-		arg.HasAfter,
 		arg.AfterOrder,
 		arg.AfterIndex,
 		arg.AfterID,
+		arg.IncludeAnchor,
 		arg.PageLimit,
 	)
 	if err != nil {
