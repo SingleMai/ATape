@@ -17,6 +17,7 @@ sql:
       - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
       - "internal/adapters/postgres/migrations/000014_canonical_usage.sql"
       - "internal/adapters/postgres/migrations/000015_publication_candidates.sql"
+      - "internal/adapters/postgres/migrations/000016_publication_validation.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:

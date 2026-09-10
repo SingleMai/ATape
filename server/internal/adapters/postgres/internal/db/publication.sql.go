@@ -26,11 +26,41 @@ func (q *Queries) AddPublicationBytes(ctx context.Context, arg AddPublicationByt
 	return err
 }
 
+const advancePublicationValidation = `-- name: AdvancePublicationValidation :exec
+UPDATE canonical_publication_attempts SET validated_parts=validated_parts+1,
+ candidate_events=candidate_events+$1,candidate_usage=candidate_usage+$2,
+ retained_bytes=retained_bytes+$3,header_digest=$4,target_json=$5,state=$6
+WHERE id=$7
+`
+
+type AdvancePublicationValidationParams struct {
+	Events       int32
+	Usage        int32
+	ByteDelta    int64
+	HeaderDigest *string
+	TargetJson   *string
+	State        string
+	ID           pgtype.UUID
+}
+
+func (q *Queries) AdvancePublicationValidation(ctx context.Context, arg AdvancePublicationValidationParams) error {
+	_, err := q.db.Exec(ctx, advancePublicationValidation,
+		arg.Events,
+		arg.Usage,
+		arg.ByteDelta,
+		arg.HeaderDigest,
+		arg.TargetJson,
+		arg.State,
+		arg.ID,
+	)
+	return err
+}
+
 const createPublicationAttempt = `-- name: CreatePublicationAttempt :one
 INSERT INTO canonical_publication_attempts(id,session_id,capture_id,base_head,transform_version,fence,lease_until)
 SELECT $1,$2,$3,$4,$5,$6,LEAST($7::timestamptz,clock_timestamp()+$8::bigint*interval '1 millisecond')
 WHERE $7::timestamptz>clock_timestamp()
-RETURNING id, session_id, capture_id, base_head, transform_version, fence, lease_until, state, part_count, retained_bytes, seal_json
+RETURNING id, session_id, capture_id, base_head, transform_version, fence, lease_until, state, part_count, retained_bytes, seal_json, validated_parts, candidate_events, candidate_usage, header_digest, target_json
 `
 
 type CreatePublicationAttemptParams struct {
@@ -68,6 +98,11 @@ func (q *Queries) CreatePublicationAttempt(ctx context.Context, arg CreatePublic
 		&i.PartCount,
 		&i.RetainedBytes,
 		&i.SealJson,
+		&i.ValidatedParts,
+		&i.CandidateEvents,
+		&i.CandidateUsage,
+		&i.HeaderDigest,
+		&i.TargetJson,
 	)
 	return i, err
 }
@@ -142,7 +177,7 @@ func (q *Queries) DeletePublicationPart(ctx context.Context, arg DeletePublicati
 }
 
 const getPublicationAttempt = `-- name: GetPublicationAttempt :one
-SELECT a.id, a.session_id, a.capture_id, a.base_head, a.transform_version, a.fence, a.lease_until, a.state, a.part_count, a.retained_bytes, a.seal_json,r.expires_at,
+SELECT a.id, a.session_id, a.capture_id, a.base_head, a.transform_version, a.fence, a.lease_until, a.state, a.part_count, a.retained_bytes, a.seal_json, a.validated_parts, a.candidate_events, a.candidate_usage, a.header_digest, a.target_json,r.expires_at,
  CASE WHEN a.state='rejected' THEN 'rejected'
  WHEN a.fence<>s.writer_fence OR a.base_head IS DISTINCT FROM s.current_head THEN 'superseded'
  WHEN a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp() THEN 'expired'
@@ -165,6 +200,11 @@ type GetPublicationAttemptRow struct {
 	PartCount        int32
 	RetainedBytes    int64
 	SealJson         *string
+	ValidatedParts   int32
+	CandidateEvents  int32
+	CandidateUsage   int32
+	HeaderDigest     *string
+	TargetJson       *string
 	ExpiresAt        time.Time
 	EffectiveState   string
 }
@@ -184,10 +224,32 @@ func (q *Queries) GetPublicationAttempt(ctx context.Context, id pgtype.UUID) (Ge
 		&i.PartCount,
 		&i.RetainedBytes,
 		&i.SealJson,
+		&i.ValidatedParts,
+		&i.CandidateEvents,
+		&i.CandidateUsage,
+		&i.HeaderDigest,
+		&i.TargetJson,
 		&i.ExpiresAt,
 		&i.EffectiveState,
 	)
 	return i, err
+}
+
+const getPublicationMember = `-- name: GetPublicationMember :one
+SELECT source_key FROM canonical_publication_members WHERE attempt_id=$1 AND kind=$2 AND record_id=$3
+`
+
+type GetPublicationMemberParams struct {
+	AttemptID pgtype.UUID
+	Kind      string
+	RecordID  string
+}
+
+func (q *Queries) GetPublicationMember(ctx context.Context, arg GetPublicationMemberParams) (string, error) {
+	row := q.db.QueryRow(ctx, getPublicationMember, arg.AttemptID, arg.Kind, arg.RecordID)
+	var source_key string
+	err := row.Scan(&source_key)
+	return source_key, err
 }
 
 const getPublicationPart = `-- name: GetPublicationPart :one
@@ -210,6 +272,100 @@ func (q *Queries) GetPublicationPart(ctx context.Context, arg GetPublicationPart
 	var i GetPublicationPartRow
 	err := row.Scan(&i.Ordinal, &i.Digest, &i.ByteCount)
 	return i, err
+}
+
+const getPublicationPartBody = `-- name: GetPublicationPartBody :one
+SELECT body,validated_body,format_version,stored_bytes FROM canonical_publication_parts WHERE attempt_id=$1 AND ordinal=$2
+`
+
+type GetPublicationPartBodyParams struct {
+	AttemptID pgtype.UUID
+	Ordinal   int32
+}
+
+type GetPublicationPartBodyRow struct {
+	Body          []byte
+	ValidatedBody []byte
+	FormatVersion *int32
+	StoredBytes   int64
+}
+
+func (q *Queries) GetPublicationPartBody(ctx context.Context, arg GetPublicationPartBodyParams) (GetPublicationPartBodyRow, error) {
+	row := q.db.QueryRow(ctx, getPublicationPartBody, arg.AttemptID, arg.Ordinal)
+	var i GetPublicationPartBodyRow
+	err := row.Scan(
+		&i.Body,
+		&i.ValidatedBody,
+		&i.FormatVersion,
+		&i.StoredBytes,
+	)
+	return i, err
+}
+
+const getPublicationPartStorage = `-- name: GetPublicationPartStorage :one
+SELECT stored_bytes,format_version FROM canonical_publication_parts WHERE attempt_id=$1 AND ordinal=$2
+`
+
+type GetPublicationPartStorageParams struct {
+	AttemptID pgtype.UUID
+	Ordinal   int32
+}
+
+type GetPublicationPartStorageRow struct {
+	StoredBytes   int64
+	FormatVersion *int32
+}
+
+func (q *Queries) GetPublicationPartStorage(ctx context.Context, arg GetPublicationPartStorageParams) (GetPublicationPartStorageRow, error) {
+	row := q.db.QueryRow(ctx, getPublicationPartStorage, arg.AttemptID, arg.Ordinal)
+	var i GetPublicationPartStorageRow
+	err := row.Scan(&i.StoredBytes, &i.FormatVersion)
+	return i, err
+}
+
+const getPublicationRecordIdentity = `-- name: GetPublicationRecordIdentity :one
+SELECT source_key,thread_id FROM canonical_publication_record_versions WHERE session_id=$1 AND kind=$2 AND record_id=$3 LIMIT 1
+`
+
+type GetPublicationRecordIdentityParams struct {
+	SessionID string
+	Kind      string
+	RecordID  string
+}
+
+type GetPublicationRecordIdentityRow struct {
+	SourceKey string
+	ThreadID  string
+}
+
+func (q *Queries) GetPublicationRecordIdentity(ctx context.Context, arg GetPublicationRecordIdentityParams) (GetPublicationRecordIdentityRow, error) {
+	row := q.db.QueryRow(ctx, getPublicationRecordIdentity, arg.SessionID, arg.Kind, arg.RecordID)
+	var i GetPublicationRecordIdentityRow
+	err := row.Scan(&i.SourceKey, &i.ThreadID)
+	return i, err
+}
+
+const getPublicationRecordVersion = `-- name: GetPublicationRecordVersion :one
+SELECT fingerprint FROM canonical_publication_record_versions WHERE kind=$1 AND source_key=$2 AND projection_revision=$3 AND revision=$4
+`
+
+type GetPublicationRecordVersionParams struct {
+	Kind               string
+	SourceKey          string
+	ProjectionRevision int64
+	Revision           int64
+}
+
+func (q *Queries) GetPublicationRecordVersion(ctx context.Context, arg GetPublicationRecordVersionParams) (string, error) {
+	row := q.db.QueryRow(ctx, getPublicationRecordVersion,
+		arg.Kind,
+		arg.SourceKey,
+		arg.ProjectionRevision,
+		arg.Revision,
+	)
+	var fingerprint string
+	err := row.Scan(&fingerprint)
+	return fingerprint, err
 }
 
 const getPublicationReservation = `-- name: GetPublicationReservation :one
@@ -258,6 +414,40 @@ func (q *Queries) GetPublicationSource(ctx context.Context, sessionID string) (C
 	return i, err
 }
 
+const insertPublicationMember = `-- name: InsertPublicationMember :exec
+INSERT INTO canonical_publication_members(attempt_id,kind,record_id,source_key,part_ordinal,entry_index,thread_id,source_order,event_index,search_descriptor)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+`
+
+type InsertPublicationMemberParams struct {
+	AttemptID        pgtype.UUID
+	Kind             string
+	RecordID         string
+	SourceKey        string
+	PartOrdinal      int32
+	EntryIndex       int32
+	ThreadID         string
+	SourceOrder      int64
+	EventIndex       int64
+	SearchDescriptor string
+}
+
+func (q *Queries) InsertPublicationMember(ctx context.Context, arg InsertPublicationMemberParams) error {
+	_, err := q.db.Exec(ctx, insertPublicationMember,
+		arg.AttemptID,
+		arg.Kind,
+		arg.RecordID,
+		arg.SourceKey,
+		arg.PartOrdinal,
+		arg.EntryIndex,
+		arg.ThreadID,
+		arg.SourceOrder,
+		arg.EventIndex,
+		arg.SearchDescriptor,
+	)
+	return err
+}
+
 const insertPublicationPart = `-- name: InsertPublicationPart :exec
 INSERT INTO canonical_publication_parts(attempt_id,ordinal,digest,byte_count,body) VALUES($1,$2,$3,$4,$5)
 `
@@ -277,6 +467,36 @@ func (q *Queries) InsertPublicationPart(ctx context.Context, arg InsertPublicati
 		arg.Digest,
 		arg.ByteCount,
 		arg.Body,
+	)
+	return err
+}
+
+const insertPublicationRecordVersion = `-- name: InsertPublicationRecordVersion :exec
+INSERT INTO canonical_publication_record_versions(session_id,kind,source_key,record_id,thread_id,projection_revision,revision,fingerprint)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+`
+
+type InsertPublicationRecordVersionParams struct {
+	SessionID          string
+	Kind               string
+	SourceKey          string
+	RecordID           string
+	ThreadID           string
+	ProjectionRevision int64
+	Revision           int64
+	Fingerprint        string
+}
+
+func (q *Queries) InsertPublicationRecordVersion(ctx context.Context, arg InsertPublicationRecordVersionParams) error {
+	_, err := q.db.Exec(ctx, insertPublicationRecordVersion,
+		arg.SessionID,
+		arg.Kind,
+		arg.SourceKey,
+		arg.RecordID,
+		arg.ThreadID,
+		arg.ProjectionRevision,
+		arg.Revision,
+		arg.Fingerprint,
 	)
 	return err
 }
@@ -361,7 +581,7 @@ func (q *Queries) NextPublicationFence(ctx context.Context, sessionID string) (i
 }
 
 const publicationReclaimParts = `-- name: PublicationReclaimParts :many
-SELECT p.attempt_id,p.ordinal,p.byte_count FROM canonical_publication_parts p
+SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count FROM canonical_publication_parts p
 JOIN canonical_publication_attempts a ON a.id=p.attempt_id
 JOIN canonical_publication_reservations r ON r.id=a.id
 JOIN canonical_publication_sources s ON s.session_id=a.session_id
@@ -462,6 +682,21 @@ type SealPublicationAttemptParams struct {
 
 func (q *Queries) SealPublicationAttempt(ctx context.Context, arg SealPublicationAttemptParams) error {
 	_, err := q.db.Exec(ctx, sealPublicationAttempt, arg.ID, arg.SealJson)
+	return err
+}
+
+const storeValidatedPublicationPart = `-- name: StoreValidatedPublicationPart :exec
+UPDATE canonical_publication_parts SET body=NULL,validated_body=$3,format_version=1 WHERE attempt_id=$1 AND ordinal=$2
+`
+
+type StoreValidatedPublicationPartParams struct {
+	AttemptID     pgtype.UUID
+	Ordinal       int32
+	ValidatedBody []byte
+}
+
+func (q *Queries) StoreValidatedPublicationPart(ctx context.Context, arg StoreValidatedPublicationPartParams) error {
+	_, err := q.db.Exec(ctx, storeValidatedPublicationPart, arg.AttemptID, arg.Ordinal, arg.ValidatedBody)
 	return err
 }
 

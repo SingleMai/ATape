@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"hash"
 	"time"
+
+	"github.com/SingleMai/ATape/server/internal/ingestion"
 )
 
 type Scope struct {
@@ -50,7 +52,26 @@ type Attempt struct {
 	Parts            int
 	RetainedBytes    int64
 	Seal             *Manifest
+	ValidatedParts   int
+	CandidateEvents  int
+	CandidateUsage   int
 }
+
+// CanonicalPart repeats the complete bounded Session/Thread header and declares
+// the complete target counts in every frozen transport part.
+const TargetProfile = "atape.publication-target.v1"
+
+type Target struct {
+	Profile string `json:"profile"`
+	Events  int    `json:"events"`
+	Usage   int    `json:"usage"`
+	Threads int    `json:"threads"`
+}
+type CanonicalPart struct {
+	Target Target          `json:"target"`
+	Batch  ingestion.Batch `json:"batch"`
+}
+
 type Part struct {
 	Ordinal int
 	SHA256  string
