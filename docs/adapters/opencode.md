@@ -41,6 +41,26 @@ corrupt state fails instead of silently creating a replacement. The source
 Origin remains immutable within that binding. The database uses WAL and FULL
 synchronous transactions; new journal files use mode `0600`.
 
+## Landed foundation: Server candidate preparation
+
+The PostgreSQL `PublicationStore` now supplies the Server-side candidate Module:
+finite reservations, immutable Begin identity, writer fences and leases, bounded
+parts, transport sealing, metadata recovery, renewal, explicit rejection and
+reclamation. It is not yet connected to HTTP routes or the Composition Root.
+No candidate can activate, enter ordinary conversation reads, grant Raw authority
+or enqueue Search work in this increment.
+
+The legacy ingestion path and candidate reservations enforce one write mode for
+the same authenticated source identity. Reserving a new source selects publication
+mode permanently; reserving an existing legacy Session fails. This is an explicit
+capability boundary and does not migrate existing Codex or Claude history.
+
+The [candidate preparation Interface](../architecture/publication-candidates.md)
+records the exact bounds, lease and retry semantics, and the distinction between
+transport sealing and Canonical validation. Real PostgreSQL tests cover nine
+scenario groups, including independent connections competing for quota, lease
+expiry during storage work, expired-token cleanup and revoked membership.
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -62,8 +82,10 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment implements the Server publication Interface and transactions,
-then connects journal recovery and the OpenCode projection to that Interface.
+The next increment adds bounded Canonical validation and head materialization,
+then atomic activation with head-aware Reader/Search integration and HTTP routing.
+Collector journal recovery and the OpenCode projection then connect to that
+complete publication Interface.
 The first usable OpenCode release also needs real source mutation, rewind,
 compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
 the production public Interfaces. Research prototypes remain on their separate

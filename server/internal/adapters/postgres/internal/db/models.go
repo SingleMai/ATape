@@ -37,6 +37,39 @@ type CanonicalEvent struct {
 	ToolUpdateJson     string
 }
 
+type CanonicalPublicationAttempt struct {
+	ID               pgtype.UUID
+	SessionID        string
+	CaptureID        string
+	BaseHead         *string
+	TransformVersion string
+	Fence            int64
+	LeaseUntil       time.Time
+	State            string
+	PartCount        int32
+	RetainedBytes    int64
+	SealJson         *string
+}
+
+type CanonicalPublicationReservation struct {
+	ID        pgtype.UUID
+	SessionID string
+	ExpiresAt time.Time
+}
+
+type CanonicalPublicationSource struct {
+	SessionID        string
+	SourceKey        string
+	ProjectID        string
+	CapturedByUserID pgtype.UUID
+	InstallationID   string
+	AdapterID        string
+	SourceSessionID  string
+	OriginKey        string
+	WriterFence      int64
+	CurrentHead      *string
+}
+
 type CanonicalSession struct {
 	ID                 string
 	ProjectID          string

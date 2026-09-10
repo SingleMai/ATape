@@ -16,6 +16,7 @@ sql:
       - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
       - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
       - "internal/adapters/postgres/migrations/000014_canonical_usage.sql"
+      - "internal/adapters/postgres/migrations/000015_publication_candidates.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
