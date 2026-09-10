@@ -1,6 +1,7 @@
 import type { Components } from "react-markdown"
 import { useCodeCopy } from "../presenters/codeCopyPresenter"
 import { useMermaid } from "../presenters/markdownPresenter"
+import { t } from "../i18n"
 
 export const MarkdownCodeBlock: NonNullable<Components["pre"]> = ({ children, node }) => {
   const code = node?.children.find((child) => child.type === "element" && child.tagName === "code")
@@ -17,25 +18,25 @@ export const MarkdownCodeBlock: NonNullable<Components["pre"]> = ({ children, no
   return (
     <div className="narrative-code-block">
       <div className="narrative-code-toolbar">
-        <span>{language || "text"}</span>
-        <button type="button" onClick={copy} disabled={status === "copying"} aria-label="Copy code">
-          {status === "copying" ? "Copying…" : "Copy"}
+        <span>{language || t("markdown.plainText", "text")}</span>
+        <button type="button" onClick={copy} disabled={status === "copying"} aria-label={t("markdown.copyCode", "Copy code")}>
+          {status === "copying" ? t("markdown.copying", "Copying…") : t("markdown.copy", "Copy")}
         </button>
         <span className="narrative-code-copy-status" role="status">
-          {status === "copied" ? "Copied!" : status === "failed" ? "Copy failed · select code to copy manually" : ""}
+          {status === "copied" ? t("markdown.copied", "Copied!") : status === "failed" ? t("markdown.copyFailed", "Copy failed · select code to copy manually") : ""}
         </span>
       </div>
       {language === "mermaid" ? (
         <>
           {diagram?.status === "ready" ? (
-            <div className="narrative-mermaid" aria-label="Mermaid diagram" dangerouslySetInnerHTML={{ __html: diagram.html }} />
+            <div className="narrative-mermaid" aria-label={t("markdown.mermaidDiagram", "Mermaid diagram")} dangerouslySetInnerHTML={{ __html: diagram.html }} />
           ) : (
             <p className="narrative-mermaid-status" role="status">
-              {diagram?.status === "failed" ? "Diagram unavailable · source shown below" : "Loading diagram…"}
+              {diagram?.status === "failed" ? t("markdown.diagramUnavailable", "Diagram unavailable · source shown below") : t("markdown.loadingDiagram", "Loading diagram…")}
             </p>
           )}
           <details open={diagram?.status !== "ready"}>
-            <summary className="narrative-mermaid-source">Diagram source</summary>
+            <summary className="narrative-mermaid-source">{t("markdown.diagramSource", "Diagram source")}</summary>
             <pre>{children}</pre>
           </details>
         </>

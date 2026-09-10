@@ -386,3 +386,11 @@ test("persists Raw preference and Team policy with the effective state", async (
   await expect(policy).toHaveValue("force")
   expect((await fixtureState(page)).rawPreference).toBe("enable")
 })
+
+test("renders the interface in the persisted locale", async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.setItem("atape.locale", "zh-CN"))
+  await page.goto("/auth/sign-in")
+
+  await expect(page.getByRole("heading", { name: "登录 ATape" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "使用 GitHub 继续" })).toBeVisible()
+})

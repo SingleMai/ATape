@@ -41,6 +41,7 @@ export type AdapterInstallation = typeof AdapterInstallation.Type
 
 export const ClientConfig = Schema.Struct({
   version: Schema.Literal(ClientConfigVersion),
+  locale: Schema.optionalKey(Schema.String),
   activeInstanceOrigin: Schema.optionalKey(Schema.String),
   projects: Schema.Array(ProjectRegistration),
   adapters: Schema.Array(AdapterInstallation),

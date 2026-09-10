@@ -12,6 +12,7 @@ import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPres
 import { RefreshControl } from "./RefreshControl"
 import { ConversationReadingFrame } from "./UserMessageIndex"
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock"
+import { formatDate, t, type WebMessageKey } from "../i18n"
 
 export type SessionReaderProps = {
   readonly state: LoadableView<Conversation>
@@ -35,20 +36,18 @@ const EventPrefix = createContext("")
 const useEventId = (id: string) => `${useContext(EventPrefix)}event-${id}`
 
 const formatTime = (value: string) =>
-  new Intl.DateTimeFormat("en", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(
-    new Date(value)
-  )
+  formatDate(new Date(value), { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 
-const eventLabel: Record<CanonicalEvent["kind"], string> = {
-  message: "Message",
-  thought: "Thinking",
-  tool_call: "Tool call",
-  tool_result: "Tool result",
-  artifact: "Artifact",
-  spawn: "Delegation",
-  lifecycle: "Activity",
-  context: "Context",
-  notice: "Notice"
+const eventLabel: Record<CanonicalEvent["kind"], WebMessageKey> = {
+  message: "session.event.message",
+  thought: "session.event.thought",
+  tool_call: "session.event.toolCall",
+  tool_result: "session.event.toolResult",
+  artifact: "session.event.artifact",
+  spawn: "session.event.delegation",
+  lifecycle: "session.event.activity",
+  context: "session.event.context",
+  notice: "session.event.notice"
 }
 
 const isToolEvent = (event: CanonicalEvent) => event.kind === "tool_call" || event.kind === "tool_result"
@@ -62,11 +61,11 @@ const markdownComponents: Components = {
     href && /^(https?:\/\/|mailto:)/i.test(href) ? (
       <a href={href} title={title}>{children}</a>
     ) : (
-      <span title="File and local links are unavailable in captured conversations.">{children}</span>
+      <span title={t("session.unavailableLinks", "File and local links are unavailable in captured conversations.")}>{children}</span>
     ),
   pre: MarkdownCodeBlock,
   table: ({ children }) => (
-    <div className="narrative-table-scroll" role="region" aria-label="Markdown table" tabIndex={0}>
+    <div className="narrative-table-scroll" role="region" aria-label={t("session.markdownTable", "Markdown table")} tabIndex={0}>
       <table>{children}</table>
     </div>
   )
@@ -86,16 +85,16 @@ const MarkdownText = ({ text }: { readonly text: string }) => {
 const ToolDetails = ({ event }: { readonly event: CanonicalEvent }) =>
   event.tool ? (
     <div className="tool-details">
-      <small>Tool call · {event.tool.toolCallId}</small>
+      <small>{t("session.toolCallId", "Tool call · {id}", { id: event.tool.toolCallId })}</small>
       {Object.hasOwn(event.tool, "rawInput") && (
         <details>
-          <summary>Input</summary>
+          <summary>{t("session.input", "Input")}</summary>
           <pre>{JSON.stringify(event.tool.rawInput, null, 2)}</pre>
         </details>
       )}
       {Object.hasOwn(event.tool, "rawOutput") && (
         <details>
-          <summary>Output</summary>
+          <summary>{t("session.output", "Output")}</summary>
           <pre>
             {typeof event.tool.rawOutput === "string"
               ? event.tool.rawOutput
@@ -117,12 +116,12 @@ const ChildThreadButton = ({
   return childThread ? (
     <button className="child-thread" type="button" onClick={() => onOpenThread(childThread.id, childThread.label)}>
       <span>
-        <strong>{childThread.label} · child thread</strong>
+        <strong>{t("session.childThread", "{label} · child thread", { label: childThread.label })}</strong>
         <small>
-          {childThread.summary} · {childThread.captureStatus} · {childThread.eventCount} events
+          {t("session.childThreadMeta", "{summary} · {status} · {count} events", { summary: childThread.summary, status: childThread.captureStatus, count: childThread.eventCount })}
         </small>
       </span>
-      <strong>Open in side panel ↗</strong>
+      <strong>{t("session.openInSidePanel", "Open in side panel ↗")}</strong>
     </button>
   ) : null
 }
@@ -184,10 +183,10 @@ const describeActivity = (events: ReadonlyArray<CanonicalEvent>) => {
   const updateCount = events.filter((event) => event.kind === "message").length
   const backgroundCount = events.length - toolCount - thoughtCount - updateCount
   return [
-    updateCount > 0 ? `${updateCount} update${updateCount === 1 ? "" : "s"}` : undefined,
-    thoughtCount > 0 ? `${thoughtCount} thought${thoughtCount === 1 ? "" : "s"}` : undefined,
-    toolCount > 0 ? `${toolCount} tool event${toolCount === 1 ? "" : "s"}` : undefined,
-    backgroundCount > 0 ? `${backgroundCount} other event${backgroundCount === 1 ? "" : "s"}` : undefined
+    updateCount > 0 ? t("session.activity.update", "{count, plural, one {# update} other {# updates}}", { count: updateCount }) : undefined,
+    thoughtCount > 0 ? t("session.activity.thought", "{count, plural, one {# thought} other {# thoughts}}", { count: thoughtCount }) : undefined,
+    toolCount > 0 ? t("session.activity.toolEvent", "{count, plural, one {# tool event} other {# tool events}}", { count: toolCount }) : undefined,
+    backgroundCount > 0 ? t("session.activity.otherEvent", "{count, plural, one {# other event} other {# other events}}", { count: backgroundCount }) : undefined
   ]
     .filter((label): label is string => label !== undefined)
     .join(" · ")
@@ -214,8 +213,8 @@ const ActivityEventView = ({
   >
     {event.kind !== "message" && <header>
       <span>
-        <strong>{event.toolLabel || eventLabel[event.kind]}</strong>
-        {event.toolLabel && <small>{eventLabel[event.kind]}</small>}
+        <strong>{event.toolLabel || t(eventLabel[event.kind])}</strong>
+        {event.toolLabel && <small>{t(eventLabel[event.kind])}</small>}
       </span>
     </header>}
     <MarkdownText text={event.text} />
@@ -241,7 +240,7 @@ const ActivityDetails = ({
     <details className="narrative-activity" open={containsHighlight || isIncomplete || undefined}>
       <summary>
         <span>
-          <strong>Activity</strong>
+          <strong>{t("session.activity", "Activity")}</strong>
           <small>{describeActivity(exchange.activity)}</small>
         </span>
         <span className="activity-chevron" aria-hidden="true">
@@ -282,7 +281,7 @@ const HighlightView = ({
     tabIndex={0}
   >
     <header>
-      <strong>{event.kind === "message" ? "Unclassified message" : eventLabel[event.kind]}</strong>
+      <strong>{event.kind === "message" ? t("session.unclassifiedMessage", "Unclassified message") : t(eventLabel[event.kind])}</strong>
     </header>
     <MarkdownText text={event.text} />
     <ToolDetails event={event} />
@@ -329,7 +328,7 @@ export const SessionReaderView = ({
   if (state._tag === "Loading") {
     return (
       <section className="state-card" aria-live="polite">
-        Reconstructing conversation…
+        {t("session.loading", "Reconstructing conversation…")}
       </section>
     )
   }
@@ -338,11 +337,11 @@ export const SessionReaderView = ({
     return (
       <section className="state-card error-card" role="alert">
         <Button className="back-link" variant="ghost" onClick={searchOrigin?.onReturn ?? onBack}>
-          {embedded ? "Close thread tab" : searchOrigin ? "Back to search results" : `Back to ${projectName}`}
+          {embedded ? t("session.closeThreadTab", "Close thread tab") : searchOrigin ? t("session.backToSearch", "Back to search results") : t("session.backToProject", "Back to {project}", { project: projectName })}
         </Button>
-        <h1>{state.refreshRequired ? "Conversation has changed" : "Conversation is unavailable"}</h1>
-        <p>{state.message}</p>
-        {state.retryable && <Button onClick={onRetry}>{state.refreshRequired ? "Reload conversation" : "Try again"}</Button>}
+        <h1>{state.refreshRequired ? t("session.changed", "Conversation has changed") : t("session.unavailable", "Conversation is unavailable")}</h1>
+        <p>{t(state.messageKey)}</p>
+        {state.retryable && <Button onClick={onRetry}>{state.refreshRequired ? t("session.reloadConversation", "Reload conversation") : t("common.tryAgain", "Try again")}</Button>}
       </section>
     )
   }
@@ -353,7 +352,7 @@ export const SessionReaderView = ({
     <section aria-labelledby={titleId}>
       <header className="clean-reader-heading">
         <div className="clean-reader-title">
-          <Button className="back-link" variant="ghost" onClick={onBack} aria-label={embedded ? "Close thread tab" : "Back to conversations"}>
+          <Button className="back-link" variant="ghost" onClick={onBack} aria-label={embedded ? t("session.closeThreadTab", "Close thread tab") : t("session.backToConversations", "Back to conversations")}>
             {embedded ? "×" : "←"}
           </Button>
           <div>
@@ -366,18 +365,18 @@ export const SessionReaderView = ({
           </div>
         </div>
         <details className="quiet-disclosure">
-          <summary aria-label="Conversation details and actions">More</summary>
+          <summary aria-label={t("session.conversationDetails", "Conversation details and actions")}>{t("session.more", "More")}</summary>
           <div className="quiet-disclosure-panel">
             <p>
-              {conversation.session.status} · Capture: {conversation.session.captureStatus}
+              {t("session.statusCapture", "{status} · Capture: {captureStatus}", { status: conversation.session.status, captureStatus: conversation.session.captureStatus })}
             </p>
             <RefreshControl
               settings={refresh}
               refreshing={state.refreshing}
-              refreshFailure={state.refreshFailure}
+              refreshFailure={state.refreshFailureKey === undefined ? undefined : t(state.refreshFailureKey)}
               status={
                 <>
-                  Updated{" "}
+                  {t("session.updatedLabel", "Updated")}{" "}
                   <time dateTime={conversation.session.updatedAt}>
                     {formatTime(conversation.session.updatedAt)}
                   </time>
@@ -386,7 +385,7 @@ export const SessionReaderView = ({
               onRefresh={onRetry}
             />
             <Button variant="ghost" onClick={onOpenRaw}>
-              View Raw source
+              {t("session.viewRawSource", "View Raw source")}
             </Button>
           </div>
         </details>
@@ -394,23 +393,23 @@ export const SessionReaderView = ({
       {(conversation.session.captureStatus === "partial" ||
         conversation.session.captureStatus === "degraded") && (
         <p className="compact-warning" role="status">
-          Capture is {conversation.session.captureStatus} · some conversation content may be missing.
+          {t("session.captureIncomplete", "Capture is {status} · some conversation content may be missing.", { status: conversation.session.captureStatus })}
         </p>
       )}
-      {state.refreshFailure && (
+      {state.refreshFailureKey && (
         <p className="compact-warning" role="status">
-          Refresh failed · showing previous conversation
+          {t("session.refreshFailed", "Refresh failed · showing previous conversation")}
         </p>
       )}
       {searchOrigin && (
         <div className="compact-search-origin">
           <button type="button" onClick={searchOrigin.onReturn}>
-            ← Search results for “{searchOrigin.query}”
+            {t("session.searchResultsFor", "← Search results for “{query}”", { query: searchOrigin.query })}
           </button>
         </div>
       )}
       {conversation.threadPath.length > 1 && (
-        <nav className="thread-path" aria-label="Thread path">
+        <nav className="thread-path" aria-label={t("session.threadPath", "Thread path")}>
           {conversation.threadPath.map((thread, index) => (
             <span className="thread-path-item" key={thread.id}>
               {index > 0 && <span aria-hidden="true">/</span>}
@@ -427,13 +426,13 @@ export const SessionReaderView = ({
         </nav>
       )}
 
-      {onFirstPage && <Button variant="ghost" onClick={onFirstPage}>Read from the beginning</Button>}
+      {onFirstPage && <Button variant="ghost" onClick={onFirstPage}>{t("session.readFromBeginning", "Read from the beginning")}</Button>}
       <ConversationReadingFrame key={`${conversation.thread.id}:${conversation.events[0]?.id ?? "empty"}`} prompts={prompts} embedded={embedded}>
         <div className="conversation-stream">
           {narrative.map((exchange, index) => (
             <section
               className="narrative-exchange"
-              aria-label={`Conversation exchange ${index + 1}`}
+              aria-label={t("session.exchange", "Conversation exchange {index}", { index: index + 1 })}
               key={exchange.id}
             >
               {exchange.prompt && (
@@ -467,15 +466,15 @@ export const SessionReaderView = ({
           ))}
           {narrative.length === 0 && (
             <div className="empty-conversation">
-              <strong>No messages captured yet</strong>
-              <span>ATape will add the conversation here as new events arrive.</span>
+              <strong>{t("session.noMessagesTitle", "No messages captured yet")}</strong>
+              <span>{t("session.noMessagesBody", "ATape will add the conversation here as new events arrive.")}</span>
             </div>
           )}
         </div>
       </ConversationReadingFrame>
       {conversation.head && conversation.nextEventId && onNextPage && (
-        <nav aria-label="Conversation pages">
-          <Button disabled={state.refreshing} onClick={() => onNextPage(conversation.head!, conversation.nextEventId!)}>Next page</Button>
+        <nav aria-label={t("session.pages", "Conversation pages")}>
+          <Button disabled={state.refreshing} onClick={() => onNextPage(conversation.head!, conversation.nextEventId!)}>{t("session.nextPage", "Next page")}</Button>
         </nav>
       )}
     </section>

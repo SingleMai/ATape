@@ -2,7 +2,7 @@ import type { ParsedCLI } from "./commands.ts"
 
 export const requestsGuidedExperience = (cli: ParsedCLI) =>
   (cli.positionals.length === 0 || cli.positionals[0] === "setup" && cli.positionals.length <= 2) &&
-  Object.keys(cli.options).every(key => key === "instance" || key === "noBrowser")
+  Object.keys(cli.options).every(key => key === "instance" || key === "noBrowser" || key === "lang")
 
 export const supportsInteractiveExperience = (
   environment: NodeJS.ProcessEnv = process.env,

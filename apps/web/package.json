@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && vite build",
     "dev": "vite",
+    "i18n:extract": "i18next",
     "test": "vitest run --passWithNoTests",
     "test:browser": "playwright test",
     "typecheck": "tsc -p tsconfig.json"
@@ -13,6 +14,7 @@
   "dependencies": {
     "@atape/application": "workspace:*",
     "@atape/domain": "workspace:*",
+    "@atape/i18n": "workspace:*",
     "@atape/ui": "workspace:*",
     "@effect/atom-react": "catalog:",
     "@tanstack/react-router": "catalog:",
@@ -31,6 +33,7 @@
     "@types/react": "catalog:build",
     "@types/react-dom": "catalog:build",
     "@vitejs/plugin-react": "catalog:build",
+    "i18next-parser": "9.4.0",
     "typescript": "catalog:build",
     "vite": "catalog:build",
     "vitest": "catalog:build"

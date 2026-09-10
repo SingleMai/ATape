@@ -3,6 +3,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { Group, Panel, Separator, usePanelCallbackRef } from "react-resizable-panels"
 import { useConversationPresenter } from "../presenters/memoryPresenter"
 import { SessionReaderView, type SessionReaderProps } from "./SessionReaderView"
+import { t } from "../i18n"
 
 type Props = Omit<SessionReaderProps, "onOpenThread" | "embedded"> & {
   readonly sessionId: string
@@ -88,7 +89,7 @@ export function SessionReaderWorkspace({ sessionId, ...reader }: Props) {
     const target = opener.current?.isConnected ? opener.current : main.current
     target?.focus({ preventScroll: true })
   }
-  const openThread = (id: string, label = "Thread") => {
+  const openThread = (id: string, label = t("workspace.thread", "Thread")) => {
     if (id === mainThread) { returnToMain(); return }
     if (main.current?.contains(document.activeElement)) opener.current = document.activeElement as HTMLElement
     setTabs(previous => previous.some(tab => tab.id === id) ? previous : [...previous, { id, label }])
@@ -126,7 +127,7 @@ export function SessionReaderWorkspace({ sessionId, ...reader }: Props) {
         <div className="session-main-content"><SessionReaderView {...reader} onOpenThread={openThread} /></div>
       </div>
     </Panel>
-    <Separator className="thread-separator" aria-label="Resize child conversations"
+    <Separator className="thread-separator" aria-label={t("workspace.resizeChildConversations", "Resize child conversations")}
       style={{ flexBasis: 7, display: phase === "closed" ? "none" : undefined }} />
     <Panel id={`${workspaceId}-children`} panelRef={sidePanelRef} elementRef={sideElement} defaultSize="0%" minSize="28%"
       maxSize="70%" collapsible style={{ overflow: "hidden" }}
@@ -135,9 +136,9 @@ export function SessionReaderWorkspace({ sessionId, ...reader }: Props) {
         if (phase === "closing") { setPhase("closed"); setTabs([]); setActive(undefined) }
         else if (phase === "opening") setPhase("open")
       }}>
-      <aside className="thread-sidebar" aria-label="Child conversations" inert={!expanded} aria-hidden={!expanded}>
+      <aside className="thread-sidebar" aria-label={t("workspace.childConversations", "Child conversations")} inert={!expanded} aria-hidden={!expanded}>
         <header className="thread-sidebar-toolbar">
-          <div className="thread-tabs" role="tablist" aria-label="Child conversation tabs" ref={tablist}
+          <div className="thread-tabs" role="tablist" aria-label={t("workspace.childConversationTabs", "Child conversation tabs")} ref={tablist}
             onKeyDown={event => {
               if (!(event.target instanceof HTMLElement) || event.target.getAttribute("role") !== "tab") return
               const index = tabs.findIndex(tab => tab.id === active)
@@ -155,11 +156,11 @@ export function SessionReaderWorkspace({ sessionId, ...reader }: Props) {
                 aria-controls={`${workspaceId}-panel-${tab.id}`} aria-selected={active === tab.id}
                 tabIndex={active === tab.id ? 0 : -1} title={tab.label}
                 onClick={() => setActive(tab.id)}>{tab.label}</button>
-              <button type="button" className="thread-tab-close" aria-label={`Close ${tab.label} tab`}
+              <button type="button" className="thread-tab-close" aria-label={t("workspace.closeTab", "Close {label} tab", { label: tab.label })}
                 onClick={() => closeTab(tab.id)}>×</button>
             </div>)}
           </div>
-          <button type="button" className="quiet-icon" aria-label="Close side panel" onClick={() => {
+          <button type="button" className="quiet-icon" aria-label={t("workspace.closeSidePanel", "Close side panel")} onClick={() => {
             setPhase("closing"); returnToMain()
           }}>×</button>
         </header>

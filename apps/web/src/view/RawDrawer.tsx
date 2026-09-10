@@ -3,6 +3,7 @@ import { Badge, Button, Eyebrow } from "@atape/ui"
 import { useEffect, useRef, useState } from "react"
 import type { LoadableView } from "../presenters/memoryPresenter"
 import { useRawContentPresenter } from "../presenters/rawPresenter"
+import { t } from "../i18n"
 
 type Props = {
   readonly state: LoadableView<SessionRawArchive>
@@ -13,9 +14,9 @@ type Props = {
 }
 
 const formatBytes = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+  if (bytes < 1024) return t("raw.bytes", "{value} B", { value: bytes })
+  if (bytes < 1024 * 1024) return t("raw.kibibytes", "{value} KiB", { value: (bytes / 1024).toFixed(1) })
+  return t("raw.mebibytes", "{value} MiB", { value: (bytes / 1024 / 1024).toFixed(1) })
 }
 
 const RawContentPane = ({ object }: { readonly object: RawObject }) => {
@@ -30,14 +31,14 @@ const RawContentPane = ({ object }: { readonly object: RawObject }) => {
   }
 
   if (presenter.state._tag === "Loading") {
-    return <div className="raw-content-state" aria-live="polite">Opening a bounded Raw page…</div>
+    return <div className="raw-content-state" aria-live="polite">{t("raw.openingPage", "Opening a bounded Raw page…")}</div>
   }
   if (presenter.state._tag === "Failed") {
     return (
       <div className="raw-content-state raw-content-error" role="alert">
-        <strong>Raw content is unavailable</strong>
-        <span>{presenter.state.message}</span>
-        {presenter.state.retryable && <Button onClick={presenter.reload}>Try again</Button>}
+        <strong>{t("raw.contentUnavailable", "Raw content is unavailable")}</strong>
+        <span>{t(presenter.state.messageKey)}</span>
+        {presenter.state.retryable && <Button onClick={presenter.reload}>{t("common.tryAgain", "Try again")}</Button>}
       </div>
     )
   }
@@ -47,39 +48,39 @@ const RawContentPane = ({ object }: { readonly object: RawObject }) => {
     <section className="raw-content" aria-labelledby="raw-content-heading">
       <header className="raw-content-toolbar">
         <div>
-          <strong id="raw-content-heading">Captured bytes</strong>
-          <small>{formatBytes(page.sizeBytes)} total · {page.finalized ? "finalized" : "still appending"}</small>
+          <strong id="raw-content-heading">{t("raw.capturedBytes", "Captured bytes")}</strong>
+          <small>{page.finalized ? t("raw.totalFinalized", "{size} total · finalized", { size: formatBytes(page.sizeBytes) }) : t("raw.totalAppending", "{size} total · still appending", { size: formatBytes(page.sizeBytes) })}</small>
         </div>
         <label>
-          <span>Generation</span>
+          <span>{t("raw.generation", "Generation")}</span>
           <select
             value={generation}
             onChange={(event) => chooseGeneration(Number(event.currentTarget.value))}
           >
             {Array.from({ length: object.generationCount }, (_, index) => index + 1).map((value) => (
-              <option key={value} value={value}>{value}{value === object.currentGeneration ? " · current" : ""}</option>
+              <option key={value} value={value}>{value === object.currentGeneration ? t("raw.currentGeneration", "{generation} · current", { generation: value }) : value}</option>
             ))}
           </select>
         </label>
       </header>
 
-      <pre className="raw-code" tabIndex={0}>{text || "(empty finalized source)"}</pre>
+      <pre className="raw-code" tabIndex={0}>{text || t("raw.emptySource", "(empty finalized source)")}</pre>
 
       <footer className="raw-page-controls">
-        <span>Page {cursors.length} · 1 chunk loaded</span>
+        <span>{t("raw.pageInfo", "Page {page} · 1 chunk loaded", { page: cursors.length })}</span>
         <div>
           <Button
             variant="ghost"
             disabled={cursors.length === 1}
             onClick={() => setCursors((current) => current.slice(0, -1))}
           >
-            Previous
+            {t("common.previous", "Previous")}
           </Button>
           <Button
             disabled={!page.nextCursor}
             onClick={() => page.nextCursor && setCursors((current) => [...current, page.nextCursor!])}
           >
-            Next page
+            {t("raw.nextPage", "Next page")}
           </Button>
         </div>
       </footer>
@@ -130,47 +131,49 @@ export const RawDrawer = ({ state, cursor, onPage, onClose, onRetry }: Props) =>
 
   return (
     <div className="raw-drawer-layer">
-      <button className="raw-drawer-backdrop" type="button" aria-label="Close Raw source" onClick={onClose} />
+      <button className="raw-drawer-backdrop" type="button" aria-label={t("raw.closeSource", "Close Raw source")} onClick={onClose} />
       <aside ref={drawer} className="raw-drawer" role="dialog" aria-modal="true" aria-labelledby="raw-drawer-title">
         <header className="raw-drawer-heading">
           <div>
-            <Eyebrow>Separate archive</Eyebrow>
-            <h2 id="raw-drawer-title">Raw source</h2>
+            <Eyebrow>{t("raw.separateArchive", "Separate archive")}</Eyebrow>
+            <h2 id="raw-drawer-title">{t("raw.source", "Raw source")}</h2>
           </div>
           <button
             ref={closeButton}
             className="atape-button atape-button--ghost"
             type="button"
-            aria-label="Close Raw source"
+            aria-label={t("raw.closeSource", "Close Raw source")}
             onClick={onClose}
           >
-            Close
+            {t("raw.close", "Close")}
           </button>
         </header>
 
         {state._tag === "Loading" && (
-          <div className="raw-drawer-state" aria-live="polite">Fetching the Raw manifest…</div>
+          <div className="raw-drawer-state" aria-live="polite">{t("raw.fetchingManifest", "Fetching the Raw manifest…")}</div>
         )}
         {state._tag === "Failed" && (
           <div className="raw-drawer-state raw-content-error" role="alert">
-            <strong>Raw manifest is unavailable</strong>
-            <span>{state.message}</span>
-            {state.retryable && <Button onClick={onRetry}>Try again</Button>}
+            <strong>{t("raw.manifestUnavailable", "Raw manifest is unavailable")}</strong>
+            <span>{t(state.messageKey)}</span>
+            {state.retryable && <Button onClick={onRetry}>{t("common.tryAgain", "Try again")}</Button>}
           </div>
         )}
         {state._tag === "Ready" && (cursor || state.value.nextCursor) && (
-          <nav className="raw-page-controls" aria-label="Raw archive pages">
-            <span>{objects.length} sources on this page · newest received first</span>
+          <nav className="raw-page-controls" aria-label={t("raw.archivePages", "Raw archive pages")}>
+            <span>{t("raw.sourcesOnPage", "{count} sources on this page · newest received first", { count: objects.length })}</span>
             <div>
-              <Button variant="ghost" disabled={!cursor} onClick={() => onPage("")}>First sources</Button>
-              <Button disabled={!state.value.nextCursor} onClick={() => state.value.nextCursor && onPage(state.value.nextCursor)}>Next sources</Button>
+              <Button variant="ghost" disabled={!cursor} onClick={() => onPage("")}>{t("raw.firstSources", "First sources")}</Button>
+              <Button disabled={!state.value.nextCursor} onClick={() => state.value.nextCursor && onPage(state.value.nextCursor)}>{t("raw.nextSources", "Next sources")}</Button>
             </div>
           </nav>
         )}
         {state._tag === "Ready" && objects.length === 0 && (
           <div className="raw-drawer-state">
-            <strong>{cursor ? "No more Raw sources on this page." : "No Raw source was captured for this Session."}</strong>
-            <span>The Canonical conversation remains available above the source archive.</span>
+            <strong>{cursor
+              ? t("raw.noMoreSources", "No more Raw sources on this page.")
+              : t("raw.noSourceTitle", "No Raw source was captured for this Session.")}</strong>
+            <span>{t("raw.noSourceBody", "The Canonical conversation remains available above the source archive.")}</span>
           </div>
         )}
         {state._tag === "Ready" && selected && (
@@ -178,12 +181,12 @@ export const RawDrawer = ({ state, cursor, onPage, onClose, onRetry }: Props) =>
             <div className="raw-redaction-note">
               <span aria-hidden="true">✓</span>
               <div>
-                <strong>Client-side secret redaction applied</strong>
-                <small>Raw is fetched only for this drawer. It is not part of the Canonical conversation or Search index.</small>
+                <strong>{t("raw.redactionTitle", "Client-side secret redaction applied")}</strong>
+                <small>{t("raw.redactionBody", "Raw is fetched only for this drawer. It is not part of the Canonical conversation or Search index.")}</small>
               </div>
             </div>
             {objects.length > 1 && (
-              <div className="raw-object-picker" role="list" aria-label="Raw source files">
+              <div className="raw-object-picker" role="list" aria-label={t("raw.sourceFiles", "Raw source files")}>
                 {objects.map((object) => (
                   <button
                     key={object.objectId}
@@ -196,16 +199,16 @@ export const RawDrawer = ({ state, cursor, onPage, onClose, onRetry }: Props) =>
                 ))}
               </div>
             )}
-            <section className="raw-object-card" aria-label="Raw source metadata">
+            <section className="raw-object-card" aria-label={t("raw.sourceMetadata", "Raw source metadata")}>
               <div>
                 <strong>{selected.sourceName}</strong>
                 <small>{selected.mediaType}</small>
               </div>
               <div className="raw-object-badges">
-                <Badge>{selected.adapterId} · {selected.adapterVersion}</Badge>
-                <Badge tone="accent">generation {selected.currentGeneration} / {selected.generationCount}</Badge>
+                <Badge>{t("raw.adapterBadge", "{adapter} · {version}", { adapter: selected.adapterId, version: selected.adapterVersion })}</Badge>
+                <Badge tone="accent">{t("raw.generationBadge", "generation {current} / {total}", { current: selected.currentGeneration, total: selected.generationCount })}</Badge>
                 <Badge tone={selected.currentFinalized ? "success" : "warning"}>
-                  {selected.currentFinalized ? "finalized" : "appending"}
+                  {selected.currentFinalized ? t("raw.finalized", "finalized") : t("raw.appending", "appending")}
                 </Badge>
               </div>
             </section>

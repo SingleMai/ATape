@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import type { SearchSeed } from "./searchOverlayContext"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
-import type { LoadableView } from "./memoryPresenter"
+import { gatewayFailureMessageKey, type LoadableView } from "./memoryPresenter"
 import { BrowserSearchGatewayLayer } from "../runtime/searchGateway"
 
 const runtime = Atom.runtime(BrowserSearchGatewayLayer)
@@ -14,12 +14,12 @@ const toLoadableView = <A>(result: AsyncResult.AsyncResult<A, SearchGatewayError
     onInitial: () => ({ _tag: "Loading" as const }),
     onError: (error) => ({
       _tag: "Failed" as const,
-      message: error.message,
+      messageKey: gatewayFailureMessageKey(error.reason, error.status),
       retryable: error.reason !== "decode"
     }),
     onDefect: () => ({
       _tag: "Failed" as const,
-      message: "ATape could not render these Search results safely.",
+      messageKey: "errors.defect.search" as const,
       retryable: false
     }),
     onSuccess: (success) => ({
