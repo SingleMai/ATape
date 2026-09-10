@@ -1020,7 +1020,30 @@ paths:
         "201": {$ref: "#/components/responses/GenericJSON"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
+  /api/v1/ingestion/raw/receipts/lookup:
+    post:
+      operationId: lookupRawChunkReceipt
+      x-atape-authorization-actions: [raw.ingest]
+      tags: [Ingestion]
+      summary: Read one caller-owned immutable chunk receipt without Raw content
+      description: Rechecks current source ownership and Session access. Current upload policy does not hide an already committed receipt. Not found is unknown, never acknowledgement.
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RawChunkIdentity"}
+      responses:
+        "200":
+          description: Immutable metadata of the actual committed chunk.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RawChunkReceipt"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
   /api/v1/publications/capabilities:
+    # Raw publication proof is advertised separately as atape.raw-publication.v1.
     get:
       operationId: publicationCapabilities
       tags: [Ingestion]
@@ -1871,6 +1894,7 @@ components:
         teamPolicy: {type: string, enum: [force, personal, close], default: personal}
         userPreference: {type: string, enum: [enable, disable], default: disable}
         enabled: {type: boolean}
+        authority: {$ref: "#/components/schemas/RawAuthority"}
     RawCapturePreference:
       type: object
       required: [preference]
@@ -2348,6 +2372,54 @@ components:
         final: {type: boolean}
         contentBase64: {type: string, contentEncoding: base64}
         sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        publication: {$ref: "#/components/schemas/RawPublicationProof"}
+    RawAuthority:
+      type: object
+      additionalProperties: false
+      required: [protocol, teamRevision, userRevision]
+      properties:
+        protocol: {const: atape.raw-publication.v1}
+        teamRevision: {type: integer, format: int64, minimum: 1}
+        userRevision: {type: integer, format: int64, minimum: 0}
+    RawPublicationProof:
+      type: object
+      additionalProperties: false
+      required: [head, authority]
+      properties:
+        head: {type: string, format: uuid}
+        authority: {$ref: "#/components/schemas/RawAuthority"}
+    RawChunkIdentity:
+      type: object
+      additionalProperties: false
+      required: [sessionId, installationId, adapterId, sourceObjectId, sourceChunkId]
+      properties:
+        sessionId: {type: string, minLength: 1, maxLength: 512}
+        installationId: {type: string, minLength: 1, maxLength: 512}
+        adapterId: {type: string, minLength: 1, maxLength: 512}
+        sourceObjectId: {type: string, minLength: 1, maxLength: 512}
+        sourceChunkId: {type: string, minLength: 1, maxLength: 512}
+    RawChunkReceipt:
+      type: object
+      required: [protocolVersion, sessionId, installationId, adapterId, sourceObjectId, sourceChunkId, objectId, generation, offset, sizeBytes, sha256, final, sourceName, mediaType, adapterVersion, capturedAt, clientRedacted]
+      properties:
+        protocolVersion: {const: atape.raw.v1}
+        sourceName: {type: string}
+        mediaType: {type: string}
+        adapterVersion: {type: string}
+        capturedAt: {$ref: "#/components/schemas/Timestamp"}
+        clientRedacted: {type: boolean}
+        sessionId: {type: string}
+        installationId: {type: string}
+        adapterId: {type: string}
+        sourceObjectId: {type: string}
+        sourceChunkId: {type: string}
+        objectId: {type: string}
+        generation: {type: integer, format: int64, minimum: 1}
+        offset: {type: integer, format: int64, minimum: 0}
+        sizeBytes: {type: integer, format: int64, minimum: 0, maximum: 3145728}
+        sha256: {type: string, pattern: "^[a-f0-9]{64}$"}
+        final: {type: boolean}
+        publication: {$ref: "#/components/schemas/RawPublicationProof"}
     ProblemField:
       type: object
       additionalProperties: false
@@ -2386,6 +2458,7 @@ components:
             - origin_rejected
             - csrf_rejected
             - raw_capture_disabled
+            - raw_authority_changed
             - access_denied
             - membership_role_denied
             - credential_capability_denied

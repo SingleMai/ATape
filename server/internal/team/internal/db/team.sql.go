@@ -537,7 +537,7 @@ func (q *Queries) GetRawCaptureMembershipForShare(ctx context.Context, arg GetRa
 }
 
 const getRawCaptureSettings = `-- name: GetRawCaptureSettings :one
-SELECT t.raw_capture_policy, u.raw_capture_preference
+SELECT t.raw_capture_policy, u.raw_capture_preference, t.raw_capture_revision AS team_revision, u.raw_capture_revision AS user_revision
 FROM workspace_teams t CROSS JOIN auth_users u
 JOIN team_memberships m ON m.user_id = u.id
 WHERE t.id = $1 AND u.id = $2 AND m.team_id = t.id
@@ -552,12 +552,19 @@ type GetRawCaptureSettingsParams struct {
 type GetRawCaptureSettingsRow struct {
 	RawCapturePolicy     string
 	RawCapturePreference string
+	TeamRevision         int64
+	UserRevision         int64
 }
 
 func (q *Queries) GetRawCaptureSettings(ctx context.Context, arg GetRawCaptureSettingsParams) (GetRawCaptureSettingsRow, error) {
 	row := q.db.QueryRow(ctx, getRawCaptureSettings, arg.ID, arg.ID_2)
 	var i GetRawCaptureSettingsRow
-	err := row.Scan(&i.RawCapturePolicy, &i.RawCapturePreference)
+	err := row.Scan(
+		&i.RawCapturePolicy,
+		&i.RawCapturePreference,
+		&i.TeamRevision,
+		&i.UserRevision,
+	)
 	return i, err
 }
 
@@ -1490,7 +1497,8 @@ func (q *Queries) SetMembershipRole(ctx context.Context, arg SetMembershipRolePa
 }
 
 const setTeamRawCapturePolicy = `-- name: SetTeamRawCapturePolicy :exec
-UPDATE workspace_teams SET raw_capture_policy = $2, updated_at = clock_timestamp() WHERE id = $1
+UPDATE workspace_teams SET raw_capture_revision = raw_capture_revision + CASE WHEN raw_capture_policy <> $2 THEN 1 ELSE 0 END,
+ raw_capture_policy = $2, updated_at = clock_timestamp() WHERE id = $1
 `
 
 type SetTeamRawCapturePolicyParams struct {
@@ -1504,7 +1512,8 @@ func (q *Queries) SetTeamRawCapturePolicy(ctx context.Context, arg SetTeamRawCap
 }
 
 const setUserRawCapturePreference = `-- name: SetUserRawCapturePreference :exec
-UPDATE auth_users SET raw_capture_preference = $2 WHERE id = $1
+UPDATE auth_users SET raw_capture_revision = raw_capture_revision + CASE WHEN raw_capture_preference <> $2 THEN 1 ELSE 0 END,
+ raw_capture_preference = $2 WHERE id = $1
 `
 
 type SetUserRawCapturePreferenceParams struct {

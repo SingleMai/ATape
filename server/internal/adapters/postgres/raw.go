@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/postgres/internal/db"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/sourceidentity"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (s *Store) AuthorizeChunk(
@@ -44,6 +47,10 @@ func (s *Store) AuthorizeChunk(
 	}
 	if !rawarchive.CaptureEnabled(policy.RawCapturePolicy, policy.RawCapturePreference) {
 		return &rawarchive.CaptureDisabledError{}
+	}
+	if err := publicationChunkAuthority(ctx, s.queries.WithTx(tx), principal, chunk,
+		rawarchive.CaptureAuthority(policy.RawCapturePolicy, policy.TeamRevision, policy.UserRevision)); err != nil {
+		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return rawPersist("commit chunk authorization", err)
@@ -85,6 +92,10 @@ func (s *Store) CommitChunk(
 	if !rawarchive.CaptureEnabled(policy.RawCapturePolicy, policy.RawCapturePreference) {
 		return rawarchive.CommitResult{}, &rawarchive.CaptureDisabledError{}
 	}
+	if err := publicationChunkAuthority(ctx, queries, principal, chunk,
+		rawarchive.CaptureAuthority(policy.RawCapturePolicy, policy.TeamRevision, policy.UserRevision)); err != nil {
+		return rawarchive.CommitResult{}, err
+	}
 	chunk.ProjectID = access.projectID
 
 	if err := queries.AcquireRawLock(ctx, "chunk:"+chunk.ChunkID); err != nil {
@@ -96,7 +107,7 @@ func (s *Store) CommitChunk(
 
 	existingChunk, err := queries.GetRawChunkForReplay(ctx, chunk.ChunkID)
 	if err == nil {
-		if !sameRawChunk(existingChunk, chunk) {
+		if !sameRawChunk(existingChunk, chunk) || !sameRawPublication(existingChunk.PublicationHead, existingChunk.RawTeamRevision, existingChunk.RawUserRevision, chunk.Publication) {
 			return rawarchive.CommitResult{}, rawConflict(chunk.ChunkID, "chunkId was reused with different content or metadata")
 		}
 		object, generation, err := readRawCommit(ctx, queries, existingChunk.ObjectID, existingChunk.Generation)
@@ -129,6 +140,16 @@ func (s *Store) CommitChunk(
 		if err := queries.InsertRawGeneration(ctx, db.InsertRawGenerationParams{ObjectID: chunk.ObjectID, Generation: 1}); err != nil {
 			return rawarchive.CommitResult{}, rawPersist("insert first generation", err)
 		}
+		if proof := chunk.Publication; proof != nil {
+			var head pgtype.UUID
+			if err := head.Scan(proof.Head); err != nil {
+				return rawarchive.CommitResult{}, err
+			}
+			if err := queries.BindRawPublicationObject(ctx, db.BindRawPublicationObjectParams{ID: chunk.ObjectID, PublicationHead: head,
+				RawTeamRevision: &proof.Authority.TeamRevision, RawUserRevision: &proof.Authority.UserRevision}); err != nil {
+				return rawarchive.CommitResult{}, rawPersist("bind Raw publication object", err)
+			}
+		}
 		object = rawarchive.ObjectRecord{
 			ObjectID: chunk.ObjectID, ProjectID: chunk.ProjectID, SessionID: chunk.SessionID,
 			SourceName: chunk.SourceName, MediaType: chunk.MediaType, AdapterID: chunk.AdapterID,
@@ -137,7 +158,7 @@ func (s *Store) CommitChunk(
 		}
 	} else {
 		object = rawObjectForUpdate(storedObject)
-		if !sameRawObjectIdentity(object, chunk) {
+		if !sameRawObjectIdentity(object, chunk) || !sameRawPublication(storedObject.PublicationHead, storedObject.RawTeamRevision, storedObject.RawUserRevision, chunk.Publication) {
 			return rawarchive.CommitResult{}, rawConflict(chunk.ObjectID, "Raw object project, session, source, media type, and Adapter are immutable")
 		}
 		switch {
@@ -209,6 +230,88 @@ func (s *Store) CommitChunk(
 		return rawarchive.CommitResult{}, rawPersist("commit chunk transaction", err)
 	}
 	return rawarchive.CommitResult{Object: object, Generation: generation}, nil
+}
+
+func publicationChunkAuthority(ctx context.Context, q *db.Queries, principal authentication.Principal, chunk rawarchive.ChunkRecord, authority rawarchive.Authority) error {
+	source, err := q.GetPublicationSource(ctx, chunk.SessionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if chunk.Publication != nil {
+			return &rawarchive.ValidationError{Field: "publication", Reason: "requires a publication-mode Session"}
+		}
+		return nil
+	}
+	if err != nil {
+		return rawPersist("read Raw publication owner", err)
+	}
+	if domainUUID(source.CapturedByUserID) != principal.UserID || source.InstallationID != chunk.InstallationID || source.AdapterID != chunk.AdapterID {
+		return &rawarchive.NotFoundError{Resource: "session", ID: chunk.SessionID}
+	}
+	proof := chunk.Publication
+	if proof == nil {
+		return &rawarchive.ValidationError{Field: "publication", Reason: "publication-mode Raw requires activation proof and independent Raw authority"}
+	}
+	if chunk.Generation != 1 {
+		return &rawarchive.ValidationError{Field: "generation", Reason: "publication Raw objects have one immutable generation"}
+	}
+	if proof.Authority != authority {
+		return &rawarchive.AuthorityChangedError{}
+	}
+	var head pgtype.UUID
+	if err := head.Scan(proof.Head); err != nil {
+		return &rawarchive.ValidationError{Field: "publication", Reason: "invalid activation identity"}
+	}
+	activated, err := q.GetRawPublicationProof(ctx, head)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &rawarchive.ValidationError{Field: "publication", Reason: "capture has not activated"}
+	}
+	if err != nil {
+		return rawPersist("read Raw activation proof", err)
+	}
+	if activated.SessionID != chunk.SessionID || activated.InstallationID != chunk.InstallationID || activated.AdapterID != chunk.AdapterID || domainUUID(activated.CapturedByUserID) != principal.UserID {
+		return &rawarchive.NotFoundError{Resource: "session", ID: chunk.SessionID}
+	}
+	return nil
+}
+
+func sameRawPublication(head pgtype.UUID, team, user *int64, proof *rawarchive.PublicationProof) bool {
+	if proof == nil {
+		return !head.Valid && team == nil && user == nil
+	}
+	return head.Valid && domainUUID(head) == proof.Head && team != nil && user != nil && *team == proof.Authority.TeamRevision && *user == proof.Authority.UserRevision
+}
+
+func (s *Store) LookupChunk(ctx context.Context, principal authentication.Principal, identity rawarchive.ChunkIdentity) (rawarchive.ChunkReceipt, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return rawarchive.ChunkReceipt{}, rawPersist("begin Raw receipt lookup", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	q := s.queries.WithTx(tx)
+	if _, err := resolveSessionAccess(ctx, q, principal, identity.SessionID, authorization.RawIngest, false); err != nil {
+		return rawarchive.ChunkReceipt{}, err
+	}
+	objectID := sourceidentity.RawObjectID(principal.UserID, identity.SessionID, identity.InstallationID, identity.AdapterID, identity.SourceObjectID)
+	chunkID := sourceidentity.RawChunkID(objectID, identity.SourceChunkID)
+	row, err := q.GetRawChunkForReplay(ctx, chunkID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return rawarchive.ChunkReceipt{}, &rawarchive.NotFoundError{Resource: "chunk", ID: identity.SourceChunkID}
+	}
+	if err != nil {
+		return rawarchive.ChunkReceipt{}, rawPersist("read Raw receipt", err)
+	}
+	receipt := rawarchive.ChunkReceipt{ChunkIdentity: identity, ObjectID: row.ObjectID, Generation: row.Generation, Offset: row.ByteOffset, SizeBytes: row.SizeBytes, SHA256: row.Sha256, Final: row.Final,
+		ProtocolVersion: rawarchive.ProtocolVersion, SourceName: row.SourceName, MediaType: row.MediaType, AdapterVersion: row.ChunkAdapterVersion,
+		CapturedAt: row.ChunkCapturedAt.UTC().Format(time.RFC3339Nano), ClientRedacted: row.ClientRedacted}
+	if row.PublicationHead.Valid {
+		if row.RawTeamRevision == nil || row.RawUserRevision == nil {
+			return rawarchive.ChunkReceipt{}, rawPersist("read Raw publication binding", errors.New("incomplete publication binding"))
+		}
+		receipt.Publication = &rawarchive.PublicationProof{Head: domainUUID(row.PublicationHead), Authority: rawarchive.Authority{Protocol: rawarchive.PublicationProtocol, TeamRevision: *row.RawTeamRevision, UserRevision: *row.RawUserRevision}}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return rawarchive.ChunkReceipt{}, rawPersist("commit Raw receipt lookup", err)
+	}
+	return receipt, nil
 }
 
 func (s *Store) ListSessionObjects(

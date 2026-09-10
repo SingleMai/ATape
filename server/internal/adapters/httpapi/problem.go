@@ -32,6 +32,7 @@ const (
 	problemPublicationExpired         problemCode = "publication_expired"
 	problemPublicationConflict        problemCode = "publication_conflict"
 	problemRawCaptureDisabled         problemCode = "raw_capture_disabled"
+	problemRawAuthorityChanged        problemCode = "raw_authority_changed"
 	problemInvalidRequest             problemCode = "invalid_request"
 	problemInvalidUserCode            problemCode = "invalid_user_code"
 	problemInvalidJoinCode            problemCode = "invalid_join_code"
@@ -84,6 +85,7 @@ var problemRegistry = map[problemCode]problemDefinition{
 	problemPublicationExpired:         {410, "The publication authority expired", "Recover the attempt status before allocating new publication authority."},
 	problemPublicationConflict:        {409, "The publication identity conflicts", "Reuse immutable publication identities only with the original content."},
 	problemRawCaptureDisabled:         {403, "Raw capture is disabled", "The current Team and User settings do not allow Raw uploads."},
+	problemRawAuthorityChanged:        {409, "Raw capture authority changed", "The frozen observation cannot use newer Raw authority; preserve real receipts and capture a fresh observation."},
 	problemInvalidRequest:             {400, "The request is invalid", "The request could not be understood."},
 	problemInvalidUserCode:            {400, "The user code is invalid", "The user code is invalid or no longer available."},
 	problemInvalidJoinCode:            {400, "The join code is invalid", "The join code is invalid or no longer available."},
@@ -243,6 +245,10 @@ func classifyError(err error) (problemCode, int, []fieldProblem) {
 		return problemValidationFailed, 0, []fieldProblem{{Field: canonicalValidation.Field, Code: "invalid"}}
 	}
 	var rawDisabled *rawarchive.CaptureDisabledError
+	var rawAuthority *rawarchive.AuthorityChangedError
+	if errors.As(err, &rawAuthority) {
+		return problemRawAuthorityChanged, 0, nil
+	}
 	if errors.As(err, &rawDisabled) {
 		return problemRawCaptureDisabled, 0, nil
 	}

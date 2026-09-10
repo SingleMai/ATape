@@ -164,6 +164,7 @@ func (h *Handler) instance(response http.ResponseWriter, request *http.Request) 
 	protocols := []string{"atape.canonical.v1", "atape.raw.v1", "atape.cli-authorization.v1"}
 	if h.publication != nil {
 		protocols = append(protocols, h.publication.Capabilities().Protocol)
+		protocols = append(protocols, rawarchive.PublicationProtocol)
 	}
 	writePublicMetadata(response, request, instanceDocument{
 		Protocol: "atape.instance.v1", InstanceOrigin: h.config.instanceOrigin,

@@ -379,7 +379,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	decodeResponse(t, createProjectResponse, &project)
 
 	t.Run("publication transport", func(t *testing.T) {
-		assertHTTPPublicationContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie)
+		assertHTTPPublicationContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
 
 	batch := canonicalcontract.ValidBatch()

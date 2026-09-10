@@ -17,6 +17,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/sourceidentity"
+	"github.com/google/uuid"
 )
 
 const (
@@ -27,22 +28,23 @@ const (
 )
 
 type UploadChunk struct {
-	ProtocolVersion string `json:"protocolVersion"`
-	SourceChunkID   string `json:"sourceChunkId"`
-	SourceObjectID  string `json:"sourceObjectId"`
-	SessionID       string `json:"sessionId"`
-	InstallationID  string `json:"installationId"`
-	Generation      int64  `json:"generation"`
-	Offset          int64  `json:"offset"`
-	SourceName      string `json:"sourceName"`
-	MediaType       string `json:"mediaType"`
-	AdapterID       string `json:"adapterId"`
-	AdapterVersion  string `json:"adapterVersion"`
-	CapturedAt      string `json:"capturedAt"`
-	ClientRedacted  bool   `json:"clientRedacted"`
-	Final           bool   `json:"final"`
-	ContentBase64   string `json:"contentBase64"`
-	SHA256          string `json:"sha256"`
+	ProtocolVersion string            `json:"protocolVersion"`
+	SourceChunkID   string            `json:"sourceChunkId"`
+	SourceObjectID  string            `json:"sourceObjectId"`
+	SessionID       string            `json:"sessionId"`
+	InstallationID  string            `json:"installationId"`
+	Generation      int64             `json:"generation"`
+	Offset          int64             `json:"offset"`
+	SourceName      string            `json:"sourceName"`
+	MediaType       string            `json:"mediaType"`
+	AdapterID       string            `json:"adapterId"`
+	AdapterVersion  string            `json:"adapterVersion"`
+	CapturedAt      string            `json:"capturedAt"`
+	ClientRedacted  bool              `json:"clientRedacted"`
+	Final           bool              `json:"final"`
+	ContentBase64   string            `json:"contentBase64"`
+	SHA256          string            `json:"sha256"`
+	Publication     *PublicationProof `json:"publication,omitempty"`
 }
 
 type ChunkRecord struct {
@@ -67,6 +69,7 @@ type ChunkRecord struct {
 	Final            bool
 	SHA256           string
 	StorageKey       string
+	Publication      *PublicationProof
 }
 
 type GenerationRecord struct {
@@ -113,6 +116,7 @@ type ManifestStore interface {
 	CommitChunk(context.Context, authentication.Principal, ChunkRecord) (CommitResult, error)
 	ListSessionObjects(context.Context, authentication.Principal, string) ([]ObjectRecord, error)
 	PlanContent(context.Context, authentication.Principal, string, int64, int64, int) (ContentPlan, error)
+	LookupChunk(context.Context, authentication.Principal, ChunkIdentity) (ChunkReceipt, error)
 }
 
 // ChunkStore is the immutable byte Seam consumed by Archive. Put must be
@@ -142,11 +146,12 @@ func (a *Archive) CheckStorage(ctx context.Context) error {
 }
 
 type AppendResult struct {
-	ObjectID   string `json:"objectId"`
-	Generation int64  `json:"generation"`
-	SizeBytes  int64  `json:"sizeBytes"`
-	Finalized  bool   `json:"finalized"`
-	Replayed   bool   `json:"replayed"`
+	ObjectID   string        `json:"objectId"`
+	Generation int64         `json:"generation"`
+	SizeBytes  int64         `json:"sizeBytes"`
+	Finalized  bool          `json:"finalized"`
+	Replayed   bool          `json:"replayed"`
+	Receipt    *ChunkReceipt `json:"receipt,omitempty"`
 }
 
 type ObjectSummary struct {
@@ -205,13 +210,71 @@ func (a *Archive) Append(
 	if err != nil {
 		return AppendResult{}, concealedAsNotFound(err, "session", upload.SessionID)
 	}
-	return AppendResult{
+	result := AppendResult{
 		ObjectID:   committed.Object.ObjectID,
 		Generation: committed.Generation.Generation,
 		SizeBytes:  committed.Generation.SizeBytes,
 		Finalized:  committed.Generation.Finalized,
 		Replayed:   committed.Replayed,
-	}, nil
+	}
+	if record.Publication != nil {
+		receipt := ReceiptForChunk(record)
+		result.Receipt = &receipt
+	}
+	return result, nil
+}
+
+type PublicationProof struct {
+	Head      string    `json:"head"`
+	Authority Authority `json:"authority"`
+}
+
+type ChunkIdentity struct {
+	SessionID      string `json:"sessionId"`
+	InstallationID string `json:"installationId"`
+	AdapterID      string `json:"adapterId"`
+	SourceObjectID string `json:"sourceObjectId"`
+	SourceChunkID  string `json:"sourceChunkId"`
+}
+
+// ChunkReceipt describes one immutable accepted write, never the current size
+// of a generation that other chunks may have advanced since the original ACK.
+type ChunkReceipt struct {
+	ChunkIdentity
+	ProtocolVersion string            `json:"protocolVersion"`
+	SourceName      string            `json:"sourceName"`
+	MediaType       string            `json:"mediaType"`
+	AdapterVersion  string            `json:"adapterVersion"`
+	CapturedAt      string            `json:"capturedAt"`
+	ClientRedacted  bool              `json:"clientRedacted"`
+	ObjectID        string            `json:"objectId"`
+	Generation      int64             `json:"generation"`
+	Offset          int64             `json:"offset"`
+	SizeBytes       int64             `json:"sizeBytes"`
+	SHA256          string            `json:"sha256"`
+	Final           bool              `json:"final"`
+	Publication     *PublicationProof `json:"publication,omitempty"`
+}
+
+func ReceiptForChunk(record ChunkRecord) ChunkReceipt {
+	return ChunkReceipt{ChunkIdentity: ChunkIdentity{SessionID: record.SessionID, InstallationID: record.InstallationID,
+		AdapterID: record.AdapterID, SourceObjectID: record.SourceObjectID, SourceChunkID: record.SourceChunkID},
+		ProtocolVersion: ProtocolVersion, SourceName: record.SourceName, MediaType: record.MediaType, AdapterVersion: record.AdapterVersion,
+		CapturedAt: record.CapturedAt.UTC().Format(time.RFC3339Nano), ClientRedacted: record.ClientRedacted,
+		ObjectID: record.ObjectID, Generation: record.Generation, Offset: record.Offset, SizeBytes: record.SizeBytes,
+		SHA256: record.SHA256, Final: record.Final, Publication: record.Publication}
+}
+
+// Receipt recovers accepted metadata without a blob read or new upload grant.
+// Current source ownership/access is still checked by the manifest transaction.
+func (a *Archive) Receipt(ctx context.Context, principal authentication.Principal, identity ChunkIdentity) (ChunkReceipt, error) {
+	for _, value := range []string{identity.SessionID, identity.InstallationID, identity.AdapterID, identity.SourceObjectID, identity.SourceChunkID} {
+		if strings.TrimSpace(value) == "" || len(value) > 512 || strings.ContainsRune(value, 0) {
+			return ChunkReceipt{}, &ValidationError{Field: "chunkIdentity", Reason: "requires bounded nonempty source identity"}
+		}
+	}
+	receipt, err := a.manifests.LookupChunk(ctx, principal, identity)
+	return receipt, concealedAsNotFound(err, "chunk", identity.SourceChunkID)
 }
 
 func (a *Archive) OpenSession(
@@ -302,6 +365,13 @@ func concealedAsNotFound(err error, resource, id string) error {
 }
 
 func validateUpload(principal authentication.Principal, upload UploadChunk) (ChunkRecord, []byte, error) {
+	if proof := upload.Publication; proof != nil {
+		id, err := uuid.Parse(proof.Head)
+		if err != nil || id.String() != proof.Head || id == uuid.Nil || proof.Authority.Protocol != PublicationProtocol ||
+			proof.Authority.TeamRevision < 1 || proof.Authority.UserRevision < 0 || upload.Generation != 1 {
+			return ChunkRecord{}, nil, &ValidationError{Field: "publication", Reason: "requires a canonical activation identity, Raw authority and one immutable generation"}
+		}
+	}
 	required := []struct {
 		field string
 		value string
@@ -358,6 +428,9 @@ func validateUpload(principal authentication.Principal, upload UploadChunk) (Chu
 	if err != nil {
 		return ChunkRecord{}, nil, &ValidationError{Field: "capturedAt", Reason: "must be RFC3339"}
 	}
+	if upload.Publication != nil && capturedAt.Nanosecond()%1000 != 0 {
+		return ChunkRecord{}, nil, &ValidationError{Field: "capturedAt", Reason: "publication receipt timestamps require microsecond precision or coarser"}
+	}
 	objectID := sourceidentity.RawObjectID(
 		principal.UserID, upload.SessionID, upload.InstallationID,
 		upload.AdapterID, upload.SourceObjectID,
@@ -369,7 +442,7 @@ func validateUpload(principal authentication.Principal, upload UploadChunk) (Chu
 		Generation: upload.Generation, Offset: upload.Offset, SizeBytes: int64(len(content)), SourceName: upload.SourceName,
 		MediaType: upload.MediaType, AdapterID: upload.AdapterID, AdapterVersion: upload.AdapterVersion,
 		CapturedAt: capturedAt.UTC(), ClientRedacted: upload.ClientRedacted, Final: upload.Final,
-		SHA256: providedDigest, StorageKey: "sha256/" + providedDigest[:2] + "/" + providedDigest,
+		SHA256: providedDigest, StorageKey: "sha256/" + providedDigest[:2] + "/" + providedDigest, Publication: upload.Publication,
 	}, content, nil
 }
 

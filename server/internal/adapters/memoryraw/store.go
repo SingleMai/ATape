@@ -11,6 +11,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/sourceidentity"
 )
 
 type generationState struct {
@@ -87,6 +88,9 @@ func (s *Store) AuthorizeChunk(
 	principal authentication.Principal,
 	chunk rawarchive.ChunkRecord,
 ) error {
+	if chunk.Publication != nil {
+		return &rawarchive.UnavailableError{Operation: "publication Raw in demo mode"}
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -105,6 +109,9 @@ func (s *Store) CommitChunk(
 	principal authentication.Principal,
 	chunk rawarchive.ChunkRecord,
 ) (rawarchive.CommitResult, error) {
+	if chunk.Publication != nil {
+		return rawarchive.CommitResult{}, &rawarchive.UnavailableError{Operation: "publication Raw in demo mode"}
+	}
 	if err := ctx.Err(); err != nil {
 		return rawarchive.CommitResult{}, err
 	}
@@ -195,6 +202,21 @@ func (s *Store) CommitChunk(
 	state.record.CurrentFinalized = generation.record.Finalized
 
 	return rawarchive.CommitResult{Object: state.record, Generation: generation.record}, nil
+}
+
+func (s *Store) LookupChunk(ctx context.Context, principal authentication.Principal, identity rawarchive.ChunkIdentity) (rawarchive.ChunkReceipt, error) {
+	if _, err := s.authorizeSession(ctx, principal, identity.SessionID, authorization.RawIngest); err != nil {
+		return rawarchive.ChunkReceipt{}, err
+	}
+	objectID := sourceidentity.RawObjectID(principal.UserID, identity.SessionID, identity.InstallationID, identity.AdapterID, identity.SourceObjectID)
+	chunkID := sourceidentity.RawChunkID(objectID, identity.SourceChunkID)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	chunk, ok := s.chunkIDs[chunkID]
+	if !ok {
+		return rawarchive.ChunkReceipt{}, &rawarchive.NotFoundError{Resource: "chunk", ID: identity.SourceChunkID}
+	}
+	return rawarchive.ReceiptForChunk(chunk), nil
 }
 
 func (s *Store) ListSessionObjects(

@@ -60,6 +60,19 @@ func (h *Handler) rawChunk(response http.ResponseWriter, request *http.Request) 
 	writeJSON(response, request, status, result)
 }
 
+func (h *Handler) rawReceipt(response http.ResponseWriter, request *http.Request) {
+	var identity rawarchive.ChunkIdentity
+	if !decodeJSON(response, request, &identity) {
+		return
+	}
+	receipt, err := h.raw.Receipt(request.Context(), principalFromContext(request.Context()), identity)
+	if err != nil {
+		writeError(response, request, err)
+		return
+	}
+	writeJSON(response, request, http.StatusOK, receipt)
+}
+
 func (h *Handler) workspace(response http.ResponseWriter, request *http.Request) {
 	principal := principalFromContext(request.Context())
 	if h.teams != nil {

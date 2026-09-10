@@ -1,5 +1,8 @@
 # Architecture Decision Records
 
+[ADR-0060](0060-publication-raw-authority-and-receipts.md) defines independent
+Raw authority versions and immutable chunk receipt recovery for publication.
+
 [ADR-0059](0059-opencode-publication-and-recovery.md) selects common atomic
 publication and the OpenCode capture/recovery contract for the first increment;
 Implementation and native acceptance remain pending.

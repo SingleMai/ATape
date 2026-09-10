@@ -564,7 +564,7 @@ DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 17; got != want {
+	if got, want := migrationCount, 18; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))
