@@ -95,6 +95,9 @@ importers:
 
   adapters/opencode:
     dependencies:
+      '@atape/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       effect:
         specifier: 'catalog:'
         version: 4.0.0-rc.112

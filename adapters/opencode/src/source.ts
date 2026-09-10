@@ -42,6 +42,10 @@ export type OpenCodeSourceRecord = {
 export type OpenCodeSourceView = {
   readonly root: OpenCodeSession
   readonly threads: ReadonlyArray<OpenCodeSession>
+  /** Creation evidence, never inferred from the mutable current directory. */
+  readonly origin: () => Effect.Effect<{ readonly eventId: string; readonly directory: string; readonly createdAt: number }, OpenCodeSourceError>
+  /** One planning rescan, only after complete consumption, inside this same snapshot. */
+  readonly rewind: () => Effect.Effect<void, OpenCodeSourceError>
   /** One coherent read transaction. A view is single-consumer and cannot be resumed after close. */
   readonly read: () => Effect.Effect<{ readonly records: ReadonlyArray<OpenCodeSourceRecord>; readonly done: boolean }, OpenCodeSourceError>
 }
@@ -102,7 +106,7 @@ function probe(db: DatabaseSync) {
   const v2 = db.prepare("SELECT type FROM sqlite_schema WHERE name='session_message'").get()
   if (v2 && (v2.type !== "table" || !hasIndex("session_message", ["session_id"])))
     throw fail("unsupported", "OpenCode v2 history cannot be safely probed.")
-  return { columns, v2: v2 !== undefined }
+  return { columns, v2: v2 !== undefined, hasIndex }
 }
 
 const open = (path: string) => Effect.acquireRelease(Effect.tryPromise({
@@ -165,11 +169,14 @@ const partProjection = `json_object('type',json_extract(data,'$.type'),'text',js
   'state',json_object('status',json_extract(data,'$.state.status'),'input',json_extract(data,'$.state.input'),
     'output',json_extract(data,'$.state.output'),'error',json_extract(data,'$.state.error'),'title',json_extract(data,'$.state.title'),
     'time',json_extract(data,'$.state.time'),'sessionId',json_extract(data,'$.state.metadata.sessionId'),
-    'attachments',json_extract(data,'$.state.attachments')),
-  'mime',json_extract(data,'$.mime'),'filename',json_extract(data,'$.filename'),'url',json_extract(data,'$.url'),
+    'partialOutput',json_extract(data,'$.state.metadata.output'),'interrupted',data -> '$.state.metadata.interrupted',
+    'attachmentsShape',json_type(data,'$.state.attachments'),
+    'attachmentCount',CASE WHEN json_type(data,'$.state.attachments')='array' THEN json_array_length(data,'$.state.attachments') END),
+  'mime',json_extract(data,'$.mime'),'filename',json_extract(data,'$.filename'),
+  'url',CASE WHEN lower(substr(json_extract(data,'$.url'),1,5))='data:' THEN 'data:' ELSE json_extract(data,'$.url') END,
   'auto',data -> '$.auto','prompt',json_extract(data,'$.prompt'),'description',json_extract(data,'$.description'),
   'agent',json_extract(data,'$.agent'),'name',json_extract(data,'$.name'),'files',json_extract(data,'$.files'),
-  'reason',json_extract(data,'$.reason'))`
+  'reason',json_extract(data,'$.reason'),'tokens',json_extract(data,'$.tokens'))`
 
 /** Holds one scoped SQLite snapshot until all records are read or the Effect scope exits.
  * No network, provider executable, source migration, or payload persistence is performed.
@@ -227,7 +234,7 @@ export const openOpenCodeSource = (options: { readonly path: string; readonly se
     }
     let threadIndex = 0, phase: Table = "session", messageId = "", messageTime = -1, partId = "", consumed = 0
     let pending: { record: OpenCodeSourceRecord; bytes: number } | undefined
-    let failed = false, done = false
+    let failed = false, done = false, rewound = false
     const row = (table: Table, id: string): OpenCodeSourceRecord => {
       const columns = options.rawEnabled ? schema.columns[table] : [...required[table]]
       const sizeExpression = columns.map(column => `coalesce(length(cast(${quoted(column)} as blob)),0)`).join("+")
@@ -276,7 +283,36 @@ export const openOpenCodeSource = (options: { readonly path: string; readonly se
       }
       return undefined
     }
-    return { root, threads: family, read: () => attempt(() => {
+    return { root, threads: family, origin: () => attempt(() => {
+      check()
+      if (failed) throw fail("closed", "A failed source view must be abandoned and reopened.")
+      if (db.prepare("SELECT type FROM sqlite_schema WHERE name='event'").get()?.type !== "table")
+        throw fail("attribution", "OpenCode creation evidence is unavailable.")
+      const info = db.prepare("SELECT * FROM pragma_table_info('event') LIMIT 101").all()
+      if (info.length > 100 || ["id", "aggregate_id", "seq", "type", "data"].some(key => !info.some(column => column.name === key)) ||
+        info.filter(column => Number(column.pk) > 0).length !== 1 || !info.some(column => column.name === "id" && column.pk === 1) ||
+        !schema.hasIndex("event", ["aggregate_id", "type", "seq"]))
+        throw fail("unsupported", "OpenCode creation evidence has no supported bounded read path.")
+      const rows = db.prepare(`SELECT CASE WHEN length(cast(id as blob))<=500 THEN id END id,seq,
+        length(cast(data as blob)) bytes FROM event WHERE aggregate_id=? AND type='session.created.1' LIMIT 2`).all(root.id)
+      if (rows.length !== 1 || rows[0]!.seq !== 0) throw fail("attribution", "OpenCode creation evidence is missing or ambiguous.")
+      const row = rows[0]!, id = identifier(row.id)
+      if (count(row.bytes) > limits.rowBytes) throw fail("limit", "OpenCode creation evidence exceeds its byte bound.")
+      if (db.prepare("SELECT CASE WHEN typeof(data)='text' AND json_valid(data) THEN json_type(data) END shape FROM event WHERE id=?").get(id)?.shape !== "object")
+        throw fail("format", "OpenCode creation evidence JSON is invalid.")
+      const data = json(db.prepare(`SELECT json_object('sessionID',json_extract(data,'$.sessionID'),'info',
+        json_object('id',json_extract(data,'$.info.id'),'parentID',json_extract(data,'$.info.parentID'),
+        'directory',json_extract(data,'$.info.directory'),'time',json_object('created',data -> '$.info.time.created'))) projected FROM event WHERE id=?`).get(id)?.projected), created = object(data.info)
+      const directory = identifier(created.directory, 4096), createdAt = count(object(created.time).created)
+      if (data.sessionID !== root.id || created.id !== root.id || created.parentID != null ||
+        createdAt !== root.timeCreated || !isAbsolute(directory)) throw fail("attribution", "OpenCode creation evidence does not prove this root's Origin.")
+      check()
+      return { eventId: id, directory, createdAt }
+    }), rewind: () => attempt(() => {
+      check()
+      if (failed || !done || rewound) throw fail("closed", "Only one complete planning rescan is allowed.")
+      rewound = true; done = false; threadIndex = 0; phase = "session"; messageId = ""; messageTime = -1; partId = ""; consumed = 0; pending = undefined
+    }), read: () => attempt(() => {
       check()
       if (failed) throw fail("closed", "A failed source view must be abandoned and reopened.")
       if (done) return { records: [], done: true }

@@ -316,6 +316,29 @@ matched all 23 records without changing the database mtime. These results establ
 one source profile, not general platform/version support or end-to-end ingestion.
 See [ADR-0063](../architecture/adr/0063-opencode-scoped-source-views.md).
 
+## Landed source capability: Active Path projection and creation Origin
+
+`openOpenCodeCapture` plans complete target counts and streams bounded Event/usage
+drafts within the same read-only SQLite snapshot. One complete planning rescan is
+allowed; neither pass writes intermediate provider payloads. Final versions,
+redaction, encoding and Raw provenance remain Host responsibilities. The source
+scope must close before journal sealing and content delivery.
+
+Native creation events prove the root's original directory independently of later
+Session moves. Missing or ambiguous creation evidence reports an attribution
+failure; current directories never silently substitute for Origin. Native parents
+define children and independent forks. Revert boundaries determine Canonical
+membership, while stored suffixes still produce Raw frames. Tool call/result slots
+keep stable identities and recognize actual completed/error states. Step usage
+restores cache/reasoning components and preserves unknown counters.
+
+Unknown parts, inline media and unprojected tool attachments mark capture fidelity
+partial. External/file media are links without content fetching. Compaction retains
+original stored tool output; lifecycle parts do not become fabricated messages.
+The controlled native fixture now includes its three actual creation events.
+SQLite tests cover these semantics, source mutation between passes, bounds and
+scope closure. See [ADR-0064](../architecture/adr/0064-opencode-projection-and-creation-origin.md).
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -337,8 +360,8 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment adds OpenCode Active Path and Canonical projection. Host preparation and
-Collector scheduling then connect these foundations into the explicit capability.
+The next increment connects Host preparation, revision allocation, validation,
+redaction and final byte packing. Collector scheduling then selects the explicit capability.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
 The first usable OpenCode release also needs real source mutation, rewind,

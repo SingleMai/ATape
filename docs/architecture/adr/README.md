@@ -112,3 +112,4 @@ pretending that staging acceptance passed.
 - [ADR-0061: Independent fresh Raw observations](0061-independent-raw-observations.md)
 - [ADR-0062: Source record versions and independent coverage](0062-source-record-versions-and-coverage.md)
 - [ADR-0063: OpenCode scoped source views](0063-opencode-scoped-source-views.md)
+- [ADR-0064: OpenCode projection and creation Origin](0064-opencode-projection-and-creation-origin.md)
