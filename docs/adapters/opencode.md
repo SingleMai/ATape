@@ -292,6 +292,30 @@ requires an explicit record-count budget. A verified format 1–3 upgrade preser
 existing payloads and receipts; it does not initialize versions over an existing
 untracked checkpoint. See [ADR-0062](../architecture/adr/0062-source-record-versions-and-coverage.md).
 
+## Landed source capability: scoped read-only OpenCode SQLite
+
+The private OpenCode workspace package now provides bounded discovery and scoped
+source views. It probes the actual v1 tables and indexes, follows native parent
+chains, and reads one proven root family in one SQLite snapshot. Fork roots remain
+independent. Unknown/mixed v2 storage, missing parent evidence and inconsistent
+relationships fail explicitly. Revert metadata is validated; the source still
+returns actual stored rows for subsequent Active Path projection.
+
+Every view has explicit byte, row, family and lifetime budgets. It checks source
+sizes before loading values and verifies that traversal covered all admitted rows.
+Raw-off reads expose only projection fields; Raw-on includes complete actual row
+columns and original JSON TEXT. Unknown provider fields do not become Canonical
+merely because the archive retains them. Oversized sources fail without replacing
+existing published coverage. The Host still must validate/redact source output.
+
+Real SQLite tests cover concurrent source changes, field filtering, identities,
+unsupported layouts, invalid ordering and bounds. The controlled official 1.18.30
+fixture's root/child/fork messages and parts match official exports through the
+production source Interface. Direct reading of its retained native database also
+matched all 23 records without changing the database mtime. These results establish
+one source profile, not general platform/version support or end-to-end ingestion.
+See [ADR-0063](../architecture/adr/0063-opencode-scoped-source-views.md).
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -313,7 +337,7 @@ lease/fence checks or source observation. The Host must use tracked membership
 and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
-The next increment connects the OpenCode source Interface and projection. Host preparation and
+The next increment adds OpenCode Active Path and Canonical projection. Host preparation and
 Collector scheduling then connect these foundations into the explicit capability.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
