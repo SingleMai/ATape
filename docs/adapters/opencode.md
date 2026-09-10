@@ -61,6 +61,22 @@ transport sealing and Canonical validation. Real PostgreSQL tests cover nine
 scenario groups, including independent connections competing for quota, lease
 expiry during storage work, expired-token cleanup and revoked membership.
 
+## Landed foundation: bounded candidate validation
+
+`PublicationStore.Validate` now checks one frozen part per transaction through
+the shared Canonical normalization Interface. It verifies source ownership,
+complete Session/Thread topology, tools, usage, cross-part membership and immutable
+source revisions. Each successful step replaces the transport body with fixed
+Canonical bytes and persists membership coordinates, validation progress and
+actual retained-byte accounting together. A new Server connection resumes from
+that progress. Normalized bytes still consume the configured part, target and
+account budgets; failed validation cannot partly advance the current unit.
+
+Real PostgreSQL tests cover eleven validation scenarios, including large Event
+indices, child tools and usage, changed source versions after cleanup, quota
+rollback and lease expiry during normalization. This increment prepares complete
+candidate membership but does not select a visible head or connect HTTP routes.
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -82,8 +98,8 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment adds bounded Canonical validation and head materialization,
-then atomic activation with head-aware Reader/Search integration and HTTP routing.
+The next increment adds atomic activation with head-aware Reader/Search
+integration and HTTP routing.
 Collector journal recovery and the OpenCode projection then connect to that
 complete publication Interface.
 The first usable OpenCode release also needs real source mutation, rewind,

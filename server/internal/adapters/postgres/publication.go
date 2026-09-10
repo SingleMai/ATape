@@ -127,6 +127,9 @@ func (s *PublicationStore) reservation(ctx context.Context, q *db.Queries, p aut
 func attemptValue(row db.GetPublicationAttemptRow) (publication.Attempt, error) {
 	value := publication.Attempt{ID: domainUUID(row.ID), SessionID: row.SessionID, CaptureID: row.CaptureID, TransformVersion: row.TransformVersion,
 		Fence: row.Fence, LeaseUntil: row.LeaseUntil, ExpiresAt: row.ExpiresAt, State: row.EffectiveState, Parts: int(row.PartCount), RetainedBytes: row.RetainedBytes}
+	value.ValidatedParts = int(row.ValidatedParts)
+	value.CandidateEvents = int(row.CandidateEvents)
+	value.CandidateUsage = int(row.CandidateUsage)
 	if row.BaseHead != nil {
 		value.BaseHead = *row.BaseHead
 	}
@@ -148,7 +151,7 @@ func publicationAttempt(ctx context.Context, q *db.Queries, id pgtype.UUID) (pub
 	return attemptValue(row)
 }
 func liveAttempt(a publication.Attempt) error {
-	if a.State != "open" && a.State != "sealed" {
+	if a.State != "open" && a.State != "sealed" && a.State != "validating" && a.State != "validated" {
 		return publicationError(a.State, "candidate no longer has write authority")
 	}
 	return nil

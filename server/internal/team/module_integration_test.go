@@ -691,7 +691,8 @@ func rotateAndJoin(
 func resetTeamState(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(), `
-TRUNCATE canonical_publication_parts, canonical_publication_attempts,
+TRUNCATE canonical_publication_members, canonical_publication_record_versions,
+         canonical_publication_parts, canonical_publication_attempts,
          canonical_publication_reservations, canonical_publication_sources,
          security_audit_events,
          team_operation_receipts, team_project_repository_aliases,

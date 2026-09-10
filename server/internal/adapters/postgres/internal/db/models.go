@@ -49,6 +49,11 @@ type CanonicalPublicationAttempt struct {
 	PartCount        int32
 	RetainedBytes    int64
 	SealJson         *string
+	ValidatedParts   int32
+	CandidateEvents  int32
+	CandidateUsage   int32
+	HeaderDigest     *string
+	TargetJson       *string
 }
 
 type CanonicalPublicationReservation struct {

@@ -56,11 +56,18 @@ func (i *Ingestor) ApplyBatch(ctx context.Context, principal authentication.Prin
 	if err := ctx.Err(); err != nil {
 		return canonical.ApplyResult{}, err
 	}
-	writeBatch, err := normalizeBatch(principal, batch)
+	writeBatch, err := PrepareBatch(principal, batch)
 	if err != nil {
 		return canonical.ApplyResult{}, err
 	}
 	return i.store.ApplyBatch(ctx, principal, writeBatch)
+}
+
+// PrepareBatch validates and projects one bounded Canonical wire batch without
+// publishing it. Incremental ingestion and candidate preparation share this
+// Interface so tool, usage, identity and fidelity rules cannot diverge.
+func PrepareBatch(principal authentication.Principal, batch Batch) (canonical.WriteBatch, error) {
+	return normalizeBatch(principal, batch)
 }
 
 func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.WriteBatch, error) {
