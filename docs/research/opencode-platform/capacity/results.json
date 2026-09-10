@@ -1,0 +1,784 @@
+[
+  {
+    "case": "1000-off-normal",
+    "exitCode": 0,
+    "timeout": false,
+    "processWallSeconds": 2.134685375,
+    "maxRSSBytes": 222543872,
+    "output": {
+      "case": {
+        "count": 1000,
+        "rawEnabled": false,
+        "mode": "normal",
+        "textBytesPerEvent": 1024
+      },
+      "node": "v24.18.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "limits": {
+        "source": {
+          "rowBytes": 1048576,
+          "pageBytes": 4194304,
+          "pageRows": 100,
+          "records": 100000,
+          "threads": 20,
+          "durationMs": 115000
+        },
+        "projection": {
+          "events": 20000,
+          "usage": 20000,
+          "pageItems": 100,
+          "pageBytes": 4194304
+        },
+        "journal": {
+          "unitBytes": 5242880,
+          "targetBytes": 134217728,
+          "pendingBytes": 268435456,
+          "unitsPerTarget": 4096,
+          "recordsPerTarget": 100000,
+          "metadataEntries": 1000000
+        },
+        "raw": {
+          "objectBytes": 3145728,
+          "wireBytes": 5242880,
+          "targetBytes": 100663296,
+          "units": 4096
+        },
+        "remote": {
+          "partBytes": 4194304,
+          "targetBytes": 134217728,
+          "userPendingBytes": 268435456,
+          "parts": 4096,
+          "reservations": 10,
+          "reservationLifetimeMs": 60000,
+          "leaseLifetimeMs": 60000
+        }
+      },
+      "fixtureMs": 11.719874999999995,
+      "result": {
+        "elapsedMs": 2055.84325,
+        "prepared": {
+          "ok": true,
+          "value": {
+            "units": 2,
+            "bytes": 1427622,
+            "materializedBytes": 3595358,
+            "records": {
+              "canonical": {
+                "session": 1,
+                "thread": 1,
+                "event": 1000,
+                "usage": 0
+              }
+            }
+          }
+        },
+        "captureState": "sealed",
+        "seal": {
+          "records": {
+            "canonical": {
+              "session": 1,
+              "thread": 1,
+              "event": 1000,
+              "usage": 0
+            }
+          },
+          "canonicalUnits": 2,
+          "rawUnits": 0,
+          "nextCheckpoint": "measured-head",
+          "manifestJson": "{\"protocol\":\"atape.publication.v1\",\"fence\":1,\"manifest\":{\"parts\":2,\"bytes\":1427622,\"sha256\":\"b5ffc3e77a685b6c6f8d337d2d0e82071e45dc708c004f406b707d514790c93f\"}}"
+        },
+        "activationReceipt": null,
+        "baseline": null,
+        "coverage": {
+          "canonicalCaptureId": null,
+          "observedCanonicalCaptureId": "measured",
+          "observedRawCaptureId": null
+        },
+        "checkpoint": null,
+        "stats": {
+          "files": {
+            "db": 2633728,
+            "wal": 1718072,
+            "shm": 32768
+          },
+          "account": {
+            "retained_bytes": 1427622,
+            "metadata_entries": 2008
+          },
+          "tables": {
+            "scopes": 1,
+            "captures": 1,
+            "units": 2,
+            "source_record_versions": 1002,
+            "capture_records": 1002
+          },
+          "units": [
+            {
+              "kind": "canonical",
+              "units": 2,
+              "bytes": 1427622
+            }
+          ]
+        },
+        "contentTransportCalls": 0,
+        "sourceBytes": 1884160
+      },
+      "afterClose": {
+        "db": 2633728,
+        "wal": 0,
+        "shm": 0
+      },
+      "nodeResourceUsage": {
+        "userCPUTime": 2008156,
+        "systemCPUTime": 250013,
+        "maxRSS": 217328,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 99123,
+        "majorPageFault": 100,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 2188,
+        "involuntaryContextSwitches": 5861
+      }
+    }
+  },
+  {
+    "case": "1000-on-normal",
+    "exitCode": 0,
+    "timeout": false,
+    "processWallSeconds": 3.067953208,
+    "maxRSSBytes": 211779584,
+    "output": {
+      "case": {
+        "count": 1000,
+        "rawEnabled": true,
+        "mode": "normal",
+        "textBytesPerEvent": 1024
+      },
+      "node": "v24.18.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "limits": {
+        "source": {
+          "rowBytes": 1048576,
+          "pageBytes": 4194304,
+          "pageRows": 100,
+          "records": 100000,
+          "threads": 20,
+          "durationMs": 115000
+        },
+        "projection": {
+          "events": 20000,
+          "usage": 20000,
+          "pageItems": 100,
+          "pageBytes": 4194304
+        },
+        "journal": {
+          "unitBytes": 5242880,
+          "targetBytes": 134217728,
+          "pendingBytes": 268435456,
+          "unitsPerTarget": 4096,
+          "recordsPerTarget": 100000,
+          "metadataEntries": 1000000
+        },
+        "raw": {
+          "objectBytes": 3145728,
+          "wireBytes": 5242880,
+          "targetBytes": 100663296,
+          "units": 4096
+        },
+        "remote": {
+          "partBytes": 4194304,
+          "targetBytes": 134217728,
+          "userPendingBytes": 268435456,
+          "parts": 4096,
+          "reservations": 10,
+          "reservationLifetimeMs": 60000,
+          "leaseLifetimeMs": 60000
+        }
+      },
+      "fixtureMs": 10.438000000000002,
+      "result": {
+        "elapsedMs": 2990.685458,
+        "prepared": {
+          "ok": true,
+          "value": {
+            "units": 2,
+            "bytes": 1563622,
+            "materializedBytes": 3731358,
+            "raw": {
+              "units": 21,
+              "bytes": 2342664,
+              "records": 2001,
+              "reused": 0,
+              "gaps": 0,
+              "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+            },
+            "records": {
+              "canonical": {
+                "session": 1,
+                "thread": 1,
+                "event": 1000,
+                "usage": 0
+              },
+              "raw": {
+                "records": 2001,
+                "scopeComplete": true,
+                "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+              }
+            }
+          }
+        },
+        "captureState": "sealed",
+        "seal": {
+          "records": {
+            "canonical": {
+              "session": 1,
+              "thread": 1,
+              "event": 1000,
+              "usage": 0
+            },
+            "raw": {
+              "records": 2001,
+              "scopeComplete": true,
+              "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+            }
+          },
+          "canonicalUnits": 2,
+          "rawUnits": 21,
+          "nextCheckpoint": "measured-head",
+          "manifestJson": "{\"protocol\":\"atape.publication.v1\",\"fence\":1,\"manifest\":{\"parts\":2,\"bytes\":1563622,\"sha256\":\"930d07ce08ee4ccce79d1803dc782c14b92befde3d08405fb5f48645646c3d28\"}}"
+        },
+        "activationReceipt": null,
+        "baseline": null,
+        "coverage": {
+          "canonicalCaptureId": null,
+          "observedCanonicalCaptureId": "measured",
+          "observedRawCaptureId": "measured"
+        },
+        "checkpoint": null,
+        "stats": {
+          "files": {
+            "db": 7405568,
+            "wal": 1297832,
+            "shm": 32768
+          },
+          "account": {
+            "retained_bytes": 3906286,
+            "metadata_entries": 6031
+          },
+          "tables": {
+            "scopes": 1,
+            "captures": 1,
+            "units": 23,
+            "source_record_versions": 3003,
+            "capture_records": 3003
+          },
+          "units": [
+            {
+              "kind": "canonical",
+              "units": 2,
+              "bytes": 1563622
+            },
+            {
+              "kind": "raw",
+              "units": 21,
+              "bytes": 2342664
+            }
+          ]
+        },
+        "contentTransportCalls": 0,
+        "sourceBytes": 1884160
+      },
+      "afterClose": {
+        "db": 7405568,
+        "wal": 0,
+        "shm": 0
+      },
+      "nodeResourceUsage": {
+        "userCPUTime": 3107238,
+        "systemCPUTime": 475524,
+        "maxRSS": 206816,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 107849,
+        "majorPageFault": 85,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 6387,
+        "involuntaryContextSwitches": 16843
+      }
+    }
+  },
+  {
+    "case": "10000-off-normal",
+    "exitCode": 0,
+    "timeout": false,
+    "processWallSeconds": 21.877301457999998,
+    "maxRSSBytes": 331038720,
+    "output": {
+      "case": {
+        "count": 10000,
+        "rawEnabled": false,
+        "mode": "normal",
+        "textBytesPerEvent": 1024
+      },
+      "node": "v24.18.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "limits": {
+        "source": {
+          "rowBytes": 1048576,
+          "pageBytes": 4194304,
+          "pageRows": 100,
+          "records": 100000,
+          "threads": 20,
+          "durationMs": 115000
+        },
+        "projection": {
+          "events": 20000,
+          "usage": 20000,
+          "pageItems": 100,
+          "pageBytes": 4194304
+        },
+        "journal": {
+          "unitBytes": 5242880,
+          "targetBytes": 134217728,
+          "pendingBytes": 268435456,
+          "unitsPerTarget": 4096,
+          "recordsPerTarget": 100000,
+          "metadataEntries": 1000000
+        },
+        "raw": {
+          "objectBytes": 3145728,
+          "wireBytes": 5242880,
+          "targetBytes": 100663296,
+          "units": 4096
+        },
+        "remote": {
+          "partBytes": 4194304,
+          "targetBytes": 134217728,
+          "userPendingBytes": 268435456,
+          "parts": 4096,
+          "reservations": 10,
+          "reservationLifetimeMs": 60000,
+          "leaseLifetimeMs": 60000
+        }
+      },
+      "fixtureMs": 73.111667,
+      "result": {
+        "elapsedMs": 21726.207834,
+        "prepared": {
+          "ok": true,
+          "value": {
+            "units": 20,
+            "bytes": 14296250,
+            "materializedBytes": 35973590,
+            "records": {
+              "canonical": {
+                "session": 1,
+                "thread": 1,
+                "event": 10000,
+                "usage": 0
+              }
+            }
+          }
+        },
+        "captureState": "sealed",
+        "seal": {
+          "records": {
+            "canonical": {
+              "session": 1,
+              "thread": 1,
+              "event": 10000,
+              "usage": 0
+            }
+          },
+          "canonicalUnits": 20,
+          "rawUnits": 0,
+          "nextCheckpoint": "measured-head",
+          "manifestJson": "{\"protocol\":\"atape.publication.v1\",\"fence\":1,\"manifest\":{\"parts\":20,\"bytes\":14296250,\"sha256\":\"4eb6d483b85d9437a2557810f26d8b1cef5bd1208d4dbab061e1f19d3345809b\"}}"
+        },
+        "activationReceipt": null,
+        "baseline": null,
+        "coverage": {
+          "canonicalCaptureId": null,
+          "observedCanonicalCaptureId": "measured",
+          "observedRawCaptureId": null
+        },
+        "checkpoint": null,
+        "stats": {
+          "files": {
+            "db": 25137152,
+            "wal": 1783992,
+            "shm": 32768
+          },
+          "account": {
+            "retained_bytes": 14296250,
+            "metadata_entries": 20026
+          },
+          "tables": {
+            "scopes": 1,
+            "captures": 1,
+            "units": 20,
+            "source_record_versions": 10002,
+            "capture_records": 10002
+          },
+          "units": [
+            {
+              "kind": "canonical",
+              "units": 20,
+              "bytes": 14296250
+            }
+          ]
+        },
+        "contentTransportCalls": 0,
+        "sourceBytes": 18255872
+      },
+      "afterClose": {
+        "db": 25137152,
+        "wal": 0,
+        "shm": 0
+      },
+      "nodeResourceUsage": {
+        "userCPUTime": 20635331,
+        "systemCPUTime": 2690450,
+        "maxRSS": 323280,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 893372,
+        "majorPageFault": 87,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 36520,
+        "involuntaryContextSwitches": 56981
+      }
+    }
+  },
+  {
+    "case": "10000-on-normal",
+    "exitCode": 0,
+    "timeout": false,
+    "processWallSeconds": 32.043205541,
+    "maxRSSBytes": 371441664,
+    "output": {
+      "case": {
+        "count": 10000,
+        "rawEnabled": true,
+        "mode": "normal",
+        "textBytesPerEvent": 1024
+      },
+      "node": "v24.18.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "limits": {
+        "source": {
+          "rowBytes": 1048576,
+          "pageBytes": 4194304,
+          "pageRows": 100,
+          "records": 100000,
+          "threads": 20,
+          "durationMs": 115000
+        },
+        "projection": {
+          "events": 20000,
+          "usage": 20000,
+          "pageItems": 100,
+          "pageBytes": 4194304
+        },
+        "journal": {
+          "unitBytes": 5242880,
+          "targetBytes": 134217728,
+          "pendingBytes": 268435456,
+          "unitsPerTarget": 4096,
+          "recordsPerTarget": 100000,
+          "metadataEntries": 1000000
+        },
+        "raw": {
+          "objectBytes": 3145728,
+          "wireBytes": 5242880,
+          "targetBytes": 100663296,
+          "units": 4096
+        },
+        "remote": {
+          "partBytes": 4194304,
+          "targetBytes": 134217728,
+          "userPendingBytes": 268435456,
+          "parts": 4096,
+          "reservations": 10,
+          "reservationLifetimeMs": 60000,
+          "leaseLifetimeMs": 60000
+        }
+      },
+      "fixtureMs": 70.146917,
+      "result": {
+        "elapsedMs": 31892.938583000003,
+        "prepared": {
+          "ok": true,
+          "value": {
+            "units": 20,
+            "bytes": 15656250,
+            "materializedBytes": 37333590,
+            "raw": {
+              "units": 201,
+              "bytes": 23406984,
+              "records": 20001,
+              "reused": 0,
+              "gaps": 0,
+              "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+            },
+            "records": {
+              "canonical": {
+                "session": 1,
+                "thread": 1,
+                "event": 10000,
+                "usage": 0
+              },
+              "raw": {
+                "records": 20001,
+                "scopeComplete": true,
+                "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+              }
+            }
+          }
+        },
+        "captureState": "sealed",
+        "seal": {
+          "records": {
+            "canonical": {
+              "session": 1,
+              "thread": 1,
+              "event": 10000,
+              "usage": 0
+            },
+            "raw": {
+              "records": 20001,
+              "scopeComplete": true,
+              "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+            }
+          },
+          "canonicalUnits": 20,
+          "rawUnits": 201,
+          "nextCheckpoint": "measured-head",
+          "manifestJson": "{\"protocol\":\"atape.publication.v1\",\"fence\":1,\"manifest\":{\"parts\":20,\"bytes\":15656250,\"sha256\":\"3342922321c88e32ed3e35a475f41231ad182e006a1ae18c1e4dbde7c7476abc\"}}"
+        },
+        "activationReceipt": null,
+        "baseline": null,
+        "coverage": {
+          "canonicalCaptureId": null,
+          "observedCanonicalCaptureId": "measured",
+          "observedRawCaptureId": "measured"
+        },
+        "checkpoint": null,
+        "stats": {
+          "files": {
+            "db": 73613312,
+            "wal": 1792232,
+            "shm": 32768
+          },
+          "account": {
+            "retained_bytes": 39063234,
+            "metadata_entries": 60229
+          },
+          "tables": {
+            "scopes": 1,
+            "captures": 1,
+            "units": 221,
+            "source_record_versions": 30003,
+            "capture_records": 30003
+          },
+          "units": [
+            {
+              "kind": "canonical",
+              "units": 20,
+              "bytes": 15656250
+            },
+            {
+              "kind": "raw",
+              "units": 201,
+              "bytes": 23406984
+            }
+          ]
+        },
+        "contentTransportCalls": 0,
+        "sourceBytes": 18255872
+      },
+      "afterClose": {
+        "db": 73613312,
+        "wal": 0,
+        "shm": 0
+      },
+      "nodeResourceUsage": {
+        "userCPUTime": 29335811,
+        "systemCPUTime": 4932825,
+        "maxRSS": 362736,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 982018,
+        "majorPageFault": 167,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 145589,
+        "involuntaryContextSwitches": 152989
+      }
+    }
+  },
+  {
+    "case": "1000-off-target-limit",
+    "exitCode": 0,
+    "timeout": false,
+    "processWallSeconds": 1.113369083000002,
+    "maxRSSBytes": 158089216,
+    "output": {
+      "case": {
+        "count": 1000,
+        "rawEnabled": false,
+        "mode": "target-limit",
+        "textBytesPerEvent": 1024
+      },
+      "node": "v24.18.0",
+      "platform": "darwin",
+      "arch": "arm64",
+      "limits": {
+        "source": {
+          "rowBytes": 1048576,
+          "pageBytes": 4194304,
+          "pageRows": 100,
+          "records": 100000,
+          "threads": 20,
+          "durationMs": 115000
+        },
+        "projection": {
+          "events": 20000,
+          "usage": 20000,
+          "pageItems": 100,
+          "pageBytes": 4194304
+        },
+        "journal": {
+          "unitBytes": 5242880,
+          "targetBytes": 134217728,
+          "pendingBytes": 268435456,
+          "unitsPerTarget": 4096,
+          "recordsPerTarget": 100000,
+          "metadataEntries": 1000000
+        },
+        "raw": {
+          "objectBytes": 3145728,
+          "wireBytes": 5242880,
+          "targetBytes": 100663296,
+          "units": 4096
+        },
+        "remote": {
+          "partBytes": 4194304,
+          "targetBytes": 134217728,
+          "userPendingBytes": 268435456,
+          "parts": 4096,
+          "reservations": 10,
+          "reservationLifetimeMs": 60000,
+          "leaseLifetimeMs": 60000
+        }
+      },
+      "fixtureMs": 3.8100000000000023,
+      "result": {
+        "elapsedMs": 1020.1035,
+        "prepared": {
+          "ok": false,
+          "error": {
+            "_tag": "PublicationPreparationError",
+            "reason": "capacity",
+            "message": "Canonical target exceeds negotiated publication capacity."
+          }
+        },
+        "captureState": "preparing",
+        "seal": null,
+        "activationReceipt": null,
+        "baseline": {
+          "checkpoint": "baseline-head",
+          "coverage": {
+            "canonicalCaptureId": "baseline",
+            "observedCanonicalCaptureId": "baseline",
+            "observedRawCaptureId": null
+          }
+        },
+        "coverage": {
+          "canonicalCaptureId": "baseline",
+          "observedCanonicalCaptureId": "baseline",
+          "observedRawCaptureId": null
+        },
+        "checkpoint": "baseline-head",
+        "stats": {
+          "files": {
+            "db": 651264,
+            "wal": 1100072,
+            "shm": 32768
+          },
+          "account": {
+            "retained_bytes": 2337,
+            "metadata_entries": 1013
+          },
+          "tables": {
+            "scopes": 1,
+            "captures": 2,
+            "units": 1,
+            "source_record_versions": 503,
+            "capture_records": 506
+          },
+          "units": [
+            {
+              "kind": "canonical",
+              "units": 1,
+              "bytes": 2337
+            }
+          ]
+        },
+        "contentTransportCalls": 4,
+        "sourceBytes": 1884160
+      },
+      "afterClose": {
+        "db": 675840,
+        "wal": 0,
+        "shm": 0
+      },
+      "nodeResourceUsage": {
+        "userCPUTime": 1034219,
+        "systemCPUTime": 98743,
+        "maxRSS": 154384,
+        "sharedMemorySize": 0,
+        "unsharedDataSize": 0,
+        "unsharedStackSize": 0,
+        "minorPageFault": 52447,
+        "majorPageFault": 165,
+        "swappedOut": 0,
+        "fsRead": 0,
+        "fsWrite": 0,
+        "ipcSent": 0,
+        "ipcReceived": 0,
+        "signalsCount": 0,
+        "voluntaryContextSwitches": 622,
+        "involuntaryContextSwitches": 3092
+      }
+    }
+  }
+]

@@ -1,0 +1,137 @@
+{
+  "sourceCommit": "50c52c57141037f403e1a553db164c3339a94401",
+  "node": "24.18.0",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "iterationsPerCase": 1,
+  "processTimeoutSeconds": 120,
+  "bundleSha256": "7b2f961072866a79f88b11f223275eb2270dba140d19dee8f787af7a223d2b27",
+  "cases": [
+    {
+      "case": "1000-off-normal",
+      "count": 1000,
+      "raw": false,
+      "preparationMs": 2055.843,
+      "processWallMs": 2134.685,
+      "processPeakRSSBytes": 222543872,
+      "sourceDBBytes": 1884160,
+      "canonicalBytes": 1427622,
+      "rawBytes": 0,
+      "metadataEntries": 2008,
+      "journalOpenFiles": {
+        "db": 2633728,
+        "wal": 1718072,
+        "shm": 32768
+      },
+      "journalClosedFiles": {
+        "db": 2633728,
+        "wal": 0,
+        "shm": 0
+      },
+      "state": "sealed",
+      "error": null
+    },
+    {
+      "case": "1000-on-normal",
+      "count": 1000,
+      "raw": true,
+      "preparationMs": 2990.685,
+      "processWallMs": 3067.953,
+      "processPeakRSSBytes": 211779584,
+      "sourceDBBytes": 1884160,
+      "canonicalBytes": 1563622,
+      "rawBytes": 2342664,
+      "metadataEntries": 6031,
+      "journalOpenFiles": {
+        "db": 7405568,
+        "wal": 1297832,
+        "shm": 32768
+      },
+      "journalClosedFiles": {
+        "db": 7405568,
+        "wal": 0,
+        "shm": 0
+      },
+      "state": "sealed",
+      "error": null
+    },
+    {
+      "case": "10000-off-normal",
+      "count": 10000,
+      "raw": false,
+      "preparationMs": 21726.208,
+      "processWallMs": 21877.301,
+      "processPeakRSSBytes": 331038720,
+      "sourceDBBytes": 18255872,
+      "canonicalBytes": 14296250,
+      "rawBytes": 0,
+      "metadataEntries": 20026,
+      "journalOpenFiles": {
+        "db": 25137152,
+        "wal": 1783992,
+        "shm": 32768
+      },
+      "journalClosedFiles": {
+        "db": 25137152,
+        "wal": 0,
+        "shm": 0
+      },
+      "state": "sealed",
+      "error": null
+    },
+    {
+      "case": "10000-on-normal",
+      "count": 10000,
+      "raw": true,
+      "preparationMs": 31892.939,
+      "processWallMs": 32043.206,
+      "processPeakRSSBytes": 371441664,
+      "sourceDBBytes": 18255872,
+      "canonicalBytes": 15656250,
+      "rawBytes": 23406984,
+      "metadataEntries": 60229,
+      "journalOpenFiles": {
+        "db": 73613312,
+        "wal": 1792232,
+        "shm": 32768
+      },
+      "journalClosedFiles": {
+        "db": 73613312,
+        "wal": 0,
+        "shm": 0
+      },
+      "state": "sealed",
+      "error": null
+    },
+    {
+      "case": "1000-off-target-limit",
+      "count": 1000,
+      "raw": false,
+      "preparationMs": 1020.104,
+      "processWallMs": 1113.369,
+      "processPeakRSSBytes": 158089216,
+      "sourceDBBytes": 1884160,
+      "canonicalBytes": null,
+      "rawBytes": null,
+      "metadataEntries": 1013,
+      "journalOpenFiles": {
+        "db": 651264,
+        "wal": 1100072,
+        "shm": 32768
+      },
+      "journalClosedFiles": {
+        "db": 675840,
+        "wal": 0,
+        "shm": 0
+      },
+      "state": "preparing",
+      "error": {
+        "_tag": "PublicationPreparationError",
+        "reason": "capacity",
+        "message": "Canonical target exceeds negotiated publication capacity."
+      }
+    }
+  ],
+  "rejectionPreservedBaseline": true,
+  "normalCasesContentTransportCalls": 0
+}

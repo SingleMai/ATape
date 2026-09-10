@@ -93,3 +93,8 @@ rtk proxy node "$NEW_BUILD_OUTPUT/max-pages.mjs"
 
 [Linux provenance](linux-native/provenance.json)、[ENOSPC provenance](enospc/provenance.json) 中的绝对路径仅标识原始研究目录。归档仅含脚本、摘要及 hash，不提交 binary、tarball、bundle、数据库或大段模型/用户数据。
 此证据供 [验证 OpenCode 有界采集在改写与重启后的可重放性](https://github.com/SingleMai/ATape/issues/115) 与 [确定 OpenCode 首个可用增量与验收证据](https://github.com/SingleMai/ATape/issues/114) 链接；不是安装版 CLI 注册、后台同步、Canonical/Raw HTTP delivery、Server 或产品发布验收。
+
+## 后续容量观察（独立基线）
+
+[有限规模 OpenCode source + Host 冻结准备容量原型](capacity/OBSERVATIONS.md) 使用 main `50c52c57141037f403e1a553db164c3339a94401`，与上面 `000668f` 原始平台/ENOSPC 实验分开记录。
+它是 macOS arm64 单次合成负载的 1,000/10,000 Event、Raw off/on 与 target admission 拒绝观察；全进程 RSS 包含 fixture 构造，DB/WAL/SHM 是固定时刻快照而非峰值，无真实 HTTP ACK。所有实验限额都不是发布默认值。

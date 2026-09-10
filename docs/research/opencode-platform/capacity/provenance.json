@@ -1,0 +1,21 @@
+{
+  "sourceCommit": "50c52c57141037f403e1a553db164c3339a94401",
+  "originalResearchPath": "/tmp/atape-capacity-n80sck0y",
+  "originalBundleSHA256": "7b2f961072866a79f88b11f223275eb2270dba140d19dee8f787af7a223d2b27",
+  "originalScriptHashes": {
+    "capacity.ts": "88d88b25be54e5aa1fc810a3819cd46f47e6fd11ff569e27277ef509a03fb69c",
+    "run.py": "746e989288519d96f3d33ffa27bcdeb95e080f127bf6a48fa3a8fb47253394e0"
+  },
+  "fixtureSHA256": "4034a150da542be49d8d1f0d62d6a3244d986db9abc1b886f80ab6416d037298",
+  "archivedScriptChanges": [
+    "Production imports resolve from explicit build checkout argument; bundled fixture path relative to bundle URL.",
+    "Runner takes bundle/output/node arguments, requires Darwin for time -l units, refuses overwrite, and optionally selects cases.",
+    "Original results remain unchanged; rebuilding can change bundle hash and does not reproduce recorded timings."
+  ],
+  "measurementScope": "Single run per case on macOS arm64; whole process peak RSS; DB/WAL/SHM snapshots are not disk peaks; no real HTTP ACK; experiment bounds are not release defaults.",
+  "archivedScriptHashes": {
+    "capacity.ts": "30a6905fe3b0ce4eeeda906642e1ff7c155bbf91f5bdf3675a57b3df95f39cf6",
+    "run.py": "376da0a89a1028bdfeb3b31cad7667b20621a5bd565531700c9d5a4d5ee35742",
+    "build-probe.mjs": "a18ea8e86bb45db4fdd4c9c75134ee454745251fb10e0ca32eaba73a61289f2f"
+  }
+}

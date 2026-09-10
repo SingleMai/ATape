@@ -1,0 +1,38 @@
+{
+  "scope": "Parameterization smoke only; does not replace original five cases or establish comparable performance.",
+  "build": {
+    "checkoutCommit": "c6b8dcafbf43d9841f82f1dc7490296465348313",
+    "checkoutDirty": false,
+    "esbuild": "0.28.2",
+    "node": "v24.18.0",
+    "bundleSHA256": {
+      "capacity": "4f9cd9561ed3a824bd83d5f851925b2645de7e663a1c65e1c56774f5eab6cfdb"
+    }
+  },
+  "case": "1000-off-normal",
+  "status": "PASS",
+  "exitCode": 0,
+  "timeout": false,
+  "maxRSSBytes": 221413376,
+  "processWallSeconds": 2.1539608749999997,
+  "prepared": {
+    "ok": true,
+    "value": {
+      "units": 2,
+      "bytes": 1427622,
+      "materializedBytes": 3595358,
+      "records": {
+        "canonical": {
+          "session": 1,
+          "thread": 1,
+          "event": 1000,
+          "usage": 0
+        }
+      }
+    }
+  },
+  "captureState": "sealed",
+  "activationReceipt": null,
+  "checkpoint": null,
+  "contentTransportCalls": 0
+}
