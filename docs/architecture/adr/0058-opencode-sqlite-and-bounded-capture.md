@@ -1,7 +1,8 @@
 # ADR-0058: OpenCode SQLite acquisition and bounded pending capture
 
-- Status: Accepted direction; detailed capture contract and Implementation pending
+- Status: Accepted direction; detailed contract selected in ADR-0059; Implementation pending
 - Date: 2026-09-10
+- The detailed capture/publication direction is selected in [ADR-0059](0059-opencode-publication-and-recovery.md); Implementation remains pending.
 - Decision: [OpenCode acquisition and support contract](https://github.com/SingleMai/ATape/issues/112)
 
 OpenCode history is mutable: after Canonical or part of Raw is accepted, the
