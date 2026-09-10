@@ -1,0 +1,10 @@
+{
+  "name": "@atape/adapter-opencode",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/source.ts" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": { "effect": "catalog:" },
+  "devDependencies": { "@types/node": "^24.0.0", "typescript": "catalog:build", "vitest": "catalog:build" }
+}

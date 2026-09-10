@@ -1,0 +1,622 @@
+{
+  "version": "1.18.30",
+  "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "rootID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+  "childID": "ses_f7600b7dbffeaiDw2c5adNiAFm",
+  "forkID": "ses_f7600b773ffeF1AP4d1I82Avi5",
+  "ddl": [
+    "CREATE TABLE `message` (\n          `id` text PRIMARY KEY,\n          `session_id` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )",
+    "CREATE TABLE `part` (\n          `id` text PRIMARY KEY,\n          `message_id` text NOT NULL,\n          `session_id` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_part_message_id_message_id_fk` FOREIGN KEY (`message_id`) REFERENCES `message`(`id`) ON DELETE CASCADE\n        )",
+    "CREATE TABLE `session` (\n          `id` text PRIMARY KEY,\n          `project_id` text NOT NULL,\n          `workspace_id` text,\n          `parent_id` text,\n          `slug` text NOT NULL,\n          `directory` text NOT NULL,\n          `path` text,\n          `title` text NOT NULL,\n          `version` text NOT NULL,\n          `share_url` text,\n          `summary_additions` integer,\n          `summary_deletions` integer,\n          `summary_files` integer,\n          `summary_diffs` text,\n          `metadata` text,\n          `cost` real DEFAULT 0 NOT NULL,\n          `tokens_input` integer DEFAULT 0 NOT NULL,\n          `tokens_output` integer DEFAULT 0 NOT NULL,\n          `tokens_reasoning` integer DEFAULT 0 NOT NULL,\n          `tokens_cache_read` integer DEFAULT 0 NOT NULL,\n          `tokens_cache_write` integer DEFAULT 0 NOT NULL,\n          `revert` text,\n          `permission` text,\n          `agent` text,\n          `model` text,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `time_compacting` integer,\n          `time_archived` integer,\n          CONSTRAINT `fk_session_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE\n        )",
+    "CREATE INDEX `message_session_time_created_id_idx` ON `message` (`session_id`,`time_created`,`id`)",
+    "CREATE INDEX `part_message_id_id_idx` ON `part` (`message_id`,`id`)",
+    "CREATE INDEX `part_session_idx` ON `part` (`session_id`)",
+    "CREATE INDEX `session_parent_idx` ON `session` (`parent_id`)",
+    "CREATE INDEX `session_project_idx` ON `session` (`project_id`)",
+    "CREATE INDEX `session_workspace_idx` ON `session` (`workspace_id`)"
+  ],
+  "rows": {
+    "session": [
+      {
+        "id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "project_id": "global",
+        "workspace_id": null,
+        "parent_id": null,
+        "slug": "quick-squid",
+        "directory": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+        "path": "private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+        "title": "ATape native fixture 根 🧪 (fork #1)",
+        "version": "1.18.30",
+        "share_url": null,
+        "summary_additions": null,
+        "summary_deletions": null,
+        "summary_files": null,
+        "summary_diffs": null,
+        "metadata": null,
+        "cost": 0.0,
+        "tokens_input": 0,
+        "tokens_output": 0,
+        "tokens_reasoning": 0,
+        "tokens_cache_read": 0,
+        "tokens_cache_write": 0,
+        "revert": null,
+        "permission": null,
+        "agent": null,
+        "model": null,
+        "time_created": 1789021603980,
+        "time_updated": 1789021603980,
+        "time_compacting": null,
+        "time_archived": null
+      },
+      {
+        "id": "ses_f7600b7dbffeaiDw2c5adNiAFm",
+        "project_id": "global",
+        "workspace_id": null,
+        "parent_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "slug": "mighty-comet",
+        "directory": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+        "path": "private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+        "title": "Native child 子会话",
+        "version": "1.18.30",
+        "share_url": null,
+        "summary_additions": null,
+        "summary_deletions": null,
+        "summary_files": null,
+        "summary_diffs": null,
+        "metadata": null,
+        "cost": 0.0,
+        "tokens_input": 0,
+        "tokens_output": 0,
+        "tokens_reasoning": 0,
+        "tokens_cache_read": 0,
+        "tokens_cache_write": 0,
+        "revert": null,
+        "permission": null,
+        "agent": "build",
+        "model": "{\"id\":\"fixture-model\",\"providerID\":\"fixture\",\"variant\":\"default\"}",
+        "time_created": 1789021603876,
+        "time_updated": 1789021603890,
+        "time_compacting": null,
+        "time_archived": null
+      },
+      {
+        "id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "project_id": "global",
+        "workspace_id": null,
+        "parent_id": null,
+        "slug": "lucky-cabin",
+        "directory": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+        "path": "private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+        "title": "ATape native fixture 根 🧪",
+        "version": "1.18.30",
+        "share_url": null,
+        "summary_additions": 0,
+        "summary_deletions": 0,
+        "summary_files": 0,
+        "summary_diffs": null,
+        "metadata": null,
+        "cost": 0.0,
+        "tokens_input": 0,
+        "tokens_output": 0,
+        "tokens_reasoning": 0,
+        "tokens_cache_read": 0,
+        "tokens_cache_write": 0,
+        "revert": null,
+        "permission": null,
+        "agent": "build",
+        "model": "{\"id\":\"fixture-model\",\"providerID\":\"fixture\",\"variant\":\"default\"}",
+        "time_created": 1789021603080,
+        "time_updated": 1789021604204,
+        "time_compacting": null,
+        "time_archived": null
+      }
+    ],
+    "message": [
+      {
+        "id": "msg_089ff4615001S3CK9khlJXjnvs",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021603349,
+        "time_updated": 1789021603361,
+        "data": "{\"role\":\"user\",\"time\":{\"created\":1789021603349},\"agent\":\"build\",\"model\":{\"providerID\":\"fixture\",\"modelID\":\"fixture-model\"}}"
+      },
+      {
+        "id": "msg_089ff482b001onEwcLYD6RP6o4",
+        "session_id": "ses_f7600b7dbffeaiDw2c5adNiAFm",
+        "time_created": 1789021603883,
+        "time_updated": 1789021603887,
+        "data": "{\"role\":\"user\",\"time\":{\"created\":1789021603883},\"agent\":\"build\",\"model\":{\"providerID\":\"fixture\",\"modelID\":\"fixture-model\"}}"
+      },
+      {
+        "id": "msg_089ff484d001TpAXkrZDaSVCfg",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021603917,
+        "time_updated": 1789021603918,
+        "data": "{\"time\":{\"created\":1789021603917},\"role\":\"user\",\"agent\":\"build\",\"model\":{\"providerID\":\"fixture\",\"modelID\":\"fixture-model\"}}"
+      },
+      {
+        "id": "msg_089ff4850001mc2ZgIcvkGUZcZ",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021603920,
+        "time_updated": 1789021603973,
+        "data": "{\"parentID\":\"msg_089ff484d001TpAXkrZDaSVCfg\",\"mode\":\"build\",\"agent\":\"build\",\"cost\":0,\"path\":{\"cwd\":\"/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"root\":\"/\"},\"time\":{\"created\":1789021603920,\"completed\":1789021603972},\"role\":\"assistant\",\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"modelID\":\"fixture-model\",\"providerID\":\"fixture\"}"
+      },
+      {
+        "id": "msg_089ff488f001wfpM4IhM6TPAF6",
+        "session_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "time_created": 1789021603349,
+        "time_updated": 1789021603983,
+        "data": "{\"role\":\"user\",\"time\":{\"created\":1789021603349},\"agent\":\"build\",\"model\":{\"providerID\":\"fixture\",\"modelID\":\"fixture-model\"}}"
+      },
+      {
+        "id": "msg_089ff48920016FqrhJIKXJZr2X",
+        "session_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "time_created": 1789021603917,
+        "time_updated": 1789021603987,
+        "data": "{\"time\":{\"created\":1789021603917},\"role\":\"user\",\"agent\":\"build\",\"model\":{\"providerID\":\"fixture\",\"modelID\":\"fixture-model\"}}"
+      },
+      {
+        "id": "msg_089ff4895001gHr3kdb8mYtewU",
+        "session_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "time_created": 1789021603920,
+        "time_updated": 1789021603990,
+        "data": "{\"parentID\":\"msg_089ff48920016FqrhJIKXJZr2X\",\"mode\":\"build\",\"agent\":\"build\",\"cost\":0,\"path\":{\"cwd\":\"/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"root\":\"/\"},\"time\":{\"created\":1789021603920,\"completed\":1789021603972},\"role\":\"assistant\",\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"read\":0,\"write\":0}},\"modelID\":\"fixture-model\",\"providerID\":\"fixture\"}"
+      },
+      {
+        "id": "msg_089ff4913001TZLkcRgDx7np3x",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021604115,
+        "time_updated": 1789021604116,
+        "data": "{\"role\":\"user\",\"model\":{\"providerID\":\"fixture\",\"modelID\":\"fixture-model\"},\"agent\":\"build\",\"time\":{\"created\":1789021604115}}"
+      },
+      {
+        "id": "msg_089ff4929001HVOY6rWplB1vT1",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021604137,
+        "time_updated": 1789021604200,
+        "data": "{\"role\":\"assistant\",\"parentID\":\"msg_089ff4913001TZLkcRgDx7np3x\",\"mode\":\"compaction\",\"agent\":\"compaction\",\"summary\":true,\"path\":{\"cwd\":\"/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project\",\"root\":\"/\"},\"cost\":0,\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":0}},\"modelID\":\"fixture-model\",\"providerID\":\"fixture\",\"time\":{\"created\":1789021604137,\"completed\":1789021604200},\"finish\":\"stop\"}"
+      }
+    ],
+    "part": [
+      {
+        "id": "prt_089ff461c001kynVDOiT82JF0Q",
+        "message_id": "msg_089ff4615001S3CK9khlJXjnvs",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021603845,
+        "time_updated": 1789021603866,
+        "data": "{\"type\":\"text\",\"text\":\"改写文本 B：中文与 emoji 🚀\\nsecond line\",\"metadata\":{\"atapeFixtureUnknown\":{\"sentinel\":\"raw-only-unknown-字段\",\"nested\":[1,true,null]}}}"
+      },
+      {
+        "id": "prt_089ff482e001a0XJhyLbR3ClV2",
+        "message_id": "msg_089ff482b001onEwcLYD6RP6o4",
+        "session_id": "ses_f7600b7dbffeaiDw2c5adNiAFm",
+        "time_created": 1789021603888,
+        "time_updated": 1789021603889,
+        "data": "{\"type\":\"text\",\"text\":\"子会话的受控内容 🧵\"}"
+      },
+      {
+        "id": "prt_089ff484f001h1VsPiOQx0rS3p",
+        "message_id": "msg_089ff484d001TpAXkrZDaSVCfg",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021603919,
+        "time_updated": 1789021603920,
+        "data": "{\"type\":\"text\",\"text\":\"The following tool was executed by the user\",\"synthetic\":true}"
+      },
+      {
+        "id": "prt_089ff4851001qMmSthFn21glkd",
+        "message_id": "msg_089ff4850001mc2ZgIcvkGUZcZ",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021603922,
+        "time_updated": 1789021603974,
+        "data": "{\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"01M24ZYJ2JDSDVXAPAFSZTJ22J\",\"state\":{\"status\":\"completed\",\"time\":{\"start\":1789021603921,\"end\":1789021603972},\"input\":{\"command\":\"printf 'native tool fixture 中文 🛠️\\\\n'\"},\"title\":\"\",\"metadata\":{\"output\":\"native tool fixture 中文 🛠️\\n\"},\"output\":\"native tool fixture 中文 🛠️\\n\"}}"
+      },
+      {
+        "id": "prt_089ff4891001mZdYWkgweEgLCx",
+        "message_id": "msg_089ff488f001wfpM4IhM6TPAF6",
+        "session_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "time_created": 1789021603985,
+        "time_updated": 1789021603986,
+        "data": "{\"type\":\"text\",\"text\":\"改写文本 B：中文与 emoji 🚀\\nsecond line\",\"metadata\":{\"atapeFixtureUnknown\":{\"sentinel\":\"raw-only-unknown-字段\",\"nested\":[1,true,null]}}}"
+      },
+      {
+        "id": "prt_089ff4894001ZaPZbM3he1yeRE",
+        "message_id": "msg_089ff48920016FqrhJIKXJZr2X",
+        "session_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "time_created": 1789021603988,
+        "time_updated": 1789021603989,
+        "data": "{\"type\":\"text\",\"text\":\"The following tool was executed by the user\",\"synthetic\":true}"
+      },
+      {
+        "id": "prt_089ff4897001hEArMhXibSLkT2",
+        "message_id": "msg_089ff4895001gHr3kdb8mYtewU",
+        "session_id": "ses_f7600b773ffeF1AP4d1I82Avi5",
+        "time_created": 1789021603991,
+        "time_updated": 1789021603992,
+        "data": "{\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"01M24ZYJ2JDSDVXAPAFSZTJ22J\",\"state\":{\"status\":\"completed\",\"time\":{\"start\":1789021603921,\"end\":1789021603972},\"input\":{\"command\":\"printf 'native tool fixture 中文 🛠️\\\\n'\"},\"title\":\"\",\"metadata\":{\"output\":\"native tool fixture 中文 🛠️\\n\"},\"output\":\"native tool fixture 中文 🛠️\\n\"}}"
+      },
+      {
+        "id": "prt_089ff4915001xUi04HdRp1latx",
+        "message_id": "msg_089ff4913001TZLkcRgDx7np3x",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021604117,
+        "time_updated": 1789021604118,
+        "data": "{\"type\":\"compaction\",\"auto\":false}"
+      },
+      {
+        "id": "prt_089ff495a001KTC1SuZ4u3riIW",
+        "message_id": "msg_089ff4929001HVOY6rWplB1vT1",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021604186,
+        "time_updated": 1789021604187,
+        "data": "{\"type\":\"step-start\"}"
+      },
+      {
+        "id": "prt_089ff495c0019diHt44VsPsY32",
+        "message_id": "msg_089ff4929001HVOY6rWplB1vT1",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021604188,
+        "time_updated": 1789021604191,
+        "data": "{\"type\":\"text\",\"text\":\"受控本地摘要：fixture 根会话、子会话与工具输出。No real model was called. 🧪\",\"time\":{\"start\":1789021604188,\"end\":1789021604191}}"
+      },
+      {
+        "id": "prt_089ff4962001w2KskuUVRoWDns",
+        "message_id": "msg_089ff4929001HVOY6rWplB1vT1",
+        "session_id": "ses_f7600baf7ffePlLjL8sABQ16MN",
+        "time_created": 1789021604194,
+        "time_updated": 1789021604196,
+        "data": "{\"reason\":\"stop\",\"type\":\"step-finish\",\"tokens\":{\"input\":0,\"output\":0,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":0}},\"cost\":0}"
+      }
+    ]
+  },
+  "exports": {
+    "root": [
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1789021603349
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          },
+          "id": "msg_089ff4615001S3CK9khlJXjnvs",
+          "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "改写文本 B：中文与 emoji 🚀\nsecond line",
+            "metadata": {
+              "atapeFixtureUnknown": {
+                "sentinel": "raw-only-unknown-字段",
+                "nested": [
+                  1,
+                  true,
+                  null
+                ]
+              }
+            },
+            "id": "prt_089ff461c001kynVDOiT82JF0Q",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff4615001S3CK9khlJXjnvs"
+          }
+        ]
+      },
+      {
+        "info": {
+          "time": {
+            "created": 1789021603917
+          },
+          "role": "user",
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          },
+          "id": "msg_089ff484d001TpAXkrZDaSVCfg",
+          "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "The following tool was executed by the user",
+            "synthetic": true,
+            "id": "prt_089ff484f001h1VsPiOQx0rS3p",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff484d001TpAXkrZDaSVCfg"
+          }
+        ]
+      },
+      {
+        "info": {
+          "parentID": "msg_089ff484d001TpAXkrZDaSVCfg",
+          "mode": "build",
+          "agent": "build",
+          "cost": 0,
+          "path": {
+            "cwd": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+            "root": "/"
+          },
+          "time": {
+            "created": 1789021603920,
+            "completed": 1789021603972
+          },
+          "role": "assistant",
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "id": "msg_089ff4850001mc2ZgIcvkGUZcZ",
+          "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN"
+        },
+        "parts": [
+          {
+            "type": "tool",
+            "tool": "bash",
+            "callID": "01M24ZYJ2JDSDVXAPAFSZTJ22J",
+            "state": {
+              "status": "completed",
+              "time": {
+                "start": 1789021603921,
+                "end": 1789021603972
+              },
+              "input": {
+                "command": "printf 'native tool fixture 中文 🛠️\\n'"
+              },
+              "title": "",
+              "metadata": {
+                "output": "native tool fixture 中文 🛠️\n"
+              },
+              "output": "native tool fixture 中文 🛠️\n"
+            },
+            "id": "prt_089ff4851001qMmSthFn21glkd",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff4850001mc2ZgIcvkGUZcZ"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          },
+          "agent": "build",
+          "time": {
+            "created": 1789021604115
+          },
+          "id": "msg_089ff4913001TZLkcRgDx7np3x",
+          "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN"
+        },
+        "parts": [
+          {
+            "type": "compaction",
+            "auto": false,
+            "id": "prt_089ff4915001xUi04HdRp1latx",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff4913001TZLkcRgDx7np3x"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "parentID": "msg_089ff4913001TZLkcRgDx7np3x",
+          "mode": "compaction",
+          "agent": "compaction",
+          "summary": true,
+          "path": {
+            "cwd": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "write": 0,
+              "read": 0
+            }
+          },
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "time": {
+            "created": 1789021604137,
+            "completed": 1789021604200
+          },
+          "finish": "stop",
+          "id": "msg_089ff4929001HVOY6rWplB1vT1",
+          "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_089ff495a001KTC1SuZ4u3riIW",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff4929001HVOY6rWplB1vT1"
+          },
+          {
+            "type": "text",
+            "text": "受控本地摘要：fixture 根会话、子会话与工具输出。No real model was called. 🧪",
+            "time": {
+              "start": 1789021604188,
+              "end": 1789021604191
+            },
+            "id": "prt_089ff495c0019diHt44VsPsY32",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff4929001HVOY6rWplB1vT1"
+          },
+          {
+            "reason": "stop",
+            "type": "step-finish",
+            "tokens": {
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "write": 0,
+                "read": 0
+              }
+            },
+            "cost": 0,
+            "id": "prt_089ff4962001w2KskuUVRoWDns",
+            "sessionID": "ses_f7600baf7ffePlLjL8sABQ16MN",
+            "messageID": "msg_089ff4929001HVOY6rWplB1vT1"
+          }
+        ]
+      }
+    ],
+    "child": [
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1789021603883
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          },
+          "id": "msg_089ff482b001onEwcLYD6RP6o4",
+          "sessionID": "ses_f7600b7dbffeaiDw2c5adNiAFm"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "子会话的受控内容 🧵",
+            "id": "prt_089ff482e001a0XJhyLbR3ClV2",
+            "sessionID": "ses_f7600b7dbffeaiDw2c5adNiAFm",
+            "messageID": "msg_089ff482b001onEwcLYD6RP6o4"
+          }
+        ]
+      }
+    ],
+    "fork": [
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1789021603349
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          },
+          "id": "msg_089ff488f001wfpM4IhM6TPAF6",
+          "sessionID": "ses_f7600b773ffeF1AP4d1I82Avi5"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "改写文本 B：中文与 emoji 🚀\nsecond line",
+            "metadata": {
+              "atapeFixtureUnknown": {
+                "sentinel": "raw-only-unknown-字段",
+                "nested": [
+                  1,
+                  true,
+                  null
+                ]
+              }
+            },
+            "id": "prt_089ff4891001mZdYWkgweEgLCx",
+            "sessionID": "ses_f7600b773ffeF1AP4d1I82Avi5",
+            "messageID": "msg_089ff488f001wfpM4IhM6TPAF6"
+          }
+        ]
+      },
+      {
+        "info": {
+          "time": {
+            "created": 1789021603917
+          },
+          "role": "user",
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          },
+          "id": "msg_089ff48920016FqrhJIKXJZr2X",
+          "sessionID": "ses_f7600b773ffeF1AP4d1I82Avi5"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "The following tool was executed by the user",
+            "synthetic": true,
+            "id": "prt_089ff4894001ZaPZbM3he1yeRE",
+            "sessionID": "ses_f7600b773ffeF1AP4d1I82Avi5",
+            "messageID": "msg_089ff48920016FqrhJIKXJZr2X"
+          }
+        ]
+      },
+      {
+        "info": {
+          "parentID": "msg_089ff48920016FqrhJIKXJZr2X",
+          "mode": "build",
+          "agent": "build",
+          "cost": 0,
+          "path": {
+            "cwd": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-native-11830-sidb0u9u/source/project",
+            "root": "/"
+          },
+          "time": {
+            "created": 1789021603920,
+            "completed": 1789021603972
+          },
+          "role": "assistant",
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "id": "msg_089ff4895001gHr3kdb8mYtewU",
+          "sessionID": "ses_f7600b773ffeF1AP4d1I82Avi5"
+        },
+        "parts": [
+          {
+            "type": "tool",
+            "tool": "bash",
+            "callID": "01M24ZYJ2JDSDVXAPAFSZTJ22J",
+            "state": {
+              "status": "completed",
+              "time": {
+                "start": 1789021603921,
+                "end": 1789021603972
+              },
+              "input": {
+                "command": "printf 'native tool fixture 中文 🛠️\\n'"
+              },
+              "title": "",
+              "metadata": {
+                "output": "native tool fixture 中文 🛠️\n"
+              },
+              "output": "native tool fixture 中文 🛠️\n"
+            },
+            "id": "prt_089ff4897001hEArMhXibSLkT2",
+            "sessionID": "ses_f7600b773ffeF1AP4d1I82Avi5",
+            "messageID": "msg_089ff4895001gHr3kdb8mYtewU"
+          }
+        ]
+      }
+    ]
+  }
+}
