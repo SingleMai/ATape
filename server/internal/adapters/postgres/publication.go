@@ -24,7 +24,7 @@ import (
 )
 
 // PublicationStore owns candidate lifetime, immutable retries, source mode and
-// authority, quotas and cleanup. It does not publish or validate Canonical values.
+// authority, validation, atomic activation, quotas and cleanup.
 // Callers never receive SQL rows or pending bodies through recovery metadata.
 type PublicationStore struct {
 	pool   *pgxpool.Pool
@@ -122,7 +122,12 @@ func (s *PublicationStore) reservation(ctx context.Context, q *db.Queries, p aut
 	if err != nil {
 		return r, source, persist("read publication binding", err)
 	}
-	return r, source, s.sourceAccess(ctx, q, p, source)
+	if err = s.sourceAccess(ctx, q, p, source); err != nil {
+		return r, source, err
+	}
+	// The source may have changed while waiting for its transaction lock.
+	source, err = q.GetPublicationSource(ctx, r.SessionID)
+	return r, source, err
 }
 func attemptValue(row db.GetPublicationAttemptRow) (publication.Attempt, error) {
 	value := publication.Attempt{ID: domainUUID(row.ID), SessionID: row.SessionID, CaptureID: row.CaptureID, TransformVersion: row.TransformVersion,
@@ -130,6 +135,11 @@ func attemptValue(row db.GetPublicationAttemptRow) (publication.Attempt, error) 
 	value.ValidatedParts = int(row.ValidatedParts)
 	value.CandidateEvents = int(row.CandidateEvents)
 	value.CandidateUsage = int(row.CandidateUsage)
+	if row.ActivationJson != nil {
+		if err := json.Unmarshal([]byte(*row.ActivationJson), &value.Activation); err != nil {
+			return value, persist("decode activation receipt", err)
+		}
+	}
 	if row.BaseHead != nil {
 		value.BaseHead = *row.BaseHead
 	}
@@ -459,6 +469,9 @@ func (s *PublicationStore) Reject(ctx context.Context, p authentication.Principa
 		if err != nil {
 			return a, err
 		}
+		if a.Activation != nil {
+			return a, publicationError("conflict", "activated history cannot be rejected")
+		}
 		if err = q.RejectPublicationAttempt(ctx, id); err != nil {
 			return a, persist("reject publication candidate", err)
 		}
@@ -466,9 +479,9 @@ func (s *PublicationStore) Reject(ctx context.Context, p authentication.Principa
 	})
 }
 
-// Reclaim is bounded and account-scoped. It may remove only candidates that
-// cannot activate. Receipt metadata survives until the reservation expires;
-// after deletion that token can never Begin again. Source mode/fences remain.
+// Reclaim is bounded and account-scoped. It removes failed candidates and
+// unreachable old-head bodies, never the selected head. Activation receipts
+// survive body cleanup; failed-attempt receipts expire with their reservation.
 func (s *PublicationStore) Reclaim(ctx context.Context, p authentication.Principal, limit int) (publication.Reclaimed, error) {
 	if limit < 1 || limit > 32 {
 		return publication.Reclaimed{}, publicationError("invalid", "invalid reclamation limit")

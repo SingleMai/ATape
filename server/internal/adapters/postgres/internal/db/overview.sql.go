@@ -16,9 +16,9 @@ const overviewEvents = `-- name: OverviewEvents :many
 SELECT e.session_id,e.thread_id,e.author,
 CASE WHEN e.author=s.actor_name THEN left(e.text,1500) ELSE right(e.text,1500) END::text AS text,
 e.occurred_at,e.source_order,e.event_index,(t.parent_thread_id IS NULL)::boolean AS root
-FROM canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
+FROM visible_canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
 JOIN canonical_projects p ON p.id=s.project_id
-JOIN canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
+JOIN visible_canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
 WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' AND e.kind='message'
 AND e.occurred_at>=$2::timestamptz AND e.occurred_at<$3::timestamptz
 ORDER BY e.session_id,e.source_order,e.event_index,e.id LIMIT 100001
@@ -217,7 +217,7 @@ func (q *Queries) OverviewTeam(ctx context.Context, arg OverviewTeamParams) (Ove
 }
 
 const overviewUnknownTimes = `-- name: OverviewUnknownTimes :one
-SELECT count(DISTINCT e.session_id)::bigint FROM canonical_events e
+SELECT count(DISTINCT e.session_id)::bigint FROM visible_canonical_events e
 JOIN canonical_sessions s ON s.id=e.session_id JOIN canonical_projects p ON p.id=s.project_id
 WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' AND e.kind='message' AND e.occurred_at<'2000-01-01'::timestamptz
 `
@@ -230,7 +230,7 @@ func (q *Queries) OverviewUnknownTimes(ctx context.Context, teamID string) (int6
 }
 
 const overviewUsage = `-- name: OverviewUsage :many
-SELECT u.source_key, u.session_id, u.thread_id, u.revision, u.digest, u.occurred_at, u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens FROM canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
+SELECT u.source_key, u.session_id, u.thread_id, u.revision, u.digest, u.occurred_at, u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens FROM visible_canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
 JOIN canonical_projects p ON p.id=s.project_id
 WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
 AND u.occurred_at>=$2::timestamptz AND u.occurred_at<$3::timestamptz
@@ -243,15 +243,15 @@ type OverviewUsageParams struct {
 	UntilTime time.Time
 }
 
-func (q *Queries) OverviewUsage(ctx context.Context, arg OverviewUsageParams) ([]CanonicalUsage, error) {
+func (q *Queries) OverviewUsage(ctx context.Context, arg OverviewUsageParams) ([]VisibleCanonicalUsage, error) {
 	rows, err := q.db.Query(ctx, overviewUsage, arg.TeamID, arg.FromTime, arg.UntilTime)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CanonicalUsage{}
+	items := []VisibleCanonicalUsage{}
 	for rows.Next() {
-		var i CanonicalUsage
+		var i VisibleCanonicalUsage
 		if err := rows.Scan(
 			&i.SourceKey,
 			&i.SessionID,

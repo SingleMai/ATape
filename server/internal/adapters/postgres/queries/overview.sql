@@ -19,21 +19,21 @@ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' ORDER BY s
 SELECT e.session_id,e.thread_id,e.author,
 CASE WHEN e.author=s.actor_name THEN left(e.text,1500) ELSE right(e.text,1500) END::text AS text,
 e.occurred_at,e.source_order,e.event_index,(t.parent_thread_id IS NULL)::boolean AS root
-FROM canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
+FROM visible_canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
 JOIN canonical_projects p ON p.id=s.project_id
-JOIN canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
+JOIN visible_canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
 WHERE p.team_id=sqlc.arg(team_id) AND p.state<>'deleted' AND s.record_state='active' AND e.kind='message'
 AND e.occurred_at>=sqlc.arg(from_time)::timestamptz AND e.occurred_at<sqlc.arg(until_time)::timestamptz
 ORDER BY e.session_id,e.source_order,e.event_index,e.id LIMIT 100001;
 
 -- name: OverviewUsage :many
-SELECT u.* FROM canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
+SELECT u.* FROM visible_canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
 JOIN canonical_projects p ON p.id=s.project_id
 WHERE p.team_id=sqlc.arg(team_id) AND p.state<>'deleted' AND s.record_state='active'
 AND u.occurred_at>=sqlc.arg(from_time)::timestamptz AND u.occurred_at<sqlc.arg(until_time)::timestamptz
 ORDER BY u.session_id,u.occurred_at,u.source_key LIMIT 100001;
 
 -- name: OverviewUnknownTimes :one
-SELECT count(DISTINCT e.session_id)::bigint FROM canonical_events e
+SELECT count(DISTINCT e.session_id)::bigint FROM visible_canonical_events e
 JOIN canonical_sessions s ON s.id=e.session_id JOIN canonical_projects p ON p.id=s.project_id
 WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' AND e.kind='message' AND e.occurred_at<'2000-01-01'::timestamptz;

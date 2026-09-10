@@ -170,12 +170,34 @@ type CapturedUser struct {
 }
 
 type ConversationSnapshot struct {
+	Head        string
+	NextEventID string
 	CapturedBy  *CapturedUser
 	Session     SessionRecord
 	Thread      ThreadRecord
 	Threads     []ThreadRecord
 	Events      []EventRecord
 	EventCounts map[string]int
+}
+
+type ConversationPageRequest struct {
+	Head         string
+	AfterEventID string
+	Limit        int
+}
+
+type RefreshRequiredError struct{ Head string }
+
+func (e *RefreshRequiredError) Error() string {
+	return "conversation head changed; refresh from the selected head"
+}
+
+// PaginationRequiredError prevents older callers from mistaking a bounded page
+// for an entire publication-mode conversation.
+type PaginationRequiredError struct{}
+
+func (*PaginationRequiredError) Error() string {
+	return "conversation requires the bounded page Interface"
 }
 
 // ProjectionThread is the minimal Thread identity copied into a derived read
@@ -188,19 +210,21 @@ type ProjectionThread struct {
 // EventProjection is the current Canonical document made available to derived
 // read models. Search owns how this document is indexed and queried.
 type EventProjection struct {
-	ProjectID    string
-	SessionID    string
-	SessionTitle string
-	ThreadID     string
-	ThreadPath   []ProjectionThread
-	EventID      string
-	Author       string
-	Harness      string
-	OccurredAt   time.Time
-	Text         string
-	ToolLabel    string
-	IngestSeq    uint64
-	ObservedAt   time.Time
+	PublicationHead       string
+	PublicationDescriptor string
+	ProjectID             string
+	SessionID             string
+	SessionTitle          string
+	ThreadID              string
+	ThreadPath            []ProjectionThread
+	EventID               string
+	Author                string
+	Harness               string
+	OccurredAt            time.Time
+	Text                  string
+	ToolLabel             string
+	IngestSeq             uint64
+	ObservedAt            time.Time
 }
 
 type ProjectionChange struct {

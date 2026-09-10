@@ -47,8 +47,7 @@ The PostgreSQL `PublicationStore` now supplies the Server-side candidate Module:
 finite reservations, immutable Begin identity, writer fences and leases, bounded
 parts, transport sealing, metadata recovery, renewal, explicit rejection and
 reclamation. It is not yet connected to HTTP routes or the Composition Root.
-No candidate can activate, enter ordinary conversation reads, grant Raw authority
-or enqueue Search work in this increment.
+This preparation increment was followed by validation and activation below.
 
 The legacy ingestion path and candidate reservations enforce one write mode for
 the same authenticated source identity. Reserving a new source selects publication
@@ -77,6 +76,31 @@ indices, child tools and usage, changed source versions after cleanup, quota
 rollback and lease expiry during normalization. This increment prepares complete
 candidate membership but does not select a visible head or connect HTTP routes.
 
+## Landed foundation: atomic activation and selected-head reads
+
+`PublicationStore.Activate` now selects a complete validated version together
+with Session metadata, capture progress, a durable receipt and Search eligibility.
+Replaying a successful receipt after restart, expiry or a later publication
+returns the original proof without selecting the old version again.
+
+Conversation, project counts and overview usage read the selected version.
+`Store.ConversationPage` returns bounded Events and requires continuations to
+retain their head; a changed version produces an explicit refresh result. The
+older whole-conversation Interface fails explicitly above 100 Events for these
+Sessions, so HTTP/Web paging remains a prerequisite for enabling OpenCode.
+
+Search still indexes asynchronously. Current membership and semantic descriptors
+hide withdrawn or changed content immediately, and late workers cannot restore
+it. A partially indexed target reports unknown indexed-through progress until
+all current descriptors are covered. Bounded cleanup reclaims unreachable old
+version bodies while retaining activation proof and protecting the current head.
+
+Real PostgreSQL tests exercise publication, rollback during lease expiry, lost
+result recovery through a fresh connection, old receipt replay, stale index work,
+pagination, withdrawn child tools/usage, partial indexing, empty targets, old-body
+cleanup and lifecycle authorization. These are Module-level results; they do not
+yet establish HTTP lost-response or native OpenCode end-to-end acceptance.
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -98,10 +122,9 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment adds atomic activation with head-aware Reader/Search
-integration and HTTP routing.
-Collector journal recovery and the OpenCode projection then connect to that
-complete publication Interface.
+The next increment exposes secured publication and pagination HTTP Interfaces
+and carries paging through the Web reader. Collector journal recovery, independent
+Raw activation proof and the OpenCode projection then connect to that Interface.
 The first usable OpenCode release also needs real source mutation, rewind,
 compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
 the production public Interfaces. Research prototypes remain on their separate
