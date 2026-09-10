@@ -55,11 +55,31 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 		t.Fatal(err)
 	}
 	journal := filepath.Join(t.TempDir(), "collector.sqlite")
+	// Pack once; every fresh Node phase loads this persisted installation rather
+	// than a workspace source wrapper. npm prepack builds the actual private entry.
+	artifactDirectory := t.TempDir()
+	packContext, cancelPack := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancelPack()
+	pack := exec.CommandContext(packContext, "npm", "pack", "--json", "--pack-destination", artifactDirectory)
+	pack.Dir = filepath.Join(root, "adapters", "opencode")
+	var packError bytes.Buffer
+	pack.Stderr = &packError
+	packed, err := pack.Output()
+	if err != nil {
+		t.Fatalf("pack private OpenCode Adapter: %v\n%s", err, packError.String())
+	}
+	var artifacts []struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(packed, &artifacts); err != nil || len(artifacts) != 1 || artifacts[0].Filename == "" {
+		t.Fatalf("decode private OpenCode tarball: %v", err)
+	}
+	tarball := filepath.Join(artifactDirectory, artifacts[0].Filename)
 	batch := canonicalcontract.ValidBatch()
 	batch.ProjectID = projectID
 	run := func(phase string) nativeCollectorSnapshot {
 		t.Helper()
-		input, err := json.Marshal(map[string]any{"phase": phase, "origin": origin, "credential": credential, "userId": userID, "journal": journal, "batch": batch})
+		input, err := json.Marshal(map[string]any{"phase": phase, "origin": origin, "credential": credential, "userId": userID, "journal": journal, "tarball": tarball, "batch": batch})
 		if err != nil {
 			t.Fatal(err)
 		}

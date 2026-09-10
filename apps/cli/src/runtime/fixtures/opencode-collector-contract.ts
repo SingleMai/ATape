@@ -1,12 +1,13 @@
 // Executed by the authenticated Go/PostgreSQL contract in a fresh Node process
 // for every phase. Only a controlled native fixture is read; credentials use stdin.
 import assert from "node:assert/strict"
+import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { CaptureJournals, CLICredentialStore, CollectorStateStore, runCollectionCycle } from "@atape/application"
-import { AdapterProtocolVersion, SourceCaptureVersion, type CanonicalBatch, type StoredCLICredential } from "@atape/domain"
+import { type CanonicalBatch, type StoredCLICredential } from "@atape/domain"
 import { Effect, Logger } from "effect"
 import { makeNodeClientLayer, defaultNodeClientPaths } from "../clientLayers.ts"
 import { sourceCollectionLimits } from "./source-collection-test-support.ts"
@@ -14,14 +15,15 @@ import { sourceCollectionLimits } from "./source-collection-test-support.ts"
 const limits = { ...sourceCollectionLimits, recovery: { ...sourceCollectionLimits.recovery, sourceMs: 5000 }, sourceWorkMs: 30000, cycleMs: 90000 }
 
 const input = JSON.parse(readFileSync(0, "utf8")) as {
-  phase: string; origin: string; credential: string; userId: string; journal: string; batch: CanonicalBatch
+  phase: string; origin: string; credential: string; userId: string; journal: string; tarball: string; batch: CanonicalBatch
 }
 const native = JSON.parse(readFileSync(new URL("../../../../../adapters/opencode/src/fixtures/native-v1.json", import.meta.url), "utf8")) as {
   rootID: string; childID: string; forkID: string; ddl: string[]; rows: Record<string, Record<string, SQLInputValue>[]>
 }
 const home = dirname(input.journal), path = join(home, "source.db"), workspace = join(home, "workspace")
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") })
-const adapterId = "opencode-collector-contract", at = "2026-09-10T00:00:00Z", secret = "SENSITIVE_TEST_TOKEN"
+const adapterId = "opencode", packageName = "@atape/adapter-opencode", at = "2026-09-10T00:00:00Z", secret = "SENSITIVE_TEST_TOKEN"
+process.env.OPENCODE_DB = path // The installed foreign runtime selects its native source from process environment.
 const initialPart = native.rows.part!.find(row => row.session_id === native.rootID && JSON.parse(String(row.data)).type === "text")!
 const secondMessage = native.rows.message!.filter(row => row.session_id === native.rootID)[1]!
 const project = { id: input.batch.projectId, instanceOrigin: input.origin, userId: input.userId,
@@ -45,14 +47,8 @@ if (input.phase === "initial") {
   db.prepare("UPDATE part SET data=json_set(data,'$.state.output',?,'$.state.metadata.output',?) WHERE session_id=? AND json_extract(data,'$.type')='tool'")
     .run(`CollectorToolNeedle ${secret}`, `CollectorToolNeedle ${secret}`, native.rootID)
   db.close()
-  const packageRoot = join(paths.adapterDirectory, "node_modules", "@atape", "adapter-opencode-contract")
-  mkdirSync(packageRoot, { recursive: true })
-  const packageName = "@atape/adapter-opencode-contract"
-  writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: packageName, version: "0.0.0", type: "module", atapeAdapter: {
-    protocolVersion: AdapterProtocolVersion, adapterId, displayName: "OpenCode", entry: "./index.mjs", harnesses: ["OpenCode"], sourceCapture: SourceCaptureVersion
-  } }))
-  writeFileSync(join(packageRoot, "index.mjs"), `import { createOpenCodeRuntime } from ${JSON.stringify(new URL("../../../../../adapters/opencode/src/runtime.ts", import.meta.url).href)};
-export const createAtapeAdapter = context => createOpenCodeRuntime({ path: ${JSON.stringify(path)}, signal: context.signal });`)
+  execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", paths.adapterDirectory, input.tarball],
+    { cwd: home, timeout: 120000, stdio: ["ignore", "pipe", "pipe"] })
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [adapterId], projects: [project],
     adapters: [{ adapterId, packageName, version: "0.0.0", displayName: "OpenCode", upgradeSpec: packageName, installedAt: at, updatedAt: at }] }))

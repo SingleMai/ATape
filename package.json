@@ -9,7 +9,7 @@
   },
   "scripts": {
     "atape": "node apps/cli/src/main.ts",
-    "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
+    "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/adapter-opencode build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
     "build:release:images": "node scripts/build-release-images.mjs",
     "check": "pnpm -r typecheck && pnpm -r test && pnpm --filter @atape/web test:browser && pnpm test:e2e && pnpm test:go",
     "dev:server": "cd server && ATAPE_DEMO_MODE=true go run ./cmd/atape-server",
@@ -20,7 +20,7 @@
     "pack:adapter-codex": "pnpm --filter @atape/adapter-codex pack:release",
     "pack:adapter-claude": "pnpm --filter @atape/adapter-claude pack:release",
     "pack:release": "node scripts/pack-release.mjs",
-    "test:adapter-package": "pnpm --filter @atape/adapter-codex verify:package && pnpm --filter @atape/adapter-claude verify:package",
+    "test:adapter-package": "pnpm --filter @atape/adapter-codex verify:package && pnpm --filter @atape/adapter-claude verify:package && pnpm --filter @atape/adapter-opencode verify:package",
     "test:e2e": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/cli test:e2e",
     "test:cli-package": "pnpm --filter @atape/cli verify:package",
     "test:release": "pnpm test:cli-package && pnpm test:adapter-package && node scripts/verify-release.mjs",

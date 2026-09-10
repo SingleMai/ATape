@@ -1,8 +1,9 @@
 # OpenCode Adapter implementation status
 
 The selected route is read-only local SQLite through the existing Host-owned
-bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
-Adapter. Atomic publication and versioned reads are implemented; the first source integration
+bounded-pull Collector. A self-contained private candidate can now be installed
+explicitly for controlled acceptance. OpenCode is not published, registered or
+enabled by default. Atomic publication and versioned reads are implemented; the first source integration
 now has explicitly admitted runtime scheduling and native Collector/HTTP acceptance.
 Bounded archive browsing is implemented; release admission remains required. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
@@ -453,8 +454,9 @@ Bounded archive browsing now pages observation-per-object history through the
 Raw Module; the legacy listing explicitly refuses archives above 100 objects.
 The native Collector acceptance below covers source mutation, rewind, compaction,
 tools, child/fork identity, off/on Raw policy and Search through production
-Interfaces. Artifact installation, supported-platform capacity and remaining
-failure/admission evidence still gate the first usable release. Research prototypes remain on their separate
+Interfaces. Private Adapter installation is verified below; installed CLI background
+acceptance, supported-platform capacity and remaining failure/admission evidence
+still gate the first usable release. Research prototypes remain on their separate
 branch and are not bundled with the CLI.
 
 ## Landed Host capability: source collection and scheduling
@@ -488,7 +490,7 @@ now also passes actual authenticated HTTP/PostgreSQL acceptance below. See
 ## Native Collector acceptance through authenticated HTTP/PostgreSQL
 
 The controlled official OpenCode 1.18.30 SQLite fixture now runs through a locally
-installed runtime entry, full Node composition and `runCollectionCycle`, actual CLI
+installed private tarball, full Node composition and `runCollectionCycle`, actual CLI
 credential storage, authenticated HTTP, PostgreSQL publication and the production
 conversation, Raw and Search Interfaces. Each phase starts a separate native Node
 process; no publication, journal, attribution or transport workflow is substituted.
@@ -510,10 +512,11 @@ process recovers from the existing journal with the source and Project directory
 unavailable. Raw receipt recovery performs zero uploads, and final Raw browsing
 contains both original and later observed rows without the controlled secret.
 
-This is production Interface acceptance of controlled native data, not a published
-tarball, a background-daemon acceptance run or a general version/platform claim.
-The package stays private and unregistered. Bounded Raw object browsing is implemented below; physical admission, metadata
-retention and supported-platform/artifact checks remain release gates.
+This is production Interface acceptance of a locally packed and installed private
+Adapter. It does not establish installed CLI background-daemon acceptance or a
+general version/platform claim. The package stays private and unregistered.
+Bounded Raw object browsing and metadata admission are implemented below; physical
+admission, retention and supported-platform/background checks remain release gates.
 
 ## Verification
 
@@ -541,7 +544,7 @@ See [ADR-0071](../architecture/adr/0071-bounded-raw-manifest-browsing.md).
 
 This closes the unbounded manifest-list gap. OpenCode remains private/unregistered;
 physical capacity measurements, retention and supported-platform
-and installed-artifact/background acceptance still precede enablement. No package
+and installed CLI background acceptance still precede enablement. No package
 publication, server deployment or production migration is part of this increment.
 
 ### Account journal metadata admission
@@ -566,5 +569,34 @@ SQLite file, demonstrating why metadata admission is separate. That fixture had
 ten records and one 256-byte unit per capture; its local 2.7-second run and about
 1.1 MiB WAL do not define platform-independent latency, memory or disk defaults.
 See [ADR-0073](../architecture/adr/0073-capture-journal-metadata-admission.md).
-Physical capacity/deadline defaults, retention and supported installed-artifact
-acceptance remain required before OpenCode registration or enablement.
+Physical capacity/deadline defaults, retention and supported installed CLI
+background acceptance remain required before OpenCode registration or enablement.
+
+
+### Private installable Adapter artifact
+
+The private `@atape/adapter-opencode@0.0.0` package now exports a bundled ESM
+`createAtapeAdapter` entry and declares `atape.source-capture.v1`. All runtime
+code is bundled; installing it needs no workspace or runtime npm dependencies.
+It remains excluded from the public release contract and default tool registry.
+The normal build and Adapter artifact checks include this private candidate.
+
+`pnpm --filter @atape/adapter-opencode verify:package` packs the exact four-file
+artifact (entry, manifest, README and license), installs it offline with lifecycle
+scripts disabled, and copies the verifier and controlled native fixture outside
+the checkout. A fresh Node process imports only that installed bundle and Node
+builtins. It checks root/fork discovery across child-only pages, original-directory
+attribution, bounded frames, six Canonical Events, Raw off/on, one active view,
+close/reopen, lifetime cancellation, missing-source errors and unchanged source
+hash/mtime. The controlled local tarball measured 145,420 bytes; this is build
+evidence, not a contractual future package-size value.
+
+The full authenticated HTTP/PostgreSQL Collector contract now packs this same
+package once and installs it into its isolated Adapter directory. Each subsequent
+phase loads that persisted installation. The previous source-import wrapper has
+been removed, so rewriting history, response-loss recovery and exact Raw references
+also exercise the shipped entry and its manifest. No personal history is read.
+
+This increment verifies the private Adapter artifact. Installed CLI background
+execution and platform-specific admission evidence are the next increments;
+publication, server deployment and production migration are separate actions.
