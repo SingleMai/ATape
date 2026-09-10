@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { SourceCaptureRuntime } from "./sourceCapture.ts"
 import type {
   ContentBlock as OfficialAcpContentBlock,
   SessionUpdate as OfficialAcpSessionUpdate
@@ -328,10 +329,17 @@ export type AdapterCollectRequest = {
   readonly signal: AbortSignal
 }
 
-export type AtapeAdapterRuntime = {
+export type LegacyAdapterRuntime = {
   readonly collect: (request: AdapterCollectRequest) => unknown | PromiseLike<unknown>
   readonly close?: () => unknown | PromiseLike<unknown>
 }
+
+export type SourceAdapterRuntime = {
+  readonly sourceCapture: SourceCaptureRuntime
+  readonly close: () => unknown | PromiseLike<unknown>
+}
+
+export type AtapeAdapterRuntime = LegacyAdapterRuntime | SourceAdapterRuntime
 
 export type AtapeAdapterModule = {
   readonly createAtapeAdapter: (

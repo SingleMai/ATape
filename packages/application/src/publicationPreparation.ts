@@ -1,5 +1,5 @@
 import { Effect, Schema, Scope } from "effect"
-import { PublicationTargetProfile, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
+import { PublicationTargetProfile, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage, type AdapterRawReference, type SourceCaptureFrame } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./captureJournal.ts"
 import { prepareCanonicalSlice } from "./collector.ts"
 import { canonicalMaterializationBound, projectCanonicalSubmission } from "./canonicalProjection.ts"
@@ -7,12 +7,7 @@ import { publicationPreparationContext, rawObservationPreparationContext, sealPu
 import { createRawPreparation, validateRawPreparationLimits, type RawPreparationLimits } from "./rawPreparation.ts"
 export type { RawPreparationLimits } from "./rawPreparation.ts"
 
-export type PublicationDraftFrame = {
-  readonly recordKey: string
-  readonly events: ReadonlyArray<Omit<AdapterEvent, "revision" | "projectionRevision" | "rawRef">>
-  readonly usage: ReadonlyArray<Omit<AdapterUsage, "revision">>
-  readonly raw?: unknown
-}
+export type PublicationDraftFrame = SourceCaptureFrame
 export type PublicationDraftView<E = never, R = never> = {
   readonly profile: string
   readonly origin: { readonly sourceId: string; readonly originKey: string }

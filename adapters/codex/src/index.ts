@@ -1,13 +1,13 @@
 import type {
   AdapterOpenContext,
   AtapeAdapterModule,
-  AtapeAdapterRuntime
+  LegacyAdapterRuntime
 } from "@atape/domain"
 import { Effect } from "effect"
 import { collectCodexPage, openCodexArchive } from "./codexArchive.ts"
 
-const module: AtapeAdapterModule = {
-  createAtapeAdapter: async (context): Promise<AtapeAdapterRuntime> => {
+const module = {
+  createAtapeAdapter: async (context: AdapterOpenContext & { readonly signal: AbortSignal }): Promise<LegacyAdapterRuntime> => {
     const archive = await Effect.runPromise(openCodexArchive(context), { signal: context.signal })
     return {
       collect: (request) => Effect.runPromise(collectCodexPage(archive, request), {
@@ -15,7 +15,7 @@ const module: AtapeAdapterModule = {
       })
     }
   }
-}
+} satisfies AtapeAdapterModule
 
 export const createAtapeAdapter = (
   context: AdapterOpenContext & { readonly signal: AbortSignal }

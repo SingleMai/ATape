@@ -2,6 +2,7 @@ import { Schema } from "effect"
 
 export const ClientConfigVersion = 3 as const
 export const AdapterProtocolVersion = "atape.adapter.v1alpha1" as const
+export const SourceCaptureVersion = "atape.source-capture.v1" as const
 export const GitAttributionVersion = "atape.git-attribution.v1" as const
 
 export const ProjectRegistration = Schema.Struct({
@@ -55,7 +56,8 @@ export const AdapterManifest = Schema.Struct({
   entry: Schema.String,
   harnesses: Schema.Array(Schema.String),
   gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion)),
-  rawCapturePolicy: Schema.optionalKey(Schema.Literal("atape.raw-capture.v1"))
+  rawCapturePolicy: Schema.optionalKey(Schema.Literal("atape.raw-capture.v1")),
+  sourceCapture: Schema.optionalKey(Schema.Literal(SourceCaptureVersion))
 })
 export type AdapterManifest = typeof AdapterManifest.Type
 

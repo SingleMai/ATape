@@ -46,6 +46,7 @@ import {
   AuthenticatedHTTPClient,
   AuthenticatedHTTPError
 } from "./authenticatedHTTPClient.ts"
+import { hostSourceCapture, isSourceCaptureRuntime } from "./sourceCaptureRuntime.ts"
 import { withCollectorStateLock } from "./collectorStateLock.ts"
 import { captureInstallationPath, capturePathState, captureRoot, readCaptureInstallation } from "./captureBinding.ts"
 
@@ -330,10 +331,13 @@ const loadAdapterRuntime = (
       adapter.adapterId, "load", false, errorMessage(`Could not create Adapter ${adapter.adapterId}`, cause)
     )
   }).pipe(Effect.onError(() => Effect.sync(() => lifetime.abort())))
-  if (!foreign || typeof foreign.collect !== "function") {
+  if (typeof foreign !== "object" || foreign === null || (manifest.sourceCapture === undefined
+    ? !("collect" in foreign) || typeof foreign.collect !== "function" || "sourceCapture" in foreign
+    : !("sourceCapture" in foreign) || !isSourceCaptureRuntime(foreign.sourceCapture) || typeof foreign.close !== "function" || "collect" in foreign)) {
     lifetime.abort()
+    if (typeof foreign?.close === "function") yield* Effect.tryPromise({ try: () => Promise.resolve(foreign.close?.()), catch: () => undefined }).pipe(Effect.catch(() => Effect.void))
     return yield* runtimeFailure(
-      adapter.adapterId, "contract", false, "createAtapeAdapter must return an object with collect(request)."
+      adapter.adapterId, "contract", false, "createAtapeAdapter must return the exact runtime capability declared by its manifest."
     )
   }
   if (attributionFailure) {
@@ -343,6 +347,9 @@ const loadAdapterRuntime = (
     }).pipe(Effect.catch(() => Effect.void))
     return yield* attributionRuntimeFailure()
   }
+  if ("sourceCapture" in foreign) return { foreign, lifetime, hosted: {
+    sourceCapture: hostSourceCapture(adapter.adapterId, foreign.sourceCapture, lifetime.signal)
+  } satisfies HostedAdapter }
   const hosted: HostedAdapter = {
     collect: (request) => Effect.suspend(() => {
       if (request.rawCaptureEnabled === false && manifest.rawCapturePolicy !== "atape.raw-capture.v1") {
