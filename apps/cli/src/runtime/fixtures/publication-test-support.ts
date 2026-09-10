@@ -107,7 +107,7 @@ export const fixture = async (partBytes = 4096) => {
   const run = async <A, E>(work: Effect.Effect<A, E, CaptureJournal | PublicationTransport | RawPublicationTransport | SecretRedactor>) => {
     const currentMode = mode; mode = "open"
     return Effect.runPromise(work.pipe(Effect.provide(Layer.mergeAll(remote, rawRemote, makeSecretRedactorLayer(["SENSITIVE_TEST_TOKEN"]), makeCaptureJournalLayer({ path, mode: currentMode, binding,
-      limits: { unitBytes: partBytes, targetBytes: 1024 * 1024, pendingBytes: 2 * 1024 * 1024, unitsPerTarget: 4096, recordsPerTarget: 4096 } })))))
+      limits: { unitBytes: partBytes, targetBytes: 1024 * 1024, pendingBytes: 2 * 1024 * 1024, metadataEntries: 100_000, unitsPerTarget: 4096, recordsPerTarget: 4096 } })))))
   }
   const prepare = (count = 1, raw = false, seal = true, id = "capture", baseHead = "", rawCount = 1, rawContent = "raw A") => run(Effect.gen(function*() {
     const j = yield* CaptureJournal, owner = yield* j.claim(scope)

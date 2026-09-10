@@ -72,6 +72,7 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
       integer(limits.targetBytes, limits.unitBytes, Number.MAX_SAFE_INTEGER)
       integer(limits.pendingBytes, limits.targetBytes, Number.MAX_SAFE_INTEGER)
       integer(limits.unitsPerTarget, 1, 1_000_000)
+      integer(limits.metadataEntries, 1, 1_000_000)
       if (limits.recordsPerTarget !== undefined) integer(limits.recordsPerTarget, 1, 1_000_000)
       const identity = JSON.stringify([binding.instanceOrigin, binding.userId, binding.installationId])
       if (options.mode === "create") {
@@ -109,7 +110,7 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
           db.exec("COMMIT")
         }
         const version = db.prepare("PRAGMA user_version").get()
-        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4 && version?.user_version !== 5) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
+        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4 && version?.user_version !== 5 && version?.user_version !== 6) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
         const stored = db.prepare("SELECT identity,retained_bytes FROM binding").all()
         if (stored.length !== 1 || stored[0]?.identity !== identity) throw failure("binding", "Capture journal belongs to a different account or installation.")
         // Upgrade only a verified binding. Concurrent openers serialize and recheck.
@@ -144,6 +145,15 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
         if (db.prepare("PRAGMA user_version").get()?.user_version === 4) {
           db.exec("CREATE UNIQUE INDEX unactivated_source_capture ON captures(scope_key) WHERE state IN ('preparing','sealed'); PRAGMA user_version=5")
         }
+        if (db.prepare("PRAGMA user_version").get()?.user_version === 5) {
+          const tables = ["scopes", "captures", "units", "source_record_versions", "capture_records"]
+          db.exec("ALTER TABLE binding ADD COLUMN metadata_entries INTEGER NOT NULL DEFAULT 0 CHECK(metadata_entries >= 0 AND metadata_entries <= 9007199254740991)")
+          db.exec(`UPDATE binding SET metadata_entries=${tables.map(table => `(SELECT count(*) FROM ${table})`).join("+")}`)
+          for (const table of tables) db.exec(`
+            CREATE TRIGGER metadata_${table}_insert AFTER INSERT ON ${table} BEGIN UPDATE binding SET metadata_entries=metadata_entries+1; END;
+            CREATE TRIGGER metadata_${table}_delete AFTER DELETE ON ${table} BEGIN UPDATE binding SET metadata_entries=metadata_entries-1; END;`)
+          db.exec("PRAGMA user_version=6")
+        }
         db.exec("COMMIT")
         return db
       } catch (cause) {
@@ -155,6 +165,15 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
   }), db => Effect.sync(() => db.close())).pipe(Effect.map(db => implementation(db, options)))
 function implementation(db: DatabaseSync, options: CaptureJournalOptions): CaptureJournal["Service"] {
   const { limits } = options
+  // Called only inside the existing write transaction, after idempotent replay
+  // checks. No quota gate on settlement or body reclamation of admitted rows.
+  const admitMetadata = (entries: number) => {
+    const used = db.prepare("SELECT metadata_entries FROM binding").get()?.metadata_entries
+    if (typeof used !== "number" || !Number.isSafeInteger(used) || used < 0)
+      throw failure("corrupt", "Capture journal metadata accounting is invalid.")
+    if (entries > limits.metadataEntries - used)
+      throw failure("capacity", `Capture journal metadata admission exhausted: used ${used}, limit ${limits.metadataEntries}, required ${entries} new entries. Existing deliveries remain recoverable; increase metadataEntries to admit more history.`)
+  }
   const one = (sql: string, ...parameters: SQLInputValue[]) => db.prepare(sql).get(...parameters)
   const update = (sql: string, ...parameters: SQLInputValue[]) => db.prepare(sql).run(...parameters)
   const transaction = <A>(work: () => A) => Effect.try({ try: () => {
@@ -272,6 +291,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
         update("UPDATE scopes SET epoch=epoch+1 WHERE scope_key=?",key)
         return { scope, epoch:old.epoch+1, checkpoint:old.checkpoint }
       }
+      admitMetadata(1)
       update("INSERT INTO scopes(scope_key,origin_key,epoch,checkpoint) VALUES(?,?,1,NULL)",key,scope.originKey)
       return { scope, epoch:1, checkpoint:null }
     }),
@@ -311,6 +331,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (track) update("UPDATE scopes SET records_initialized=1 WHERE scope_key=?",scope.key)
       if (one("SELECT id FROM captures WHERE scope_key=? AND state IN ('preparing','sealed') LIMIT 1",scope.key))
         throw failure("conflict","Resolve the existing unactivated capture before reserving another.")
+      admitMetadata(1)
       update("INSERT INTO captures(scope_key,id,expected_checkpoint,begin_json,raw_enabled,state,purpose,track_records) VALUES(?,?,?,?,?,'preparing',?,?)",
         scope.key,input.id,input.expectedCheckpoint,input.beginJson,Number(input.rawEnabled),purpose,Number(track))
     }),
@@ -339,6 +360,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (typeof total !== "number" || total<0 || !Number.isSafeInteger(total)) throw failure("corrupt","Journal byte accounting is invalid.")
       if (Number(counts.total)>=limits.unitsPerTarget || unit.bytes.byteLength>limits.targetBytes-row.retained_bytes || unit.bytes.byteLength>limits.pendingBytes-total)
         throw failure("capacity","Pending capture capacity is exhausted; unacknowledged content was retained.")
+      admitMetadata(1)
       update("INSERT INTO units(scope_key,capture_id,kind,ordinal,byte_count,digest,body) VALUES(?,?,?,?,?,?,?)",
         key,id,unit.kind,unit.ordinal,unit.bytes.byteLength,fingerprint,Buffer.from(unit.bytes))
       update("UPDATE captures SET retained_bytes=retained_bytes+? WHERE scope_key=? AND id=?",unit.bytes.byteLength,key,id)
@@ -363,6 +385,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (row.state !== "preparing") throw failure("state","Source observations require an unsealed capture.")
       if (row.record_count >= limits.recordsPerTarget) throw failure("capacity","Source record capacity is exhausted.")
       const old = one("SELECT * FROM source_record_versions WHERE scope_key=? AND kind=? AND record_key=?",scope.key,kind,input.key)
+      admitMetadata(old === undefined ? 2 : 1)
       const previous = old === undefined ? undefined : decode(RecordRow,old)
       const lastComplete = kind === "raw" ? scope.observed_raw : scope.observed_canonical
       const comparison = old === undefined ? null : decode(Schema.Struct({ comparison_capture: Schema.NullOr(Schema.String) }),old).comparison_capture

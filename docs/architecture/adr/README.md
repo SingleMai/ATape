@@ -123,3 +123,4 @@ pretending that staging acceptance passed.
 
 - [ADR-0071: Bounded Raw manifest browsing](0071-bounded-raw-manifest-browsing.md)
 - [ADR-0072: Localization boundary for Web and CLI](0072-localization-boundary.md)
+- [ADR-0073: Capture journal metadata admission](0073-capture-journal-metadata-admission.md)

@@ -76,12 +76,28 @@ describe("Host source collection workflow", () => {
     expect(after.events).toEqual(before.events)
     expect(await f.cycle()).toMatchObject({ observations: 0, rawChunks: 0 })
   })
-  it("recovers lost activation and frozen Raw after the source database disappears", async () => {
+  it("retains the previous published head at metadata capacity and resumes after explicit admission increases", async () => {
+    const f = await setup()
+    await f.cycle()
+    const before = await f.inspect(), sent = f.remote.sent.length
+    const db = new DatabaseSync(f.native.path)
+    db.prepare("UPDATE part SET data=json_set(data,'$.text','Metadata capacity changed source') WHERE json_extract(data,'$.type')='text'").run(); db.close()
+    await expect(f.cycle(f.host, { ...limits, journal: { ...limits.journal, metadataEntries: 1 } })).rejects.toMatchObject({
+      _tag: "CollectorStateError", message: expect.stringContaining("metadata admission exhausted")
+    })
+    expect((await f.inspect()).coverage).toEqual(before.coverage)
+    expect(f.remote.sent).toHaveLength(sent)
+    expect((await f.inspect()).pending).toEqual([])
+    const resumed = await f.cycle()
+    expect(resumed.observations).toBe(1); expect(resumed.canonicalBatches).toBeGreaterThan(0)
+    expect((await f.inspect()).coverage.canonicalCaptureId).not.toBe(before.coverage.canonicalCaptureId)
+  })
+  it("recovers lost activation and frozen Raw with exhausted metadata admission after source deletion", async () => {
     const f = await setup(); f.remote.loseActivation()
     expect(await f.cycle()).toMatchObject({ observations: 1, sourceFailures: [{ source: f.native.metadata.origin.sourceId, reason: "io" }] })
     expect((await f.inspect()).coverage.canonicalCaptureId).toBeNull()
     const opens = f.opens(); await rm(f.native.path); f.missing()
-    await expect(f.cycle()).rejects.toMatchObject({ reason: "collect" })
+    await expect(f.cycle(f.host, { ...limits, journal: { ...limits.journal, metadataEntries: 1 } })).rejects.toMatchObject({ reason: "collect" })
     const recovered = await f.inspect()
     expect(recovered.coverage.canonicalCaptureId).not.toBeNull()
     expect(f.remote.rawSent.length).toBeGreaterThan(0)

@@ -16,6 +16,8 @@ export type CaptureBinding = { readonly instanceOrigin: string; readonly userId:
 export type CaptureJournalLimits = {
   readonly unitBytes: number; readonly targetBytes: number; readonly pendingBytes: number
   readonly unitsPerTarget: number; readonly recordsPerTarget?: number
+  /** Account-wide retained metadata rows; exhausted admission never blocks existing recovery. */
+  readonly metadataEntries: number
 }
 export type CaptureClaim = CaptureOwner & { readonly checkpoint: string | null }
 export type CaptureUnitKind = "canonical" | "raw"

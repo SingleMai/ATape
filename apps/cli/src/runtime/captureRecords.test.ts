@@ -26,7 +26,7 @@ const fixture = async (recordsPerTarget = 1000) => {
   const run = <A, E>(work: Effect.Effect<A, E, CaptureJournal>) => {
     const current = mode; mode = "open"
     return Effect.runPromise(work.pipe(Effect.provide(makeCaptureJournalLayer({ path, mode: current, binding,
-      limits: { unitBytes: 512, targetBytes: 4096, pendingBytes: 8192, unitsPerTarget: 100, recordsPerTarget } }))))
+      limits: { unitBytes: 512, targetBytes: 4096, pendingBytes: 8192, metadataEntries: 100_000, unitsPerTarget: 100, recordsPerTarget } }))))
   }
   return { path, run }
 }

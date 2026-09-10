@@ -59,7 +59,7 @@ const auth = makeAuthenticatedHTTPClientLayer(faultFetch, true).pipe(Layer.provi
   })))))
 const dependencies = Layer.mergeAll(makePublicationTransportLayer().pipe(Layer.provide(auth)), makeRawPublicationTransportLayer().pipe(Layer.provide(auth)),
   makeSecretRedactorLayer(["SENSITIVE_TEST_TOKEN"]), makeCaptureJournalLayer({ path: input.journal, mode: input.phase === "prepare" ? "create" : "open", binding,
-    limits: { unitBytes: 4 * 1024 * 1024, targetBytes: 32 * 1024 * 1024, pendingBytes: 64 * 1024 * 1024, unitsPerTarget: 100, recordsPerTarget: 1000 } }))
+    limits: { unitBytes: 4 * 1024 * 1024, targetBytes: 32 * 1024 * 1024, pendingBytes: 64 * 1024 * 1024, metadataEntries: 100_000, unitsPerTarget: 100, recordsPerTarget: 1000 } }))
 const rawLimits = { objectBytes: 4000, wireBytes: 8192, targetBytes: 100_000, units: 100 }
 const result = await Effect.runPromise(Effect.gen(function*() {
   const j = yield* CaptureJournal

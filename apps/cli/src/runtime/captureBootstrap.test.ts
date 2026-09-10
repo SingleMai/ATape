@@ -12,7 +12,7 @@ import { makeCollectorStateLayer } from "./collectorLayers.ts"
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
 const account = { instanceOrigin: "https://atape.test", userId: "user" }
-const limits = { unitBytes: 1024, targetBytes: 8192, pendingBytes: 16384, unitsPerTarget: 16, recordsPerTarget: 100 }
+const limits = { unitBytes: 1024, targetBytes: 8192, pendingBytes: 16384, metadataEntries: 100_000, unitsPerTarget: 16, recordsPerTarget: 100 }
 const scope = { projectId: "project", adapterId: "opencode", sourceSessionId: "root", originKey: "origin" }
 const fixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "atape-bootstrap-")); directories.push(root)
