@@ -99,6 +99,18 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   return { sessionId: attempt.sessionId, attemptId: attempt.id, limits: capabilities.limits }
 })
 
+/** Checked local preparation context. This reads metadata only and does no HTTP.
+ * Source preparation uses the persisted Begin identity, never an independent proof. */
+export const publicationPreparationContext = (owner: CaptureOwner, id: string) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal
+  const { capture, units } = yield* journal.inspect(owner, id, { kind: "canonical", limit: 1 })
+  const intent = yield* boundIntent(journal, owner, capture)
+  if (capture.state !== "preparing" || !capture.trackRecords) return yield* failure("conflict", "Source preparation requires a tracked unsealed capture.")
+  if (units.length > 0 || (yield* journal.records(owner, id, { kind: "session", limit: 1 })).length > 0)
+    return yield* failure("conflict", "An interrupted source preparation must be abandoned before opening a fresh source.")
+  return { intent, rawEnabled: capture.rawEnabled }
+})
+
 const hashManifestText = (value: string) => Effect.tryPromise({
   try: async () => Array.from(new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))))
     .map(byte => byte.toString(16).padStart(2, "0")).join(""),

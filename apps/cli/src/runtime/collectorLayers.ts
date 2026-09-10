@@ -6,6 +6,7 @@ import {
   CollectorStateStore,
   CollectorTransport,
   makeSecretRedactorLayer,
+  projectCanonicalSubmission,
   GitSourceAttribution,
   GitAttributionError,
   ProjectLocator,
@@ -21,16 +22,12 @@ import {
   GitAttributionVersion,
   GitSource,
   CanonicalApplyReceipt as CanonicalApplyReceiptSchema,
-  CanonicalIngestionProtocolVersion,
-  CanonicalProfileVersion,
   CollectorState as CollectorStateSchema,
   RawAppendReceipt as RawAppendReceiptSchema,
   RawIngestionProtocolVersion,
   emptyCollectorState,
   type AdapterCollectionPage,
   type AdapterManifest,
-  type AcpContentBlock,
-  type AcpSessionUpdate,
   type AtapeAdapterModule,
   type AtapeAdapterRuntime,
   type CanonicalApplyReceipt,
@@ -463,96 +460,8 @@ export const makeCollectorTransportLayer = () => Layer.effect(
 )
 
 const canonicalBatch = (submission: CanonicalSubmission): CanonicalBatch => {
-  const source = {
-    adapterId: submission.adapterId,
-    adapterVersion: submission.adapterVersion,
-    installationId: submission.installationId
-  }
-  const events = submission.observation.events.map((event) => {
-    const projection = projectAcpUpdate(event.update, submission.observation.session.actor)
-    return {
-      sourceEventId: event.sourceEventId,
-      sourceThreadId: event.sourceThreadId,
-      revision: event.revision,
-      projectionRevision: event.projectionRevision,
-      sourceOrder: event.sourceOrder,
-      eventIndex: event.eventIndex,
-      orderFidelity: event.orderFidelity,
-      fidelity: event.fidelity,
-      rawRef: event.rawRef._tag === "object"
-        ? {
-            type: "object" as const,
-            sourceObjectId: event.rawRef.sourceObjectId,
-            ...(event.rawRef.fragment === undefined ? {} : { fragment: event.rawRef.fragment })
-          }
-        : { type: "unavailable" as const, reason: event.rawRef.reason },
-      kind: event.childSourceThreadId === undefined ? projection.kind : "spawn" as const,
-      author: projection.author,
-      occurredAt: event.occurredAt,
-      text: projection.text,
-      ...(projection.toolLabel === undefined ? {} : { toolLabel: projection.toolLabel }),
-      ...("toolCallId" in event.update ? { toolUpdateJson: JSON.stringify(event.update) } : {}),
-      ...(event.childSourceThreadId === undefined ? {} : { childSourceThreadId: event.childSourceThreadId })
-    }
-  })
-  const base = {
-    protocolVersion: CanonicalIngestionProtocolVersion,
-    canonicalProfileVersion: CanonicalProfileVersion,
-    observedAt: submission.observation.observedAt,
-    source,
-    projectId: submission.projectId,
-    session: submission.observation.session,
-    threads: submission.observation.threads,
-    events,
-    ...(submission.observation.usage === undefined ? {} : { usage: submission.observation.usage })
-  }
+  const base = projectCanonicalSubmission(submission)
   return { ...base, batchId: `b_${digest(JSON.stringify(base))}` }
-}
-
-const projectAcpUpdate = (
-  update: AcpSessionUpdate,
-  actor: { readonly name: string; readonly harness: string }
-): { readonly kind: "message" | "thought" | "tool_call" | "tool_result"; readonly author: string; readonly text: string; readonly toolLabel?: string } => {
-  switch (update.sessionUpdate) {
-    case "user_message_chunk":
-      return { kind: "message", author: actor.name, text: projectAcpContent(update.content) }
-    case "agent_message_chunk":
-      return { kind: "message", author: actor.harness, text: projectAcpContent(update.content) }
-    case "agent_thought_chunk":
-      return { kind: "thought", author: actor.harness, text: projectAcpContent(update.content) }
-    case "tool_call":
-      return {
-        kind: "tool_call",
-        author: actor.harness,
-        text: update.status ? `${update.title} · ${update.status}` : update.title,
-        toolLabel: update.title
-      }
-    case "tool_call_update": {
-      const label = update.title || update.toolCallId
-      const status = update.status || "updated"
-      return {
-        kind: status === "completed" || status === "failed" ? "tool_result" : "tool_call",
-        author: actor.harness,
-        text: `${label} · ${status}`,
-        toolLabel: label
-      }
-    }
-  }
-}
-
-const projectAcpContent = (content: AcpContentBlock): string => {
-  switch (content.type) {
-    case "text":
-      return content.text
-    case "image":
-      return `[Image: ${content.mimeType}]`
-    case "audio":
-      return `[Audio: ${content.mimeType}]`
-    case "resource_link":
-      return `${content.title || content.name} · ${content.uri}`
-    case "resource":
-      return "text" in content.resource ? content.resource.text : `[Resource: ${content.resource.uri}]`
-  }
 }
 
 const rawChunk = (submission: RawSubmission): RawUploadChunk => {
