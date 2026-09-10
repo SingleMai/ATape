@@ -200,8 +200,8 @@ for (const width of [320, 390, 1440]) {
 test("settings preserves the reader and supports nested confirmation without dismissing settings", async ({ page }) => {
   await page.goto(`${projectPath}/sessions/session-reader?thread=root`)
   await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
-  await page.evaluate(() => window.scrollTo(0, 380))
-  const before = await page.evaluate(() => scrollY)
+  await page.locator(".session-main-reader").evaluate(el => el.scrollTo(0, 380))
+  const before = await page.locator(".session-main-reader").evaluate(el => el.scrollTop)
   const url = page.url()
   const account = page.getByRole("button", { name: "Open account security for Mai" })
   await account.click()
@@ -225,7 +225,7 @@ test("settings preserves the reader and supports nested confirmation without dis
   await page.keyboard.press("Escape")
   await expect(settings).toBeHidden()
   await expect(account).toBeFocused()
-  expect(await page.evaluate(() => scrollY)).toBe(before)
+  expect(await page.locator(".session-main-reader").evaluate(el => el.scrollTop)).toBe(before)
   await expect(page).toHaveURL(url)
 })
 

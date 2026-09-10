@@ -34,10 +34,11 @@ test("locates Canonical prompts and keeps the reading interval through long resp
   await expect(page.locator("#event-prompt-2")).toBeFocused()
   const centered = await page.locator("#event-prompt-2").evaluate((el) => {
     const rect = el.getBoundingClientRect()
-    return Math.abs(rect.top + rect.height / 2 - innerHeight / 2)
+    const viewport = el.closest(".session-main-reader")!.getBoundingClientRect()
+    return Math.abs(rect.top + rect.height / 2 - (viewport.top + viewport.height / 2))
   })
   expect(centered).toBeLessThan(3)
-  await page.evaluate(() => scrollBy(0, 850))
+  await page.locator(".session-main-reader").evaluate(el => el.scrollBy(0, 850))
   await expect(rail.locator('[aria-current="location"]')).toHaveAttribute("aria-label", /^3\./)
   const before = await page.locator("#event-prompt-2").evaluate((el) => el.getBoundingClientRect().top)
   // Programmatic activation preserves the user's scroll position while exercising
@@ -55,14 +56,15 @@ test("locates Canonical prompts and keeps the reading interval through long resp
   await page.keyboard.press("Escape")
   await expect(page.locator(".message-index-panel")).toBeHidden()
   const documentIdentity = await page.evaluate(() => performance.timeOrigin)
-  await page.getByRole("button", { name: /Follow thread/ }).click()
-  await expect(page).toHaveURL(/thread=child/)
+  await page.getByRole("button", { name: /Open in side panel/ }).click()
+  await expect(page).toHaveURL(/thread=root/)
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentIdentity)
-  await expect(rail.locator("button")).toHaveCount(2)
-  await expect(page.locator("#event-child-0")).toBeAttached()
+  await expect(rail.locator("button")).toHaveCount(12)
+  await expect(page.getByRole("tabpanel").locator('[data-event-id="child-0"]')).toBeAttached()
   await page.getByRole("navigation", { name: "Thread path" }).getByRole("button", { name: "Root", exact: true }).click()
   await expect(rail.locator("button")).toHaveCount(12)
-  await expect(page.locator("#event-child-0")).toHaveCount(0)
+  await page.getByRole("button", { name: "Close Child tab", exact: true }).click()
+  await expect(page.getByRole("tabpanel")).toHaveCount(0)
 })
 
 for (const width of [390, 640, 641, 800, 1023, 1024, 1440]) {
@@ -117,9 +119,10 @@ test.describe("delayed layout", () => {
     await expect.poll(async () => Math.abs(await paragraph.evaluate((el) => el.getBoundingClientRect().top) - before)).toBeLessThanOrEqual(1)
     await expect(page.locator('.message-index-rail [aria-current="location"]')).toHaveAttribute("aria-label", /^1\./)
     // Subsequent manual scrolling must establish a new anchor normally.
-    const scrollBefore = await page.evaluate(() => scrollY)
+    const scrollBefore = await page.locator(".session-main-reader").evaluate(el => el.scrollTop)
+    await paragraph.hover()
     await page.mouse.wheel(0, 350)
-    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(scrollBefore + 300)
+    await expect.poll(() => page.locator(".session-main-reader").evaluate(el => el.scrollTop)).toBeGreaterThan(scrollBefore + 300)
   })
 })
 
@@ -174,12 +177,12 @@ for (const count of [0, 1]) {
       await page.goto(path)
       await expect(page.getByRole("heading", { name: "Conversation hierarchy" })).toBeVisible()
       await expect(page.getByRole("navigation", { name: "User messages", exact: true })).toHaveCount(0)
-      const before = await page.evaluate(() => scrollY)
+      const before = await page.locator(".session-main-reader").evaluate(el => el.scrollTop)
       // Publish new fixture data only when the test is ready to request a refresh.
       scenario.append = true
       await page.locator(".refresh-now").evaluate((el: HTMLButtonElement) => el.click())
       await expect(page.locator(".message-index-rail button")).toHaveCount(2)
-      expect(await page.evaluate(() => scrollY)).toBe(before)
+      expect(await page.locator(".session-main-reader").evaluate(el => el.scrollTop)).toBe(before)
     })
   })
 }

@@ -3,39 +3,45 @@ import { Eyebrow } from "@atape/ui"
 import { fromMarkdown } from "mdast-util-from-markdown"
 import { Component, createRef, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
-type Props = { readonly prompts: ReadonlyArray<CanonicalEvent>; readonly children: ReactNode }
+type Props = { readonly prompts: ReadonlyArray<CanonicalEvent>; readonly children: ReactNode; readonly embedded?: boolean }
 type Anchor = {
   readonly promptId: string
   readonly promptTop: number
   readonly block: HTMLElement
   readonly blockTop: number
 } | null
-const elementFor = (id: string) => document.getElementById(`event-${id}`)
+const elementFor = (id: string, root?: HTMLElement | null) => root
+  ? root.querySelector<HTMLElement>(`[data-event-id="${CSS.escape(id)}"]`)
+  : document.getElementById(`event-${id}`)
+const mainViewport = () => document.querySelector<HTMLElement>(".session-main-reader")
+const readingLine = (viewport?: HTMLElement | null) => viewport
+  ? viewport.getBoundingClientRect().top + viewport.clientHeight / 2 : window.innerHeight / 2
 
 // Canonical prompts are ordered in the same order as the DOM. Binary search
 // keeps scroll work logarithmic, even when a thread has hundreds of prompts.
-const readingPrompt = (prompts: Props["prompts"]): CanonicalEvent | undefined => {
+const readingPrompt = (prompts: Props["prompts"], root?: HTMLElement | null, viewport?: HTMLElement | null): CanonicalEvent | undefined => {
   // A short final exchange may never reach the reading line because scrolling
   // is clamped at the document end. At the bottom, select its visible prompt.
   const last = prompts.at(-1)
-  if (last && window.scrollY > 0 && document.documentElement.scrollHeight - window.scrollY - window.innerHeight <= 1) {
-    const element = elementFor(last.id)
-    if (element && element.getBoundingClientRect().top < window.innerHeight) return last
+  if (last && (viewport ? viewport.scrollTop > 0 && viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 1 : window.scrollY > 0 && document.documentElement.scrollHeight - window.scrollY - window.innerHeight <= 1)) {
+    const element = elementFor(last.id, root)
+    if (element && element.getBoundingClientRect().top < (viewport ? viewport.getBoundingClientRect().bottom : window.innerHeight)) return last
   }
   let low = 0
   let high = prompts.length - 1
   while (low < high) {
     const middle = Math.ceil((low + high) / 2)
-    const element = elementFor(prompts[middle]!.id)
-    if (element && element.getBoundingClientRect().top <= window.innerHeight / 2) low = middle
+    const element = elementFor(prompts[middle]!.id, root)
+    if (element && element.getBoundingClientRect().top <= readingLine(viewport)) low = middle
     else high = middle - 1
   }
   return prompts[low]
 }
 
-const readingAnchor = (prompts: Props["prompts"]): Anchor => {
-  const prompt = readingPrompt(prompts)
-  const element = prompt && elementFor(prompt.id)
+const readingAnchor = (prompts: Props["prompts"], root?: HTMLElement | null, viewport?: HTMLElement | null): Anchor => {
+  if (root && !root.getClientRects().length) return null
+  const prompt = readingPrompt(prompts, root, viewport)
+  const element = prompt && elementFor(prompt.id, root)
   if (!prompt || !element) return null
   let block = element
   // Preserve the visible paragraph, not just the prompt above a long response.
@@ -45,7 +51,7 @@ const readingAnchor = (prompts: Props["prompts"]): Anchor => {
   ) ?? []
   for (const candidate of candidates) {
     if (!candidate.getClientRects().length) continue
-    if (candidate.getBoundingClientRect().top > window.innerHeight / 2) break
+    if (candidate.getBoundingClientRect().top > readingLine(viewport)) break
     block = candidate
   }
   return { promptId: prompt.id, promptTop: element.getBoundingClientRect().top,
@@ -60,21 +66,23 @@ export class ConversationReadingFrame extends Component<Props, Record<string, ne
   private anchor: Anchor = null
   private observer: ResizeObserver | undefined
   private frame = 0
-  private readonly remember = () => { this.anchor = readingAnchor(this.props.prompts) }
+  private get viewport() { return this.root.current?.closest<HTMLElement>(this.props.embedded ? ".thread-tab-panel" : ".session-main-reader") }
+  private snapshot(prompts: Props["prompts"]) { return readingAnchor(prompts, this.root.current, this.viewport) }
+  private readonly remember = () => { this.anchor = this.snapshot(this.props.prompts) }
   private readonly scheduleRemember = () => {
     if (!this.frame) this.frame = requestAnimationFrame(() => { this.frame = 0; this.remember() })
   }
   private restore(anchor: Anchor) {
-    if (!anchor) return
-    const block = anchor.block.isConnected ? anchor.block : elementFor(anchor.promptId)
+    if (!anchor || !this.root.current?.getClientRects().length) return
+    const block = anchor.block.isConnected ? anchor.block : elementFor(anchor.promptId, this.root.current)
     if (!block) return
     const top = anchor.block.isConnected ? anchor.blockTop : anchor.promptTop
     const delta = block.getBoundingClientRect().top - top
-    if (Math.abs(delta) > 0.5) window.scrollBy({ top: delta, behavior: "instant" })
+    if (Math.abs(delta) > 0.5) (this.viewport ?? window).scrollBy({ top: delta, behavior: "instant" })
   }
   componentDidMount() {
-    this.remember()
-    window.addEventListener("scroll", this.remember, { passive: true })
+    this.remember();
+    (this.viewport ?? window).addEventListener("scroll", this.remember, { passive: true })
     // Resize establishes a new viewport rather than fighting the user's layout.
     window.addEventListener("resize", this.scheduleRemember)
     this.observer = new ResizeObserver(() => {
@@ -83,20 +91,20 @@ export class ConversationReadingFrame extends Component<Props, Record<string, ne
     })
     if (this.root.current) this.observer.observe(this.root.current)
   }
-  getSnapshotBeforeUpdate(previous: Props): Anchor { return readingAnchor(previous.prompts) }
+  getSnapshotBeforeUpdate(previous: Props): Anchor { return this.snapshot(previous.prompts) }
   componentDidUpdate(_previous: Props, _state: Record<string, never>, anchor: Anchor) {
     this.restore(anchor)
     this.remember()
   }
   componentWillUnmount() {
     this.observer?.disconnect()
-    cancelAnimationFrame(this.frame)
-    window.removeEventListener("scroll", this.remember)
+    cancelAnimationFrame(this.frame);
+    (this.viewport ?? window).removeEventListener("scroll", this.remember)
     window.removeEventListener("resize", this.scheduleRemember)
   }
   render() {
     return <div className="conversation-reading-frame" ref={this.root}>
-      {this.props.children}<UserMessageIndex prompts={this.props.prompts} />
+      {this.props.children}{!this.props.embedded && <UserMessageIndex prompts={this.props.prompts} />}
     </div>
   }
 }
@@ -139,25 +147,31 @@ function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
 
   useLayoutEffect(() => {
     let frame = 0
-    const update = () => { frame = 0; setCurrent(readingPrompt(prompts)?.id) }
+    const scrollport = mainViewport()
+    const update = () => { frame = 0; setCurrent(readingPrompt(prompts, scrollport, scrollport)?.id) }
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
-    const resize = () => { setViewport(`${window.innerWidth}:${window.innerHeight}`); schedule() }
+    const resize = () => {
+      setViewport(`${scrollport?.clientWidth ?? window.innerWidth}:${scrollport?.clientHeight ?? window.innerHeight}`)
+      schedule()
+    }
     const cancel = () => { cancelAnimationFrame(animation.current); animation.current = 0 }
     update()
-    window.addEventListener("scroll", schedule, { passive: true })
+    const scrollTarget = scrollport ?? window
+    scrollTarget.addEventListener("scroll", schedule, { passive: true })
     window.addEventListener("resize", resize)
     window.addEventListener("wheel", cancel, { passive: true })
     window.addEventListener("touchstart", cancel, { passive: true })
     window.addEventListener("keydown", cancel)
-    const observer = new ResizeObserver(schedule)
+    const observer = new ResizeObserver(resize)
     const stream = document.querySelector(".conversation-stream")
     if (stream) observer.observe(stream)
+    if (scrollport) observer.observe(scrollport)
     return () => {
       cancelAnimationFrame(frame)
       cancel()
       glow.current?.cancel()
       observer.disconnect()
-      window.removeEventListener("scroll", schedule)
+      scrollTarget.removeEventListener("scroll", schedule)
       window.removeEventListener("resize", resize)
       window.removeEventListener("wheel", cancel)
       window.removeEventListener("touchstart", cancel)
@@ -210,14 +224,19 @@ function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
     cancelAnimationFrame(animation.current)
     glow.current?.cancel()
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    const start = window.scrollY
+    const scrollport = mainViewport()
+    const scrollTarget = scrollport ?? window
+    const start = scrollport?.scrollTop ?? window.scrollY
+    const height = scrollport?.clientHeight ?? window.innerHeight
+    const top = scrollport?.getBoundingClientRect().top ?? 0
+    const scrollHeight = scrollport?.scrollHeight ?? document.documentElement.scrollHeight
     const rect = element.getBoundingClientRect()
-    const target = Math.max(0, Math.min(document.documentElement.scrollHeight - window.innerHeight,
-      start + rect.top + Math.min(rect.height, window.innerHeight) / 2 - window.innerHeight / 2))
+    const target = Math.max(0, Math.min(scrollHeight - height,
+      start + rect.top - top + Math.min(rect.height, height) / 2 - height / 2))
     const started = performance.now()
     const step = (now: number) => {
       const progress = reduced ? 1 : Math.min(1, (now - started) / 200)
-      window.scrollTo({ top: start + (target - start) * (1 - (1 - progress) ** 3), behavior: "instant" })
+      scrollTarget.scrollTo({ top: start + (target - start) * (1 - (1 - progress) ** 3), behavior: "instant" })
       if (progress < 1) animation.current = requestAnimationFrame(step)
       else {
         animation.current = 0
