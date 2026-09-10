@@ -3,7 +3,8 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-now has explicitly admitted runtime scheduling and still requires native acceptance. See the
+now has explicitly admitted runtime scheduling and native Collector/HTTP acceptance.
+Bounded archive browsing and release admission remain required. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -450,9 +451,10 @@ capacity gaps stay stable under matching packing admission and are retried when
 admission changes. See [ADR-0069](../architecture/adr/0069-source-comparison-before-capture.md).
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
-The first usable OpenCode release also needs real source mutation, rewind,
-compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
-the production public Interfaces. Research prototypes remain on their separate
+The native Collector acceptance below covers source mutation, rewind, compaction,
+tools, child/fork identity, off/on Raw policy and Search through production
+Interfaces. Artifact installation, supported-platform capacity and remaining
+failure/admission evidence still gate the first usable release. Research prototypes remain on their separate
 branch and are not bundled with the CLI.
 
 ## Landed Host capability: source collection and scheduling
@@ -479,10 +481,40 @@ Projects whose scan ends never coincide. Cursors survive every pause.
 
 Native SQLite, installed runtime and real Node Collector tests cover initial and
 unchanged collection, source edits, Raw-only changes, policy off/on, response loss,
-deleted directories, fairness and bounded recovery. The next increment exercises
-this complete Collector path against actual authenticated HTTP/PostgreSQL, then
-addresses bounded Raw browsing and measured release admission. See
+deleted directories, fairness and bounded recovery. The complete Collector path
+now also passes actual authenticated HTTP/PostgreSQL acceptance below. See
 [ADR-0070](../architecture/adr/0070-source-collector-recovery-and-scheduling.md).
+
+## Native Collector acceptance through authenticated HTTP/PostgreSQL
+
+The controlled official OpenCode 1.18.30 SQLite fixture now runs through a locally
+installed runtime entry, full Node composition and `runCollectionCycle`, actual CLI
+credential storage, authenticated HTTP, PostgreSQL publication and the production
+conversation, Raw and Search Interfaces. Each phase starts a separate native Node
+process; no publication, journal, attribution or transport workflow is substituted.
+
+The contract verifies initial capture and unchanged scans, an in-place text rewrite,
+rewind/unrevert, native compaction and tool details, child Thread search anchors,
+an initially excluded fork later attributed as a separate Session, and paginated
+head-consistent reads. Old-head continuation requests fail explicitly. Rewound
+messages immediately lose Search eligibility; the actual asynchronous projector
+then makes current membership searchable. Tool output remains in details under
+the existing ADR-0030 summary-only Search contract.
+
+Raw-off Canonical changes keep unavailable references after Raw is enabled again.
+An actual stored Event reference resolves through the Raw HTTP API to the precise
+masked source member; that historical row stays unchanged after later captures.
+A Raw-only source field produces an independent observation and no Canonical PUT.
+The test drops successful activation and Raw responses after Server commit. A new
+process recovers from the existing journal with the source and Project directory
+unavailable. Raw receipt recovery performs zero uploads, and final Raw browsing
+contains both original and later observed rows without the controlled secret.
+
+This is production Interface acceptance of controlled native data, not a published
+tarball, a background-daemon acceptance run or a general version/platform claim.
+The package stays private and unregistered. The next increment bounds Raw object
+browsing before repeated observations can be enabled; physical admission, metadata
+retention and supported-platform/artifact checks remain release gates.
 
 ## Verification
 
