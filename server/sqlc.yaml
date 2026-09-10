@@ -19,6 +19,7 @@ sql:
       - "internal/adapters/postgres/migrations/000015_publication_candidates.sql"
       - "internal/adapters/postgres/migrations/000016_publication_validation.sql"
       - "internal/adapters/postgres/migrations/000017_publication_activation.sql"
+      - "internal/adapters/postgres/migrations/000018_publication_raw_authority.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
@@ -47,6 +48,7 @@ sql:
       - "internal/adapters/postgres/migrations/000011_cli_device_inventory.sql"
       - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
       - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
+      - "internal/adapters/postgres/migrations/000018_publication_raw_authority.sql"
     queries: "internal/authentication/queries"
     gen:
       go:
@@ -75,6 +77,7 @@ sql:
       - "internal/adapters/postgres/migrations/000011_cli_device_inventory.sql"
       - "internal/adapters/postgres/migrations/000012_raw_chunk_capacity.sql"
       - "internal/adapters/postgres/migrations/000013_raw_capture_policy.sql"
+      - "internal/adapters/postgres/migrations/000018_publication_raw_authority.sql"
     queries: "internal/team/queries"
     gen:
       go:

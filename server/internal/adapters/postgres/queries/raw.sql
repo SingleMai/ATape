@@ -11,7 +11,7 @@ SELECT c.chunk_id, c.object_id, c.generation, c.ordinal, c.byte_offset,
        c.size_bytes, c.adapter_version AS chunk_adapter_version,
        c.captured_at AS chunk_captured_at, c.final, c.sha256, c.storage_key,
        o.project_id, o.session_id, o.source_name, o.media_type, o.adapter_id,
-       o.client_redacted
+       o.client_redacted, o.publication_head, o.raw_team_revision, o.raw_user_revision
 FROM raw_chunks c
 JOIN raw_objects o ON o.id = c.object_id
 WHERE c.chunk_id = $1;
@@ -19,7 +19,7 @@ WHERE c.chunk_id = $1;
 -- name: GetRawObjectForUpdate :one
 SELECT id, project_id, session_id, source_name, media_type, adapter_id,
        adapter_version, captured_at, client_redacted, current_generation,
-       generation_count
+       generation_count, publication_head, raw_team_revision, raw_user_revision
 FROM raw_objects
 WHERE id = $1
 FOR UPDATE;
@@ -101,10 +101,18 @@ ORDER BY ordinal
 LIMIT sqlc.arg(result_limit);
 
 -- name: ReadRawCapturePolicy :one
-SELECT t.raw_capture_policy, u.raw_capture_preference
+SELECT t.raw_capture_policy, u.raw_capture_preference, t.raw_capture_revision AS team_revision, u.raw_capture_revision AS user_revision
 FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2;
 
 -- name: LockRawCapturePolicy :one
-SELECT t.raw_capture_policy, u.raw_capture_preference
+SELECT t.raw_capture_policy, u.raw_capture_preference, t.raw_capture_revision AS team_revision, u.raw_capture_revision AS user_revision
 FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2
 FOR SHARE OF t, u;
+
+-- name: BindRawPublicationObject :exec
+UPDATE raw_objects SET publication_head=$2, raw_team_revision=$3, raw_user_revision=$4 WHERE id=$1;
+
+-- name: GetRawPublicationProof :one
+SELECT s.session_id, s.installation_id, s.adapter_id, s.captured_by_user_id
+FROM canonical_publication_attempts a JOIN canonical_publication_sources s ON s.session_id=a.session_id
+WHERE a.id=$1 AND a.state='activated' AND a.activation_json IS NOT NULL;

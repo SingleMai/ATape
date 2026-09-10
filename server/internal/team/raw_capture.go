@@ -12,9 +12,10 @@ import (
 )
 
 type RawCaptureSettings struct {
-	TeamPolicy     string `json:"teamPolicy"`
-	UserPreference string `json:"userPreference"`
-	Enabled        bool   `json:"enabled"`
+	TeamPolicy     string                `json:"teamPolicy"`
+	UserPreference string                `json:"userPreference"`
+	Enabled        bool                  `json:"enabled"`
+	Authority      *rawarchive.Authority `json:"authority,omitempty"`
 }
 
 type RawCapturePreference struct {
@@ -51,8 +52,7 @@ func (m *Module) rawCaptureForTeamID(ctx context.Context, principal authenticati
 		if err != nil {
 			return RawCaptureSettings{}, err
 		}
-		return RawCaptureSettings{TeamPolicy: row.RawCapturePolicy, UserPreference: row.RawCapturePreference,
-			Enabled: rawarchive.CaptureEnabled(row.RawCapturePolicy, row.RawCapturePreference)}, nil
+		return rawCaptureSettings(row), nil
 	})
 	return result, mapOperationError("read Raw capture policy", err)
 }
@@ -91,16 +91,22 @@ func (m *Module) SetTeamRawCapture(ctx context.Context, principal authentication
 		if err = q.SetTeamRawCapturePolicy(ctx, teamdb.SetTeamRawCapturePolicyParams{ID: row.ID, RawCapturePolicy: policy}); err != nil {
 			return RawCaptureSettings{}, err
 		}
-		preference, err := q.GetUserRawCapturePreference(ctx, userID)
+		settings, err := q.GetRawCaptureSettings(ctx, teamdb.GetRawCaptureSettingsParams{ID: row.ID, ID_2: userID})
 		if err != nil {
 			return RawCaptureSettings{}, err
 		}
 		if err = appendAudit(ctx, q, auditRecord{principal: principal, action: "team.update_raw_capture", targetKind: "team", targetID: row.ID, reason: policy, requestID: requestID}); err != nil {
 			return RawCaptureSettings{}, err
 		}
-		return RawCaptureSettings{TeamPolicy: policy, UserPreference: preference, Enabled: rawarchive.CaptureEnabled(policy, preference)}, nil
+		return rawCaptureSettings(settings), nil
 	})
 	return result, mapOperationError("update Team Raw capture policy", err)
+}
+
+func rawCaptureSettings(row teamdb.GetRawCaptureSettingsRow) RawCaptureSettings {
+	authority := rawarchive.CaptureAuthority(row.RawCapturePolicy, row.TeamRevision, row.UserRevision)
+	return RawCaptureSettings{TeamPolicy: row.RawCapturePolicy, UserPreference: row.RawCapturePreference,
+		Enabled: rawarchive.CaptureEnabled(row.RawCapturePolicy, row.RawCapturePreference), Authority: &authority}
 }
 
 func (m *Module) UserRawCapture(ctx context.Context, principal authentication.Principal) (RawCapturePreference, error) {

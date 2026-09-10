@@ -333,20 +333,22 @@ INSERT INTO security_audit_events (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, '', $10, $11, $12);
 
 -- name: GetRawCaptureSettings :one
-SELECT t.raw_capture_policy, u.raw_capture_preference
+SELECT t.raw_capture_policy, u.raw_capture_preference, t.raw_capture_revision AS team_revision, u.raw_capture_revision AS user_revision
 FROM workspace_teams t CROSS JOIN auth_users u
 JOIN team_memberships m ON m.user_id = u.id
 WHERE t.id = $1 AND u.id = $2 AND m.team_id = t.id
   AND m.status = 'active' AND u.status = 'active';
 
 -- name: SetTeamRawCapturePolicy :exec
-UPDATE workspace_teams SET raw_capture_policy = $2, updated_at = clock_timestamp() WHERE id = $1;
+UPDATE workspace_teams SET raw_capture_revision = raw_capture_revision + CASE WHEN raw_capture_policy <> $2 THEN 1 ELSE 0 END,
+ raw_capture_policy = $2, updated_at = clock_timestamp() WHERE id = $1;
 
 -- name: GetUserRawCapturePreference :one
 SELECT raw_capture_preference FROM auth_users WHERE id = $1;
 
 -- name: SetUserRawCapturePreference :exec
-UPDATE auth_users SET raw_capture_preference = $2 WHERE id = $1;
+UPDATE auth_users SET raw_capture_revision = raw_capture_revision + CASE WHEN raw_capture_preference <> $2 THEN 1 ELSE 0 END,
+ raw_capture_preference = $2 WHERE id = $1;
 
 -- name: LockRawCaptureUserForUpdate :exec
 SELECT id FROM auth_users WHERE id = $1 FOR UPDATE;

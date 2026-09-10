@@ -21,6 +21,27 @@ func (q *Queries) AcquireRawLock(ctx context.Context, lockKey string) error {
 	return err
 }
 
+const bindRawPublicationObject = `-- name: BindRawPublicationObject :exec
+UPDATE raw_objects SET publication_head=$2, raw_team_revision=$3, raw_user_revision=$4 WHERE id=$1
+`
+
+type BindRawPublicationObjectParams struct {
+	ID              string
+	PublicationHead pgtype.UUID
+	RawTeamRevision *int64
+	RawUserRevision *int64
+}
+
+func (q *Queries) BindRawPublicationObject(ctx context.Context, arg BindRawPublicationObjectParams) error {
+	_, err := q.db.Exec(ctx, bindRawPublicationObject,
+		arg.ID,
+		arg.PublicationHead,
+		arg.RawTeamRevision,
+		arg.RawUserRevision,
+	)
+	return err
+}
+
 const commitRawGeneration = `-- name: CommitRawGeneration :exec
 UPDATE raw_generations
 SET size_bytes = $1,
@@ -96,7 +117,7 @@ SELECT c.chunk_id, c.object_id, c.generation, c.ordinal, c.byte_offset,
        c.size_bytes, c.adapter_version AS chunk_adapter_version,
        c.captured_at AS chunk_captured_at, c.final, c.sha256, c.storage_key,
        o.project_id, o.session_id, o.source_name, o.media_type, o.adapter_id,
-       o.client_redacted
+       o.client_redacted, o.publication_head, o.raw_team_revision, o.raw_user_revision
 FROM raw_chunks c
 JOIN raw_objects o ON o.id = c.object_id
 WHERE c.chunk_id = $1
@@ -120,6 +141,9 @@ type GetRawChunkForReplayRow struct {
 	MediaType           string
 	AdapterID           string
 	ClientRedacted      bool
+	PublicationHead     pgtype.UUID
+	RawTeamRevision     *int64
+	RawUserRevision     *int64
 }
 
 func (q *Queries) GetRawChunkForReplay(ctx context.Context, chunkID string) (GetRawChunkForReplayRow, error) {
@@ -143,6 +167,9 @@ func (q *Queries) GetRawChunkForReplay(ctx context.Context, chunkID string) (Get
 		&i.MediaType,
 		&i.AdapterID,
 		&i.ClientRedacted,
+		&i.PublicationHead,
+		&i.RawTeamRevision,
+		&i.RawUserRevision,
 	)
 	return i, err
 }
@@ -263,7 +290,7 @@ func (q *Queries) GetRawObjectForRead(ctx context.Context, id string) (GetRawObj
 const getRawObjectForUpdate = `-- name: GetRawObjectForUpdate :one
 SELECT id, project_id, session_id, source_name, media_type, adapter_id,
        adapter_version, captured_at, client_redacted, current_generation,
-       generation_count
+       generation_count, publication_head, raw_team_revision, raw_user_revision
 FROM raw_objects
 WHERE id = $1
 FOR UPDATE
@@ -281,6 +308,9 @@ type GetRawObjectForUpdateRow struct {
 	ClientRedacted    bool
 	CurrentGeneration int64
 	GenerationCount   int64
+	PublicationHead   pgtype.UUID
+	RawTeamRevision   *int64
+	RawUserRevision   *int64
 }
 
 func (q *Queries) GetRawObjectForUpdate(ctx context.Context, id string) (GetRawObjectForUpdateRow, error) {
@@ -298,6 +328,34 @@ func (q *Queries) GetRawObjectForUpdate(ctx context.Context, id string) (GetRawO
 		&i.ClientRedacted,
 		&i.CurrentGeneration,
 		&i.GenerationCount,
+		&i.PublicationHead,
+		&i.RawTeamRevision,
+		&i.RawUserRevision,
+	)
+	return i, err
+}
+
+const getRawPublicationProof = `-- name: GetRawPublicationProof :one
+SELECT s.session_id, s.installation_id, s.adapter_id, s.captured_by_user_id
+FROM canonical_publication_attempts a JOIN canonical_publication_sources s ON s.session_id=a.session_id
+WHERE a.id=$1 AND a.state='activated' AND a.activation_json IS NOT NULL
+`
+
+type GetRawPublicationProofRow struct {
+	SessionID        string
+	InstallationID   string
+	AdapterID        string
+	CapturedByUserID pgtype.UUID
+}
+
+func (q *Queries) GetRawPublicationProof(ctx context.Context, id pgtype.UUID) (GetRawPublicationProofRow, error) {
+	row := q.db.QueryRow(ctx, getRawPublicationProof, id)
+	var i GetRawPublicationProofRow
+	err := row.Scan(
+		&i.SessionID,
+		&i.InstallationID,
+		&i.AdapterID,
+		&i.CapturedByUserID,
 	)
 	return i, err
 }
@@ -522,7 +580,7 @@ func (q *Queries) ListRawSessionObjects(ctx context.Context, sessionID string) (
 }
 
 const lockRawCapturePolicy = `-- name: LockRawCapturePolicy :one
-SELECT t.raw_capture_policy, u.raw_capture_preference
+SELECT t.raw_capture_policy, u.raw_capture_preference, t.raw_capture_revision AS team_revision, u.raw_capture_revision AS user_revision
 FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2
 FOR SHARE OF t, u
 `
@@ -535,17 +593,24 @@ type LockRawCapturePolicyParams struct {
 type LockRawCapturePolicyRow struct {
 	RawCapturePolicy     string
 	RawCapturePreference string
+	TeamRevision         int64
+	UserRevision         int64
 }
 
 func (q *Queries) LockRawCapturePolicy(ctx context.Context, arg LockRawCapturePolicyParams) (LockRawCapturePolicyRow, error) {
 	row := q.db.QueryRow(ctx, lockRawCapturePolicy, arg.ID, arg.ID_2)
 	var i LockRawCapturePolicyRow
-	err := row.Scan(&i.RawCapturePolicy, &i.RawCapturePreference)
+	err := row.Scan(
+		&i.RawCapturePolicy,
+		&i.RawCapturePreference,
+		&i.TeamRevision,
+		&i.UserRevision,
+	)
 	return i, err
 }
 
 const readRawCapturePolicy = `-- name: ReadRawCapturePolicy :one
-SELECT t.raw_capture_policy, u.raw_capture_preference
+SELECT t.raw_capture_policy, u.raw_capture_preference, t.raw_capture_revision AS team_revision, u.raw_capture_revision AS user_revision
 FROM workspace_teams t CROSS JOIN auth_users u WHERE t.id = $1 AND u.id = $2
 `
 
@@ -557,11 +622,18 @@ type ReadRawCapturePolicyParams struct {
 type ReadRawCapturePolicyRow struct {
 	RawCapturePolicy     string
 	RawCapturePreference string
+	TeamRevision         int64
+	UserRevision         int64
 }
 
 func (q *Queries) ReadRawCapturePolicy(ctx context.Context, arg ReadRawCapturePolicyParams) (ReadRawCapturePolicyRow, error) {
 	row := q.db.QueryRow(ctx, readRawCapturePolicy, arg.ID, arg.ID_2)
 	var i ReadRawCapturePolicyRow
-	err := row.Scan(&i.RawCapturePolicy, &i.RawCapturePreference)
+	err := row.Scan(
+		&i.RawCapturePolicy,
+		&i.RawCapturePreference,
+		&i.TeamRevision,
+		&i.UserRevision,
+	)
 	return i, err
 }

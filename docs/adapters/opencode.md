@@ -3,7 +3,7 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-still requires source preparation/scheduling, independent Raw recovery and native acceptance. See the
+still requires source preparation/scheduling, Collector Raw recovery and native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -174,6 +174,37 @@ successful part response, lose successful activation, then recover the original
 proof after another writer publishes a newer head and reclaims the old bodies.
 The recovered checkpoint advances without restoring the old Server head.
 
+## Landed foundation: independent Raw proof and receipt lookup
+
+Publication Raw uploads now require their original activation head and independent
+Raw authority from the authenticated capture-policy response. PostgreSQL verifies
+the actual activated capture, current Session lifecycle, owning user/installation/
+Adapter and current policy both before blob writes and during manifest commit.
+The head may already have been replaced and its Canonical bodies reclaimed.
+
+Team policy and personal preference revisions fence Raw separately from Canonical.
+Off/on does not revive old authority. An identical setting does not advance its
+revision; `force` ignores personal revisions and preference changes. Each new
+publication Raw object binds its activation/authority permanently and supports
+one generation, so an existing object cannot be re-signed under newer authority.
+A fresh observation after re-enabling uses fresh object identities and can refer
+to existing genuine activation without changing old Canonical references.
+
+Append returns an immutable per-chunk receipt in addition to the legacy append
+result. CLI-only `POST /api/v1/ingestion/raw/receipts/lookup` reads one receipt by
+caller-scoped source identity without consulting the blob Store. It checks current
+ownership/access but does not hide a real ACK merely because uploading is now
+disabled. Receipt identity, metadata, offset, length, digest, final marker and
+publication proof remain fixed even after later chunks advance the object size.
+Publication receipt timestamps accept microsecond precision or coarser, matching
+PostgreSQL exactly; finer timestamps are rejected before storage.
+
+Real HTTP/PostgreSQL tests cover old-head Raw, legacy-path bypass rejection,
+unactivated/foreign/stale authority, object re-binding, immutable generation,
+personal and Team off/on, forced capture, lost-result receipt lookup, unavailable
+blob storage, revoked membership and a policy change between blob write and
+manifest commit. See [ADR-0060](../architecture/adr/0060-publication-raw-authority-and-receipts.md).
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -195,9 +226,11 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment supplies independent Raw activation proof and recovery. The
-OpenCode source projection, Host preparation, revision/coverage allocation and
+The next increment connects Collector Raw recovery to this independent proof and
+receipt Interface. OpenCode source projection, Host preparation, revision/coverage allocation and
 Collector scheduling then connect these foundations into the explicit capability.
+Bounded archive browsing is also required before enabling observation-per-object
+capture, since the legacy Session archive listing currently loads all objects.
 The first usable OpenCode release also needs real source mutation, rewind,
 compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
 the production public Interfaces. Research prototypes remain on their separate

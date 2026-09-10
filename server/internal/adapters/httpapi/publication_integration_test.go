@@ -24,7 +24,7 @@ import (
 
 // Runs against the authenticated HTTP fixture's real PostgreSQL, CLI credential
 // and Web session. No publication operation is replaced by a mock.
-func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool, projectID, userID, credential string, cookie *http.Cookie) {
+func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool, projectID, userID, credential string, cookie *http.Cookie, csrf string) {
 	t.Helper()
 	send := func(method, path string, body []byte, web bool, want int) *httptest.ResponseRecorder {
 		t.Helper()
@@ -278,6 +278,7 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, po
 	if current.Head != next.ID || len(current.Events) != 0 {
 		t.Fatal("Collector recovery selected an old head")
 	}
+	lookup := assertHTTPPublicationRaw(t, h, modules, pool, projectID, credential, cookie, csrf, attempt.ID, next.ID, rejected.ID, batch)
 
 	// Recovery reauthorizes current membership, including historical success proof.
 	if _, err := pool.Exec(t.Context(), "UPDATE team_memberships SET status='removed',removed_at=clock_timestamp() WHERE user_id=$1", userID); err != nil {
@@ -290,6 +291,7 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, po
 	}()
 	send("POST", activatePath, nil, false, 404)
 	send("GET", pagePath+"?limit=100&head="+first.Head, nil, true, 404)
+	send("POST", "/api/v1/ingestion/raw/receipts/lookup", encode(lookup), false, 404)
 }
 
 func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, credential, baseHead string, batch ingestion.Batch, replace func(string)) {
