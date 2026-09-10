@@ -108,3 +108,5 @@ pretending that staging acceptance passed.
 - [ADR-0055: Codex item updates across collection pages](0055-codex-item-update-revisions.md)
 
 - [ADR-0056: Team and personal Raw capture policy](0056-configurable-raw-capture.md)
+
+- [ADR-0061: Independent fresh Raw observations](0061-independent-raw-observations.md)

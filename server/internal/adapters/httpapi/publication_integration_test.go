@@ -367,4 +367,7 @@ func assertNodePublicationRecovery(t *testing.T, modules Modules, userID, creden
 	setMembership(true)
 	setPreference("enable")
 	run("finish-raw")
+	run("prepare-observation")
+	run("lose-observation")
+	run("recover-observation")
 }

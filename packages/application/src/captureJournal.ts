@@ -14,7 +14,10 @@ export type CaptureOwner = { readonly scope: CaptureScope; readonly epoch: numbe
 export type CaptureBinding = { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
 export type CaptureClaim = CaptureOwner & { readonly checkpoint: string | null }
 export type CaptureUnitKind = "canonical" | "raw"
+export type CapturePurpose = "publication" | "raw-observation"
 export type CaptureReservation = {
+  /** Existing callers default to publication. Raw observations cannot advance Canonical coverage. */
+  readonly purpose?: CapturePurpose
   readonly id: string
   readonly expectedCheckpoint: string | null
   readonly beginJson: string
@@ -27,6 +30,7 @@ export type CaptureSeal = {
   readonly manifestJson: string
 }
 export type CaptureSummary = CaptureReservation & {
+  readonly purpose: CapturePurpose
   readonly state: "preparing" | "sealed" | "activated" | "completed" | "abandoned"
   readonly seal: CaptureSeal | null
   readonly activationReceipt: string | null
