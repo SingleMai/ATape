@@ -333,7 +333,7 @@ func (s *Store) Conversation(
 // ConversationPage reads at most 100 Events from one selected publication head.
 // Continuations must retain Head and the previous page's NextEventID.
 func (s *Store) ConversationPage(ctx context.Context, principal authentication.Principal, sessionID, threadID string, request canonical.ConversationPageRequest) (canonical.ConversationSnapshot, bool, error) {
-	if request.Limit < 1 || request.Limit > 100 || len(request.Head) > 200 || len(request.AfterEventID) > 200 || (request.AfterEventID != "" && request.Head == "") {
+	if request.Limit < 1 || request.Limit > 100 || len(request.Head) > 200 || len(request.AfterEventID) > 200 || len(request.AtEventID) > 200 || (request.AfterEventID != "" && request.AtEventID != "") || (request.AfterEventID != "" && request.Head == "") {
 		return canonical.ConversationSnapshot{}, false, publicationError("invalid", "invalid conversation page bounds")
 	}
 	return s.conversation(ctx, principal, sessionID, threadID, &request)
@@ -405,8 +405,8 @@ func (s *Store) conversation(ctx context.Context, principal authentication.Princ
 			return canonical.ConversationSnapshot{}, false, &canonical.PaginationRequiredError{}
 		}
 	} else {
-		if request != nil {
-			return snapshot, false, publicationError("invalid", "bounded publication pages require a publication-mode Session")
+		if request != nil && (request.Head != "" || request.AfterEventID != "") {
+			return snapshot, false, &canonical.RefreshRequiredError{}
 		}
 		eventRows, e := queries.ListThreadEvents(ctx, db.ListThreadEventsParams{SessionID: sessionID, ThreadID: threadID})
 		if e != nil {

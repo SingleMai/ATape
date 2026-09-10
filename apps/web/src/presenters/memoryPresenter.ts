@@ -1,11 +1,12 @@
 import {
   openConversation,
   openProjectMemory,
+  type ConversationPageRequest,
   type MemoryGatewayError
 } from "@atape/application"
 import type { Conversation, ProjectMemory } from "@atape/domain"
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
-import { Effect, Fiber, Option } from "effect"
+import { Effect, Fiber } from "effect"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { useEffect, useRef, useState } from "react"
 import { BrowserMemoryGatewayLayer } from "../runtime/memoryGateway"
@@ -18,7 +19,7 @@ export type LoadableView<A> =
       readonly refreshing: boolean
       readonly refreshFailure?: string
     }
-  | { readonly _tag: "Failed"; readonly message: string; readonly retryable: boolean }
+  | { readonly _tag: "Failed"; readonly message: string; readonly retryable: boolean; readonly refreshRequired?: boolean; readonly discardPrevious?: boolean }
 
 export type RefreshCadence = "manual" | "30_seconds" | "1_minute" | "5_minutes"
 
@@ -35,7 +36,7 @@ const projectAtoms = Atom.family((projectId: string) =>
 
 const conversationAtoms = Atom.family((sessionId: string) =>
   Atom.family((threadId: string) =>
-    runtime.atom(openConversation(sessionId, threadId))
+    Atom.family((page: string) => runtime.atom(openConversation(sessionId, threadId, JSON.parse(page) as ConversationPageRequest)))
   )
 )
 
@@ -60,12 +61,16 @@ const toLoadableView = <A>(
     onError: (error) => ({
       _tag: "Failed" as const,
       message: error.message,
-      retryable: error.reason !== "decode"
+      retryable: error.reason !== "decode",
+      refreshRequired: error.code === "refresh_required",
+      discardPrevious: error.code === "refresh_required" || [401, 403, 404].includes(error.status ?? 0)
     }),
     onDefect: () => ({
       _tag: "Failed" as const,
       message: "ATape could not render this memory safely.",
-      retryable: false
+      retryable: false,
+      refreshRequired: false,
+      discardPrevious: false
     }),
     onSuccess: (success) => ({
       _tag: "Ready" as const,
@@ -74,18 +79,8 @@ const toLoadableView = <A>(
     })
   })
 
-  if (
-    view._tag === "Failed" &&
-    result._tag === "Failure" &&
-    Option.isSome(result.previousSuccess)
-  ) {
-    return {
-      _tag: "Ready",
-      value: result.previousSuccess.value.value,
-      refreshing: result.waiting,
-      refreshFailure: view.message
-    }
-  }
+  // The binding below owns the displayed fallback. Effect's previousSuccess
+  // can outlive an authorization denial, so it must never resurrect that data.
 
   return view
 }
@@ -142,6 +137,11 @@ const useCachedLoadableView = <A>(
     return view
   }
 
+  if (view._tag === "Failed" && view.discardPrevious) {
+    cache.current = undefined
+    return view
+  }
+
   if (cache.current !== undefined) {
     return view._tag === "Failed"
       ? {
@@ -177,15 +177,17 @@ export const useProjectMemoryPresenter = (projectId: string): {
   }
 }
 
-export const useConversationPresenter = (sessionId: string, threadId: string): {
+export const useConversationPresenter = (sessionId: string, threadId: string, page: ConversationPageRequest = {}, restart?: () => void): {
   readonly state: LoadableView<Conversation>
   readonly reload: () => void
   readonly refresh: RefreshSettingsView
 } => {
-  const atom = conversationAtoms(sessionId)(threadId)
+  const pageKey = JSON.stringify(page)
+  const atom = conversationAtoms(sessionId)(threadId)(pageKey)
   const result = useAtomValue(atom)
-  const reload = useAtomRefresh(atom)
-  const state = useCachedLoadableView(`${sessionId}\u0000${threadId}`, result)
+  const refreshAtom = useAtomRefresh(atom)
+  const reload = (page.head !== undefined || page.at !== undefined) && restart !== undefined ? restart : refreshAtom
+  const state = useCachedLoadableView(`${sessionId}\u0000${threadId}\u0000${pageKey}`, result)
   const refresh = useRefreshSettings(reload, result.waiting)
   return {
     state,

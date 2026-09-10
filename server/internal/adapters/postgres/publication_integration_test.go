@@ -299,7 +299,11 @@ func TestPublicationCandidateRecovery(t *testing.T) {
 		if _, e = short.Put(ctx, principal, a.ID, 0, hex.EncodeToString(sum[:]), []byte("retained")); e != nil {
 			t.Fatal(e)
 		}
-		time.Sleep(time.Until(r.ExpiresAt) + 20*time.Millisecond)
+		// Expiry is owned by PostgreSQL; a VM/host clock offset must not make
+		// the unused reservation appear expired only on the test runner.
+		if _, e = pool.Exec(ctx, "SELECT pg_sleep(GREATEST(0, EXTRACT(EPOCH FROM ($1::timestamptz-clock_timestamp())))+0.02)", r.ExpiresAt); e != nil {
+			t.Fatal(e)
+		}
 		_, e = short.Renew(ctx, principal, a.ID)
 		requireCode(e, "expired")
 		replay, e := short.Begin(ctx, principal, input)

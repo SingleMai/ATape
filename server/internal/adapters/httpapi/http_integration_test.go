@@ -22,6 +22,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
+	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
@@ -90,11 +91,15 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Fatalf("construct Raw chunk store: %v", err)
 	}
 	archive := rawarchive.NewArchive(store, chunkStore)
+	publisher, err := postgresadapter.NewPublicationStore(pool, publication.Limits{PartBytes: 4 << 20, TargetBytes: 32 << 20, UserPendingBytes: 64 << 20, Parts: 32, Reservations: 32, LeaseLifetime: time.Minute, ReservationLifetime: 5 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
 	handler, err := NewHandler(Config{
 		InstanceOrigin: "https://web.example.test", WebOrigin: "https://web.example.test",
 		APIOrigin: "https://api.example.test", CookieDomain: "example.test",
 	}, Modules{
-		Authentication: authenticationModule, Teams: teamModule, Cutover: cutoverModule,
+		Authentication: authenticationModule, Teams: teamModule, Cutover: cutoverModule, Publication: publisher,
 		Memory: conversation.NewMemory(store), Ingestor: ingestion.NewIngestor(store),
 		Searcher: projectsearch.NewSearcher(store), Directory: workspace.NewDirectory(store), Raw: archive,
 	})
@@ -371,6 +376,10 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	}
 	var project projectDTO
 	decodeResponse(t, createProjectResponse, &project)
+
+	t.Run("publication transport", func(t *testing.T) {
+		assertHTTPPublicationContract(t, handler, pool, project.ID, session.User.ID, token.Credential, sessionCookie)
+	})
 
 	batch := canonicalcontract.ValidBatch()
 	batch.ProjectID = project.ID

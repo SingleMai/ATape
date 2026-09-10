@@ -6,11 +6,12 @@ import {
 import { Effect, Layer, Schema } from "effect"
 import { BrowserHTTPError, browserRequest } from "./http"
 
-const requestJSON = (path: string): Effect.Effect<unknown, MemoryGatewayError> =>
-  browserRequest(path).pipe(Effect.mapError((cause: BrowserHTTPError) => new MemoryGatewayError({
+const requestJSON = (path: string, responseProfile?: "conversation-page"): Effect.Effect<unknown, MemoryGatewayError> =>
+  browserRequest(path, responseProfile === undefined ? {} : { responseProfile }).pipe(Effect.mapError((cause: BrowserHTTPError) => new MemoryGatewayError({
     reason: cause.reason === "transport" ? "transport" : cause.reason === "decode" ? "decode" : "http",
     message: cause.message,
-    ...(cause.status === undefined ? {} : { status: cause.status })
+    ...(cause.status === undefined ? {} : { status: cause.status }),
+    ...(cause.code === undefined ? {} : { code: cause.code })
   })))
 
 const decodeProjectMemory = (payload: unknown) =>
@@ -36,9 +37,9 @@ export const BrowserMemoryGatewayLayer = Layer.succeed(
       requestJSON(`/api/v1/projects/${encodeURIComponent(projectId)}/memory`).pipe(
         Effect.flatMap(decodeProjectMemory)
       ),
-    openConversation: (sessionId, threadId) => {
-      const query = new URLSearchParams({ thread: threadId })
-      return requestJSON(`/api/v1/sessions/${encodeURIComponent(sessionId)}?${query}`).pipe(
+    openConversation: (sessionId, threadId, page = {}) => {
+      const query = new URLSearchParams({ thread: threadId, limit: "100", ...page })
+      return requestJSON(`/api/v1/sessions/${encodeURIComponent(sessionId)}?${query}`, "conversation-page").pipe(
         Effect.flatMap(decodeConversation)
       )
     }

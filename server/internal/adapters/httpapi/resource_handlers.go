@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
@@ -128,15 +129,29 @@ func (h *Handler) projectMemory(response http.ResponseWriter, request *http.Requ
 }
 
 func (h *Handler) conversation(response http.ResponseWriter, request *http.Request) {
-	result, err := h.memory.OpenConversation(
-		request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"),
-		request.URL.Query().Get("thread"),
-	)
-	if err != nil {
-		writeError(response, request, err)
+	query, ok := strictQuery(response, request, "thread", "limit", "head", "after", "at")
+	if !ok {
 		return
 	}
-	writeJSON(response, request, http.StatusOK, result)
+	limit, ok := queryInteger(response, request, query, "limit", 100)
+	if !ok {
+		return
+	}
+	if limit < 1 || limit > 100 {
+		writeProblem(response, request, problemInvalidRequest, 0, nil)
+		return
+	}
+	if !query.Has("limit") {
+		if query.Has("head") || query.Has("after") || query.Has("at") {
+			writeProblem(response, request, problemInvalidRequest, 0, nil)
+			return
+		}
+		value, err := h.memory.OpenConversation(request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"), query.Get("thread"))
+		publicationResult(response, request, value, err)
+		return
+	}
+	value, err := h.memory.OpenConversationPage(request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"), query.Get("thread"), canonical.ConversationPageRequest{Limit: limit, Head: query.Get("head"), AfterEventID: query.Get("after"), AtEventID: query.Get("at")})
+	publicationResult(response, request, value, err)
 }
 
 func (h *Handler) deleteCapturedSession(response http.ResponseWriter, request *http.Request) {

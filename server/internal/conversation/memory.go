@@ -4,6 +4,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"time"
@@ -96,10 +97,12 @@ type Event struct {
 }
 
 type Conversation struct {
-	Session    Session          `json:"session"`
-	Thread     Thread           `json:"thread"`
-	ThreadPath []ThreadPathItem `json:"threadPath"`
-	Events     []Event          `json:"events"`
+	Head        string           `json:"head,omitempty"`
+	NextEventID string           `json:"nextEventId,omitempty"`
+	Session     Session          `json:"session"`
+	Thread      Thread           `json:"thread"`
+	ThreadPath  []ThreadPathItem `json:"threadPath"`
+	Events      []Event          `json:"events"`
 }
 
 type NotFoundError struct {
@@ -179,6 +182,57 @@ func (m *Memory) OpenConversation(
 		return Conversation{}, &NotFoundError{Resource: "conversation", ID: sessionID + "/" + threadID}
 	}
 
+	return m.renderConversation(snapshot)
+}
+
+// OpenConversationPage selects one version before reconstruction and caps the
+// complete JSON representation. Legacy Sessions keep their existing full read.
+func (m *Memory) OpenConversationPage(ctx context.Context, p authentication.Principal, sessionID, threadID string, page canonical.ConversationPageRequest) (Conversation, error) {
+	if threadID == "" {
+		threadID = rootThreadID
+	}
+	snapshot, ok, err := m.store.ConversationPage(ctx, p, sessionID, threadID, page)
+	if err != nil {
+		return Conversation{}, err
+	}
+	if !ok {
+		return Conversation{}, &NotFoundError{Resource: "conversation", ID: sessionID + "/" + threadID}
+	}
+	value, err := m.renderConversation(snapshot)
+	if err != nil || snapshot.Head == "" {
+		return value, err
+	}
+	events := value.Events
+	value.Events = []Event{}
+	header, err := json.Marshal(value)
+	if err != nil {
+		return Conversation{}, err
+	}
+	// Includes cursor growth, commas and the transport's final newline.
+	size := len(header) + 256
+	for _, event := range events {
+		encoded, err := json.Marshal(event)
+		if err != nil {
+			return Conversation{}, err
+		}
+		if size+len(encoded)+1 > MaxPageBytes {
+			if len(value.Events) == 0 {
+				return Conversation{}, fmt.Errorf("admitted Event exceeds conversation response capacity")
+			}
+			value.NextEventID = value.Events[len(value.Events)-1].ID
+			break
+		}
+		size += len(encoded) + 1
+		value.Events = append(value.Events, event)
+	}
+	return value, nil
+}
+
+// MaxPageBytes includes one maximum-size admitted Event after JSON escaping.
+const MaxPageBytes = 8 << 20
+
+func (m *Memory) renderConversation(snapshot canonical.ConversationSnapshot) (Conversation, error) {
+
 	threadByID := make(map[string]canonical.ThreadRecord, len(snapshot.Threads))
 	for _, thread := range snapshot.Threads {
 		threadByID[thread.ID] = thread
@@ -231,6 +285,7 @@ func (m *Memory) OpenConversation(
 		capturedBy = &CapturedUser{ID: user.ID, DisplayName: user.DisplayName, AvatarURL: user.AvatarURL}
 	}
 	return Conversation{
+		Head: snapshot.Head, NextEventID: snapshot.NextEventID,
 		Session: Session{
 			CapturedBy:    capturedBy,
 			ID:            snapshot.Session.ID,

@@ -2,8 +2,8 @@
 
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
-Adapter. The first integration still requires atomic replacement publication,
-head-aware conversation reads and Search, and independent Raw recovery. See the
+Adapter. Atomic publication and versioned reads are implemented; the first source integration
+still requires Collector delivery, independent Raw recovery and native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -46,7 +46,7 @@ synchronous transactions; new journal files use mode `0600`.
 The PostgreSQL `PublicationStore` now supplies the Server-side candidate Module:
 finite reservations, immutable Begin identity, writer fences and leases, bounded
 parts, transport sealing, metadata recovery, renewal, explicit rejection and
-reclamation. It is not yet connected to HTTP routes or the Composition Root.
+reclamation. The HTTP and Composition Root connection is described below.
 This preparation increment was followed by validation and activation below.
 
 The legacy ingestion path and candidate reservations enforce one write mode for
@@ -87,7 +87,7 @@ Conversation, project counts and overview usage read the selected version.
 `Store.ConversationPage` returns bounded Events and requires continuations to
 retain their head; a changed version produces an explicit refresh result. The
 older whole-conversation Interface fails explicitly above 100 Events for these
-Sessions, so HTTP/Web paging remains a prerequisite for enabling OpenCode.
+Sessions. The HTTP/Web paging increment below provides the bounded read path.
 
 Search still indexes asynchronously. Current membership and semantic descriptors
 hide withdrawn or changed content immediately, and late workers cannot restore
@@ -99,7 +99,45 @@ Real PostgreSQL tests exercise publication, rollback during lease expiry, lost
 result recovery through a fresh connection, old receipt replay, stale index work,
 pagination, withdrawn child tools/usage, partial indexing, empty targets, old-body
 cleanup and lifecycle authorization. These are Module-level results; they do not
-yet establish HTTP lost-response or native OpenCode end-to-end acceptance.
+establish native OpenCode end-to-end acceptance.
+
+## Landed foundation: publication HTTP and Web paging
+
+The closed HTTP route registry now exposes `atape.publication.v1` through CLI-only
+operations. The existing authentication middleware rejects missing, revoked or
+Web credentials before reading a publication body; the Module rechecks capture
+ownership and current Project/Session access, including historical receipts.
+Part uploads preserve exact bytes. Validate still processes one part per call;
+no handler owns a retry loop, database transaction or publication workflow.
+
+`ATAPE_PUBLICATION_LIMITS` is an explicit JSON configuration (bytes, counts and
+lifetimes in milliseconds). Unconfigured instances omit the capability from
+instance discovery and return `503` from publication routes. Demo mode rejects
+this configuration. Actual constructor limits are returned by the authenticated
+capability operation. No deployment or release limits are selected here.
+See [the HTTP contract](../architecture/publication-candidates.md#http-transport)
+and [OpenAPI](../api/openapi-v1.yaml).
+
+The Web reader requests one page of at most 100 Events and retains the selected
+head in each continuation URL. It renders one page at a time, supports browser
+back/forward and return to the beginning, and opens search matches at an inclusive
+Event anchor. A changed head removes the cached page and asks the user to reload.
+Pages never append content from different heads. Narrative grouping and the prompt
+index cover the current page, so an exchange may continue on the next page.
+
+Publication reads also stop at a 6 MiB internal Event budget (one admitted Event
+always makes progress) and cap the complete response at 8 MiB, including JSON
+escaping, headers and tool details. The Browser accepts that bounded response
+profile for conversation pages; other responses and errors retain 2 MiB limits.
+Legacy Sessions preserve their existing full read behavior. Old HTTP callers
+without `limit` receive `pagination_required` for an incomplete publication read.
+
+Real HTTP/PostgreSQL tests cover multi-part preparation/validation, exact-byte
+retries, configured upload limits, lost-result recovery, empty replacement, old
+receipt replay after reclamation, current authorization, count/byte page boundaries
+and inclusive anchors. Browser tests cover page transitions, browser history,
+head replacement and direct search navigation. These fixtures do not substitute
+for native OpenCode/Collector end-to-end acceptance.
 
 ## Bounds and remaining integration work
 
@@ -122,9 +160,8 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment exposes secured publication and pagination HTTP Interfaces
-and carries paging through the Web reader. Collector journal recovery, independent
-Raw activation proof and the OpenCode projection then connect to that Interface.
+The next increment connects Collector journal recovery to the secured publication
+Interface. Independent Raw activation proof and the OpenCode projection follow.
 The first usable OpenCode release also needs real source mutation, rewind,
 compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
 the production public Interfaces. Research prototypes remain on their separate

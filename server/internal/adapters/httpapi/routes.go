@@ -193,6 +193,17 @@ func (h *Handler) registerRoutes() error {
 		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/raw-objects/{objectId}/content", WebOnly}, handler: h.rawContent, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.RawObjectRead}},
 		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/ingestion/canonical/batches", CLIOnly}, handler: h.canonicalBatch, body: canonicalJSONRequest, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
 		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/ingestion/raw/chunks", CLIOnly}, handler: h.rawChunk, body: rawJSONRequest, cache: noStore, actions: []authorization.Action{authorization.RawIngest}},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/publications/capabilities", CLIOnly}, handler: h.publicationAvailable(h.publicationCapabilities), body: noRequestBody, cache: noStore},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/reservations", CLIOnly}, handler: h.publicationAvailable(h.publicationReserve), body: controlPlaneJSONRequest, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/attempts", CLIOnly}, handler: h.publicationAvailable(h.publicationBegin), body: controlPlaneJSONRequest, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPut, "/api/v1/publications/attempts/{attemptId}/parts/{ordinal}", CLIOnly}, handler: h.publicationAvailable(h.publicationPut), body: canonicalJSONRequest, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/attempts/{attemptId}/seal", CLIOnly}, handler: h.publicationAvailable(h.publicationSeal), body: controlPlaneJSONRequest, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/attempts/{attemptId}/validate", CLIOnly}, handler: h.publicationAvailable(h.publicationValidate), body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/attempts/{attemptId}/activate", CLIOnly}, handler: h.publicationAvailable(h.publicationActivate), body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/publications/attempts/{attemptId}", CLIOnly}, handler: h.publicationAvailable(h.publicationStatus), body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/attempts/{attemptId}/renew", CLIOnly}, handler: h.publicationAvailable(h.publicationRenew), body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/attempts/{attemptId}/reject", CLIOnly}, handler: h.publicationAvailable(h.publicationReject), body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
+		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/publications/reclaim", CLIOnly}, handler: h.publicationAvailable(h.publicationReclaim), body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
 	}
 	for _, candidate := range routes {
 		if err := h.register(candidate); err != nil {

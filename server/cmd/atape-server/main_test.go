@@ -15,6 +15,7 @@ import (
 
 var serverConfigEnvironment = []string{
 	"ATAPE_SERVER_ADDRESS",
+	"ATAPE_PUBLICATION_LIMITS",
 	"ATAPE_DATABASE_URL",
 	"ATAPE_DATABASE_URL_FILE",
 	"ATAPE_RAW_DIRECTORY",
@@ -394,5 +395,28 @@ func clearServerConfigEnvironment(t *testing.T) {
 				_ = os.Unsetenv(name)
 			}
 		})
+	}
+}
+
+func TestPublicationCapacityIsExplicit(t *testing.T) {
+	clearServerConfigEnvironment(t)
+	limits, err := loadPublicationLimits()
+	if err != nil || limits != nil {
+		t.Fatalf("absent capacity enabled publication: %v %v", limits, err)
+	}
+	for _, value := range []string{"", "null", "{}", `{"leaseLifetimeMs":9223372036854775807}`, `{"leaseLifetimeMs":1000,"reservationLifetimeMs":2000,"unknown":1}`} {
+		t.Setenv("ATAPE_PUBLICATION_LIMITS", value)
+		if _, err := loadPublicationLimits(); err == nil {
+			t.Fatalf("accepted invalid capacity: %q", value)
+		}
+	}
+	t.Setenv("ATAPE_PUBLICATION_LIMITS", `{"partBytes":4194304,"targetBytes":16777216,"userPendingBytes":33554432,"parts":16,"reservations":32,"leaseLifetimeMs":30000,"reservationLifetimeMs":60000}`)
+	limits, err = loadPublicationLimits()
+	if err != nil || limits.LeaseLifetime != 30*time.Second || limits.PartBytes != 4<<20 {
+		t.Fatalf("capacity: %+v %v", limits, err)
+	}
+	t.Setenv("ATAPE_DEMO_MODE", "true")
+	if _, err = loadConfig(); err == nil {
+		t.Fatal("demo advertised unsupported publication")
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
+	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/teamoverview"
@@ -23,6 +24,13 @@ import (
 type problemCode string
 
 const (
+	problemPaginationRequired         problemCode = "pagination_required"
+	problemRefreshRequired            problemCode = "refresh_required"
+	problemPublicationUnknown         problemCode = "publication_unknown"
+	problemPublicationCapacity        problemCode = "publication_capacity"
+	problemPublicationSuperseded      problemCode = "publication_superseded"
+	problemPublicationExpired         problemCode = "publication_expired"
+	problemPublicationConflict        problemCode = "publication_conflict"
 	problemRawCaptureDisabled         problemCode = "raw_capture_disabled"
 	problemInvalidRequest             problemCode = "invalid_request"
 	problemInvalidUserCode            problemCode = "invalid_user_code"
@@ -68,6 +76,13 @@ type problemDefinition struct {
 }
 
 var problemRegistry = map[problemCode]problemDefinition{
+	problemPaginationRequired:         {409, "The conversation requires pagination", "Read this conversation using bounded pages."},
+	problemRefreshRequired:            {409, "The conversation version changed", "Reload the conversation before continuing to another page."},
+	problemPublicationUnknown:         {404, "The publication proof is unavailable", "This response does not prove that activation never occurred. Retain unresolved obligations."},
+	problemPublicationCapacity:        {429, "The publication capacity is exhausted", "Reclaim eligible candidates or reduce the capture before retrying."},
+	problemPublicationSuperseded:      {409, "The publication writer was superseded", "Recover the attempt status before starting a new capture."},
+	problemPublicationExpired:         {410, "The publication authority expired", "Recover the attempt status before allocating new publication authority."},
+	problemPublicationConflict:        {409, "The publication identity conflicts", "Reuse immutable publication identities only with the original content."},
 	problemRawCaptureDisabled:         {403, "Raw capture is disabled", "The current Team and User settings do not allow Raw uploads."},
 	problemInvalidRequest:             {400, "The request is invalid", "The request could not be understood."},
 	problemInvalidUserCode:            {400, "The user code is invalid", "The user code is invalid or no longer available."},
@@ -170,6 +185,33 @@ func writeError(response http.ResponseWriter, request *http.Request, err error) 
 }
 
 func classifyError(err error) (problemCode, int, []fieldProblem) {
+	var publicationError *publication.Error
+	if errors.As(err, &publicationError) {
+		switch publicationError.Code {
+		case "invalid":
+			return problemInvalidRequest, 0, nil
+		case "conflict", "rejected", "activated":
+			return problemPublicationConflict, 0, nil
+		case "expired":
+			return problemPublicationExpired, 0, nil
+		case "superseded":
+			return problemPublicationSuperseded, 0, nil
+		case "capacity":
+			return problemPublicationCapacity, 0, nil
+		case "unknown":
+			return problemPublicationUnknown, 0, nil
+		default:
+			return problemInternal, 0, nil
+		}
+	}
+	var refresh *canonical.RefreshRequiredError
+	if errors.As(err, &refresh) {
+		return problemRefreshRequired, 0, nil
+	}
+	var pages *canonical.PaginationRequiredError
+	if errors.As(err, &pages) {
+		return problemPaginationRequired, 0, nil
+	}
 	var authError *authentication.Error
 	if errors.As(err, &authError) {
 		return classifyAuthenticationError(authError)

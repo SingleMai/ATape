@@ -28,6 +28,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
+	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/releaseinfo"
 	"github.com/SingleMai/ATape/server/internal/team"
@@ -38,16 +39,17 @@ import (
 )
 
 type serverConfig struct {
-	address       string
-	databaseURL   string
-	rawDirectory  string
-	demoMode      bool
-	http          httpapi.Config
-	pepperKeys    authentication.KeyRing
-	privateKeys   authentication.KeyRing
-	github        githubauth.Config
-	githubEnabled bool
-	cutoverMode   authcutover.ServingMode
+	publicationLimits *publication.Limits
+	address           string
+	databaseURL       string
+	rawDirectory      string
+	demoMode          bool
+	http              httpapi.Config
+	pepperKeys        authentication.KeyRing
+	privateKeys       authentication.KeyRing
+	github            githubauth.Config
+	githubEnabled     bool
+	cutoverMode       authcutover.ServingMode
 }
 
 func (serverConfig) String() string          { return "main.serverConfig{secrets:redacted}" }
@@ -74,6 +76,13 @@ func loadConfig() (serverConfig, error) {
 		address: address, databaseURL: databaseURL,
 		rawDirectory: os.Getenv("ATAPE_RAW_DIRECTORY"), demoMode: demoMode,
 		cutoverMode: authcutover.NormalMode,
+	}
+	config.publicationLimits, err = loadPublicationLimits()
+	if err != nil {
+		return serverConfig{}, err
+	}
+	if demoMode && config.publicationLimits != nil {
+		return serverConfig{}, errors.New("publication requires PostgreSQL; remove ATAPE_PUBLICATION_LIMITS in demo mode")
 	}
 	if configuredMode := os.Getenv("ATAPE_AUTH_CUTOVER_MODE"); configuredMode != "" {
 		config.cutoverMode = authcutover.ServingMode(configuredMode)
@@ -150,6 +159,31 @@ func loadConfig() (serverConfig, error) {
 		return serverConfig{}, errors.New("ATAPE_RAW_DIRECTORY is required outside demo mode")
 	}
 	return config, nil
+}
+
+// Publication remains opt-in until production capacity and acceptance are recorded.
+func loadPublicationLimits() (*publication.Limits, error) {
+	encoded, present := os.LookupEnv("ATAPE_PUBLICATION_LIMITS")
+	if !present {
+		return nil, nil
+	}
+	if len(encoded) > 4096 || !strings.HasPrefix(strings.TrimSpace(encoded), "{") {
+		return nil, errors.New("ATAPE_PUBLICATION_LIMITS must be a bounded JSON object")
+	}
+	var capacity publication.Capacity
+	decoder := json.NewDecoder(strings.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&capacity); err != nil {
+		return nil, fmt.Errorf("ATAPE_PUBLICATION_LIMITS: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return nil, errors.New("ATAPE_PUBLICATION_LIMITS must contain one JSON object")
+	}
+	if capacity.LeaseLifetimeMS < 1 || capacity.LeaseLifetimeMS > 3600000 || capacity.ReservationLifetimeMS < capacity.LeaseLifetimeMS || capacity.ReservationLifetimeMS > 86400000 {
+		return nil, errors.New("ATAPE_PUBLICATION_LIMITS contains invalid lifetimes in milliseconds")
+	}
+	return &publication.Limits{PartBytes: capacity.PartBytes, TargetBytes: capacity.TargetBytes, UserPendingBytes: capacity.UserPendingBytes,
+		Parts: capacity.Parts, Reservations: capacity.Reservations, LeaseLifetime: time.Duration(capacity.LeaseLifetimeMS) * time.Millisecond, ReservationLifetime: time.Duration(capacity.ReservationLifetimeMS) * time.Millisecond}, nil
 }
 
 func demoHTTPConfig(address string) (httpapi.Config, error) {
@@ -275,6 +309,7 @@ type persistenceAdapters struct {
 	DirectoryStore  workspace.DirectoryStore
 	OverviewStore   teamoverview.Store
 	RawArchive      *rawarchive.Archive
+	Publication     httpapi.Publication
 	Pool            *pgxpool.Pool
 }
 
@@ -299,6 +334,15 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 	pool, err := postgresadapter.NewPool(config.databaseURL)
 	if err != nil {
 		return persistenceAdapters{}, err
+	}
+	var publisher httpapi.Publication
+	if config.publicationLimits != nil {
+		candidate, err := postgresadapter.NewPublicationStore(pool, *config.publicationLimits)
+		if err != nil {
+			pool.Close()
+			return persistenceAdapters{}, fmt.Errorf("ATAPE_PUBLICATION_LIMITS: %w", err)
+		}
+		publisher = candidate
 	}
 	store := postgresadapter.NewStore(pool)
 	var chunkStore rawarchive.ChunkStore
@@ -330,7 +374,7 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 	return persistenceAdapters{
 		BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store,
 		ProjectionIndex: store, QueryIndex: store, DirectoryStore: store,
-		RawArchive: rawarchive.NewArchive(store, chunkStore), Pool: pool,
+		RawArchive: rawarchive.NewArchive(store, chunkStore), Pool: pool, Publication: publisher,
 	}, nil
 }
 
@@ -414,11 +458,12 @@ func provideHTTPHandler(
 	directory *workspace.Directory,
 	overview *teamoverview.Module,
 	raw *rawarchive.Archive,
+	publisher httpapi.Publication,
 ) (*httpapi.Handler, error) {
 	return httpapi.NewHandler(config.http, httpapi.Modules{
 		Authentication: authenticationModule, Teams: teamModule, Memory: memory,
 		Ingestor: ingestor, Searcher: searcher, Directory: directory, Raw: raw,
-		Cutover: cutoverModule, Overview: overview,
+		Cutover: cutoverModule, Overview: overview, Publication: publisher,
 	})
 }
 

@@ -54,6 +54,8 @@ import { TeamOverviewView } from "./view/TeamOverviewView"
 import { useOverviewPresenter } from "./presenters/overviewPresenter"
 
 const SessionSearch = Schema.Struct({
+  head: Schema.optionalKey(Schema.String),
+  after: Schema.optionalKey(Schema.String),
   thread: Schema.optionalKey(Schema.String),
   event: Schema.optionalKey(Schema.String),
   from: Schema.optionalKey(Schema.Literal("search")),
@@ -62,6 +64,8 @@ const SessionSearch = Schema.Struct({
 })
 
 type SessionLocationSearch = {
+  readonly head?: string
+  readonly after?: string
   readonly thread: string
   readonly event?: string
   readonly from?: "search"
@@ -75,6 +79,8 @@ const parseSessionSearch = (input: unknown): SessionLocationSearch =>
     onSome: (value) => ({
       thread: value.thread ?? "root",
       ...(value.event ? { event: value.event } : {}),
+      ...(value.head ? { head: value.head } : {}),
+      ...(value.after ? { after: value.after } : {}),
       ...(value.from ? { from: value.from } : {}),
       ...(value.q ? { q: value.q } : {}),
       ...(value.raw ? { raw: value.raw } : {})
@@ -418,12 +424,23 @@ function SessionRoute() {
   const search = sessionRoute.useSearch()
   const navigate = useNavigate()
   const { openSearch, hasSearch } = useSearchOverlay()
-  const presenter = useConversationPresenter(params.sessionId, search.thread)
+  const restart = () => {
+    const { head: _head, after: _after, event: _event, ...first } = search
+    void navigate({ to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params, search: first, replace: true })
+  }
+  const page = { ...(search.head ? { head: search.head } : {}),
+    ...(search.after ? { after: search.after } : search.event ? { at: search.event } : {}) }
+  const presenter = useConversationPresenter(params.sessionId, search.thread, page, restart)
   return (
     <>
       <SessionReaderView
         state={presenter.state}
         refresh={presenter.refresh}
+        {...(search.after || search.event ? { onFirstPage: restart } : {})}
+        onNextPage={(head, after) => void navigate({
+          to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params,
+          search: { ...search, head, after }
+        })}
         projectName={params.projectId}
         onRetry={presenter.reload}
         onOpenRaw={() => void navigate({

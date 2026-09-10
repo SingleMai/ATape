@@ -40,6 +40,14 @@ func NewPublicationStore(pool *pgxpool.Pool, limits publication.Limits) (*Public
 	}
 	return &PublicationStore{pool: pool, limits: limits}, nil
 }
+func (s *PublicationStore) Capabilities() publication.Capabilities {
+	l := s.limits
+	return publication.Capabilities{Protocol: publication.Protocol, TargetProfile: publication.TargetProfile,
+		Limits: publication.Capacity{PartBytes: l.PartBytes, TargetBytes: l.TargetBytes, UserPendingBytes: l.UserPendingBytes,
+			Parts: l.Parts, Reservations: l.Reservations, ReservationLifetimeMS: l.ReservationLifetime.Milliseconds(), LeaseLifetimeMS: l.LeaseLifetime.Milliseconds()},
+		StatusPageSize: 100, ReclaimPageSize: 32}
+}
+
 func publicationError(code, message string) error {
 	return &publication.Error{Code: code, Message: message}
 }

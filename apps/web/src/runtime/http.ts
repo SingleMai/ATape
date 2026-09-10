@@ -28,6 +28,7 @@ export class BrowserHTTPError extends Error {
 }
 
 type RequestOptions = {
+  readonly responseProfile?: "conversation-page"
   readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
   readonly body?: unknown
   readonly csrf?: boolean
@@ -86,9 +87,9 @@ const invalidateAuthentication = (): void => {
   for (const listener of authenticationListeners) listener()
 }
 
-const readResponseBody = async (response: Response): Promise<unknown> => {
+const readResponseBody = async (response: Response, maximum: number): Promise<unknown> => {
   const declared = Number(response.headers.get("Content-Length"))
-  if (Number.isFinite(declared) && declared > responseBodyLimit) {
+  if (Number.isFinite(declared) && declared > maximum) {
     throw new BrowserHTTPError({ reason: "decode", message: "The ATape response was unexpectedly large." })
   }
   const chunks: Uint8Array[] = []
@@ -100,7 +101,7 @@ const readResponseBody = async (response: Response): Promise<unknown> => {
         const next = await reader.read()
         if (next.done) break
         byteLength += next.value.byteLength
-        if (byteLength > responseBodyLimit) {
+        if (byteLength > maximum) {
           await reader.cancel()
           throw new BrowserHTTPError({ reason: "decode", message: "The ATape response was unexpectedly large." })
         }
@@ -190,7 +191,7 @@ export const browserRequest = (path: string, options: RequestOptions = {}): Effe
       })
       let payload: unknown
       try {
-        payload = await readResponseBody(response)
+        payload = await readResponseBody(response, response.ok && options.responseProfile === "conversation-page" ? 8 * 1024 * 1024 : responseBodyLimit)
       } catch (error) {
         // An unreadable 401 cannot be proven to be the recoverable
         // fresh-authentication case, so fail closed and restore the Session.

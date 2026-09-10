@@ -183,6 +183,7 @@ type ConversationSnapshot struct {
 type ConversationPageRequest struct {
 	Head         string
 	AfterEventID string
+	AtEventID    string
 	Limit        int
 }
 

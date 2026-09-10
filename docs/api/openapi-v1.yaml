@@ -937,6 +937,10 @@ paths:
       security: [{webSession: []}]
       parameters:
         - {name: thread, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, description: Opt in to bounded publication pages. Without this parameter large publications return pagination_required. Legacy Sessions retain full reads., schema: {type: integer, minimum: 1, maximum: 100}}
+        - {name: head, in: query, description: Selected head from the preceding page; a changed head returns refresh_required., schema: {type: string, maxLength: 200}}
+        - {name: after, in: query, description: Previous nextEventId; requires head and excludes at., schema: {type: string, maxLength: 200}}
+        - {name: at, in: query, description: Inclusive Event anchor for a search result; excludes after., schema: {type: string, maxLength: 200}}
       responses:
         "200": {$ref: "#/components/responses/GenericJSON"}
         "4XX": {$ref: "#/components/responses/Problem"}
@@ -1014,6 +1018,233 @@ paths:
       responses:
         "200": {$ref: "#/components/responses/GenericJSON"}
         "201": {$ref: "#/components/responses/GenericJSON"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/capabilities:
+    get:
+      operationId: publicationCapabilities
+      tags: [Ingestion]
+      summary: Capabilities a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: []
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationCapabilities"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/reservations:
+    post:
+      operationId: publicationReserve
+      tags: [Ingestion]
+      summary: Reserve a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublicationScope"}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationReservation"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts:
+    post:
+      operationId: publicationBegin
+      tags: [Ingestion]
+      summary: Begin a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublicationBegin"}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationAttempt"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}/parts/{ordinal}:
+    put:
+      operationId: publicationPut
+      tags: [Ingestion]
+      summary: Put a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-canonical, requestBodyLimit: 4194304, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: ordinal, in: path, required: true, schema: {type: integer, minimum: 0, maximum: 4095}}
+        - {name: sha256, in: query, required: true, description: SHA-256 of the exact request bytes., schema: {type: string, pattern: "^[0-9a-f]{64}$"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublicationCanonicalPart"}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationPart"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}/seal:
+    post:
+      operationId: publicationSeal
+      tags: [Ingestion]
+      summary: Seal a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublicationManifest"}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationAttempt"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}/validate:
+    post:
+      operationId: publicationValidate
+      tags: [Ingestion]
+      summary: Validate a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationAttempt"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}/activate:
+    post:
+      operationId: publicationActivate
+      tags: [Ingestion]
+      summary: Activate a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationActivation"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}:
+    get:
+      operationId: publicationStatus
+      tags: [Ingestion]
+      summary: Status a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: after, in: query, schema: {type: integer, minimum: -1, maximum: 4095, default: -1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 100}}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationPage"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}/renew:
+    post:
+      operationId: publicationRenew
+      tags: [Ingestion]
+      summary: Renew a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationAttempt"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/attempts/{attemptId}/reject:
+    post:
+      operationId: publicationReject
+      tags: [Ingestion]
+      summary: Reject a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: attemptId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationAttempt"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/reclaim:
+    post:
+      operationId: publicationReclaim
+      tags: [Ingestion]
+      summary: Reclaim a bounded atomic publication operation
+      description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 32, default: 32}}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationReclaimed"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
 components:
@@ -1503,6 +1734,136 @@ components:
       schema: {type: integer, minimum: 1}
       description: Present for retryable 409, 429, and 503 outcomes.
   schemas:
+    PublicationScope:
+      type: object
+      additionalProperties: false
+      required: [projectId, installationId, adapterId, sourceSessionId, originKey]
+      properties:
+        projectId: {type: string}
+        installationId: {type: string}
+        adapterId: {type: string}
+        sourceSessionId: {type: string}
+        originKey: {type: string}
+    PublicationReservation:
+      type: object
+      additionalProperties: false
+      required: [id, sessionId, expiresAt]
+      properties:
+        id: {type: string, format: uuid}
+        sessionId: {type: string}
+        expiresAt: {type: string, format: date-time}
+    PublicationBegin:
+      type: object
+      additionalProperties: false
+      required: [reservationId, captureId, baseHead, transformVersion]
+      properties:
+        reservationId: {type: string}
+        captureId: {type: string}
+        baseHead: {type: string}
+        transformVersion: {type: string}
+    PublicationPart:
+      type: object
+      additionalProperties: false
+      required: [ordinal, sha256, bytes]
+      properties:
+        ordinal: {type: integer}
+        sha256: {type: string}
+        bytes: {type: integer}
+    PublicationManifest:
+      type: object
+      additionalProperties: false
+      required: [parts, bytes, sha256]
+      properties:
+        parts: {type: integer}
+        bytes: {type: integer}
+        sha256: {type: string}
+    PublicationActivation:
+      type: object
+      additionalProperties: false
+      required: [head, sessionId, captureId, baseHead, fence, transformVersion, manifest, activatedAt]
+      properties:
+        head: {type: string}
+        sessionId: {type: string}
+        captureId: {type: string}
+        baseHead: {type: string}
+        fence: {type: integer}
+        transformVersion: {type: string}
+        manifest: {$ref: "#/components/schemas/PublicationManifest"}
+        activatedAt: {type: string, format: date-time}
+    PublicationAttempt:
+      type: object
+      additionalProperties: false
+      required: [id, sessionId, captureId, baseHead, transformVersion, state, fence, parts, retainedBytes, validatedParts, candidateEvents, candidateUsage, leaseUntil, expiresAt, seal, activation]
+      properties:
+        id: {type: string}
+        sessionId: {type: string}
+        captureId: {type: string}
+        baseHead: {type: string}
+        transformVersion: {type: string}
+        state: {type: string}
+        fence: {type: integer}
+        parts: {type: integer}
+        retainedBytes: {type: integer}
+        validatedParts: {type: integer}
+        candidateEvents: {type: integer}
+        candidateUsage: {type: integer}
+        leaseUntil: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        seal: {oneOf: [{$ref: "#/components/schemas/PublicationManifest"}, {type: "null"}]}
+        activation: {oneOf: [{$ref: "#/components/schemas/PublicationActivation"}, {type: "null"}]}
+    PublicationPage:
+      type: object
+      additionalProperties: false
+      required: [attempt, parts]
+      properties:
+        attempt: {$ref: "#/components/schemas/PublicationAttempt"}
+        parts: {type: array, maxItems: 100, items: {$ref: "#/components/schemas/PublicationPart"}}
+    PublicationReclaimed:
+      type: object
+      additionalProperties: false
+      required: [parts, reservations, bytes]
+      properties:
+        parts: {type: integer}
+        reservations: {type: integer}
+        bytes: {type: integer}
+    PublicationCapacity:
+      type: object
+      additionalProperties: false
+      required: [partBytes, targetBytes, userPendingBytes, parts, reservations, reservationLifetimeMs, leaseLifetimeMs]
+      properties:
+        partBytes: {type: integer}
+        targetBytes: {type: integer}
+        userPendingBytes: {type: integer}
+        parts: {type: integer}
+        reservations: {type: integer}
+        reservationLifetimeMs: {type: integer}
+        leaseLifetimeMs: {type: integer}
+    PublicationCapabilities:
+      type: object
+      additionalProperties: false
+      required: [protocol, targetProfile, limits, statusPageSize, reclaimPageSize]
+      properties:
+        protocol: {type: string, const: atape.publication.v1}
+        targetProfile: {type: string, const: atape.publication-target.v1}
+        limits: {$ref: "#/components/schemas/PublicationCapacity"}
+        statusPageSize: {type: integer, const: 100}
+        reclaimPageSize: {type: integer, const: 32}
+    PublicationTarget:
+      type: object
+      additionalProperties: false
+      required: [profile, events, usage, threads]
+      properties:
+        profile: {type: string, const: atape.publication-target.v1}
+        events: {type: integer}
+        usage: {type: integer}
+        threads: {type: integer}
+    PublicationCanonicalPart:
+      type: object
+      additionalProperties: false
+      required: [target, batch]
+      properties:
+        target: {$ref: "#/components/schemas/PublicationTarget"}
+        batch: {$ref: "#/components/schemas/CanonicalBatch"}
     RawCaptureSettings:
       type: object
       required: [teamPolicy, userPreference, enabled]
@@ -2005,6 +2366,13 @@ components:
         code:
           type: string
           enum:
+            - publication_conflict
+            - publication_expired
+            - publication_superseded
+            - publication_capacity
+            - publication_unknown
+            - refresh_required
+            - pagination_required
             - invalid_request
             - invalid_user_code
             - invalid_join_code

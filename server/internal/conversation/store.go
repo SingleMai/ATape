@@ -13,4 +13,5 @@ import (
 type SnapshotStore interface {
 	Project(context.Context, authentication.Principal, string) (canonical.ProjectSnapshot, bool, error)
 	Conversation(context.Context, authentication.Principal, string, string) (canonical.ConversationSnapshot, bool, error)
+	ConversationPage(context.Context, authentication.Principal, string, string, canonical.ConversationPageRequest) (canonical.ConversationSnapshot, bool, error)
 }
