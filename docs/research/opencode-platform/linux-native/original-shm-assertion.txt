@@ -1,0 +1,65 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Adapter must not mutate DB/WAL/SHM
++ actual - expected
+... Skipped lines
+
+  {
+    '': {
+      bytes: 270336,
+      mtimeMs: 1789064354760.1223,
+      sha256: 'f9a163241df35a4e3980ff8c9134ccfa735640223cd50fee94f3fdb63b545dbe'
+...
+      bytes: 32768,
++     mtimeMs: 1789064355575.8726,
+-     mtimeMs: 1789064354876.2002,
+      sha256: '4813f1a6576c486e6a0f5e2dc94b63bd4bc9efc21f5ba472427477f9f84ec815'
+    },
+    '-wal': {
+      bytes: 1326672,
+      mtimeMs: 1789064354831.7878,
+
+    at file:///evidence/verify-native.mjs:60:37 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: {
+    '': {
+      bytes: 270336,
+      mtimeMs: 1789064354760.1223,
+      sha256: 'f9a163241df35a4e3980ff8c9134ccfa735640223cd50fee94f3fdb63b545dbe'
+    },
+    '-wal': {
+      bytes: 1326672,
+      mtimeMs: 1789064354831.7878,
+      sha256: 'fc7a125d1495703bcf712ae18768e559165685ad146d33987bc3de4cde116b15'
+    },
+    '-shm': {
+      bytes: 32768,
+      mtimeMs: 1789064355575.8726,
+      sha256: '4813f1a6576c486e6a0f5e2dc94b63bd4bc9efc21f5ba472427477f9f84ec815'
+    }
+  },
+  expected: {
+    '': {
+      bytes: 270336,
+      mtimeMs: 1789064354760.1223,
+      sha256: 'f9a163241df35a4e3980ff8c9134ccfa735640223cd50fee94f3fdb63b545dbe'
+    },
+    '-wal': {
+      bytes: 1326672,
+      mtimeMs: 1789064354831.7878,
+      sha256: 'fc7a125d1495703bcf712ae18768e559165685ad146d33987bc3de4cde116b15'
+    },
+    '-shm': {
+      bytes: 32768,
+      mtimeMs: 1789064354876.2002,
+      sha256: '4813f1a6576c486e6a0f5e2dc94b63bd4bc9efc21f5ba472427477f9f84ec815'
+    }
+  },
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.20.0

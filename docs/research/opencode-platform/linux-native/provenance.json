@@ -1,0 +1,64 @@
+{
+  "version": "1.18.30",
+  "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "releaseURL": "https://github.com/anomalyco/opencode/releases/download/v1.18.30/opencode-linux-arm64.tar.gz",
+  "releasePublishedAt": "2026-09-09T03:34:27Z",
+  "archiveSHA256": "4111a55c2a02c0fac314bd51e9a2330280e6d29d2b85b9554fff6d62612566ed",
+  "binarySHA256": "01edb5839aa10d5b09133fedcb335a062ecad6e82552933bb14f71756f2b296b",
+  "adapterTarballSHA256": "2ee430414ff0f90bc3ba0460bbc27b1fd5fb37af9a01743cb652516becb426fd",
+  "inspectedAtUTC": "2026-09-10T18:21:38.846801+00:00",
+  "adapterCandidateCommit": "000668f83864fbebaae0fa384d9f2a3eb5fe4c6f",
+  "adapterBundleSHA256": "1536a25a62c4c5f188eab54145b4a4a30e5425e5ee880d72b33779ab2bc7450f",
+  "generatorOriginalCommit": "6d1c082db48793dff8a48050552b2a7fc586be14",
+  "generatorOriginalPath": "packages/application/prototypes/opencode-native/generate.py",
+  "generatorModification": "Only corrected resource max RSS unit annotation from macOS bytes to Linux KiB",
+  "scriptHashes": {
+    "generate.py": "6688c2484a58ea3ac995b1b790d1298636499eff0727ff443ca4662b8a23b82e",
+    "generate-linux.py": "7b8a8d03f4783dd3c1623520724d73780aed1f65c11b7e9a93890f05bde56286",
+    "run.py": "c9f38f58a4c10b7b0fc8157916c2a94bf98bf698b5ebe3f2ea2a67bd758ebef8",
+    "verify-native.mjs": "9526a85243808c5f0f35bb90781d3c6a2b8fc872281ed6dd8f4a397bfe3904f1"
+  },
+  "containerImageIndex": "node@sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
+  "platform": {
+    "platform": "Linux-6.8.0-117-generic-aarch64-with-glibc2.36",
+    "machine": "aarch64",
+    "libc": [
+      "glibc",
+      "2.36"
+    ],
+    "node": "v24.20.0",
+    "network": "none"
+  },
+  "isolation": {
+    "Id": "ed0effb465fb778337c77737f36608049f6954a768329111c0f0e94865591155",
+    "Image": "sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
+    "State": {
+      "Status": "exited",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "2026-09-10T18:19:59.503796932Z",
+      "FinishedAt": "2026-09-10T18:19:59.683610314Z"
+    },
+    "Mounts": [],
+    "networkMode": "none",
+    "capDrop": [
+      "ALL"
+    ],
+    "securityOpt": [
+      "no-new-privileges"
+    ],
+    "memoryLimit": 2147483648,
+    "nanoCPUs": 2000000000
+  },
+  "originalResearchPath": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-linux-native-gj7ukls0",
+  "archivedScriptChanges": [
+    "verify-native.mjs evidence root accepts argv[3]; container default /evidence",
+    "new runner automates isolated copy, launch, evidence extraction and cleanup; archived original run verified separately"
+  ]
+}

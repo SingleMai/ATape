@@ -1,0 +1,122 @@
+{
+  "status": "PASS",
+  "platform": "linux",
+  "arch": "arm64",
+  "node": "v24.20.0",
+  "artifactSHA256": "1536a25a62c4c5f188eab54145b4a4a30e5425e5ee880d72b33779ab2bc7450f",
+  "discoveryPages": 4,
+  "officialExportMatchesAdapterRaw": true,
+  "rawOffOnCanonicalEqual": true,
+  "databaseAndWALUnchanged": true,
+  "sharedMemoryBytesUnchanged": true,
+  "sharedMemoryMtimeChanged": true,
+  "dbFilesBefore": {
+    "": {
+      "bytes": 270336,
+      "mtimeMs": 1789064354760.1223,
+      "sha256": "f9a163241df35a4e3980ff8c9134ccfa735640223cd50fee94f3fdb63b545dbe"
+    },
+    "-wal": {
+      "bytes": 1326672,
+      "mtimeMs": 1789064354831.7878,
+      "sha256": "fc7a125d1495703bcf712ae18768e559165685ad146d33987bc3de4cde116b15"
+    },
+    "-shm": {
+      "bytes": 32768,
+      "mtimeMs": 1789064355575.8726,
+      "sha256": "4813f1a6576c486e6a0f5e2dc94b63bd4bc9efc21f5ba472427477f9f84ec815"
+    }
+  },
+  "dbFilesAfter": {
+    "": {
+      "bytes": 270336,
+      "mtimeMs": 1789064354760.1223,
+      "sha256": "f9a163241df35a4e3980ff8c9134ccfa735640223cd50fee94f3fdb63b545dbe"
+    },
+    "-wal": {
+      "bytes": 1326672,
+      "mtimeMs": 1789064354831.7878,
+      "sha256": "fc7a125d1495703bcf712ae18768e559165685ad146d33987bc3de4cde116b15"
+    },
+    "-shm": {
+      "bytes": 32768,
+      "mtimeMs": 1789064399620.7632,
+      "sha256": "4813f1a6576c486e6a0f5e2dc94b63bd4bc9efc21f5ba472427477f9f84ec815"
+    }
+  },
+  "captures": [
+    {
+      "source": "root",
+      "rawOff": {
+        "frames": 16,
+        "pages": 9,
+        "target": {
+          "events": 6,
+          "usage": 1,
+          "threads": 2
+        }
+      },
+      "rawOn": {
+        "frames": 16,
+        "pages": 9,
+        "target": {
+          "events": 6,
+          "usage": 1,
+          "threads": 2
+        }
+      }
+    },
+    {
+      "source": "fork",
+      "rawOff": {
+        "frames": 7,
+        "pages": 4,
+        "target": {
+          "events": 4,
+          "usage": 0,
+          "threads": 1
+        }
+      },
+      "rawOn": {
+        "frames": 7,
+        "pages": 4,
+        "target": {
+          "events": 4,
+          "usage": 0,
+          "threads": 1
+        }
+      }
+    }
+  ],
+  "nativeGeneration": {
+    "version": "1.18.30",
+    "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+    "tableCounts": {
+      "session": 3,
+      "message": 9,
+      "part": 11,
+      "event": 37,
+      "event_sequence": 3,
+      "session_message": 0
+    },
+    "journalMode": "wal",
+    "beforeRevertMessageCount": 3,
+    "revertRetainedMessageCount": 3,
+    "compactionAPIResult": true,
+    "modelStubRequests": [
+      {
+        "path": "/v1/chat/completions",
+        "stream": true,
+        "messageCount": 2
+      }
+    ],
+    "officialExportMatchesAPI": true,
+    "officialExportMatchesSQLite": true,
+    "sqliteFileBytes": 270336,
+    "maxChildRSSNativeUnits": 512956,
+    "maxChildRSSNote": "Linux KiB; max child peak across version/server/export, not incremental collector memory",
+    "generationSeconds": 1.444,
+    "openMetadataSentinelPreservedInAPI": true,
+    "unknownExtensionPreservedInAPI": false
+  }
+}

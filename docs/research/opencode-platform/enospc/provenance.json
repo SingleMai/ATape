@@ -1,0 +1,15 @@
+{
+  "originalResearchPath": "/tmp/atape-enospc-d0t8cdhz",
+  "candidateCommit": "000668f83864fbebaae0fa384d9f2a3eb5fe4c6f",
+  "originalBundleSHA256": "cb0f967873d79db7a7bc555563059feb37c4482d9c576e16e3c0e6fbf2209e3a",
+  "esbuildVersion": "0.28.2",
+  "originalScriptHashes": {
+    "prototype.ts": "f701e29b305870b4588d67a74105e92359fac5dfba73c9acdcdbca6a7c58278e",
+    "max-pages.ts": "cc3e4bfc92654bf2ae13924f2afec1540737a1e60ff0eb9684d19c40037831cb"
+  },
+  "archivedScriptChanges": [
+    "Absolute journal source import changed to atape-journal-probe-source; build-probes.mjs resolves it from explicit checkout argument.",
+    "Bundle content/hash may change on rebuild; committed result describes original bundle only."
+  ],
+  "fixStatusAtArchive": "Fix in ATape-capture-disk-full worktree in progress, not merged or released; original classification failure retained."
+}

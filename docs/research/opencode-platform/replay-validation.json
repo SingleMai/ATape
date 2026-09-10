@@ -1,0 +1,40 @@
+{
+  "date": "2026-09-11",
+  "linuxNativeNewRunner": {
+    "status": "PASS",
+    "node": "v24.20.0",
+    "platform": "linux",
+    "arch": "arm64",
+    "artifactSHA256": "1536a25a62c4c5f188eab54145b4a4a30e5425e5ee880d72b33779ab2bc7450f",
+    "officialExportMatchesAdapterRaw": true,
+    "databaseAndWALUnchanged": true,
+    "sharedMemoryBytesUnchanged": true
+  },
+  "enospcOriginalBundleRunner": {
+    "status": "PASS",
+    "expectedPublicFailureReason": "io",
+    "realENOSPC": true,
+    "retainedSnapshotUnchanged": true,
+    "failedAppendLeftNoUnit": true,
+    "recoverySucceeded": true
+  },
+  "enospcParameterizedRebuild": {
+    "build": {
+      "checkoutCommit": "000668f83864fbebaae0fa384d9f2a3eb5fe4c6f",
+      "checkoutDirty": false,
+      "esbuild": "0.28.2",
+      "node": "v24.18.0",
+      "bundleSHA256": {
+        "prototype": "76d74ec25eef199e2852d06ee48dee35b5f964f696a82e64a6ca5893b466517a",
+        "max-pages": "e9e584394ad3971027dc0fdb5265706b86e815461ef7e08b8e8345943d63aa04"
+      }
+    },
+    "status": "PASS",
+    "expectedPublicFailureReason": "io",
+    "realENOSPC": true,
+    "retainedSnapshotUnchanged": true,
+    "failedAppendLeftNoUnit": true,
+    "recoverySucceeded": true
+  },
+  "scope": "Research runner repeatability. No fix candidate or release acceptance."
+}

@@ -1,0 +1,83 @@
+{
+  "sourceCommit": "000668f83864fbebaae0fa384d9f2a3eb5fe4c6f",
+  "imageIndexDigest": "sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
+  "runtime": {
+    "node": "v24.20.0",
+    "platform": "linux",
+    "arch": "arm64"
+  },
+  "tmpfsBytes": 16777216,
+  "actualENOSPC": {
+    "message": "ENOSPC: no space left on device, write",
+    "code": "ENOSPC",
+    "writtenBytes": 16125952,
+    "fs": {
+      "blockSize": 4096,
+      "totalBytes": 16777216,
+      "availableBytes": 0
+    }
+  },
+  "sqliteErrors": [
+    {
+      "method": "run",
+      "message": "database or disk is full",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 13
+    },
+    {
+      "method": "exec",
+      "statement": "ROLLBACK",
+      "message": "cannot rollback - no transaction is active",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 1,
+      "isTransaction": false
+    }
+  ],
+  "publicFailure": {
+    "_tag": "CaptureJournalError",
+    "reason": "io",
+    "message": "Capture journal storage operation failed."
+  },
+  "originalSnapshotEqualAcrossFailureReopenAndRecovery": true,
+  "originalPayload": {
+    "bytes": 524288,
+    "sha256": "85a84a75886e8a526dbec4e16e3375faa307b4aead79c9ed3264c0477a6f6eba"
+  },
+  "originalVersions": {
+    "session": 1,
+    "thread": 1
+  },
+  "originalCheckpoint": null,
+  "originalDisposition": "pending",
+  "originalReceipt": null,
+  "failedAppendLeftNoUnit": true,
+  "successfulAppendAfterFree": {
+    "bytes": 2097152,
+    "sha256": "85a6e0cdf20bfbc76abca53afb39fdf2edd59ac8fcf236ee730d8ea2851ca975"
+  },
+  "integrityBefore": [
+    {
+      "integrity_check": "ok"
+    }
+  ],
+  "integrityAfter": [
+    {
+      "integrity_check": "ok"
+    }
+  ],
+  "metadataEntriesBefore": 9,
+  "metadataEntriesAfter": 10,
+  "maxPageCount": {
+    "node": "v24.18.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "initialPageCount": 20,
+    "maxBefore": 4294967294,
+    "otherConnectionMax": 20,
+    "separateConnectionMax": 4294967294,
+    "publicJournalAppend2MiB": "succeeded",
+    "finalPageCount": 532,
+    "reopenedMax": 4294967294
+  },
+  "bundleSha256": "cb0f967873d79db7a7bc555563059feb37c4482d9c576e16e3c0e6fbf2209e3a"
+}
