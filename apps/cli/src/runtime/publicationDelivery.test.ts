@@ -104,7 +104,7 @@ const fixture = async () => {
   const run = async <A, E>(work: Effect.Effect<A, E, CaptureJournal | PublicationTransport | RawPublicationTransport>) => {
     const currentMode = mode; mode = "open"
     return Effect.runPromise(work.pipe(Effect.provide(Layer.mergeAll(remote, rawRemote, makeCaptureJournalLayer({ path, mode: currentMode, binding,
-      limits: { unitBytes: 4096, targetBytes: 1024 * 1024, pendingBytes: 2 * 1024 * 1024, unitsPerTarget: 4096 } })))))
+      limits: { unitBytes: 4096, targetBytes: 1024 * 1024, pendingBytes: 2 * 1024 * 1024, unitsPerTarget: 4096, recordsPerTarget: 4096 } })))))
   }
   const prepare = (count = 1, raw = false, seal = true, id = "capture", baseHead = "", rawCount = 1, rawContent = "raw A") => run(Effect.gen(function*() {
     const j = yield* CaptureJournal, owner = yield* j.claim(scope)
@@ -155,6 +155,37 @@ const fixture = async () => {
 }
 
 describe("Collector publication recovery", () => {
+  it("publishes tracked coverage and recovers a Raw-only explicit gap without sending content", async () => {
+    const f = await fixture()
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      yield* beginPublicationCapture(owner, { captureId: "tracked", baseHead: "", transformVersion: "projection-1", rawEnabled: false, trackRecords: true })
+      yield* j.append(owner, "tracked", { kind: "canonical", ordinal: 0, bytes: new TextEncoder().encode("prepared Canonical") })
+      for (const kind of ["session", "thread"] as const) {
+        yield* j.record(owner, "tracked", { kind, key: "root", fingerprint: createHash("sha256").update(kind).digest("hex"), projectionVersion: "v1" })
+        yield* j.bindRecord(owner, "tracked", { kind, key: "root" }, { _tag: "Unit", ordinal: 0 })
+      }
+      yield* sealPublicationCapture(owner, "tracked", { nextCheckpoint: "tracked-next", rawUnits: 0,
+        records: { canonical: { session: 1, thread: 1, event: 0, usage: 0 } } })
+    }))
+    expect(await f.deliver(64, "tracked")).toMatchObject({ state: "activated" })
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect((yield* j.coverage(owner)).canonicalCaptureId).toBe("tracked")
+      yield* beginRawObservation(owner, { observationId: "gap", canonicalCaptureId: "tracked" })
+      yield* j.record(owner, "gap", { kind: "raw", key: "part/oversized", fingerprint: createHash("sha256").update("limited row metadata").digest("hex"), projectionVersion: "v1" })
+      yield* j.bindRecord(owner, "gap", { kind: "raw", key: "part/oversized" }, { _tag: "Unavailable", reason: "limit" })
+      yield* sealRawObservation(owner, "gap", 0, { raw: { records: 1, scopeComplete: false } })
+    }))
+    expect(await f.deliverRaw(64, "gap")).toMatchObject({ state: "completed" })
+    expect(f.rawSent).toEqual([])
+    await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect(owner.checkpoint).toBe("tracked-next")
+      expect((yield* j.records(owner, "gap", { kind: "raw" }))[0]).toMatchObject({ disposition: "unavailable", unavailableReason: "limit" })
+      expect((yield* j.coverage(owner)).canonicalCaptureId).toBe("tracked")
+    }))
+  })
   it("replays the exact sealed bytes after a lost part response and keeps Raw independent", async () => {
     const f = await fixture(); await f.prepare(2, true); f.losePut()
     await expect(f.deliver()).rejects.toMatchObject({ reason: "network" })

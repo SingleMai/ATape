@@ -1,4 +1,5 @@
 import { Context, Effect, Schema } from "effect"
+import type { AdapterRawReference } from "@atape/domain"
 
 /** Private local storage for already validated, redacted, final delivery bytes.
  * The publication workflow owns remote authority and receipt verification.
@@ -15,7 +16,35 @@ export type CaptureBinding = { readonly instanceOrigin: string; readonly userId:
 export type CaptureClaim = CaptureOwner & { readonly checkpoint: string | null }
 export type CaptureUnitKind = "canonical" | "raw"
 export type CapturePurpose = "publication" | "raw-observation"
+export type CaptureRecordKind = "session" | "thread" | "event" | "usage" | "raw"
+export type CaptureRecordKey = { readonly kind: CaptureRecordKind; readonly key: string }
+export type CaptureRecordInput = CaptureRecordKey & {
+  readonly fingerprint: string
+  readonly projectionVersion: string
+  /** Proposed immutable Event provenance, adopted only with a new version. */
+  readonly rawReference?: AdapterRawReference
+}
+export type CaptureRecordVersion = CaptureRecordInput & { readonly revision: number }
+export type CaptureRecordBinding =
+  | { readonly _tag: "Unit"; readonly ordinal: number; readonly captureId?: string }
+  | { readonly _tag: "Unavailable"; readonly reason: "limit" | "redaction" }
+export type CaptureRecordManifest = {
+  readonly canonical?: { readonly session: number; readonly thread: number; readonly event: number; readonly usage: number }
+  readonly raw?: { readonly records: number; readonly scopeComplete: boolean }
+}
+export type CaptureRecordSummary = CaptureRecordVersion & {
+  readonly disposition: "unbound" | "pending" | "published" | "acknowledged" | "canceled" | "unavailable" | "abandoned"
+  readonly unit: { readonly captureId: string; readonly ordinal: number } | null
+  readonly unavailableReason: "limit" | "redaction" | null
+}
+export type CaptureCoverage = {
+  readonly canonicalCaptureId: string | null
+  readonly observedCanonicalCaptureId: string | null
+  readonly observedRawCaptureId: string | null
+}
 export type CaptureReservation = {
+  /** Explicit capability. Requires configured record admission and a tracked source. */
+  readonly trackRecords?: boolean
   /** Existing callers default to publication. Raw observations cannot advance Canonical coverage. */
   readonly purpose?: CapturePurpose
   readonly id: string
@@ -24,6 +53,7 @@ export type CaptureReservation = {
   readonly rawEnabled: boolean
 }
 export type CaptureSeal = {
+  readonly records?: CaptureRecordManifest
   readonly canonicalUnits: number
   readonly rawUnits: number
   readonly nextCheckpoint: string
@@ -31,6 +61,7 @@ export type CaptureSeal = {
 }
 export type CaptureSummary = CaptureReservation & {
   readonly purpose: CapturePurpose
+  readonly trackRecords: boolean
   readonly state: "preparing" | "sealed" | "activated" | "completed" | "abandoned"
   readonly seal: CaptureSeal | null
   readonly activationReceipt: string | null
@@ -68,10 +99,18 @@ export class CaptureJournal extends Context.Service<CaptureJournal, {
   readonly binding: CaptureBinding
   /** A new owner fences every earlier owner for this source, including reads/GC. */
   claim(scope: CaptureScope): Effect.Effect<CaptureClaim, CaptureJournalError>
+  /** Known local scopes remain recoverable after the provider deletes a source. */
+  sources(projectId: string, adapterId: string, page: { readonly afterSessionId?: string; readonly limit?: number }): Effect.Effect<ReadonlyArray<CaptureScope>, CaptureJournalError>
   reserve(owner: CaptureOwner, capture: CaptureReservation): Effect.Effect<void, CaptureJournalError>
   append(owner: CaptureOwner, id: string, unit: {
     readonly kind: CaptureUnitKind; readonly ordinal: number; readonly bytes: Uint8Array
   }): Effect.Effect<void, CaptureJournalError>
+  /** Reserve monotonic observed versions; this is not publication or Raw coverage. */
+  record(owner: CaptureOwner, id: string, record: CaptureRecordInput): Effect.Effect<CaptureRecordVersion, CaptureJournalError>
+  bindRecord(owner: CaptureOwner, id: string, record: CaptureRecordKey, binding: CaptureRecordBinding): Effect.Effect<void, CaptureJournalError>
+  records(owner: CaptureOwner, id: string, page: { readonly kind: CaptureRecordKind; readonly afterKey?: string; readonly limit?: number }): Effect.Effect<ReadonlyArray<CaptureRecordSummary>, CaptureJournalError>
+  /** Pointers only; page the immutable record membership to inspect actual outcomes. */
+  coverage(owner: CaptureOwner): Effect.Effect<CaptureCoverage, CaptureJournalError>
   seal(owner: CaptureOwner, id: string, manifest: CaptureSeal): Effect.Effect<void, CaptureJournalError>
   /** Metadata only: unresolved captures or terminal captures awaiting reclamation. At most 100 entries. */
   pending(owner: CaptureOwner, afterId?: string, limit?: number): Effect.Effect<ReadonlyArray<CaptureSummary>, CaptureJournalError>

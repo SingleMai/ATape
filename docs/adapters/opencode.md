@@ -3,7 +3,7 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-still requires source preparation/scheduling, revision and coverage allocation, and native acceptance. See the
+still requires source preparation/scheduling and native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -264,6 +264,34 @@ contract adds fresh observation preparation, a lost successful append response,
 and a separate recovery process, while the newer Canonical head stays selected.
 See [ADR-0061](../architecture/adr/0061-independent-raw-observations.md).
 
+## Landed foundation: source record versions and coverage
+
+Journal format 4 adds explicitly tracked source membership. A stable source key
+receives monotonically increasing revisions for changed fingerprints/profiles and
+reappearance after a complete observed absence. Abandoned captures may consume
+versions; retries never roll counters back or combine different observations under
+one capture identity. Existing Event versions retain their original Raw provenance,
+including unavailable references from Raw-off preparation.
+
+Every tracked record binds to frozen content or an explicit Raw limit/redaction gap.
+Canonical membership points at its own replacement units. Raw can retain a matching
+activated capture's pending or acknowledged obligation; its outcome follows the
+actual unit receipt/cancellation even after payload cleanup. No canceled object is
+recreated from a later source read.
+
+Seals validate exact counts and complete bindings. Complete observed membership
+and actually published Canonical coverage have separate pointers; activation switches
+the latter atomically with its receipt and checkpoint. Raw coverage remains per
+record. Tracked Raw-only observations can have no new units when recording gaps,
+reusing obligations, or proving a complete empty scope. Their own-wire completion
+does not turn a missing or pending archive into an ACK.
+
+Known-source and record listings use indexed pages of at most 100 metadata rows,
+so local recovery can still find a scope after its provider removes it. Tracking
+requires an explicit record-count budget. A verified format 1–3 upgrade preserves
+existing payloads and receipts; it does not initialize versions over an existing
+untracked checkpoint. See [ADR-0062](../architecture/adr/0062-source-record-versions-and-coverage.md).
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -281,12 +309,11 @@ release gates before the new capture workflow is enabled.
 
 Remote receipts are bounded opaque JSON owned and validated by the publication
 workflow. The journal does not authenticate them or replace remote authorization,
-lease/fence checks, source revision allocation, Raw coverage or scanner state.
-Those fields must be given a concrete workflow contract before activation in the
-Collector; the journal's opaque checkpoint alone is not proof of full coverage.
+lease/fence checks or source observation. The Host must use tracked membership
+and actual per-record outcomes; the opaque checkpoint alone is not proof of full
+Canonical or Raw coverage.
 
-The next increment connects source revision/coverage allocation. OpenCode source
-projection, Host preparation and
+The next increment connects the OpenCode source Interface and projection. Host preparation and
 Collector scheduling then connect these foundations into the explicit capability.
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.

@@ -6,7 +6,7 @@ import {
   type PublicationPart, type PublicationReservation
 } from "@atape/domain"
 import { RawPublicationError, RawPublicationTransport } from "./rawPublicationTransport.ts"
-import { CaptureJournal, type CaptureClaim, type CaptureOwner, type CaptureSummary } from "./captureJournal.ts"
+import { CaptureJournal, type CaptureClaim, type CaptureOwner, type CaptureSummary, type CaptureRecordManifest } from "./captureJournal.ts"
 
 export class PublicationError extends Schema.TaggedError<PublicationError>()("PublicationError", {
   reason: Schema.Literals(["invalid", "binding", "invalid_response", "unauthenticated", "network", "unknown", "expired", "superseded", "conflict", "capacity", "unavailable"]),
@@ -78,7 +78,7 @@ const checkActivation = (intent: Intent, seal: Seal, receipt: PublicationActivat
  * never completed with newly read source pages after a restart.
  */
 export const beginPublicationCapture = (owner: CaptureClaim, input: {
-  readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean; readonly rawAuthority?: RawAuthority
+  readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean; readonly rawAuthority?: RawAuthority; readonly trackRecords?: boolean
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal, remote = yield* PublicationTransport
   // Check the owner before consuming remote reservation quota.
@@ -93,7 +93,7 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities,
     ...(rawAuthority === undefined ? {} : { rawAuthority }) }
   yield* journal.reserve(owner, { id: input.captureId, expectedCheckpoint: owner.checkpoint,
-    beginJson: JSON.stringify(intent), rawEnabled: input.rawEnabled })
+    beginJson: JSON.stringify(intent), rawEnabled: input.rawEnabled, trackRecords: input.trackRecords ?? false })
   const attempt = yield* checkAttempt(intent, yield* remote.begin(binding, begin))
   if (attempt.state !== "open") return yield* failure("conflict", "A new capture requires an open publication attempt.")
   return { sessionId: attempt.sessionId, attemptId: attempt.id, limits: capabilities.limits }
@@ -129,17 +129,23 @@ const preparedManifest = (journal: CaptureJournal["Service"], owner: CaptureOwne
   return { parts: ordinal, bytes, sha256 }
 })
 
+const sameRecordManifest = (a: CaptureRecordManifest | undefined, b: CaptureRecordManifest | undefined) => {
+  const key = (v: CaptureRecordManifest | undefined) => JSON.stringify([v !== undefined, v?.canonical !== undefined,
+    v?.canonical?.session,v?.canonical?.thread,v?.canonical?.event,v?.canonical?.usage,v?.raw !== undefined,v?.raw?.records,v?.raw?.scopeComplete])
+  return key(a) === key(b)
+}
+
 /** Close the source view before calling. Only metadata is read while computing
  * the ordered manifest; payloads remain in SQLite. This is the content-send gate.
  */
 export const sealPublicationCapture = (owner: CaptureOwner, id: string, input: {
-  readonly nextCheckpoint: string; readonly rawUnits: number
+  readonly nextCheckpoint: string; readonly rawUnits: number; readonly records?: CaptureRecordManifest
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal, remote = yield* PublicationTransport
   const { capture } = yield* journal.inspect(owner, id, { kind: "canonical", limit: 1 })
   const intent = yield* boundIntent(journal, owner, capture)
   if (capture.seal !== null) {
-    if (capture.seal.nextCheckpoint !== input.nextCheckpoint || capture.seal.rawUnits !== input.rawUnits)
+    if (capture.seal.nextCheckpoint !== input.nextCheckpoint || capture.seal.rawUnits !== input.rawUnits || !sameRecordManifest(capture.seal.records,input.records))
       return yield* failure("conflict", "Capture seal cannot change on replay.")
     return
   }
@@ -149,7 +155,7 @@ export const sealPublicationCapture = (owner: CaptureOwner, id: string, input: {
   const attempt = yield* checkAttempt(intent, yield* remote.status(journal.binding, intent.begin.reservationId))
   if (attempt.state !== "open" || attempt.parts !== 0) return yield* failure("conflict", "An unsealed capture cannot already have remote content.")
   yield* journal.seal(owner, id, { canonicalUnits: manifest.parts, rawUnits: input.rawUnits, nextCheckpoint: input.nextCheckpoint,
-    manifestJson: JSON.stringify({ protocol: PublicationProtocol, fence: attempt.fence, manifest } satisfies Seal) })
+    ...(input.records === undefined ? {} : { records: input.records }), manifestJson: JSON.stringify({ protocol: PublicationProtocol, fence: attempt.fence, manifest } satisfies Seal) })
 })
 
 export type PublicationDeliveryResult =
@@ -241,7 +247,7 @@ const RawObservationProtocol = "atape.raw-observation.v1"
 const CanonicalProof = Schema.Struct({ intent: Intent, seal: Seal, receipt: PublicationActivation })
 const RawObservationIntent = Schema.Struct({ protocol: Schema.Literal(RawObservationProtocol), observationId: Schema.String,
   rawAuthority: RawAuthority, canonical: CanonicalProof })
-const boundedCount = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
+const boundedCount = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
 const RawObservationSeal = Schema.Struct({ protocol: Schema.Literal(RawObservationProtocol), manifest: Schema.Struct({
   parts: boundedCount, bytes: boundedCount, sha256: PublicationManifest.fields.sha256 }) })
 const checkCanonicalProof = (journal: CaptureJournal["Service"], owner: CaptureOwner, proof: typeof CanonicalProof.Type) => Effect.gen(function*() {
@@ -281,26 +287,27 @@ export const beginRawObservation = (owner: CaptureClaim, input: {
   const observation = { protocol: RawObservationProtocol, observationId: input.observationId, rawAuthority,
     canonical: { intent, seal, receipt } } satisfies typeof RawObservationIntent.Type
   yield* journal.reserve(owner, { id: input.observationId, purpose: "raw-observation", expectedCheckpoint: owner.checkpoint,
-    beginJson: JSON.stringify(observation), rawEnabled: true })
+    beginJson: JSON.stringify(observation), rawEnabled: true, trackRecords: capture.trackRecords })
   return { sessionId: receipt.sessionId, head: receipt.head, rawAuthority }
 })
 
 /** Close the source view first. Zero Canonical units and an unchanged checkpoint
  * are enforced by the journal, independently of the workflow metadata.
  */
-export const sealRawObservation = (owner: CaptureOwner, id: string, rawUnits: number) => Effect.gen(function*() {
+export const sealRawObservation = (owner: CaptureOwner, id: string, rawUnits: number, records?: CaptureRecordManifest) => Effect.gen(function*() {
   const journal = yield* CaptureJournal
   const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
   yield* boundObservation(journal, owner, capture)
   if (capture.seal !== null) {
-    if (capture.seal.rawUnits !== rawUnits) return yield* failure("conflict", "Raw observation seal cannot change.")
+    if (capture.seal.rawUnits !== rawUnits || !sameRecordManifest(capture.seal.records,records)) return yield* failure("conflict", "Raw observation seal cannot change.")
     return
   }
   const manifest = yield* preparedManifest(journal, owner, id, "raw", {
     unitBytes: RawPublicationWireBytes, units: 1_000_000, targetBytes: Number.MAX_SAFE_INTEGER })
   if (manifest.parts !== rawUnits) return yield* failure("invalid", "Raw observation does not contain every promised unit.")
   const seal = yield* decode(RawObservationSeal, { protocol: RawObservationProtocol, manifest })
-  yield* journal.seal(owner, id, { canonicalUnits: 0, rawUnits, nextCheckpoint: capture.expectedCheckpoint!, manifestJson: JSON.stringify(seal) })
+  yield* journal.seal(owner, id, { canonicalUnits: 0, rawUnits, nextCheckpoint: capture.expectedCheckpoint!, manifestJson: JSON.stringify(seal),
+    ...(records === undefined ? {} : { records }) })
 })
 
 export type RawPublicationDeliveryResult = { readonly state: "pending" | "completed" | "abandoned"; readonly operations: number }
