@@ -3,7 +3,7 @@
 The selected route is read-only local SQLite through the existing Host-owned
 bounded-pull Collector. OpenCode is not yet an installable or enabled ATape
 Adapter. Atomic publication and versioned reads are implemented; the first source integration
-still requires Collector delivery, independent Raw recovery and native acceptance. See the
+still requires source preparation/scheduling, independent Raw recovery and native acceptance. See the
 [capture and publication contract](../architecture/opencode-capture-publication.md).
 
 ## Landed foundation: private capture journal
@@ -139,6 +139,41 @@ and inclusive anchors. Browser tests cover page transitions, browser history,
 head replacement and direct search navigation. These fixtures do not substitute
 for native OpenCode/Collector end-to-end acceptance.
 
+## Landed foundation: Collector publication recovery
+
+The application publication Module now owns reserve/Begin, local manifest sealing
+and bounded recovery through the secured Server Interface. Host preparation still
+has to validate, redact and encode every unit, persist it in `CaptureJournal`,
+and close its source view before sealing. The existing Adapter collection loop
+does not select this capability yet.
+
+Recovery derives its account/installation binding from the opened journal. It
+never opens a source or invokes a converter. Each slice has an explicit budget
+of 3–64 remote operations, reads one payload unit at a time, and renews only the
+same authoritative attempt. The Node HTTP Adapter sends the stored JSON bytes
+verbatim, using the pinned API origin and expected account. It validates bounded
+wire receipts before the workflow checks their original identity/fence/manifest.
+
+Actual Canonical part receipts are persisted independently of activation. An
+indexed pending-unit page makes progress across large targets and process
+restarts without retransmitting all earlier acknowledged parts. This does not
+advance the source checkpoint or release Canonical bodies. A verified activation
+commits coverage atomically while Raw obligations remain pending. Unknown,
+unauthorized and failed requests preserve sealed content; expired/superseded
+candidates require an actual terminal rejection before local abandonment.
+
+Journal format 2 adds the pending-unit index and upgrades a verified format-1
+binding transactionally. Payload and receipt identities remain unchanged. The
+public Interface exposes the immutable binding and Canonical acknowledgement;
+no Server schema migration or deployment is part of this increment.
+
+Tests cover 205 parts with a three-operation slice, exact retry bytes, local
+fencing, changed remote identities, unknown outcomes and independent Raw. A real
+HTTP/PostgreSQL contract starts four independent Node processes: seal, lose a
+successful part response, lose successful activation, then recover the original
+proof after another writer publishes a newer head and reclaims the old bodies.
+The recovered checkpoint advances without restoring the old Server head.
+
 ## Bounds and remaining integration work
 
 Limits cover each payload unit, retained bytes per target, total retained
@@ -160,8 +195,9 @@ lease/fence checks, source revision allocation, Raw coverage or scanner state.
 Those fields must be given a concrete workflow contract before activation in the
 Collector; the journal's opaque checkpoint alone is not proof of full coverage.
 
-The next increment connects Collector journal recovery to the secured publication
-Interface. Independent Raw activation proof and the OpenCode projection follow.
+The next increment supplies independent Raw activation proof and recovery. The
+OpenCode source projection, Host preparation, revision/coverage allocation and
+Collector scheduling then connect these foundations into the explicit capability.
 The first usable OpenCode release also needs real source mutation, rewind,
 compaction, tool/subagent replay, off/on Raw policy, and Search acceptance through
 the production public Interfaces. Research prototypes remain on their separate

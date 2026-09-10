@@ -95,9 +95,15 @@ export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer
           db.exec("COMMIT")
         }
         const version = db.prepare("PRAGMA user_version").get()
-        if (version?.user_version !== 1) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
+        if (version?.user_version !== 1 && version?.user_version !== 2) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
         const stored = db.prepare("SELECT identity,retained_bytes FROM binding").all()
         if (stored.length !== 1 || stored[0]?.identity !== identity) throw failure("binding", "Capture journal belongs to a different account or installation.")
+        // Upgrade only a verified binding. Concurrent openers serialize and recheck.
+        db.exec("BEGIN IMMEDIATE")
+        if (db.prepare("PRAGMA user_version").get()?.user_version === 1) {
+          db.exec("CREATE INDEX pending_units ON units(scope_key,capture_id,kind,ordinal) WHERE disposition='pending'; PRAGMA user_version=2")
+        }
+        db.exec("COMMIT")
         return db
       } catch (cause) {
         if (db.isTransaction) db.exec("ROLLBACK")
@@ -153,6 +159,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     return value
   }
   return {
+    binding: Object.freeze({ ...options.binding }),
     claim: scope => transaction(() => {
       const key=scopeKey(scope); text(scope.originKey)
       const row=one("SELECT * FROM scopes WHERE scope_key=?",key)
@@ -235,7 +242,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       const {key}=ownerScope(owner), row=capture(key,id)
       kind(page.kind); integer(page.afterOrdinal ?? -1,-1,1_000_000); integer(page.limit ?? 32,1,100)
       const units=db.prepare(`SELECT ordinal,byte_count,digest,disposition,receipt_json,body IS NOT NULL AS retained
-        FROM units WHERE scope_key=? AND capture_id=? AND kind=? AND ordinal>? ORDER BY ordinal LIMIT ?`)
+        FROM units WHERE scope_key=? AND capture_id=? AND kind=? AND ordinal>? ${page.pendingOnly ? "AND disposition='pending'" : ""} ORDER BY ordinal LIMIT ?`)
         .all(key,id,page.kind,page.afterOrdinal ?? -1,page.limit ?? 32)
         .map(record => {
           const unit=decode(UnitRow,record)
@@ -263,6 +270,19 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     settle: (owner,id,settlement) => transaction(() => {
       const scope=ownerScope(owner), {key}=scope, row=capture(key,id)
       switch (settlement._tag) {
+        case "CanonicalAcknowledged": {
+          json(settlement.receiptJson); integer(settlement.ordinal,0,1_000_000)
+          const found=one("SELECT ordinal,byte_count,digest,disposition,receipt_json FROM units WHERE scope_key=? AND capture_id=? AND kind='canonical' AND ordinal=?",key,id,settlement.ordinal)
+          if (!found) throw failure("missing","Canonical unit does not exist.")
+          const unit=decode(UnitRow,found)
+          if (unit.receipt_json !== null) {
+            if (unit.receipt_json !== settlement.receiptJson) throw failure("conflict","Canonical receipt identity changed.")
+            return
+          }
+          if (row.state !== "sealed") throw failure("state","Canonical receipts require a sealed pending capture.")
+          update("UPDATE units SET disposition='acknowledged',receipt_json=? WHERE scope_key=? AND capture_id=? AND kind='canonical' AND ordinal=?",settlement.receiptJson,key,id,settlement.ordinal)
+          return
+        }
         case "Activated": {
           json(settlement.receiptJson)
           if (row.activation_receipt !== null) {
