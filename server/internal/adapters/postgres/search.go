@@ -24,6 +24,9 @@ func (s *Store) LeaseProjectionChanges(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if limit < 1 || limit > 500 || owner == "" || len(owner) > 200 || !leaseUntil.After(time.Now()) || leaseUntil.After(time.Now().Add(time.Hour)) {
+		return nil, fmt.Errorf("invalid projection lease bounds")
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, persist("begin projection lease", err)
@@ -37,12 +40,6 @@ func (s *Store) LeaseProjectionChanges(
 	})
 	if err != nil {
 		return nil, persist("claim projection changes", err)
-	}
-	if len(ids) == 0 {
-		if err := tx.Commit(ctx); err != nil {
-			return nil, persist("commit empty projection lease", err)
-		}
-		return []canonical.ProjectionChange{}, nil
 	}
 	rows, err := queries.LoadProjectionChanges(ctx, db.LoadProjectionChangesParams{
 		ChangeIds:  ids,
@@ -75,6 +72,33 @@ func (s *Store) LeaseProjectionChanges(
 			},
 		})
 	}
+	prepared, err := queries.ClaimPublicationProjectionChanges(ctx, db.ClaimPublicationProjectionChangesParams{LeaseOwner: &owner, LeaseUntil: pgtype.Timestamptz{Time: leaseUntil, Valid: true}, BatchLimit: int32(limit - len(changes))})
+	if err != nil {
+		return nil, persist("claim publication Search work", err)
+	}
+	var previousHead pgtype.UUID
+	var previousPart int32 = -1
+	var fixed canonical.WriteBatch
+	for _, item := range prepared {
+		if item.AttemptID != previousHead || item.PartOrdinal != previousPart {
+			fixed, err = fixedPublicationPart(ctx, queries, item.AttemptID, item.PartOrdinal)
+			if err != nil {
+				return nil, err
+			}
+			previousHead, previousPart = item.AttemptID, item.PartOrdinal
+		}
+		if item.EntryIndex < 0 || int(item.EntryIndex) >= len(fixed.Events) || fixed.Events[item.EntryIndex].ID != item.EventID {
+			return nil, persist("load publication Search member", errors.New("member coordinate differs from fixed content"))
+		}
+		event := fixed.Events[item.EntryIndex]
+		changes = append(changes, canonical.ProjectionChange{ID: item.ID, Document: canonical.EventProjection{
+			PublicationHead: domainUUID(item.AttemptID), PublicationDescriptor: item.SearchDescriptor,
+			ProjectID: fixed.ProjectID, SessionID: fixed.Session.ID, SessionTitle: fixed.Session.Title,
+			ThreadID: event.ThreadID, ThreadPath: publicationThreadPaths(fixed.Threads)[event.ThreadID],
+			EventID: event.ID, Author: event.Author, Harness: fixed.Session.Actor.Harness,
+			OccurredAt: event.OccurredAt, Text: event.Text, ToolLabel: event.ToolLabel, IngestSeq: event.IngestSeq, ObservedAt: event.ObservedAt,
+		}})
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, persist("commit projection lease", err)
 	}
@@ -84,6 +108,12 @@ func (s *Store) LeaseProjectionChanges(
 func (s *Store) AckProjectionChanges(ctx context.Context, owner string, ids []int64) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	if len(ids) > 500 {
+		return fmt.Errorf("projection acknowledgement exceeds batch limit")
+	}
+	if err := s.queries.AckPublicationProjectionChanges(ctx, db.AckPublicationProjectionChangesParams{ChangeIds: ids, LeaseOwner: &owner}); err != nil {
+		return persist("ack publication Search work", err)
 	}
 	if err := s.queries.AckProjectionChanges(ctx, db.AckProjectionChangesParams{
 		ChangeIds:  ids,
@@ -98,6 +128,9 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 	if len(documents) == 0 {
 		return nil
 	}
+	if len(documents) > 500 {
+		return fmt.Errorf("projection update exceeds batch limit")
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return persist("begin Search projection update", err)
@@ -105,6 +138,7 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := s.queries.WithTx(tx)
 	checkpoints := make(map[string]time.Time)
+	publicationProjects := make(map[string]struct{})
 	for _, document := range documents {
 		pathIDs := make([]string, 0, len(document.ThreadPath))
 		pathLabels := make([]string, 0, len(document.ThreadPath))
@@ -112,7 +146,8 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 			pathIDs = append(pathIDs, thread.ID)
 			pathLabels = append(pathLabels, thread.Label)
 		}
-		if err := queries.UpsertSearchDocument(ctx, db.UpsertSearchDocumentParams{
+		written, err := queries.UpsertSearchDocument(ctx, db.UpsertSearchDocumentParams{
+			PublicationHead: document.PublicationHead, PublicationDescriptor: document.PublicationDescriptor,
 			EventID: document.EventID, ProjectID: document.ProjectID,
 			SessionID: document.SessionID, SessionTitle: document.SessionTitle,
 			ThreadID: document.ThreadID, ThreadPathIds: pathIDs,
@@ -120,10 +155,13 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 			Harness: document.Harness, OccurredAt: document.OccurredAt,
 			Text: document.Text, ToolLabel: document.ToolLabel,
 			IngestSeq: int64(document.IngestSeq), ObservedAt: document.ObservedAt,
-		}); err != nil {
+		})
+		if err != nil {
 			return persist("upsert Search document", err)
 		}
-		if document.ObservedAt.After(checkpoints[document.ProjectID]) {
+		if document.PublicationHead != "" {
+			publicationProjects[document.ProjectID] = struct{}{}
+		} else if written > 0 && document.ObservedAt.After(checkpoints[document.ProjectID]) {
 			checkpoints[document.ProjectID] = document.ObservedAt
 		}
 	}
@@ -132,6 +170,15 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 			ProjectID: projectID, IndexedThrough: indexedThrough,
 		}); err != nil {
 			return persist("advance Search checkpoint", err)
+		}
+	}
+	if len(publicationProjects) > 0 {
+		ids := make([]string, 0, len(publicationProjects))
+		for id := range publicationProjects {
+			ids = append(ids, id)
+		}
+		if err = queries.AdvanceCompletedPublicationSearchCheckpoints(ctx, ids); err != nil {
+			return persist("advance fully covered publication Search progress", err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

@@ -55,6 +55,20 @@ type Attempt struct {
 	ValidatedParts   int
 	CandidateEvents  int
 	CandidateUsage   int
+	Activation       *Activation
+}
+
+// Activation is durable proof of the first successful head selection. Replays
+// return this exact receipt even after another head or an expired writer lease.
+type Activation struct {
+	Head             string
+	SessionID        string
+	CaptureID        string
+	BaseHead         string
+	Fence            int64
+	TransformVersion string
+	Manifest         Manifest
+	ActivatedAt      time.Time
 }
 
 // CanonicalPart repeats the complete bounded Session/Thread header and declares

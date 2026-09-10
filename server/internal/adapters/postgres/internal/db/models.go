@@ -38,22 +38,24 @@ type CanonicalEvent struct {
 }
 
 type CanonicalPublicationAttempt struct {
-	ID               pgtype.UUID
-	SessionID        string
-	CaptureID        string
-	BaseHead         *string
-	TransformVersion string
-	Fence            int64
-	LeaseUntil       time.Time
-	State            string
-	PartCount        int32
-	RetainedBytes    int64
-	SealJson         *string
-	ValidatedParts   int32
-	CandidateEvents  int32
-	CandidateUsage   int32
-	HeaderDigest     *string
-	TargetJson       *string
+	ID                  pgtype.UUID
+	SessionID           string
+	CaptureID           string
+	BaseHead            *string
+	TransformVersion    string
+	Fence               int64
+	LeaseUntil          time.Time
+	State               string
+	PartCount           int32
+	RetainedBytes       int64
+	SealJson            *string
+	ValidatedParts      int32
+	CandidateEvents     int32
+	CandidateUsage      int32
+	HeaderDigest        *string
+	TargetJson          *string
+	ActivationJson      *string
+	PublishedObservedAt pgtype.Timestamptz
 }
 
 type CanonicalPublicationReservation struct {
@@ -111,6 +113,59 @@ type CanonicalThread struct {
 }
 
 type CanonicalUsage struct {
+	SourceKey        string
+	SessionID        string
+	ThreadID         string
+	Revision         int64
+	Digest           string
+	OccurredAt       time.Time
+	Model            string
+	InputTokens      *int64
+	OutputTokens     *int64
+	CacheReadTokens  *int64
+	CacheWriteTokens *int64
+}
+
+type VisibleCanonicalEvent struct {
+	ID                 string
+	SessionID          string
+	ThreadID           string
+	SourceKey          string
+	Revision           int64
+	ProjectionRevision int64
+	Digest             string
+	SourceOrder        int64
+	EventIndex         int64
+	OrderFidelity      string
+	Fidelity           string
+	RawRef             string
+	AdapterVersion     string
+	SchemaVersion      string
+	ObservedAt         time.Time
+	ReceivedAt         time.Time
+	IngestSeq          int64
+	Kind               string
+	Author             string
+	OccurredAt         time.Time
+	Text               string
+	ToolLabel          string
+	ChildThreadID      *string
+	ToolUpdateJson     string
+}
+
+type VisibleCanonicalThread struct {
+	SessionID      string
+	ID             string
+	SourceKey      string
+	Revision       int64
+	Digest         string
+	Label          string
+	Summary        string
+	ParentThreadID *string
+	CaptureStatus  string
+}
+
+type VisibleCanonicalUsage struct {
 	SourceKey        string
 	SessionID        string
 	ThreadID         string

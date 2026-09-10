@@ -196,15 +196,17 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        s.status, s.capture_status, s.updated_at, s.reported_event_count,
        s.captured_by_user_id,
        GREATEST(
-           s.reported_event_count,
-           (SELECT COUNT(*) FROM canonical_events e WHERE e.session_id = s.id)
+           CASE WHEN EXISTS(SELECT 1 FROM canonical_publication_sources ps WHERE ps.session_id=s.id) THEN 0 ELSE s.reported_event_count END,
+           CASE WHEN ps.current_head IS NOT NULL THEN
+            (SELECT count(*) FROM canonical_publication_members m WHERE m.attempt_id=ps.current_head::uuid AND m.kind='event')
+           ELSE (SELECT COUNT(*) FROM canonical_events e WHERE e.session_id = s.id) END
        )::bigint AS event_count,
        (
            SELECT COUNT(*)
-           FROM canonical_threads child
+           FROM visible_canonical_threads child
            WHERE child.session_id = s.id AND child.parent_thread_id IS NOT NULL
        )::bigint AS child_thread_count
-FROM canonical_sessions s
+FROM canonical_sessions s LEFT JOIN canonical_publication_sources ps ON ps.session_id=s.id
 WHERE s.project_id = $1 AND s.record_state = 'active'
 ORDER BY s.updated_at DESC, s.id;
 
@@ -218,28 +220,41 @@ WHERE id = $1 AND record_state = 'active';
 -- name: GetThreadForRead :one
 SELECT session_id, id, source_key, revision, digest, label, summary,
        parent_thread_id, capture_status
-FROM canonical_threads
+FROM visible_canonical_threads
 WHERE session_id = $1 AND id = $2;
 
 -- name: ListSessionThreads :many
-SELECT t.session_id, t.id, t.source_key, t.revision, t.digest, t.label,
-       t.summary, t.parent_thread_id, t.capture_status,
-       COUNT(e.id)::bigint AS event_count
-FROM canonical_threads t
-LEFT JOIN canonical_events e
-       ON e.session_id = t.session_id AND e.thread_id = t.id
-WHERE t.session_id = $1
-GROUP BY t.session_id, t.id
-ORDER BY t.id;
+SELECT t.session_id,t.id,t.source_key,t.revision,t.digest,t.label,t.summary,t.parent_thread_id,t.capture_status,
+CASE WHEN ps.current_head IS NOT NULL THEN
+ (SELECT count(*) FROM canonical_publication_members m WHERE m.attempt_id=ps.current_head::uuid AND m.kind='event' AND m.thread_id=t.id)
+ELSE (SELECT count(*) FROM canonical_events e WHERE e.session_id=t.session_id AND e.thread_id=t.id) END::bigint AS event_count
+FROM visible_canonical_threads t LEFT JOIN canonical_publication_sources ps ON ps.session_id=t.session_id
+WHERE t.session_id=$1 ORDER BY t.id;
 
 -- name: ListThreadEvents :many
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,
        adapter_version, schema_version, observed_at, received_at, ingest_seq,
        kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json
-FROM canonical_events
+FROM visible_canonical_events
 WHERE session_id = $1 AND thread_id = $2
 ORDER BY source_order, event_index, id;
 
 -- name: GetConversationUser :one
 SELECT id, display_name, avatar_url FROM auth_users WHERE id = $1;
+
+-- name: SelectPublicationSession :exec
+UPDATE canonical_sessions
+SET revision = $2,
+    digest = $3,
+    title = $4,
+    summary = $5,
+    insight = $6,
+    actor_name = $7,
+    actor_harness = $8,
+    branch = $9,
+    status = $10,
+    capture_status = $11,
+    updated_at = $12,
+    reported_event_count = $13
+WHERE id = $1 AND record_state = 'active';

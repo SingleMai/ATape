@@ -1,9 +1,9 @@
-# Canonical publication candidate preparation and validation
+# Canonical publication
 
-These are the candidate preparation and bounded validation increments of
-[ADR-0059](adr/0059-opencode-publication-and-recovery.md). The Module stores and
-validates a candidate separately from ordinary Canonical data. It cannot
-activate a target and is not wired into HTTP or the Server Composition Root yet.
+These are the candidate preparation, bounded validation and atomic activation
+increments of [ADR-0059](adr/0059-opencode-publication-and-recovery.md). The Module
+stores and validates candidates separately, then selects a complete head for
+Canonical reads. It is not wired into HTTP or the Server Composition Root yet.
 The full [publication contract](opencode-capture-publication.md) remains the
 acceptance baseline; OpenCode is not enabled by this increment.
 
@@ -23,22 +23,24 @@ mode selection, retries, deadlines, leases, quota serialization and cleanup.
 | Put | Accept one bounded numbered part with its verified SHA-256. A repeated identity must carry the same digest and byte count. No upload can replace a sealed part. |
 | Seal | Verify the complete contiguous numbered set and manifest digest through metadata pages; retain its immutable manifest. Sealed means transport-complete, not semantically validated or visible. |
 | Validate | Normalize at most one next part, bind its immutable source versions and membership, and atomically save fixed Canonical bytes with progress and quota accounting. Validated still means invisible. |
+| Activate | Reauthorize and select the validated head with Session metadata, capture progress, activation proof and eligibility of durable Search work in one transaction. An old successful retry returns its original proof without changing the head. |
 | Status | Reauthorize before returning attempt state and a bounded metadata page; never return uploaded bodies as a client recovery source. |
 | Renew | Extend only a currently live, unchanged authority, bounded by the original reservation expiry. Expired or superseded attempts cannot regain authority. |
 | Reject | Durably reject a known unactivated attempt. An unknown ID never becomes a terminal rejection receipt. |
-| Reclaim | Remove a bounded batch of the caller's parts that can no longer activate; retain receipt metadata until reservation expiry. Expired empty reservation records can then be removed. |
+| Reclaim | Remove a bounded batch of failed-candidate or unreachable old-head bodies. Protect the selected head and retain successful activation proof independently of content. Failed-attempt receipts expire with their reservations. |
 
 Reservation loss can leave a bounded, expiring server record. There is no API to
 recreate an absent reservation with a client-selected token. Once its record is
 cleaned up, the old identity returns `unknown`, not successful Begin and not proof
-that a future publication capability never activated it. Permanent source mode,
+that an unavailable publication capability never activated it. Permanent source mode,
 Origin and writer-fence bindings survive reservation cleanup.
 
-An attempt becomes superseded when its fence or base differs from the current
-source control row. The current increment initializes the base to no active head;
-only the later activation implementation may advance that pointer. All future
-activation and cleanup work must share the account/source locking protocol and
-exclude successful activations from this unactivated-candidate cleanup path.
+An unactivated attempt becomes superseded when its fence or base differs from
+the source control row. Only Activate advances that pointer. Activated state and
+proof survive newer writers and reservation expiry. Reclaim can remove an old
+head's parts once another head is selected; retained proof never repoints the
+source to those old bytes. PostgreSQL snapshots protect an already-running read
+while physical tuple reclamation follows the database's ordinary MVCC lifetime.
 
 ## Bounds and transaction semantics
 
@@ -91,13 +93,55 @@ rejecting a candidate does not permit redefining an already validated source
 version. Deterministic invalid input rolls back the current part and leaves the
 candidate available for explicit rejection, without skipping it.
 
+## Activation, selected reads and Search
+
+Activate reads only one bounded fixed unit for its already validated header. It
+does not loop over target Events, rerun ingestion conversion or index text. The
+Session lifecycle row and metadata, project capture time, head pointer, receipt
+and eligibility of Search work become visible in the same transaction. A final
+lease/fence check after storage work rolls back all of them on expiry. An already
+successful call returns the same proof after current authorization and lifecycle
+checks, even when its body was reclaimed or its reservation expired.
+
+Private SQL views select only current parts for Thread/Event/Usage reads. The
+complete, validated arrays are exactly the target membership. Views decode
+normalized format 1 once per part, without joining Raw or duplicating full
+Canonical bodies. UUID comparisons retain membership index access for paging,
+counts and Search. Project lists, workspace metadata, conversation reads and
+overview usage share this selection. Explicit membership replaces legacy reported
+counts for these Sessions, including an empty target.
+
+`Store.ConversationPage` reads 1–100 Events with a head-bound continuation. A
+continuation supplies Head and the preceding page's NextEventID. A changed head
+returns `RefreshRequiredError` before resolving a potentially withdrawn Thread.
+Each response owns one repeatable-read transaction and loads fixed units one at
+a time. The older whole-conversation Interface handles small publication Threads;
+it returns `PaginationRequiredError` when more than 100 Events remain, rather than
+silently truncating them. HTTP/Web pagination support remains required work.
+
+Validation prepares body-free Search work; leasing exposes it only for the
+current activated head. Existing worker Interfaces process at most 500 records
+(the ordinary worker requests 100). Search matches require current Event
+membership and a matching semantic descriptor. Changed titles, paths or content
+stop matching immediately; unchanged descriptors may reuse an existing document.
+Late workers cannot overwrite a newer indexed Event or grant an old descriptor
+eligibility. Reclaiming old membership can remove its outstanding work; late
+acknowledgements remain harmless.
+
+Publication Search progress advances only after current descriptors are fully
+covered. While any current head in the Project lacks a matching document, its
+indexed-through value is conservatively unknown. Completing just one batch cannot
+claim the whole capture time; empty targets have no indexing obligation.
+
+## Transaction and retention boundaries
+
 An account-scoped transaction lock serializes quota changes across independent
 connections. A source lock shared with legacy ingestion enforces the write-mode
 boundary. Authorization uses the existing Project and captured-Session lifecycle
 policy, including receipt replay. New reservations cannot adopt a legacy Session,
 and the legacy batch path cannot mutate a reserved publication source.
 
-Put, Seal and Validate storage work is followed by an authority check inside the same
+Put, Seal, Validate and Activate storage work is followed by an authority check inside the same
 transaction; expiry before that check rolls back both content and accounting.
 This is the operation's final authority check, not a promise that its lease will
 remain valid while the response travels over the network. Begin and Renew also
@@ -105,10 +149,12 @@ check finite validity in their final write statements. Storage errors and contex
 cancellation roll back the operation; callers reconcile an uncertain response
 through the original identity.
 
-Reclamation uses indexed account/source/attempt access and never evicts live
-content to make quota. PostgreSQL dead tuples, indexes and permanent source
-bindings and version fingerprints are outside the logical pending-payload budget; this is not a physical
-disk-size ceiling. Cleanup scheduling, metadata retention policy and long-running
+Reclamation never evicts the selected head or a still-authoritative pending
+candidate. Published Canonical data exits the pending-payload budget; replaced
+old bodies remain reclaimable in bounded parts. PostgreSQL dead tuples, indexes,
+successful receipts and permanent source/version bindings are outside that
+logical budget; this is not a physical disk-size ceiling. Cleanup scheduling,
+metadata retention policy and long-running
 pressure acceptance must be completed before enabling the full workflow.
 
 ## Evidence and remaining work
@@ -124,10 +170,22 @@ membership, inconsistent headers/source scope, invalid topology, child tools and
 usage, source-version conflicts after reclamation, provenance-only upgrades,
 64-bit Event indices, normalization capacity rollback, original receipt replay,
 normalized-byte reclamation, mid-validation lease expiry, writer fencing and
-revoked membership. These tests do not establish HTTP lost-response recovery or
-atomic activation.
+revoked membership.
 
-Before release: atomically commit the selected head, activation receipt and durable Search work; integrate
-head-aware reads, visible aggregates and Search descriptor eligibility; expose
-and secure the HTTP Interface; connect Collector recovery and OpenCode projection;
+Activation integration tests cover replacement visibility, withdrawn Events and
+child usage, head-bound pages, stale Search workers, full-descriptor indexing
+progress, empty targets, first-activation fencing, mid-write lease expiry,
+expired receipt replay, bounded old-body cleanup, Session deletion and revoked
+membership. HTTP lost-response and supported-platform acceptance remain separate
+evidence.
+
+An isolated PostgreSQL 17 query-plan check used a 2 MiB fixed part with 500
+Events and 20,000 unrelated parts. The selected-part primary-key lookup loaded
+one part, and whole-part expansion ran once (rather than once per member).
+The measured Event/Usage queries took about 8.7/6.8 ms and the indexed membership
+count about 0.08 ms. These controlled measurements guard against query
+amplification; they do not establish production throughput or release limits.
+
+Before release: expose and secure the HTTP Interface and Web pagination; connect
+Collector recovery, independent Raw activation proof and OpenCode projection;
 then run the native-source and supported-platform acceptance in ADR-0059.

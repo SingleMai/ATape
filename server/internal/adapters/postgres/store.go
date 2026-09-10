@@ -327,6 +327,19 @@ func (s *Store) Conversation(
 	sessionID string,
 	threadID string,
 ) (canonical.ConversationSnapshot, bool, error) {
+	return s.conversation(ctx, principal, sessionID, threadID, nil)
+}
+
+// ConversationPage reads at most 100 Events from one selected publication head.
+// Continuations must retain Head and the previous page's NextEventID.
+func (s *Store) ConversationPage(ctx context.Context, principal authentication.Principal, sessionID, threadID string, request canonical.ConversationPageRequest) (canonical.ConversationSnapshot, bool, error) {
+	if request.Limit < 1 || request.Limit > 100 || len(request.Head) > 200 || len(request.AfterEventID) > 200 || (request.AfterEventID != "" && request.Head == "") {
+		return canonical.ConversationSnapshot{}, false, publicationError("invalid", "invalid conversation page bounds")
+	}
+	return s.conversation(ctx, principal, sessionID, threadID, &request)
+}
+
+func (s *Store) conversation(ctx context.Context, principal authentication.Principal, sessionID, threadID string, request *canonical.ConversationPageRequest) (canonical.ConversationSnapshot, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return canonical.ConversationSnapshot{}, false, err
 	}
@@ -351,6 +364,13 @@ func (s *Store) Conversation(
 	if err != nil {
 		return canonical.ConversationSnapshot{}, false, persist("read conversation session", err)
 	}
+	source, err := queries.GetPublicationSource(ctx, sessionID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return canonical.ConversationSnapshot{}, false, persist("read selected conversation head", err)
+	}
+	if request != nil && source.CurrentHead != nil && request.Head != "" && request.Head != *source.CurrentHead {
+		return canonical.ConversationSnapshot{}, false, &canonical.RefreshRequiredError{Head: *source.CurrentHead}
+	}
 	storedThread, err := queries.GetThreadForRead(ctx, db.GetThreadForReadParams{SessionID: sessionID, ID: threadID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return canonical.ConversationSnapshot{}, false, nil
@@ -362,16 +382,39 @@ func (s *Store) Conversation(
 	if err != nil {
 		return canonical.ConversationSnapshot{}, false, persist("list conversation threads", err)
 	}
-	eventRows, err := queries.ListThreadEvents(ctx, db.ListThreadEventsParams{SessionID: sessionID, ThreadID: threadID})
-	if err != nil {
-		return canonical.ConversationSnapshot{}, false, persist("list conversation events", err)
-	}
 	snapshot := canonical.ConversationSnapshot{
 		Session:     canonicalSession(storedSession),
-		Thread:      canonicalThread(storedThread),
+		Thread:      canonicalThread(db.CanonicalThread(storedThread)),
 		Threads:     make([]canonical.ThreadRecord, 0, len(threadRows)),
-		Events:      make([]canonical.EventRecord, 0, len(eventRows)),
+		Events:      []canonical.EventRecord{},
 		EventCounts: make(map[string]int, len(threadRows)),
+	}
+	if source.CurrentHead != nil {
+		snapshot.Head = *source.CurrentHead
+		page := canonical.ConversationPageRequest{Limit: 100}
+		if request != nil {
+			page = *request
+		}
+		if page.Head != "" && page.Head != snapshot.Head {
+			return snapshot, false, &canonical.RefreshRequiredError{Head: snapshot.Head}
+		}
+		if err = readPublicationEvents(ctx, queries, &snapshot, threadID, page); err != nil {
+			return snapshot, false, err
+		}
+		if request == nil && snapshot.NextEventID != "" {
+			return canonical.ConversationSnapshot{}, false, &canonical.PaginationRequiredError{}
+		}
+	} else {
+		if request != nil {
+			return snapshot, false, publicationError("invalid", "bounded publication pages require a publication-mode Session")
+		}
+		eventRows, e := queries.ListThreadEvents(ctx, db.ListThreadEventsParams{SessionID: sessionID, ThreadID: threadID})
+		if e != nil {
+			return snapshot, false, persist("list conversation events", e)
+		}
+		for _, row := range eventRows {
+			snapshot.Events = append(snapshot.Events, canonicalEvent(db.CanonicalEvent(row)))
+		}
 	}
 	user, err := queries.GetConversationUser(ctx, storedSession.CapturedByUserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -383,9 +426,6 @@ func (s *Store) Conversation(
 	for _, row := range threadRows {
 		snapshot.Threads = append(snapshot.Threads, threadRecord(row.SessionID, row.ID, row.SourceKey, row.Revision, row.Digest, row.Label, row.Summary, row.ParentThreadID, row.CaptureStatus))
 		snapshot.EventCounts[row.ID] = int(row.EventCount)
-	}
-	for _, row := range eventRows {
-		snapshot.Events = append(snapshot.Events, canonicalEvent(row))
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return canonical.ConversationSnapshot{}, false, persist("commit conversation read", err)

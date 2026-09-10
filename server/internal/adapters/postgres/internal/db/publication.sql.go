@@ -12,6 +12,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ackPublicationProjectionChanges = `-- name: AckPublicationProjectionChanges :exec
+UPDATE canonical_publication_projection_changes SET processed_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL
+WHERE id=ANY($1::bigint[]) AND lease_owner=$2
+`
+
+type AckPublicationProjectionChangesParams struct {
+	ChangeIds  []int64
+	LeaseOwner *string
+}
+
+func (q *Queries) AckPublicationProjectionChanges(ctx context.Context, arg AckPublicationProjectionChangesParams) error {
+	_, err := q.db.Exec(ctx, ackPublicationProjectionChanges, arg.ChangeIds, arg.LeaseOwner)
+	return err
+}
+
+const activatePublicationSource = `-- name: ActivatePublicationSource :execrows
+UPDATE canonical_publication_sources s SET current_head=$1
+FROM canonical_publication_attempts a JOIN canonical_publication_reservations r ON r.id=a.id
+WHERE a.id=$2 AND s.session_id=a.session_id AND a.state='activated'
+ AND a.validated_parts=a.part_count AND a.fence=s.writer_fence
+ AND a.base_head IS NOT DISTINCT FROM s.current_head
+ AND a.lease_until>clock_timestamp() AND r.expires_at>clock_timestamp()
+`
+
+type ActivatePublicationSourceParams struct {
+	Head      *string
+	AttemptID pgtype.UUID
+}
+
+func (q *Queries) ActivatePublicationSource(ctx context.Context, arg ActivatePublicationSourceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, activatePublicationSource, arg.Head, arg.AttemptID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const addPublicationBytes = `-- name: AddPublicationBytes :exec
 UPDATE canonical_publication_attempts SET retained_bytes=retained_bytes+$2,part_count=part_count+1 WHERE id=$1
 `
@@ -56,11 +93,84 @@ func (q *Queries) AdvancePublicationValidation(ctx context.Context, arg AdvanceP
 	return err
 }
 
+const claimPublicationProjectionChanges = `-- name: ClaimPublicationProjectionChanges :many
+WITH candidates AS (
+ SELECT c.id FROM canonical_publication_projection_changes c
+ JOIN canonical_publication_attempts a ON a.id=c.attempt_id AND a.state='activated'
+ JOIN canonical_publication_sources s ON s.session_id=a.session_id AND s.current_head::uuid=c.attempt_id
+ JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
+ WHERE c.processed_at IS NULL AND (c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
+ ORDER BY c.id LIMIT $1 FOR UPDATE OF c SKIP LOCKED
+), claimed AS (
+ UPDATE canonical_publication_projection_changes c SET lease_owner=$2,lease_until=$3
+ FROM candidates WHERE c.id=candidates.id RETURNING c.id, c.attempt_id, c.event_id, c.kind, c.lease_owner, c.lease_until, c.processed_at
+)
+SELECT c.id,c.attempt_id,c.event_id,m.part_ordinal,m.entry_index,m.search_descriptor
+FROM claimed c JOIN canonical_publication_members m ON m.attempt_id=c.attempt_id AND m.kind='event' AND m.record_id=c.event_id
+ORDER BY c.id
+`
+
+type ClaimPublicationProjectionChangesParams struct {
+	BatchLimit int32
+	LeaseOwner *string
+	LeaseUntil pgtype.Timestamptz
+}
+
+type ClaimPublicationProjectionChangesRow struct {
+	ID               int64
+	AttemptID        pgtype.UUID
+	EventID          string
+	PartOrdinal      int32
+	EntryIndex       int32
+	SearchDescriptor string
+}
+
+func (q *Queries) ClaimPublicationProjectionChanges(ctx context.Context, arg ClaimPublicationProjectionChangesParams) ([]ClaimPublicationProjectionChangesRow, error) {
+	rows, err := q.db.Query(ctx, claimPublicationProjectionChanges, arg.BatchLimit, arg.LeaseOwner, arg.LeaseUntil)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimPublicationProjectionChangesRow{}
+	for rows.Next() {
+		var i ClaimPublicationProjectionChangesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AttemptID,
+			&i.EventID,
+			&i.PartOrdinal,
+			&i.EntryIndex,
+			&i.SearchDescriptor,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const confirmPublicationActivationAuthority = `-- name: ConfirmPublicationActivationAuthority :one
+SELECT a.lease_until>clock_timestamp() AND r.expires_at>clock_timestamp()
+ AND a.fence=s.writer_fence AND s.current_head=a.id::text AS valid
+FROM canonical_publication_attempts a JOIN canonical_publication_reservations r ON r.id=a.id
+JOIN canonical_publication_sources s ON s.session_id=a.session_id WHERE a.id=$1
+`
+
+func (q *Queries) ConfirmPublicationActivationAuthority(ctx context.Context, id pgtype.UUID) (*bool, error) {
+	row := q.db.QueryRow(ctx, confirmPublicationActivationAuthority, id)
+	var valid *bool
+	err := row.Scan(&valid)
+	return valid, err
+}
+
 const createPublicationAttempt = `-- name: CreatePublicationAttempt :one
 INSERT INTO canonical_publication_attempts(id,session_id,capture_id,base_head,transform_version,fence,lease_until)
 SELECT $1,$2,$3,$4,$5,$6,LEAST($7::timestamptz,clock_timestamp()+$8::bigint*interval '1 millisecond')
 WHERE $7::timestamptz>clock_timestamp()
-RETURNING id, session_id, capture_id, base_head, transform_version, fence, lease_until, state, part_count, retained_bytes, seal_json, validated_parts, candidate_events, candidate_usage, header_digest, target_json
+RETURNING id, session_id, capture_id, base_head, transform_version, fence, lease_until, state, part_count, retained_bytes, seal_json, validated_parts, candidate_events, candidate_usage, header_digest, target_json, activation_json, published_observed_at
 `
 
 type CreatePublicationAttemptParams struct {
@@ -103,6 +213,8 @@ func (q *Queries) CreatePublicationAttempt(ctx context.Context, arg CreatePublic
 		&i.CandidateUsage,
 		&i.HeaderDigest,
 		&i.TargetJson,
+		&i.ActivationJson,
+		&i.PublishedObservedAt,
 	)
 	return i, err
 }
@@ -132,7 +244,7 @@ DELETE FROM canonical_publication_reservations WHERE id IN (
  JOIN canonical_publication_sources s ON s.session_id=r.session_id
  LEFT JOIN canonical_publication_attempts a ON a.id=r.id
  WHERE s.captured_by_user_id=$1 AND r.expires_at<=clock_timestamp()
- AND (a.id IS NULL OR a.part_count=0)
+ AND (a.id IS NULL OR (a.part_count=0 AND a.state<>'activated'))
  ORDER BY r.id LIMIT $2
 ) RETURNING id
 `
@@ -177,8 +289,9 @@ func (q *Queries) DeletePublicationPart(ctx context.Context, arg DeletePublicati
 }
 
 const getPublicationAttempt = `-- name: GetPublicationAttempt :one
-SELECT a.id, a.session_id, a.capture_id, a.base_head, a.transform_version, a.fence, a.lease_until, a.state, a.part_count, a.retained_bytes, a.seal_json, a.validated_parts, a.candidate_events, a.candidate_usage, a.header_digest, a.target_json,r.expires_at,
- CASE WHEN a.state='rejected' THEN 'rejected'
+SELECT a.id, a.session_id, a.capture_id, a.base_head, a.transform_version, a.fence, a.lease_until, a.state, a.part_count, a.retained_bytes, a.seal_json, a.validated_parts, a.candidate_events, a.candidate_usage, a.header_digest, a.target_json, a.activation_json, a.published_observed_at,r.expires_at,
+ CASE WHEN a.state='activated' THEN 'activated'
+ WHEN a.state='rejected' THEN 'rejected'
  WHEN a.fence<>s.writer_fence OR a.base_head IS DISTINCT FROM s.current_head THEN 'superseded'
  WHEN a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp() THEN 'expired'
  ELSE a.state END::text AS effective_state
@@ -189,24 +302,26 @@ WHERE a.id=$1
 `
 
 type GetPublicationAttemptRow struct {
-	ID               pgtype.UUID
-	SessionID        string
-	CaptureID        string
-	BaseHead         *string
-	TransformVersion string
-	Fence            int64
-	LeaseUntil       time.Time
-	State            string
-	PartCount        int32
-	RetainedBytes    int64
-	SealJson         *string
-	ValidatedParts   int32
-	CandidateEvents  int32
-	CandidateUsage   int32
-	HeaderDigest     *string
-	TargetJson       *string
-	ExpiresAt        time.Time
-	EffectiveState   string
+	ID                  pgtype.UUID
+	SessionID           string
+	CaptureID           string
+	BaseHead            *string
+	TransformVersion    string
+	Fence               int64
+	LeaseUntil          time.Time
+	State               string
+	PartCount           int32
+	RetainedBytes       int64
+	SealJson            *string
+	ValidatedParts      int32
+	CandidateEvents     int32
+	CandidateUsage      int32
+	HeaderDigest        *string
+	TargetJson          *string
+	ActivationJson      *string
+	PublishedObservedAt pgtype.Timestamptz
+	ExpiresAt           time.Time
+	EffectiveState      string
 }
 
 func (q *Queries) GetPublicationAttempt(ctx context.Context, id pgtype.UUID) (GetPublicationAttemptRow, error) {
@@ -229,9 +344,35 @@ func (q *Queries) GetPublicationAttempt(ctx context.Context, id pgtype.UUID) (Ge
 		&i.CandidateUsage,
 		&i.HeaderDigest,
 		&i.TargetJson,
+		&i.ActivationJson,
+		&i.PublishedObservedAt,
 		&i.ExpiresAt,
 		&i.EffectiveState,
 	)
+	return i, err
+}
+
+const getPublicationEventPosition = `-- name: GetPublicationEventPosition :one
+SELECT source_order,event_index,record_id FROM canonical_publication_members
+WHERE attempt_id=$1 AND kind='event' AND thread_id=$2 AND record_id=$3
+`
+
+type GetPublicationEventPositionParams struct {
+	AttemptID pgtype.UUID
+	ThreadID  string
+	RecordID  string
+}
+
+type GetPublicationEventPositionRow struct {
+	SourceOrder int64
+	EventIndex  int64
+	RecordID    string
+}
+
+func (q *Queries) GetPublicationEventPosition(ctx context.Context, arg GetPublicationEventPositionParams) (GetPublicationEventPositionRow, error) {
+	row := q.db.QueryRow(ctx, getPublicationEventPosition, arg.AttemptID, arg.ThreadID, arg.RecordID)
+	var i GetPublicationEventPositionRow
+	err := row.Scan(&i.SourceOrder, &i.EventIndex, &i.RecordID)
 	return i, err
 }
 
@@ -471,6 +612,20 @@ func (q *Queries) InsertPublicationPart(ctx context.Context, arg InsertPublicati
 	return err
 }
 
+const insertPublicationProjectionChange = `-- name: InsertPublicationProjectionChange :exec
+INSERT INTO canonical_publication_projection_changes(attempt_id,event_id) VALUES($1,$2)
+`
+
+type InsertPublicationProjectionChangeParams struct {
+	AttemptID pgtype.UUID
+	EventID   string
+}
+
+func (q *Queries) InsertPublicationProjectionChange(ctx context.Context, arg InsertPublicationProjectionChangeParams) error {
+	_, err := q.db.Exec(ctx, insertPublicationProjectionChange, arg.AttemptID, arg.EventID)
+	return err
+}
+
 const insertPublicationRecordVersion = `-- name: InsertPublicationRecordVersion :exec
 INSERT INTO canonical_publication_record_versions(session_id,kind,source_key,record_id,thread_id,projection_revision,revision,fingerprint)
 VALUES($1,$2,$3,$4,$5,$6,$7,$8)
@@ -568,6 +723,57 @@ func (q *Queries) ListPublicationParts(ctx context.Context, arg ListPublicationP
 	return items, nil
 }
 
+const listPublicationThreadMembers = `-- name: ListPublicationThreadMembers :many
+SELECT record_id,part_ordinal,entry_index FROM canonical_publication_members
+WHERE attempt_id=$1 AND kind='event' AND thread_id=$2
+ AND (NOT $3::boolean OR (source_order,event_index,record_id)>($4::bigint,$5::bigint,$6::text))
+ORDER BY source_order,event_index,record_id LIMIT $7
+`
+
+type ListPublicationThreadMembersParams struct {
+	AttemptID  pgtype.UUID
+	ThreadID   string
+	HasAfter   bool
+	AfterOrder int64
+	AfterIndex int64
+	AfterID    string
+	PageLimit  int32
+}
+
+type ListPublicationThreadMembersRow struct {
+	RecordID    string
+	PartOrdinal int32
+	EntryIndex  int32
+}
+
+func (q *Queries) ListPublicationThreadMembers(ctx context.Context, arg ListPublicationThreadMembersParams) ([]ListPublicationThreadMembersRow, error) {
+	rows, err := q.db.Query(ctx, listPublicationThreadMembers,
+		arg.AttemptID,
+		arg.ThreadID,
+		arg.HasAfter,
+		arg.AfterOrder,
+		arg.AfterIndex,
+		arg.AfterID,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublicationThreadMembersRow{}
+	for rows.Next() {
+		var i ListPublicationThreadMembersRow
+		if err := rows.Scan(&i.RecordID, &i.PartOrdinal, &i.EntryIndex); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const nextPublicationFence = `-- name: NextPublicationFence :one
 UPDATE canonical_publication_sources SET writer_fence=writer_fence+1
 WHERE session_id=$1 RETURNING writer_fence
@@ -585,8 +791,10 @@ SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count FROM canonical_public
 JOIN canonical_publication_attempts a ON a.id=p.attempt_id
 JOIN canonical_publication_reservations r ON r.id=a.id
 JOIN canonical_publication_sources s ON s.session_id=a.session_id
-WHERE s.captured_by_user_id=$1 AND (a.state='rejected' OR a.fence<>s.writer_fence
- OR a.base_head IS DISTINCT FROM s.current_head OR a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp())
+WHERE s.captured_by_user_id=$1 AND (
+ (a.state='activated' AND s.current_head IS DISTINCT FROM a.id::text)
+ OR (a.state<>'activated' AND (a.state='rejected' OR a.fence<>s.writer_fence
+ OR a.base_head IS DISTINCT FROM s.current_head OR a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp())))
 ORDER BY p.attempt_id,p.ordinal LIMIT $2
 `
 
@@ -627,7 +835,7 @@ SELECT (SELECT count(*) FROM canonical_publication_reservations r
  WHERE s.captured_by_user_id=$1 AND r.expires_at>clock_timestamp())::bigint AS reservations,
  (SELECT coalesce(sum(a.retained_bytes),0)::bigint FROM canonical_publication_attempts a
  JOIN canonical_publication_sources s ON s.session_id=a.session_id
- WHERE s.captured_by_user_id=$1)::bigint AS retained_bytes
+ WHERE s.captured_by_user_id=$1 AND a.state<>'activated')::bigint AS retained_bytes
 `
 
 type PublicationUsageRow struct {
@@ -640,6 +848,21 @@ func (q *Queries) PublicationUsage(ctx context.Context, capturedByUserID pgtype.
 	var i PublicationUsageRow
 	err := row.Scan(&i.Reservations, &i.RetainedBytes)
 	return i, err
+}
+
+const recordPublicationActivation = `-- name: RecordPublicationActivation :exec
+UPDATE canonical_publication_attempts SET state='activated',activation_json=$2,published_observed_at=$3 WHERE id=$1
+`
+
+type RecordPublicationActivationParams struct {
+	ID                  pgtype.UUID
+	ActivationJson      *string
+	PublishedObservedAt pgtype.Timestamptz
+}
+
+func (q *Queries) RecordPublicationActivation(ctx context.Context, arg RecordPublicationActivationParams) error {
+	_, err := q.db.Exec(ctx, recordPublicationActivation, arg.ID, arg.ActivationJson, arg.PublishedObservedAt)
+	return err
 }
 
 const rejectPublicationAttempt = `-- name: RejectPublicationAttempt :exec

@@ -11,7 +11,7 @@ SELECT (SELECT count(*) FROM canonical_publication_reservations r
  WHERE s.captured_by_user_id=$1 AND r.expires_at>clock_timestamp())::bigint AS reservations,
  (SELECT coalesce(sum(a.retained_bytes),0)::bigint FROM canonical_publication_attempts a
  JOIN canonical_publication_sources s ON s.session_id=a.session_id
- WHERE s.captured_by_user_id=$1)::bigint AS retained_bytes;
+ WHERE s.captured_by_user_id=$1 AND a.state<>'activated')::bigint AS retained_bytes;
 
 -- name: CreatePublicationReservation :one
 INSERT INTO canonical_publication_reservations(id,session_id,expires_at)
@@ -34,7 +34,8 @@ RETURNING *;
 
 -- name: GetPublicationAttempt :one
 SELECT a.*,r.expires_at,
- CASE WHEN a.state='rejected' THEN 'rejected'
+ CASE WHEN a.state='activated' THEN 'activated'
+ WHEN a.state='rejected' THEN 'rejected'
  WHEN a.fence<>s.writer_fence OR a.base_head IS DISTINCT FROM s.current_head THEN 'superseded'
  WHEN a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp() THEN 'expired'
  ELSE a.state END::text AS effective_state
@@ -73,8 +74,10 @@ SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count FROM canonical_public
 JOIN canonical_publication_attempts a ON a.id=p.attempt_id
 JOIN canonical_publication_reservations r ON r.id=a.id
 JOIN canonical_publication_sources s ON s.session_id=a.session_id
-WHERE s.captured_by_user_id=$1 AND (a.state='rejected' OR a.fence<>s.writer_fence
- OR a.base_head IS DISTINCT FROM s.current_head OR a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp())
+WHERE s.captured_by_user_id=$1 AND (
+ (a.state='activated' AND s.current_head IS DISTINCT FROM a.id::text)
+ OR (a.state<>'activated' AND (a.state='rejected' OR a.fence<>s.writer_fence
+ OR a.base_head IS DISTINCT FROM s.current_head OR a.lease_until<=clock_timestamp() OR r.expires_at<=clock_timestamp())))
 ORDER BY p.attempt_id,p.ordinal LIMIT sqlc.arg(page_limit);
 
 -- name: DeletePublicationPart :exec
@@ -89,7 +92,7 @@ DELETE FROM canonical_publication_reservations WHERE id IN (
  JOIN canonical_publication_sources s ON s.session_id=r.session_id
  LEFT JOIN canonical_publication_attempts a ON a.id=r.id
  WHERE s.captured_by_user_id=$1 AND r.expires_at<=clock_timestamp()
- AND (a.id IS NULL OR a.part_count=0)
+ AND (a.id IS NULL OR (a.part_count=0 AND a.state<>'activated'))
  ORDER BY r.id LIMIT sqlc.arg(page_limit)
 ) RETURNING id;
 
@@ -124,3 +127,53 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8);
 
 -- name: GetPublicationPartStorage :one
 SELECT stored_bytes,format_version FROM canonical_publication_parts WHERE attempt_id=$1 AND ordinal=$2;
+
+-- name: ActivatePublicationSource :execrows
+UPDATE canonical_publication_sources s SET current_head=sqlc.arg(head)
+FROM canonical_publication_attempts a JOIN canonical_publication_reservations r ON r.id=a.id
+WHERE a.id=sqlc.arg(attempt_id) AND s.session_id=a.session_id AND a.state='activated'
+ AND a.validated_parts=a.part_count AND a.fence=s.writer_fence
+ AND a.base_head IS NOT DISTINCT FROM s.current_head
+ AND a.lease_until>clock_timestamp() AND r.expires_at>clock_timestamp();
+
+-- name: RecordPublicationActivation :exec
+UPDATE canonical_publication_attempts SET state='activated',activation_json=$2,published_observed_at=$3 WHERE id=$1;
+
+-- name: ConfirmPublicationActivationAuthority :one
+SELECT a.lease_until>clock_timestamp() AND r.expires_at>clock_timestamp()
+ AND a.fence=s.writer_fence AND s.current_head=a.id::text AS valid
+FROM canonical_publication_attempts a JOIN canonical_publication_reservations r ON r.id=a.id
+JOIN canonical_publication_sources s ON s.session_id=a.session_id WHERE a.id=$1;
+
+-- name: InsertPublicationProjectionChange :exec
+INSERT INTO canonical_publication_projection_changes(attempt_id,event_id) VALUES($1,$2);
+
+-- name: ClaimPublicationProjectionChanges :many
+WITH candidates AS (
+ SELECT c.id FROM canonical_publication_projection_changes c
+ JOIN canonical_publication_attempts a ON a.id=c.attempt_id AND a.state='activated'
+ JOIN canonical_publication_sources s ON s.session_id=a.session_id AND s.current_head::uuid=c.attempt_id
+ JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
+ WHERE c.processed_at IS NULL AND (c.lease_until IS NULL OR c.lease_until<=clock_timestamp())
+ ORDER BY c.id LIMIT sqlc.arg(batch_limit) FOR UPDATE OF c SKIP LOCKED
+), claimed AS (
+ UPDATE canonical_publication_projection_changes c SET lease_owner=sqlc.arg(lease_owner),lease_until=sqlc.arg(lease_until)
+ FROM candidates WHERE c.id=candidates.id RETURNING c.*
+)
+SELECT c.id,c.attempt_id,c.event_id,m.part_ordinal,m.entry_index,m.search_descriptor
+FROM claimed c JOIN canonical_publication_members m ON m.attempt_id=c.attempt_id AND m.kind='event' AND m.record_id=c.event_id
+ORDER BY c.id;
+
+-- name: AckPublicationProjectionChanges :exec
+UPDATE canonical_publication_projection_changes SET processed_at=clock_timestamp(),lease_owner=NULL,lease_until=NULL
+WHERE id=ANY(sqlc.arg(change_ids)::bigint[]) AND lease_owner=sqlc.arg(lease_owner);
+
+-- name: GetPublicationEventPosition :one
+SELECT source_order,event_index,record_id FROM canonical_publication_members
+WHERE attempt_id=$1 AND kind='event' AND thread_id=$2 AND record_id=$3;
+
+-- name: ListPublicationThreadMembers :many
+SELECT record_id,part_ordinal,entry_index FROM canonical_publication_members
+WHERE attempt_id=$1 AND kind='event' AND thread_id=$2
+ AND (NOT sqlc.arg(has_after)::boolean OR (source_order,event_index,record_id)>(sqlc.arg(after_order)::bigint,sqlc.arg(after_index)::bigint,sqlc.arg(after_id)::text))
+ORDER BY source_order,event_index,record_id LIMIT sqlc.arg(page_limit);

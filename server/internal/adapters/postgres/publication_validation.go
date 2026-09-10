@@ -137,6 +137,9 @@ func (s *PublicationStore) Validate(ctx context.Context, p authentication.Princi
 			event.ObservedAt = normalized.ObservedAt
 			event.ReceivedAt = metadata.ReceivedAt
 			event.IngestSeq = uint64(metadata.IngestSeq)
+			if err = q.InsertPublicationProjectionChange(ctx, db.InsertPublicationProjectionChangeParams{AttemptID: id, EventID: event.ID}); err != nil {
+				return a, persist("prepare invisible Search work", err)
+			}
 		}
 		for n, value := range normalized.Usage {
 			keyHash := sha256.Sum256([]byte(value.SourceKey))

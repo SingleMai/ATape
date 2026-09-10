@@ -68,24 +68,30 @@ SET processed_at = clock_timestamp(),
 WHERE id = ANY(sqlc.arg(change_ids)::bigint[])
   AND lease_owner = sqlc.arg(lease_owner);
 
--- name: UpsertSearchDocument :exec
+-- name: UpsertSearchDocument :execrows
 INSERT INTO project_search_documents (
     event_id, project_id, session_id, session_title, thread_id,
     thread_path_ids, thread_path_labels, author, harness, occurred_at,
-    text, tool_label, ingest_seq, observed_at, search_text
-) VALUES (
+    text, tool_label, ingest_seq, observed_at, publication_head, publication_descriptor, search_text
+) SELECT
     sqlc.arg(event_id), sqlc.arg(project_id), sqlc.arg(session_id),
     sqlc.arg(session_title), sqlc.arg(thread_id), sqlc.arg(thread_path_ids),
     sqlc.arg(thread_path_labels), sqlc.arg(author), sqlc.arg(harness),
     sqlc.arg(occurred_at), sqlc.arg(text), sqlc.arg(tool_label),
-    sqlc.arg(ingest_seq), sqlc.arg(observed_at),
+    sqlc.arg(ingest_seq), sqlc.arg(observed_at), sqlc.arg(publication_head), sqlc.arg(publication_descriptor),
     lower(
         sqlc.arg(session_title)::text || ' ' ||
         array_to_string(sqlc.arg(thread_path_labels)::text[], ' ') || ' ' ||
         sqlc.arg(author)::text || ' ' || sqlc.arg(harness)::text || ' ' ||
         sqlc.arg(text)::text || ' ' || sqlc.arg(tool_label)::text
     )
-)
+WHERE (sqlc.arg(publication_head)::text='' AND NOT EXISTS(
+ SELECT 1 FROM canonical_publication_sources WHERE session_id=sqlc.arg(session_id)))
+ OR EXISTS(SELECT 1 FROM canonical_publication_sources s
+ JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
+ JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
+ WHERE s.session_id=sqlc.arg(session_id) AND s.current_head=sqlc.arg(publication_head)
+ AND m.record_id=sqlc.arg(event_id) AND m.search_descriptor=sqlc.arg(publication_descriptor))
 ON CONFLICT (event_id) DO UPDATE
 SET project_id = EXCLUDED.project_id,
     session_id = EXCLUDED.session_id,
@@ -100,6 +106,8 @@ SET project_id = EXCLUDED.project_id,
     tool_label = EXCLUDED.tool_label,
     ingest_seq = EXCLUDED.ingest_seq,
     observed_at = EXCLUDED.observed_at,
+    publication_head = EXCLUDED.publication_head,
+    publication_descriptor = EXCLUDED.publication_descriptor,
     indexed_at = clock_timestamp(),
     search_text = EXCLUDED.search_text
 WHERE project_search_documents.ingest_seq <= EXCLUDED.ingest_seq;
@@ -114,9 +122,34 @@ SET indexed_through = GREATEST(
 );
 
 -- name: GetSearchCheckpoint :one
-SELECT indexed_through
-FROM project_search_checkpoints
-WHERE project_id = $1;
+SELECT CASE WHEN EXISTS(
+ SELECT 1 FROM canonical_publication_sources s
+ JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
+ JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
+ WHERE s.project_id=$1 AND NOT EXISTS(SELECT 1 FROM project_search_documents d
+  WHERE d.event_id=m.record_id AND d.publication_descriptor=m.search_descriptor)
+) THEN '0001-01-01T00:00:00Z'::timestamptz ELSE GREATEST(
+ coalesce((SELECT indexed_through FROM project_search_checkpoints WHERE project_id=$1),'0001-01-01T00:00:00Z'::timestamptz),
+ coalesce((SELECT max(a.published_observed_at) FROM canonical_publication_sources s
+  JOIN canonical_publication_attempts a ON a.id=s.current_head::uuid
+  JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
+  WHERE s.project_id=$1),'0001-01-01T00:00:00Z'::timestamptz)
+) END::timestamptz AS indexed_through;
+
+-- name: AdvanceCompletedPublicationSearchCheckpoints :exec
+INSERT INTO project_search_checkpoints(project_id,indexed_through)
+SELECT s.project_id,max(a.published_observed_at)
+FROM canonical_publication_sources s
+JOIN canonical_publication_attempts a ON a.id=s.current_head::uuid AND a.state='activated'
+JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
+WHERE s.project_id=ANY(sqlc.arg(project_ids)::text[])
+ AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources pending
+  JOIN canonical_sessions pcs ON pcs.id=pending.session_id AND pcs.record_state='active'
+  JOIN canonical_publication_members m ON m.attempt_id=pending.current_head::uuid AND m.kind='event'
+  WHERE pending.project_id=s.project_id AND NOT EXISTS(SELECT 1 FROM project_search_documents d
+   WHERE d.event_id=m.record_id AND d.publication_descriptor=m.search_descriptor))
+GROUP BY s.project_id
+ON CONFLICT(project_id) DO UPDATE SET indexed_through=GREATEST(project_search_checkpoints.indexed_through,EXCLUDED.indexed_through);
 
 -- name: SearchDocuments :many
 WITH terms AS (
@@ -136,6 +169,10 @@ WITH terms AS (
       ON sessions.id = documents.session_id AND sessions.record_state = 'active'
     CROSS JOIN terms
     WHERE documents.project_id = sqlc.arg(project_id)
+      AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=documents.session_id)
+       OR EXISTS(SELECT 1 FROM canonical_publication_sources s
+         JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
+         WHERE s.session_id=documents.session_id AND m.record_id=documents.event_id AND m.search_descriptor=documents.publication_descriptor))
       AND (
           strpos(documents.search_text, terms.literal) > 0
           OR documents.search_vector @@ terms.parsed
