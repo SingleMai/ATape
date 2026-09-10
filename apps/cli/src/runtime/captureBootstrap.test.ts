@@ -156,6 +156,10 @@ describe("Collector capture bootstrap", () => {
       }
     }
   })
+  it("rechecks coordinator absence after another process completes first initialization", async () => {
+    const f = await fixture()
+    expect(await runChild("capture-bootstrap-race.ts", f.stateFile)).toMatchObject({ preserved: true })
+  })
   it("holds identity writes through cancellation before allowing another caller to reopen", async () => {
     const f = await fixture()
     expect(await runChild("capture-bootstrap-cancellation.ts", f.stateFile)).toMatchObject({ preserved: true })

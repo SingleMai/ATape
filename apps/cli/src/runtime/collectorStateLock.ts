@@ -21,11 +21,16 @@ const acquire = (stateFile: string) => Effect.tryPromise({
     const coordinationPath = `${stateFile}.lock.sqlite`
     let existing = await exists(coordinationPath)
     if (existing === null) {
-      if (await exists(`${stateFile}.capture-installation.json`) || await exists(`${stateFile}.captures`))
-        throw new Error("Collector coordination state is missing while captures exist; restore its existing state.")
-      try { const file = await open(coordinationPath, "wx", 0o600); await file.close() }
-      catch (cause) { if (!hasCode(cause, "EEXIST")) throw cause }
-      existing = await exists(coordinationPath)
+      if (await exists(`${stateFile}.capture-installation.json`) || await exists(`${stateFile}.captures`)) {
+        // Another first opener may have established both since our first lstat.
+        existing = await exists(coordinationPath)
+        if (existing === null) throw new Error("Collector coordination state is missing while captures exist; restore its existing state.")
+      }
+      if (existing === null) {
+        try { const file = await open(coordinationPath, "wx", 0o600); await file.close() }
+        catch (cause) { if (!hasCode(cause, "EEXIST")) throw cause }
+        existing = await exists(coordinationPath)
+      }
     }
     if (!existing?.isFile() || existing.isSymbolicLink()) throw new Error("Collector coordination state is not a regular file.")
     const db = new DatabaseSync(coordinationPath)
