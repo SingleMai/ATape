@@ -34,7 +34,7 @@ export type CaptureRecordBinding =
   | { readonly _tag: "Unavailable"; readonly reason: "limit" | "redaction" }
 export type CaptureRecordManifest = {
   readonly canonical?: { readonly session: number; readonly thread: number; readonly event: number; readonly usage: number }
-  readonly raw?: { readonly records: number; readonly scopeComplete: boolean }
+  readonly raw?: { readonly records: number; readonly scopeComplete: boolean; readonly admission?: string }
 }
 export type CaptureRecordSummary = CaptureRecordVersion & {
   readonly disposition: "unbound" | "pending" | "published" | "acknowledged" | "canceled" | "unavailable" | "abandoned"

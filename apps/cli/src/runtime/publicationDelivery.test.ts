@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { CaptureJournal, PublicationError, PublicationTransport, beginPublicationCapture, sealPublicationCapture,
   deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError, type CaptureOwner,
-  preparePublicationCanonical, prepareRawObservation, SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
+  comparePublicationSource, preparePublicationCanonical, prepareRawObservation, SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
 import { PublicationProtocol, PublicationTargetProfile, type PublicationAttempt, type PublicationCapabilities, type PublicationPart, type RawPublicationChunk, type RawPublicationReceipt, type RawPublicationPolicy } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -843,5 +843,132 @@ describe("Raw preparation admission", () => {
         expect(rows.filter(row => row.disposition === "acknowledged")).toHaveLength(rows.length - prepared.raw!.gaps)
       }))
     }
+  })
+})
+
+
+describe("Host read-only source comparison", () => {
+  const compare = (f: Awaited<ReturnType<typeof fixture>>, native: Awaited<ReturnType<typeof nativePreparationSource>>,
+    raw = false, limits = rawLimits, teamRevision = 1, adapterVersion = "0.0.0") => f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      return yield* comparePublicationSource(owner, { adapterVersion, observedAt: "2026-09-10T01:00:00Z", transformVersion: "host-v1",
+        limits: { records: 1000, durationMs: 10000 }, source: native.source(raw),
+        ...(raw ? { raw: { limits, authority: { protocol: "atape.raw-publication.v1", teamRevision, userRevision: 1 } as const } } : {}) })
+    }))
+  it("does not open a source without activated coverage, and repeats unchanged observations without captures or versions", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    const initial = await f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      return yield* comparePublicationSource(owner, { adapterVersion: "0.0.0", observedAt: timestamp, transformVersion: "host-v1",
+        limits: { records: 1000, durationMs: 10000 }, source: Effect.die("Unpublished baseline must not open a source") })
+    }))
+    expect(initial).toEqual({ canonical: "changed", raw: "disabled" })
+    await expect(compare(f, native, false, rawLimits, 1, "x".repeat(101))).rejects.toMatchObject({ reason: "invalid" })
+    await prepareNative(f, native, "baseline", false); await nativeDelivery(f, native, "baseline")
+    const before = await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      return { coverage: yield* j.coverage(owner), pending: yield* j.pending(owner), events: yield* j.records(owner, "baseline", { kind: "event" }) }
+    }))
+    const journalCounts = () => {
+      const db = new DatabaseSync(f.path, { readOnly: true })
+      try { return ["captures", "capture_records", "source_record_versions"].map(table => db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n) }
+      finally { db.close() }
+    }
+    const counts = journalCounts(), requests = f.requests()
+    for (let n = 0; n < 10; n++) expect(await compare(f, native)).toEqual({ canonical: "unchanged", raw: "disabled" })
+    expect(f.requests()).toBe(requests); expect(journalCounts()).toEqual(counts)
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      expect(yield* j.coverage(owner)).toEqual(before.coverage); expect(yield* j.pending(owner)).toEqual(before.pending)
+      expect(yield* j.records(owner, "baseline", { kind: "event" })).toEqual(before.events)
+      // An abandoned different observation consumes versions, but cannot make
+      // identical published content appear changed during a later preflight.
+      yield* j.reserve(owner, { id: "abandoned", expectedCheckpoint: owner.checkpoint, beginJson: "{}", rawEnabled: false, trackRecords: true })
+      const row = before.events[0]!
+      yield* j.record(owner, "abandoned", { ...row, fingerprint: "f".repeat(64) })
+      yield* j.settle(owner, "abandoned", { _tag: "AbandonUnsealed" })
+    }))
+    expect(await compare(f, native)).toEqual({ canonical: "unchanged", raw: "disabled" })
+    const db = new DatabaseSync(native.path)
+    db.prepare("UPDATE part SET data=json_set(data,'$.text','changed source') WHERE json_extract(data,'$.type')='text'").run(); db.close()
+    expect(await compare(f, native)).toEqual({ canonical: "changed", raw: "disabled" })
+  })
+  it("distinguishes Raw-only edits, current pending authority, cancellation and actual ACK after reclamation", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "baseline"); await nativeDelivery(f, native, "baseline")
+    expect(await compare(f, native, true)).toEqual({ canonical: "unchanged", raw: "unchanged" })
+    expect(await compare(f, native, true, rawLimits, 2)).toEqual({ canonical: "unchanged", raw: "required" })
+    await f.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* j.settle(owner, "baseline", { _tag: "RawCancellationStarted", reason: "disabled" })
+    }))
+    expect(await compare(f, native, true)).toEqual({ canonical: "unchanged", raw: "required" })
+    // Genuine receipts win even after cancellation intent. Use the real Raw
+    // transport for the independent ACK/reclamation case.
+    const g = await fixture(16384)
+    await prepareNative(g, native, "acked"); await nativeDelivery(g, native, "acked"); await nativeDelivery(g, native, "acked", true)
+    await g.run(Effect.gen(function*() { const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      while ((yield* j.reclaim(owner, "acked")) > 0) { /* bounded payload reclamation */ }
+    }))
+    expect(await compare(g, native, true, rawLimits, 2)).toEqual({ canonical: "unchanged", raw: "unchanged" })
+    const db = new DatabaseSync(native.path)
+    db.prepare("UPDATE part SET data=json_set(data,'$.rawOnlyChange',1) WHERE id=(SELECT id FROM part ORDER BY id LIMIT 1)").run(); db.close()
+    expect(await compare(g, native, true)).toEqual({ canonical: "unchanged", raw: "required" })
+    expect(await compare(g, native)).toEqual({ canonical: "unchanged", raw: "disabled" })
+    await g.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginRawObservation(owner, { observationId: "raw-only", canonicalCaptureId: "acked" })
+      yield* prepareRawObservation(owner, "raw-only", { adapterVersion: "0.0.0", observedAt: timestamp, limits: rawLimits, source: native.source(true) })
+      yield* deliverPublicationRaw(owner, "raw-only", 64)
+      expect((yield* j.coverage(owner)).canonicalCaptureId).toBe("acked")
+    }))
+    expect(await compare(g, native, true)).toEqual({ canonical: "unchanged", raw: "unchanged" })
+  })
+  it("keeps identical capacity gaps stable and retries when Raw admission changes or Raw is first enabled", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource(), small = { ...rawLimits, objectBytes: 1 }
+    await prepareNative(f, native, "gaps", true, small); await nativeDelivery(f, native, "gaps")
+    expect(await compare(f, native, true, small)).toEqual({ canonical: "unchanged", raw: "unchanged" })
+    expect(await compare(f, native, true, small, 1, "v")).toEqual({ canonical: "unchanged", raw: "required" })
+    expect(await compare(f, native, true)).toEqual({ canonical: "unchanged", raw: "required" })
+    const g = await fixture(16384)
+    await prepareNative(g, native, "off", false); await nativeDelivery(g, native, "off")
+    expect(await compare(g, native, true)).toEqual({ canonical: "unchanged", raw: "required" })
+  })
+  it("rejects a published baseline replaced during comparison even under the same owner", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "baseline", false); await nativeDelivery(f, native, "baseline")
+    await expect(f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      yield* beginPublicationCapture(owner, { captureId: "replacement", baseHead: f.snapshot().id, transformVersion: "host-v1", rawEnabled: false, trackRecords: true })
+      yield* preparePublicationCanonical(owner, "replacement", { adapterVersion: "0.0.0", observedAt: timestamp, nextCheckpoint: "replacement", source: native.source() })
+      let replaced = false
+      return yield* comparePublicationSource(owner, { adapterVersion: "0.0.0", observedAt: timestamp, transformVersion: "host-v1",
+        limits: { records: 1000, durationMs: 10000 }, source: native.source().pipe(Effect.map(view => ({ ...view,
+          read: () => view.read().pipe(Effect.tap(page => Effect.gen(function*() {
+            // Simulate a concurrent worker publishing a prepared candidate; the
+            // comparison itself has no transport dependency or content writes.
+            if (page.done && !replaced) { replaced = true; yield* deliverPublicationCapture(owner, "replacement", 64) }
+          })))
+        }))) })
+    }))).rejects.toMatchObject({ reason: "conflict" })
+    expect(await compare(f, native)).toEqual({ canonical: "unchanged", raw: "disabled" })
+  })
+  it("rejects duplicate Raw membership, bounds records, and closes the source on deadline", async () => {
+    const f = await fixture(16384), native = await nativePreparationSource()
+    await prepareNative(f, native, "baseline"); await nativeDelivery(f, native, "baseline")
+    let closed = false
+    const run = (mode: "duplicate" | "capacity" | "deadline") => f.run(Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(native.ownerScope)
+      return yield* comparePublicationSource(owner, { adapterVersion: "0.0.0", observedAt: timestamp, transformVersion: "host-v1",
+        limits: { records: mode === "capacity" ? 1 : 1000, durationMs: mode === "deadline" ? 20 : 10000 },
+        raw: { limits: rawLimits, authority: { protocol: "atape.raw-publication.v1", teamRevision: 1, userRevision: 1 } },
+        source: native.source(true).pipe(Effect.flatMap(view => Effect.gen(function*() {
+          yield* Effect.addFinalizer(() => Effect.sync(() => { closed = true }))
+          return { ...view, read: () => mode === "deadline" ? Effect.never : view.read().pipe(Effect.map(page => ({ ...page,
+            frames: page.frames.map(frame => mode === "duplicate" ? { ...frame, recordKey: "same-key" } : frame) }))) }
+        }))) })
+    }))
+    await expect(run("duplicate")).rejects.toMatchObject({ reason: "invalid" })
+    await expect(run("capacity")).rejects.toMatchObject({ reason: "capacity" })
+    closed = false
+    await expect(run("deadline")).rejects.toMatchObject({ reason: "deadline" }); expect(closed).toBe(true)
+    expect(await compare(f, native, true)).toEqual({ canonical: "unchanged", raw: "unchanged" })
   })
 })

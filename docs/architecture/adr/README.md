@@ -117,3 +117,5 @@ pretending that staging acceptance passed.
 - [ADR-0066: Host Raw preparation and receipt-aware reuse](0066-host-raw-preparation.md)
 - [ADR-0067: Collector installation binding and capture journal bootstrap](0067-collector-capture-bootstrap.md)
 - [ADR-0068: Explicit source capture runtime capability](0068-source-capture-runtime.md)
+
+- [ADR-0069: Read-only source comparison before durable capture](0069-source-comparison-before-capture.md)

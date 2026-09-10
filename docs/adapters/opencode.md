@@ -441,9 +441,14 @@ and actual per-record outcomes; the opaque checkpoint alone is not proof of full
 Canonical or Raw coverage.
 
 The next increment connects attribution and Collector scheduling to the source,
-prepared publication and recovery Modules. Unchanged observations must be compared
-before writing full per-record capture metadata; skipping activation alone still
-retains duplicate local membership records.
+prepared publication and recovery Modules. `comparePublicationSource` now compares a disposable source view before writing
+per-record capture metadata. It shares formal preparation's masking/fingerprints,
+compares actual published membership and independent Raw outcomes, and returns
+unchanged without capture/version/unit/checkpoint writes or HTTP. A changed result
+requires a fresh view after Begin; Raw-only changes use an independent observation.
+Exact identity/frame counts and the entire operation have explicit bounds. Raw
+capacity gaps stay stable under matching packing admission and are retried when
+admission changes. See [ADR-0069](../architecture/adr/0069-source-comparison-before-capture.md).
 Bounded archive browsing is also required before enabling observation-per-object
 capture, since the legacy Session archive listing currently loads all objects.
 The first usable OpenCode release also needs real source mutation, rewind,

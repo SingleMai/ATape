@@ -35,7 +35,7 @@ const digest = (value: Uint8Array) => createHash("sha256").update(value).digest(
 const scopeKey = (scope: CaptureScope) => JSON.stringify([text(scope.projectId), text(scope.adapterId), text(scope.sourceSessionId)])
 const RecordCounts = Schema.Struct({ session: Schema.Number, thread: Schema.Number, event: Schema.Number, usage: Schema.Number })
 const RecordManifest = Schema.Struct({ canonical: Schema.optionalKey(RecordCounts),
-  raw: Schema.optionalKey(Schema.Struct({ records: Schema.Number, scopeComplete: Schema.Boolean })) })
+  raw: Schema.optionalKey(Schema.Struct({ records: Schema.Number, scopeComplete: Schema.Boolean, admission: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))) })) })
 const SealSchema = Schema.Struct({ records: Schema.optionalKey(RecordManifest), canonicalUnits: Schema.Number, rawUnits: Schema.Number,
   nextCheckpoint: Schema.String, manifestJson: Schema.String })
 const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))

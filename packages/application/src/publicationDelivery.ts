@@ -143,7 +143,7 @@ const preparedManifest = (journal: CaptureJournal["Service"], owner: CaptureOwne
 
 const sameRecordManifest = (a: CaptureRecordManifest | undefined, b: CaptureRecordManifest | undefined) => {
   const key = (v: CaptureRecordManifest | undefined) => JSON.stringify([v !== undefined, v?.canonical !== undefined,
-    v?.canonical?.session,v?.canonical?.thread,v?.canonical?.event,v?.canonical?.usage,v?.raw !== undefined,v?.raw?.records,v?.raw?.scopeComplete])
+    v?.canonical?.session,v?.canonical?.thread,v?.canonical?.event,v?.canonical?.usage,v?.raw !== undefined,v?.raw?.records,v?.raw?.scopeComplete,v?.raw?.admission])
   return key(a) === key(b)
 }
 
@@ -293,6 +293,21 @@ export const captureRawAuthority = (owner: CaptureOwner, id: string) => Effect.g
   const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
   return capture.purpose === "raw-observation" ? (yield* boundObservation(journal, owner, capture)).rawAuthority :
     (yield* boundIntent(journal, owner, capture)).rawAuthority
+})
+
+/** Local activated baseline for disposable source comparison. No remote work. */
+export const sourceComparisonContext = (owner: CaptureOwner) => Effect.gen(function*() {
+  const journal = yield* CaptureJournal, coverage = yield* journal.coverage(owner)
+  if (coverage.canonicalCaptureId === null) return null
+  const { capture } = yield* journal.inspect(owner, coverage.canonicalCaptureId, { kind: "canonical", limit: 1 })
+  const intent = yield* boundIntent(journal, owner, capture)
+  if (!capture.trackRecords || capture.seal?.records?.canonical === undefined || capture.activationReceipt === null)
+    return yield* failure("invalid", "Source comparison requires tracked actual Canonical coverage.")
+  const seal = yield* parse(Seal, capture.seal.manifestJson)
+  const receipt = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
+  const raw = coverage.observedRawCaptureId === null ? null :
+    (yield* journal.inspect(owner, coverage.observedRawCaptureId, { kind: "raw", limit: 1 })).capture
+  return { coverage, capture, intent, receipt, raw }
 })
 
 /** Starts a fresh source observation under current Raw authority. Its existing
