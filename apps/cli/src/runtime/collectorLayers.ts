@@ -6,6 +6,8 @@ import {
   CollectorStateStore,
   CollectorTransport,
   makeSecretRedactorLayer,
+  makeSourceCaptureCollectorLayer,
+  CollectorConfigurationError,
   projectCanonicalSubmission,
   GitSourceAttribution,
   GitAttributionError,
@@ -46,6 +48,9 @@ import {
   AuthenticatedHTTPClient,
   AuthenticatedHTTPError
 } from "./authenticatedHTTPClient.ts"
+import { makeCaptureJournalsLayer } from "./captureBootstrap.ts"
+import { makePublicationTransportLayer } from "./publicationTransport.ts"
+import { makeRawPublicationTransportLayer } from "./rawPublicationTransport.ts"
 import { hostSourceCapture, isSourceCaptureRuntime } from "./sourceCaptureRuntime.ts"
 import { withCollectorStateLock } from "./collectorStateLock.ts"
 import { captureInstallationPath, capturePathState, captureRoot, readCaptureInstallation } from "./captureBinding.ts"
@@ -58,12 +63,22 @@ export type NodeCollectorPaths = {
 export const makeNodeCollectorLayer = (
   paths: NodeCollectorPaths,
   environment: NodeJS.ProcessEnv = process.env
-) => Layer.mergeAll(
-  makeCollectorStateLayer(paths.collectorStateFile),
-  makeAdapterRuntimeLayer(paths.adapterDirectory),
-  makeCollectorTransportLayer(),
-  makeSecretRedactorLayer(environmentSecretValues(environment))
-)
+) => {
+  const states = makeCollectorStateLayer(paths.collectorStateFile)
+  const journals = makeCaptureJournalsLayer(paths.collectorStateFile)
+  const redactor = makeSecretRedactorLayer(environmentSecretValues(environment))
+  const configured = environment.ATAPE_SOURCE_COLLECTION_LIMITS
+  const sources = configured === undefined ? Layer.empty : Layer.unwrap(Effect.try({
+    try: () => {
+      if (new TextEncoder().encode(configured).byteLength > 16384) throw new Error("Source admission is too large")
+      return JSON.parse(configured) as unknown
+    },
+    catch: () => new CollectorConfigurationError({ reason: "limits", message: "ATAPE_SOURCE_COLLECTION_LIMITS must be bounded JSON source admission." })
+  }).pipe(Effect.map(value => makeSourceCaptureCollectorLayer(value)))).pipe(Layer.provide(Layer.mergeAll(
+    states, journals, redactor, makePublicationTransportLayer(), makeRawPublicationTransportLayer()
+  )))
+  return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory), makeCollectorTransportLayer(), redactor, sources)
+}
 
 export const environmentSecretValues = (environment: NodeJS.ProcessEnv) => {
   const values = Object.entries(environment)
@@ -232,9 +247,7 @@ export const makeAdapterRuntimeLayer = (adapterDirectory: string) => Layer.effec
     const locator = yield* ProjectLocator
     return AdapterRuntimes.of({
       open: (project, adapter) => Effect.acquireRelease(
-        (project.type === "directory" ? locator.locate(project.path, "directory").pipe(
-          Effect.mapError(error => runtimeFailure(adapter.adapterId, "load", false, error.message)), Effect.asVoid
-        ) : Effect.void).pipe(Effect.flatMap(() => loadAdapterRuntime(adapterDirectory, project, adapter, attribution))),
+        loadAdapterRuntime(adapterDirectory, project, adapter, attribution, locator),
         ({ foreign, lifetime }) => Effect.sync(() => lifetime.abort()).pipe(
           Effect.flatMap(() => foreign.close === undefined
             ? Effect.void
@@ -260,7 +273,8 @@ const loadAdapterRuntime = (
   adapterDirectory: string,
   project: Parameters<AdapterRuntimes["Service"]["open"]>[0],
   adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1],
-  attribution: GitSourceAttribution["Service"]
+  attribution: GitSourceAttribution["Service"],
+  locator: ProjectLocator["Service"]
 ) => Effect.gen(function*() {
   const packageRoot = join(adapterDirectory, "node_modules", ...adapter.packageName.split("/"))
   const packageJSON = yield* Effect.tryPromise({
@@ -286,6 +300,8 @@ const loadAdapterRuntime = (
     return yield* runtimeFailure(adapter.adapterId, "contract", false,
       `Adapter ${adapter.adapterId} does not support Git repository attribution. Upgrade it before collecting this Git Project.`)
   }
+  if (manifest.sourceCapture === undefined && project.type === "directory") yield* locator.locate(project.path, "directory").pipe(
+    Effect.mapError(error => runtimeFailure(adapter.adapterId, "load", false, error.message)), Effect.asVoid)
   const entry = yield* resolveAdapterEntry(packageRoot, manifest, adapter.adapterId)
   const imported = yield* Effect.tryPromise({
     try: () => import(`${pathToFileURL(entry).href}?atape=${encodeURIComponent(adapter.updatedAt)}`) as Promise<unknown>,
@@ -348,7 +364,26 @@ const loadAdapterRuntime = (
     return yield* attributionRuntimeFailure()
   }
   if ("sourceCapture" in foreign) return { foreign, lifetime, hosted: {
-    sourceCapture: hostSourceCapture(adapter.adapterId, foreign.sourceCapture, lifetime.signal)
+    sourceCapture: hostSourceCapture(adapter.adapterId, foreign.sourceCapture, lifetime.signal),
+    attribute: (source) => Schema.decodeUnknownEffect(GitSource)(source).pipe(
+      Effect.mapError(() => runtimeFailure(adapter.adapterId, "contract", false, "Source supplied invalid Origin metadata.")),
+      Effect.flatMap(source => {
+        if (!isAbsolute(source.cwd)) return Effect.fail(runtimeFailure(adapter.adapterId, "contract", false, "Source supplied a relative Origin directory."))
+        if (project.type === "git") return resolver(source).pipe(Effect.mapError(error => runtimeFailure(adapter.adapterId,
+          error.reason === "unauthenticated" ? "unauthenticated" : error.reason === "transport" ? "transport" : "collect",
+          error.reason === "transport" || error.reason === "io", error.message)))
+        return locator.locate(project.path, "directory").pipe(
+          Effect.mapError(error => runtimeFailure(adapter.adapterId, "collect", error.reason === "io", error.message)),
+          Effect.flatMap(local => Effect.tryPromise({
+          try: async () => {
+            const root = local.path, candidate = await realpath(source.cwd)
+            const child = relative(root, candidate)
+            return child === "" || !isAbsolute(child) && child !== ".." && !child.startsWith(`..${sep}`) ? "included" as const : "excluded" as const
+          },
+          catch: cause => runtimeFailure(adapter.adapterId, "collect", true, errorMessage("Could not inspect source directory ownership", cause))
+        })))
+      })
+    )
   } satisfies HostedAdapter }
   const hosted: HostedAdapter = {
     collect: (request) => Effect.suspend(() => {

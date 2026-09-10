@@ -35,9 +35,38 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
 const downgradeToV3 = (db: DatabaseSync) => db.exec(`DROP TABLE capture_records; DROP TABLE source_record_versions;
   DROP INDEX known_source_scopes; ALTER TABLE captures DROP COLUMN track_records; ALTER TABLE captures DROP COLUMN record_count;
   ALTER TABLE scopes DROP COLUMN records_initialized; ALTER TABLE scopes DROP COLUMN canonical_coverage;
-  ALTER TABLE scopes DROP COLUMN observed_canonical; ALTER TABLE scopes DROP COLUMN observed_raw; PRAGMA user_version=3`)
+  DROP INDEX unactivated_source_capture; ALTER TABLE scopes DROP COLUMN observed_canonical; ALTER TABLE scopes DROP COLUMN observed_raw; PRAGMA user_version=3`)
 
 describe("Capture journal Interface", () => {
+  it("upgrades v4 after binding verification and finds the new Canonical attempt behind older Raw obligations", async () => {
+    const path = await setup()
+    await run(path, "create", Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      yield* fill(j, owner)
+      yield* j.settle(owner, "capture", { _tag: "Activated", receiptJson: '{"head":1}' })
+      yield* reserve(j, owner, "later", "cursor-1", false)
+    }))
+    const old = new DatabaseSync(path)
+    old.exec("DROP INDEX unactivated_source_capture; PRAGMA user_version=4"); old.close()
+    await expect(Effect.runPromise(CaptureJournal.pipe(Effect.provide(makeCaptureJournalLayer({ path, mode: "open",
+      binding: { ...binding, userId: "other" }, limits }))))).rejects.toMatchObject({ reason: "binding" })
+    const unchanged = new DatabaseSync(path)
+    expect(unchanged.prepare("PRAGMA user_version").get()?.user_version).toBe(4); unchanged.close()
+    await run(path, "open", Effect.gen(function*() {
+      const j = yield* CaptureJournal, owner = yield* j.claim(scope)
+      expect((yield* j.pending(owner, undefined, 1))[0]?.id).toBe("capture")
+      expect((yield* j.unactivated(owner))?.id).toBe("later")
+      expect(yield* j.read(owner, "capture", "raw", 0)).toEqual(bytes("Raw A"))
+      expect(owner.checkpoint).toBe("cursor-1")
+      const current = yield* j.claim(scope)
+      expect(yield* reason(j.unactivated(owner))).toBe("conflict")
+      expect(yield* reason(reserve(j, current, "competing", "cursor-1", false))).toBe("conflict")
+      yield* j.settle(current, "later", { _tag: "AbandonUnsealed" })
+      expect(yield* j.unactivated(current)).toBeNull()
+    }))
+    const upgraded = new DatabaseSync(path)
+    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(5); upgraded.close()
+  })
   it("verifies binding before upgrading v3 and preserves its independent Raw obligations", async () => {
     const path = await setup()
     await run(path, "create", Effect.gen(function*() {

@@ -119,3 +119,4 @@ pretending that staging acceptance passed.
 - [ADR-0068: Explicit source capture runtime capability](0068-source-capture-runtime.md)
 
 - [ADR-0069: Read-only source comparison before durable capture](0069-source-comparison-before-capture.md)
+- [ADR-0070: Source Collector recovery and scheduling](0070-source-collector-recovery-and-scheduling.md)

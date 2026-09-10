@@ -11,7 +11,7 @@ import { withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { inspectClient } from "./clientManagement.ts"
 import {
   CollectorConfigurationError,
-  hasPendingCollection,
+  makeCollectionContinuation,
   hasUnauthenticatedFailure,
   runCollectionCycle,
   type CollectionCycleReport
@@ -140,6 +140,7 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")((
 ) => withCollectorMonitoring(Effect.gen(function*() {
   const options = yield* resolveDaemonOptions(requested)
   const statuses = yield* CollectorRunStatusStore
+  const continueImmediately = makeCollectionContinuation()
   while (true) {
     const pending = yield* runCollectionCycle({ concurrency: options.concurrency }).pipe(
       Effect.matchEffect({
@@ -171,7 +172,7 @@ export const runManagedCollector = Effect.fn("CollectorDaemon.run")((
                 reason: "unauthenticated",
                 message: "The ATape Collector stopped because a CLI credential is missing, invalid, or expired. Run `atape login`."
               }))
-            : Effect.succeed(hasPendingCollection(report)))
+            : Effect.succeed(continueImmediately(report)))
         )
       })
     )

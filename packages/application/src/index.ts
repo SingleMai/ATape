@@ -26,3 +26,5 @@ export * from "./teamOverview.ts"
 export * from "./rawPublicationTransport.ts"
 
 export * from "./sourceComparison.ts"
+
+export * from "./sourceCollector.ts"

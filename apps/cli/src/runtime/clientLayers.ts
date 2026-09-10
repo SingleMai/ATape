@@ -31,7 +31,6 @@ import {
   type AdapterPackageFetch
 } from "./adapterPackageSource.ts"
 import { makeNodeCollectorLayer } from "./collectorLayers.ts"
-import { makeCaptureJournalsLayer } from "./captureBootstrap.ts"
 import { makeNodeCollectorDaemonLayer, makeCollectorRunStatusLayer } from "./collectorDaemonLayers.ts"
 import { makeNodeAuthenticationLayer } from "./authenticationLayers.ts"
 import { makeDeviceMonitoringLayer } from "./deviceMonitoring.ts"
@@ -116,7 +115,6 @@ export const makeNodeClientLayer = (
     makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
     projectSetup,
     collector,
-    makeCaptureJournalsLayer(paths.collectorStateFile),
     makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "", environment)
   )
 }

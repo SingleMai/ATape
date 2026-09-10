@@ -109,7 +109,7 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
           db.exec("COMMIT")
         }
         const version = db.prepare("PRAGMA user_version").get()
-        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
+        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4 && version?.user_version !== 5) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
         const stored = db.prepare("SELECT identity,retained_bytes FROM binding").all()
         if (stored.length !== 1 || stored[0]?.identity !== identity) throw failure("binding", "Capture journal belongs to a different account or installation.")
         // Upgrade only a verified binding. Concurrent openers serialize and recheck.
@@ -140,6 +140,9 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
             CREATE INDEX unbound_capture_records ON capture_records(scope_key,capture_id) WHERE unit_capture IS NULL AND unavailable_reason IS NULL;
             CREATE INDEX known_source_scopes ON scopes(json_extract(scope_key,'$[0]'),json_extract(scope_key,'$[1]'),json_extract(scope_key,'$[2]'));
             PRAGMA user_version=4;`)
+        }
+        if (db.prepare("PRAGMA user_version").get()?.user_version === 4) {
+          db.exec("CREATE UNIQUE INDEX unactivated_source_capture ON captures(scope_key) WHERE state IN ('preparing','sealed'); PRAGMA user_version=5")
         }
         db.exec("COMMIT")
         return db
@@ -454,6 +457,11 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       update("UPDATE captures SET state='sealed',seal_json=? WHERE scope_key=? AND id=?",encoded,key,id)
       if (records?.canonical !== undefined) update("UPDATE scopes SET observed_canonical=? WHERE scope_key=?",id,key)
       if (records?.raw?.scopeComplete) update("UPDATE scopes SET observed_raw=? WHERE scope_key=?",id,key)
+    }),
+    unactivated: (owner) => transaction(() => {
+      const {key} = ownerScope(owner)
+      const row = one("SELECT * FROM captures WHERE scope_key=? AND state IN ('preparing','sealed') LIMIT 1",key)
+      return row === undefined ? null : summary(decode(CaptureRow,row))
     }),
     pending: (owner,afterId,limit=20) => transaction(() => {
       const {key}=ownerScope(owner); integer(limit,1,100)
