@@ -47,6 +47,9 @@ export type CaptureSettlement =
   /** A verified part receipt advances delivery only, never coverage or reclamation. */
   | { readonly _tag: "CanonicalAcknowledged"; readonly ordinal: number; readonly receiptJson: string }
   | { readonly _tag: "RawAcknowledged"; readonly ordinal: number; readonly receiptJson: string }
+  /** Persist intent before reconciling receipts; re-enabling cannot resume these uploads. */
+  | { readonly _tag: "RawCancellationStarted"; readonly reason: string }
+  | { readonly _tag: "RawUnitCanceled"; readonly ordinal: number }
   | { readonly _tag: "RawCanceled"; readonly reason: string }
   | { readonly _tag: "AbandonUnsealed" }
   /** Workflow-verified terminal remote rejection; timeout/unknown outcome is insufficient. */

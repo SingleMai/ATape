@@ -91,6 +91,17 @@ describe("authenticated CLI HTTP boundary", () => {
       method: "PUT", path, encodedJson: new Uint8Array(4 * 1024 * 1024 + 1) })))).rejects.toMatchObject({ reason: "rejected" })
     expect(client.fetches).toHaveLength(1)
   })
+  it("sends frozen Raw bytes verbatim only to the bounded Raw upload endpoint", async () => {
+    const client = fixture(), bytes = new TextEncoder().encode(' \n{ "capturedAt": "2026-09-10T00:00:00Z" }\n')
+    await client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      expectedUserId: credential.user.id, method: "POST", path: "/api/v1/ingestion/raw/chunks", encodedJson: bytes })))
+    expect(client.fetches[0]?.init?.body).toEqual(bytes)
+    await expect(client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      method: "POST", path: "/api/v1/ingestion/raw/chunks", encodedJson: new Uint8Array(5 * 1024 * 1024 + 1) })))).rejects.toMatchObject({ reason: "rejected" })
+    await expect(client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      method: "POST", path: "/api/v1/ingestion/raw/receipts/lookup", encodedJson: bytes })))).rejects.toMatchObject({ reason: "rejected" })
+    expect(client.fetches).toHaveLength(1)
+  })
   it.each([
     [new DOMException("private message", "TimeoutError"), "timeout", "TimeoutError"],
     [new TypeError("private URL", { cause: Object.assign(new Error("private address"), { code: "ENOTFOUND" }) }), "dns", "ENOTFOUND"],

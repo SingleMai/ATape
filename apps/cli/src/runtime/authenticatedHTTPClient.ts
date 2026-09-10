@@ -147,8 +147,9 @@ const credentialedRequest = (
     if (report.length <= 8192) headers.set("X-Atape-Device", report)
     let body: string | Uint8Array<ArrayBuffer> | undefined
     if (input.encodedJson !== undefined) {
-      if (input.body !== undefined || input.method !== "PUT" || !/^\/api\/v1\/publications\/attempts\/[^/]+\/parts\/\d+\?sha256=[a-f0-9]{64}$/.test(input.path) ||
-        input.encodedJson.byteLength < 1 || input.encodedJson.byteLength > 4 * 1024 * 1024) throw new InvalidHTTPRequest()
+      const maximum = input.method === "POST" && input.path === "/api/v1/ingestion/raw/chunks" ? 5 * 1024 * 1024 :
+        input.method === "PUT" && /^\/api\/v1\/publications\/attempts\/[^/]+\/parts\/\d+\?sha256=[a-f0-9]{64}$/.test(input.path) ? 4 * 1024 * 1024 : 0
+      if (input.body !== undefined || input.encodedJson.byteLength < 1 || input.encodedJson.byteLength > maximum) throw new InvalidHTTPRequest()
       headers.set("Content-Type", "application/json")
       body = new Uint8Array(input.encodedJson)
     }

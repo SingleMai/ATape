@@ -51,6 +51,33 @@ required off/on boundary without another renewal workflow.
 
 This extends the existing deep Module rather than returning authorization and
 receipt steps for HTTP handlers to coordinate. PostgreSQL/HTTP tests exercise the
-public Interface and real Chunk Store. Native source preparation, Collector Raw
-orchestration and bounded archive browsing remain separate delivery increments.
+public Interface and real Chunk Store. Native source preparation and bounded archive browsing remain separate delivery increments.
 No package publication, instance deployment or production migration is implied.
+
+## Collector recovery
+
+The publication Module owns a bounded Raw recovery operation over the journal and
+an owned remote `RawPublicationTransport` Seam (policy, receipt, frozen append).
+The Node Adapter supplies authenticated HTTP; tests use this same Interface with
+real SQLite and an actual PostgreSQL/HTTP contract. Exposing separate retry and
+cancellation steps to the caller would spread binding, receipt checks and policy
+races into the scheduler, reducing Depth and Locality.
+
+Begin retains the authenticated Raw authority alongside the immutable capture.
+Recovery compares every immutable receipt field, including timestamp precision
+and original publication proof. It sends sealed wire bytes without re-encoding.
+A policy mismatch durably starts cancellation, then each pending unit reconciles
+its actual receipt before explicit cancellation. The pending index bounds progress
+across restarts. Network uncertainty keeps the unit pending. Re-enabling cannot
+clear cancellation intent; actual ACKs remain distinct from canceled gaps.
+
+A single bulk cancellation before lookup would lose successful-but-unacknowledged
+writes. Keeping cancellation only in memory would permit stale uploads after a
+restart. Two journal settlements (intent and individual unit) preserve this
+ordering using the existing format, without a new database or a mock-only Seam.
+Fresh Raw-only observations and source coverage allocation remain Host work.
+
+Receipt lookup distinguishes authorized absence (`204`) from concealed access
+(`404`). Only authorized absence can support upload or per-unit cancellation;
+concealed access preserves the obligation even after cancellation has started.
+This distinction prevents a revoked membership from hiding a real lost ACK.
