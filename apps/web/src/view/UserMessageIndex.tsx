@@ -2,6 +2,7 @@ import type { CanonicalEvent } from "@atape/domain"
 import { Eyebrow } from "@atape/ui"
 import { fromMarkdown } from "mdast-util-from-markdown"
 import { Component, createRef, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { formatDate, t } from "../i18n"
 
 type Props = { readonly prompts: ReadonlyArray<CanonicalEvent>; readonly children: ReactNode; readonly embedded?: boolean }
 type Anchor = {
@@ -123,16 +124,16 @@ const plainText = (node: MarkdownNode): string => {
   const separator = ["root", "blockquote", "list", "listItem"].includes(node.type) ? " " : ""
   return node.children?.map(plainText).filter(Boolean).join(separator) ?? ""
 }
-const summaryOf = (text: string) => plainText(fromMarkdown(text)).replace(/\s+/g, " ").trim() || "User message"
-const timeOf = (value: string) => new Intl.DateTimeFormat("en", {
+const summaryOf = (text: string) => plainText(fromMarkdown(text)).replace(/\s+/g, " ").trim() || t("userMessages.fallback", "User message")
+const timeOf = (value: string) => formatDate(new Date(value), {
   hour: "2-digit", minute: "2-digit", hour12: false
-}).format(new Date(value))
+})
 
 function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
   const items = useMemo(() => prompts.map((prompt, index) => {
     const summary = summaryOf(prompt.text)
     const time = timeOf(prompt.occurredAt)
-    return { prompt, summary, time, label: `${index + 1}. ${time} · ${summary}` }
+    return { prompt, summary, time, label: t("userMessages.itemLabel", "{index}. {time} · {summary}", { index: index + 1, time, summary }) }
   }), [prompts])
   const [current, setCurrent] = useState(prompts[0]?.id)
   const [open, setOpen] = useState(false)
@@ -252,7 +253,7 @@ function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
   }
 
   return (
-    <nav className="message-index" aria-label="User messages" ref={nav}
+    <nav className="message-index" aria-label={t("userMessages.title", "User messages")} ref={nav}
       onMouseEnter={() => { if (window.matchMedia("(hover: hover) and (min-width: 641px)").matches) setOpen(true) }}
       onMouseMove={() => { if (!open && window.matchMedia("(hover: hover) and (min-width: 641px)").matches) setOpen(true) }}
       onMouseLeave={() => { if (!nav.current?.contains(document.activeElement)) setOpen(false) }}
@@ -280,10 +281,10 @@ function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
         </button>)}
       </div>
       <button className="message-index-mobile" ref={mobile} type="button" aria-expanded={open}
-        aria-controls={panelId} aria-label={`User messages: ${currentIndex + 1} of ${prompts.length}`}
+        aria-controls={panelId} aria-label={t("userMessages.position", "User messages: {current} of {total}", { current: currentIndex + 1, total: prompts.length })}
         onClick={() => setOpen(!open)}><span className="message-index-dot" aria-hidden="true" />{currentIndex + 1} / {prompts.length}</button>
       <div className="message-index-panel" id={panelId} inert={!open} data-open={open}>
-        <header><Eyebrow>User messages</Eyebrow><button type="button" aria-label="Close user messages" onClick={close}>×</button></header>
+        <header><Eyebrow>{t("userMessages.title", "User messages")}</Eyebrow><button type="button" aria-label={t("userMessages.close", "Close user messages")} onClick={close}>×</button></header>
         <div className="message-index-list" ref={list}>
           {items.map(({ prompt, label, summary, time }, index) => <button key={prompt.id} type="button"
             title={label} aria-label={label}

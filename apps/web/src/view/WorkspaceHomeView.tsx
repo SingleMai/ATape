@@ -1,6 +1,7 @@
 import type { Workspace } from "@atape/domain"
 import { Button, Eyebrow } from "@atape/ui"
 import type { LoadableView } from "../presenters/memoryPresenter"
+import { t } from "../i18n"
 
 type Props = {
   readonly state: LoadableView<Workspace>
@@ -34,15 +35,15 @@ const SetupStep = ({
 
 export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
   if (state._tag === "Loading") {
-    return <section className="state-card" aria-live="polite">Looking for shared project memory…</section>
+    return <section className="state-card" aria-live="polite">{t("home.loading", "Looking for shared project memory…")}</section>
   }
 
   if (state._tag === "Failed") {
     return (
       <section className="state-card error-card" role="alert">
-        <h1>ATape could not open the Workspace</h1>
-        <p>{state.message}</p>
-        {state.retryable && <Button onClick={onRetry}>Try again</Button>}
+        <h1>{t("home.unavailableTitle", "ATape could not open the Workspace")}</h1>
+        <p>{t(state.messageKey)}</p>
+        {state.retryable && <Button onClick={onRetry}>{t("common.tryAgain", "Try again")}</Button>}
       </section>
     )
   }
@@ -51,49 +52,48 @@ export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
     <section className="onboarding" aria-labelledby="workspace-home-title">
       <header className="hero onboarding-hero">
         <div>
-          <Eyebrow>Your shared agent memory starts locally</Eyebrow>
-          <h1 id="workspace-home-title">Bring in the first conversation</h1>
+          <Eyebrow>{t("home.eyebrow", "Your shared agent memory starts locally")}</Eyebrow>
+          <h1 id="workspace-home-title">{t("home.title", "Bring in the first conversation")}</h1>
           <p>
-            Choose one local Project and keep using your preferred Harness. ATape will capture its conversations
-            into the Team’s searchable history.
+            {t("home.body", "Choose one local Project and keep using your preferred Harness. ATape will capture its conversations into the Team’s searchable history.")}
           </p>
         </div>
-        <span className="onboarding-route">CLI-first setup</span>
+        <span className="onboarding-route">{t("home.cliFirst", "CLI-first setup")}</span>
       </header>
 
-      <div className="onboarding-steps" aria-label="Set up ATape collection">
+      <div className="onboarding-steps" aria-label={t("home.setupLabel", "Set up ATape collection")}>
         <SetupStep
           number={1}
-          eyebrow="Choose the boundary"
-          title="Open guided setup"
+          eyebrow={t("home.step1Eyebrow", "Choose the boundary")}
+          title={t("home.step1Title", "Open guided setup")}
           command={"npm install --global @atape/cli\natape"}
         >
-          Choose a local directory in the terminal. Setup handles sign-in and connects its Git repository or ordinary folder to your Team.
+          {t("home.step1Body", "Choose a local directory in the terminal. Setup handles sign-in and connects its Git repository or ordinary folder to your Team.")}
         </SetupStep>
         <SetupStep
           number={2}
-          eyebrow="Review your choices"
-          title="Confirm the Project and sources"
+          eyebrow={t("home.step2Eyebrow", "Review your choices")}
+          title={t("home.step2Title", "Confirm the Project and sources")}
           command={"atape setup /path/to/project"}
         >
-          Review the Instance, Team, Project and conversation sources. Confirm once to install the selected integrations, import history and start ongoing sync.
+          {t("home.step2Body", "Review the Instance, Team, Project and conversation sources. Confirm once to install the selected integrations, import history and start ongoing sync.")}
         </SetupStep>
         <SetupStep
           number={3}
-          eyebrow="Create shared memory"
-          title="Check progress in your Project console"
+          eyebrow={t("home.step3Eyebrow", "Create shared memory")}
+          title={t("home.step3Title", "Check progress in your Project console")}
           command={"atape\n# After a reboot:\natape start"}
         >
-          The terminal distinguishes waiting for a conversation, syncing and partial coverage. You can close it while background sync continues.
+          {t("home.step3Body", "The terminal distinguishes waiting for a conversation, syncing and partial coverage. You can close it while background sync continues.")}
         </SetupStep>
       </div>
 
       <footer className="onboarding-refresh">
         <span>
-          <strong>Already collecting?</strong>
-          <small>The Workspace also checks automatically every 30 seconds.</small>
+          <strong>{t("home.alreadyCollecting", "Already collecting?")}</strong>
+          <small>{t("home.autoCheck", "The Workspace also checks automatically every 30 seconds.")}</small>
         </span>
-        <Button pending={state.refreshing} pendingLabel="Checking…" onClick={onRetry}>Check again</Button>
+        <Button pending={state.refreshing} pendingLabel={t("home.checking", "Checking…")} onClick={onRetry}>{t("home.checkAgain", "Check again")}</Button>
       </footer>
     </section>
   )

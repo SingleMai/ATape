@@ -1,4 +1,4 @@
-# ADR-0072: Capture journal metadata admission
+# ADR-0073: Capture journal metadata admission
 
 - Status: Accepted implementation detail of ADR-0059
 - Date: 2026-09-11

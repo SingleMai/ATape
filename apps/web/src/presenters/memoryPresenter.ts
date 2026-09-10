@@ -10,6 +10,7 @@ import { Effect, Fiber } from "effect"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { useEffect, useRef, useState } from "react"
 import { BrowserMemoryGatewayLayer } from "../runtime/memoryGateway"
+import { hasWebMessage, type WebMessageKey } from "../i18n"
 
 export type LoadableView<A> =
   | { readonly _tag: "Loading" }
@@ -17,9 +18,37 @@ export type LoadableView<A> =
       readonly _tag: "Ready"
       readonly value: A
       readonly refreshing: boolean
-      readonly refreshFailure?: string
+      readonly refreshFailureKey?: WebMessageKey
     }
-  | { readonly _tag: "Failed"; readonly message: string; readonly retryable: boolean; readonly refreshRequired?: boolean; readonly discardPrevious?: boolean }
+  | { readonly _tag: "Failed"; readonly messageKey: WebMessageKey; readonly retryable: boolean; readonly refreshRequired?: boolean; readonly discardPrevious?: boolean }
+
+export type GatewayFailureReason = "transport" | "http" | "decode"
+
+export const gatewayFailureMessageKey = (
+  reason: GatewayFailureReason,
+  status?: number,
+  code?: string
+): WebMessageKey => {
+  if (code !== undefined) {
+    const problemKey = `problems.${code}`
+    if (hasWebMessage(problemKey)) return problemKey
+  }
+  switch (reason) {
+    case "transport": return "errors.transport"
+    case "decode": return "errors.decode"
+    case "http":
+      switch (status) {
+        case 401: return "errors.unauthenticated"
+        case 403: return "errors.forbidden"
+        case 404: return "errors.notFound"
+        case 409: return "errors.conflict"
+        case 422: return "errors.invalidInput"
+        case 429: return "errors.rateLimited"
+        case 503: return "errors.unavailable"
+        default: return "errors.unknown"
+      }
+  }
+}
 
 export type RefreshCadence = "manual" | "30_seconds" | "1_minute" | "5_minutes"
 
@@ -62,14 +91,14 @@ const toLoadableView = <A>(
     onInitial: () => ({ _tag: "Loading" as const }),
     onError: (error) => ({
       _tag: "Failed" as const,
-      message: error.message,
+      messageKey: gatewayFailureMessageKey(error.reason, error.status, error.code),
       retryable: error.reason !== "decode",
       refreshRequired: error.code === "refresh_required",
       discardPrevious: error.code === "refresh_required" || [401, 403, 404].includes(error.status ?? 0)
     }),
     onDefect: () => ({
       _tag: "Failed" as const,
-      message: "ATape could not render this memory safely.",
+      messageKey: "errors.defect.memory" as const,
       retryable: false,
       refreshRequired: false,
       discardPrevious: false
@@ -150,7 +179,7 @@ const useCachedLoadableView = <A>(
           _tag: "Ready",
           value: cache.current.value,
           refreshing: false,
-          refreshFailure: view.message
+          refreshFailureKey: view.messageKey
         }
       : {
           _tag: "Ready",

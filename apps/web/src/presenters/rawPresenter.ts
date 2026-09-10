@@ -9,7 +9,8 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { Effect } from "effect"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { BrowserRawGatewayLayer } from "../runtime/rawGateway"
-import type { LoadableView } from "./memoryPresenter"
+import { gatewayFailureMessageKey, type LoadableView } from "./memoryPresenter"
+import type { WebMessageKey } from "../i18n"
 
 export type RawTextPage = {
   readonly page: RawContentPage
@@ -48,15 +49,15 @@ const decodeTextPage = (page: RawContentPage): Effect.Effect<RawTextPage, RawGat
 
 const toLoadable = <A>(
   result: AsyncResult.AsyncResult<A, RawGatewayFailure>,
-  defectMessage: string
+  defectMessageKey: WebMessageKey
 ): LoadableView<A> => AsyncResult.matchWithError(result, {
   onInitial: () => ({ _tag: "Loading" as const }),
   onError: (error) => ({
     _tag: "Failed" as const,
-    message: error.message,
+    messageKey: gatewayFailureMessageKey(error.reason, error.status),
     retryable: error.reason !== "decode"
   }),
-  onDefect: () => ({ _tag: "Failed" as const, message: defectMessage, retryable: false }),
+  onDefect: () => ({ _tag: "Failed" as const, messageKey: defectMessageKey, retryable: false }),
   onSuccess: (success) => ({
     _tag: "Ready" as const,
     value: success.value,
@@ -70,7 +71,7 @@ export const useSessionRawPresenter = (sessionId: string, cursor: string): {
 } => {
   const atom = archiveAtoms(JSON.stringify([sessionId, cursor]))
   return {
-    state: toLoadable(useAtomValue(atom), "ATape could not render the Raw manifest safely."),
+    state: toLoadable(useAtomValue(atom), "errors.defect.rawManifest"),
     reload: useAtomRefresh(atom)
   }
 }
@@ -85,7 +86,7 @@ export const useRawContentPresenter = (
 } => {
   const atom = contentAtoms(JSON.stringify([objectId, generation, cursor]))
   return {
-    state: toLoadable(useAtomValue(atom), "ATape could not render the Raw content safely."),
+    state: toLoadable(useAtomValue(atom), "errors.defect.rawContent"),
     reload: useAtomRefresh(atom)
   }
 }

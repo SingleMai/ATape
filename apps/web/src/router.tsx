@@ -52,6 +52,7 @@ import { CreateTeamView, JoinTeamView, TeamChoiceView } from "./view/TeamOnboard
 import { WorkspaceHomeView } from "./view/WorkspaceHomeView"
 import { TeamOverviewView } from "./view/TeamOverviewView"
 import { useOverviewPresenter } from "./presenters/overviewPresenter"
+import { t } from "./i18n"
 
 const SessionSearch = Schema.Struct({
   head: Schema.optionalKey(Schema.String),
@@ -185,10 +186,10 @@ function AuthenticatedBoundary() {
       replace: true
     })
   }, [navigate, session.state._tag, logout.action._tag])
-  if (session.state._tag === "Loading") return <FullPageState role="status">Restoring your ATape session…</FullPageState>
+  if (session.state._tag === "Loading") return <FullPageState role="status">{t("session.restoring", "Restoring your ATape session…")}</FullPageState>
   if (session.state._tag === "Failed") return <SessionFailure failure={session.state.failure} onRetry={session.reload} />
   if (session.state._tag === "Unauthenticated") {
-    return <FullPageState role="status">Taking you to sign in…</FullPageState>
+    return <FullPageState role="status">{t("session.redirecting", "Taking you to sign in…")}</FullPageState>
   }
   return (
     <AuthenticatedSessionContext.Provider value={session.state.value}>
@@ -218,9 +219,9 @@ function SignInRoute() {
       action={presenter.action}
       cliReturn={search.returnTo.startsWith("/cli/authorize")}
       {...(search.reason === "signed_out"
-        ? { flash: "You’ve been signed out." }
+        ? { flash: t("signIn.signedOut", "You’ve been signed out.") }
         : search.reason === "session_ended"
-          ? { flash: "Your previous session ended. Sign in again to continue." }
+          ? { flash: t("signIn.sessionEnded", "Your previous session ended. Sign in again to continue.") }
           : {})}
       onRetry={presenter.reloadOptions}
       onSignIn={(providerRegistrationId) => presenter.signIn({
@@ -267,7 +268,7 @@ function CLIAuthorizationRoute() {
   }, [authorization, search.user_code, session.state])
   useEffect(() => () => authorization.reset(), [authorization.reset])
 
-  if (session.state._tag === "Loading") return <FullPageState role="status">Restoring your session before showing the CLI request…</FullPageState>
+  if (session.state._tag === "Loading") return <FullPageState role="status">{t("session.restoringCli", "Restoring your session before showing the CLI request…")}</FullPageState>
   if (session.state._tag === "Failed") return <SessionFailure failure={session.state.failure} onRetry={session.reload} />
   if (session.state._tag === "Unauthenticated") {
     return <SignInView

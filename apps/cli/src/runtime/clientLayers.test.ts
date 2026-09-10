@@ -83,7 +83,9 @@ setInterval(() => {}, 1000);
       .then(() => "success", () => "cancelled").finally(() => { settled = true })
     try {
       const marker = join(client.paths.adapterDirectory, "pid")
-      await expect.poll(() => readFile(marker, "utf8").catch(() => "")).not.toBe("")
+      // Child startup competes with the full suite; the cancellation assertions below
+      // begin only after the child has installed its signal handler.
+      await expect.poll(() => readFile(marker, "utf8").catch(() => ""), { timeout: 5_000 }).not.toBe("")
       pid = Number(await readFile(marker, "utf8"))
       cancellation.abort()
       await expect.poll(() => readFile(join(client.paths.adapterDirectory, "terminated"), "utf8").catch(() => "")).toBe("true")
@@ -98,7 +100,7 @@ setInterval(() => {}, 1000);
       if (pid) { try { process.kill(pid, "SIGKILL") } catch {} }
       await pending
     }
-  })
+  }, 10_000)
   it("reads only current configuration without rewriting unsupported data", async () => {
     const client = await fixture()
     expect(await client.run(inspectClient())).toEqual(emptyClientConfig())

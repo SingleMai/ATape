@@ -61,7 +61,9 @@ test("pages keep one head, retain browser navigation, and refresh explicitly aft
   for (const failure of ["retry-failure", "network-failure"]) {
     head = failure
     await page.getByRole("button", { name: "Try again", exact: true }).click()
-    await expect(page.getByText(failure === "retry-failure" ? "Temporary failure." : "The ATape server is unavailable.", { exact: true })).toBeVisible()
+    await expect(page.getByText(failure === "retry-failure"
+      ? "ATape is temporarily unavailable. Try again shortly."
+      : "ATape could not reach the server. Check your connection and try again.", { exact: true })).toBeVisible()
     await expect(page.getByRole("heading", { name: "Conversation is unavailable" })).toBeVisible()
     await expect(page.getByText("Replacement conversation", { exact: true })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Try again", exact: true })).toBeEnabled()

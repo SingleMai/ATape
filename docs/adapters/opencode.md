@@ -565,6 +565,6 @@ The controlled 1,000-capture probe retained zero payload bytes but a 4,153,344-b
 SQLite file, demonstrating why metadata admission is separate. That fixture had
 ten records and one 256-byte unit per capture; its local 2.7-second run and about
 1.1 MiB WAL do not define platform-independent latency, memory or disk defaults.
-See [ADR-0072](../architecture/adr/0072-capture-journal-metadata-admission.md).
+See [ADR-0073](../architecture/adr/0073-capture-journal-metadata-admission.md).
 Physical capacity/deadline defaults, retention and supported installed-artifact
 acceptance remain required before OpenCode registration or enablement.

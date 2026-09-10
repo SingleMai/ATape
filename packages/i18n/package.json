@@ -1,0 +1,22 @@
+{
+  "name": "@atape/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "i18next": "26.4.2",
+    "i18next-icu": "2.4.4",
+    "intl-messageformat": "11.2.14"
+  },
+  "devDependencies": {
+    "typescript": "catalog:build",
+    "vitest": "catalog:build"
+  }
+}

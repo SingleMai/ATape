@@ -2,18 +2,28 @@
 
 import { Effect } from "effect"
 import { parseCLI, runCommand } from "./commands.ts"
-import { defaultNodeClientPaths, makeNodeClientLayer } from "./runtime/clientLayers.ts"
+import { defaultNodeClientPaths, makeNodeClientLayer, readClientConfigLocale } from "./runtime/clientLayers.ts"
 import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
+import { initializeCliI18n, resolveCliLocale, t } from "./i18n/index.ts"
 
 const main = async () => {
   let command
   try {
     command = parseCLI(process.argv.slice(2))
   } catch (cause) {
-    process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`)
+    process.stderr.write(`${t("cli.error.parse", "ATape: {message}", { message: cause instanceof Error ? cause.message : String(cause) })}\n`)
     process.exitCode = 2
     return
   }
+
+  const configLocale = await Effect.runPromise(
+    readClientConfigLocale(defaultNodeClientPaths().configFile)
+  ).catch(() => undefined)
+  initializeCliI18n(resolveCliLocale({
+    ...(command.options.lang === undefined ? {} : { flag: command.options.lang }),
+    environment: process.env,
+    ...(configLocale === undefined ? {} : { config: configLocale })
+  }))
 
   if (requestsGuidedExperience(command) && supportsInteractiveExperience()) {
     const { runInteractiveExperience } = await import("./interactive/run.ts")
@@ -21,7 +31,7 @@ const main = async () => {
     return
   }
   if (requestsGuidedExperience(command)) {
-    process.stdout.write("Interactive setup needs a macOS/Linux terminal. Configure tools with `atape tools configure --adapter <id> --apply`, then use `atape setup <directory> --team <slug> --create` and `atape start`, or `atape --help`.\n")
+    process.stdout.write(`${t("cli.error.interactiveUnsupported", "Interactive setup needs a macOS/Linux terminal. Configure tools with `atape tools configure --adapter <id> --apply`, then use `atape setup <directory> --team <slug> --create` and `atape start`, or `atape --help`.")}\n`)
     return
   }
 
@@ -36,7 +46,7 @@ const main = async () => {
         Effect.matchEffect({
           onFailure: (error: unknown) => Effect.sync(() => {
             const message = error instanceof Error ? error.message : String(error)
-            process.stderr.write(`ATape: ${message}\n`)
+            process.stderr.write(`${t("cli.error.prefix", "ATape: {message}", { message })}\n`)
             process.exitCode = 1
           }),
           onSuccess: () => Effect.void
@@ -53,6 +63,6 @@ const main = async () => {
 }
 
 main().catch((cause) => {
-  process.stderr.write(`ATape failed unexpectedly: ${cause instanceof Error ? cause.message : String(cause)}\n`)
+  process.stderr.write(`${t("cli.error.unexpected", "ATape failed unexpectedly: {message}", { message: cause instanceof Error ? cause.message : String(cause) })}\n`)
   process.exitCode = 1
 })

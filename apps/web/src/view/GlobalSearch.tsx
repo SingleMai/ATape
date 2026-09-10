@@ -7,6 +7,7 @@ import { SearchOverlayContext, type SearchSeed } from "../presenters/searchOverl
 import { useWorkspaceSearchPresenter, type WorkspaceSearchViewModel } from "../presenters/searchPresenter"
 import { useWorkspacePresenter } from "../presenters/workspacePresenter"
 import { SearchIcon } from "./WorkspaceIcons"
+import { formatDate, t } from "../i18n"
 
 export const GlobalSearchProvider = ({ children }: { readonly children: ReactNode }) => {
   const [open, setOpen] = useState(false)
@@ -115,20 +116,20 @@ const GlobalSearchDialog = ({
       }}
     >
       <header className="global-search-heading">
-        <h2 id="global-search-title">Search everything</h2>
-        <button type="button" className="search-dismiss" onClick={onClose} aria-label="Close search">
-          Close <kbd>Esc</kbd>
+        <h2 id="global-search-title">{t("search.title", "Search everything")}</h2>
+        <button type="button" className="search-dismiss" onClick={onClose} aria-label={t("search.closeSearch", "Close search")}>
+          {t("search.close", "Close")} <kbd>Esc</kbd>
         </button>
       </header>
       {workspace.state._tag === "Loading" && (
         <p className="search-feedback" role="status">
-          Loading searchable projects…
+          {t("search.loadingProjects", "Loading searchable projects…")}
         </p>
       )}
       {workspace.state._tag === "Failed" && (
         <div className="search-feedback" role="alert">
-          <p>{workspace.state.message}</p>
-          <Button onClick={workspace.reload}>Try again</Button>
+          <p>{t(workspace.state.messageKey)}</p>
+          <Button onClick={workspace.reload}>{t("common.tryAgain", "Try again")}</Button>
         </div>
       )}
       {workspace.state._tag === "Ready" && (
@@ -178,7 +179,7 @@ const SearchContents = ({
       >
         <SearchIcon />
         <label className="visually-hidden" htmlFor="global-search-input">
-          Search conversations
+          {t("search.searchConversations", "Search conversations")}
         </label>
         <input
           id="global-search-input"
@@ -187,7 +188,7 @@ const SearchContents = ({
           value={draft}
           type="search"
           autoComplete="off"
-          placeholder="Search a phrase, decision, or error…"
+          placeholder={t("search.placeholder", "Search a phrase, decision, or error…")}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
@@ -197,17 +198,17 @@ const SearchContents = ({
           }}
         />
         <button type="submit" className="search-submit">
-          Search
+          {t("search.submit", "Search")}
         </button>
       </form>
       <div className="global-search-filters">
-        <span>{!teamId && !projectId ? "All projects" : "Searching within"}</span>
+        <span>{!teamId && !projectId ? t("search.allProjects", "All projects") : t("search.searchingWithin", "Searching within")}</span>
         {teamId && (
           <button
             type="button"
             className="filter-chip"
             onClick={presenter.clearTeam}
-            aria-label="Remove team filter"
+            aria-label={t("search.removeTeamFilter", "Remove team filter")}
           >
             {workspace.teams.find((team) => team.id === teamId)?.name} ×
           </button>
@@ -217,10 +218,10 @@ const SearchContents = ({
             type="button"
             className="filter-chip"
             onClick={() => presenter.setProject("")}
-            aria-label="Remove project filter"
+            aria-label={t("search.removeProjectFilter", "Remove project filter")}
           >
             {projects.find((project) => project.projectId === projectId)?.projectName ??
-              "Unavailable project"}{" "}
+              t("search.unavailableProject", "Unavailable project")}{" "}
             ×
           </button>
         )}
@@ -231,24 +232,24 @@ const SearchContents = ({
           aria-controls="search-scope-filters"
           onClick={() => setFiltersOpen(!filtersOpen)}
         >
-          Filters{filtersOpen ? " −" : " +"}
+          {t("search.filters", "Filters")}{filtersOpen ? " −" : " +"}
         </button>
         {(teamId || projectId) && (
           <button type="button" className="filter-toggle" onClick={presenter.clearFilters}>
-            Clear filters
+            {t("search.clearFilters", "Clear filters")}
           </button>
         )}
         {filtersOpen && (
           <div id="search-scope-filters" className="search-scope-fields">
             {workspace.teams.length > 1 && (
               <label>
-                Team
+                {t("search.team", "Team")}
                 <select
-                  aria-label="Team"
+                  aria-label={t("search.team", "Team")}
                   value={teamId}
                   onChange={(event) => presenter.setTeam(event.target.value)}
                 >
-                  <option value="">All teams</option>
+                  <option value="">{t("search.allTeams", "All teams")}</option>
                   {workspace.teams.map((team) => (
                     <option key={team.id} value={team.id}>
                       {team.name}
@@ -258,13 +259,13 @@ const SearchContents = ({
               </label>
             )}
             <label>
-              Project
+              {t("search.project", "Project")}
               <select
-                aria-label="Project"
+                aria-label={t("search.project", "Project")}
                 value={projectId}
                 onChange={(event) => presenter.setProject(event.target.value)}
               >
-                <option value="">All projects</option>
+                <option value="">{t("search.allProjects", "All projects")}</option>
                 {projects
                   .filter((project) => !teamId || project.teamId === teamId)
                   .map((project) => (
@@ -287,8 +288,8 @@ const SearchContents = ({
         />
       </div>
       <footer className="global-search-footer">
-        <span>↑ ↓ Navigate · Enter Open</span>
-        <span>⌘ K Search anywhere</span>
+        <span>{t("search.footerNavigate", "↑ ↓ Navigate · Enter Open")}</span>
+        <span>{t("search.footerShortcut", "⌘ K Search anywhere")}</span>
       </footer>
     </>
   )
@@ -321,17 +322,17 @@ const SearchResults = ({
   if (!validQuery)
     return (
       <p className="search-feedback" role="alert">
-        This query is too long. Try fewer words.
+        {t("search.queryTooLong", "This query is too long. Try fewer words.")}
       </p>
     )
   if (!query && !pending)
     return (
       <div className="search-start">
-        <h3>Find it across your conversations.</h3>
-        <p>Search messages, decisions, and tool activity across {projects.length} projects.</p>
+        <h3>{t("search.startTitle", "Find it across your conversations.")}</h3>
+        <p>{t("search.startBody", "Search messages, decisions, and tool activity across {count} projects.", { count: projects.length })}</p>
         {recent.length > 0 && (
           <div className="recent-searches">
-            <span>Recent searches</span>
+            <span>{t("search.recentSearches", "Recent searches")}</span>
             {recent.map((item) => (
               <button type="button" key={item} onClick={() => setDraft(item)}>
                 <SearchIcon />
@@ -345,31 +346,30 @@ const SearchResults = ({
   if (pending)
     return (
       <p className="search-feedback" role="status">
-        Searching conversations…
+        {t("search.searching", "Searching conversations…")}
       </p>
     )
   if (state._tag === "Failed")
     return (
       <div className="search-feedback" role="alert">
-        <p>Search could not finish across the selected projects.</p>
-        <p>{state.message}</p>
-        {state.retryable && <Button onClick={presenter.reload}>Try again</Button>}
+        <p>{t("search.failedTitle", "Search could not finish across the selected projects.")}</p>
+        <p>{t(state.messageKey)}</p>
+        {state.retryable && <Button onClick={presenter.reload}>{t("common.tryAgain", "Try again")}</Button>}
       </div>
     )
   if (!page) return null
   return (
     <>
       <p className="global-result-count" role="status">
-        {page.results.length} {page.results.length === 1 ? "match" : "matches"} on this page · Grouped by
-        project
+        {t("search.resultCount", "{count, plural, one {# match} other {# matches}} on this page · Grouped by project", { count: page.results.length })}
       </p>
       {page.results.length === 0 && (
         <div className="search-start">
-          <h3>No matching conversations</h3>
-          <p>Try fewer words or a specific phrase from the conversation.</p>
+          <h3>{t("search.noMatchesTitle", "No matching conversations")}</h3>
+          <p>{t("search.noMatchesBody", "Try fewer words or a specific phrase from the conversation.")}</p>
           {(teamId || projectId) && (
             <Button variant="ghost" onClick={presenter.clearFilters}>
-              Search all projects
+              {t("search.searchAllProjects", "Search all projects")}
             </Button>
           )}
         </div>
@@ -398,7 +398,7 @@ const SearchResults = ({
             <span className="global-result-context">
               {multipleTeams ? `${result.teamName} / ` : ""}
               {result.projectName}
-              <span>{new Date(result.occurredAt).toLocaleDateString()}</span>
+              <span>{formatDate(new Date(result.occurredAt))}</span>
             </span>
             <strong>{result.sessionTitle}</strong>
             <p>
@@ -412,17 +412,17 @@ const SearchResults = ({
         ))}
       </div>
       {(pageIndex > 0 || Object.keys(page.nextCursors).length > 0) && (
-        <nav className="global-search-pagination" aria-label="Search pages">
+        <nav className="global-search-pagination" aria-label={t("search.pages", "Search pages")}>
           <Button variant="ghost" disabled={pageIndex === 0} onClick={presenter.previous}>
-            Previous
+            {t("common.previous", "Previous")}
           </Button>
-          <span>Page {pageIndex + 1}</span>
+          <span>{t("search.pageNumber", "Page {page}", { page: pageIndex + 1 })}</span>
           <Button
             variant="ghost"
             disabled={Object.keys(page.nextCursors).length === 0}
             onClick={presenter.next}
           >
-            Next
+            {t("common.next", "Next")}
           </Button>
         </nav>
       )}

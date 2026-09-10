@@ -6,6 +6,7 @@ import type { DirectorySuggestion } from "@atape/application"
 import { cliVersion } from "../version.ts"
 import { cassette, compactCassette, inlineCassette, controlsTheme, terminalTheme } from "./theme.ts"
 import { ExperiencePresenter, safeTerminalText, type Screen } from "./presenter.ts"
+import { t } from "../i18n/index.ts"
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 const characters = (value: string) => [...segmenter.segment(value)].map(part => part.segment)
@@ -58,7 +59,7 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
   const contentRows = rows - (headerHeight - 1)
   const [detailPage, setDetailPage] = useState(0)
   const details = linesWithin([...(screen.notice && screen.layout !== "projects" ? [screen.notice] : []), ...(screen.refreshError ? [screen.refreshError] : []), ...screen.details], width)
-  const detailCapacity = Math.max(1, Math.min(screen.layout === "projects" ? 3 : screen.title === "Review and connect" ? 12 : 7, contentRows - (screen.pathInput ? 10 : 8)))
+  const detailCapacity = Math.max(1, Math.min(screen.layout === "projects" ? 3 : screen.title === t("cli.review.title", "Review and connect") ? 12 : 7, contentRows - (screen.pathInput ? 10 : 8)))
   const pages = Math.max(1, Math.ceil(details.length / detailCapacity))
   const page = Math.min(detailPage, pages - 1)
   const shown = details.slice(page * detailCapacity, (page + 1) * detailCapacity)
@@ -69,10 +70,12 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
   const options = screen.options?.map(option => ({ ...option, label: safeTerminalText(option.label) })) ?? []
   const available = contentRows - shown.length - 4 - (pages > 1 ? 1 : 0)
   const optionCount = Math.max(1, Math.min(7, available - 1))
+  const refreshControl = screen.refreshable ? t("cli.view.controls.refresh", " · r Refresh") : ""
+  const backControl = screen.exitOnBack ? t("cli.view.exit", "Exit") : t("cli.view.back", "Back")
   return h(Box, { flexDirection: "column", width: window.columns },
-    h(BrandHeader, { mode: brand, title: `ATape · ${safeTerminalText(screen.kind === "busy" ? screen.context ?? screen.title : screen.title)}${screen.refreshing ? " · Refreshing…" : screen.layout === "projects" && screen.notice ? ` · ${safeTerminalText(screen.notice)}` : ""}` }),
+    h(BrandHeader, { mode: brand, title: `ATape · ${safeTerminalText(screen.kind === "busy" ? screen.context ?? screen.title : screen.title)}${screen.refreshing ? t("cli.view.refreshing", " · Refreshing…") : screen.layout === "projects" && screen.notice ? ` · ${safeTerminalText(screen.notice)}` : ""}` }),
     ...shown.map((line, index) => h(Text, { key: index, dimColor: true }, line || " ")),
-    pages > 1 ? h(Text, { color: "yellow" }, `Details ${page + 1}/${pages} · PgUp/PgDn`) : null,
+    pages > 1 ? h(Text, { color: "yellow" }, t("cli.view.pagination", "Details {page}/{pages} · PgUp/PgDn", { page: page + 1, pages })) : null,
     h(Box, { marginTop: 1, flexDirection: "column" },
       screen.layout === "projects" ? h(ProjectBrowser, { screen, presenter, width, browser, setBrowser, capacity: Math.max(1, available - 5) })
       : screen.kind === "input" ? h(TextEditor, {
@@ -83,11 +86,13 @@ const ScreenView = ({ screen, presenter, browser, setBrowser }: { screen: Screen
         : screen.kind === "menu" ? h(Select, { options, visibleOptionCount: optionCount, onChange: presenter.submit })
         : h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, `${screen.title}…`)),
     screen.layout === "projects" ? null : h(Text, { dimColor: true, wrap: "truncate-end" }, screen.kind === "sources"
-      ? "↑↓ Move · Space Select · Enter Save · Esc Back · Ctrl+C Exit"
-      : screen.pathInput ? "↑↓ Choose · Enter Select · Tab Edit path"
-      : screen.kind === "input" ? "Enter Continue · Esc Back · Ctrl+C Exit"
-      : screen.kind === "busy" ? "Esc Cancel · Ctrl+C Exit"
-      : `↑↓ Move · Enter Select${screen.refreshable ? " · r Refresh" : ""} · Esc ${screen.exitOnBack ? "Exit" : "Back"} · q Exit`)
+      ? t("cli.view.controls.sources", "↑↓ Move · Space Select · Enter Save · Esc Back · Ctrl+C Exit")
+      : screen.pathInput ? t("cli.view.controls.path", "↑↓ Choose · Enter Select · Tab Edit path")
+      : screen.kind === "input" ? t("cli.view.controls.input", "Enter Continue · Esc Back · Ctrl+C Exit")
+      : screen.kind === "busy" ? t("cli.view.controls.busy", "Esc Cancel · Ctrl+C Exit")
+      : t("cli.view.controls.menu", "↑↓ Move · Enter Select{refresh} · Esc {back} · q Exit", {
+        refresh: refreshControl, back: backControl
+      }))
   )
 }
 
@@ -155,7 +160,7 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
       key: action.value, ...(action.value === "add" || actions && i === selectedAction ? { color: terminalTheme.accent } : {}),
       bold: action.value === "add" || actions && i === selectedAction, dimColor: !actions && action.value !== "add"
     }, `${i ? "  ·  " : ""}${actions && i === selectedAction ? "› " : ""}${action.value === "add" ? "[n] " : ""}${action.label}`)))),
-    h(Text, { dimColor: !searching, ...(searching ? { color: terminalTheme.accent } : {}), wrap: "truncate-end" }, searching || query ? `/ ${safeTerminalText(query)}${searching ? "▌" : ""}` : `${options.length} projects · / to search`),
+    h(Text, { dimColor: !searching, ...(searching ? { color: terminalTheme.accent } : {}), wrap: "truncate-end" }, searching || query ? `/ ${safeTerminalText(query)}${searching ? "▌" : ""}` : t("cli.view.projectCount", "{total} projects · / to search", { total: options.length })),
     ...(options.length ? options.slice(start, start + capacity).map(option => {
       const project = screen.projects?.find(project => project.value === option.value)
       const active = !actions && selected?.value === option.value
@@ -166,10 +171,15 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
         ...(width >= 70 ? [h(Box, { key: "team", width: Math.floor(width * 0.23), paddingRight: 1 }, h(Text, { dimColor: !active, ...color, wrap: "truncate-end" }, safeTerminalText(project.team)))] : []),
         h(Box, { flexGrow: 1, flexBasis: 0 }, h(Text, { ...color, wrap: "truncate-end" }, project.status)))
         : h(Text, { key: option.value, ...color, wrap: "truncate-end" }, `${active ? "›" : " "} ${safeTerminalText(option.label)}`)
-    }) : [h(Text, { key: "empty", dimColor: true }, query ? "No matching projects. Esc clears search." : "No projects yet. Press n to add your first project.")]),
-    options.length > capacity ? h(Text, { dimColor: true }, `${index + 1}/${options.length} · ↑↓ More`) : null,
+    }) : [h(Text, { key: "empty", dimColor: true }, query
+      ? t("cli.view.noMatching", "No matching projects. Esc clears search.")
+      : t("cli.view.noProjects", "No projects yet. Press n to add your first project."))]),
+    options.length > capacity ? h(Text, { dimColor: true }, t("cli.view.more", "{index}/{total} · ↑↓ More", { index: index + 1, total: options.length })) : null,
     // The focused action remains readable even when the action bar is truncated.
-    h(Text, { dimColor: true, wrap: "truncate-end" }, actions ? `Actions: ${globalActions[selectedAction]?.label} · ←→ Choose · Enter Run · Tab Projects` : (width < 60 ? "n Add · ↑↓ Enter Open · / Find · Tab" : "n Add · ↑↓ Enter Open · / Search · r Refresh · Tab Actions · q Exit")))
+    h(Text, { dimColor: true, wrap: "truncate-end" }, actions
+      ? t("cli.view.actionsBar", "Actions: {action} · ←→ Choose · Enter Run · Tab Projects", { action: globalActions[selectedAction]?.label ?? "" })
+      : width < 60 ? t("cli.view.hintsNarrow", "n Add · ↑↓ Enter Open · / Find · Tab")
+      : t("cli.view.hintsWide", "n Add · ↑↓ Enter Open · / Search · r Refresh · Tab Actions · q Exit")))
 }
 
 const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity, onChange, onSubmit, onBack }: {
@@ -260,11 +270,13 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
   while (tail && stringWidth(chars.slice(start, edit.cursor + 1).join("") + tail) > width - 4) tail = characters(tail).slice(0, -1).join("")
   const first = Math.max(0, candidate - capacity + 1)
   return h(Box, { flexDirection: "column" },
-    pathInput && query !== undefined ? h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, `Search: ${safeTerminalText(query)}▌ · Esc Clear`) : null,
+    pathInput && query !== undefined ? h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, t("cli.view.search", "Search: {query}▌ · Esc Clear", { query: safeTerminalText(query) })) : null,
     h(Text, null, "> ", start ? "…" : "", chars.slice(start, edit.cursor).join(""), h(Text, { inverse: !pathInput || candidate === -2 }, chars[edit.cursor] || " "), tail),
     pathInput ? h(Box, { flexDirection: "column" },
-      query === undefined ? h(Text, { ...(candidate === -1 ? { color: terminalTheme.accent, bold: true } : {}), wrap: "truncate-end" }, `${candidate === -1 ? "›" : " "} Use current directory`) : null,
-      ...(suggestions.length === 0 ? [h(Text, { key: "directory-status", dimColor: true, wrap: "truncate-end" }, loading ? "Finding folders…" : "No matching folders · Paste a path or Tab to edit")] : []),
+      query === undefined ? h(Text, { ...(candidate === -1 ? { color: terminalTheme.accent, bold: true } : {}), wrap: "truncate-end" }, `${candidate === -1 ? "›" : " "} ${t("cli.view.useCurrentDirectory", "Use current directory")}`) : null,
+      ...(suggestions.length === 0 ? [h(Text, { key: "directory-status", dimColor: true, wrap: "truncate-end" }, loading
+        ? t("cli.view.findingFolders", "Finding folders…")
+        : t("cli.view.noFolders", "No matching folders · Paste a path or Tab to edit"))] : []),
       ...suggestions.slice(first, first + capacity).map((suggestion, i) => h(Text, {
         key: suggestion.path, ...(first + i === candidate ? { color: terminalTheme.accent } : {}), wrap: "truncate-middle"
       }, `${first + i === candidate ? "›" : " "} ${suggestion.parent ? "../ · " : ""}${safeTerminalText(suggestion.path)}${suggestion.git ? " [Git]" : ""}`))) : null)

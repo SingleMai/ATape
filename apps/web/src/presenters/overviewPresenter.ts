@@ -4,7 +4,8 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { Option } from "effect"
 import { BrowserOverviewGatewayLayer } from "../runtime/overviewGateway"
-import type { LoadableView } from "./memoryPresenter"
+import { gatewayFailureMessageKey, type LoadableView } from "./memoryPresenter"
+import type { WebMessageKey } from "../i18n"
 
 const runtime = Atom.runtime(BrowserOverviewGatewayLayer)
 const atoms = Atom.family((key: string) => {
@@ -13,16 +14,17 @@ const atoms = Atom.family((key: string) => {
 })
 function view(result: AsyncResult.AsyncResult<TeamOverview, OverviewError>): LoadableView<TeamOverview> {
   if (result._tag === "Success") return { _tag: "Ready", value: result.value, refreshing: result.waiting }
-  const failed = AsyncResult.matchWithError(result, {
-    onInitial: () => "", onSuccess: () => "", onError: error => error.message,
-    onDefect: () => "The overview could not be loaded."
+  const failed: WebMessageKey | undefined = AsyncResult.matchWithError(result, {
+    onInitial: () => undefined, onSuccess: () => undefined,
+    onError: error => gatewayFailureMessageKey(error.reason, error.status),
+    onDefect: () => "errors.defect.overview" as const
   })
   const revoked = AsyncResult.matchWithError(result, { onInitial: () => false, onSuccess: () => false, onDefect: () => false,
     onError: error => error.status === 401 || error.status === 403 || error.status === 404 })
-  if (!revoked && result._tag === "Failure" && Option.isSome(result.previousSuccess)) {
-    return { _tag: "Ready", value: result.previousSuccess.value.value, refreshing: result.waiting, refreshFailure: failed }
+  if (!revoked && result._tag === "Failure" && Option.isSome(result.previousSuccess) && failed !== undefined) {
+    return { _tag: "Ready", value: result.previousSuccess.value.value, refreshing: result.waiting, refreshFailureKey: failed }
   }
-  return failed ? { _tag: "Failed", message: failed, retryable: true } : { _tag: "Loading" }
+  return failed !== undefined ? { _tag: "Failed", messageKey: failed, retryable: true } : { _tag: "Loading" }
 }
 export const useOverviewPresenter = (userId: string, teamId: string, query: OverviewQuery) => {
   const key = JSON.stringify([userId, teamId, query])

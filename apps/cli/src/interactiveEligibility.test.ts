@@ -4,10 +4,10 @@ import { requestsGuidedExperience, supportsInteractiveExperience } from "./inter
 
 describe("interactive entry selection", () => {
   it("routes bare atape and unqualified setup to the guided experience", () => {
-    for (const args of [[], ["setup"], ["setup", "/work/a b"], ["--instance", "https://atape.net"]]) {
+    for (const args of [[], ["setup"], ["setup", "/work/a b"], ["--instance", "https://atape.net"], ["--lang", "zh-CN"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(true)
     }
-    for (const args of [["--help"], ["--version"], ["status", "--json"], ["setup", "--json"], ["setup", "--team", "acme"], ["__collector-daemon"]]) {
+    for (const args of [["--help"], ["--version"], ["status", "--json"], ["setup", "--json"], ["setup", "--team", "acme"], ["--lang", "zh-CN", "--json"], ["__collector-daemon"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(false)
     }
   })

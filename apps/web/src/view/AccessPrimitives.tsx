@@ -1,16 +1,17 @@
 import { Avatar, BrandMark, Button } from "@atape/ui"
 import { useEffect, useRef, type ReactNode } from "react"
 import type { FailureView } from "../presenters/accessPresenter"
+import { t } from "../i18n"
 
 export const AccessBrand = ({ home = "/" }: { readonly home?: string }) => (
-  <a className="access-brand" href={home} aria-label="ATape home">
+  <a className="access-brand" href={home} aria-label={t("common.home", "ATape home")}>
     <BrandMark className="access-brand-mark" />
     <span>ATape</span>
   </a>
 )
 
 export const AccountChip = ({ displayName, avatarUrl }: { readonly displayName: string; readonly avatarUrl?: string | undefined }) => (
-  <div className="account-chip" aria-label={`Signed in as ${displayName}`}>
+  <div className="account-chip" aria-label={t("common.signedInAs", "Signed in as {name}", { name: displayName })}>
     <Avatar name={displayName} src={avatarUrl} size="small" />
     <span>{displayName}</span>
   </div>
@@ -26,7 +27,7 @@ export const AccessHeader = ({ displayName, avatarUrl }: { readonly displayName?
 export const FailureNotice = ({
   failure,
   onRetry,
-  retryLabel = "Try again"
+  retryLabel
 }: {
   readonly failure: FailureView
   readonly onRetry?: () => void
@@ -34,10 +35,10 @@ export const FailureNotice = ({
 }) => (
   <div className="access-notice access-notice--error" role="alert">
     <span>
-      <strong>{failure.message}</strong>
-      {failure.incident !== undefined && <small>Incident {failure.incident}</small>}
+      <strong>{t(failure.messageKey)}</strong>
+      {failure.incident !== undefined && <small>{t("common.incident", "Incident {incident}", { incident: failure.incident })}</small>}
     </span>
-    {failure.retryable && onRetry !== undefined && <Button onClick={onRetry}>{retryLabel}</Button>}
+    {failure.retryable && onRetry !== undefined && <Button onClick={onRetry}>{retryLabel ?? t("common.tryAgain", "Try again")}</Button>}
   </div>
 )
 
@@ -89,17 +90,17 @@ export const ConfirmationDialog = ({
       {confirmation !== undefined && (
         <>
           <div className="confirmation-body">
-            <p className="atape-eyebrow">{confirmation.eyebrow ?? "Confirm action"}</p>
+            <p className="atape-eyebrow">{confirmation.eyebrow ?? t("common.confirmAction", "Confirm action")}</p>
             <h2 id="confirmation-title">{confirmation.title}</h2>
             <p id="confirmation-description">{confirmation.description}</p>
           </div>
           <div className="confirmation-actions">
-            <Button disabled={pending} onClick={onCancel}>Cancel</Button>
+            <Button disabled={pending} onClick={onCancel}>{t("common.cancel", "Cancel")}</Button>
             <Button
               className={confirmation.danger === true ? "danger-button" : undefined}
               variant={confirmation.danger === true ? "secondary" : "primary"}
               pending={pending}
-              pendingLabel="Working…"
+              pendingLabel={t("common.working", "Working…")}
               onClick={onConfirm}
             >
               {confirmation.confirmLabel}
