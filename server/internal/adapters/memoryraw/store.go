@@ -7,6 +7,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
@@ -149,7 +150,7 @@ func (s *Store) CommitChunk(
 			record: rawarchive.ObjectRecord{
 				ObjectID: chunk.ObjectID, ProjectID: chunk.ProjectID, SessionID: chunk.SessionID,
 				SourceName: chunk.SourceName, MediaType: chunk.MediaType, AdapterID: chunk.AdapterID,
-				AdapterVersion: chunk.AdapterVersion, CapturedAt: chunk.CapturedAt,
+				AdapterVersion: chunk.AdapterVersion, CapturedAt: chunk.CapturedAt, CreatedAt: time.Now().UTC(),
 				ClientRedacted: chunk.ClientRedacted, CurrentGeneration: 1, GenerationCount: 1,
 			},
 			generations: map[int64]*generationState{1: {record: rawarchive.GenerationRecord{Generation: 1}}},
@@ -224,6 +225,8 @@ func (s *Store) ListSessionObjects(
 	ctx context.Context,
 	principal authentication.Principal,
 	sessionID string,
+	after rawarchive.ObjectPosition,
+	limit int,
 ) ([]rawarchive.ObjectRecord, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -233,18 +236,26 @@ func (s *Store) ListSessionObjects(
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	objects := make([]rawarchive.ObjectRecord, 0)
+	objects := make([]rawarchive.ObjectRecord, 0, limit+1)
 	for _, state := range s.objects {
-		if state.record.SessionID == sessionID {
-			objects = append(objects, state.record)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		record := state.record
+		if record.SessionID != sessionID || (after.ObjectID != "" && (record.CreatedAt.After(after.CreatedAt) || (record.CreatedAt.Equal(after.CreatedAt) && record.ObjectID >= after.ObjectID))) {
+			continue
+		}
+		objects = append(objects, record)
+		sort.Slice(objects, func(left, right int) bool {
+			if !objects[left].CreatedAt.Equal(objects[right].CreatedAt) {
+				return objects[left].CreatedAt.After(objects[right].CreatedAt)
+			}
+			return objects[left].ObjectID > objects[right].ObjectID
+		})
+		if len(objects) > limit {
+			objects = objects[:limit]
 		}
 	}
-	sort.Slice(objects, func(left, right int) bool {
-		if !objects[left].CapturedAt.Equal(objects[right].CapturedAt) {
-			return objects[left].CapturedAt.After(objects[right].CapturedAt)
-		}
-		return objects[left].ObjectID < objects[right].ObjectID
-	})
 	return objects, nil
 }
 

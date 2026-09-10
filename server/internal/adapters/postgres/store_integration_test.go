@@ -23,6 +23,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
+	"github.com/SingleMai/ATape/server/internal/testsupport/rawcontract"
 	"github.com/SingleMai/ATape/server/internal/workspace"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -115,6 +116,46 @@ WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID, first, last)
 		query.From, query.To = "2026-09-07", "2026-09-07"
 		if empty, err := dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query); err != nil || empty.Metrics.Messages != 0 {
 			t.Fatalf("shorter range should recover: %+v, %v", empty.Metrics, err)
+		}
+	})
+	t.Run("bounded Raw manifests", func(t *testing.T) {
+		created, err := ingestion.NewIngestor(store).ApplyBatch(ctx, canonicalcontract.CLIPrincipal(), func() ingestion.Batch {
+			batch := canonicalcontract.ValidBatch()
+			batch.BatchID = "manifest-pages"
+			batch.Session.SourceSessionID = "manifest-pages"
+			return batch
+		}())
+		if err != nil {
+			t.Fatal(err)
+		}
+		chunks, err := rawchunks.NewFilesystem(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		archive := rawarchive.NewArchive(store, chunks)
+		cursor := rawcontract.Manifest(t, archive, canonicalcontract.CLIPrincipal(), canonicalcontract.WebPrincipal(), created.SessionID)
+		// Pre-auth cutover archives retain their original opaque object IDs.
+		// Pagination must not impose the newer derived r_<hex> identity format.
+		if _, err := pool.Exec(ctx, `WITH inserted AS (INSERT INTO raw_objects (id,project_id,session_id,source_name,media_type,adapter_id,adapter_version,captured_at,client_redacted,current_generation,generation_count)
+SELECT 'legacy-raw-page-'||n,project_id,session_id,source_name,media_type,adapter_id,adapter_version,captured_at,client_redacted,1,1
+FROM (SELECT * FROM raw_objects WHERE session_id=$1 LIMIT 1) original CROSS JOIN generate_series(1,3) n RETURNING id)
+INSERT INTO raw_generations (object_id,generation,size_bytes,chunk_count,finalized) SELECT id,1,0,0,true FROM inserted;`, created.SessionID); err != nil {
+			t.Fatal(err)
+		}
+		legacyFirst, err := archive.OpenSessionPage(ctx, canonicalcontract.WebPrincipal(), created.SessionID, "", 1)
+		if err != nil || len(legacyFirst.Objects) != 1 || !strings.HasPrefix(legacyFirst.Objects[0].ObjectID, "legacy-raw-page-") {
+			t.Fatalf("legacy first: %+v %v", legacyFirst, err)
+		}
+		legacyNext, err := archive.OpenSessionPage(ctx, canonicalcontract.WebPrincipal(), created.SessionID, legacyFirst.NextCursor, 1)
+		if err != nil || len(legacyNext.Objects) != 1 || legacyNext.Objects[0].ObjectID == legacyFirst.Objects[0].ObjectID {
+			t.Fatalf("legacy next: %+v %v", legacyNext, err)
+		}
+		if _, err := pool.Exec(ctx, "UPDATE team_memberships SET status='removed', removed_at=clock_timestamp() WHERE user_id=$1", canonicalcontract.TestUserID); err != nil {
+			t.Fatal(err)
+		}
+		var missing *rawarchive.NotFoundError
+		if _, err := archive.OpenSessionPage(ctx, canonicalcontract.WebPrincipal(), created.SessionID, cursor, 4); !errors.As(err, &missing) {
+			t.Fatalf("revoked membership reused cursor: %v", err)
 		}
 	})
 	canonicalcontract.Run(t, func(t *testing.T) canonicalcontract.Store {
@@ -564,7 +605,7 @@ DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 18; got != want {
+	if got, want := migrationCount, 19; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))

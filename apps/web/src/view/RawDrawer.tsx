@@ -8,6 +8,8 @@ import { t } from "../i18n"
 type Props = {
   readonly state: LoadableView<SessionRawArchive>
   readonly onClose: () => void
+  readonly cursor: string
+  readonly onPage: (cursor: string) => void
   readonly onRetry: () => void
 }
 
@@ -65,7 +67,7 @@ const RawContentPane = ({ object }: { readonly object: RawObject }) => {
       <pre className="raw-code" tabIndex={0}>{text || t("raw.emptySource", "(empty finalized source)")}</pre>
 
       <footer className="raw-page-controls">
-        <span>{t("raw.pageInfo", "Page {page} · at most 4 chunks loaded", { page: cursors.length })}</span>
+        <span>{t("raw.pageInfo", "Page {page} · 1 chunk loaded", { page: cursors.length })}</span>
         <div>
           <Button
             variant="ghost"
@@ -86,7 +88,7 @@ const RawContentPane = ({ object }: { readonly object: RawObject }) => {
   )
 }
 
-export const RawDrawer = ({ state, onClose, onRetry }: Props) => {
+export const RawDrawer = ({ state, cursor, onPage, onClose, onRetry }: Props) => {
   const closeButton = useRef<HTMLButtonElement>(null)
   const drawer = useRef<HTMLElement>(null)
   const [selectedObjectId, setSelectedObjectId] = useState("")
@@ -157,9 +159,20 @@ export const RawDrawer = ({ state, onClose, onRetry }: Props) => {
             {state.retryable && <Button onClick={onRetry}>{t("common.tryAgain", "Try again")}</Button>}
           </div>
         )}
+        {state._tag === "Ready" && (cursor || state.value.nextCursor) && (
+          <nav className="raw-page-controls" aria-label={t("raw.archivePages", "Raw archive pages")}>
+            <span>{t("raw.sourcesOnPage", "{count} sources on this page · newest received first", { count: objects.length })}</span>
+            <div>
+              <Button variant="ghost" disabled={!cursor} onClick={() => onPage("")}>{t("raw.firstSources", "First sources")}</Button>
+              <Button disabled={!state.value.nextCursor} onClick={() => state.value.nextCursor && onPage(state.value.nextCursor)}>{t("raw.nextSources", "Next sources")}</Button>
+            </div>
+          </nav>
+        )}
         {state._tag === "Ready" && objects.length === 0 && (
           <div className="raw-drawer-state">
-            <strong>{t("raw.noSourceTitle", "No Raw source was captured for this Session.")}</strong>
+            <strong>{cursor
+              ? t("raw.noMoreSources", "No more Raw sources on this page.")
+              : t("raw.noSourceTitle", "No Raw source was captured for this Session.")}</strong>
             <span>{t("raw.noSourceBody", "The Canonical conversation remains available above the source archive.")}</span>
           </div>
         )}

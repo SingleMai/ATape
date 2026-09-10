@@ -519,15 +519,25 @@ func (q *Queries) ListRawChunksAfter(ctx context.Context, arg ListRawChunksAfter
 
 const listRawSessionObjects = `-- name: ListRawSessionObjects :many
 SELECT o.id, o.project_id, o.session_id, o.source_name, o.media_type,
-       o.adapter_id, o.adapter_version, o.captured_at, o.client_redacted,
+       o.adapter_id, o.adapter_version, o.captured_at, o.created_at, o.client_redacted,
        o.current_generation, o.generation_count,
        g.size_bytes AS current_size_bytes, g.finalized AS current_finalized
 FROM raw_objects o
 JOIN raw_generations g
   ON g.object_id = o.id AND g.generation = o.current_generation
 WHERE o.session_id = $1
-ORDER BY o.captured_at DESC, o.id
+  AND ($2::boolean OR (o.created_at, o.id) < ($3::timestamptz, $4::text))
+ORDER BY o.created_at DESC, o.id DESC
+LIMIT $5
 `
+
+type ListRawSessionObjectsParams struct {
+	SessionID      string
+	FirstPage      bool
+	AfterCreatedAt time.Time
+	AfterID        string
+	ResultLimit    int32
+}
 
 type ListRawSessionObjectsRow struct {
 	ID                string
@@ -538,6 +548,7 @@ type ListRawSessionObjectsRow struct {
 	AdapterID         string
 	AdapterVersion    string
 	CapturedAt        time.Time
+	CreatedAt         time.Time
 	ClientRedacted    bool
 	CurrentGeneration int64
 	GenerationCount   int64
@@ -545,8 +556,14 @@ type ListRawSessionObjectsRow struct {
 	CurrentFinalized  bool
 }
 
-func (q *Queries) ListRawSessionObjects(ctx context.Context, sessionID string) ([]ListRawSessionObjectsRow, error) {
-	rows, err := q.db.Query(ctx, listRawSessionObjects, sessionID)
+func (q *Queries) ListRawSessionObjects(ctx context.Context, arg ListRawSessionObjectsParams) ([]ListRawSessionObjectsRow, error) {
+	rows, err := q.db.Query(ctx, listRawSessionObjects,
+		arg.SessionID,
+		arg.FirstPage,
+		arg.AfterCreatedAt,
+		arg.AfterID,
+		arg.ResultLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -563,6 +580,7 @@ func (q *Queries) ListRawSessionObjects(ctx context.Context, sessionID string) (
 			&i.AdapterID,
 			&i.AdapterVersion,
 			&i.CapturedAt,
+			&i.CreatedAt,
 			&i.ClientRedacted,
 			&i.CurrentGeneration,
 			&i.GenerationCount,

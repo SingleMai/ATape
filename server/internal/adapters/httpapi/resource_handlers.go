@@ -11,9 +11,25 @@ import (
 )
 
 func (h *Handler) rawSession(response http.ResponseWriter, request *http.Request) {
-	archive, err := h.raw.OpenSession(
-		request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"),
-	)
+	query, ok := strictQuery(response, request, "limit", "cursor")
+	if !ok {
+		return
+	}
+	limit, ok := queryInteger(response, request, query, "limit", 100)
+	if !ok {
+		return
+	}
+	if limit < 1 || limit > rawarchive.MaxManifestPageSize || (query.Has("cursor") && !query.Has("limit")) {
+		writeProblem(response, request, problemInvalidRequest, 0, nil)
+		return
+	}
+	var archive rawarchive.SessionArchive
+	var err error
+	if query.Has("limit") {
+		archive, err = h.raw.OpenSessionPage(request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"), query.Get("cursor"), limit)
+	} else {
+		archive, err = h.raw.OpenSession(request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"))
+	}
 	if err != nil {
 		writeError(response, request, err)
 		return

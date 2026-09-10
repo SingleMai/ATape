@@ -19,7 +19,8 @@ export type RawObject = typeof RawObject.Type
 
 export const SessionRawArchive = Schema.Struct({
   sessionId: Schema.String,
-  objects: Schema.Array(RawObject)
+  objects: Schema.Array(RawObject).check(Schema.isMaxLength(100)),
+  nextCursor: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048)))
 })
 export type SessionRawArchive = typeof SessionRawArchive.Type
 

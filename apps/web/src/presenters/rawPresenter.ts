@@ -18,16 +18,17 @@ export type RawTextPage = {
 }
 
 const runtime = Atom.runtime(BrowserRawGatewayLayer)
-const archiveAtoms = Atom.family((sessionId: string) => runtime.atom(listSessionRaw(sessionId)))
-const contentAtoms = Atom.family((objectId: string) =>
-  Atom.family((generation: number) =>
-    Atom.family((cursor: string) => runtime.atom(
-      readRawContent({ objectId, generation, ...(cursor ? { cursor } : {}) }).pipe(
-        Effect.flatMap(decodeTextPage)
-      )
-    ))
-  )
-)
+// Keep the complete read key in one family. Nested weak families can disappear
+// under large-page GC pressure while the leaf atom is still mounted, restarting
+// the request on every subsequent render (the conversation reader uses this too).
+const archiveAtoms = Atom.family((key: string) => {
+  const [sessionId, cursor] = JSON.parse(key) as [string, string]
+  return runtime.atom(listSessionRaw(sessionId, cursor))
+})
+const contentAtoms = Atom.family((key: string) => {
+  const [objectId, generation, cursor] = JSON.parse(key) as [string, number, string]
+  return runtime.atom(readRawContent({ objectId, generation, cursor }).pipe(Effect.flatMap(decodeTextPage)))
+})
 
 const decodeTextPage = (page: RawContentPage): Effect.Effect<RawTextPage, RawGatewayFailure> =>
   Effect.try({
@@ -64,11 +65,11 @@ const toLoadable = <A>(
   })
 })
 
-export const useSessionRawPresenter = (sessionId: string): {
+export const useSessionRawPresenter = (sessionId: string, cursor: string): {
   readonly state: LoadableView<SessionRawArchive>
   readonly reload: () => void
 } => {
-  const atom = archiveAtoms(sessionId)
+  const atom = archiveAtoms(JSON.stringify([sessionId, cursor]))
   return {
     state: toLoadable(useAtomValue(atom), "errors.defect.rawManifest"),
     reload: useAtomRefresh(atom)
@@ -83,7 +84,7 @@ export const useRawContentPresenter = (
   readonly state: LoadableView<RawTextPage>
   readonly reload: () => void
 } => {
-  const atom = contentAtoms(objectId)(generation)(cursor)
+  const atom = contentAtoms(JSON.stringify([objectId, generation, cursor]))
   return {
     state: toLoadable(useAtomValue(atom), "errors.defect.rawContent"),
     reload: useAtomRefresh(atom)

@@ -67,13 +67,26 @@ Session may append its Raw source; current Team members may read it.
 ## List a Session's Raw objects
 
 ```http
-GET /api/v1/sessions/{sessionId}/raw
+GET /api/v1/sessions/{sessionId}/raw?limit=50
 Cookie: __Secure-atape_session=...
 Accept: application/json
 ```
 
 This returns manifests and generation summaries only. It never returns
-`contentBase64`.
+`contentBase64`. Explicit `limit` opts into pages of 1–100 objects (the Web uses
+50). A nonempty `nextCursor` identifies the next page; pass it as `cursor` together
+with `limit`. Omit `cursor` on the first page. Unknown, duplicate or empty query
+values are invalid. Every page rechecks current access.
+
+Objects are ordered by immutable server first-receipt time and ID, newest first.
+Later appends update their summaries without moving them between pages. Reads are
+current pages rather than a frozen cross-request snapshot; refresh from the first
+page to discover new objects. Cursors are opaque, Session-scoped and at most 2048
+characters. The response contains `sessionId`, bounded `objects`, and optional
+`nextCursor`; the last page omits `nextCursor`.
+
+Legacy requests without `limit` return a complete list only up to 100 objects.
+Larger archives return `409 pagination_required`, requiring explicit paging.
 
 ## Read one bounded content page
 
@@ -87,7 +100,10 @@ Accept: application/json
 `limit` is a chunk count from 1 through 8 and defaults to 4. `nextCursor` is
 opaque and binds the next request to the same Raw object and generation. A page
 therefore contains at most 24 MiB of decoded source; the default four-chunk
-page contains at most 12 MiB.
+page contains at most 12 MiB. The Web explicitly requests `limit=1`, loading at
+most 3 MiB of source bytes. Its successful JSON response limit is 5 MiB to allow
+Base64 expansion; oversized responses are canceled while streaming. Error bodies
+retain the ordinary 2 MiB limit.
 
 Provider-side deletion does not delete captured history. An explicit
 `DELETE /api/v1/sessions/{sessionId}` tombstones the captured Session and makes

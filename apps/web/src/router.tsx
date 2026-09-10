@@ -61,7 +61,8 @@ const SessionSearch = Schema.Struct({
   event: Schema.optionalKey(Schema.String),
   from: Schema.optionalKey(Schema.Literal("search")),
   q: Schema.optionalKey(Schema.String),
-  raw: Schema.optionalKey(Schema.Literal("open"))
+  raw: Schema.optionalKey(Schema.Literal("open")),
+  rawCursor: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048)))
 })
 
 type SessionLocationSearch = {
@@ -72,6 +73,7 @@ type SessionLocationSearch = {
   readonly from?: "search"
   readonly q?: string
   readonly raw?: "open"
+  readonly rawCursor?: string
 }
 
 const parseSessionSearch = (input: unknown): SessionLocationSearch =>
@@ -84,7 +86,7 @@ const parseSessionSearch = (input: unknown): SessionLocationSearch =>
       ...(value.after ? { after: value.after } : {}),
       ...(value.from ? { from: value.from } : {}),
       ...(value.q ? { q: value.q } : {}),
-      ...(value.raw ? { raw: value.raw } : {})
+      ...(value.raw ? { raw: value.raw, ...(value.rawCursor ? { rawCursor: value.rawCursor } : {}) } : {})
     })
   })
 
@@ -458,8 +460,13 @@ function SessionRoute() {
           params: { teamId: params.teamId, projectId: params.projectId }
         })}
       />
-      {search.raw === "open" && <RawDrawerRoute sessionId={params.sessionId} onClose={() => {
-        const { raw: _raw, ...readerSearch } = search
+      {search.raw === "open" && <RawDrawerRoute sessionId={params.sessionId} cursor={search.rawCursor ?? ""}
+        onPage={(cursor) => {
+          const { rawCursor: _cursor, ...rest } = search
+          void navigate({ to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params,
+            search: { ...rest, ...(cursor ? { rawCursor: cursor } : {}) } })
+        }} onClose={() => {
+        const { raw: _raw, rawCursor: _cursor, ...readerSearch } = search
         void navigate({
           to: "/teams/$teamId/projects/$projectId/sessions/$sessionId",
           params,
@@ -471,9 +478,9 @@ function SessionRoute() {
   )
 }
 
-function RawDrawerRoute({ sessionId, onClose }: { readonly sessionId: string; readonly onClose: () => void }) {
-  const presenter = useSessionRawPresenter(sessionId)
-  return <RawDrawer state={presenter.state} onRetry={presenter.reload} onClose={onClose} />
+function RawDrawerRoute({ sessionId, cursor, onPage, onClose }: { readonly sessionId: string; readonly cursor: string; readonly onPage: (cursor: string) => void; readonly onClose: () => void }) {
+  const presenter = useSessionRawPresenter(sessionId, cursor)
+  return <RawDrawer key={`${sessionId}:${cursor}`} state={presenter.state} cursor={cursor} onPage={onPage} onRetry={presenter.reload} onClose={onClose} />
 }
 
 function SearchRoute() {

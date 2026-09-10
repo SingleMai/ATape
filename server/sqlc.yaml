@@ -20,6 +20,7 @@ sql:
       - "internal/adapters/postgres/migrations/000016_publication_validation.sql"
       - "internal/adapters/postgres/migrations/000017_publication_activation.sql"
       - "internal/adapters/postgres/migrations/000018_publication_raw_authority.sql"
+      - "internal/adapters/postgres/migrations/000019_raw_manifest_pagination.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
