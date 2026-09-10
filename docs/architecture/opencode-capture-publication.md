@@ -1,7 +1,8 @@
 # OpenCode capture and publication contract
 
-This is the engineering contract selected with ADR-0058 and ADR-0059. Production
-implementation, native fixtures and supported-platform acceptance remain pending.
+This is the engineering contract selected with ADR-0058 and ADR-0059. See the
+[feature guide](../adapters/opencode.md) for landed increments and remaining
+production acceptance. OpenCode is not yet enabled as an Adapter.
 It extends the existing pull architecture through an explicit capability; old
 Adapters and already captured legacy Sessions keep their existing write mode.
 
