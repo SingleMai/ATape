@@ -28,6 +28,7 @@ type projectionChangeState struct {
 type MemoryStore struct {
 	mu sync.RWMutex
 
+	users                    map[string]CapturedUser
 	teams                    map[string]TeamRecord
 	projects                 map[string]ProjectRecord
 	projectCapture           map[string]time.Time
@@ -54,6 +55,7 @@ type MemoryStore struct {
 // MemoryControlPlane is explicit fixture state for the development Adapter.
 // Production control-plane mutations remain owned by the Team Module.
 type MemoryControlPlane struct {
+	Users       []CapturedUser
 	Teams       []TeamRecord
 	Projects    []ProjectRecord
 	Memberships []authorization.MembershipFacts
@@ -65,6 +67,7 @@ func NewMemoryStore() *MemoryStore {
 
 func NewMemoryStoreWithControlPlane(controlPlane MemoryControlPlane) *MemoryStore {
 	store := &MemoryStore{
+		users:                    make(map[string]CapturedUser),
 		teams:                    make(map[string]TeamRecord),
 		projects:                 make(map[string]ProjectRecord),
 		projectCapture:           make(map[string]time.Time),
@@ -83,6 +86,9 @@ func NewMemoryStoreWithControlPlane(controlPlane MemoryControlPlane) *MemoryStor
 		sessionChildThreadCounts: make(map[string]int),
 		batchReceipts:            make(map[string]batchReceipt),
 		projectionChanges:        make([]projectionChangeState, 0),
+	}
+	for _, user := range controlPlane.Users {
+		store.users[user.ID] = user
 	}
 	for _, team := range controlPlane.Teams {
 		store.teams[team.ID] = team
@@ -616,6 +622,9 @@ func (s *MemoryStore) Conversation(
 		Session:     session,
 		Thread:      cloneThread(thread),
 		EventCounts: make(map[string]int),
+	}
+	if user, ok := s.users[session.CapturedByUserID]; ok {
+		snapshot.CapturedBy = &user
 	}
 	for candidateID := range s.threadIDsBySession[sessionID] {
 		candidate := s.threads[recordKey(sessionID, candidateID)]

@@ -80,13 +80,21 @@ attachment declarations; show an explicit waiting state when there is no reply.
 No AI summary generation is included. Keep identity metadata compact and preserve
 body readability. Full reading remains in the Session reader.
 
+The Session reader header shows the capturing user’s display name and avatar from
+`session.capturedBy` (`id`, `displayName`, `avatarUrl`), followed by the Agent and
+branch. This profile belongs to the capturing account, including when another
+Team member reads the conversation. Missing profiles fall back to the source
+actor; missing or failed avatars show initials. Canonical message authors remain
+unchanged. The profile is read with the authorized conversation snapshot and
+does not include email or external identity details.
+
 ## Refresh and lifecycle
 
-Refresh every 30 seconds while visible, pause while hidden, and offer manual
-refresh with the last successful update time. Keep previous successful data on
-refresh failure with an explicit error. Preserve filtering and scroll during
-refresh. Newly arriving conversations show an explicit update action instead of
-moving the list while it is being read.
+Load data on entry and when the selection changes; offer manual refresh with the
+last successful update time. There is no background polling or separate acceptance
+action for conversation updates. Manual refresh updates the whole dashboard,
+including recent conversations. Keep previous successful data on refresh failure
+with an explicit error. Preserve filtering and scroll during refresh.
 
 Archived Projects continue contributing to history. Departed members retain
 attribution for retained Sessions and are marked as departed. Current membership
@@ -135,8 +143,9 @@ Implemented in this increment:
   conditions remain visible as removable chips. The refresh tooltip exposes the
   last successful update time.
   Session pages contain 10 entries; dimension tables contain 25 entries.
-- Visible pages refresh every 30 seconds. Failed refreshes retain readable data;
-  revoked access clears it. New conversation cards wait for explicit acceptance.
+- Pages refresh on demand without background polling. Failed refreshes retain
+  readable data; revoked access clears it. Conversation cards use the latest
+  successful response directly.
   Back restores the selected filters, page and reading position after data loads.
 
 Verification includes all workspace typechecks and unit tests, the Web build,

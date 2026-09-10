@@ -11,8 +11,3 @@ export const openTeamOverview = Effect.fn("TeamOverview.open")(function*(teamId:
   const gateway = yield* OverviewGateway
   return yield* gateway.open(teamId, query)
 })
-// Lifetime is owned by the mounted presenter; scheduling stays in Effect.
-export const refreshOverview = (visible: () => boolean, pending: () => boolean, refresh: () => void) =>
-  Effect.sleep("30 seconds").pipe(Effect.andThen(Effect.sync(() => {
-    if (visible() && !pending()) refresh()
-  })), Effect.forever)

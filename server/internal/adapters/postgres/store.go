@@ -365,6 +365,13 @@ func (s *Store) Conversation(
 		Events:      make([]canonical.EventRecord, 0, len(eventRows)),
 		EventCounts: make(map[string]int, len(threadRows)),
 	}
+	user, err := queries.GetConversationUser(ctx, storedSession.CapturedByUserID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return canonical.ConversationSnapshot{}, false, persist("read conversation user", err)
+	}
+	if err == nil {
+		snapshot.CapturedBy = &canonical.CapturedUser{ID: domainUUID(user.ID), DisplayName: user.DisplayName, AvatarURL: user.AvatarUrl}
+	}
 	for _, row := range threadRows {
 		snapshot.Threads = append(snapshot.Threads, threadRecord(row.SessionID, row.ID, row.SourceKey, row.Revision, row.Digest, row.Label, row.Summary, row.ParentThreadID, row.CaptureStatus))
 		snapshot.EventCounts[row.ID] = int(row.EventCount)

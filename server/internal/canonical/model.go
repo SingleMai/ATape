@@ -163,7 +163,14 @@ type WorkspaceSnapshot struct {
 	Projects []WorkspaceProjectSnapshot
 }
 
+type CapturedUser struct {
+	ID          string
+	DisplayName string
+	AvatarURL   string
+}
+
 type ConversationSnapshot struct {
+	CapturedBy  *CapturedUser
 	Session     SessionRecord
 	Thread      ThreadRecord
 	Threads     []ThreadRecord

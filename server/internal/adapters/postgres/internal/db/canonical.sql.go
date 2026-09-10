@@ -71,6 +71,23 @@ func (q *Queries) GetBatchReceipt(ctx context.Context, batchKey string) (GetBatc
 	return i, err
 }
 
+const getConversationUser = `-- name: GetConversationUser :one
+SELECT id, display_name, avatar_url FROM auth_users WHERE id = $1
+`
+
+type GetConversationUserRow struct {
+	ID          pgtype.UUID
+	DisplayName string
+	AvatarUrl   string
+}
+
+func (q *Queries) GetConversationUser(ctx context.Context, id pgtype.UUID) (GetConversationUserRow, error) {
+	row := q.db.QueryRow(ctx, getConversationUser, id)
+	var i GetConversationUserRow
+	err := row.Scan(&i.ID, &i.DisplayName, &i.AvatarUrl)
+	return i, err
+}
+
 const getEventByIDForUpdate = `-- name: GetEventByIDForUpdate :one
 SELECT id, session_id, thread_id, source_key, revision, projection_revision,
        digest, source_order, event_index, order_fidelity, fidelity, raw_ref,

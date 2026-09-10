@@ -4,7 +4,7 @@ import {
   type Conversation,
   type NarrativeExchange
 } from "@atape/domain"
-import { Button } from "@atape/ui"
+import { Avatar, Button } from "@atape/ui"
 import { useEffect, useMemo } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import { useMarkdownPlugins } from "../presenters/markdownPresenter"
@@ -121,6 +121,13 @@ const ChildThreadButton = ({
   ) : null
 }
 
+const MessageMetadata = ({ event }: { readonly event: CanonicalEvent }) => (
+  <footer className="message-metadata">
+    <span>{event.author}</span>
+    <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+  </footer>
+)
+
 const PromptView = ({
   event,
   onOpenThread,
@@ -133,15 +140,12 @@ const PromptView = ({
   <article
     className={eventClassName("narrative-prompt", event, highlightedEventId)}
     id={`event-${event.id}`}
-    tabIndex={-1}
+    tabIndex={0}
   >
-    <header>
-      <strong>{event.author}</strong>
-      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
-    </header>
     <MarkdownText text={event.text} />
     <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+    <MessageMetadata event={event} />
   </article>
 )
 
@@ -157,15 +161,12 @@ const PrimaryResponseView = ({
   <article
     className={eventClassName("narrative-response", event, highlightedEventId)}
     id={`event-${event.id}`}
-    tabIndex={-1}
+    tabIndex={0}
   >
-    <header>
-      <strong>{event.author}</strong>
-      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
-    </header>
     <MarkdownText text={event.text} />
     <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+    <MessageMetadata event={event} />
   </article>
 )
 
@@ -200,18 +201,18 @@ const ActivityEventView = ({
       highlightedEventId
     )}
     id={`event-${event.id}`}
-    tabIndex={-1}
+    tabIndex={0}
   >
-    <header>
+    {event.kind !== "message" && <header>
       <span>
         <strong>{event.toolLabel || eventLabel[event.kind]}</strong>
         {event.toolLabel && <small>{eventLabel[event.kind]}</small>}
       </span>
-      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
-    </header>
+    </header>}
     <MarkdownText text={event.text} />
     <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+    <MessageMetadata event={event} />
   </article>
 )
 
@@ -268,18 +269,15 @@ const HighlightView = ({
       highlightedEventId
     )}
     id={`event-${event.id}`}
-    tabIndex={-1}
+    tabIndex={0}
   >
     <header>
-      <span>
-        <strong>{event.kind === "message" ? event.author : eventLabel[event.kind]}</strong>
-        {event.kind === "message" && <small>Unclassified message</small>}
-      </span>
-      <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+      <strong>{event.kind === "message" ? "Unclassified message" : eventLabel[event.kind]}</strong>
     </header>
     <MarkdownText text={event.text} />
     <ToolDetails event={event} />
     <ChildThreadButton event={event} onOpenThread={onOpenThread} />
+    <MessageMetadata event={event} />
   </article>
 )
 
@@ -343,9 +341,10 @@ export const SessionReaderView = ({
           </Button>
           <div>
             <h1 id="session-title">{conversation.session.title}</h1>
-            <p>
-              {conversation.session.actor.name} · {conversation.session.actor.harness}
-              {conversation.session.branch ? ` · ${conversation.session.branch}` : ""}
+            <p className="reader-user">
+              <Avatar name={conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} src={conversation.session.capturedBy?.avatarUrl} size="small" />
+              <span>{conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} · {conversation.session.actor.harness}
+              {conversation.session.branch ? ` · ${conversation.session.branch}` : ""}</span>
             </p>
           </div>
         </div>

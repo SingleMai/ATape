@@ -11,7 +11,7 @@ const DemoUserID = "demo-user"
 // NewDemoStore seeds the local executable with representative Canonical data.
 // It is a development Adapter, not a source-provider fixture or Raw archive.
 func NewDemoStore() *MemoryStore {
-	store := NewMemoryStore()
+	store := NewMemoryStoreWithControlPlane(MemoryControlPlane{Users: []CapturedUser{{ID: DemoUserID, DisplayName: "Demo user"}}})
 	acme := TeamRecord{ID: "acme-engineering", Name: "Acme Engineering"}
 	openSource := TeamRecord{ID: "open-source-lab", Name: "Open Source Lab"}
 	store.teams[acme.ID] = acme

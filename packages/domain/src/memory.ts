@@ -44,6 +44,11 @@ export const ProjectMemory = Schema.Struct({
 export type ProjectMemory = typeof ProjectMemory.Type
 
 export const Session = Schema.Struct({
+  capturedBy: Schema.optionalKey(Schema.Struct({
+    id: Schema.String,
+    displayName: Schema.String,
+    avatarUrl: Schema.String
+  })),
   id: Schema.String,
   projectId: Schema.String,
   title: Schema.String,

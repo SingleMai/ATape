@@ -86,6 +86,9 @@ func TestMemoryOpensChildThread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open child conversation: %v", err)
 	}
+	if user := conversation.Session.CapturedBy; user == nil || user.ID != canonical.DemoUserID || user.DisplayName != "Demo user" {
+		t.Fatalf("missing capturing user: %+v", user)
+	}
 	if got, want := conversation.Thread.ID, "schema-review"; got != want {
 		t.Fatalf("thread id = %q, want %q", got, want)
 	}

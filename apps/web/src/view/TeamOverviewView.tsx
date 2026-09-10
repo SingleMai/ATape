@@ -45,7 +45,7 @@ export function TeamOverviewView({ presenter: p, selection: s, onChange, onOpenS
   ] as const
   const activeFilters = filters.filter(([, key]) => s[key])
   return <section className="team-overview" aria-labelledby="team-overview-title">
-    <header className="overview-heading"><div><p className="overview-team-name">{data.teamName}</p><h1 id="team-overview-title">Overview</h1></div>
+    <header className="overview-heading"><h1 id="team-overview-title">Overview</h1>
       <div className="overview-period"><label><span className="sr-only">Time range</span><select aria-label="Time range" value={custom || s.from ? "custom" : s.days} onChange={event => {
         if (event.target.value === "custom") { setDates({ from: s.from || data.from, to: s.to || data.to }); setCustom(true) }
         else { setCustom(false); update({ days: Number(event.target.value), from: "", to: "" }) }
@@ -85,8 +85,7 @@ export function TeamOverviewView({ presenter: p, selection: s, onChange, onOpenS
         <UsageChart data={data} metric={s.metric} onSelect={(date, agent) => update({ from: date, to: date, agent, view: "sessions" })} />
       </section>
       <section className="overview-recent" aria-labelledby="overview-recent-title"><header className="overview-section-heading"><h2 id="overview-recent-title">Recent sessions</h2><button type="button" onClick={() => update({ view: "sessions" })}>Open sessions <span aria-hidden="true">→</span></button></header>
-        {p.hasNewConversations && <Button variant="secondary" onClick={p.acceptConversations}>Show updated conversations</Button>}
-        <SessionGrid rows={p.rows} onOpen={onOpenSession} />
+        <SessionGrid rows={data.sessions} onOpen={onOpenSession} />
       </section>
     </> : <section className="overview-detail"><header className="overview-section-heading"><div><button type="button" className="overview-back" onClick={() => update({ view: "overview" })}>← Overview</button><h2>{({ members: "Team members", activeMembers: "Active members", projects: "Project activity", sessions: "Sessions", usage: "Token usage" } as const)[s.view]}</h2></div></header>
       {s.view === "sessions" ? <><SessionGrid rows={data.sessions} onOpen={onOpenSession} showUsage /><div className="overview-pagination"><span>{data.totalSessions} sessions · Page {data.page + 1}</span><Button variant="secondary" disabled={data.page === 0} onClick={() => onChange({ page: data.page - 1 })}>Previous</Button><Button variant="secondary" disabled={(data.page + 1) * data.limit >= data.totalSessions} onClick={() => onChange({ page: data.page + 1 })}>Next</Button></div></>
