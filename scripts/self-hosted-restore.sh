@@ -11,7 +11,9 @@ if [ "$#" -ne 2 ] || [ -z "$1" ] || [ "$2" != "--confirm-restore" ]; then
 fi
 
 repository=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
-compose_files=$repository/compose.yaml
+# Preserve the operator's complete topology, including publication and pinned
+# Web image overrides. The legacy single override remains supported.
+compose_files=${COMPOSE_FILE:-$repository/compose.yaml}
 if [ -n "${ATAPE_COMPOSE_OVERRIDE_FILE:-}" ]; then
   case "$ATAPE_COMPOSE_OVERRIDE_FILE" in
     /*) override_file=$ATAPE_COMPOSE_OVERRIDE_FILE ;;

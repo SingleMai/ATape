@@ -4,9 +4,9 @@
 package releaseinfo
 
 var (
-	Version           = "0.4.8"
+	Version           = "0.5.0"
 	AuthEpoch         = "auth-v1"
-	MinimumCLIVersion = "0.4.8"
+	MinimumCLIVersion = "0.5.0"
 )
 
 // Info is the small, presentation-safe view exposed by diagnostics and

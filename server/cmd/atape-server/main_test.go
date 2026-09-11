@@ -420,3 +420,16 @@ func TestPublicationCapacityIsExplicit(t *testing.T) {
 		t.Fatal("demo advertised unsupported publication")
 	}
 }
+
+func TestPublicationDeploymentExample(t *testing.T) {
+	clearServerConfigEnvironment(t)
+	encoded, err := os.ReadFile(filepath.Join("..", "..", "..", "deploy", "publication-limits.example.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATAPE_PUBLICATION_LIMITS", string(encoded))
+	limits, err := loadPublicationLimits()
+	if err != nil || limits == nil {
+		t.Fatalf("deployment example failed strict configuration: %v", err)
+	}
+}

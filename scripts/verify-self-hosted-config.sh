@@ -54,6 +54,31 @@ if printf '%s\n' "$loopback_rendered" | grep -Eq '^[[:space:]]+ATAPE_DATABASE_UR
   exit 1
 fi
 
+# The base topology must not turn an absent capability into a present empty JSON.
+if printf '%s\n' "$loopback_rendered" | grep -q 'ATAPE_PUBLICATION_LIMITS:'; then
+  printf '%s\n' "base Compose unexpectedly enables publication configuration" >&2
+  exit 1
+fi
+if (unset ATAPE_PUBLICATION_LIMITS; docker compose --project-directory "$repository" --env-file "$temporary/loopback.env" \
+  -f "$repository/compose.yaml" -f "$repository/compose.publication.yaml" config --quiet) >/dev/null 2>&1; then
+  printf '%s\n' "publication override accepted missing admission" >&2
+  exit 1
+fi
+if ATAPE_PUBLICATION_LIMITS='' docker compose --project-directory "$repository" --env-file "$temporary/loopback.env" \
+  -f "$repository/compose.yaml" -f "$repository/compose.publication.yaml" config --quiet >/dev/null 2>&1; then
+  printf '%s\n' "publication override accepted empty admission" >&2
+  exit 1
+fi
+publication_limits=$(tr -d '\n' < "$repository/deploy/publication-limits.example.json")
+ATAPE_PUBLICATION_LIMITS="$publication_limits" docker compose --project-directory "$repository" --env-file "$temporary/loopback.env" \
+  -f "$repository/compose.yaml" -f "$repository/compose.publication.yaml" config --format json > "$temporary/publication.json"
+python3 - "$temporary/publication.json" "$repository/deploy/publication-limits.example.json" <<'PYTHON'
+import json, sys
+with open(sys.argv[1]) as source: rendered = json.load(source)
+with open(sys.argv[2]) as source: expected = json.load(source)
+assert json.loads(rendered["services"]["server"]["environment"]["ATAPE_PUBLICATION_LIMITS"]) == expected
+PYTHON
+
 write_common "$temporary/same-origin.env" "https://self-hosted.example" "" "" "false"
 docker compose --project-directory "$repository" --env-file "$temporary/same-origin.env" \
   -f "$repository/compose.yaml" config --quiet
@@ -69,4 +94,4 @@ printf '%s\n' "$split_rendered" | grep -Fq 'VITE_ATAPE_API_ORIGIN: https://api.s
 printf '%s\n' "$split_rendered" | grep -Fq 'host_ip: 127.0.0.1'
 printf '%s\n' "$split_rendered" | grep -Fq 'published: "18081"'
 
-printf '%s\n' "validated loopback, same-origin HTTPS, and split-origin HTTPS Compose topologies"
+printf '%s\n' "validated loopback, same-origin HTTPS, split-origin HTTPS and explicit publication Compose configuration"

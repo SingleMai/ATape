@@ -91,7 +91,22 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Fatalf("construct Raw chunk store: %v", err)
 	}
 	archive := rawarchive.NewArchive(store, chunkStore)
-	publisher, err := postgresadapter.NewPublicationStore(pool, publication.Limits{PartBytes: 4 << 20, TargetBytes: 32 << 20, UserPendingBytes: 64 << 20, Parts: 32, Reservations: 32, LeaseLifetime: time.Minute, ReservationLifetime: 5 * time.Minute})
+	// Exercise the reviewed deployment example through the real constructor and
+	// full HTTP/Collector contract, not just JSON parsing.
+	encodedCapacity, err := os.ReadFile("../../../../deploy/publication-limits.example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var capacity publication.Capacity
+	if err := json.Unmarshal(encodedCapacity, &capacity); err != nil {
+		t.Fatal(err)
+	}
+	publisher, err := postgresadapter.NewPublicationStore(pool, publication.Limits{
+		PartBytes: capacity.PartBytes, TargetBytes: capacity.TargetBytes, UserPendingBytes: capacity.UserPendingBytes,
+		Parts: capacity.Parts, Reservations: capacity.Reservations,
+		LeaseLifetime:       time.Duration(capacity.LeaseLifetimeMS) * time.Millisecond,
+		ReservationLifetime: time.Duration(capacity.ReservationLifetimeMS) * time.Millisecond,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

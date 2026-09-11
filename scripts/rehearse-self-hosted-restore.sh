@@ -6,7 +6,11 @@ temporary=$(mktemp -d "$repository/.atape-restore-rehearsal.XXXXXX")
 temporary=$(CDPATH= cd -- "$temporary" && pwd -P)
 export COMPOSE_PROJECT_NAME=atape_rehearsal_$$
 export ATAPE_COMPOSE_ENV_FILE=$temporary/rehearsal.env
-compose_files=$repository/compose.yaml
+# This rehearsal owns its topology and synthetic admission; do not inherit an
+# operator's optional deployment override or shell-level publication profile.
+unset ATAPE_COMPOSE_OVERRIDE_FILE ATAPE_PUBLICATION_LIMITS
+export COMPOSE_FILE=$repository/compose.yaml:$repository/compose.publication.yaml:$temporary/storage.yaml
+compose_files=$COMPOSE_FILE
 
 compose() {
   COMPOSE_FILE=$compose_files docker compose --project-directory "$repository" \
@@ -45,7 +49,22 @@ port=$((30000 + ($$ % 20000)))
   printf 'ATAPE_AUTH_PRIVATE_STATE_KEY_RING_SECRET_FILE=%s\n' "$temporary/secrets/auth_private_state_key_ring.json"
   printf 'ATAPE_GITHUB_CLIENT_SECRET_FILE=%s\n' "$temporary/secrets/github_client_secret"
   printf 'ATAPE_SERVER_IMAGE=%s-server:latest\n' "$COMPOSE_PROJECT_NAME"
+  printf 'ATAPE_PUBLICATION_LIMITS=%s\n' "$(tr -d '\n' < "$repository/deploy/publication-limits.example.json")"
 } > "$ATAPE_COMPOSE_ENV_FILE"
+
+# Exercise the complete deployment topology through the public backup/restore
+# commands. Falling back to base Compose would archive the wrong Raw volume.
+cat > "$temporary/storage.yaml" <<'YAML'
+services:
+  server-init:
+    volumes:
+      - rehearsal-raw:/var/lib/atape/raw
+  server:
+    volumes:
+      - rehearsal-raw:/var/lib/atape/raw
+volumes:
+  rehearsal-raw:
+YAML
 
 compose up --build --detach database server
 
@@ -147,4 +166,4 @@ if [ "$display_name" != "Restore Owner" ] || [ "$restored_sha" != "$content_sha"
   exit 1
 fi
 
-printf '%s\n' "rehearsed a consistent PostgreSQL + Raw backup, mutation, restore, and readiness cycle"
+printf '%s\n' "rehearsed a consistent PostgreSQL + Raw backup, mutation, restore, and readiness cycle with publication and custom storage overrides"

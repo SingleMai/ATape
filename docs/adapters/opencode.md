@@ -14,6 +14,9 @@ The Server must expose `atape.publication.v1` with configured publication limits
 CLI collection defaults are supplied automatically. See the
 [package guide](../../adapters/opencode/README.md) for enablement and source paths,
 and the [capture contract](../architecture/opencode-capture-publication.md).
+The [0.5.0 release candidate](../releases/v0.5.0.md) coordinates all four npm
+artifacts. The [Server rollout procedure](../operations/opencode-rollout.md)
+provides explicit Compose enablement, admission review and paired recovery steps.
 
 The sections below record the delivery sequence. Statements about private
 candidates, unavailable entry points or pending gates describe their respective
