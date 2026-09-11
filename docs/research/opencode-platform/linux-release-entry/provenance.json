@@ -1,0 +1,27 @@
+{
+  "imageIndex": "node@sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
+  "releaseURL": "https://github.com/anomalyco/opencode/releases/download/v1.18.30/opencode-linux-arm64.tar.gz",
+  "archiveSHA256": "4111a55c2a02c0fac314bd51e9a2330280e6d29d2b85b9554fff6d62612566ed",
+  "binarySHA256": "01edb5839aa10d5b09133fedcb335a062ecad6e82552933bb14f71756f2b296b",
+  "adapterTarballSHA256": "57e02deb5cb44654e76f0cdfafc5ca957c50065ee029252cfd82a8b714b9ac54",
+  "network": "none",
+  "mounts": [],
+  "platformRequested": "linux/arm64",
+  "candidateCommit": "df5fcbbcf2f8cb4ba6c79929d450b2e9160c2412",
+  "candidatePullRequest": "https://github.com/SingleMai/ATape/pull/148",
+  "adapterVersion": "0.4.8",
+  "installedEntrySHA256": "db6ffd14179a26e38fff2dbfae0df18863fb1d6f2e619cf311c1421a7eb62323",
+  "outputDirectory": "/tmp/atape-linux-release-entry-df5fcbb",
+  "containerRemoved": true,
+  "harnessDelta": "Read installed package manifest and use/assert its actual 0.4.8 version and declared protocol/sourceCapture/gitAttribution in factory context; preserve historical linux-native evidence.",
+  "files": {
+    "run.py": "9a088a49060c2bb874ca6bacadc12e8592adc380f1143ea739d7dc8652ef0f8d",
+    "generate-linux.py": "7b8a8d03f4783dd3c1623520724d73780aed1f65c11b7e9a93890f05bde56286",
+    "verification.stdout.txt": "28d82624b80d75b54ae020556d180211b8a7e65568b7ffb2a4f8276e9ed440d4",
+    "results.json": "b6b7d6c79a7702bb2b5c157ddc5a2aee0cb5a3236a96717748bce0d2929c860b",
+    "platform.json": "785bfebd58b512ddcd93ae03b8c0a3910b7c6614ab605a4bc1f531b51312a75e",
+    "native-manifest.json": "0a29bd8cbefa9f97da770ea0bc9c10fcfc37ab83de34e4d8e811dd617f9c9e4c",
+    "verify-native.mjs": "be51cb9345e012b959351db0feeecd43f4d39c10ae6723133d35ed9de8583258",
+    "README.md": "661ac32443a8e9bd4f0d97eaa8efc6fd5706ebe42e3777560ef6a940ed525824"
+  }
+}

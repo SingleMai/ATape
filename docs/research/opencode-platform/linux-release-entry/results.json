@@ -1,0 +1,562 @@
+{
+  "installedPackage": {
+    "name": "@atape/adapter-opencode",
+    "version": "0.4.8",
+    "atapeAdapter": {
+      "protocolVersion": "atape.adapter.v1alpha1",
+      "gitAttribution": "atape.git-attribution.v1",
+      "sourceCapture": "atape.source-capture.v1",
+      "adapterId": "opencode",
+      "displayName": "OpenCode",
+      "entry": "./dist/index.js",
+      "harnesses": [
+        "OpenCode"
+      ]
+    }
+  },
+  "platform": "linux",
+  "arch": "arm64",
+  "node": "v24.20.0",
+  "artifactSHA256": "db6ffd14179a26e38fff2dbfae0df18863fb1d6f2e619cf311c1421a7eb62323",
+  "discovery": [
+    {
+      "sourceId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "originKey": "oc_1d9ac1c05394ddb38a3a25b3cab65734ea4af7884f7bbedc02db309d2e26cca4",
+      "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project"
+    },
+    {
+      "sourceId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "originKey": "oc_e79747a90f75966d70ca0ceb60ac8edb20f43243dd498bf9905c6665139145a9",
+      "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project"
+    }
+  ],
+  "captures": [
+    {
+      "name": "root",
+      "rawOff": {
+        "rawEnabled": false,
+        "frames": 16,
+        "pages": 9,
+        "origin": {
+          "sourceId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "originKey": "oc_e79747a90f75966d70ca0ceb60ac8edb20f43243dd498bf9905c6665139145a9",
+          "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project"
+        },
+        "threads": [
+          {
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "label": "ATape native fixture 根 🧪",
+            "summary": "",
+            "captureStatus": "healthy"
+          },
+          {
+            "sourceThreadId": "ses_f7135b7a0ffezUms7fchmZH03l",
+            "parentSourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "label": "Native child 子会话",
+            "summary": "",
+            "captureStatus": "healthy"
+          }
+        ],
+        "target": {
+          "events": 6,
+          "usage": 1,
+          "threads": 2
+        },
+        "events": [
+          {
+            "sourceEventId": "oc_676d0336310ef97953f1bd7e81ae36cbd43d16e2962bb080c728ce2474d5b7ac",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 0,
+            "eventIndex": 0,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.234Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "改写文本 B：中文与 emoji 🚀\nsecond line"
+              },
+              "messageId": "msg_08eca46ea001Xu7tovBxi7PNdZ"
+            }
+          },
+          {
+            "sourceEventId": "oc_b6452f7e886303ae8157662876b30d731f66431f3f9b235c116c0e9cecc0f649",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 1,
+            "eventIndex": 1,
+            "orderFidelity": "derived",
+            "fidelity": "derived",
+            "occurredAt": "2026-09-11T04:46:56.625Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "The following tool was executed by the user"
+              },
+              "messageId": "msg_08eca4871001cGZgA94zSj411g"
+            }
+          },
+          {
+            "sourceEventId": "oc_a0a8e239f777ca24448fcb5ecd30d53691cdc87be7ba34cc02deab57a8cc4ee9",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 2,
+            "eventIndex": 2,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.627Z",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "oc_597f03b7f767e2a48ef311f12f5441cdfe537ca93b70bf17ee0391f3354fda99",
+              "title": "bash",
+              "kind": "other",
+              "status": "in_progress",
+              "rawInput": {
+                "command": "printf 'native tool fixture 中文 🛠️\\n'"
+              }
+            }
+          },
+          {
+            "sourceEventId": "oc_bc42bdb59484d5f1bb5bcedc0ffbd0f70a44e1f71a1c6fb6ce11440c49c869eb",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 3,
+            "eventIndex": 3,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.634Z",
+            "update": {
+              "sessionUpdate": "tool_call_update",
+              "toolCallId": "oc_597f03b7f767e2a48ef311f12f5441cdfe537ca93b70bf17ee0391f3354fda99",
+              "status": "completed",
+              "rawOutput": "native tool fixture 中文 🛠️\n"
+            }
+          },
+          {
+            "sourceEventId": "oc_ece0a89ac348bd4dcec1d57aa807842bae07d1f7b72299e51201bd2250ae17cc",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 4,
+            "eventIndex": 4,
+            "orderFidelity": "derived",
+            "fidelity": "derived",
+            "occurredAt": "2026-09-11T04:46:56.714Z",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "受控本地摘要：fixture 根会话、子会话与工具输出。No real model was called. 🧪"
+              },
+              "messageId": "msg_08eca48b000141koJlWnZ74KNl"
+            }
+          },
+          {
+            "sourceEventId": "oc_be88d51d3e7f3b09ffa22c99f6c9c3afc6dd0262d6a465de1b6129fcec4649e7",
+            "sourceThreadId": "ses_f7135b7a0ffezUms7fchmZH03l",
+            "sourceOrder": 5,
+            "eventIndex": 5,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.613Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "子会话的受控内容 🧵"
+              },
+              "messageId": "msg_08eca4865001IVe0gdyrHYsiH0"
+            }
+          }
+        ],
+        "usage": [
+          {
+            "sourceUsageId": "oc_ea09c4119902fd1c02c51aeac9a1aa5ed2f9f368cd1a26474447b66ae87031eb",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "occurredAt": "2026-09-11T04:46:56.719Z",
+            "model": "fixture-model",
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          }
+        ]
+      },
+      "rawOn": {
+        "rawEnabled": true,
+        "frames": 16,
+        "pages": 9,
+        "origin": {
+          "sourceId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "originKey": "oc_e79747a90f75966d70ca0ceb60ac8edb20f43243dd498bf9905c6665139145a9",
+          "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project"
+        },
+        "threads": [
+          {
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "label": "ATape native fixture 根 🧪",
+            "summary": "",
+            "captureStatus": "healthy"
+          },
+          {
+            "sourceThreadId": "ses_f7135b7a0ffezUms7fchmZH03l",
+            "parentSourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "label": "Native child 子会话",
+            "summary": "",
+            "captureStatus": "healthy"
+          }
+        ],
+        "target": {
+          "events": 6,
+          "usage": 1,
+          "threads": 2
+        },
+        "events": [
+          {
+            "sourceEventId": "oc_676d0336310ef97953f1bd7e81ae36cbd43d16e2962bb080c728ce2474d5b7ac",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 0,
+            "eventIndex": 0,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.234Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "改写文本 B：中文与 emoji 🚀\nsecond line"
+              },
+              "messageId": "msg_08eca46ea001Xu7tovBxi7PNdZ"
+            }
+          },
+          {
+            "sourceEventId": "oc_b6452f7e886303ae8157662876b30d731f66431f3f9b235c116c0e9cecc0f649",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 1,
+            "eventIndex": 1,
+            "orderFidelity": "derived",
+            "fidelity": "derived",
+            "occurredAt": "2026-09-11T04:46:56.625Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "The following tool was executed by the user"
+              },
+              "messageId": "msg_08eca4871001cGZgA94zSj411g"
+            }
+          },
+          {
+            "sourceEventId": "oc_a0a8e239f777ca24448fcb5ecd30d53691cdc87be7ba34cc02deab57a8cc4ee9",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 2,
+            "eventIndex": 2,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.627Z",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "oc_597f03b7f767e2a48ef311f12f5441cdfe537ca93b70bf17ee0391f3354fda99",
+              "title": "bash",
+              "kind": "other",
+              "status": "in_progress",
+              "rawInput": {
+                "command": "printf 'native tool fixture 中文 🛠️\\n'"
+              }
+            }
+          },
+          {
+            "sourceEventId": "oc_bc42bdb59484d5f1bb5bcedc0ffbd0f70a44e1f71a1c6fb6ce11440c49c869eb",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 3,
+            "eventIndex": 3,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.634Z",
+            "update": {
+              "sessionUpdate": "tool_call_update",
+              "toolCallId": "oc_597f03b7f767e2a48ef311f12f5441cdfe537ca93b70bf17ee0391f3354fda99",
+              "status": "completed",
+              "rawOutput": "native tool fixture 中文 🛠️\n"
+            }
+          },
+          {
+            "sourceEventId": "oc_ece0a89ac348bd4dcec1d57aa807842bae07d1f7b72299e51201bd2250ae17cc",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "sourceOrder": 4,
+            "eventIndex": 4,
+            "orderFidelity": "derived",
+            "fidelity": "derived",
+            "occurredAt": "2026-09-11T04:46:56.714Z",
+            "update": {
+              "sessionUpdate": "agent_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "受控本地摘要：fixture 根会话、子会话与工具输出。No real model was called. 🧪"
+              },
+              "messageId": "msg_08eca48b000141koJlWnZ74KNl"
+            }
+          },
+          {
+            "sourceEventId": "oc_be88d51d3e7f3b09ffa22c99f6c9c3afc6dd0262d6a465de1b6129fcec4649e7",
+            "sourceThreadId": "ses_f7135b7a0ffezUms7fchmZH03l",
+            "sourceOrder": 5,
+            "eventIndex": 5,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.613Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "子会话的受控内容 🧵"
+              },
+              "messageId": "msg_08eca4865001IVe0gdyrHYsiH0"
+            }
+          }
+        ],
+        "usage": [
+          {
+            "sourceUsageId": "oc_ea09c4119902fd1c02c51aeac9a1aa5ed2f9f368cd1a26474447b66ae87031eb",
+            "sourceThreadId": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+            "occurredAt": "2026-09-11T04:46:56.719Z",
+            "model": "fixture-model",
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "fork",
+      "rawOff": {
+        "rawEnabled": false,
+        "frames": 7,
+        "pages": 4,
+        "origin": {
+          "sourceId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "originKey": "oc_1d9ac1c05394ddb38a3a25b3cab65734ea4af7884f7bbedc02db309d2e26cca4",
+          "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project"
+        },
+        "threads": [
+          {
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "label": "ATape native fixture 根 🧪 (fork #1)",
+            "summary": "",
+            "captureStatus": "healthy"
+          }
+        ],
+        "target": {
+          "events": 4,
+          "usage": 0,
+          "threads": 1
+        },
+        "events": [
+          {
+            "sourceEventId": "oc_c2f5c69a310ad9e7117d0b4726e4067b0b1333978b34a31f02e71abdf4678f25",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 0,
+            "eventIndex": 0,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.234Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "改写文本 B：中文与 emoji 🚀\nsecond line"
+              },
+              "messageId": "msg_08eca4883001E9n8WrTJAGkJrJ"
+            }
+          },
+          {
+            "sourceEventId": "oc_5e481fd38bf90afad55c91148e889d06c06813b60d618604826c39b5db998988",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 1,
+            "eventIndex": 1,
+            "orderFidelity": "derived",
+            "fidelity": "derived",
+            "occurredAt": "2026-09-11T04:46:56.625Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "The following tool was executed by the user"
+              },
+              "messageId": "msg_08eca4885001qND7s5xSSoStol"
+            }
+          },
+          {
+            "sourceEventId": "oc_fbd73b152168d85f258d2e7092724a53313c828ccede19386f5d9de8aef937c0",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 2,
+            "eventIndex": 2,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.627Z",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "oc_3899ff21de126d4cf9f3716ff25bbc0c12fb4e86126d4d9725213919d72dcb05",
+              "title": "bash",
+              "kind": "other",
+              "status": "in_progress",
+              "rawInput": {
+                "command": "printf 'native tool fixture 中文 🛠️\\n'"
+              }
+            }
+          },
+          {
+            "sourceEventId": "oc_df34e03d311c2d0c4152eca855f2775dc91646ea59e505b5ca1e842f0c559ee0",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 3,
+            "eventIndex": 3,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.634Z",
+            "update": {
+              "sessionUpdate": "tool_call_update",
+              "toolCallId": "oc_3899ff21de126d4cf9f3716ff25bbc0c12fb4e86126d4d9725213919d72dcb05",
+              "status": "completed",
+              "rawOutput": "native tool fixture 中文 🛠️\n"
+            }
+          }
+        ],
+        "usage": []
+      },
+      "rawOn": {
+        "rawEnabled": true,
+        "frames": 7,
+        "pages": 4,
+        "origin": {
+          "sourceId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "originKey": "oc_1d9ac1c05394ddb38a3a25b3cab65734ea4af7884f7bbedc02db309d2e26cca4",
+          "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project"
+        },
+        "threads": [
+          {
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "label": "ATape native fixture 根 🧪 (fork #1)",
+            "summary": "",
+            "captureStatus": "healthy"
+          }
+        ],
+        "target": {
+          "events": 4,
+          "usage": 0,
+          "threads": 1
+        },
+        "events": [
+          {
+            "sourceEventId": "oc_c2f5c69a310ad9e7117d0b4726e4067b0b1333978b34a31f02e71abdf4678f25",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 0,
+            "eventIndex": 0,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.234Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "改写文本 B：中文与 emoji 🚀\nsecond line"
+              },
+              "messageId": "msg_08eca4883001E9n8WrTJAGkJrJ"
+            }
+          },
+          {
+            "sourceEventId": "oc_5e481fd38bf90afad55c91148e889d06c06813b60d618604826c39b5db998988",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 1,
+            "eventIndex": 1,
+            "orderFidelity": "derived",
+            "fidelity": "derived",
+            "occurredAt": "2026-09-11T04:46:56.625Z",
+            "update": {
+              "sessionUpdate": "user_message_chunk",
+              "content": {
+                "type": "text",
+                "text": "The following tool was executed by the user"
+              },
+              "messageId": "msg_08eca4885001qND7s5xSSoStol"
+            }
+          },
+          {
+            "sourceEventId": "oc_fbd73b152168d85f258d2e7092724a53313c828ccede19386f5d9de8aef937c0",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 2,
+            "eventIndex": 2,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.627Z",
+            "update": {
+              "sessionUpdate": "tool_call",
+              "toolCallId": "oc_3899ff21de126d4cf9f3716ff25bbc0c12fb4e86126d4d9725213919d72dcb05",
+              "title": "bash",
+              "kind": "other",
+              "status": "in_progress",
+              "rawInput": {
+                "command": "printf 'native tool fixture 中文 🛠️\\n'"
+              }
+            }
+          },
+          {
+            "sourceEventId": "oc_df34e03d311c2d0c4152eca855f2775dc91646ea59e505b5ca1e842f0c559ee0",
+            "sourceThreadId": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+            "sourceOrder": 3,
+            "eventIndex": 3,
+            "orderFidelity": "derived",
+            "fidelity": "native",
+            "occurredAt": "2026-09-11T04:46:56.634Z",
+            "update": {
+              "sessionUpdate": "tool_call_update",
+              "toolCallId": "oc_3899ff21de126d4cf9f3716ff25bbc0c12fb4e86126d4d9725213919d72dcb05",
+              "status": "completed",
+              "rawOutput": "native tool fixture 中文 🛠️\n"
+            }
+          }
+        ],
+        "usage": []
+      }
+    }
+  ],
+  "discoveryPages": 4,
+  "sharedMemoryMtimeChanged": true,
+  "status": "PASS",
+  "officialExportMatchesAdapterRaw": true,
+  "rawOffOnCanonicalEqual": true,
+  "databaseAndWALUnchanged": true,
+  "sharedMemoryBytesUnchanged": true,
+  "dbFilesBefore": {
+    "": {
+      "bytes": 270336,
+      "mtimeMs": 1789102018135.6582,
+      "sha256": "cdd0b036b735eb2683036eca0e8548e3f8541f886f4d11dc514d44a43a20b42f"
+    },
+    "-wal": {
+      "bytes": 1326672,
+      "mtimeMs": 1789102018245.095,
+      "sha256": "63e5d47568f381b5e8bc9e450e86bfb3aea888ab5ce0e27fa197dfa8411a8794"
+    },
+    "-shm": {
+      "bytes": 32768,
+      "mtimeMs": 1789102018337.4634,
+      "sha256": "30404a9c748f48ba0f5147aa70227a570ca0e0f255aaeb2ebbeead71a1cec07a"
+    }
+  },
+  "dbFilesAfter": {
+    "": {
+      "bytes": 270336,
+      "mtimeMs": 1789102018135.6582,
+      "sha256": "cdd0b036b735eb2683036eca0e8548e3f8541f886f4d11dc514d44a43a20b42f"
+    },
+    "-wal": {
+      "bytes": 1326672,
+      "mtimeMs": 1789102018245.095,
+      "sha256": "63e5d47568f381b5e8bc9e450e86bfb3aea888ab5ce0e27fa197dfa8411a8794"
+    },
+    "-shm": {
+      "bytes": 32768,
+      "mtimeMs": 1789102019070.0066,
+      "sha256": "30404a9c748f48ba0f5147aa70227a570ca0e0f255aaeb2ebbeead71a1cec07a"
+    }
+  }
+}

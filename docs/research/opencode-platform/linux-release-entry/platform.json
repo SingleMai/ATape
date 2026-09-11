@@ -1,0 +1,10 @@
+{
+  "platform": "Linux-6.8.0-117-generic-aarch64-with-glibc2.36",
+  "machine": "aarch64",
+  "libc": [
+    "glibc",
+    "2.36"
+  ],
+  "node": "v24.20.0",
+  "network": "none"
+}

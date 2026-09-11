@@ -1,0 +1,31 @@
+{
+  "status": "PASS",
+  "platform": "linux",
+  "arch": "arm64",
+  "node": "v24.20.0",
+  "artifactSHA256": "db6ffd14179a26e38fff2dbfae0df18863fb1d6f2e619cf311c1421a7eb62323",
+  "discoveryPages": 4,
+  "captures": [
+    {
+      "name": "root",
+      "frames": 16,
+      "target": {
+        "events": 6,
+        "usage": 1,
+        "threads": 2
+      }
+    },
+    {
+      "name": "fork",
+      "frames": 7,
+      "target": {
+        "events": 4,
+        "usage": 0,
+        "threads": 1
+      }
+    }
+  ],
+  "officialExportMatchesAdapterRaw": true,
+  "databaseAndWALUnchanged": true,
+  "sharedMemoryBytesUnchanged": true
+}

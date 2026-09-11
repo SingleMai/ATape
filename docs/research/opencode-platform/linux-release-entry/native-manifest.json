@@ -1,0 +1,1192 @@
+{
+  "version": "1.18.30",
+  "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "platform": "Linux-6.8.0-117-generic-aarch64-with-glibc2.36",
+  "binarySHA256": "01edb5839aa10d5b09133fedcb335a062ecad6e82552933bb14f71756f2b296b",
+  "scratch": "/evidence/atape-opencode-native-11830-0zct7_af",
+  "dbPath": "/evidence/atape-opencode-native-11830-0zct7_af/source/data/opencode/opencode.db",
+  "projectPath": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+  "rootID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+  "requestedProjectPath": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+  "mutableMessageID": "msg_08eca46ea001Xu7tovBxi7PNdZ",
+  "mutablePartID": "prt_08eca46ee001HoaLTOXjf0x7Z6",
+  "unknownExtensionPreservedInAPI": false,
+  "openMetadataSentinelPreservedInAPI": true,
+  "childID": "ses_f7135b7a0ffezUms7fchmZH03l",
+  "toolMessageID": "msg_08eca48720024ohFx5NYmJuToD",
+  "forkID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+  "revertSession": {
+    "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+    "slug": "glowing-comet",
+    "projectID": "global",
+    "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+    "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+    "summary": {
+      "additions": 0,
+      "deletions": 0,
+      "files": 0
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "title": "ATape native fixture 根 🧪",
+    "agent": "build",
+    "model": {
+      "id": "fixture-model",
+      "providerID": "fixture",
+      "variant": "default"
+    },
+    "version": "1.18.30",
+    "time": {
+      "created": 1789102016211,
+      "updated": 1789102016668
+    },
+    "revert": {
+      "messageID": "msg_08eca46ea001Xu7tovBxi7PNdZ"
+    }
+  },
+  "revertRetainedMessageCount": 3,
+  "beforeRevertMessageCount": 3,
+  "compactionAPIResult": true,
+  "modelStubRequests": [
+    {
+      "path": "/v1/chat/completions",
+      "stream": true,
+      "messageCount": 2
+    }
+  ],
+  "syncHistory": [
+    {
+      "id": "evt_08eca46d4001tQRGhobdr05IW2",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 0,
+      "type": "session.created.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "slug": "glowing-comet",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪",
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016211,
+            "updated": 1789102016211
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca485f002G700G3L13pkxTo",
+      "aggregate_id": "ses_f7135b7a0ffezUms7fchmZH03l",
+      "seq": 0,
+      "type": "session.created.1",
+      "data": {
+        "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+        "info": {
+          "id": "ses_f7135b7a0ffezUms7fchmZH03l",
+          "slug": "cosmic-forest",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "parentID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "Native child 子会话",
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016607,
+            "updated": 1789102016607
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4882002QoKvT1TZMCIG9e",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 0,
+      "type": "session.created.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "info": {
+          "id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "slug": "kind-mountain",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪 (fork #1)",
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016642,
+            "updated": 1789102016642
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca46eb001CKx7nFu2b0hQfV",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 1,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "slug": "glowing-comet",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016211,
+            "updated": 1789102016234
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4866001jQfgOG0qq808IU",
+      "aggregate_id": "ses_f7135b7a0ffezUms7fchmZH03l",
+      "seq": 1,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+        "info": {
+          "id": "ses_f7135b7a0ffezUms7fchmZH03l",
+          "slug": "cosmic-forest",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "parentID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "Native child 子会话",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016607,
+            "updated": 1789102016613
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4883001E2FlVpTQYd4Wsf",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 1,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "info": {
+          "id": "msg_08eca4883001E9n8WrTJAGkJrJ",
+          "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "role": "user",
+          "time": {
+            "created": 1789102016234
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca46ef001dzfVWkMn2JRlbQ",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 2,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca46ea001Xu7tovBxi7PNdZ",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "user",
+          "time": {
+            "created": 1789102016234
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4867001Okp5dIWq4ETskc",
+      "aggregate_id": "ses_f7135b7a0ffezUms7fchmZH03l",
+      "seq": 2,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+        "info": {
+          "id": "msg_08eca4865001IVe0gdyrHYsiH0",
+          "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+          "role": "user",
+          "time": {
+            "created": 1789102016613
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4884001wcanivdHo5yac8",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 2,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "part": {
+          "id": "prt_08eca4884001So1Lg6T3wyPkMQ",
+          "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "messageID": "msg_08eca4883001E9n8WrTJAGkJrJ",
+          "type": "text",
+          "text": "改写文本 B：中文与 emoji 🚀\nsecond line",
+          "metadata": {
+            "atapeFixtureUnknown": {
+              "sentinel": "raw-only-unknown-字段",
+              "nested": [
+                1,
+                true,
+                null
+              ]
+            }
+          }
+        },
+        "time": 1789102016644
+      }
+    },
+    {
+      "id": "evt_08eca4850001kEqNwUEAd0tARE",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 3,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca46ee001HoaLTOXjf0x7Z6",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca46ea001Xu7tovBxi7PNdZ",
+          "type": "text",
+          "text": "原始文本 A：中文与 emoji 🧪\nsecond line"
+        },
+        "time": 1789102016592
+      }
+    },
+    {
+      "id": "evt_08eca4868001ljZ5y9SPssCJwf",
+      "aggregate_id": "ses_f7135b7a0ffezUms7fchmZH03l",
+      "seq": 3,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+        "part": {
+          "id": "prt_08eca486700155wi4OWuKasmBQ",
+          "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+          "messageID": "msg_08eca4865001IVe0gdyrHYsiH0",
+          "type": "text",
+          "text": "子会话的受控内容 🧵"
+        },
+        "time": 1789102016616
+      }
+    },
+    {
+      "id": "evt_08eca4885001CPOFaF43eA3zJt",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 3,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "info": {
+          "id": "msg_08eca4885001qND7s5xSSoStol",
+          "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "role": "user",
+          "time": {
+            "created": 1789102016625
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4853001cuIrDJ7RUeKCrA",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 4,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "slug": "glowing-comet",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016211,
+            "updated": 1789102016595
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48690015rInlFgVyzczc0",
+      "aggregate_id": "ses_f7135b7a0ffezUms7fchmZH03l",
+      "seq": 4,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b7a0ffezUms7fchmZH03l",
+        "info": {
+          "id": "ses_f7135b7a0ffezUms7fchmZH03l",
+          "slug": "cosmic-forest",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "parentID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "Native child 子会话",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016607,
+            "updated": 1789102016617
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca488500277JpjYlYqSWLXc",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 4,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "part": {
+          "id": "prt_08eca4885002OBZ3mWRVjN5haY",
+          "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "messageID": "msg_08eca4885001qND7s5xSSoStol",
+          "type": "text",
+          "text": "The following tool was executed by the user",
+          "synthetic": true
+        },
+        "time": 1789102016645
+      }
+    },
+    {
+      "id": "evt_08eca4857001wrRu9kjdRSuSxg",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 5,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca46ee001HoaLTOXjf0x7Z6",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca46ea001Xu7tovBxi7PNdZ",
+          "type": "text",
+          "text": "改写文本 B：中文与 emoji 🚀\nsecond line",
+          "metadata": {
+            "atapeFixtureUnknown": {
+              "sentinel": "raw-only-unknown-字段",
+              "nested": [
+                1,
+                true,
+                null
+              ]
+            }
+          }
+        },
+        "time": 1789102016599
+      }
+    },
+    {
+      "id": "evt_08eca488500329vK9LmbHzEk80",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 5,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "info": {
+          "id": "msg_08eca4885003NFl7THjCrU9ywY",
+          "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "role": "assistant",
+          "time": {
+            "created": 1789102016626,
+            "completed": 1789102016634
+          },
+          "parentID": "msg_08eca4885001qND7s5xSSoStol",
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca487100145rE6wctkQOftt",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 6,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca4871001cGZgA94zSj411g",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "user",
+          "time": {
+            "created": 1789102016625
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca488b0015iRYH3kFBSs36S",
+      "aggregate_id": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+      "seq": 6,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+        "part": {
+          "id": "prt_08eca488b001j95cp9xPZrv6zh",
+          "sessionID": "ses_f7135b77dffeLOt7QSHPCgJeUN",
+          "messageID": "msg_08eca4885003NFl7THjCrU9ywY",
+          "type": "tool",
+          "callID": "01M27CMJ3K5J4BKMDRFD3WJZ7T",
+          "tool": "bash",
+          "state": {
+            "status": "completed",
+            "input": {
+              "command": "printf 'native tool fixture 中文 🛠️\\n'"
+            },
+            "output": "native tool fixture 中文 🛠️\n",
+            "title": "",
+            "metadata": {
+              "output": "native tool fixture 中文 🛠️\n"
+            },
+            "time": {
+              "start": 1789102016627,
+              "end": 1789102016634
+            }
+          }
+        },
+        "time": 1789102016651
+      }
+    },
+    {
+      "id": "evt_08eca4872001vkhMFJbKVO6fAH",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 7,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca4872001zI6pJu7t5GZHqj",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca4871001cGZgA94zSj411g",
+          "type": "text",
+          "text": "The following tool was executed by the user",
+          "synthetic": true
+        },
+        "time": 1789102016626
+      }
+    },
+    {
+      "id": "evt_08eca4872002h4URlB7vacmOE7",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 8,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca48720024ohFx5NYmJuToD",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "assistant",
+          "time": {
+            "created": 1789102016626
+          },
+          "parentID": "msg_08eca4871001cGZgA94zSj411g",
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca4873001M4L9QRMOAtrV2N",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 9,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca4873001MD7CgGf5FYuQ7s",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48720024ohFx5NYmJuToD",
+          "type": "tool",
+          "callID": "01M27CMJ3K5J4BKMDRFD3WJZ7T",
+          "tool": "bash",
+          "state": {
+            "status": "running",
+            "input": {
+              "command": "printf 'native tool fixture 中文 🛠️\\n'"
+            },
+            "time": {
+              "start": 1789102016627
+            }
+          }
+        },
+        "time": 1789102016627
+      }
+    },
+    {
+      "id": "evt_08eca4878001JVwbKZtOCUgQEs",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 10,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca4873001MD7CgGf5FYuQ7s",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48720024ohFx5NYmJuToD",
+          "type": "tool",
+          "callID": "01M27CMJ3K5J4BKMDRFD3WJZ7T",
+          "tool": "bash",
+          "state": {
+            "status": "running",
+            "input": {
+              "command": "printf 'native tool fixture 中文 🛠️\\n'"
+            },
+            "metadata": {
+              "output": "native tool fixture 中文 🛠️\n"
+            },
+            "time": {
+              "start": 1789102016627
+            }
+          }
+        },
+        "time": 1789102016632
+      }
+    },
+    {
+      "id": "evt_08eca487a001sNEfddd5EYbc1g",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 11,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca48720024ohFx5NYmJuToD",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "assistant",
+          "time": {
+            "created": 1789102016626,
+            "completed": 1789102016634
+          },
+          "parentID": "msg_08eca4871001cGZgA94zSj411g",
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "mode": "build",
+          "agent": "build",
+          "path": {
+            "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca487b001YMLCuWTz5rN582",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 12,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca4873001MD7CgGf5FYuQ7s",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48720024ohFx5NYmJuToD",
+          "type": "tool",
+          "callID": "01M27CMJ3K5J4BKMDRFD3WJZ7T",
+          "tool": "bash",
+          "state": {
+            "status": "completed",
+            "input": {
+              "command": "printf 'native tool fixture 中文 🛠️\\n'"
+            },
+            "output": "native tool fixture 中文 🛠️\n",
+            "title": "",
+            "metadata": {
+              "output": "native tool fixture 中文 🛠️\n"
+            },
+            "time": {
+              "start": 1789102016627,
+              "end": 1789102016634
+            }
+          }
+        },
+        "time": 1789102016635
+      }
+    },
+    {
+      "id": "evt_08eca489c002ylYCwGoLwjMYu5",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 13,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "slug": "glowing-comet",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "summary": {
+            "additions": 0,
+            "deletions": 0,
+            "files": 0
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016211,
+            "updated": 1789102016668
+          },
+          "revert": {
+            "messageID": "msg_08eca46ea001Xu7tovBxi7PNdZ"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48a8001yJtnElIWYgxii2",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 14,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "slug": "glowing-comet",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "summary": {
+            "additions": 0,
+            "deletions": 0,
+            "files": 0
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016211,
+            "updated": 1789102016680
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48ab001RYwv4jQurvNMtA",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 15,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca48ab001tW7oUnFWm132hd",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "user",
+          "time": {
+            "created": 1789102016683
+          },
+          "agent": "build",
+          "model": {
+            "providerID": "fixture",
+            "modelID": "fixture-model"
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48ab0029CrJzRs6qrWQ4g",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 16,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca48ab002hgMuEx2YFJe8U0",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48ab001tW7oUnFWm132hd",
+          "type": "compaction",
+          "auto": false
+        },
+        "time": 1789102016683
+      }
+    },
+    {
+      "id": "evt_08eca48b0001Rq3digVOecdpP8",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 17,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca48b000141koJlWnZ74KNl",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "assistant",
+          "time": {
+            "created": 1789102016688
+          },
+          "parentID": "msg_08eca48ab001tW7oUnFWm132hd",
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48c900191NPnssLod4Pmn",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 18,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca48c90015J6VHItqfK67Zr",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48b000141koJlWnZ74KNl",
+          "type": "step-start"
+        },
+        "time": 1789102016713
+      }
+    },
+    {
+      "id": "evt_08eca48ca001A6xkmiIm7NrF5G",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 19,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca48ca001lTemxqy8UEUhDu",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48b000141koJlWnZ74KNl",
+          "type": "text",
+          "text": "",
+          "time": {
+            "start": 1789102016714
+          }
+        },
+        "time": 1789102016714
+      }
+    },
+    {
+      "id": "evt_08eca48cb002nZSgHnN19mXkEW",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 20,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca48ca001lTemxqy8UEUhDu",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48b000141koJlWnZ74KNl",
+          "type": "text",
+          "text": "受控本地摘要：fixture 根会话、子会话与工具输出。No real model was called. 🧪",
+          "time": {
+            "start": 1789102016714,
+            "end": 1789102016715
+          }
+        },
+        "time": 1789102016715
+      }
+    },
+    {
+      "id": "evt_08eca48cf001iFfhDYg1pQJc1t",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 21,
+      "type": "message.part.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "part": {
+          "id": "prt_08eca48cf001LQRdZEUDxXydbU",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "messageID": "msg_08eca48b000141koJlWnZ74KNl",
+          "type": "step-finish",
+          "reason": "stop",
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        },
+        "time": 1789102016719
+      }
+    },
+    {
+      "id": "evt_08eca48d0001yBEjeLro6UXnQj",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 22,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca48b000141koJlWnZ74KNl",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "assistant",
+          "time": {
+            "created": 1789102016688
+          },
+          "parentID": "msg_08eca48ab001tW7oUnFWm132hd",
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop"
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48d2001buv4yrq7Ah9soY",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 23,
+      "type": "message.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "msg_08eca48b000141koJlWnZ74KNl",
+          "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "role": "assistant",
+          "time": {
+            "created": 1789102016688,
+            "completed": 1789102016722
+          },
+          "parentID": "msg_08eca48ab001tW7oUnFWm132hd",
+          "modelID": "fixture-model",
+          "providerID": "fixture",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop"
+        }
+      }
+    },
+    {
+      "id": "evt_08eca48d6001KvhjTV9iqkYQ94",
+      "aggregate_id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+      "seq": 24,
+      "type": "session.updated.1",
+      "data": {
+        "sessionID": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+        "info": {
+          "id": "ses_f7135b92dffeMhg8Xp6CLncWRC",
+          "slug": "glowing-comet",
+          "projectID": "global",
+          "directory": "/evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "path": "evidence/atape-opencode-native-11830-0zct7_af/source/project",
+          "summary": {
+            "additions": 0,
+            "deletions": 0,
+            "files": 0
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "title": "ATape native fixture 根 🧪",
+          "agent": "build",
+          "model": {
+            "id": "fixture-model",
+            "providerID": "fixture",
+            "variant": "default"
+          },
+          "version": "1.18.30",
+          "time": {
+            "created": 1789102016211,
+            "updated": 1789102016726
+          }
+        }
+      }
+    }
+  ],
+  "tables": [
+    "account",
+    "account_state",
+    "control_account",
+    "credential",
+    "data_migration",
+    "event",
+    "event_sequence",
+    "message",
+    "migration",
+    "part",
+    "permission",
+    "project",
+    "project_directory",
+    "session",
+    "session_context_epoch",
+    "session_input",
+    "session_message",
+    "session_share",
+    "todo",
+    "workspace"
+  ],
+  "tableCounts": {
+    "session": 3,
+    "message": 9,
+    "part": 11,
+    "event": 37,
+    "event_sequence": 3,
+    "session_message": 0
+  },
+  "journalMode": "wal",
+  "unknownExtensionPreservedInDB": false,
+  "generationSeconds": 46.735,
+  "officialExportMatchesAPI": true,
+  "officialExportMatchesSQLite": true,
+  "sqliteFileBytes": 270336,
+  "maxChildRSSNativeUnits": 539396,
+  "maxChildRSSNote": "Linux KiB; max child peak across version/server/export, not incremental collector memory"
+}
