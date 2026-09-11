@@ -131,3 +131,4 @@ pretending that staging acceptance passed.
 
 - [ADR-0075: Confirmed Canonical progress in Collector checkpoints](0075-confirmed-collector-progress.md)
 - [ADR-0076: Source collection admission for the first OpenCode release](0076-source-collection-release-admission.md)
+- [ADR-0077: Local first publication of OpenCode 0.5.0](0077-opencode-local-first-publication.md)

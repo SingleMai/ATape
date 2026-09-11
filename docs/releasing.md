@@ -73,7 +73,7 @@ npm Trusted Publishing can only be configured after a package already exists. Fo
 
 1. Enable two-factor authentication on the npm owner account.
 2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.
-3. Add it to the GitHub repository as the `NPM_TOKEN` Actions secret.
+3. Add it to the GitHub repository as the `NPM_TOKEN` Actions secret. This route requires explicitly wiring that secret into the publication step; the current workflow uses OIDC without a token fallback.
 4. Push the matching release tag, for example `v0.1.0`.
 
 ```sh
@@ -82,6 +82,14 @@ git push origin v0.1.0
 ```
 
 The workflow runs all checks before making external changes. npm publication is recoverable: when a version already exists, the workflow verifies its SHA-512 registry integrity against the local release tarball and skips it only when the bytes match.
+
+For `@atape/adapter-opencode@0.5.0` only, the user requested local first publication
+with the already authenticated npm account, then later trusted-publisher setup.
+[ADR-0077](architecture/adr/0077-opencode-local-first-publication.md) records this
+exception, the exact artifact digest and the absence of GitHub build provenance
+for that one package version. All automated gates remain required. The ordinary
+tag workflow publishes the other three packages and verifies the already-published
+OpenCode bytes before creating the GitHub Release.
 
 ## Switch to npm Trusted Publishing
 
