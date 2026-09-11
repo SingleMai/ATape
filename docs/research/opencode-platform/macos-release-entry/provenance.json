@@ -1,0 +1,36 @@
+{
+  "candidateCommit": "df5fcbbcf2f8cb4ba6c79929d450b2e9160c2412",
+  "tarballSHA256": "57e02deb5cb44654e76f0cdfafc5ca957c50065ee029252cfd82a8b714b9ac54",
+  "officialBinarySHA256": "2d0c9c339bb91046c6ea951c97664bc2f8a8eaca707f31fbfbb7bc73c4eddc62",
+  "officialVersion": "1.18.30",
+  "officialSourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+  "platform": "macOS-26.3.2-arm64-arm-64bit",
+  "node": {
+    "version": "v24.18.0",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "expectedAdapterVersion": "0.4.8",
+  "scriptsSHA256": {
+    "generate-native.py": "6688c2484a58ea3ac995b1b790d1298636499eff0727ff443ca4662b8a23b82e",
+    "verify-native.mjs": "bbe4293ae62e0cadf3221d57e7371cf8e08b043ae4904cfcd576d4818a9de3d8",
+    "run.py": "04d742e1c7104dc432000fdfe9cc905946adef9acb9f0aa7a6af052b766978e7"
+  },
+  "recordedAtUTC": "2026-09-11T04:49:16.483905+00:00",
+  "officialArchiveURL": "https://github.com/anomalyco/opencode/releases/download/v1.18.30/opencode-darwin-arm64.zip",
+  "officialArchiveSHA256": "a5e43d6887386efc7d68ce49ae28e3bbdfdee3dfd1d7169b612c3ce67e53b1e8",
+  "installedBundleSHA256": "db6ffd14179a26e38fff2dbfae0df18863fb1d6f2e619cf311c1421a7eb62323",
+  "evidenceScratch": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-opencode-macos-release-g95kdj4z/run-final",
+  "originalGeneratorSourceCommit": "6d1c082db48793dff8a48050552b2a7fc586be14",
+  "verifierBaseResearchCommit": "262508f3bd1605245f918b51f918989a24e43704",
+  "researchScriptChanges": [
+    "Generator RSS annotation restored from Linux KiB to macOS bytes.",
+    "Verifier reads actual installed package manifest/version and checks explicit expected version.",
+    "New macOS harness validates supplied binary/tarball hashes, isolates HOME/npm configs and bounds subprocess groups."
+  ],
+  "initialHarnessFailure": {
+    "stage": "npm config loading, after successful native generation, before installed Adapter execution",
+    "message": "double-loading config /dev/null as global, previously loaded as user",
+    "resolution": "Use distinct empty user/global npm config files in scratch; entire generation/install/verification rerun in fresh run-final directory."
+  }
+}

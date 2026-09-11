@@ -1,0 +1,140 @@
+{
+  "status": "PASS",
+  "package": {
+    "name": "@atape/adapter-opencode",
+    "version": "0.4.8",
+    "private": false,
+    "manifest": {
+      "protocolVersion": "atape.adapter.v1alpha1",
+      "gitAttribution": "atape.git-attribution.v1",
+      "sourceCapture": "atape.source-capture.v1",
+      "adapterId": "opencode",
+      "displayName": "OpenCode",
+      "entry": "./dist/index.js",
+      "harnesses": [
+        "OpenCode"
+      ]
+    }
+  },
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": "v24.18.0",
+  "artifactSHA256": "db6ffd14179a26e38fff2dbfae0df18863fb1d6f2e619cf311c1421a7eb62323",
+  "discoveryPages": 4,
+  "officialExportMatchesAdapterRaw": true,
+  "rawOffOnCanonicalEqual": true,
+  "databaseAndWALUnchanged": true,
+  "sharedMemoryBytesUnchanged": true,
+  "sharedMemoryMtimeChanged": true,
+  "dbFilesBefore": {
+    "": {
+      "bytes": 274432,
+      "mtimeMs": 1789102035864.7969,
+      "sha256": "6667ecf9d6d65613376832af8ad0d74c825297a3956d1aa496e9551d9899eb0e"
+    },
+    "-wal": {
+      "bytes": 32768,
+      "mtimeMs": 1789102035936.4812,
+      "sha256": "3292c12e209744cbd515baaca6d19352b76110cd2e14e43f9275cc576f9af778"
+    },
+    "-shm": {
+      "bytes": 32768,
+      "mtimeMs": 1789102035994.7559,
+      "sha256": "227a05d08109c4ee5fb534da0d29b020361e4410f0758c38c52f699759674643"
+    }
+  },
+  "dbFilesAfter": {
+    "": {
+      "bytes": 274432,
+      "mtimeMs": 1789102035864.7969,
+      "sha256": "6667ecf9d6d65613376832af8ad0d74c825297a3956d1aa496e9551d9899eb0e"
+    },
+    "-wal": {
+      "bytes": 32768,
+      "mtimeMs": 1789102035936.4812,
+      "sha256": "3292c12e209744cbd515baaca6d19352b76110cd2e14e43f9275cc576f9af778"
+    },
+    "-shm": {
+      "bytes": 32768,
+      "mtimeMs": 1789102036847.244,
+      "sha256": "227a05d08109c4ee5fb534da0d29b020361e4410f0758c38c52f699759674643"
+    }
+  },
+  "captures": [
+    {
+      "source": "root",
+      "rawOff": {
+        "frames": 16,
+        "pages": 9,
+        "target": {
+          "events": 6,
+          "usage": 1,
+          "threads": 2
+        }
+      },
+      "rawOn": {
+        "frames": 16,
+        "pages": 9,
+        "target": {
+          "events": 6,
+          "usage": 1,
+          "threads": 2
+        }
+      }
+    },
+    {
+      "source": "fork",
+      "rawOff": {
+        "frames": 7,
+        "pages": 4,
+        "target": {
+          "events": 4,
+          "usage": 0,
+          "threads": 1
+        }
+      },
+      "rawOn": {
+        "frames": 7,
+        "pages": 4,
+        "target": {
+          "events": 4,
+          "usage": 0,
+          "threads": 1
+        }
+      }
+    }
+  ],
+  "nativeGeneration": {
+    "version": "1.18.30",
+    "sourceCommit": "3104c1428ec91f809e5ab86631300de41eb6952e",
+    "binarySHA256": "2d0c9c339bb91046c6ea951c97664bc2f8a8eaca707f31fbfbb7bc73c4eddc62",
+    "platform": "macOS-26.3.2-arm64-arm-64bit",
+    "tableCounts": {
+      "session": 3,
+      "message": 9,
+      "part": 11,
+      "event": 37,
+      "event_sequence": 3,
+      "session_message": 0
+    },
+    "journalMode": "wal",
+    "beforeRevertMessageCount": 3,
+    "revertRetainedMessageCount": 3,
+    "compactionAPIResult": true,
+    "modelStubRequests": [
+      {
+        "path": "/v1/chat/completions",
+        "stream": true,
+        "messageCount": 2
+      }
+    ],
+    "officialExportMatchesAPI": true,
+    "officialExportMatchesSQLite": true,
+    "sqliteFileBytes": 274432,
+    "maxChildRSSNativeUnits": 572997632,
+    "maxChildRSSNote": "macOS bytes; max child peak across version/server/export, not incremental collector memory",
+    "generationSeconds": 1.154,
+    "openMetadataSentinelPreservedInAPI": true,
+    "unknownExtensionPreservedInAPI": false
+  }
+}
