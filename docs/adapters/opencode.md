@@ -1,12 +1,24 @@
 # OpenCode Adapter implementation status
 
-The selected route is read-only local SQLite through the existing Host-owned
-bounded-pull Collector. A self-contained private candidate can now be installed
-explicitly for controlled acceptance. OpenCode is not published, registered or
-enabled by default. Atomic publication and versioned reads are implemented; the first source integration
-now has explicitly admitted runtime scheduling and native Collector/HTTP acceptance.
-Bounded archive browsing is implemented; release admission remains required. See the
-[capture and publication contract](../architecture/opencode-capture-publication.md).
+OpenCode is a First-party Adapter in the ordinary Tools selection, package
+installation and upgrade flows. The selected route is read-only local SQLite
+through the Host-owned bounded-pull Collector, with complete Canonical targets
+published atomically and Raw recovered independently. Installing the package
+alone does not enable capture. This integration does not publish npm packages,
+deploy an instance or migrate a production database.
+
+The accepted first-release source is **OpenCode 1.18.30 local v1 SQLite on macOS
+arm64 and Linux arm64/glibc**, using Node.js 24 or later. Other source versions,
+architectures, v2/mixed databases and JSON-only history have no support claim.
+The Server must expose `atape.publication.v1` with configured publication limits;
+CLI collection defaults are supplied automatically. See the
+[package guide](../../adapters/opencode/README.md) for enablement and source paths,
+and the [capture contract](../architecture/opencode-capture-publication.md).
+
+The sections below record the delivery sequence. Statements about private
+candidates, unavailable entry points or pending gates describe their respective
+historical increment; the current scope is above and the final increment is at
+the end of this guide.
 
 ## Landed foundation: private capture journal
 
@@ -768,3 +780,37 @@ TestAdapters. Limits and uncertain attribution now retain their actual diagnosti
 category across the foreign Interface. The installed background CLI HTTP contract
 also runs without an admission override. Ordinary tool registration, installation
 and upgrade integration are the next increment; the package remains private here.
+
+### Ordinary tool enablement and coordinated packages
+
+OpenCode is now in the shared official tool catalog. Setup, global tool selection,
+version discovery and device update reporting use that catalog. Existing explicit
+tool selections remain unchanged. The provider owns one pure database-location
+resolver used by both runtime and metadata-only setup detection; setup neither
+opens SQLite nor executes OpenCode. Explicit `:memory:`, directories and missing
+files are not detected as durable history.
+
+The self-contained OpenCode artifact now follows the same version and public
+package metadata contract as the CLI, Codex and Claude artifacts. The release
+manifest, checksum list and workflow asset list include all four tarballs. The
+OpenCode-specific installed-artifact verifier accepts the exact release tarball;
+it does not rebuild or substitute it during verification. Publication and Server
+deployment remain separate actions.
+
+Public Interface tests cover OpenCode selection, subsequent Project inheritance,
+metadata-only detection and bounded version checks. The actual installed CLI
+HTTP/PostgreSQL acceptance also installs a re-versioned fixture package, captures
+a source change, and replaces it via `adapters upgrade opencode` with the actual
+candidate. Package replacement leaves Collector JSON unchanged; the next
+cycle records the installed version without uploading Canonical or Raw content,
+changing the published head, changing retained record/Raw references or resetting
+capture progress. When the version string changes Raw envelope byte width, one
+local Raw observation rechecks packing admission and reuses existing receipts;
+the following unchanged cycle does no work. The same test then resumes stopped and live background changes.
+This uses the current bundle under a fixture version and does not claim support
+for any older OpenCode format.
+
+Remaining scope: remote OpenCode servers, source control/orchestration, additional
+OpenCode versions/platforms and automatic source-format migration. Native capacity
+measurements are controlled evidence, not universal performance guarantees. New
+version support requires native compatibility evidence before extending the matrix.

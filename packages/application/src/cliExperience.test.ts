@@ -44,7 +44,7 @@ const fixture = () => {
     Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sleep(10).pipe(Effect.andThen(Effect.sync(() => {
       packages.push(spec)
       if (failInstall) throw new Error("offline")
-      const id = spec.includes("claude") ? "claude" : "codex"
+      const id = spec.includes("opencode") ? "opencode" : spec.includes("claude") ? "claude" : "codex"
       return { packageName: `@atape/adapter-${id}`, upgradeSpec: spec, version: "1.0.0", manifest: {
         protocolVersion: AdapterProtocolVersion, adapterId: id, displayName: id, entry: "./index.js", harnesses: [id]
       } }
@@ -89,24 +89,24 @@ const input = { instanceOrigin: "https://atape.net", path: "/work/payments" }
 const progress = () => Effect.void
 
 describe("CLI experience application Interface", () => {
-  it("configures tools once, connects subsequent Projects with the same selection and rejects scoped overrides", async () => {
+  it.each(["codex", "opencode"])("configures %s tools once, connects subsequent Projects with the same selection and rejects scoped overrides", async sourceId => {
     const client = fixture()
     expect((await client.run(inspectTools())).configured).toBe(false)
-    const tools = await client.run(planToolChange(["codex"]))
+    const tools = await client.run(planToolChange([sourceId]))
     expect(client.packages).toEqual([])
     await client.run(applyToolChange(tools))
-    expect(client.config()).toMatchObject({ version: 3, enabledAdapterIds: ["codex"], projects: [] })
+    expect(client.config()).toMatchObject({ version: 3, enabledAdapterIds: [sourceId], projects: [] })
     expect(client.starts()).toBe(0)
     const plan = await client.run(prepareGuidedSetup(input))
-    const first = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const first = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: [sourceId], progress }))
     const { adapterIds, ...identity } = first
     const second = await client.run(setupProject({ ...identity, path: "/work/second", projectId: "second", name: "Second" }))
-    expect(second.project.adapterIds).toEqual(["codex"])
-    expect(client.packages).toEqual(["@atape/adapter-codex"])
+    expect(second.project.adapterIds).toEqual([sourceId])
+    expect(client.packages).toEqual([`@atape/adapter-${sourceId}`])
     expect((await client.run(inspectCLIExperience())).projects).toHaveLength(2)
     await expect(client.run(setupProject({ ...identity, path: "/work/third", projectId: "third", expectedToolIds: [] }))).rejects.toMatchObject({ reason: "conflict" })
     expect(client.config().projects.every(project => !("adapterIds" in project))).toBe(true)
-    expect((await client.run(inspectClient())).projects.every(project => project.adapterIds.join() === "codex")).toBe(true)
+    expect((await client.run(inspectClient())).projects.every(project => project.adapterIds.join() === sourceId)).toBe(true)
   })
 
   it("previews changes without enabling anything, then applies one global selection to every Project", async () => {
@@ -180,7 +180,7 @@ describe("CLI experience application Interface", () => {
   it("plans without installing/enabling/starting, then applies only the explicit selection", async () => {
     const client = fixture()
     const plan = await client.run(prepareGuidedSetup(input))
-    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false]])
+    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false], ["opencode", false]])
     expect(client.config().projects).toEqual([])
     expect(client.packages).toEqual([])
     expect(client.starts()).toBe(0)

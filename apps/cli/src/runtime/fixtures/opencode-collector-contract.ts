@@ -51,9 +51,10 @@ if (["initial", "daemon-source"].includes(input.phase)) {
 if (input.phase === "initial") {
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", paths.adapterDirectory, input.tarball],
     { cwd: home, timeout: 120000, stdio: ["ignore", "pipe", "pipe"] })
+  const installedVersion = JSON.parse(readFileSync(join(paths.adapterDirectory, "node_modules", "@atape", "adapter-opencode", "package.json"), "utf8")).version as string
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [adapterId], projects: [project],
-    adapters: [{ adapterId, packageName, version: "0.0.0", displayName: "OpenCode", upgradeSpec: packageName, installedAt: at, updatedAt: at }] }))
+    adapters: [{ adapterId, packageName, version: installedVersion, displayName: "OpenCode", upgradeSpec: packageName, installedAt: at, updatedAt: at }] }))
 }
 if (input.phase === "recover-activation") {
   renameSync(path, `${path}.offline`); rmSync(workspace, { recursive: true })
@@ -63,10 +64,10 @@ if (input.phase === "raw-only") {
 }
 if (input.phase === "recover-raw") { rmSync(path); rmSync(workspace, { recursive: true }) }
 if (input.phase === "daemon-missing") rmSync(path)
-if (["edit", "rewind", "unrevert", "fork", "raw-off", "lose-activation", "raw-only", "daemon-edit", "daemon-live-edit"].includes(input.phase)) {
+if (["edit", "rewind", "unrevert", "fork", "raw-off", "lose-activation", "raw-only", "daemon-edit", "daemon-upgrade-edit", "daemon-live-edit"].includes(input.phase)) {
   const db = new DatabaseSync(path)
-  if (["edit", "raw-off", "lose-activation", "daemon-edit", "daemon-live-edit"].includes(input.phase)) {
-    const needle = input.phase === "daemon-live-edit" ? "CollectorDaemonLiveNeedle" : input.phase === "daemon-edit" ? "CollectorDaemonUpdatedNeedle" : input.phase === "edit" ? "CollectorEditedNeedle" : input.phase === "raw-off" ? "CollectorPolicyNeedle" : "CollectorFinalNeedle"
+  if (["edit", "raw-off", "lose-activation", "daemon-edit", "daemon-upgrade-edit", "daemon-live-edit"].includes(input.phase)) {
+    const needle = input.phase === "daemon-upgrade-edit" ? "CollectorDaemonUpgradeNeedle" : input.phase === "daemon-live-edit" ? "CollectorDaemonLiveNeedle" : input.phase === "daemon-edit" ? "CollectorDaemonUpdatedNeedle" : input.phase === "edit" ? "CollectorEditedNeedle" : input.phase === "raw-off" ? "CollectorPolicyNeedle" : "CollectorFinalNeedle"
     db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id=?").run(`${needle} ${secret}`, initialPart.id!)
   }
   if (input.phase === "rewind") db.prepare("UPDATE session SET revert=? WHERE id=?").run(JSON.stringify({ messageID: secondMessage.id }), native.rootID)
@@ -75,7 +76,7 @@ if (["edit", "rewind", "unrevert", "fork", "raw-off", "lose-activation", "raw-on
   if (input.phase === "raw-only") db.prepare("UPDATE part SET data=json_set(data,'$.freshArchive',?) WHERE id=?").run("CollectorFreshRawNeedle", initialPart.id!)
   db.close()
 }
-if (["daemon-source", "daemon-edit", "daemon-live-edit", "daemon-missing"].includes(input.phase)) {
+if (["daemon-source", "daemon-edit", "daemon-upgrade-edit", "daemon-live-edit", "daemon-missing"].includes(input.phase)) {
   // Control only the external source. The installed CLI owns all collection.
   process.stdout.write(JSON.stringify({ atapeHome: paths.atapeHome, sourcePath: path, sourceLimits: limits }))
   process.exit(0)

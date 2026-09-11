@@ -30,6 +30,7 @@ const environment = {
   XDG_CONFIG_HOME: join(temporaryRoot, "xdg-config"),
   XDG_DATA_HOME: join(temporaryRoot, "xdg-data"),
   XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
+  OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
   ATAPE_REDACT_VALUES: "[]"
 }
 let collectorStarted = false

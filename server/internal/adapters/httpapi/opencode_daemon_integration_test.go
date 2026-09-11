@@ -15,9 +15,9 @@ import (
 
 // This extends the actual HTTP/PostgreSQL contract using its existing account,
 // installed Adapter and frozen journal. Only native source mutations and reads of
-// test evidence use the fixture; all collection runs in the installed CLI daemon.
-func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID string, previous nativeCollectorSnapshot,
-	control func(string) []byte, snapshot func(string) nativeCollectorSnapshot,
+// test evidence use the fixture; all collection runs in the installed CLI, including package upgrade recovery.
+func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, adapterTarball string, previous nativeCollectorSnapshot,
+	control func(string) []byte, snapshot func(string) nativeCollectorSnapshot, contentUploads func() int64,
 	read func() (string, []conversation.Event), readRaw func() []byte,
 ) {
 	t.Helper()
@@ -175,6 +175,7 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID s
 	if row := readRaw(); !bytes.Contains(row, []byte("CollectorDaemonInitialNeedle")) || bytes.Contains(row, []byte("SENSITIVE_TEST_TOKEN")) {
 		t.Fatal("initial installed daemon Event did not resolve to its own masked Raw source")
 	}
+	assertOpenCodeInstalledUpgrade(t, root, source.Home, projectID, adapterTarball, command, runPackage, control, snapshot, readRaw, contentUploads)
 	control("daemon-edit")
 	created, secondPID := start()
 	if !created || secondPID == firstPID {

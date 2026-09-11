@@ -5,7 +5,8 @@ import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { link, mkdir, open, opendir, readFile, rm, stat } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, dirname, join, resolve, sep } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path"
+import { openCodeDatabasePath } from "../../../../adapters/opencode/src/location.ts"
 import type { NodeClientPaths } from "./clientLayers.ts"
 
 export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = process.env) => Layer.succeed(
@@ -18,6 +19,11 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
       const detected: string[] = []
       for (const [id, path] of candidates) {
         try { if ((await stat(path)).isDirectory()) detected.push(id) }
+        catch (cause) { if (!hasCode(cause, "ENOENT")) throw cause }
+      }
+      const database = openCodeDatabasePath(environment, homedir())
+      if (isAbsolute(database)) {
+        try { if ((await stat(database)).isFile()) detected.push("opencode") }
         catch (cause) { if (!hasCode(cause, "ENOENT")) throw cause }
       }
       return detected

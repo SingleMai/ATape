@@ -1,4 +1,4 @@
-import { CollectorDeviceGateway, scopeCollectorReport } from "@atape/application"
+import { CollectorDeviceGateway, officialSources, scopeCollectorReport } from "@atape/application"
 import { emptyCollectorRunState, type CollectorRunState, type ClientConfig, type CLIDeviceMetadata } from "@atape/domain"
 import { hostname, platform, arch } from "node:os"
 import { Effect, Layer, Semaphore } from "effect"
@@ -21,7 +21,7 @@ export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<Cl
       nextCheck = Date.now() + 60 * 60 * 1_000
       versions = yield* Effect.tryPromise({ try: async (signal) => {
         const packages = ["@atape/cli", ...local.adapters.map(a => a.packageName)
-          .filter(name => name === "@atape/adapter-codex" || name === "@atape/adapter-claude")]
+          .filter(name => officialSources.some(source => source.packageName === name))]
         const entries = await Promise.all([...new Set(packages)].map(async name => {
           try { return [name, await latestPublishedVersion(home, name, true, signal, fetchReleases)] as const }
           catch { return [name, undefined] as const }

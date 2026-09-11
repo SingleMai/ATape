@@ -6,7 +6,8 @@ const Repository = "git+https://github.com/SingleMai/ATape.git"
 const PackageDefinitions = [
   { path: "apps/cli/package.json", name: "@atape/cli", directory: "apps/cli" },
   { path: "adapters/codex/package.json", name: "@atape/adapter-codex", directory: "adapters/codex" },
-  { path: "adapters/claude/package.json", name: "@atape/adapter-claude", directory: "adapters/claude" }
+  { path: "adapters/claude/package.json", name: "@atape/adapter-claude", directory: "adapters/claude" },
+  { path: "adapters/opencode/package.json", name: "@atape/adapter-opencode", directory: "adapters/opencode" }
 ]
 
 export const loadReleaseContract = async (repositoryRoot) => {

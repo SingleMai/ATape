@@ -35,7 +35,7 @@ The CLI accepts a registry package specifier, local package directory, local npm
 
 These checks make installation inert; they do not sandbox Adapter execution. An enabled Adapter is trusted code loaded into the Collector Host and receives only its selected Project context.
 
-## Runtime export
+## Paged observation runtime export
 
 The entry module exports one factory:
 
@@ -55,7 +55,7 @@ export async function createAtapeAdapter(context) {
 }
 ```
 
-`context` contains the Adapter ID and version, the stable ATape user ID, plus the selected local Project ID, type, and absolute path. It also carries an `AbortSignal`. It does not contain another Project's path or server credentials.
+For this paged observation runtime, `context` contains the Adapter ID and version, the stable ATape user ID, plus the selected local Project ID, type, and absolute path. It also carries an `AbortSignal`. It does not contain another Project's path or server credentials.
 
 For Git Projects, `context.gitAttribution` contains `version` and
 `resolve(source, signal): Promise<"included" | "excluded" | "unknown">`.
@@ -133,3 +133,39 @@ of general Claude history support.
 `AdapterCollectRequest.rawCaptureEnabled`, continues Canonical without Raw when
 false, and can resume Raw from real host receipts on re-enable. The host requires
 this capability for disabled Raw; it never fabricates receipts to skip work.
+
+## Bounded source-capture capability
+
+`sourceCapture: "atape.source-capture.v1"` selects the source-capture runtime used
+by [OpenCode](opencode.md). Its factory returns `sourceCapture` plus `close()`
+instead of the paged `collect()` method above. It does not declare
+`rawCapturePolicy`; Raw-off is required behavior of this capability itself.
+
+`sourceCapture` exposes its protocol version, bounded `discover({ cursor, limits,
+signal })` and `open({ sourceId, rawEnabled, limits, projection, signal })`.
+Discovery returns original source attribution evidence and paged source IDs. An
+open view supplies a complete target header and bounded `read(signal)` frames,
+then `close()`. The Host checks page and total limits, cursor progress, identity,
+Raw policy and lifetime cancellation. A view has one scoped source snapshot;
+recovering a delivery never requires reopening it.
+
+Unlike the paged observation runtime's attribution callback, discovery passes
+source evidence to the Host, which resolves directory/Git membership before
+opening included sources. Authentication, authorization and transport failures
+retain their own failure channels. The Adapter owns source-format semantics;
+the Host owns attribution, redaction, comparison, revisions, Raw references,
+journaling and delivery. Neither Server credentials nor upload operations are
+part of the foreign runtime Interface.
+
+The Host freezes final validated and masked bytes into an account-bound SQLite
+capture journal before uploading content. It selects a complete Canonical target
+atomically after genuine activation proof. Raw acknowledgements and unresolved
+Raw bytes remain independent of that selected head. Raw-off does not retain full
+source JSON for future archival, and re-enable does not rewrite existing Event
+provenance merely to add Raw. Recovery can continue after source deletion using
+only frozen units and receipts. These rules replace the paged observation replay
+and Raw-append ordering above for this capability.
+
+The authoritative types remain in `packages/domain/src/collector.ts`; see
+[ADR-0068](../architecture/adr/0068-source-capture-runtime.md) and
+[default admission](../architecture/adr/0076-source-collection-release-admission.md).
