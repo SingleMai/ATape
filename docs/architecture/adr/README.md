@@ -1,5 +1,9 @@
 # Architecture Decision Records
 
+[ADR-0074](0074-capture-observation-retention.md) retires superseded terminal
+observation memberships in bounded fenced batches while retaining source
+versions, current coverage, independent Raw obligations and replay receipts.
+
 [ADR-0060](0060-publication-raw-authority-and-receipts.md) defines independent
 Raw authority versions and immutable chunk receipt recovery for publication.
 

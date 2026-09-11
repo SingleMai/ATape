@@ -114,6 +114,10 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
           error.reason === "invalid" || error.reason === "contract" ? "format" : "io")
         return Effect.succeed(undefined)
       }))
+    const retireSupersededRecords = (owner: CaptureOwner) => sourceFailure(owner.scope.sourceSessionId, Effect.gen(function*() {
+      while ((yield* journal.pruneRecords(owner)) > 0) yield* Effect.yieldNow
+      return true
+    }), limits.recovery.sourceMs)
     const scope = (source: { readonly sourceId: string; readonly originKey: string }) => ({ projectId: project.id, adapterId: adapter.adapterId,
       sourceSessionId: source.sourceId, originKey: source.originKey })
     const work = Effect.gen(function*() {
@@ -137,6 +141,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
           cursor = { ...cursor, recoveryCapture: capture.id }
           yield* commit()
         }
+        yield* retireSupersededRecords(owner)
         if (captures.length === limits.recovery.captures) {
           cursor = { ...cursor, recoveryCapture: captures.at(-1)!.id }
           yield* commit(); break
@@ -163,6 +168,9 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
             if ((yield* journal.unactivated(owner)) !== null) return
             owner = yield* journal.claim(scope(source))
           }
+          // Clear superseded memberships before admitting another complete
+          // observation. Deadline interruption postpones new work to a later cycle.
+          if (!(yield* retireSupersededRecords(owner))) return
           const policy = yield* raw.policy(journal.binding, project.id)
           const baseline = yield* sourceComparisonContext(owner)
           const observedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
@@ -183,6 +191,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
           }
           observations++
           yield* recover(owner, (yield* journal.inspect(owner, id, { kind: "canonical", limit: 1 })).capture)
+          yield* retireSupersededRecords(owner)
         }))
         cursor = { ...cursor, offset: index + 1 }
         yield* commit()

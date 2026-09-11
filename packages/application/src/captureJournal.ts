@@ -66,6 +66,8 @@ export type CaptureSeal = {
   readonly manifestJson: string
 }
 export type CaptureSummary = CaptureReservation & {
+  /** Historical membership retired; record reads/replays fail explicitly. Proofs remain. */
+  readonly recordsRetired: boolean
   readonly purpose: CapturePurpose
   readonly trackRecords: boolean
   readonly state: "preparing" | "sealed" | "activated" | "completed" | "abandoned"
@@ -142,4 +144,7 @@ export class CaptureJournal extends Context.Service<CaptureJournal, {
   settle(owner: CaptureOwner, id: string, settlement: CaptureSettlement): Effect.Effect<void, CaptureJournalError>
   /** Drops at most 32 resolved payloads, retaining identity/receipt metadata for replay. */
   reclaim(owner: CaptureOwner, id: string, limit?: number): Effect.Effect<number, CaptureJournalError>
+  /** Retires at most 100 superseded terminal membership rows; keeps all current
+   * coverage, pending work, version identities and unit/activation receipts. */
+  pruneRecords(owner: CaptureOwner, limit?: number): Effect.Effect<number, CaptureJournalError>
 }>()("atape/application/CaptureJournal") {}

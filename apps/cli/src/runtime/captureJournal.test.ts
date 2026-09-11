@@ -33,6 +33,7 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
 })
 
 const downgradeToV5 = (db: DatabaseSync) => {
+  db.exec("DROP INDEX obsolete_capture_records; ALTER TABLE captures DROP COLUMN records_retired; ALTER TABLE captures DROP COLUMN retained_records")
   for (const table of ["scopes", "captures", "units", "source_record_versions", "capture_records"]) {
     db.exec(`DROP TRIGGER metadata_${table}_insert; DROP TRIGGER metadata_${table}_delete`)
   }
@@ -73,7 +74,7 @@ describe("Capture journal Interface", () => {
       expect(yield* j.unactivated(current)).toBeNull()
     }))
     const upgraded = new DatabaseSync(path)
-    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(6); upgraded.close()
+    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(7); upgraded.close()
   })
   it("verifies binding before upgrading v3 and preserves its independent Raw obligations", async () => {
     const path = await setup()

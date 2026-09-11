@@ -58,6 +58,22 @@ const setup = async () => {
 }
 
 describe("Host source collection workflow", () => {
+  it("automatically retires superseded native memberships and sustains rewrites under unchanged admission", async () => {
+    const f = await setup(), bounded = { ...limits, journal: { ...limits.journal, metadataEntries: 500 } }
+    let previous: Awaited<ReturnType<typeof f.inspect>> | undefined
+    for (let n = 0; n < 25; n++) {
+      const db = new DatabaseSync(f.native.path)
+      db.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE json_extract(data,'$.type')='text'").run(`Retention update ${n}`); db.close()
+      expect(await f.cycle(f.host, bounded)).toMatchObject({ observations: 1, sourceFailures: [] })
+      const current = await f.inspect()
+      expect(current.events).toHaveLength(6)
+      expect(current.capture?.id).not.toBe(previous?.capture?.id)
+      expect(current.capture?.recordsRetired).toBe(false)
+      expect(current.pending).toEqual([])
+      previous = current
+    }
+    expect(await f.cycle(f.host, bounded)).toMatchObject({ observations: 0, sourceFailures: [] })
+  }, 15000)
   it("publishes a native family, skips unchanged content, and archives a Raw-only edit without replacing Canonical", async () => {
     const f = await setup()
     const first = await f.cycle()
