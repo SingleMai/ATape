@@ -72,8 +72,8 @@ changed afterward.
 npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new OpenCode Adapter):
 
 1. Enable two-factor authentication on the npm owner account.
-2. Create a granular access token (GAT) with a one-day expiry, package publish permission and bypass-2FA enabled. Select only the package being bootstrapped, or the `@atape` scope when the new package cannot yet be selected. Grant no organization-management permission.
-3. Add it to the GitHub repository as the `NPM_TOKEN` Actions secret. Only the publication step receives it as `NODE_AUTH_TOKEN`; checks and builds do not. Without the secret, the same step uses npm Trusted Publishing.
+2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.
+3. Add it to the GitHub repository as the `NPM_TOKEN` Actions secret. This route requires explicitly wiring that secret into the publication step; the current workflow uses OIDC without a token fallback.
 4. Push the matching release tag, for example `v0.1.0`.
 
 ```sh
@@ -82,6 +82,14 @@ git push origin v0.1.0
 ```
 
 The workflow runs all checks before making external changes. npm publication is recoverable: when a version already exists, the workflow verifies its SHA-512 registry integrity against the local release tarball and skips it only when the bytes match.
+
+For `@atape/adapter-opencode@0.5.0` only, the user requested local first publication
+with the already authenticated npm account, then later trusted-publisher setup.
+[ADR-0077](architecture/adr/0077-opencode-local-first-publication.md) records this
+exception, the exact artifact digest and the absence of GitHub build provenance
+for that one package version. All automated gates remain required. The ordinary
+tag workflow publishes the other three packages and verifies the already-published
+OpenCode bytes before creating the GitHub Release.
 
 ## Switch to npm Trusted Publishing
 
@@ -100,7 +108,7 @@ npm trust github @atape/adapter-claude --file release.yml --repo SingleMai/ATape
 npm trust github @atape/adapter-opencode --file release.yml --repo SingleMai/ATape --allow-publish
 ```
 
-After the first publication, configure the new package's trust relationship, revoke the bootstrap GAT and delete the `NPM_TOKEN` repository secret. Configure npm publishing access to disallow traditional tokens. The next version uses only OIDC; verify its successful publication and provenance without creating a placeholder version just to test trust. GitHub-hosted runners receive short-lived credentials through the workflow's `id-token: write` permission. Public repositories and packages also receive npm provenance attestations.
+Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and configure npm publishing access to disallow traditional tokens. GitHub-hosted runners receive short-lived credentials through the workflow's `id-token: write` permission. Public repositories and packages also receive npm provenance attestations.
 
 ## Publication order and recovery
 
