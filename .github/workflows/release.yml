@@ -126,6 +126,9 @@ jobs:
 
       - name: Publish public npm packages
         run: node scripts/publish-npm-release.mjs
+        env:
+          # First-package bootstrap only; absent after npm OIDC trust is configured.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create the GitHub Release
         run: >-
