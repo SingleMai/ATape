@@ -1,0 +1,15 @@
+{
+  "baseline": "60964394cdf7413a11c5843e669f96c87467d381",
+  "platform": "macOS-26.3.2-arm64-arm-64bit",
+  "files": {
+    "/tmp/atape-retention-capacity-u8prj6a0/prototype.ts": "1a31178c9876b567dad5e3155fdc00470234a425b79c86e44e1b5331649327f1",
+    "/tmp/atape-retention-capacity-u8prj6a0/prototype.mjs": "f5151959ab70f67c7c1de0b80583cb5ed121fe3dad28f8f01f2b8b44b2fcb007",
+    "/tmp/atape-retention-capacity-u8prj6a0/run.py": "4bbcf15a5b0c40c3196ac3d3a26b39c5364a48743b3ff30867d718559b4d6c2b",
+    "/Users/liying/.codex/worktrees/1199/ATape-metadata-retention/adapters/opencode/src/fixtures/native-v1.json": "4034a150da542be49d8d1f0d62d6a3244d986db9abc1b886f80ab6416d037298",
+    "/tmp/atape-retention-capacity-u8prj6a0/summarize.py": "66275ed6bbd5e842c80f51bb98dad8b7cefc2ec7bcf9fde3f7f09ceafb811e1a",
+    "/tmp/atape-retention-capacity-u8prj6a0/clean.jsonl": "aab71143d3bde03a18e747d6a5c202c4fcf6f26daf5ef55a879cc506b14ee581",
+    "/tmp/atape-retention-capacity-u8prj6a0/clean.time.txt": "0b95ea1e11498ae80ab6e8715d77b9006e35096e13bf83aed4556067eec8ab2b",
+    "/tmp/atape-retention-capacity-u8prj6a0/compact-results.json": "d381291f03b53da5d1d6356f96e48b990960d640b8a07f5ae4856deb207c734e",
+    "/tmp/atape-retention-capacity-u8prj6a0/OBSERVATIONS.md": "f177cef93c82347cac4702dfc9c03b1a0a10e7ab37fc458ae452a9fe9b140908"
+  }
+}

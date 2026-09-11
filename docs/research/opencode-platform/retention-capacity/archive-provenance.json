@@ -1,0 +1,24 @@
+{
+  "originalResearchPath": "/tmp/atape-retention-capacity-u8prj6a0",
+  "originalScripts": {
+    "prototype.ts": "1a31178c9876b567dad5e3155fdc00470234a425b79c86e44e1b5331649327f1",
+    "run.py": "4bbcf15a5b0c40c3196ac3d3a26b39c5364a48743b3ff30867d718559b4d6c2b",
+    "summarize.py": "66275ed6bbd5e842c80f51bb98dad8b7cefc2ec7bcf9fde3f7f09ceafb811e1a"
+  },
+  "sharedControlledFixture": "../capacity/native-fixture.json",
+  "fixtureSHA256": "4034a150da542be49d8d1f0d62d6a3244d986db9abc1b886f80ab6416d037298",
+  "archivedScriptChanges": [
+    "Production imports resolve via explicit checkout in build-probe.mjs; controlled fixture copied beside bundle.",
+    "Scratch uses OS tmpdir; runner requires macOS and explicit new output/bundle paths, checks final assertions.",
+    "Summarizer accepts input/output/database parameters, refuses overwrite and nonempty WAL/SHM before offline immutable read.",
+    "Prototype reports actual checkout commit from build-provenance.json next to bundle."
+  ],
+  "originalResultsReplaced": false,
+  "fullFiveRoundRerunDuringArchive": false,
+  "archivedScriptHashes": {
+    "prototype.ts": "c467b699b4faab85e141efe97429f817ef70caa8368962b169535954c947ccfb",
+    "build-probe.mjs": "9867c255962d7040008796302081c7386c5bef23d2148cac8362cf1c2f01962b",
+    "run.py": "ca33d283ad4438b50c647489347a339059967c7f51d2e28505c6e76e191d5dca",
+    "summarize.py": "f242e306a5b5b2146a237c0e5b8e6034f7eabaa598e03766048145f7504a38ec"
+  }
+}

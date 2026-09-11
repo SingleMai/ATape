@@ -98,3 +98,9 @@ rtk proxy node "$NEW_BUILD_OUTPUT/max-pages.mjs"
 
 [有限规模 OpenCode source + Host 冻结准备容量原型](capacity/OBSERVATIONS.md) 使用 main `50c52c57141037f403e1a553db164c3339a94401`，与上面 `000668f` 原始平台/ENOSPC 实验分开记录。
 它是 macOS arm64 单次合成负载的 1,000/10,000 Event、Raw off/on 与 target admission 拒绝观察；全进程 RSS 包含 fixture 构造，DB/WAL/SHM 是固定时刻快照而非峰值，无真实 HTTP ACK。所有实验限额都不是发布默认值。
+
+## 连续观察的 metadata 保留容量（候选 6096439）
+
+[10,000 Event 连续观察与安全 metadata 清理容量原型](retention-capacity/OBSERVATIONS.md) 记录固定 `metadataEntries=110000` 的五轮 Raw-on 观察，每轮仅改同一正文。
+清理后 metadata 为 60229 / 60251 / 60273 / 60295 / 60317；后四轮每次释放 30003 条旧 membership，同时保留当前成员、最新版本键及旧 unit 模拟 ACK proofs。后续每轮仍净增 22，不能据此承诺无限观察。
+这是 Source/Host + SQLite 和明确 TestAdapter ACK 的单次 macOS arm64 实验，没有真实 HTTP；原始 210 秒结果与归档构建检查分开记录。

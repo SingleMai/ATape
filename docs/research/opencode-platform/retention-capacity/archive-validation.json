@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-11",
+  "build": {
+    "checkoutCommit": "60964394cdf7413a11c5843e669f96c87467d381",
+    "checkoutDirty": false,
+    "esbuild": "0.28.2",
+    "node": "v24.18.0",
+    "bundleSHA256": {
+      "prototype": "deb56a35554c06a10e1aa5d6635a13c8e5f8958739ddcc46c798482742787346"
+    }
+  },
+  "scriptSyntax": "PASS",
+  "fullFiveRoundRerun": false,
+  "parameterizedSummarizerReadonlyOriginalDatabase": "PASS",
+  "recomputedCompactResultEqualsOriginal": true,
+  "originalEvidenceByteForBytePreserved": [
+    "compact-results.json",
+    "clean.jsonl",
+    "clean.time.txt",
+    "controller-results.json",
+    "provenance.json"
+  ],
+  "scope": "Archive repeatability checks only; original five-round measurements remain the sole performance run."
+}

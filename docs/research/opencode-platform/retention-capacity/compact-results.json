@@ -1,0 +1,340 @@
+{
+  "baseline": "60964394cdf7413a11c5843e669f96c87467d381",
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": "v24.18.0",
+  "elapsedMs": 210326.501958,
+  "limits": {
+    "source": {
+      "rowBytes": 1048576,
+      "pageBytes": 4194304,
+      "pageRows": 100,
+      "records": 100000,
+      "threads": 20,
+      "durationMs": 115000
+    },
+    "projection": {
+      "events": 20000,
+      "usage": 20000,
+      "pageItems": 100,
+      "pageBytes": 4194304
+    },
+    "journal": {
+      "unitBytes": 5242880,
+      "targetBytes": 134217728,
+      "pendingBytes": 268435456,
+      "unitsPerTarget": 4096,
+      "recordsPerTarget": 100000,
+      "metadataEntries": 110000
+    },
+    "raw": {
+      "objectBytes": 3145728,
+      "wireBytes": 5242880,
+      "targetBytes": 100663296,
+      "units": 4096
+    },
+    "remote": {
+      "partBytes": 4194304,
+      "targetBytes": 134217728,
+      "userPendingBytes": 268435456,
+      "parts": 4096,
+      "reservations": 10,
+      "reservationLifetimeMs": 60000,
+      "leaseLifetimeMs": 60000
+    }
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "prepareMs": 34879.883375,
+      "cleanupMs": 162.6113750000004,
+      "pruneMs": 0.1522499999991851,
+      "canonicalBytes": 15656250,
+      "raw": {
+        "units": 201,
+        "bytes": 23406984,
+        "records": 20001,
+        "reused": 0,
+        "gaps": 0,
+        "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+      },
+      "pruned": 0,
+      "pruneBatches": 0,
+      "maxPruneBatch": 0,
+      "metadataBeforePrune": 60229,
+      "metadataAfterPrune": 60229,
+      "actualRows": {
+        "scopes": 1,
+        "captures": 1,
+        "units": 221,
+        "source_record_versions": 30003,
+        "capture_records": 30003
+      },
+      "retainedBytes": 0,
+      "currentEvents": 10000,
+      "stableOriginalRawRefs": 10000,
+      "rssBytes": 309329920,
+      "processMaxRSSKiB": 381808,
+      "filesAfterPreparation": {
+        "db": 74395648,
+        "wal": 1804592,
+        "shm": 32768
+      },
+      "filesAfterCleanup": {
+        "db": 75182080,
+        "wal": 1804592,
+        "shm": 32768
+      }
+    },
+    {
+      "round": 2,
+      "prepareMs": 39081.8305,
+      "cleanupMs": 1367.8731660000049,
+      "pruneMs": 1319.5081670000072,
+      "canonicalBytes": 15656250,
+      "raw": {
+        "units": 1,
+        "bytes": 2712,
+        "records": 20001,
+        "reused": 20000,
+        "gaps": 0,
+        "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+      },
+      "pruned": 30003,
+      "pruneBatches": 301,
+      "maxPruneBatch": 100,
+      "metadataBeforePrune": 90254,
+      "metadataAfterPrune": 60251,
+      "actualRows": {
+        "scopes": 1,
+        "captures": 2,
+        "units": 242,
+        "source_record_versions": 30003,
+        "capture_records": 30003
+      },
+      "retainedBytes": 0,
+      "currentEvents": 10000,
+      "stableOriginalRawRefs": 9999,
+      "rssBytes": 343736320,
+      "processMaxRSSKiB": 459504,
+      "filesAfterPreparation": {
+        "db": 75182080,
+        "wal": 1804592,
+        "shm": 32768
+      },
+      "filesAfterCleanup": {
+        "db": 75182080,
+        "wal": 1804592,
+        "shm": 32768
+      }
+    },
+    {
+      "round": 3,
+      "prepareMs": 38068.35016700001,
+      "cleanupMs": 1314.2469169999968,
+      "pruneMs": 1232.2207909999997,
+      "canonicalBytes": 15656250,
+      "raw": {
+        "units": 1,
+        "bytes": 2712,
+        "records": 20001,
+        "reused": 20000,
+        "gaps": 0,
+        "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+      },
+      "pruned": 30003,
+      "pruneBatches": 301,
+      "maxPruneBatch": 100,
+      "metadataBeforePrune": 90276,
+      "metadataAfterPrune": 60273,
+      "actualRows": {
+        "scopes": 1,
+        "captures": 3,
+        "units": 263,
+        "source_record_versions": 30003,
+        "capture_records": 30003
+      },
+      "retainedBytes": 0,
+      "currentEvents": 10000,
+      "stableOriginalRawRefs": 9999,
+      "rssBytes": 342097920,
+      "processMaxRSSKiB": 482144,
+      "filesAfterPreparation": {
+        "db": 75182080,
+        "wal": 1804592,
+        "shm": 32768
+      },
+      "filesAfterCleanup": {
+        "db": 75182080,
+        "wal": 1804592,
+        "shm": 32768
+      }
+    },
+    {
+      "round": 4,
+      "prepareMs": 36543.969042,
+      "cleanupMs": 1172.969207999995,
+      "pruneMs": 1092.4718339999963,
+      "canonicalBytes": 15656250,
+      "raw": {
+        "units": 1,
+        "bytes": 2712,
+        "records": 20001,
+        "reused": 20000,
+        "gaps": 0,
+        "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+      },
+      "pruned": 30003,
+      "pruneBatches": 301,
+      "maxPruneBatch": 100,
+      "metadataBeforePrune": 90298,
+      "metadataAfterPrune": 60295,
+      "actualRows": {
+        "scopes": 1,
+        "captures": 4,
+        "units": 284,
+        "source_record_versions": 30003,
+        "capture_records": 30003
+      },
+      "retainedBytes": 0,
+      "currentEvents": 10000,
+      "stableOriginalRawRefs": 9999,
+      "rssBytes": 314097664,
+      "processMaxRSSKiB": 482144,
+      "filesAfterPreparation": {
+        "db": 75182080,
+        "wal": 1804592,
+        "shm": 32768
+      },
+      "filesAfterCleanup": {
+        "db": 75182080,
+        "wal": 1849912,
+        "shm": 32768
+      }
+    },
+    {
+      "round": 5,
+      "prepareMs": 51171.101000000024,
+      "cleanupMs": 1296.166459,
+      "pruneMs": 1207.7537090000114,
+      "canonicalBytes": 15656250,
+      "raw": {
+        "units": 1,
+        "bytes": 2712,
+        "records": 20001,
+        "reused": 20000,
+        "gaps": 0,
+        "admission": "de877fdc883be767c2b0ceab83d5abe717bb4ac37c1198e5951a7bdf902ccf2d"
+      },
+      "pruned": 30003,
+      "pruneBatches": 301,
+      "maxPruneBatch": 100,
+      "metadataBeforePrune": 90320,
+      "metadataAfterPrune": 60317,
+      "actualRows": {
+        "scopes": 1,
+        "captures": 5,
+        "units": 305,
+        "source_record_versions": 30003,
+        "capture_records": 30003
+      },
+      "retainedBytes": 0,
+      "currentEvents": 10000,
+      "stableOriginalRawRefs": 9999,
+      "rssBytes": 294748160,
+      "processMaxRSSKiB": 482144,
+      "filesAfterPreparation": {
+        "db": 75182080,
+        "wal": 1854032,
+        "shm": 32768
+      },
+      "filesAfterCleanup": {
+        "db": 75182080,
+        "wal": 1854032,
+        "shm": 32768
+      }
+    }
+  ],
+  "resources": {
+    "userCPUTime": 185903133,
+    "systemCPUTime": 33971501,
+    "maxRSS": 482144,
+    "sharedMemorySize": 0,
+    "unsharedDataSize": 0,
+    "unsharedStackSize": 0,
+    "minorPageFault": 4891288,
+    "majorPageFault": 151,
+    "swappedOut": 0,
+    "fsRead": 0,
+    "fsWrite": 0,
+    "ipcSent": 0,
+    "ipcReceived": 0,
+    "signalsCount": 0,
+    "voluntaryContextSwitches": 709371,
+    "involuntaryContextSwitches": 1226811
+  },
+  "afterClose": {
+    "db": 75182080,
+    "wal": 0,
+    "shm": 0
+  },
+  "reopenedReadonlyVerification": {
+    "currentMembership": [
+      {
+        "kind": "event",
+        "count": 10000
+      },
+      {
+        "kind": "raw",
+        "count": 20001
+      },
+      {
+        "kind": "session",
+        "count": 1
+      },
+      {
+        "kind": "thread",
+        "count": 1
+      }
+    ],
+    "historicalMembershipCount": [
+      {
+        "count": 0
+      }
+    ],
+    "sourceVersionRevisionCounts": [
+      {
+        "revision": 1,
+        "count": 30001
+      },
+      {
+        "revision": 5,
+        "count": 2
+      }
+    ],
+    "firstRawProofs": [
+      {
+        "disposition": "acknowledged",
+        "reclaimed": 1,
+        "receipt": 1,
+        "count": 201
+      }
+    ],
+    "danglingRawBindings": [
+      {
+        "count": 0
+      }
+    ],
+    "fileAllocation": [
+      {
+        "page_count": 18355
+      }
+    ],
+    "freePages": [
+      {
+        "freelist_count": 9537
+      }
+    ]
+  },
+  "receiptEvidence": "Canonical PublicationTransport TestAdapter; Raw public journal RawAcknowledged contract settlement. No HTTP or real remote ACK."
+}
