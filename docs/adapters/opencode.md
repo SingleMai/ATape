@@ -688,6 +688,36 @@ capture headers and unit receipts still consume admission, and protected current
 or pending work is never evicted for space. SQLite can reuse freed pages; this
 does not promise an immediate smaller file or constant storage for unlimited
 history. See [ADR-0074](../architecture/adr/0074-capture-observation-retention.md).
-Remaining work is representative retention/capacity evidence and explicit first
-release admission/support, followed by the ordinary detection/enablement flow.
+The [continuous retention capacity experiment](https://github.com/SingleMai/ATape/blob/262508f3bd1605245f918b51f918989a24e43704/docs/research/opencode-platform/retention-capacity/OBSERVATIONS.md)
+completed five 10,000-Event Raw-enabled observations under an unchanged 110,000
+entry budget. Each rewrite changed one Event, retired 30,003 membership rows in
+301 batches and retained 9,999 unchanged Event Raw references. Post-cleanup usage
+rose from 60,229 to 60,317 entries; each later round added only 22 capture/unit
+proof rows. Cleanup took 1.09–1.32 seconds. This single macOS arm64 experiment used
+simulated ACKs; it does not replace the real HTTP contract or select release
+defaults. The full process peaked at 493,715,456 bytes RSS, and its SQLite file
+reused pages without shrinking. Remaining work is explicit first release
+admission/support, followed by the ordinary detection/enablement flow.
 OpenCode remains private and unregistered; no publication or deployment occurred.
+
+### Installed Git Project attribution
+
+The OpenCode manifest now declares `atape.git-attribution.v1`, allowing the existing
+Host to load it for Git Projects. The Adapter supplies immutable creation Origin
+metadata; the shared Host Module owns Git inspection, durable repository evidence
+and current Server matching. No provider-specific Git resolver is added.
+
+The package regression builds the actual tarball and installs it through
+`installAdapter`, then verifies the setup capability check and public
+`AdapterRuntimes` Interface. A real Git worktree provides the original source
+directory while ATape is configured against a separate clone. A fork originates
+in a foreign repository nested inside that clone, and mutable OpenCode directory
+metadata points there too. The root is included and projects six Events; the
+foreign fork is excluded. Removing the original worktree preserves established
+attribution across fresh runtimes, while an unseen source remains unknown and a
+revoked credential still fails. Source DB hash/mtime remain unchanged.
+
+Only the owned Project-matching remote Seam uses a TestAdapter in this focused
+regression; package installation, source reading, filesystem/Git inspection and
+durable bindings use production Implementations. This is Git attribution
+acceptance of the private artifact, not a package publication or default enablement.

@@ -23,6 +23,7 @@ try {
   assert.equal(manifest.version, "0.0.0")
   assert.equal(manifest.dependencies, undefined, "The installed Adapter must be self-contained")
   assert.equal(manifest.atapeAdapter.sourceCapture, "atape.source-capture.v1")
+  assert.equal(manifest.atapeAdapter.gitAttribution, "atape.git-attribution.v1")
   assert.equal(manifest.atapeAdapter.adapterId, "opencode")
   assert.equal(manifest.atapeAdapter.protocolVersion, "atape.adapter.v1alpha1")
   assert.equal(manifest.exports["."], manifest.atapeAdapter.entry)
