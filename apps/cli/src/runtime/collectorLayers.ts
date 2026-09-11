@@ -7,6 +7,7 @@ import {
   CollectorTransport,
   makeSecretRedactorLayer,
   makeSourceCaptureCollectorLayer,
+  defaultSourceCollectionLimits,
   CollectorConfigurationError,
   projectCanonicalSubmission,
   GitSourceAttribution,
@@ -68,13 +69,14 @@ export const makeNodeCollectorLayer = (
   const journals = makeCaptureJournalsLayer(paths.collectorStateFile)
   const redactor = makeSecretRedactorLayer(environmentSecretValues(environment))
   const configured = environment.ATAPE_SOURCE_COLLECTION_LIMITS
-  const sources = configured === undefined ? Layer.empty : Layer.unwrap(Effect.try({
+  const admission = configured === undefined ? Effect.succeed(defaultSourceCollectionLimits) : Effect.try({
     try: () => {
       if (new TextEncoder().encode(configured).byteLength > 16384) throw new Error("Source admission is too large")
       return JSON.parse(configured) as unknown
     },
     catch: () => new CollectorConfigurationError({ reason: "limits", message: "ATAPE_SOURCE_COLLECTION_LIMITS must be bounded JSON source admission." })
-  }).pipe(Effect.map(value => makeSourceCaptureCollectorLayer(value)))).pipe(Layer.provide(Layer.mergeAll(
+  })
+  const sources = Layer.unwrap(admission.pipe(Effect.map(value => makeSourceCaptureCollectorLayer(value)))).pipe(Layer.provide(Layer.mergeAll(
     states, journals, redactor, makePublicationTransportLayer(), makeRawPublicationTransportLayer()
   )))
   return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory), makeCollectorTransportLayer(), redactor, sources)

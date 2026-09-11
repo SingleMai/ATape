@@ -740,3 +740,31 @@ public Interfaces. See [ADR-0075](../architecture/adr/0075-confirmed-collector-p
 
 Final first release admission/support and ordinary detection/enablement remain
 open. The artifact is still private and explicitly configured.
+
+### First release scope and default Collector admission
+
+The owner accepted OpenCode 1.18.30 local v1 SQLite on macOS arm64 and Linux
+arm64/glibc as the first supported scope. Actual source capability, immutable
+Origin and relationship checks still apply. Old JSON, a selected family's nonempty
+v2/mixed history, other versions and other platforms have no first release
+compatibility promise. Unknown parts and unsupported media retain explicit partial
+fidelity; source history is never migrated or silently read through a fallback.
+
+The Node Collector now supplies a bounded default profile, so source collection
+does not require manually writing `ATAPE_SOURCE_COLLECTION_LIMITS`. Present
+overrides remain strictly validated. The selected profile admits 1 MiB source
+rows, 4 MiB pages, 128 MiB frozen targets, 256 MiB account pending payload and
+1,000,000 account metadata entries. Source, projection, Raw, comparison, recovery
+and outer work deadlines are all explicit in
+[ADR-0076](../architecture/adr/0076-source-collection-release-admission.md).
+These are independent admission ceilings, not guaranteed history sizes, physical
+database file limits or process memory limits. Negotiated Server limits may be
+smaller. Existing safe cleanup and capacity backpressure remain unchanged.
+
+A default-profile regression uses the real Source runtime, Host boundary,
+Collector and SQLite journal for three 1,000-Event text observations, unchanged
+polling and an oversized-row rejection. Only the owned remote dependencies use
+TestAdapters. Limits and uncertain attribution now retain their actual diagnostic
+category across the foreign Interface. The installed background CLI HTTP contract
+also runs without an admission override. Ordinary tool registration, installation
+and upgrade integration are the next increment; the package remains private here.

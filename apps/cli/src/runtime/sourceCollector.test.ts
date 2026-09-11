@@ -1,6 +1,6 @@
 import { CaptureJournals, CollectorStateStore, SourceCaptureCollector, makeSourceCaptureCollectorLayer, makeSecretRedactorLayer,
-  AdapterRuntimeError, type HostedAdapter, type SourceCollectionLimits } from "@atape/application"
-import type { AdapterInstallation, LocalProject } from "@atape/domain"
+  AdapterRuntimeError, defaultSourceCollectionLimits, type HostedAdapter, type SourceCollectionLimits } from "@atape/application"
+import type { AdapterInstallation, LocalProject, PublicationCapabilities } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { DatabaseSync } from "node:sqlite"
@@ -8,13 +8,15 @@ import { dirname } from "node:path"
 import { rm } from "node:fs/promises"
 import { makeCaptureJournalsLayer } from "./captureBootstrap.ts"
 import { makeCollectorStateLayer } from "./collectorLayers.ts"
+import { hostSourceCapture } from "./sourceCaptureRuntime.ts"
+import { createOpenCodeRuntime } from "../../../../adapters/opencode/src/runtime.ts"
 import { fixture, nativePreparationSource, directories, timestamp } from "./fixtures/publication-test-support.ts"
 
 import { sourceCollectionLimits as limits } from "./fixtures/source-collection-test-support.ts"
 
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
-const setup = async () => {
-  const remote = await fixture(16384), native = await nativePreparationSource()
+const setup = async (admission = limits, remoteLimits: Partial<PublicationCapabilities["limits"]> = {}) => {
+  const remote = await fixture(remoteLimits.partBytes ?? 16384, remoteLimits), native = await nativePreparationSource()
   const stateFile = `${remote.path}.collector.json`
   const project: LocalProject = { id: "project", instanceOrigin: "https://atape.test", userId: "user", teamId: "team", teamSlug: "team", teamName: "Team", name: "Project",
     type: "directory", path: dirname(native.path), createdAt: timestamp, adapterIds: ["opencode"] }
@@ -22,7 +24,7 @@ const setup = async () => {
     upgradeSpec: "@atape/adapter-opencode", installedAt: timestamp, updatedAt: timestamp }
   const base = Layer.mergeAll(makeCaptureJournalsLayer(stateFile), makeCollectorStateLayer(stateFile), remote.remote, remote.rawRemote,
     makeSecretRedactorLayer(["SENSITIVE_TEST_TOKEN"]))
-  const layer = Layer.merge(base, makeSourceCaptureCollectorLayer(limits).pipe(Layer.provide(base)))
+  const layer = Layer.merge(base, makeSourceCaptureCollectorLayer(admission).pipe(Layer.provide(base)))
   const run = <A, E>(work: Effect.Effect<A, E, SourceCaptureCollector | CollectorStateStore | CaptureJournals>) => Effect.runPromise(work.pipe(Effect.provide(layer)))
   let opens = 0, discoveries = 0, discoveryMissing = false
   const host: Extract<HostedAdapter, { sourceCapture: unknown }> = {
@@ -39,14 +41,14 @@ const setup = async () => {
         Effect.mapError(() => new AdapterRuntimeError({ adapterId: "opencode", reason: "collect", retryable: true, message: "Could not open controlled source." }))) })
     }
   }
-  const cycle = (selected = host, configured = limits) => Effect.runPromise(Effect.gen(function*() {
+  const cycle = (selected = host, configured = admission) => Effect.runPromise(Effect.gen(function*() {
     const states = yield* CollectorStateStore, collector = yield* SourceCaptureCollector
     const snapshot = yield* states.snapshot(project.instanceOrigin, project.userId, project.id, adapter.adapterId)
     return yield* collector.collect(project, adapter, selected, snapshot)
   }).pipe(Effect.provide(Layer.merge(base, makeSourceCaptureCollectorLayer(configured).pipe(Layer.provide(base))))))
   const inspect = () => run(Effect.scoped(Effect.gen(function*() {
     const factory = yield* CaptureJournals
-    const journal = yield* factory.open({ instanceOrigin: project.instanceOrigin, userId: project.userId }, limits.journal)
+    const journal = yield* factory.open({ instanceOrigin: project.instanceOrigin, userId: project.userId }, admission.journal)
     const owner = yield* journal.claim(native.ownerScope), coverage = yield* journal.coverage(owner)
     const capture = coverage.canonicalCaptureId === null ? null : (yield* journal.inspect(owner, coverage.canonicalCaptureId, { kind: "canonical", limit: 1 })).capture
     return { coverage, capture, canonicalUnits: capture === null ? [] : (yield* journal.inspect(owner, capture.id, { kind: "canonical", limit: 100 })).units,
@@ -59,6 +61,60 @@ const setup = async () => {
 }
 
 describe("Host source collection workflow", () => {
+  it("collects repeated 1,000-Event native-format targets under release admission and preserves the old head at a source limit", async () => {
+    const admission = defaultSourceCollectionLimits
+    const f = await setup(admission, { partBytes: 4 * 1024 * 1024, targetBytes: 128 * 1024 * 1024, userPendingBytes: 256 * 1024 * 1024 })
+    const db = new DatabaseSync(f.native.path), root = f.native.metadata.origin.sourceId
+    db.exec("BEGIN; DELETE FROM part; DELETE FROM message")
+    const message = db.prepare("INSERT INTO message(id,session_id,time_created,time_updated,data) VALUES(?,?,?,?,?)")
+    const part = db.prepare("INSERT INTO part(id,message_id,session_id,time_created,time_updated,data) VALUES(?,?,?,?,?,?)")
+    for (let n = 0; n < 1000; n++) {
+      const id = String(n).padStart(6, "0"), time = Date.parse(timestamp) + n
+      message.run(`msg_${id}`, root, time, time, JSON.stringify({ role: "user", time: { created: time }, agent: "build", model: { providerID: "fixture", modelID: "fixture" } }))
+      part.run(`prt_${id}`, `msg_${id}`, root, time, time, JSON.stringify({ type: "text", text: "x".repeat(1024) }))
+    }
+    db.exec("COMMIT"); db.close()
+    const readRecords = () => f.run(Effect.scoped(Effect.gen(function*() {
+      const factory = yield* CaptureJournals
+      const journal = yield* factory.open({ instanceOrigin: f.project.instanceOrigin, userId: f.project.userId }, admission.journal)
+      const owner = yield* journal.claim(f.native.ownerScope), coverage = yield* journal.coverage(owner)
+      const records = []
+      let afterKey: string | undefined
+      while (true) {
+        const page = yield* journal.records(owner, coverage.canonicalCaptureId!, { kind: "event", limit: 100, ...(afterKey === undefined ? {} : { afterKey }) })
+        if (page.length === 0) break
+        records.push(...page); afterKey = page.at(-1)!.key
+      }
+      return records
+    })))
+    const cycle = async () => {
+      const runtime = await createOpenCodeRuntime({ path: f.native.path, signal: new AbortController().signal })
+      try {
+        const source = hostSourceCapture("opencode", runtime.sourceCapture, new AbortController().signal)
+        return await f.cycle({ ...f.host, sourceCapture: { ...f.host.sourceCapture, open: source.open } })
+      } finally { await runtime.close() }
+    }
+    expect(await cycle()).toMatchObject({ observations: 1, canonicalEvents: 1000, sourceFailures: [] })
+    const original = await readRecords()
+    expect(original).toHaveLength(1000)
+    expect(original.every(record => record.rawReference?._tag === "object")).toBe(true)
+    for (let round = 1; round <= 2; round++) {
+      const changed = new DatabaseSync(f.native.path)
+      changed.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id='prt_000000'").run("x".repeat(1023) + round); changed.close()
+      expect(await cycle()).toMatchObject({ observations: 1, canonicalEvents: 1000, sourceFailures: [] })
+      const current = await readRecords()
+      expect(current.filter((record, index) => record.fingerprint === original[index]!.fingerprint &&
+        JSON.stringify(record.rawReference) === JSON.stringify(original[index]!.rawReference))).toHaveLength(999)
+      expect((await f.inspect()).pending).toEqual([])
+    }
+    const sent = f.remote.sent.length, rawSent = f.remote.rawSent.length, before = await f.inspect()
+    expect(await cycle()).toMatchObject({ observations: 0, canonicalBatches: 0, rawChunks: 0, sourceFailures: [] })
+    const oversized = new DatabaseSync(f.native.path)
+    oversized.prepare("UPDATE part SET data=json_set(data,'$.text',?) WHERE id='prt_000000'").run("x".repeat(admission.source.rowBytes)); oversized.close()
+    expect(await cycle()).toMatchObject({ observations: 0, canonicalBatches: 0, sourceFailures: [{ source: root, reason: "limit" }] })
+    expect((await f.inspect()).coverage).toEqual(before.coverage)
+    expect(f.remote.sent).toHaveLength(sent); expect(f.remote.rawSent).toHaveLength(rawSent)
+  }, 60000)
   it("records confirmed Canonical progress across empty cycles and recovers older checkpoints without the source", async () => {
     const f = await setup(); f.remote.policy(false)
     expect((await f.progress()).checkpoint).toBeUndefined()

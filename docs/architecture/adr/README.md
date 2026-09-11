@@ -130,3 +130,4 @@ pretending that staging acceptance passed.
 - [ADR-0073: Capture journal metadata admission](0073-capture-journal-metadata-admission.md)
 
 - [ADR-0075: Confirmed Canonical progress in Collector checkpoints](0075-confirmed-collector-progress.md)
+- [ADR-0076: Source collection admission for the first OpenCode release](0076-source-collection-release-admission.md)

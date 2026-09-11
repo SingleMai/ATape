@@ -23,6 +23,17 @@ export const SourceCollectionLimits = Schema.Struct({
   sourceWorkMs: count(300000), cycleMs: count(600_000)
 })
 export type SourceCollectionLimits = typeof SourceCollectionLimits.Type
+/** First release admission. Payload quotas do not bound SQLite files or process RSS. */
+export const defaultSourceCollectionLimits: SourceCollectionLimits = {
+  source: { rowBytes: 1024 * 1024, pageBytes: 4 * 1024 * 1024, pageRows: 100, records: 100_000, threads: 20, durationMs: 120_000 },
+  projection: { events: 20_000, usage: 20_000, pageItems: 100, pageBytes: 4 * 1024 * 1024 },
+  journal: { unitBytes: 5 * 1024 * 1024, targetBytes: 128 * 1024 * 1024, pendingBytes: 256 * 1024 * 1024,
+    unitsPerTarget: 4096, recordsPerTarget: 100_000, metadataEntries: 1_000_000 },
+  raw: { objectBytes: 3 * 1024 * 1024, wireBytes: 5 * 1024 * 1024, targetBytes: 96 * 1024 * 1024, units: 4096 },
+  comparison: { records: 100_000, durationMs: 120_000 },
+  recovery: { sources: 20, captures: 20, operations: 64, reclaimUnits: 32, sourceMs: 15_000 },
+  sourceWorkMs: 240_000, cycleMs: 600_000
+}
 const Cursor = Schema.Struct({ protocol: Schema.Literal(Protocol), discovery: Schema.NullOr(identity), offset: count(100, 0),
   recoveryAfter: Schema.NullOr(identity), recoverySource: Schema.NullOr(Schema.Struct({ sourceId: identity, originKey: identity })),
   recoveryCapture: Schema.NullOr(identity) })
@@ -112,7 +123,8 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         reason: "collect", retryable: true, message: "A source exceeded its work deadline; retained obligations will be retried." })) }),
       Effect.catch(error => {
         if (error._tag === "CaptureJournalError" || error._tag === "CollectorStateError" || error.reason === "unauthenticated") return Effect.fail(error)
-        diagnostic(source, error.reason === "capacity" || error.reason === "limit" ? "limit" : error.reason === "binding" ? "attribution" :
+        diagnostic(source, error instanceof AdapterRuntimeError && error.sourceFailureReason !== undefined ? error.sourceFailureReason :
+          error.reason === "capacity" || error.reason === "limit" ? "limit" : error.reason === "binding" ? "attribution" :
           error.reason === "invalid" || error.reason === "contract" ? "format" : "io")
         return Effect.succeed(undefined)
       }))

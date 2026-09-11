@@ -33,6 +33,7 @@ export class CollectorStateError extends Schema.TaggedError<CollectorStateError>
 
 export class AdapterRuntimeError extends Schema.TaggedError<AdapterRuntimeError>()("AdapterRuntimeError", {
   reason: Schema.Literals(["load", "contract", "collect", "close", "unauthenticated", "transport"]),
+  sourceFailureReason: Schema.optionalKey(AdapterSourceFailure.fields.reason),
   adapterId: Schema.String,
   retryable: Schema.Boolean,
   message: Schema.String

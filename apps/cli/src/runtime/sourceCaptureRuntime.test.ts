@@ -51,6 +51,23 @@ export const createAtapeAdapter = context => createOpenCodeRuntime({ path: ${JSO
 }
 
 describe("Host source runtime capability", () => {
+  it("provides bounded collection without environment configuration and rejects malformed overrides", async () => {
+    const f = await fixture()
+    expect(await Effect.runPromise(SourceCaptureCollector.pipe(Effect.as(true), Effect.provide(makeNodeClientLayer(f.paths, {}))))).toBe(true)
+    for (const configured of ["", "invalid", "{}", " ".repeat(16385)]) {
+      await expect(Effect.runPromise(SourceCaptureCollector.pipe(Effect.provide(makeNodeClientLayer(f.paths, {
+        ATAPE_SOURCE_COLLECTION_LIMITS: configured
+      }))))).rejects.toMatchObject({ reason: "limits" })
+    }
+    await expect(readFile(f.paths.collectorStateFile)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+  it.each(["limit", "attribution", "unsupported"])("preserves a source %s diagnostic across the foreign Interface", async reason => {
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion,
+      discover: () => { throw { reason } }, open: () => { throw { reason } } }, new AbortController().signal)
+    await expect(Effect.runPromise(hosted.discover({ cursor: null, limits }))).rejects.toMatchObject({
+      reason: "contract", sourceFailureReason: reason === "unsupported" ? "format" : reason
+    })
+  })
   it("opens the actual OpenCode package Interface and closes native views with the caller Scope", async () => {
     const f = await fixture()
     const escaped = await f.run(Effect.scoped(Effect.gen(function*() {
@@ -105,8 +122,8 @@ describe("Host source runtime capability", () => {
     const count = remote.sent.length
     expect(await sweep()).toEqual({ observations: 0, canonicalEvents: 0 })
     expect(remote.sent).toHaveLength(count)
-    // The real executable composition exposes the service only with explicit
-    // validated admission; constructing it does not open any private history.
+    // Explicit overrides remain validated; constructing the composition does
+    // not open any private history.
     expect(await Effect.runPromise(SourceCaptureCollector.pipe(Effect.as(true), Effect.provide(makeNodeClientLayer(f.paths, {
       ATAPE_SOURCE_COLLECTION_LIMITS: JSON.stringify(sourceCollectionLimits)
     }))))).toBe(true)

@@ -56,7 +56,7 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID s
 		"PATH=" + os.Getenv("PATH"), "HOME=" + root, "ATAPE_LANG=en",
 		"XDG_CONFIG_HOME=" + filepath.Join(root, "xdg-config"), "XDG_DATA_HOME=" + filepath.Join(root, "xdg-data"), "XDG_STATE_HOME=" + filepath.Join(root, "xdg-state"),
 		"ATAPE_HOME=" + source.Home, "ATAPE_INSTANCE_URL=" + origin, "ATAPE_DEVELOPMENT_ALLOW_HTTP=true",
-		"OPENCODE_DB=" + source.Path, "ATAPE_SOURCE_COLLECTION_LIMITS=" + string(source.Limits),
+		"OPENCODE_DB=" + source.Path,
 		`ATAPE_REDACT_VALUES=["SENSITIVE_TEST_TOKEN"]`,
 	}
 	execute := func(ctx context.Context, args ...string) ([]byte, error) {
