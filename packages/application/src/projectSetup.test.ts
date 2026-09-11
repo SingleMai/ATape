@@ -9,6 +9,7 @@ import {
   ProjectSetupError,
   ProjectSetupGateway,
   applyProjectSetup,
+  decideProjectSetup,
   planProjectSetup
 } from "./projectSetup.ts"
 
@@ -131,5 +132,51 @@ describe("Project setup Module", () => {
       instanceOrigin: "https://atape.net", path: "/work/payments"
     }))).rejects.toBeInstanceOf(ProjectSetupError)
     expect(client.calls).toEqual([])
+  })
+})
+
+
+describe("Project setup decisions shared by CLI and TUI", () => {
+  const planFor = (exact = false) => fixture({ exact }).run(planProjectSetup({ instanceOrigin: "https://atape.net", path: "/work/payments" }))
+
+  it("attaches the single exact match even when several Teams are available", async () => {
+    const plan = await planFor(true)
+    const decision = decideProjectSetup({ ...plan, teams: [...plan.teams,
+      { id: "other", slug: "other", displayName: "Other", role: "member" }] })
+    expect(decision).toMatchObject({ kind: "ready", selection: { mode: "exact", teamId: "team-1", projectId: "project-1" } })
+  })
+
+  it("requires a Team when matching cannot choose one unambiguously", async () => {
+    const plan = await planFor()
+    const teams = [...plan.teams, { id: "other", slug: "other", displayName: "Other", role: "member" as const }]
+    expect(decideProjectSetup({ ...plan, teams })).toEqual({ kind: "needs_team", teams })
+    expect(decideProjectSetup({ ...plan, teams }, { mode: "create" })).toEqual({ kind: "needs_team", teams })
+    expect(decideProjectSetup({ ...plan, teams }, { team: "missing" })).toEqual({ kind: "invalid", reason: "team_unavailable" })
+  })
+
+  it("requires creation consent and resolves explicit flags and reviewed consent to the same selection", async () => {
+    const client = fixture()
+    const plan = await client.run(planProjectSetup({ instanceOrigin: "https://atape.net", path: "/work/payments" }))
+    expect(decideProjectSetup(plan)).toMatchObject({ kind: "needs_creation_confirmation", team: { id: "team-1" } })
+    expect(client.calls.some(call => Array.isArray(call) && call[0] === "create")).toBe(false)
+    const cli = decideProjectSetup(plan, { team: "acme", mode: "create", name: "Payments" })
+    const tui = decideProjectSetup(plan, { team: "team-1", creationApproved: true, name: "Payments" })
+    expect(cli).toEqual(tui)
+    if (cli.kind !== "ready") throw new Error("Expected an approved selection")
+    expect((await client.run(applyProjectSetup(plan, cli.selection))).createdRemotely).toBe(true)
+  })
+
+  it("rejects explicit creation of an exact match while reviewed attachment stays valid", async () => {
+    const plan = await planFor(true)
+    expect(decideProjectSetup(plan, { mode: "create" })).toEqual({ kind: "invalid", reason: "exact_match_exists" })
+    expect(decideProjectSetup(plan, { team: "acme", creationApproved: true })).toMatchObject({ kind: "ready", selection: { mode: "exact" } })
+  })
+
+  it("does not guess when a Team slug collides with another Team ID", async () => {
+    const plan = await planFor()
+    expect(decideProjectSetup({ ...plan, teams: [...plan.teams,
+      { id: "acme", slug: "other", displayName: "Other", role: "member" }] }, { team: "acme" }))
+      .toEqual({ kind: "invalid", reason: "team_unavailable" })
+    expect(decideProjectSetup({ ...plan, teams: [] })).toEqual({ kind: "invalid", reason: "no_team" })
   })
 })

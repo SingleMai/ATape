@@ -184,7 +184,29 @@ installed from a local file or URL, `Use published …` explicitly switches to t
 reviewed npm release; custom publisher packages stay on their original source.
 This does not enable additional tools or start stopped sync.
 
-Bulk upgrades run sequentially because the packages share one isolated npm installation tree. Registry packages resolve `latest`; local directories and archives keep their canonical local source path; HTTPS installations fetch the same URL again. Release URLs should therefore either be stable update endpoints or be replaced by explicitly installing a newer asset.
+Each installation prepares an independent package slot, validates it, then selects
+it with an atomic configuration update. Failed validation or cancellation keeps
+the current version usable. Running collection retains its existing package files;
+later cycles load the selected version. Local directories are copied at install
+time; run install or upgrade again to pick up source edits. Downloading and npm
+work do not hold the configuration lock, and a concurrent change to the same
+Adapter causes the stale update to fail instead of overwriting it.
+
+Bulk upgrades remain sequential to bound package work and stop at the first
+failure. Registry packages resolve `latest`; local directories and archives keep
+their canonical local source path; HTTPS installations fetch the same URL again.
+Release URLs should therefore either be stable update endpoints or be replaced
+by explicitly installing a newer asset.
+
+Previous slots and validated candidates that lose a concurrent update are retained
+under `~/.atape/adapters/slots/`. Use `atape adapters prune` to preview eligible
+tracked installations, then add `--apply` to clean them using runtime leases;
+see [Adapter installation cleanup](#adapter-installation-cleanup). Records from
+the earlier shared layout remain readable until their next explicit upgrade.
+When updating from a CLI that uses the shared installation tree, restart background
+sync with the updated CLI before upgrading Adapters. The built-in `atape upgrade`
+flow already restarts previously running sync; a direct package-manager update
+requires `atape stop` followed by `atape start` so the Host understands package slots.
 
 ## Run collection
 
@@ -231,6 +253,16 @@ pnpm atape start --interval 10 --concurrency 4
 ```
 
 The Collector runs at most four Project/Adapter jobs concurrently by default and caps the value at eight. Within each job it pulls bounded pages sequentially. `Ctrl+C` and `SIGTERM` interrupt Adapter work and release loaded runtimes.
+
+Every Canonical and Raw upload verifies the Project's bound account against the
+current credential. Switching accounts during a cycle stops further delivery;
+sign back in with the original account to resume unacknowledged work. Confirmed
+Canonical history remains visible after idle cycles even when Raw capture is off.
+The interactive console reads captured scope metadata once per refresh for all
+enabled Project/Adapter pairs; it does not read conversation bodies or journals.
+Older Raw-off checkpoints without a confirmed-history flag gain it after their
+next acknowledged Canonical upload. The CLI does not infer publication from an
+opaque cursor or reset collection progress to manufacture that evidence.
 
 For the Codex/Claude paged observation runtime, each page follows this commit order:
 
@@ -281,3 +313,86 @@ The redactor covers common credentials and environment values whose names end in
 Every listing command supports `--json` for scripts.
 
 The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex Adapter guide](../adapters/codex.md).
+
+## Implementation boundaries
+
+CLI flags and interactive setup now use the same `decideProjectSetup` Interface
+for Team defaults, exact matching and creation consent. Applying a selection still
+revalidates account, local directory and remote Project state. Tool configuration
+and reader maintenance live in `toolManagement`; `projectAccess` owns registration
+and account checks. Interactive navigation stays in the Presenter, whose screen
+union requires options, input values and tool selections for the appropriate kind.
+Typed recovery actions replace inspection of arbitrary failure fields.
+
+The Collector scheduler owns job concurrency, continuation and report aggregation.
+`collectionJob` owns the scoped Adapter runtime and dispatches to `legacyCollector`
+or `SourceCaptureCollector`. Shared contracts and preparation no longer import the
+scheduler. Source collection is an explicit Effect requirement supplied with
+validated admission by the Node Composition Root. Both protocols retain their
+checkpoint, account binding, redaction and independent Raw delivery behavior.
+
+Node configuration, package installation, project location, Adapter hosting,
+checkpoint persistence and legacy transport each have a cohesive Implementation;
+`clientLayers` and `collectorLayers` assemble these existing Seams. No additional
+plugin registry, runtime or package boundary was introduced. See
+[ADR-0079](../architecture/adr/0079-cli-module-boundaries.md).
+
+Commands now decode into individual input types before runtime construction.
+Unknown or unrelated options, duplicate scalar flags and extra positional arguments
+fail with exit status 2. Repeated `--adapter` options remain supported by global
+`tools configure`. Domain choices and Collector limits remain in their owning
+application Modules.
+
+`pnpm check:architecture` enforces Application/Domain/UI boundaries, prevents CLI
+imports of private provider code, and checks runtime cycles across the governed
+production Modules. It parses source with the pinned TypeScript compiler, including
+type imports, re-exports and dynamic imports. Type-only edges obey layer rules but
+do not form runtime cycles. `pnpm check` runs it in CI.
+
+## Adapter installation cleanup
+
+```sh
+atape adapters prune --json
+atape adapters prune --apply --keep 1 --json
+```
+
+The first command previews; `--apply` removes eligible installations. `--keep`
+(default 1, range 0–20) retains that many inactive installations per package in
+addition to all currently selected and in-use versions. Each invocation removes
+at most 32 slots; `more: true` means another invocation can continue. A retired
+slot can no longer admit new runtimes, and interrupted removal can resume. Small
+retirement markers outside the deleted trees remain to keep admission closed.
+
+Preparation holds a lease until configuration activation. Runtime leases remain
+until the Adapter closes, so delayed imports continue using their original files
+across upgrades. A process lease is considered stale only when its PID no longer
+exists. Ambiguous ownership conservatively retains files. Current configuration
+protects installed tools even if capture is disabled. No Canonical, Raw, Search,
+credentials or Collector state is removed.
+
+Only slots created with the new tracking protocol are eligible. Legacy shared npm
+trees, older untracked slots, malformed metadata and symlinks are retained. There
+is no automatic background cleanup. Stop CLI/Collector processes from older builds
+that do not implement leases before applying cleanup against tracked slots.
+
+## Adapter acceptance
+
+Run `pnpm test:adapter-contracts` to exercise all three installed provider paths.
+It requires Docker, Go, Node and the installed workspace dependencies.
+
+| Adapter | Real integration boundary | Main coverage |
+| --- | --- | --- |
+| Codex | CLI/daemon → real Go HTTP APIs with demo storage | Native history, child Threads, finalized history, Raw, Search, daemon start/stop |
+| Claude | CLI → real Go HTTP APIs with demo storage | Native discovery, incremental changes, conversation, Raw, Search |
+| OpenCode | Installed package/daemon → real Go HTTP APIs and PostgreSQL | Native SQLite, edits/reverts/forks, Raw policy, lost receipts and recovery, provenance/Search, installed upgrade/restart |
+
+OpenCode's existing test lives under Server HTTP integration tests. The new
+`pnpm test:opencode-contract` entry runs that same named subtest and fails if it is
+missing or skipped. `pnpm test:go:integration` runs the complete existing PostgreSQL
+suites with the same mandatory OpenCode assertion. CI retains Codex/Claude coverage
+in `pnpm check` and OpenCode in its PostgreSQL step; it does not run duplicate suites.
+
+Remaining work: the Presenter still owns navigation for all interactive flows;
+extract flows when they develop independent state. Old untracked installation
+slots require deliberate manual review, and mixed old/new CLI readers are outside
+the lease protocol. See [ADR-0080](../architecture/adr/0080-cli-input-and-adapter-slot-lifetime.md).

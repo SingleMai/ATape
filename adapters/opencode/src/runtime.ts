@@ -1,7 +1,7 @@
 import { SourceCaptureVersion, type AdapterOpenContext, type SourceAdapterRuntime } from "@atape/domain"
 import { Effect, Exit, Scope } from "effect"
 import { homedir } from "node:os"
-import { openCodeDatabasePath } from "./location.ts"
+import { openCodeDatabasePath } from "@atape/adapter-catalog/node"
 import { openOpenCodeCapture } from "./capture.ts"
 import { discoverOpenCodeSources, OpenCodeSourceError } from "./source.ts"
 

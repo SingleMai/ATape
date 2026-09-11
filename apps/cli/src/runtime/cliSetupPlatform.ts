@@ -6,24 +6,20 @@ import { constants } from "node:fs"
 import { link, mkdir, open, opendir, readFile, rm, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path"
-import { openCodeDatabasePath } from "../../../../adapters/opencode/src/location.ts"
-import type { NodeClientPaths } from "./clientLayers.ts"
+import { officialSourceLocations } from "@atape/adapter-catalog/node"
+import type { NodeClientPaths } from "./clientPaths.ts"
+import { adapterPackageRoot } from "./adapterInstallation.ts"
 
 export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = process.env) => Layer.succeed(
   CLISetupPlatform, CLISetupPlatform.of({
     detectSources: () => localIO(async () => {
-      const candidates = [
-        ["codex", environment.ATAPE_CODEX_HOME || environment.CODEX_HOME || join(homedir(), ".codex")],
-        ["claude", environment.ATAPE_CLAUDE_HOME || join(homedir(), ".claude")]
-      ] as const
       const detected: string[] = []
-      for (const [id, path] of candidates) {
-        try { if ((await stat(path)).isDirectory()) detected.push(id) }
-        catch (cause) { if (!hasCode(cause, "ENOENT")) throw cause }
-      }
-      const database = openCodeDatabasePath(environment, homedir())
-      if (isAbsolute(database)) {
-        try { if ((await stat(database)).isFile()) detected.push("opencode") }
+      for (const { id, kind, path } of officialSourceLocations(environment, homedir())) {
+        if (kind === "file" && !isAbsolute(path)) continue
+        try {
+          const metadata = await stat(path)
+          if (kind === "file" ? metadata.isFile() : metadata.isDirectory()) detected.push(id)
+        }
         catch (cause) { if (!hasCode(cause, "ENOENT")) throw cause }
       }
       return detected
@@ -57,7 +53,7 @@ export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = 
         (fuzzyScore(basename(a.path), prefix) ?? 0) - (fuzzyScore(basename(b.path), prefix) ?? 0) || a.path.localeCompare(b.path)).slice(0, 30)
     }),
     supportsGit: adapter => localIO(async () => {
-      const manifestPath = join(paths.adapterDirectory, "node_modules", ...adapter.packageName.split("/"), "package.json")
+      const manifestPath = join(adapterPackageRoot(paths.adapterDirectory, adapter), "package.json")
       const details = await stat(manifestPath)
       if (details.size > 256 * 1024) throw new Error("Package manifest too large")
       const packageJSON = JSON.parse(await readFile(manifestPath, "utf8"))

@@ -27,7 +27,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   const toolInstalls: string[] = []
   const base = Layer.mergeAll(makeNodeClientLayer(defaultNodeClientPaths(environment), environment),
     Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: () => toolUpdate ? Effect.succeed("0.4.4") : Effect.fail(new ToolUpdateError({ message: "offline" })) })),
-    ...(toolUpdate ? [Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sync(() => {
+    ...(toolUpdate ? [Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"), install: spec => Effect.sync(() => {
       toolInstalls.push(spec)
       return { packageName: "@atape/adapter-codex", upgradeSpec: "@atape/adapter-codex", version: "0.4.4",
         manifest: { protocolVersion: "atape.adapter.v1alpha1", adapterId: "codex", displayName: "Codex", entry: "./index.js", harnesses: ["codex"] } }

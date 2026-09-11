@@ -200,6 +200,7 @@ const fixture = (options: {
       transact: (change) => change(options.config?.() ?? clientConfig()).pipe(Effect.map((result) => result.value))
     })),
     Layer.succeed(CollectorStateStore, CollectorStateStore.of({
+      capturedScopes: () => Effect.succeed(checkpoint && (checkpoint.canonicalPublished || checkpoint.rawObjects.length) ? [checkpoint] : []),
       snapshot: () => Effect.succeed({
         installationId: "i_fixture",
         ...(checkpoint === undefined ? {} : { checkpoint })
@@ -249,10 +250,11 @@ const fixture = (options: {
         })
       })))
     })),
-    makeSecretRedactorLayer(["supersecret"])
+    makeSecretRedactorLayer(["supersecret"]),
+    Layer.succeed(SourceCaptureCollector, { collect: () => Effect.die("Unexpected source capture in legacy fixture") })
   )
   const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore | CollectorStateStore |
-    AdapterRuntimes | CollectorTransport | import("./collector.ts").SecretRedactor>) =>
+    AdapterRuntimes | CollectorTransport | SecretRedactor | SourceCaptureCollector>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
   return {
     run,
@@ -285,12 +287,18 @@ describe("Collector Module", () => {
   })
 
   it("continues Canonical without Raw or invented receipts when policy disables upload", async () => {
-    const capture = fixture({ rawEnabled: false })
+    const capture = fixture({ rawEnabled: false, pages: [collectionPage(), {
+      protocolVersion: AdapterProtocolVersion, nextCursor: "idle-progress", hasMore: false, observations: []
+    }] })
     await capture.run(runCollectionCycle())
     expect(capture.canonical).toHaveLength(1)
     expect(capture.rawAttempts()).toBe(0)
     expect(capture.checkpoint()?.cursor).toBe("cursor-1")
     expect(capture.checkpoint()?.rawObjects).toEqual([])
+    expect(capture.checkpoint()?.canonicalPublished).toBe(true)
+    expect(capture.canonical[0]?.userId).toBe("user-1")
+    expect((await capture.run(runCollectionCycle())).jobs[0]?.canonicalBatches).toBe(0)
+    expect(capture.checkpoint()).toMatchObject({ cursor: "idle-progress", canonicalPublished: true, rawObjects: [] })
   })
   it("fails closed when the authoritative policy cannot be read", async () => {
     const capture = fixture({ policyFailure: new CollectionTransportError({
@@ -415,6 +423,34 @@ describe("Collector Module", () => {
       recordCycle: report => Effect.sync(() => { reports.push(report.jobs.map(job => job.hasMore)) }),
       recordCollectorFailure: () => Effect.void
     }), Effect.provide(TestClock.layer())))
+  })
+
+  it("dispatches source capture without using legacy transport and closes the runtime", async () => {
+    const capture = fixture()
+    let closed = false
+    let collected = false
+    const report = await capture.run(runCollectionCycle().pipe(
+      Effect.provideService(AdapterRuntimes, { open: () => Effect.acquireRelease(
+        Effect.succeed({ attribute: () => Effect.succeed("included" as const), sourceCapture: {
+          discover: () => Effect.die("Discovery belongs to the source workflow"),
+          open: () => Effect.die("Opening views belongs to the source workflow")
+        } }), () => Effect.sync(() => { closed = true })) }),
+      Effect.provideService(SourceCaptureCollector, { collect: (project, adapter, _host, snapshot) => Effect.sync(() => {
+        expect(snapshot.installationId).toBeTruthy()
+        expect(closed).toBe(false)
+        collected = true
+        return { projectId: project.id, adapterId: adapter.adapterId, pages: 1, observations: 0,
+          canonicalBatches: 0, rawChunks: 0, redactions: 0, hasMore: false }
+      }) }),
+      Effect.provideService(CollectorTransport, {
+        rawCaptureEnabled: () => Effect.die("Source capture must not read legacy policy"),
+        submitCanonical: () => Effect.die("Source capture must not submit legacy Canonical"),
+        appendRaw: () => Effect.die("Source capture must not append legacy Raw")
+      })
+    ))
+    expect(report.failures).toEqual([])
+    expect(report.jobs).toHaveLength(1)
+    expect(collected && closed).toBe(true)
   })
 
   it("continues through an empty progress page before publishing history", async () => {

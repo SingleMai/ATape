@@ -132,3 +132,6 @@ pretending that staging acceptance passed.
 - [ADR-0075: Confirmed Canonical progress in Collector checkpoints](0075-confirmed-collector-progress.md)
 - [ADR-0076: Source collection admission for the first OpenCode release](0076-source-collection-release-admission.md)
 - [ADR-0077: Local first publication of OpenCode 0.5.0](0077-opencode-local-first-publication.md)
+- [ADR-0078: Isolated Adapter maintenance and bounded CLI inspection](0078-cli-adapter-maintenance-and-inspection.md)
+- [ADR-0079: Collector and CLI Module boundaries](0079-cli-module-boundaries.md)
+- [ADR-0080: CLI input and Adapter slot lifetime](0080-cli-input-and-adapter-slot-lifetime.md)

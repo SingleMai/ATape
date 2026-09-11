@@ -119,6 +119,40 @@ export type ProjectSetupOutcome = {
   readonly updatedLocally: boolean
 }
 
+export type ProjectSetupIntent = {
+  /** A Team ID or slug. Omission permits an unambiguous default. */
+  readonly team?: string
+  /** Explicit creation rejects an existing exact match. */
+  readonly mode?: "create"
+  readonly creationApproved?: boolean
+  readonly name?: string
+}
+
+export type ProjectSetupDecision =
+  | { readonly kind: "needs_team"; readonly teams: ReadonlyArray<SetupTeam> }
+  | { readonly kind: "needs_creation_confirmation"; readonly team: SetupTeam }
+  | { readonly kind: "ready"; readonly team: SetupTeam; readonly selection: ProjectSetupSelection }
+  | { readonly kind: "invalid"; readonly reason: "team_unavailable" | "no_team" | "exact_match_exists" }
+
+/** Resolve policy once for commands and interactive review; applying the selection
+ * still revalidates the directory, account, Team and remote Project. */
+export const decideProjectSetup = (plan: ProjectSetupPlan, intent: ProjectSetupIntent = {}): ProjectSetupDecision => {
+  const matches = intent.team === undefined ? [] : plan.teams.filter(team => team.id === intent.team || team.slug === intent.team)
+  if (intent.team !== undefined && matches.length !== 1) return { kind: "invalid", reason: "team_unavailable" }
+  if (plan.teams.length === 0) return { kind: "invalid", reason: "no_team" }
+  let team = matches[0]
+  if (!team && intent.mode !== "create" && plan.exactMatches.length === 1) team = plan.exactMatches[0]!.team
+  team ??= plan.teams.length === 1 ? plan.teams[0] : undefined
+  if (!team) return { kind: "needs_team", teams: plan.teams }
+  const exact = plan.exactMatches.find(match => match.team.id === team.id)
+  if (exact) return intent.mode === "create"
+    ? { kind: "invalid", reason: "exact_match_exists" }
+    : { kind: "ready", team, selection: { mode: "exact", teamId: team.id, projectId: exact.project.id } }
+  if (intent.mode !== "create" && intent.creationApproved !== true) return { kind: "needs_creation_confirmation", team }
+  return { kind: "ready", team, selection: { mode: "create", teamId: team.id,
+    ...(intent.name === undefined ? {} : { name: intent.name }) } }
+}
+
 export const planProjectSetup = Effect.fn("ProjectSetup.plan")(function*(input: {
   readonly instanceOrigin: string
   readonly path: string

@@ -61,6 +61,7 @@
     "react": "catalog:",
     "string-width": "8.2.2",
     "typescript": "catalog:build",
-    "vitest": "catalog:build"
+    "vitest": "catalog:build",
+    "@atape/adapter-catalog": "workspace:*"
   }
 }

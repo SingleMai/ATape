@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@atape/domain": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "@atape/adapter-catalog": "workspace:*"
   },
   "devDependencies": {
     "typescript": "catalog:build",

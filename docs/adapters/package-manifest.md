@@ -35,6 +35,13 @@ The CLI accepts a registry package specifier, local package directory, local npm
 
 These checks make installation inert; they do not sandbox Adapter execution. An enabled Adapter is trusted code loaded into the Collector Host and receives only its selected Project context.
 
+New installs use independent, immutable npm trees. The Host validates the package
+and its resolved entry before atomically selecting a package slot in client
+configuration. Local directory installs copy ready-to-run contents instead of
+linking the checkout. Failed or cancelled preparation cannot replace the active
+package; old running runtimes retain their existing files. Previous installation
+records remain loadable from the original layout. See [maintenance and retention](../cli/setup-and-adapters.md#tools-and-adapter-packages).
+
 ## Paged observation runtime export
 
 The entry module exports one factory:

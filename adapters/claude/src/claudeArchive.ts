@@ -6,6 +6,7 @@ import { constants } from "node:fs"
 import { open, readdir, realpath, stat } from "node:fs/promises"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { homedir } from "node:os"
+import { claudeHome } from "@atape/adapter-catalog/node"
 import { isAbsolute, join, relative, sep } from "node:path"
 
 const MaxRecordBytes = 16 * 1024 * 1024
@@ -73,7 +74,7 @@ const timestamp = (value: unknown): string | undefined => typeof value === "stri
 export const openClaudeArchive = (context: AdapterOpenContext): Effect.Effect<Archive, ClaudeArchiveError> => Effect.tryPromise({
   try: async () => {
     const file = process.env.ATAPE_CLAUDE_SESSION_FILE || undefined
-    const home = process.env.ATAPE_CLAUDE_HOME || join(homedir(), ".claude")
+    const home = claudeHome(process.env, homedir())
     if (file && !isAbsolute(file) || !isAbsolute(home)) fail("configuration", "Claude source overrides must be absolute paths.")
     if (context.project.type === "git" && context.gitAttribution?.version !== GitAttributionVersion) {
       fail("configuration", "Upgrade the ATape CLI to collect Git Projects with shared attribution.")

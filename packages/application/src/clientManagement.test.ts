@@ -33,6 +33,7 @@ const setupInput = (overrides: Partial<Parameters<typeof setupProject>[0]> = {})
 const fixture = (fixedUpgradeSpec?: string) => {
   let config: ClientConfig = emptyClientConfig()
   let version = "1.0.0"
+  let duringInstall: ((current: ClientConfig) => ClientConfig) | undefined
   const packageRequests: Array<string> = []
   const layer = Layer.mergeAll(
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({
@@ -51,9 +52,10 @@ const fixture = (fixedUpgradeSpec?: string) => {
         type: preference === "directory" ? "directory" : "git"
       })
     })),
-    Layer.succeed(AdapterPackages, AdapterPackages.of({
+    Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"),
       install: (packageSpec) => Effect.sync(() => {
         packageRequests.push(packageSpec)
+        if (duringInstall) { const change = duringInstall; duringInstall = undefined; config = change(config) }
         return {
           packageName: "@atape/adapter-codex",
           upgradeSpec: fixedUpgradeSpec ?? "@atape/adapter-codex",
@@ -73,10 +75,22 @@ const fixture = (fixedUpgradeSpec?: string) => {
   )
   const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore | ProjectLocator | AdapterPackages>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
-  return { run, read: () => config, packageRequests }
+  return { run, read: () => config, packageRequests,
+    duringInstall: (change: (current: ClientConfig) => ClientConfig) => { duringInstall = change } }
 }
 
 describe("Client management Module", () => {
+  it("preserves unrelated changes during package preparation and rejects a competing installation", async () => {
+    const client = fixture()
+    const first = (await client.run(installAdapter("@atape/adapter-codex"))).adapter
+    client.duringInstall(config => ({ ...config, locale: "zh-CN", toolsConfigured: true, enabledAdapterIds: ["codex"] }))
+    const second = (await client.run(installAdapter("@atape/adapter-codex@latest", { installation: first }))).adapter
+    expect(client.read()).toMatchObject({ locale: "zh-CN", enabledAdapterIds: ["codex"] })
+    client.duringInstall(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, version: "3.0.0", updatedAt: "newer" })) }))
+    await expect(client.run(installAdapter("@atape/adapter-codex@latest", { installation: second })))
+      .rejects.toMatchObject({ reason: "conflict", resource: "adapter" })
+    expect(client.read().adapters[0]).toMatchObject({ version: "3.0.0", updatedAt: "newer" })
+  })
   it("sets up an auto-detected Git Project idempotently", async () => {
     const client = fixture()
     const input = setupInput()

@@ -19,7 +19,8 @@
     "vitest": "catalog:build",
     "effect": "catalog:",
     "@atape/domain": "workspace:*",
-    "esbuild": "catalog:build"
+    "esbuild": "catalog:build",
+    "@atape/adapter-catalog": "workspace:*"
   },
   "description": "ATape Adapter for local OpenCode SQLite history",
   "license": "MIT",

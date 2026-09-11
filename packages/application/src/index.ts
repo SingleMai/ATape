@@ -15,6 +15,7 @@ export * from "./search.ts"
 export * from "./workspace.ts"
 
 export * from "./cliExperience.ts"
+export * from "./cliRecovery.ts"
 export * from "./cliUpgrade.ts"
 export * from "./toolUpdates.ts"
 

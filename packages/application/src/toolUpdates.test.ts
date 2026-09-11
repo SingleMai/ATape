@@ -23,7 +23,7 @@ const fixture = () => {
       checks.push({ name, cached })
       return offline ? Effect.fail(new ToolUpdateError({ message: "offline" })) : Effect.succeed("0.4.4")
     }) })),
-    Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sleep(1).pipe(Effect.andThen(Effect.suspend(() => {
+    Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"), install: spec => Effect.sleep(1).pipe(Effect.andThen(Effect.suspend(() => {
       installs.push(spec)
       return installFailed ? Effect.fail(new AdapterPackageError({ reason: "install", packageSpec: spec, message: "offline" })) :
         Effect.succeed({ packageName: "@atape/adapter-codex", version: "0.4.4", upgradeSpec: "@atape/adapter-codex",

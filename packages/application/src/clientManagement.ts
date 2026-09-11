@@ -5,7 +5,7 @@ import type {
   LocalProject,
   ProjectRegistration
 } from "@atape/domain"
-import { Clock, Context, Effect, Schema } from "effect"
+import { Clock, Context, Effect, Schema, type Scope } from "effect"
 
 export class ClientConfigStoreError extends Schema.TaggedError<ClientConfigStoreError>()("ClientConfigStoreError", {
   reason: Schema.Literals(["io", "decode"]),
@@ -39,6 +39,7 @@ export type LocatedProject = {
 
 export type InstalledAdapterPackage = {
   readonly packageName: string
+  readonly packageSlot?: string
   readonly upgradeSpec: string
   readonly version: string
   readonly manifest: AdapterManifest
@@ -63,8 +64,35 @@ export class ProjectLocator extends Context.Service<ProjectLocator, {
 }>()("atape/application/ProjectLocator") {}
 
 export class AdapterPackages extends Context.Service<AdapterPackages, {
-  install(packageSpec: string): Effect.Effect<InstalledAdapterPackage, AdapterPackageError>
+  // Keep preparation alive through configuration activation, not just npm exit.
+  install(packageSpec: string): Effect.Effect<InstalledAdapterPackage, AdapterPackageError, Scope.Scope>
+  prune(input: { readonly apply: boolean; readonly keep: number }): Effect.Effect<AdapterPruneReport, AdapterPackageError | ClientConfigStoreError, ClientConfigStore>
 }>()("atape/application/AdapterPackages") {}
+
+export type AdapterPruneSlot = {
+  readonly slot: string
+  readonly packageName?: string
+  readonly version?: string
+  readonly state: "current" | "in_use" | "retained" | "eligible" | "removed" | "unmanaged"
+}
+
+export type AdapterPruneReport = {
+  readonly applied: boolean
+  readonly slots: ReadonlyArray<AdapterPruneSlot>
+  readonly removed: number
+  readonly more: boolean
+}
+
+export const pruneAdapterPackages = Effect.fn("Client.pruneAdapterPackages")(function*(input: {
+  readonly apply?: boolean
+  readonly keep?: number
+} = {}) {
+  const keep = input.keep ?? 1
+  if (!Number.isSafeInteger(keep) || keep < 0 || keep > 20) {
+    return yield* new ClientManagementError({ reason: "invalid", resource: "adapter", message: "--keep must be an integer from 0 to 20." })
+  }
+  return yield* (yield* AdapterPackages).prune({ apply: input.apply === true, keep })
+})
 
 export type SetupProjectInput = {
   readonly path: string
@@ -249,16 +277,24 @@ export const installAdapter = Effect.fn("Client.installAdapter")(function*(packa
 }) {
   const store = yield* ClientConfigStore
   const packages = yield* AdapterPackages
+  const before = yield* inspectClient()
+  if (expected && !sameInstallation(before.adapters.find(adapter => adapter.adapterId === expected.installation.adapterId), expected.installation)) {
+    return yield* installationChanged()
+  }
+  // Preparation is inert and owns a separate npm tree. Only the short config
+  // transaction below selects it for future collection cycles.
+  const installed = yield* packages.install(packageSpec)
+  yield* validateIdentifier("adapter", installed.manifest.adapterId)
   return yield* store.transact<AdapterInstallResult, ClientManagementError | AdapterPackageError, never>((config) => Effect.gen(function*() {
-    if (expected && JSON.stringify(config.adapters.find(adapter => adapter.adapterId === expected.installation.adapterId)) !== JSON.stringify(expected.installation)) {
-      return yield* new ClientManagementError({ reason: "conflict", resource: "adapter", message: "This tool's installation changed. Check for updates again." })
+    const previous = before.adapters.find(adapter => adapter.adapterId === installed.manifest.adapterId)
+    if (!sameInstallation(config.adapters.find(adapter => adapter.adapterId === installed.manifest.adapterId), previous) ||
+      expected && !sameInstallation(config.adapters.find(adapter => adapter.adapterId === expected.installation.adapterId), expected.installation)) {
+      return yield* installationChanged()
     }
-    const installed = yield* packages.install(packageSpec)
     if (expected && (installed.manifest.adapterId !== expected.installation.adapterId || installed.packageName !== expected.installation.packageName ||
       expected.version !== undefined && installed.version !== expected.version)) {
       return yield* new ClientManagementError({ reason: "conflict", resource: "adapter", message: "The installed package does not match the selected tool release." })
     }
-    yield* validateIdentifier("adapter", installed.manifest.adapterId)
     const byID = config.adapters.find((adapter) => adapter.adapterId === installed.manifest.adapterId)
     if (byID && byID.packageName !== installed.packageName) {
       return yield* new ClientManagementError({
@@ -271,6 +307,7 @@ export const installAdapter = Effect.fn("Client.installAdapter")(function*(packa
     const adapter: AdapterInstallation = {
       adapterId: installed.manifest.adapterId,
       packageName: installed.packageName,
+      ...(installed.packageSlot === undefined ? {} : { packageSlot: installed.packageSlot }),
       upgradeSpec: installed.upgradeSpec,
       displayName: installed.manifest.displayName,
       version: installed.version,
@@ -286,12 +323,10 @@ export const installAdapter = Effect.fn("Client.installAdapter")(function*(packa
       }
     }
   }))
-})
+}, Effect.scoped)
 
 export const upgradeAdapters = Effect.fn("Client.upgradeAdapters")(function*(target: string | "all") {
-  const store = yield* ClientConfigStore
-  const packages = yield* AdapterPackages
-  const snapshot = yield* store.transact<ClientConfig, never, never>((config) => Effect.succeed({ value: config }))
+  const snapshot = yield* inspectClient()
   const selectedIds = target === "all"
     ? snapshot.adapters.map((adapter) => adapter.adapterId)
     : snapshot.adapters.filter((adapter) => adapter.adapterId === target).map((adapter) => adapter.adapterId)
@@ -303,42 +338,25 @@ export const upgradeAdapters = Effect.fn("Client.upgradeAdapters")(function*(tar
 
   const upgraded: Array<AdapterInstallation> = []
   for (const adapterId of selectedIds) {
-    const updated = yield* store.transact<AdapterInstallation, ClientManagementError | AdapterPackageError, never>((config) => Effect.gen(function*() {
-      const current = config.adapters.find((adapter) => adapter.adapterId === adapterId)
-      if (!current) {
-        return yield* new ClientManagementError({
-          reason: "not_found", resource: "adapter", message: `Adapter ${adapterId} is no longer installed.`
-        })
-      }
-      const packageSpec = current.upgradeSpec === current.packageName
-        ? `${current.packageName}@latest`
-        : current.upgradeSpec
-      const installed = yield* packages.install(packageSpec)
-      if (installed.packageName !== current.packageName || installed.manifest.adapterId !== current.adapterId) {
-        return yield* new ClientManagementError({
-          reason: "conflict",
-          resource: "adapter",
-          message: `Upgrade for ${current.adapterId} returned a different package or Adapter identity.`
-        })
-      }
-      const next: AdapterInstallation = {
-        ...current,
-        displayName: installed.manifest.displayName,
-        version: installed.version,
-        updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString()
-      }
-      return {
-        value: next,
-        config: {
-          ...config,
-          adapters: config.adapters.map((adapter) => adapter.adapterId === current.adapterId ? next : adapter)
-        }
-      }
-    }))
-    upgraded.push(updated)
+    const config = yield* inspectClient()
+    const current = config.adapters.find((adapter) => adapter.adapterId === adapterId)
+    if (!current) {
+      return yield* new ClientManagementError({
+        reason: "not_found", resource: "adapter", message: `Adapter ${adapterId} is no longer installed.`
+      })
+    }
+    const packageSpec = current.upgradeSpec === current.packageName
+      ? `${current.packageName}@latest`
+      : current.upgradeSpec
+    upgraded.push((yield* installAdapter(packageSpec, { installation: current })).adapter)
   }
   return upgraded
 })
+
+const sameInstallation = (left: AdapterInstallation | undefined, right: AdapterInstallation | undefined) =>
+  JSON.stringify(left) === JSON.stringify(right)
+const installationChanged = () => new ClientManagementError({ reason: "conflict", resource: "adapter",
+  message: "This tool's installation changed. Check for updates again." })
 
 const identifierPattern = /^[a-z0-9][a-z0-9._-]{0,127}$/
 
@@ -363,3 +381,7 @@ function validateText(resource: string, value: string): Effect.Effect<void, Clie
 function sameStrings(left: ReadonlyArray<string>, right: ReadonlyArray<string>) {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
+
+/** Persist a presentation preference through the same atomic config Interface. */
+export const setClientLocale = (locale: string) => ClientConfigStore.use(store =>
+  store.transact(config => Effect.succeed({ value: undefined, config: { ...config, locale } })))

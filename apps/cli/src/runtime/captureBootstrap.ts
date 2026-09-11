@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { join } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { openCaptureJournal } from "./captureJournal.ts"
-import { withCollectorInstallation } from "./collectorLayers.ts"
+import { withCollectorInstallation } from "./collectorState.ts"
 import { CaptureInstallation, captureFailure, captureInstallationPath, capturePathState, captureRoot, ensureCaptureDirectory,
   readCaptureInstallation, readCaptureMetadata, writeCaptureMetadata } from "./captureBinding.ts"
 

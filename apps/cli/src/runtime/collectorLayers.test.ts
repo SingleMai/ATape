@@ -7,11 +7,13 @@ import {
   CollectorTransport,
   ProjectLocator,
   SecretRedactor,
+  SourceCaptureCollector,
   installAdapter,
+  pruneAdapterPackages,
   runCollectionCycle,
   setupProject
 } from "@atape/application"
-import { AdapterProtocolVersion, RawTransportChunkBytes, type CollectorCheckpoint } from "@atape/domain"
+import { AdapterCollectionLimits, AdapterProtocolVersion, RawTransportChunkBytes, type CollectorCheckpoint } from "@atape/domain"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { createServer, type Server } from "node:http"
@@ -50,12 +52,12 @@ const fixture = async () => {
   })
   const run = <A, E>(effect: Effect.Effect<A, E,
     ClientConfigStore | ProjectLocator | AdapterPackages | CollectorStateStore |
-    AdapterRuntimes | CollectorTransport | SecretRedactor | CLICredentialStore>) =>
+    AdapterRuntimes | CollectorTransport | SecretRedactor | SourceCaptureCollector | CLICredentialStore>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
   return { root, paths, run }
 }
 
-const listen = async () => {
+const listen = async (afterRequest?: (phase: "policy" | "canonical") => Promise<void>) => {
   const canonical: Array<Record<string, unknown>> = []
   const raw: Array<Record<string, unknown>> = []
   const authorizations: Array<string | undefined> = []
@@ -80,6 +82,7 @@ const listen = async () => {
       return
     }
     if (request.url?.endsWith("/raw-capture")) {
+      await afterRequest?.("policy")
       response.setHeader("Content-Type", "application/json")
       response.statusCode = policyStatus
       response.end(JSON.stringify(policy))
@@ -101,6 +104,7 @@ const listen = async () => {
     }
     if (request.url === "/api/v1/ingestion/canonical/batches") {
       canonical.push(body)
+      await afterRequest?.("canonical")
       if (canonicalProblem !== undefined) { response.statusCode = 409; response.end(JSON.stringify(canonicalProblem)); return }
       response.statusCode = 201
       response.end(JSON.stringify({
@@ -145,18 +149,23 @@ const listen = async () => {
 
 const authorize = <A extends { readonly run: <T, E>(effect: Effect.Effect<T, E, CLICredentialStore>) => Promise<T> }>(
   client: A,
-  instanceOrigin: string
-) => client.run(CLICredentialStore.use((store) => store.replace({
-  credential: {
-    version: 1,
-    instanceOrigin,
-    apiOrigin: instanceOrigin,
-    credential: "atc_v1_collector-fixture",
-    credentialId: "credential-collector",
-    capabilityVersion: "atape-cli.v1",
-    createdAt: "2026-09-06T00:00:00Z",
-    user: { id: "user-1", displayName: "Mai" }
-  }
+  instanceOrigin: string,
+  userId = "user-1"
+) => client.run(CLICredentialStore.use((store) => Effect.gen(function*() {
+  const previous = yield* store.read(instanceOrigin)
+  return yield* store.replace({
+    ...(previous === undefined ? {} : { expectedCredentialId: previous.credentialId }),
+    credential: {
+      version: 1,
+      instanceOrigin,
+      apiOrigin: instanceOrigin,
+      credential: "atc_v1_collector-fixture",
+      credentialId: "credential-collector",
+      capabilityVersion: "atape-cli.v1",
+      createdAt: "2026-09-06T00:00:00Z",
+      user: { id: userId, displayName: "Mai" }
+    }
+  })
 })))
 
 const writeAdapter = async (root: string, rawContent?: string, gitCapability = false) => {
@@ -286,6 +295,7 @@ export async function createAtapeAdapter(context) {
     type: "module",
     atapeAdapter: {
       protocolVersion: AdapterProtocolVersion,
+      rawCapturePolicy: "atape.raw-capture.v1",
       ...(gitCapability ? { gitAttribution: "atape.git-attribution.v1" } : {}),
       adapterId: "collector-fixture",
       displayName: "Collector Fixture",
@@ -297,6 +307,98 @@ export async function createAtapeAdapter(context) {
 }
 
 describe("Node Collector Layers", () => {
+  it("protects delayed imports during upgrade and cleanup, then reclaims released versions", async () => {
+    const client = await fixture(), source = join(client.root, "source"), path = join(client.root, "project")
+    await Promise.all([mkdir(source), mkdir(path)])
+    const writeVersion = async (version: string) => {
+      await writeFile(join(source, "package.json"), JSON.stringify({ name: "atape-slot-fixture", version, type: "module",
+        atapeAdapter: { protocolVersion: AdapterProtocolVersion, adapterId: "slot-fixture", displayName: "Slots", entry: "./index.js", harnesses: ["fixture"] } }))
+      await writeFile(join(source, "index.js"), `export const createAtapeAdapter = () => ({ collect: async () => ({
+        protocolVersion: ${JSON.stringify(AdapterProtocolVersion)}, nextCursor: (await import('./version.js')).version,
+        observations: [], hasMore: false }) });\n`)
+      await writeFile(join(source, "version.js"), `export const version = ${JSON.stringify(version)};\n`)
+    }
+    await writeVersion("1.0.0")
+    const first = (await client.run(installAdapter(source))).adapter
+    const { project } = await client.run(setupProject({ ...accountProject(path, "https://fixture.example"), type: "directory" }))
+    const cursors = await client.run(Effect.scoped(Effect.gen(function*() {
+      const runtimes = yield* AdapterRuntimes
+      const old = yield* runtimes.open(project, first)
+      yield* Effect.promise(() => writeVersion("2.0.0"))
+      const second = yield* installAdapter(source, { installation: first })
+      yield* Effect.promise(() => writeVersion("3.0.0"))
+      const third = yield* installAdapter(source, { installation: second.adapter })
+      const current = yield* runtimes.open(project, third.adapter)
+      const preview = yield* pruneAdapterPackages()
+      expect(preview.slots).toEqual(expect.arrayContaining([
+        expect.objectContaining({ slot: first.packageSlot, state: "in_use" }),
+        expect.objectContaining({ slot: second.adapter.packageSlot, state: "retained" }),
+        expect.objectContaining({ slot: third.adapter.packageSlot, state: "current" })
+      ]))
+      const applied = yield* pruneAdapterPackages({ apply: true, keep: 0 })
+      expect(applied.slots).toEqual(expect.arrayContaining([
+        expect.objectContaining({ slot: first.packageSlot, state: "in_use" }),
+        expect.objectContaining({ slot: second.adapter.packageSlot, state: "removed" }),
+        expect.objectContaining({ slot: third.adapter.packageSlot, state: "current" })
+      ]))
+      if (!("collect" in old) || !("collect" in current)) throw new Error("Expected paged runtimes")
+      const request = { protocolVersion: AdapterProtocolVersion, cursor: null, limits: AdapterCollectionLimits, rawProgress: [] }
+      return [(yield* old.collect(request)).nextCursor, (yield* current.collect(request)).nextCursor]
+    })))
+    expect(cursors).toEqual(["1.0.0", "3.0.0"])
+    const eligible = await client.run(pruneAdapterPackages({ keep: 0 }))
+    expect(eligible.slots).toContainEqual(expect.objectContaining({ slot: first.packageSlot, state: "eligible" }))
+    const oldRoot = join(client.paths.adapterDirectory, "slots", first.packageSlot!)
+    expect((await stat(oldRoot)).isDirectory()).toBe(true)
+    await expect(stat(join(client.paths.adapterDirectory, "retired-slots", first.packageSlot!))).rejects.toMatchObject({ code: "ENOENT" })
+    // An interrupted sweep closed admission while the package files still exist.
+    await mkdir(join(client.paths.adapterDirectory, "retired-slots", first.packageSlot!), { recursive: true })
+    await expect(client.run(Effect.scoped(AdapterRuntimes.use(runtimes => runtimes.open(project, first)))))
+      .rejects.toMatchObject({ reason: "load", retryable: true, message: expect.stringContaining("retired") })
+    expect((await client.run(pruneAdapterPackages({ apply: true, keep: 0 }))).removed).toBe(1)
+    await expect(stat(oldRoot)).rejects.toMatchObject({ code: "ENOENT" })
+    expect((await client.run(pruneAdapterPackages({ apply: true, keep: 0 }))).removed).toBe(0)
+  }, 20_000)
+  it.each(["policy", "canonical"] as const)("stops before sending history under an account changed after %s", async phase => {
+    const client = await fixture()
+    let switched = false
+    const remote = await listen(async completed => {
+      if (!switched && completed === phase) { switched = true; await authorize(client, remote.url, "other-user") }
+    })
+    await authorize(client, remote.url)
+    const project = join(client.root, "project")
+    await mkdir(project)
+    await client.run(installAdapter(await writeAdapter(client.root)))
+    await client.run(ClientConfigStore.use(store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["collector-fixture"] } }))))
+    await client.run(setupProject({ ...accountProject(project, remote.url), type: "directory" }))
+    const rejected = await client.run(runCollectionCycle())
+    expect(rejected.failures).toMatchObject([{ reason: "unauthenticated", retryable: false }])
+    expect(remote.canonical).toHaveLength(phase === "policy" ? 0 : 1)
+    expect(remote.raw).toEqual([])
+    expect((await client.run(CollectorStateStore.use(store => store.snapshot(remote.url, "user-1", "payments", "collector-fixture")))).checkpoint).toBeUndefined()
+    await authorize(client, remote.url)
+    expect((await client.run(runCollectionCycle())).failures).toEqual([])
+    expect(remote.raw).toHaveLength(1)
+  }, 20_000)
+
+  it("retains confirmed history across a fresh runtime and an idle Raw-off cycle", async () => {
+    const client = await fixture(), remote = await listen()
+    await authorize(client, remote.url)
+    remote.setPolicy({ teamPolicy: "close", userPreference: "disable", enabled: false })
+    const project = join(client.root, "project")
+    await mkdir(project)
+    await client.run(installAdapter(await writeAdapter(client.root)))
+    await client.run(ClientConfigStore.use(store => store.transact(config => Effect.succeed({ value: undefined,
+      config: { ...config, toolsConfigured: true, enabledAdapterIds: ["collector-fixture"] } }))))
+    await client.run(setupProject({ ...accountProject(project, remote.url), type: "directory" }))
+    expect((await client.run(runCollectionCycle())).jobs[0]?.canonicalBatches).toBe(1)
+    expect((await client.run(runCollectionCycle())).jobs[0]?.canonicalBatches).toBe(0)
+    expect(remote.raw).toEqual([])
+    const captured = await client.run(CollectorStateStore.use(store => store.capturedScopes()))
+    expect(captured).toEqual([{ instanceOrigin: remote.url, userId: "user-1", projectId: "payments",
+      projectCreatedAt: "2026-09-06T00:00:00Z", adapterId: "collector-fixture" }])
+  }, 20_000)
   // Real npm installation plus two HTTP collection cycles can exceed Vitest's
   // default five seconds when the full workspace runs concurrently on CI.
   it("loads only the enabled package, posts separate redacted payloads, and resumes from its cursor", async () => {
@@ -513,6 +615,9 @@ describe("Node Collector Layers", () => {
     })
   })
 })
+
+const accountProject = (path: string, instanceOrigin: string) => ({ path, instanceOrigin, userId: "user-1",
+  teamId: "team-1", teamSlug: "acme", teamName: "Acme", projectId: "payments", name: "Payments", createdAt: "2026-09-06T00:00:00Z" })
 
 it("loads authoritative Raw policy and rejects absent or malformed policies", async () => {
   const client = await fixture(), server = await listen()

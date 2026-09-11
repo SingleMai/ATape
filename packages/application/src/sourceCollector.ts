@@ -1,7 +1,7 @@
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { SourceCaptureLimits, SourceProjectionLimits, type AdapterInstallation, type AdapterSourceFailure, type LocalProject } from "@atape/domain"
 import { AdapterRuntimeError, CollectorConfigurationError, CollectorStateError, CollectorStateStore, SecretRedactor,
-  type AdapterCollectionReport, type CollectorStateSnapshot, type HostedAdapter } from "./collector.ts"
+  type AdapterCollectionReport, type CollectorStateSnapshot, type HostedAdapter } from "./collectorContracts.ts"
 import { CaptureJournal, CaptureJournalError, CaptureJournals, type CaptureOwner, type CaptureSummary } from "./captureJournal.ts"
 import { PublicationTransport, PublicationError, beginPublicationCapture, beginRawObservation, deliverPublicationCapture, deliverPublicationRaw, sourceComparisonContext } from "./publicationDelivery.ts"
 import { RawPublicationTransport, RawPublicationError } from "./rawPublicationTransport.ts"

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { mkdtemp, mkdir, realpath, rm } from "node:fs/promises"
+import { mkdtemp, mkdir, realpath, rm, stat } from "node:fs/promises"
 import { createServer, type Server } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -114,6 +114,19 @@ const authenticationServer = async () => {
 }
 
 describe("atape CLI", () => {
+  it("rejects unrelated options before touching config or the network", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atape-invalid-command-"))
+    temporaryDirectories.push(root)
+    const remote = await authenticationServer()
+    const home = join(root, ".atape")
+    for (const args of [["login", "--apply"], ["tools", "list", "--apply"], ["language", "en", "extra"]]) {
+      await expect(exec(process.execPath, [cli, ...args], { env: { ...englishEnvironment, ATAPE_HOME: home, ATAPE_INSTANCE_URL: remote.origin } }))
+        .rejects.toMatchObject({ code: 2 })
+    }
+    expect(remote.requests).toHaveLength(0)
+    await expect(stat(home)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
   it("reports a development version when run from TypeScript source", async () => {
     const result = await exec(process.execPath, [cli, "--version"], { env: englishEnvironment })
     expect(result.stdout.trim()).toBe("ATape development")
@@ -147,7 +160,7 @@ describe("atape CLI", () => {
     expect((await exec(process.execPath, [cli, "--help"], { env: environment })).stdout).toContain("用法")
   })
 
-  // This integration scenario starts ten real CLI processes on shared CI runners.
+  // This integration scenario starts several real CLI processes on shared CI runners.
   it("completes non-interactive Project setup and listing", async () => {
     const root = await mkdtemp(join(tmpdir(), "atape-cli-command-"))
     temporaryDirectories.push(root)
@@ -166,6 +179,11 @@ describe("atape CLI", () => {
     const login = await exec(process.execPath, [
       cli, "login", "--no-browser", "--json"
     ], { env: environment })
+    await expect(exec(process.execPath, [cli, "setup", project, "--type", "directory", "--json"], { env: environment }))
+      .rejects.toMatchObject({ stderr: expect.stringContaining("pass --create") })
+    await expect(exec(process.execPath, [cli, "setup", project, "--team", "missing", "--create", "--type", "directory", "--json"], { env: environment }))
+      .rejects.toMatchObject({ stderr: expect.stringContaining("not available") })
+    expect(remote.requests.some(request => request.method === "POST" && request.url === "/api/v1/teams/acme/projects")).toBe(false)
     const setup = await exec(process.execPath, [
       cli, "setup", project, "--team", "acme", "--create", "--type", "directory", "--json"
     ], { env: environment })

@@ -1,7 +1,7 @@
 import { Effect, Schema, Scope } from "effect"
 import type { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, SourceCaptureFrame } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
-import { prepareCanonicalSlice } from "./collector.ts"
+import { prepareCanonicalSlice } from "./collectorPreparation.ts"
 import { projectCanonicalSubmission } from "./canonicalProjection.ts"
 export type PublicationDraftFrame = SourceCaptureFrame
 export type PublicationDraftView<E = never, R = never> = {
