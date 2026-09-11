@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,7 +48,14 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 		server.Close()
 		t.Fatal(err)
 	}
-	server.Config.Handler = handler
+	var contentUploads atomic.Int64
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/publications/attempts/")) ||
+			(r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/ingestion/raw/chunks")) {
+			contentUploads.Add(1)
+		}
+		handler.ServeHTTP(w, r)
+	})
 	server.Start()
 	defer server.Close()
 	root, err := filepath.Abs("../../../..")
@@ -56,7 +64,7 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 	}
 	journal := filepath.Join(t.TempDir(), "collector.sqlite")
 	// Pack once; every fresh Node phase loads this persisted installation rather
-	// than a workspace source wrapper. npm prepack builds the actual private entry.
+	// than a workspace source wrapper. npm prepack builds the actual package entry.
 	artifactDirectory := t.TempDir()
 	packContext, cancelPack := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancelPack()
@@ -66,13 +74,13 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 	pack.Stderr = &packError
 	packed, err := pack.Output()
 	if err != nil {
-		t.Fatalf("pack private OpenCode Adapter: %v\n%s", err, packError.String())
+		t.Fatalf("pack OpenCode Adapter: %v\n%s", err, packError.String())
 	}
 	var artifacts []struct {
 		Filename string `json:"filename"`
 	}
 	if err := json.Unmarshal(packed, &artifacts); err != nil || len(artifacts) != 1 || artifacts[0].Filename == "" {
-		t.Fatalf("decode private OpenCode tarball: %v", err)
+		t.Fatalf("decode OpenCode tarball: %v", err)
 	}
 	tarball := filepath.Join(artifactDirectory, artifacts[0].Filename)
 	batch := canonicalcontract.ValidBatch()
@@ -336,7 +344,7 @@ func assertOpenCodeCollectorContract(t *testing.T, h *Handler, modules Modules, 
 	if strings.Contains(content.String(), "SENSITIVE_TEST_TOKEN") || !strings.Contains(content.String(), "CollectorFreshRawNeedle") || !strings.Contains(content.String(), "CollectorInitialNeedle") {
 		t.Fatal("Raw recovery lost an observation or bypassed Host masking")
 	}
-	assertOpenCodeInstalledDaemon(t, root, origin, projectID, finished, invoke, run, func() (string, []conversation.Event) {
+	assertOpenCodeInstalledDaemon(t, root, origin, projectID, tarball, finished, invoke, run, contentUploads.Load, func() (string, []conversation.Event) {
 		return read(finished.SessionID, 5)
 	}, func() []byte {
 		return rawMember(firstReference(finished.SessionID))

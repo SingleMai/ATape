@@ -180,6 +180,8 @@ try:
     assert "Interactive setup needs" in piped and "\x1b" not in piped
 
     cli("adapters", "install", adapter, "--json")
+    tools = json.loads(cli("tools", "list", "--json"))["tools"]
+    smoke_index = next(index for index, tool in enumerate(tools) if tool["id"] == "smoke")
     # Configure tools once, then exercise login and the zero-Team detour during
     # Project connection without a second tool-selection step.
     def team_mode(enabled):
@@ -191,7 +193,7 @@ try:
     terminal.wait("Welcome to ATape")
     terminal.send("\r")
     terminal.wait("Which conversations should ATape sync?")
-    terminal.send("\x1b[B\x1b[B \r")
+    terminal.send("\x1b[B" * smoke_index + " \r")
     terminal.wait("Connect a Project")
     terminal.send("\x15" + str(project) + "\r")
     assert b"Finding your Project" not in terminal.output, "finishing a path edit submitted setup"
@@ -257,7 +259,7 @@ try:
     assert b"manual update" in updates, "custom installation should remain on its original source"
     terminal.send("\x1b[B\r")
     terminal.wait("Which conversations should ATape sync?")
-    terminal.send("\x1b[B\x1b[B \r")
+    terminal.send("\x1b[B" * smoke_index + " \r")
     terminal.wait("Apply tools to all projects?")
     # Escape cancels the global change without changing capture authorization.
     terminal.send("\x1b")

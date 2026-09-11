@@ -1,7 +1,7 @@
 import { SourceCaptureVersion, type AdapterOpenContext, type SourceAdapterRuntime } from "@atape/domain"
 import { Effect, Exit, Scope } from "effect"
 import { homedir } from "node:os"
-import { isAbsolute, join } from "node:path"
+import { openCodeDatabasePath } from "./location.ts"
 import { openOpenCodeCapture } from "./capture.ts"
 import { discoverOpenCodeSources, OpenCodeSourceError } from "./source.ts"
 
@@ -44,12 +44,5 @@ export const createOpenCodeRuntime = async (options: { readonly path: string; re
   }
 }
 
-/** Matches the native stable-channel data location; OPENCODE_DB also supports a
- * named database relative to the native data directory. Other channel databases
- * require that explicit override. No directory, database or native process is created. */
-export const createAtapeAdapter = (context: AdapterOpenContext & { readonly signal: AbortSignal }) => {
-  const data = join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "opencode")
-  const configured = process.env.OPENCODE_DB
-  const path = configured ? isAbsolute(configured) || configured === ":memory:" ? configured : join(data, configured) : join(data, "opencode.db")
-  return createOpenCodeRuntime({ path, signal: context.signal })
-}
+export const createAtapeAdapter = (context: AdapterOpenContext & { readonly signal: AbortSignal }) =>
+  createOpenCodeRuntime({ path: openCodeDatabasePath(process.env, homedir()), signal: context.signal })

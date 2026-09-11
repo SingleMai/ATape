@@ -21,7 +21,8 @@ export class CLIExperienceError extends Schema.TaggedError<CLIExperienceError>()
 
 export const officialSources = [
   { id: "codex", label: "Codex", packageName: "@atape/adapter-codex" },
-  { id: "claude", label: "Claude Code", packageName: "@atape/adapter-claude" }
+  { id: "claude", label: "Claude Code", packageName: "@atape/adapter-claude" },
+  { id: "opencode", label: "OpenCode", packageName: "@atape/adapter-opencode" }
 ] as const
 
 export type DirectorySuggestion = {

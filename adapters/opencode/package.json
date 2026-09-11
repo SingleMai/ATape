@@ -1,7 +1,6 @@
 {
   "name": "@atape/adapter-opencode",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.4.8",
   "type": "module",
   "exports": {
     ".": "./dist/index.js"
@@ -11,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "build": "node scripts/build.mjs",
     "prepack": "node scripts/build.mjs",
-    "verify:package": "node scripts/verify-package.mjs"
+    "verify:package": "node scripts/verify-package.mjs",
+    "pack:release": "node ../../scripts/pack-adapter.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -21,7 +21,7 @@
     "@atape/domain": "workspace:*",
     "esbuild": "catalog:build"
   },
-  "description": "Private ATape Adapter candidate for local OpenCode SQLite history",
+  "description": "ATape Adapter for local OpenCode SQLite history",
   "license": "MIT",
   "engines": {
     "node": ">=24"
@@ -41,5 +41,18 @@
     "harnesses": [
       "OpenCode"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SingleMai/ATape.git",
+    "directory": "adapters/opencode"
+  },
+  "homepage": "https://github.com/SingleMai/ATape#readme",
+  "bugs": {
+    "url": "https://github.com/SingleMai/ATape/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

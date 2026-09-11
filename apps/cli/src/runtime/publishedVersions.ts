@@ -1,3 +1,4 @@
+import { officialSources } from "@atape/application"
 import { randomUUID } from "node:crypto"
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
@@ -15,7 +16,7 @@ const readBounded = async (file: string) => {
 // Shared bounded metadata/cache Implementation for CLI and official readers.
 export const latestPublishedVersion = async (home: string, name: string, cached: boolean,
   signal: AbortSignal, fetchMetadata: typeof globalThis.fetch) => {
-  if (!["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude"].includes(name)) throw new Error("Unknown official package")
+  if (!["@atape/cli", ...officialSources.map(source => source.packageName)].includes(name)) throw new Error("Unknown official package")
   const file = join(home, "cache", `${name.slice("@atape/".length)}-update.json`)
   if (cached) {
     const saved = await readBounded(file).then(value => Schema.decodeUnknownSync(Cache)(value)).catch(() => undefined)

@@ -9,15 +9,27 @@ import { defaultNodeClientPaths } from "./clientLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
-const fixture = async () => {
+const fixture = async (override: (root: string) => Record<string, string> = () => ({})) => {
   const root = await mkdtemp(join(tmpdir(), "atape-guided-"))
   roots.push(root)
-  const environment = { ATAPE_HOME: root, ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude") }
+  const environment = { ATAPE_HOME: root, ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"),
+    XDG_DATA_HOME: join(root, "data"), OPENCODE_DB: "", ...override(root) }
   const paths = defaultNodeClientPaths(environment)
   const layer = makeCLISetupPlatformLayer(paths, environment)
   return { root, paths, run: <A, E>(effect: Effect.Effect<A, E, CLISetupPlatform>) => Effect.runPromise(effect.pipe(Effect.provide(layer))) }
 }
 describe("Node guided setup Adapter", () => {
+  it.each(["default", "named", "absolute", "memory", "directory", "missing"])("detects OpenCode %s location using file metadata only", async kind => {
+    const client = await fixture(root => ({ OPENCODE_DB: kind === "absolute" ? join(root, "selected.db") :
+      kind === "memory" ? ":memory:" : kind === "named" ? "named.db" : "" }))
+    const path = kind === "absolute" ? join(client.root, "selected.db") :
+      join(client.root, "data", "opencode", kind === "named" ? "named.db" : "opencode.db")
+    await mkdir(dirname(path), { recursive: true })
+    if (kind === "directory") await mkdir(path)
+    else if (kind !== "missing") await writeFile(path, "Deliberately not SQLite: setup must not parse history.")
+    const detected = await client.run(CLISetupPlatform.use(platform => platform.detectSources()))
+    expect(detected).toEqual(["memory", "directory", "missing"].includes(kind) ? [] : ["opencode"])
+  })
   it("suggests Unicode/space directories and detects only known source roots", async () => {
     const client = await fixture()
     await Promise.all([mkdir(join(client.root, "codex")), mkdir(join(client.root, "项目 space")), mkdir(join(client.root, "unrelated"))])

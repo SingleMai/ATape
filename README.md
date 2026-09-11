@@ -72,9 +72,9 @@ pnpm atape start
 pnpm atape status
 ```
 
-The loopback command also requires `ATAPE_DEVELOPMENT_ALLOW_HTTP=true`; production and self-hosted Instances are HTTPS-only. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and advances local cursors only after both succeed. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+The loopback command also requires `ATAPE_DEVELOPMENT_ALLOW_HTTP=true`; production and self-hosted Instances are HTTPS-only. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and retains durable progress. Codex/Claude advance a page cursor after both deliveries succeed; OpenCode atomically publishes a complete Canonical target and recovers Raw independently. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [OpenCode Adapter guide](docs/adapters/opencode.md), [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
 
-Build and verify the installable, zero-runtime-dependency CLI and Codex Adapter tarballs with:
+Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode Adapter tarballs with:
 
 ```sh
 pnpm test:release

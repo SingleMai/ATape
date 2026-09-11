@@ -16,10 +16,12 @@ const releaseDirectory = release.releaseDirectory
 const cliPackage = release.packages.find((package_) => package_.name === "@atape/cli")
 const adapterPackage = release.packages.find((package_) => package_.name === "@atape/adapter-codex")
 const claudePackage = release.packages.find((package_) => package_.name === "@atape/adapter-claude")
-if (cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
+const opencodePackage = release.packages.find(package_ => package_.name === "@atape/adapter-opencode")
+if (opencodePackage === undefined || cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
 const cliArtifact = join(releaseDirectory, cliPackage.artifactName)
 const adapterArtifact = join(releaseDirectory, adapterPackage.artifactName)
 const claudeArtifact = join(releaseDirectory, claudePackage.artifactName)
+const opencodeArtifact = join(releaseDirectory, opencodePackage.artifactName)
 const temporaryRoot = await mkdtemp(join(tmpdir(), "atape-release-"))
 const installDirectory = join(temporaryRoot, "install")
 const projectDirectory = join(temporaryRoot, "project")
@@ -43,6 +45,7 @@ const environment = {
   XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
   ATAPE_CODEX_HOME: codexHome,
   ATAPE_CLAUDE_HOME: claudeHome,
+  OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
   ATAPE_CLAUDE_SESSION_FILE: "",
   ATAPE_REDACT_VALUES: "[]"
 }
@@ -102,9 +105,16 @@ try {
   })), [{ projectId: "release-project", adapterId: "codex", observations: 0 }])
 
   await verifyClaudeUpgrade()
+  const opencode = JSON.parse((await atape(["adapters", "install", opencodeArtifact, "--json"])).stdout)
+  assert.equal(opencode.adapter.adapterId, "opencode")
+  assert.equal(opencode.adapter.version, opencodePackage.version)
+  await atape(["tools", "configure", "--adapter", "codex", "--adapter", "claude", "--adapter", "opencode", "--apply", "--json"])
+  const tools = JSON.parse((await atape(["tools", "list", "--json"])).stdout)
+  assert.ok(tools.tools.some(choice => choice.id === "opencode" && choice.installed && choice.selected))
+  await run(process.execPath, ["adapters/opencode/scripts/verify-package.mjs", opencodeArtifact], repositoryRoot)
   // The fixture artifact is kept outside release/ and never replaces publish bytes.
   await verifyChecksums()
-  process.stdout.write("Verified packaged CLI with Codex/Claude and a versioned Claude package replacement preserving capture progress.\n")
+  process.stdout.write("Verified packaged CLI with Codex/Claude/OpenCode, exact OpenCode release artifact, and a versioned Claude replacement preserving capture progress.\n")
 } finally {
   await remote?.close().catch(() => undefined)
   await rm(temporaryRoot, { recursive: true, force: true })

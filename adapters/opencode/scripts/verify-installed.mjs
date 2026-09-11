@@ -24,7 +24,7 @@ const before = { hash: await digest(), mtime: (await stat(path)).mtimeMs }
 process.env.OPENCODE_DB = path
 const limits = { rowBytes: 65536, pageBytes: 262144, pageRows: 1, records: 1000, threads: 20, durationMs: 10000 }
 const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 }
-const context = signal => ({ protocolVersion: "atape.adapter.v1alpha1", adapter: { id: "opencode", version: "0.0.0" },
+const context = signal => ({ protocolVersion: "atape.adapter.v1alpha1", adapter: { id: "opencode", version: process.argv[3] },
   project: { id: "controlled", type: "directory", path: process.cwd() }, signal })
 const signal = AbortSignal.timeout(30000), lifetime = new AbortController()
 const runtime = await createAtapeAdapter(context(lifetime.signal))

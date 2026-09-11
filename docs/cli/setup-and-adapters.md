@@ -14,7 +14,7 @@ npm install --global @atape/cli
 atape --version
 ```
 
-The checksummed GitHub Release tarball remains an equivalent offline installation source. Repository maintainers create the complete CLI + Codex/Claude Adapter release set with `pnpm pack:release`, verify the clean installation boundary with `pnpm test:release`, and follow [`docs/releasing.md`](../releasing.md) for publication.
+The checksummed GitHub Release tarball remains an equivalent offline installation source. Repository maintainers create the complete CLI + Codex/Claude/OpenCode Adapter release set with `pnpm pack:release`, verify the clean installation boundary with `pnpm test:release`, and follow [`docs/releasing.md`](../releasing.md) for publication.
 
 ## Guided setup and Project console
 
@@ -99,9 +99,9 @@ Removal only changes this machine's configuration. It never deletes conversation
 
 ## Git conversation attribution
 
-Codex and Claude use the same Host attribution contract. Codex supplies the
+Codex, Claude and OpenCode use the same Host attribution contract. Codex supplies the
 original rollout CWD and recorded Git remote when available; Claude supplies the
-original root record's CWD. The Host resolves the nearest repository when needed
+original root record's CWD; OpenCode supplies immutable session-creation evidence. The Host resolves the nearest repository when needed
 and asks the configured Instance to match its remote in the selected Team. The
 server owns remote equivalence and repository aliases. A nested unrelated
 repository is excluded even when its path is under the configured checkout.
@@ -114,7 +114,7 @@ paths alone never guess it. A known different repository is simply excluded.
 Network or authentication failures fail the job without acknowledging its page.
 
 The Collector validates source diagnostics against the shared Adapter protocol,
-including `attribution`. Both Codex and Claude can therefore capture healthy
+including `attribution`. All three First-party Adapters can therefore capture healthy
 Sessions and advance their checkpoints while skipping unknown or foreign sources.
 Regression coverage includes mixed-source discovery, separate Canonical and Raw
 publication, and resumption without duplicate uploads. Unknown-source diagnostics
@@ -232,7 +232,7 @@ pnpm atape start --interval 10 --concurrency 4
 
 The Collector runs at most four Project/Adapter jobs concurrently by default and caps the value at eight. Within each job it pulls bounded pages sequentially. `Ctrl+C` and `SIGTERM` interrupt Adapter work and release loaded runtimes.
 
-Each page follows this commit order:
+For the Codex/Claude paged observation runtime, each page follows this commit order:
 
 1. Validate the Adapter output and apply client-side secret redaction.
 2. Commit each Canonical Session observation and receive its stable server Session ID.
@@ -242,6 +242,13 @@ Each page follows this commit order:
 
 If Raw fails after Canonical succeeds, the cursor remains unchanged. The next cycle replays the Canonical batch, skips Raw source bytes already recorded in the local progress checkpoint, and resumes at the first unacknowledged segment. If the server accepted a segment immediately before the client lost power, its deterministic identity makes that final replay safe. Source deletion never sends a delete to ATape.
 
+OpenCode uses the bounded source-capture capability. The Host prepares and freezes
+one complete Canonical target, then activates it atomically. Raw acknowledgements
+and recovery are independent; unresolved delivery reads the frozen journal without
+reopening the source. Source deletion cannot reset the selected history. See the
+[OpenCode guide](../adapters/opencode.md) for the exact supported source matrix,
+source paths, default admission and required Server publication capability.
+
 ## Local state
 
 All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
@@ -249,13 +256,19 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 - Credentials: `~/.atape/credentials/`
 - Configuration: `~/.atape/config/client.json`
 - Collector checkpoints, process metadata, and status: `~/.atape/state/`
+- Account-bound Source capture journals: below `~/.atape/state/collector.json.captures/`, with `collector.json.capture-installation.json` binding metadata
 - Git attribution evidence: beside the Collector state file, in `<state-file>.git-attribution/`
 - Background logs: `~/.atape/logs/collector.log`
 - Adapter packages: `~/.atape/adapters/`
 
 `ATAPE_HOME` relocates the whole layout. Individual `ATAPE_CONFIG_FILE`, `ATAPE_COLLECTOR_STATE_FILE`, `ATAPE_COLLECTOR_PROCESS_FILE`, `ATAPE_COLLECTOR_STATUS_FILE`, `ATAPE_COLLECTOR_LOG_FILE`, and `ATAPE_ADAPTER_DIRECTORY` overrides remain available for development. Credentials use opaque per-Instance filenames, owner-only directories/files, no-follow reads, compare-and-swap updates, and fsynced atomic replacement. Local filesystem paths remain client state and are not part of server Project, Canonical, Raw, or Search payloads.
 
-The checkpoint file stores only an installation ID, opaque cursors, and per-Raw-object offsets; it never queues conversation bodies. Raw content is re-read from the Harness through an unadvanced cursor after a failed upload, while acknowledged source ranges are skipped.
+The JSON checkpoint file stores installation identity, opaque progress and Raw
+receipts, never conversation bodies. Codex/Claude replay through an unadvanced
+cursor after a failed upload. OpenCode instead retains only bounded, final masked
+pending content in the separate account-bound capture journal. Preserve its binding
+and files with Collector state; deleting them is not a supported reset. Resolved
+payloads are reclaimed while identity and receipt evidence remains.
 
 Git attribution evidence contains source identifiers, original CWD and remote,
 never conversation bodies or upload acknowledgements. Preserve it with Collector
