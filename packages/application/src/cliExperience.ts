@@ -282,7 +282,8 @@ export const inspectCLIExperience = Effect.fn("CLIExperience.inspect")(function*
     let captured = false
     for (const adapterId of project.adapterIds) {
       const snapshot = yield* store.snapshot(project.instanceOrigin, project.userId, project.id, adapterId)
-      if (snapshot.checkpoint?.projectCreatedAt === project.createdAt && snapshot.checkpoint.rawObjects.length > 0) captured = true
+      if (snapshot.checkpoint?.projectCreatedAt === project.createdAt &&
+        (snapshot.checkpoint.canonicalPublished === true || snapshot.checkpoint.rawObjects.length > 0)) captured = true
     }
     const state: ProjectSyncState = project.adapterIds.length === 0 ? "no_sources"
       : jobs.some(job => job.state === "failed") ? "failed"

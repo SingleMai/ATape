@@ -54,6 +54,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
     const journal = yield* journals.open({ instanceOrigin: project.instanceOrigin, userId: project.userId }, limits.journal)
     if (snapshot.installationId !== journal.binding.installationId) return yield* stateFailure("Collector and capture journal installation identities differ.")
     let cursor = initialCursor(), revision = snapshot.checkpoint?.revision ?? 0
+    let canonicalPublished = snapshot.checkpoint?.canonicalPublished === true
     if (snapshot.checkpoint !== undefined) {
       if (snapshot.checkpoint.projectCreatedAt !== project.createdAt || snapshot.checkpoint.rawObjects.length !== 0 || snapshot.checkpoint.cursor === null ||
         new TextEncoder().encode(snapshot.checkpoint.cursor).byteLength > 8192)
@@ -77,7 +78,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
       yield* states.commit({ instanceOrigin: project.instanceOrigin, userId: project.userId, projectId: project.id, adapterId: adapter.adapterId,
         expectedRevision: revision, checkpoint: { instanceOrigin: project.instanceOrigin, userId: project.userId, projectId: project.id,
           projectCreatedAt: project.createdAt, adapterId: adapter.adapterId, adapterVersion: adapter.version, revision: revision + 1,
-          cursor: JSON.stringify(cursor), rawObjects: [], updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString() } })
+          cursor: JSON.stringify(cursor), rawObjects: [], canonicalPublished, updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString() } })
       revision++
     })
     const recover = (owner: CaptureOwner, capture: CaptureSummary) => Effect.gen(function*() {
@@ -85,6 +86,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         const result = yield* deliverPublicationCapture(owner, capture.id, limits.recovery.operations)
         if (result.state === "pending") return
         if (result.state === "activated") {
+          canonicalPublished = true
           canonicalBatches += capture.seal?.canonicalUnits ?? 0
           canonicalEvents += capture.seal?.records?.canonical?.event ?? 0
         }
@@ -118,8 +120,14 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
       while ((yield* journal.pruneRecords(owner)) > 0) yield* Effect.yieldNow
       return true
     }), limits.recovery.sourceMs)
-    const scope = (source: { readonly sourceId: string; readonly originKey: string }) => ({ projectId: project.id, adapterId: adapter.adapterId,
-      sourceSessionId: source.sourceId, originKey: source.originKey })
+    const claim = (source: { readonly sourceId: string; readonly originKey: string }) => Effect.gen(function*() {
+      const owner = yield* journal.claim({ projectId: project.id, adapterId: adapter.adapterId,
+        sourceSessionId: source.sourceId, originKey: source.originKey })
+      // Journal activation may precede the Collector JSON commit. Repair this
+      // derived progress during the normal recovery walk, without source I/O.
+      canonicalPublished ||= owner.checkpoint !== null
+      return owner
+    })
     const work = Effect.gen(function*() {
       // The indexed pending source walk remains available if the provider database
       // has disappeared. Its bounded cursor is independent of discovery progress.
@@ -132,7 +140,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
           source = { sourceId: next.sourceSessionId, originKey: next.originKey }
           cursor = { ...cursor, recoverySource: source, recoveryCapture: null }
         }
-        const owner = yield* journal.claim(scope(source))
+        const owner = yield* claim(source)
         const active = yield* journal.unactivated(owner)
         if (active !== null) yield* sourceFailure(source.sourceId, recover(owner, active), limits.recovery.sourceMs)
         const captures = yield* journal.pending(owner, cursor.recoveryCapture ?? undefined, limits.recovery.captures)
@@ -161,12 +169,12 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
           const attribution = yield* host.attribute(source)
           if (attribution === "unknown") { diagnostic(source.sourceId, "attribution"); return }
           if (attribution === "excluded") return
-          let owner = yield* journal.claim(scope(source))
+          let owner = yield* claim(source)
           const active = yield* journal.unactivated(owner)
           if (active !== null) {
             yield* sourceFailure(source.sourceId, recover(owner, active), limits.recovery.sourceMs)
             if ((yield* journal.unactivated(owner)) !== null) return
-            owner = yield* journal.claim(scope(source))
+            owner = yield* claim(source)
           }
           // Clear superseded memberships before admitting another complete
           // observation. Deadline interruption postpones new work to a later cycle.

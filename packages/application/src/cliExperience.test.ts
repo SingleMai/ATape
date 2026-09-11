@@ -251,6 +251,32 @@ describe("CLI experience application Interface", () => {
         sourceOffset: 100, serverGeneration: 1, serverOffset: 100, finalized: true }] })
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("up_to_date")
   })
+  it("uses confirmed Canonical progress without parsing source cursors or hiding later failures", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const plan = await client.run(prepareGuidedSetup(input))
+    const project = await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    const job = { projectId: project.id, adapterId: "codex", lastAttemptAt: date, lastSuccessAt: date,
+      canonicalBatches: 0, observations: 0, hasMore: false }
+    const state: CollectorRunState = { version: 1, jobs: [job] }
+    const checkpoint: CollectorCheckpoint = { instanceOrigin: project.instanceOrigin, userId: project.userId, projectId: project.id,
+      projectCreatedAt: project.createdAt, adapterId: "codex", adapterVersion: "1.0.0", revision: 7,
+      cursor: "opaque discovery progress", updatedAt: date, rawObjects: [] }
+    client.record(state, checkpoint)
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("waiting")
+    const published = { ...checkpoint, canonicalPublished: true }
+    client.record(state, published)
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("up_to_date")
+    client.record(state, { ...published, projectCreatedAt: "older-registration" })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("waiting")
+    client.record(state, { ...published, canonicalPublished: false })
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("waiting")
+    client.record({ version: 1, jobs: [{ ...job, lastFailureAt: date, failureReason: "transport", failureMessage: "Offline", retryable: true }] }, published)
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("failed")
+    client.record(state, published)
+    await client.run(stopExperienceCollector())
+    expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("stopped")
+  })
   it("allows an explicit empty source selection without removing the Project", async () => {
     const client = fixture()
     await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
