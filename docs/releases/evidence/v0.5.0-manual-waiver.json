@@ -3,7 +3,7 @@
   "releaseVersion": "0.5.0",
   "authEpoch": "auth-v1",
   "status": "authorized",
-  "candidateCommit": "02a66ebf07fce800fe99cdb71d0ec5c690dda038",
+  "candidateCommit": "6b431876ecb3dae8902e5b96c86a4cfa7996efd3",
   "authorizedOn": "2026-09-11",
   "authorization": "The user replied exactly: fa, in response to the explicit question asking whether to formally publish the 0.5.0 CLI and Codex, Claude and OpenCode Adapters. In this Chinese conversation fa means 发 (publish), and confirms that concrete publication request. Under AGENTS.md and ADR-0048 this also authorizes the manual staging acceptance waiver for this candidate; automated CI, integration tests and security gates remain mandatory. Server deployment and database migration are not authorized by this request.",
   "scope": "manual-staging-only",
