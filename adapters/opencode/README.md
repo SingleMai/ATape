@@ -14,6 +14,13 @@ The default source is `$XDG_DATA_HOME/opencode/opencode.db`, or
 selects an absolute file or a filename relative to that native data directory.
 Source access is read-only. Project attribution uses original creation evidence.
 
+The package declares shared Git attribution. The Host resolves the original
+creation directory through its Git repository evidence and current Server
+authorization, including worktrees and other checkouts of the same repository.
+Later OpenCode directory changes do not move the captured Session. A source in a
+different repository is excluded; a missing origin without established evidence
+remains unknown. This reuses the existing Host attribution Module.
+
 The Host requires explicit source-collection admission, and the Server requires
 publication admission. Raw capture obeys the current Host policy; this package
 does not upload content or store credentials itself. Installing the candidate
