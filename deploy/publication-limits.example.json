@@ -1,0 +1,9 @@
+{
+  "partBytes": 4194304,
+  "targetBytes": 134217728,
+  "userPendingBytes": 268435456,
+  "parts": 128,
+  "reservations": 32,
+  "leaseLifetimeMs": 300000,
+  "reservationLifetimeMs": 900000
+}

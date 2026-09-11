@@ -8,8 +8,12 @@ valid recovery point.
 The bundled scripts target the root Compose topology. Set
 `ATAPE_COMPOSE_ENV_FILE=/absolute/path/to/.env` when the deployment does not use
 the repository's default `.env`. For split-origin deployments also set
-`ATAPE_COMPOSE_OVERRIDE_FILE=compose.split-origin.yaml`. `COMPOSE_PROJECT_NAME`
-is respected.
+`ATAPE_COMPOSE_OVERRIDE_FILE=compose.split-origin.yaml`. For multiple overrides,
+export `COMPOSE_FILE` with the complete colon-separated list of absolute paths,
+including the base Compose file, publication, custom storage and any pinned Web
+image override. The legacy `ATAPE_COMPOSE_OVERRIDE_FILE` is appended when set;
+do not include the same override twice. `COMPOSE_PROJECT_NAME` is respected.
+Use the same topology for backup, restore and normal operation.
 
 ## Create a backup
 
@@ -71,7 +75,9 @@ pnpm test:self-hosting:restore
 It creates an isolated Compose project and volumes, starts the real server and
 PostgreSQL, inserts linked Canonical/Raw proof data, takes a paired backup,
 mutates both stores, restores, verifies the database value, Raw digest, and
-readiness, then destroys only those rehearsal resources.
+readiness, then destroys only those rehearsal resources. Publication is enabled
+using the reviewed-example configuration, and a second override moves Raw to a
+custom volume so the rehearsal detects helpers that discard `COMPOSE_FILE`.
 
 Object-store Chunk Store Adapters must supply an equivalent consistent snapshot
 and restore implementation before replacing the filesystem Adapter in

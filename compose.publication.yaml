@@ -1,0 +1,6 @@
+# Explicit opt-in: use together with compose.yaml after reviewing capacity.
+# Missing/empty configuration fails interpolation rather than breaking the base stack.
+services:
+  server:
+    environment:
+      ATAPE_PUBLICATION_LIMITS: ${ATAPE_PUBLICATION_LIMITS:?set reviewed ATAPE_PUBLICATION_LIMITS before enabling publication}

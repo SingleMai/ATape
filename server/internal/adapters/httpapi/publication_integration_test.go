@@ -57,7 +57,7 @@ func assertHTTPPublicationContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	const prefix = "/api/v1/publications/"
 	caps := send("GET", prefix+"capabilities", nil, false, 200)
-	if !strings.Contains(caps.Body.String(), `"partBytes":4194304`) || !strings.Contains(caps.Body.String(), `"leaseLifetimeMs":60000`) {
+	if !strings.Contains(caps.Body.String(), `"partBytes":4194304`) || !strings.Contains(caps.Body.String(), `"leaseLifetimeMs":300000`) {
 		t.Fatal(caps.Body.String())
 	}
 	send("GET", prefix+"capabilities", nil, true, 401)
