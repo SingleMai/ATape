@@ -23,7 +23,7 @@ export const directories: string[] = []
 export const failure = (reason: PublicationError["reason"]) => new PublicationError({ reason, message: "injected remote failure" })
 
 // Test Adapter for the real owned remote Seam. Local storage is always SQLite.
-export const fixture = async (partBytes = 4096) => {
+export const fixture = async (partBytes = 4096, admission: Partial<PublicationCapabilities["limits"]> = {}) => {
   const directory = await mkdtemp(join(tmpdir(), "atape-delivery-")); directories.push(directory)
   const path = join(directory, "capture.sqlite")
   let serial = 0, mode: "create" | "open" = "create", requests = 0
@@ -35,7 +35,7 @@ export const fixture = async (partBytes = 4096) => {
   const operation = <A>(body: () => A) => Effect.try({ try: () => { requests++; return body() }, catch: cause => cause as PublicationError })
   const snapshot = () => structuredClone(attempt)
   const remote = Layer.succeed(PublicationTransport, PublicationTransport.of({
-    capabilities: () => operation(() => ({ ...capabilities, limits: { ...capabilities.limits, partBytes } })),
+    capabilities: () => operation(() => ({ ...capabilities, limits: { ...capabilities.limits, ...admission, partBytes } })),
     reserve: () => operation(() => ({ id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp })),
     begin: (_, input) => operation(() => {
       parts.clear()

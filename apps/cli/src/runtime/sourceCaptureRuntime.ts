@@ -29,7 +29,9 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
     catch: cause => {
       const reason = typeof cause === "object" && cause !== null && "reason" in cause ? cause.reason : undefined
       return typeof reason === "string" && ["format", "unsupported", "attribution", "limit", "closed"].includes(reason)
-        ? failure(adapterId, "contract", `Adapter source cannot be captured (${reason}).`)
+        ? new AdapterRuntimeError({ adapterId, reason: "contract", retryable: false,
+          sourceFailureReason: reason === "limit" || reason === "attribution" ? reason : "format",
+          message: `Adapter source cannot be captured (${reason}).` })
         : failure(adapterId, "collect", "Adapter source operation failed, was canceled or exceeded its deadline.")
     }
   })
