@@ -559,7 +559,8 @@ At capacity, new metadata is rejected with used/limit/required counts. Existing
 receipts, activation, cancellation and payload reclamation remain available even
 when reopening below current usage. Increasing explicit admission permits new
 captures. Completed or abandoned metadata remains charged after its body is
-reclaimed; no automatic version/receipt pruning or state reset is introduced.
+reclaimed. The bounded membership retirement below now credits eligible old
+observation rows; version/receipt pruning and state reset are not introduced.
 Stop older Collector processes before a format upgrade; mixed-version writers
 are unsupported. Concurrent current-version writers must use the same admitted
 configuration, as with existing payload budgets.
@@ -654,3 +655,39 @@ which records exactly tested binary/platform combinations and the distinction
 between unchanged DB/WAL data and SQLite SHM read-lock metadata. OpenCode remains
 private, explicitly configured and outside the default tool registry. Final
 release admission and support boundaries remain to be accepted.
+
+### Bounded retirement of superseded observations
+
+The Collector now automatically retires obsolete full record memberships through
+the journal's `pruneRecords` Interface. Each fenced transaction deletes at most
+100 metadata rows from one completed or explicitly abandoned capture. The current
+published Canonical, last complete Canonical/Raw observations and all unfinished
+captures stay protected. Recovery and cleanup run before new source admission;
+cleanup yields between batches, uses the existing source deadline and resumes
+without rereading the provider. A timed-out cleanup postpones new capture.
+
+Journal format 7 verifies its binding and initializes retained record counts
+before enabling cleanup. A retirement marker makes old record reads/replays fail
+explicitly rather than returning an incomplete list or implying source absence.
+Capture and unit identity, immutable seals, source versions, Event Raw provenance
+and receipts remain. Identical reservation/seal/receipt replay still works, changed
+proof conflicts, and an old activation cannot restore its checkpoint. New Raw
+observations can continue reusing original units after the original membership
+has been retired. Existing Server Raw objects and historical references are
+independent of this local cleanup.
+
+Tests cover bounded interruption/reopen and actual `SIGKILL`, protected roots,
+pending Raw, binding-before-upgrade, old proof replay, absence/reappearance and
+abandoned source versions. Twenty complete 60-Event rewrites fit an unchanged
+250-entry journal budget. The real Source Collector additionally completes 25
+native fixture rewrites under 500 entries and then skips the unchanged source;
+the installed CLI/Adapter HTTP/PostgreSQL contract continues to pass.
+
+This removes repeated full-membership amplification. Distinct source versions,
+capture headers and unit receipts still consume admission, and protected current
+or pending work is never evicted for space. SQLite can reuse freed pages; this
+does not promise an immediate smaller file or constant storage for unlimited
+history. See [ADR-0074](../architecture/adr/0074-capture-observation-retention.md).
+Remaining work is representative retention/capacity evidence and explicit first
+release admission/support, followed by the ordinary detection/enablement flow.
+OpenCode remains private and unregistered; no publication or deployment occurred.

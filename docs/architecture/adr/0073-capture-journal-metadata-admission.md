@@ -3,6 +3,10 @@
 - Status: Accepted implementation detail of ADR-0059
 - Date: 2026-09-11
 
+Historical membership retention is refined by
+[ADR-0074](0074-capture-observation-retention.md). Admission and proof retention
+remain in force; eligible old membership rows now return their charged entries.
+
 Payload reclamation leaves identity, source versions, observation membership and
 receipts behind. A controlled journal-only experiment with 1,000 completed captures
 and ten records per capture retained zero payload bytes but a 4,153,344-byte SQLite

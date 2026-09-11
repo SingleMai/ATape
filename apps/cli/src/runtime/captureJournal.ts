@@ -39,7 +39,7 @@ const RecordManifest = Schema.Struct({ canonical: Schema.optionalKey(RecordCount
 const SealSchema = Schema.Struct({ records: Schema.optionalKey(RecordManifest), canonicalUnits: Schema.Number, rawUnits: Schema.Number,
   nextCheckpoint: Schema.String, manifestJson: Schema.String })
 const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
-const CaptureRow = Schema.Struct({ track_records: Schema.Literals([0, 1]), record_count: Count, purpose: Schema.Literals(["publication", "raw-observation"]), id: Schema.String, expected_checkpoint: Schema.NullOr(Schema.String), begin_json: Schema.String,
+const CaptureRow = Schema.Struct({ records_retired: Schema.Literals([0, 1]), retained_records: Count, track_records: Schema.Literals([0, 1]), record_count: Count, purpose: Schema.Literals(["publication", "raw-observation"]), id: Schema.String, expected_checkpoint: Schema.NullOr(Schema.String), begin_json: Schema.String,
   raw_enabled: Schema.Literals([0, 1]), state: Schema.Literals(["preparing", "sealed", "activated", "completed", "abandoned"]),
   seal_json: Schema.NullOr(Schema.String), activation_receipt: Schema.NullOr(Schema.String), retained_bytes: Count,
   raw_cancel_reason: Schema.NullOr(Schema.String), rejection_receipt: Schema.NullOr(Schema.String) })
@@ -111,7 +111,7 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
           db.exec("COMMIT")
         }
         const version = db.prepare("PRAGMA user_version").get()
-        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4 && version?.user_version !== 5 && version?.user_version !== 6) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
+        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4 && version?.user_version !== 5 && version?.user_version !== 6 && version?.user_version !== 7) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
         const stored = db.prepare("SELECT identity,retained_bytes FROM binding").all()
         if (stored.length !== 1 || stored[0]?.identity !== identity) throw failure("binding", "Capture journal belongs to a different account or installation.")
         // Upgrade only a verified binding. Concurrent openers serialize and recheck.
@@ -154,6 +154,13 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
             CREATE TRIGGER metadata_${table}_insert AFTER INSERT ON ${table} BEGIN UPDATE binding SET metadata_entries=metadata_entries+1; END;
             CREATE TRIGGER metadata_${table}_delete AFTER DELETE ON ${table} BEGIN UPDATE binding SET metadata_entries=metadata_entries-1; END;`)
           db.exec("PRAGMA user_version=6")
+        }
+        if (db.prepare("PRAGMA user_version").get()?.user_version === 6) {
+          db.exec(`ALTER TABLE captures ADD COLUMN records_retired INTEGER NOT NULL DEFAULT 0 CHECK(records_retired IN (0,1));
+            ALTER TABLE captures ADD COLUMN retained_records INTEGER NOT NULL DEFAULT 0 CHECK(retained_records>=0);
+            UPDATE captures SET retained_records=record_count;
+            CREATE INDEX obsolete_capture_records ON captures(scope_key,id) WHERE state IN ('completed','abandoned') AND retained_records>0;
+            PRAGMA user_version=7`)
         }
         db.exec("COMMIT")
         return db
@@ -209,6 +216,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     try { return decode(SealSchema,JSON.parse(value)) } catch { throw failure("corrupt","Capture seal failed validation.") }
   }
   const summary = (row: typeof CaptureRow.Type): CaptureSummary => ({
+    recordsRetired: row.records_retired === 1,
     trackRecords: row.track_records === 1, purpose: row.purpose, id: row.id, expectedCheckpoint: row.expected_checkpoint, beginJson: row.begin_json,
     rawEnabled: row.raw_enabled === 1, state: row.state, seal: row.seal_json === null ? null : parsedSeal(row.seal_json),
     activationReceipt: row.activation_receipt, retainedBytes: row.retained_bytes,
@@ -243,10 +251,14 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       revision: row.revision, ...(rawReference === undefined ? {} : { rawReference }) }
   }
   const getRecord = (key: string, id: string, kind: CaptureRecordKind, recordKey: string) => {
+    retainedMembership(capture(key,id))
     recordKind(kind); text(recordKey)
     const row = one("SELECT * FROM capture_records WHERE scope_key=? AND capture_id=? AND kind=? AND record_key=?",key,id,kind,recordKey)
     if (!row) throw failure("missing","Captured source record does not exist.")
     return { ...decode(RecordRow,row), ...decode(RecordBindingRow,row) }
+  }
+  const retainedMembership = (row: typeof CaptureRow.Type) => {
+    if (row.records_retired === 1) throw failure("state", "Historical capture membership was retired; its identity and receipts remain available.")
   }
   const recordSummary = (row: typeof CaptureRow.Type, value: unknown): CaptureRecordSummary => {
     const record = decode(RecordRow,value), binding = decode(RecordBindingRow,value)
@@ -374,6 +386,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     }),
     record: (owner,id,input) => transaction(() => {
       const scope = ownerScope(owner), row = capture(scope.key,id), kind = recordKind(input.kind)
+      retainedMembership(row)
       text(input.key); text(input.projectionVersion)
       if (typeof input.fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(input.fingerprint)) throw failure("invalid","A source fingerprint must be SHA-256 metadata.")
       const proposedReference = reference(input.rawReference)
@@ -409,7 +422,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
         revision=excluded.revision,raw_reference=excluded.raw_reference,version_capture=excluded.version_capture,comparison_capture=excluded.comparison_capture`,scope.key,kind,input.key,input.fingerprint,input.projectionVersion,revision,actualReference,versionCapture,lastComplete)
       update("INSERT INTO capture_records(scope_key,capture_id,kind,record_key,fingerprint,projection_version,revision,raw_reference,version_capture) VALUES(?,?,?,?,?,?,?,?,?)",
         scope.key,id,kind,input.key,input.fingerprint,input.projectionVersion,revision,actualReference,versionCapture)
-      update("UPDATE captures SET record_count=record_count+1 WHERE scope_key=? AND id=?",scope.key,id)
+      update("UPDATE captures SET record_count=record_count+1,retained_records=retained_records+1 WHERE scope_key=? AND id=?",scope.key,id)
       return recordVersion({ kind,record_key:input.key,fingerprint:input.fingerprint,projection_version:input.projectionVersion,
         revision,raw_reference:actualReference,version_capture:versionCapture })
     }),
@@ -446,6 +459,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     }),
     recordStatus: (owner,id,identity) => transaction(() => {
       const {key} = ownerScope(owner), row = capture(key,id)
+      retainedMembership(row)
       recordKind(identity.kind); text(identity.key)
       const value = one(`SELECT r.*,u.disposition FROM capture_records r LEFT JOIN units u
         ON u.scope_key=r.scope_key AND u.capture_id=r.unit_capture AND u.kind=r.unit_kind AND u.ordinal=r.unit_ordinal
@@ -454,6 +468,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     }),
     records: (owner,id,page) => transaction(() => {
       const {key} = ownerScope(owner), row = capture(key,id)
+      retainedMembership(row)
       recordKind(page.kind); integer(page.limit ?? 32,1,100)
       if (page.afterKey !== undefined) text(page.afterKey)
       return db.prepare(`SELECT r.*,u.disposition FROM capture_records r LEFT JOIN units u
@@ -472,7 +487,10 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (row.purpose === "raw-observation" && manifest.nextCheckpoint !== row.expected_checkpoint)
         throw failure("state","A Raw observation cannot change Canonical coverage.")
       text(manifest.nextCheckpoint,MetadataBytes); json(manifest.manifestJson)
-      const records = recordManifest(key,id,row,manifest.records)
+      // A retired historical membership cannot be revalidated. Its immutable
+      // seal still accepts exact replay and rejects any changed declaration.
+      const records = row.records_retired === 0 ? recordManifest(key,id,row,manifest.records) :
+        manifest.records === undefined ? undefined : decode(RecordManifest,manifest.records)
       const encoded=JSON.stringify({canonicalUnits:manifest.canonicalUnits,rawUnits:manifest.rawUnits,nextCheckpoint:manifest.nextCheckpoint,manifestJson:manifest.manifestJson,
         ...(records === undefined ? {} : { records })})
       if (row.seal_json !== null) {
@@ -607,6 +625,22 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
           return
         }
       }
+    }),
+    pruneRecords: (owner,limit=100) => transaction(() => {
+      const scope=ownerScope(owner); integer(limit,1,100)
+      // Select through the terminal-membership index, skipping at most the
+      // three protected roots. No payloads or complete memberships are read.
+      const row=one(`SELECT id,retained_records FROM captures
+        WHERE scope_key=? AND state IN ('completed','abandoned') AND retained_records>0
+        AND id IS NOT ? AND id IS NOT ? AND id IS NOT ? ORDER BY id LIMIT 1`,
+        scope.key,scope.canonical_coverage,scope.observed_canonical,scope.observed_raw)
+      if (row === undefined) return 0
+      const selected=decode(Schema.Struct({ id: Schema.String, retained_records: Count }),row)
+      const removed=Number(update(`DELETE FROM capture_records WHERE rowid IN
+        (SELECT rowid FROM capture_records WHERE scope_key=? AND capture_id=? ORDER BY kind,record_key LIMIT ?)`,scope.key,selected.id,limit).changes)
+      if (removed < 1 || removed > selected.retained_records) throw failure("corrupt","Retained source membership accounting is invalid.")
+      update("UPDATE captures SET records_retired=1,retained_records=retained_records-? WHERE scope_key=? AND id=?",removed,scope.key,selected.id)
+      return removed
     }),
     reclaim: (owner,id,limit=32) => transaction(() => {
       const {key}=ownerScope(owner), row=capture(key,id); integer(limit,1,32)
