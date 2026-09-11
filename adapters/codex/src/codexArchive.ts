@@ -14,6 +14,7 @@ import { createHash } from "node:crypto"
 import { AdapterThread as AdapterThreadSchema, GitAttributionVersion, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
 import { open, opendir, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
+import { codexHome as resolveCodexHome } from "@atape/adapter-catalog/node"
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { Effect, Option, Schema } from "effect"
@@ -262,7 +263,7 @@ export const openCodexArchive = (
   context: AdapterOpenContext
 ): Effect.Effect<CodexArchive, CodexArchiveError> => Effect.tryPromise({
   try: async () => {
-    const configuredHome = process.env.ATAPE_CODEX_HOME || process.env.CODEX_HOME || join(homedir(), ".codex")
+    const configuredHome = resolveCodexHome(process.env, homedir())
     if (context.project.type === "git" && context.gitAttribution?.version !== GitAttributionVersion) {
       throw new CodexArchiveError({ reason: "configuration", message: "Upgrade the ATape CLI to collect Git Projects with shared attribution." })
     }

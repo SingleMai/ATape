@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority, type AdapterRawReference, type RawAuthority } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
-import { SecretRedactor, type SecretRedactorService } from "./collector.ts"
+import { SecretRedactor, type SecretRedactorService } from "./collectorContracts.ts"
 import { captureRawAuthority } from "./publicationDelivery.ts"
 
 export type RawPreparationLimits = {

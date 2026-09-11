@@ -63,7 +63,7 @@ jobs:
       - name: Verify the exact release tarballs
         run: pnpm test:release
 
-      - name: Run PostgreSQL integration tests
+      - name: Run PostgreSQL and installed OpenCode contracts
         run: pnpm test:go:integration
 
       - name: Verify Collector recovery after physical disk exhaustion

@@ -1,7 +1,7 @@
 import type { AdapterInstallation } from "@atape/domain"
 import { Context, Effect, Schema } from "effect"
 import { inspectClient, installAdapter } from "./clientManagement.ts"
-import { officialSources } from "./cliExperience.ts"
+import { officialSources } from "@atape/adapter-catalog"
 import { CLIUpgradePlatform } from "./cliUpgrade.ts"
 import { newer, stableVersion } from "./releaseVersion.ts"
 

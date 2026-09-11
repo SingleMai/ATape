@@ -49,10 +49,17 @@ catalogs:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      typescript:
+        specifier: catalog:build
+        version: 7.0.2
 
   adapters/claude:
     devDependencies:
+      '@atape/adapter-catalog':
+        specifier: workspace:*
+        version: link:../../packages/adapter-catalog
       '@atape/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -74,6 +81,9 @@ importers:
 
   adapters/codex:
     devDependencies:
+      '@atape/adapter-catalog':
+        specifier: workspace:*
+        version: link:../../packages/adapter-catalog
       '@atape/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -95,6 +105,9 @@ importers:
 
   adapters/opencode:
     devDependencies:
+      '@atape/adapter-catalog':
+        specifier: workspace:*
+        version: link:../../packages/adapter-catalog
       '@atape/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -116,6 +129,9 @@ importers:
 
   apps/cli:
     devDependencies:
+      '@atape/adapter-catalog':
+        specifier: workspace:*
+        version: link:../../packages/adapter-catalog
       '@atape/application':
         specifier: workspace:*
         version: link:../../packages/application
@@ -232,8 +248,20 @@ importers:
         specifier: catalog:build
         version: 5.0.0(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(tsx@4.23.13))
 
+  packages/adapter-catalog:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: catalog:build
+        version: 7.0.2
+
   packages/application:
     dependencies:
+      '@atape/adapter-catalog':
+        specifier: workspace:*
+        version: link:../adapter-catalog
       '@atape/domain':
         specifier: workspace:*
         version: link:../domain

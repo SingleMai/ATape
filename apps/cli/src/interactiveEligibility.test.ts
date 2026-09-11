@@ -7,7 +7,7 @@ describe("interactive entry selection", () => {
     for (const args of [[], ["setup"], ["setup", "/work/a b"], ["--instance", "https://atape.net"], ["--lang", "zh-CN"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(true)
     }
-    for (const args of [["--help"], ["--version"], ["status", "--json"], ["setup", "--json"], ["setup", "--team", "acme"], ["--lang", "zh-CN", "--json"], ["__collector-daemon"]]) {
+    for (const args of [["--help"], ["--version"], ["status", "--json"], ["setup", "--json"], ["setup", "--team", "acme"], ["--lang", "zh-CN", "--json"], ["__collector-daemon", "--daemon-token", "test-token"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(false)
     }
   })

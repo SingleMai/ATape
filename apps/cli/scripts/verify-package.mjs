@@ -60,7 +60,9 @@ try {
   const help = (await atape(["--help"])).stdout
   assert.match(help, /^ATape CLI/m)
   assert.match(help, /atape upgrade/)
+  assert.match(help, /atape adapters prune/)
   assert.equal((await atape(["--version"])).stdout.trim(), `ATape ${packageManifest.version}`)
+  await assert.rejects(atape(["status", "--team", "unused"]), error => error.cause?.code === 2)
   assert.deepEqual(JSON.parse((await atape(["status", "--json"])).stdout), {
     running: false,
     jobs: []
@@ -86,7 +88,14 @@ try {
     assert.match(login.stderr, /Q7KM4W/)
 
     await writeSmokeAdapter()
-    await atape(["adapters", "install", adapterSource, "--json"])
+    const firstInstall = JSON.parse((await atape(["adapters", "install", adapterSource, "--json"])).stdout)
+    const currentInstall = JSON.parse((await atape(["adapters", "install", adapterSource, "--json"])).stdout)
+    const preview = JSON.parse((await atape(["adapters", "prune", "--keep", "0", "--json"])).stdout)
+    assert.equal(preview.applied, false)
+    assert.equal(preview.slots.find(slot => slot.slot === firstInstall.adapter.packageSlot)?.state, "eligible")
+    const pruned = JSON.parse((await atape(["adapters", "prune", "--keep", "0", "--apply", "--json"])).stdout)
+    assert.equal(pruned.slots.find(slot => slot.slot === firstInstall.adapter.packageSlot)?.state, "removed")
+    assert.equal(pruned.slots.find(slot => slot.slot === currentInstall.adapter.packageSlot)?.state, "current")
     await atape(["tools", "configure", "--adapter", "smoke", "--apply", "--json"])
     const setup = JSON.parse((await atape([
       "setup", projectDirectory, "--team", "package-team", "--create",

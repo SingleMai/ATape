@@ -1,18 +1,11 @@
 import {
-  AdapterRuntimes,
-  CollectorDaemonProcess,
-  CollectorRunStatusStore,
-  CollectorStateStore,
-  CollectorTransport,
-  CLIAuthenticationGateway,
-  CLIAuthenticationInteraction,
-  CLICredentialStore,
-  ProjectSetupGateway,
   applyProjectSetup,
-  SecretRedactor,
+  decideProjectSetup,
+  setClientLocale,
   inspectClient,
   inspectManagedCollector,
   installAdapter,
+  pruneAdapterPackages,
   loginCLI,
   logoutCLI,
   planProjectSetup,
@@ -24,163 +17,54 @@ import {
   startManagedCollector,
   stopManagedCollector,
   upgradeAdapters,
-  upgradeCLI, type CLIUpgradePlatform,
+  upgradeCLI,
   inspectTools, planToolChange, applyToolChange,
-  type CLISetupPlatform,
-  type AdapterPackages,
-  type ClientConfigStore,
   type ClientSnapshot,
+  type AdapterPruneSlot,
   type CollectionCycleReport,
   type ManagedCollectorStatus,
-  type ProjectLocator,
   type ProjectSetupPlan,
   type ProjectSetupSelection,
-  type SetupTeam
+  type ProjectSetupIntent
 } from "@atape/application"
 import { SUPPORTED_LOCALES, isLocale } from "@atape/i18n"
 import { createInterface } from "node:readline/promises"
-import { parseArgs } from "node:util"
 import { Effect } from "effect"
 import { cliVersion } from "./version.ts"
 import { supportsInteractiveExperience } from "./interactiveEligibility.ts"
 import { currentCliLocale, t } from "./i18n/index.ts"
-import { defaultNodeClientPaths, setClientConfigLocale } from "./runtime/clientLayers.ts"
 
-type CLIOptions = {
-  readonly help?: boolean
-  readonly version?: boolean
-  readonly json?: boolean
-  readonly lang?: string
-  readonly instance?: string
-  readonly noBrowser?: boolean
-  readonly team?: string
-  readonly create?: boolean
-  readonly apply?: boolean
-  readonly none?: boolean
-  readonly name?: string
-  readonly type?: string
-  readonly adapter?: ReadonlyArray<string>
-  readonly project?: string
-  readonly all?: boolean
-  readonly once?: boolean
-  readonly interval?: string
-  readonly concurrency?: string
-  readonly daemonToken?: string
-}
+import { CLIInputError, type ParsedCLI, type CommandOptions } from "./commandInput.ts"
+export { CLIInputError, parseCLI, type ParsedCLI } from "./commandInput.ts"
 
-export type ParsedCLI = {
-  readonly positionals: ReadonlyArray<string>
-  readonly options: CLIOptions
-}
-
-export class CLIInputError extends Error {}
-
-export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
-  const parsed = parseArgs({
-    args: [...args],
-    allowPositionals: true,
-    strict: true,
-    options: {
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "v" },
-      json: { type: "boolean" },
-      lang: { type: "string" },
-      instance: { type: "string" },
-      "no-browser": { type: "boolean" },
-      team: { type: "string" },
-      create: { type: "boolean" },
-      apply: { type: "boolean" },
-      none: { type: "boolean" },
-      name: { type: "string" },
-      type: { type: "string" },
-      adapter: { type: "string", multiple: true },
-      project: { type: "string" },
-      all: { type: "boolean" },
-      once: { type: "boolean" },
-      interval: { type: "string" },
-      concurrency: { type: "string" },
-      "daemon-token": { type: "string" }
-    }
-  })
-  return {
-    positionals: parsed.positionals,
-    options: {
-      ...(parsed.values.help === true ? { help: true } : {}),
-      ...(parsed.values.version === true ? { version: true } : {}),
-      ...(parsed.values.json === true ? { json: true } : {}),
-      ...(parsed.values.lang ? { lang: parsed.values.lang } : {}),
-      ...(parsed.values.instance ? { instance: parsed.values.instance } : {}),
-      ...(parsed.values["no-browser"] === true ? { noBrowser: true } : {}),
-      ...(parsed.values.team ? { team: parsed.values.team } : {}),
-      ...(parsed.values.create === true ? { create: true } : {}),
-      ...(parsed.values.apply === true ? { apply: true } : {}),
-      ...(parsed.values.none === true ? { none: true } : {}),
-      ...(parsed.values.name ? { name: parsed.values.name } : {}),
-      ...(parsed.values.type ? { type: parsed.values.type } : {}),
-      ...(parsed.values.adapter ? { adapter: parsed.values.adapter } : {}),
-      ...(parsed.values.project ? { project: parsed.values.project } : {}),
-      ...(parsed.values.all === true ? { all: true } : {}),
-      ...(parsed.values.once === true ? { once: true } : {}),
-      ...(parsed.values.interval ? { interval: parsed.values.interval } : {}),
-      ...(parsed.values.concurrency ? { concurrency: parsed.values.concurrency } : {}),
-      ...(parsed.values["daemon-token"] ? { daemonToken: parsed.values["daemon-token"] } : {})
-    }
-  }
-}
-
-export const runCommand = (cli: ParsedCLI): Effect.Effect<
-  void,
-  unknown,
-  ClientConfigStore | ProjectLocator | AdapterPackages |
-    CollectorStateStore | AdapterRuntimes | CollectorTransport | SecretRedactor |
-    CollectorDaemonProcess | CollectorRunStatusStore |
-    CLIAuthenticationGateway | CLICredentialStore | CLIAuthenticationInteraction | ProjectSetupGateway |
-    CLISetupPlatform | CLIUpgradePlatform
-> => {
-  const [command, action, argument, extra] = cli.positionals
-  if (cli.options.version) {
-    return cli.positionals.length === 0 ? print(`ATape ${cliVersion}`) : failUsage(t("cli.error.versionNoCommand", "--version accepts no command."))
-  }
-  if (cli.options.help || command === undefined || command === "help") {
-    if (action !== undefined && command !== "help") return failUsage(t("cli.error.tooManyHelp", "Too many arguments for help."))
-    return print(helpText())
-  }
-  if (extra !== undefined) return failUsage(t("cli.error.tooManyPositionals", "Too many positional arguments."))
-
-  switch (command) {
+export const runCommand = Effect.fn("CLI.command")(function*(cli: ParsedCLI) {
+  switch (cli.kind) {
+    case "interactive":
+    case "help": return yield* print(helpText())
+    case "version": return yield* print(`ATape ${cliVersion}`)
     case "upgrade":
-      if (action !== undefined) return failUsage(t("cli.error.upgradeNoPositional", "upgrade accepts no positional arguments."))
-      return (cli.options.json ? Effect.void : print(t("cli.upgrade.checking", "Checking for an ATape update…"))).pipe(
+      return yield* (cli.options.json ? Effect.void : print(t("cli.upgrade.checking", "Checking for an ATape update…"))).pipe(
         Effect.andThen(upgradeCLI(cliVersion)), Effect.flatMap(result => cli.options.json ? printJSON(result) : print(
           result.updated ? result.resumed
             ? t("cli.upgrade.updatedResumed", "Updated ATape to {version}. Background sync resumed.", { version: result.version })
             : t("cli.upgrade.updated", "Updated ATape to {version}.", { version: result.version })
             : t("cli.upgrade.upToDate", "ATape {version} is up to date.", { version: result.version }))))
-    case "login":
-      if (action !== undefined) return failUsage(t("cli.error.loginNoPositional", "login accepts no positional arguments."))
-      return loginCommand(cli.options)
-    case "logout":
-      if (action !== undefined) return failUsage(t("cli.error.logoutNoPositional", "logout accepts no positional arguments."))
-      return logoutCommand(cli.options)
-    case "setup":
-      if (argument !== undefined) return failUsage(t("cli.error.setupTooManyDirectories", "setup accepts at most one directory."))
-      return setupCommand(action, cli.options)
-    case "projects":
-      if (action === "list" && argument === undefined) return listProjects(cli.options.json === true)
-      if (action === "remove" && argument !== undefined) return removeProjectCommand(argument, cli.options.json === true)
-      return failUsage(t("cli.error.projectsUsage", "Use `atape projects list` or `atape projects remove <project-id>`."))
-    case "adapters":
-      return adapterCommand(action, argument, cli.options)
-    case "tools":
-      if (argument !== undefined) return failUsage(t("cli.error.toolsNoExtraArguments", "tools accepts no extra arguments."))
-      if (action === "list") return inspectTools().pipe(Effect.flatMap(result => cli.options.json ? printJSON({ configured: result.configured,
+    case "login": return yield* loginCommand(cli.options)
+    case "logout": return yield* logoutCommand(cli.options)
+    case "setup": return yield* setupCommand(cli.directory, cli.options)
+    case "projects.list": return yield* listProjects(cli.options.json === true)
+    case "projects.remove": return yield* removeProjectCommand(cli.projectId, cli.options.json === true)
+    case "adapters.list": return yield* listAdapters(cli.options.json === true)
+    case "adapters.install": return yield* installAdapterCommand(cli.packageSpec, cli.options.json === true)
+    case "adapters.upgrade": return yield* upgradeAdaptersCommand(cli.target, cli.options.json === true)
+    case "adapters.prune": return yield* pruneAdaptersCommand(cli.options)
+    case "tools.list":
+      return yield* inspectTools().pipe(Effect.flatMap(result => cli.options.json ? printJSON({ configured: result.configured,
         tools: result.choices, projectCount: result.config.projects.length }) : print(
         result.choices.map(choice => `${choice.label}: ${result.configured && choice.selected
           ? t("cli.tools.enabled", "enabled") : t("cli.tools.notEnabled", "not enabled")}${choice.installed ? t("cli.tools.ready", " · ready") : ""}`).join("\n"))))
-      if (action !== "configure" || cli.options.project || Boolean(cli.options.none) === Boolean(cli.options.adapter?.length)) {
-        return failUsage(t("cli.error.toolsConfigureUsage", "Use atape tools configure --adapter <id> [--adapter <id>] or --none. Preview first; add --apply to save globally."))
-      }
-      return planToolChange(cli.options.adapter ?? []).pipe(Effect.flatMap(plan => {
+    case "tools.configure":
+      return yield* planToolChange(cli.adapterIds).pipe(Effect.flatMap(plan => {
         if (cli.options.apply) {
           return applyToolChange(plan).pipe(Effect.flatMap(config => cli.options.json
             ? printJSON(config) : print(t("cli.tools.saved", "Global tools saved for all connected projects."))))
@@ -196,31 +80,16 @@ export const runCommand = (cli: ParsedCLI): Effect.Effect<
           t("cli.tools.previewNotice", "Added tools import existing history. Disabled tools retain captured history. Add --apply to confirm.")
         ].join("\n"))
       }))
-    case "collect":
-      if (action !== undefined) return failUsage(t("cli.error.collectNoPositional", "collect accepts no positional arguments."))
-      return collectCommand(cli.options)
-    case "start":
-      if (action !== undefined) return failUsage(t("cli.error.startNoPositional", "start accepts no positional arguments."))
-      return startCommand(cli.options)
-    case "stop":
-      if (action !== undefined) return failUsage(t("cli.error.stopNoPositional", "stop accepts no positional arguments."))
-      return stopCommand(cli.options.json === true)
-    case "status":
-      if (action !== undefined) return failUsage(t("cli.error.statusNoPositional", "status accepts no positional arguments."))
-      return statusCommand(cli.options.json === true)
-    case "language":
-      return languageCommand(action, cli.options)
-    case "__collector-daemon":
-      if (action !== undefined || cli.options.daemonToken === undefined) {
-        return failUsage(t("cli.error.invalidCollectorInvocation", "Invalid internal Collector invocation."))
-      }
-      return daemonCommand(cli.options)
-    default:
-      return failUsage(t("cli.error.unknownCommand", "Unknown command: {command}", { command }))
+    case "collect": return yield* collectCommand(cli.options)
+    case "start": return yield* startCommand(cli.options)
+    case "stop": return yield* stopCommand(cli.options.json === true)
+    case "status": return yield* statusCommand(cli.options.json === true)
+    case "language": return yield* languageCommand(cli.locale, cli.options)
+    case "__collector-daemon": return yield* daemonCommand(cli.options)
   }
-}
+})
 
-const languageCommand = (locale: string | undefined, options: CLIOptions) => Effect.gen(function*() {
+const languageCommand = (locale: string | undefined, options: CommandOptions<"language">) => Effect.gen(function*() {
   if (locale === undefined) {
     const current = currentCliLocale()
     if (options.json) return yield* printJSON({ locale: current })
@@ -230,13 +99,12 @@ const languageCommand = (locale: string | undefined, options: CLIOptions) => Eff
     return yield* failUsage(t("cli.language.unsupported", "Unsupported language: {locale}. Supported: {locales}.",
       { locale, locales: SUPPORTED_LOCALES.join(", ") }))
   }
-  yield* setClientConfigLocale(defaultNodeClientPaths().configFile, locale)
+  yield* setClientLocale(locale)
   if (options.json) return yield* printJSON({ locale })
   return yield* print(t("cli.language.set", "Language set to {locale}. It applies to the next ATape command.", { locale }))
 })
 
-const setupCommand = (path: string | undefined, options: CLIOptions) => Effect.gen(function*() {
-  if (options.adapter !== undefined) return yield* failUsage(t("cli.error.toolsAreGlobal", "Tools are global. Omit --adapter for Project setup; use atape tools configure to change tools."))
+const setupCommand = (path: string | undefined, options: CommandOptions<"setup">) => Effect.gen(function*() {
   const instanceOrigin = yield* resolveInstance(options, yield* inspectClient())
   const type = yield* setupType(options.type)
   const plan = yield* planProjectSetup({
@@ -267,7 +135,7 @@ const setupCommand = (path: string | undefined, options: CLIOptions) => Effect.g
   ].join("\n"))
 })
 
-const loginCommand = (options: CLIOptions) => Effect.gen(function*() {
+const loginCommand = (options: CommandOptions<"login">) => Effect.gen(function*() {
   const current = yield* inspectClient()
   const instanceOrigin = yield* resolveInstance(options, current)
   const result = yield* loginCLI({
@@ -287,7 +155,7 @@ const loginCommand = (options: CLIOptions) => Effect.gen(function*() {
   ].join("\n"))
 })
 
-const logoutCommand = (options: CLIOptions) => Effect.gen(function*() {
+const logoutCommand = (options: CommandOptions<"logout">) => Effect.gen(function*() {
   const current = yield* inspectClient()
   const instanceOrigin = yield* resolveInstance(options, current)
   const result = yield* logoutCLI({
@@ -306,7 +174,7 @@ const logoutCommand = (options: CLIOptions) => Effect.gen(function*() {
   ].join("\n"))
 })
 
-const resolveInstance = (options: CLIOptions, config: ClientSnapshot) => selectInstanceOrigin({
+const resolveInstance = (options: { readonly instance?: string }, config: ClientSnapshot) => selectInstanceOrigin({
   ...(options.instance === undefined ? {} : { commandLine: options.instance }),
   ...(process.env.ATAPE_INSTANCE_URL === undefined ? {} : { environment: process.env.ATAPE_INSTANCE_URL }),
   ...(config.activeInstanceOrigin === undefined ? {} : { savedActive: config.activeInstanceOrigin }),
@@ -326,83 +194,52 @@ const setupType = (
 
 const resolveProjectSetupSelection = (
   plan: ProjectSetupPlan,
-  options: CLIOptions
+  options: CommandOptions<"setup">
 ): Effect.Effect<ProjectSetupSelection, CLIInputError> => Effect.tryPromise({
   try: async () => {
     const interactive = supportsInteractiveExperience() && options.json !== true
-    let team = options.team === undefined ? undefined : findTeam(plan.teams, options.team)
-    if (options.team !== undefined && team === undefined) {
-      throw new CLIInputError(t("cli.setup.teamUnavailable", "Team {team} is not available to the signed-in account.", { team: options.team }))
+    let intent: ProjectSetupIntent = {
+      ...(options.team === undefined ? {} : { team: options.team }),
+      ...(options.create === true ? { mode: "create" as const } : {}),
+      ...(options.name === undefined ? {} : { name: options.name })
     }
-
-    if (team === undefined && options.create !== true && plan.exactMatches.length === 1) {
-      const exact = plan.exactMatches[0]
-      if (exact === undefined) throw new CLIInputError(t("cli.setup.exactMatchDisappeared", "The exact Project match disappeared."))
-      return {
-        mode: "exact",
-        teamId: exact.team.id,
-        projectId: exact.project.id,
-      }
-    }
-
-    if (team === undefined) {
-      if (plan.teams.length === 1) {
-        team = plan.teams[0]
-      } else if (!interactive) {
-        throw new CLIInputError(t("cli.setup.teamRequired", "--team <slug> is required when more than one Team is available."))
-      } else {
-        const prompt = createInterface({ input: process.stdin, output: process.stdout })
-        try {
-          process.stdout.write([t("cli.setup.chooseTeam", "Choose a Team:"), ...plan.teams.map((item) =>
-            `  ${item.slug} · ${item.displayName}`)].join("\n") + "\n")
-          team = findTeam(plan.teams, await ask(prompt, t("cli.setup.teamSlugPrompt", "Team slug")))
-        } finally {
-          prompt.close()
+    while (true) {
+      const decision = decideProjectSetup(plan, intent)
+      switch (decision.kind) {
+        case "ready": return decision.selection
+        case "invalid":
+          switch (decision.reason) {
+            case "team_unavailable": throw new CLIInputError(t("cli.setup.teamUnavailable", "Team {team} is not available to the signed-in account.", { team: intent.team ?? "" }))
+            case "no_team": throw new CLIInputError(t("cli.setup.noTeam", "No Team is available to the signed-in account."))
+            case "exact_match_exists": throw new CLIInputError(t("cli.setup.exactMatchCreateConflict", "This repository already has an exact Project match; omit --create to attach it."))
+          }
+        case "needs_team": {
+          if (!interactive) throw new CLIInputError(t("cli.setup.teamRequired", "--team <slug> is required when more than one Team is available."))
+          const prompt = createInterface({ input: process.stdin, output: process.stdout })
+          try {
+            process.stdout.write([t("cli.setup.chooseTeam", "Choose a Team:"), ...decision.teams.map(team =>
+              `  ${team.slug} · ${team.displayName}`)].join("\n") + "\n")
+            intent = { ...intent, team: await ask(prompt, t("cli.setup.teamSlugPrompt", "Team slug")) }
+          } finally { prompt.close() }
+          break
         }
-        if (team === undefined) throw new CLIInputError(t("cli.setup.selectedTeamUnavailable", "The selected Team is not available."))
+        case "needs_creation_confirmation": {
+          if (!interactive) throw new CLIInputError(t("cli.setup.createRequired", "No exact Project match exists; pass --create to create one explicitly."))
+          const prompt = createInterface({ input: process.stdin, output: process.stdout })
+          try {
+            const approved = await confirm(prompt, t("cli.setup.confirmCreate", "Create a Project in {team}?", { team: decision.team.displayName }))
+            if (!approved) throw new CLIInputError(t("cli.setup.cancelled", "Setup cancelled before creating a server Project."))
+            intent = { ...intent, team: decision.team.id, creationApproved: true }
+          } finally { prompt.close() }
+          break
+        }
       }
-    }
-    if (team === undefined) throw new CLIInputError(t("cli.setup.noTeam", "No Team is available to the signed-in account."))
-
-    const exact = plan.exactMatches.find((match) => match.team.id === team.id)
-    if (exact !== undefined) {
-      if (options.create === true) {
-        throw new CLIInputError(t("cli.setup.exactMatchCreateConflict", "This repository already has an exact Project match; omit --create to attach it."))
-      }
-      return {
-        mode: "exact",
-        teamId: team.id,
-        projectId: exact.project.id,
-      }
-    }
-
-    if (options.create !== true) {
-      if (!interactive) {
-        throw new CLIInputError(t("cli.setup.createRequired", "No exact Project match exists; pass --create to create one explicitly."))
-      }
-      const prompt = createInterface({ input: process.stdin, output: process.stdout })
-      try {
-        const approved = await confirm(prompt, t("cli.setup.confirmCreate", "Create a Project in {team}?", { team: team.displayName }))
-        if (!approved) throw new CLIInputError(t("cli.setup.cancelled", "Setup cancelled before creating a server Project."))
-      } finally {
-        prompt.close()
-      }
-    }
-    return {
-      mode: "create",
-      teamId: team.id,
-      ...(options.name === undefined ? {} : { name: options.name }),
     }
   },
   catch: (cause) => cause instanceof CLIInputError
     ? cause
     : new CLIInputError(cause instanceof Error ? cause.message : String(cause))
 })
-
-const findTeam = (teams: ReadonlyArray<SetupTeam>, selection: string) => {
-  const matches = teams.filter((team) => team.id === selection || team.slug === selection)
-  return matches.length === 1 ? matches[0] : undefined
-}
 
 const listProjects = (json: boolean) => inspectClient().pipe(
   Effect.flatMap((config) => json
@@ -433,18 +270,8 @@ const removeProjectCommand = (projectId: string, json: boolean) => removeProject
     : print(t("cli.projects.removed", "Removed local Project {projectId}. Captured ATape server history was not deleted.", { projectId })))
 )
 
-const adapterCommand = (
-  action: string | undefined,
-  argument: string | undefined,
-  options: CLIOptions
-): Effect.Effect<void, unknown, ClientConfigStore | AdapterPackages> => {
-  switch (action) {
-    case "list":
-      if (argument !== undefined) return failUsage(t("cli.error.adaptersListNoId", "adapters list accepts no Adapter ID."))
-      return listAdapters(options.json === true)
-    case "install":
-      if (argument === undefined) return failUsage(t("cli.error.adaptersInstallRequiresSpec", "adapters install requires a package name, local source, or HTTPS archive URL."))
-      return installAdapter(argument).pipe(Effect.flatMap((result) => options.json
+const installAdapterCommand = (packageSpec: string, json: boolean) =>
+  installAdapter(packageSpec).pipe(Effect.flatMap((result) => json
         ? printJSON(result)
         : print([
           result.created
@@ -452,20 +279,36 @@ const adapterCommand = (
             : t("cli.adapters.updated", "Updated {name} ({id}) v{version}.", { name: result.adapter.displayName, id: result.adapter.adapterId, version: result.adapter.version }),
           t("cli.adapters.installNotice", "No sync was enabled. Open Tools to configure it for your projects.")
         ].join("\n"))))
-    case "upgrade": {
-      const target = options.all ? "all" : argument
-      if (target === undefined || (options.all && argument !== undefined)) {
-        return failUsage(t("cli.error.adaptersUpgradeUsage", "Use `atape adapters upgrade <adapter-id>` or `atape adapters upgrade --all`."))
-      }
-      return upgradeAdapters(target).pipe(Effect.flatMap((adapters) => options.json
+
+const upgradeAdaptersCommand = (target: string, json: boolean) =>
+  upgradeAdapters(target).pipe(Effect.flatMap((adapters) => json
         ? printJSON({ adapters })
         : print(adapters.length === 0
           ? t("cli.adapters.noneInstalled", "No Adapters are installed.")
           : [t("cli.adapters.upgradeComplete", "Adapter upgrades complete:"),
             ...adapters.map((adapter) => `- ${adapter.adapterId} · v${adapter.version}`)].join("\n"))))
-    }
-    default:
-      return failUsage(t("cli.error.adaptersUsage", "Use `atape adapters list|install|upgrade`."))
+
+const pruneAdaptersCommand = (options: CommandOptions<"adapters.prune">) => Effect.gen(function*() {
+  const keep = yield* parseIntegerOption(options.keep, "--keep")
+  const result = yield* pruneAdapterPackages({ apply: options.apply === true, ...(keep === undefined ? {} : { keep }) })
+  if (options.json) return yield* printJSON(result)
+  return yield* print([
+    ...result.slots.map(slot => `${slot.slot}: ${pruneStateLabel(slot.state)}${slot.packageName ? ` · ${slot.packageName} ${slot.version}` : ""}`),
+    result.applied ? t("cli.adapters.prune.complete", "Removed {count} unused Adapter installations.", { count: result.removed })
+      : t("cli.adapters.prune.preview", "Preview only. Add --apply to remove eligible installations."),
+    ...(!result.applied ? [t("cli.adapters.prune.oldReaders", "Before applying, stop older CLI or Collector processes that do not support installation leases.")] : []),
+    ...(result.more ? [t("cli.adapters.prune.more", "More eligible installations remain; run again to continue.")] : [])
+  ].join("\n"))
+})
+
+const pruneStateLabel = (state: AdapterPruneSlot["state"]) => {
+  switch (state) {
+    case "current": return t("cli.adapters.prune.current", "current")
+    case "in_use": return t("cli.adapters.prune.inUse", "in use")
+    case "retained": return t("cli.adapters.prune.retained", "retained backup")
+    case "eligible": return t("cli.adapters.prune.eligible", "eligible for removal")
+    case "removed": return t("cli.adapters.prune.removed", "removed")
+    case "unmanaged": return t("cli.adapters.prune.unmanaged", "untracked; retained")
   }
 }
 
@@ -496,12 +339,9 @@ const printAdapters = (config: ClientSnapshot) => {
   ].join("\n"))
 }
 
-const collectCommand = (options: CLIOptions) => Effect.gen(function*() {
+const collectCommand = (options: CommandOptions<"collect">) => Effect.gen(function*() {
   const concurrency = yield* parseIntegerOption(options.concurrency, "--concurrency")
   const intervalSeconds = yield* parseIntegerOption(options.interval, "--interval")
-  if (options.json && !options.once) {
-    return yield* failUsage(t("cli.error.collectJsonRequiresOnce", "--json requires --once for collect."))
-  }
   if (!options.once) {
     yield* print(t("cli.collect.running", "ATape collector is running; idle/retry interval {seconds}s. Press Ctrl+C to stop.", { seconds: intervalSeconds ?? 30 }))
   }
@@ -520,7 +360,7 @@ const collectCommand = (options: CLIOptions) => Effect.gen(function*() {
   }
 })
 
-const startCommand = (options: CLIOptions) => Effect.gen(function*() {
+const startCommand = (options: CommandOptions<"start">) => Effect.gen(function*() {
   const concurrency = yield* parseIntegerOption(options.concurrency, "--concurrency")
   const intervalSeconds = yield* parseIntegerOption(options.interval, "--interval")
   const started = yield* startManagedCollector({
@@ -553,7 +393,7 @@ const statusCommand = (json: boolean) => inspectManagedCollector().pipe(
   Effect.flatMap((status) => json ? printJSON(status) : printCollectorStatus(status))
 )
 
-const daemonCommand = (options: CLIOptions) => Effect.gen(function*() {
+const daemonCommand = (options: CommandOptions<"__collector-daemon">) => Effect.gen(function*() {
   const concurrency = yield* parseIntegerOption(options.concurrency, "--concurrency")
   const intervalSeconds = yield* parseIntegerOption(options.interval, "--interval")
   yield* runManagedCollector({
@@ -721,6 +561,7 @@ Usage:
   atape adapters install <package-or-source> [--json]
   atape adapters upgrade <adapter-id>
   atape adapters upgrade --all
+  atape adapters prune [--keep <count>] [--apply] [--json]
   atape collect [--once] [--project <project-id>] [options]
   atape start [--interval <seconds>] [--concurrency <count>]
   atape stop

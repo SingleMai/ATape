@@ -1,4 +1,4 @@
-import {
+import { decideProjectSetup, describeClientFailure,
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
@@ -11,32 +11,43 @@ import { Effect, type Layer } from "effect"
 import { launchBrowser } from "../runtime/authenticationLayers.ts"
 import type { makeNodeClientLayer } from "../runtime/clientLayers.ts"
 import { t } from "../i18n/index.ts"
+import { officialSourceLabel as toolLabel } from "@atape/adapter-catalog"
 
 export type ExperienceRequirements = Layer.Success<ReturnType<typeof makeNodeClientLayer>>
 export type ExperienceRunner = <A, E>(effect: Effect.Effect<A, E, ExperienceRequirements>, signal: AbortSignal) => Promise<A>
-export type Screen = {
-  readonly revision: number
-  readonly kind: "busy" | "input" | "menu" | "sources"
-  readonly title: string
-  readonly details: ReadonlyArray<string>
-  readonly options?: ReadonlyArray<{ value: string; label: string }>
-  readonly initial?: string
-  readonly selected?: ReadonlyArray<string>
+type ScreenOption = { readonly value: string; readonly label: string }
+type InputFields = {
+  readonly initial: string
   readonly suggestions?: ReadonlyArray<DirectorySuggestion>
   readonly directoriesLoading?: boolean
   readonly pathInput?: boolean
+}
+type MenuFields = {
   readonly refreshing?: boolean
   readonly refreshable?: boolean
   readonly refreshError?: string
-  readonly layout?: "welcome" | "projects"
-  readonly actions?: ReadonlyArray<{ value: string; label: string }>
-  readonly projects?: ReadonlyArray<{ value: string; name: string; status: string; team: string }>
-  readonly focusedProject?: string
-  readonly notice?: string
-  readonly context?: string
   readonly diagnostics?: boolean
   readonly exitOnBack?: boolean
+  readonly layout?: "welcome" | "projects"
+  readonly actions?: ReadonlyArray<ScreenOption>
+  readonly projects?: ReadonlyArray<{ value: string; name: string; status: string; team: string }>
+  readonly focusedProject?: string
 }
+// Absent fields remain readable for render bindings, but cannot be populated on
+// another screen kind. Menu options, input values and source selections are required.
+type Absent<T> = { readonly [K in keyof T]?: never }
+type ScreenContent = {
+  readonly title: string
+  readonly details: ReadonlyArray<string>
+  readonly notice?: string
+  readonly context?: string
+} & (
+  | { readonly kind: "busy"; readonly options?: never; readonly selected?: never } & Absent<InputFields & MenuFields>
+  | { readonly kind: "input"; readonly options?: never; readonly selected?: never } & InputFields & Absent<MenuFields>
+  | { readonly kind: "menu"; readonly options: ReadonlyArray<ScreenOption>; readonly selected?: never } & MenuFields & Absent<InputFields>
+  | { readonly kind: "sources"; readonly options: ReadonlyArray<ScreenOption>; readonly selected: ReadonlyArray<string> } & Absent<InputFields & MenuFields>
+)
+export type Screen = ScreenContent & { readonly revision: number }
 const stateLabel = (state: ConsoleProject["state"]): string => {
   switch (state) {
     case "no_sources": return t("cli.state.noSources", "No tools enabled")
@@ -71,7 +82,6 @@ const jobStateLabel = (state: "pending" | "healthy" | "partial" | "failed"): str
   }
 }
 const statusLabel = (item: ConsoleProject) => recoveryLabel(item.recovery.kind) ?? stateLabel(item.state)
-const toolLabel = (id: string) => id === "claude" ? "Claude Code" : id === "codex" ? "Codex" : id
 const failureGuidance = (reason: NonNullable<ConsoleProject["jobs"][number]["failureReason"]>): string => {
   switch (reason) {
     case "unauthenticated": return t("cli.failure.unauthenticated", "Sign in again from this project to resume sync.")
@@ -157,7 +167,7 @@ export class ExperiencePresenter {
     this.screen = screen
     for (const listener of this.listeners) listener()
   }
-  private show(screen: Omit<Screen, "revision">, action: (value: string | string[]) => void = () => {}, previous = () => this.list(), revision = this.screen.revision + 1) {
+  private show(screen: ScreenContent, action: (value: string | string[]) => void = () => {}, previous = () => this.list(), revision = this.screen.revision + 1) {
     this.consoleTarget = undefined
     this.action = action
     this.previous = previous
@@ -187,19 +197,19 @@ export class ExperiencePresenter {
     })
   }
   private failed(error: unknown, retry: () => void, back: () => void) {
-    const reason = typeof error === "object" && error !== null && "reason" in error ? error.reason : undefined
-    const instance = typeof error === "object" && error !== null && "instanceOrigin" in error && typeof error.instanceOrigin === "string" ? error.instanceOrigin : undefined
-    const reader = typeof error === "object" && error !== null && "adapterId" in error && typeof error.adapterId === "string" ? error.adapterId : undefined
-    this.show({ kind: "menu", title: t("cli.presenter.recoverTitle", "Let's get this working"), details: [error instanceof Error ? error.message : String(error)],
-      options: [
-        ...(reason === "upgrade" && reader ? [{ value: "reader", label: t("cli.presenter.installLatest", "Install latest published {tool} integration and continue", { tool: toolLabel(reader) }) }] : []),
-        ...(reason === "unauthenticated" || reason === "changed" && instance ? [{ value: "login", label: t("cli.presenter.signInAgain", "Sign in again") }] : []),
-        { value: "retry", label: reason === "changed" && !instance ? t("cli.presenter.reviewAgain", "Review again") : t("cli.presenter.retryOperation", "Retry this operation") }
-      ] }, value => {
-        if (value === "retry") retry()
-        else if (value === "reader" && reader) this.work(t("cli.presenter.updatingReader", "Updating ATape's {tool} reader", { tool: toolLabel(reader) }), updateSyncReader(reader), retry, undefined, back)
-        else if (value === "login") { if (instance) this.instanceOrigin = instance; this.login(retry, back) }
-      }, back)
+    const failure = describeClientFailure(error)
+    this.show({ kind: "menu", title: t("cli.presenter.recoverTitle", "Let's get this working"), details: [failure.message],
+      options: failure.actions.map(action => ({ value: action.kind === "review" ? "retry" : action.kind === "sign_in" ? "login" : action.kind === "update_tool" ? "reader" : "retry",
+        label: action.kind === "update_tool" ? t("cli.presenter.installLatest", "Install latest published {tool} integration and continue", { tool: toolLabel(action.adapterId) })
+          : action.kind === "sign_in" ? t("cli.presenter.signInAgain", "Sign in again")
+          : action.kind === "review" ? t("cli.presenter.reviewAgain", "Review again") : t("cli.presenter.retryOperation", "Retry this operation") }))
+    }, value => {
+      if (value === "retry") return retry()
+      if (value !== "reader" && value !== "login") return
+      const action = failure.actions.find(action => value === "reader" ? action.kind === "update_tool" : action.kind === "sign_in")
+      if (action?.kind === "update_tool") this.work(t("cli.presenter.updatingReader", "Updating ATape's {tool} reader", { tool: toolLabel(action.adapterId) }), updateSyncReader(action.adapterId), retry, undefined, back)
+      else if (action?.kind === "sign_in") { if (action.instanceOrigin) this.instanceOrigin = action.instanceOrigin; this.login(retry, back) }
+    }, back)
   }
   start() {
     if (this.started) return
@@ -253,7 +263,7 @@ export class ExperiencePresenter {
         const result = yield* inspectCLIExperience().pipe(Effect.match({ onFailure: error => ({ ok: false as const, error }), onSuccess: snapshot => ({ ok: true as const, snapshot }) }))
         if (this.consoleTarget !== target || generation !== this.generation) continue
         if (result.ok) this.showConsole(result.snapshot, target, true)
-        else this.publish({ ...this.screen, refreshError: t("cli.presenter.statusStale", "Status may be stale: {message}", { message: result.error.message }) })
+        else if (this.screen.kind === "menu") this.publish({ ...this.screen, refreshError: t("cli.presenter.statusStale", "Status may be stale: {message}", { message: result.error.message }) })
       }
     }.bind(this)), this.lifetime.signal).catch(() => {})
   }
@@ -313,7 +323,7 @@ export class ExperiencePresenter {
       const platform = yield* CLISetupPlatform
       return yield* platform.suggestDirectories(value, query)
     }).pipe(Effect.catch(() => Effect.succeed([] as DirectorySuggestion[]))), AbortSignal.any([controller.signal, this.lifetime.signal])).then(suggestions => {
-      if (!controller.signal.aborted && this.screen.revision === revision) this.publish({ ...this.screen, suggestions, directoriesLoading: false })
+      if (!controller.signal.aborted && this.screen.kind === "input" && this.screen.revision === revision) this.publish({ ...this.screen, suggestions, directoriesLoading: false })
     }).catch(() => {})
   }
   private prepare(loginAllowed = true, reviewed?: { readonly teamId: string; readonly name?: string }) {
@@ -330,7 +340,7 @@ export class ExperiencePresenter {
     const effect = loginCLI({ instanceOrigin: this.instanceOrigin, allowLoopbackHttp: this.developmentHTTP, openBrowser: !this.options.noBrowser }).pipe(
       Effect.provideService(CLIAuthenticationInteraction, CLIAuthenticationInteraction.of({
         presentChallenge: challenge => Effect.sync(() => {
-          this.publish({ ...this.screen, kind: "menu", title: t("cli.login.browserTitle", "Sign in through your browser"), details: [
+          this.publish({ revision: this.screen.revision, kind: "menu", title: t("cli.login.browserTitle", "Sign in through your browser"), details: [
             t("cli.login.instance", "Instance: {origin}", { origin: challenge.instanceOrigin }),
             t("cli.login.open", "Open: {uri}", { uri: challenge.verificationUri }),
             t("cli.login.code", "Code: {code}", { code: challenge.userCode }),
@@ -369,8 +379,8 @@ export class ExperiencePresenter {
       return this.configureTools(() => this.prepare(), () => this.pathScreen())
     }
     if (plan.existingDirectory) return this.detail(plan.existingDirectory)
-    if (plan.project.exactMatches.length === 1) return this.reviewProject(plan, plan.project.exactMatches[0]!.team.id)
-    if (plan.project.teams.length === 1) return this.reviewProject(plan, plan.project.teams[0]!.id)
+    const decision = decideProjectSetup(plan.project)
+    if (decision.kind === "ready" || decision.kind === "needs_creation_confirmation") return this.reviewProject(plan, decision.team.id)
     this.show({ kind: "menu", title: t("cli.team.title", "Choose a Team"), details: [t("cli.team.signedInAs", "Signed in as {name}", { name: plan.project.user.displayName })],
       options: plan.project.teams.map(team => ({ value: team.id, label: `${team.displayName}${plan.project.exactMatches.some(match => match.team.id === team.id) ? t("cli.team.existingProject", " · existing Project") : ""}` }))
     }, value => this.reviewProject(plan, String(value)), () => this.pathScreen())
@@ -429,14 +439,14 @@ export class ExperiencePresenter {
   }
   private refreshConsole() {
     const target = this.consoleTarget
-    if (target === undefined || this.screen.refreshing) return
+    if (target === undefined || this.screen.kind !== "menu" || this.screen.refreshing) return
     this.cancelOperation()
     const generation = this.generation
     const controller = new AbortController()
     this.operation = controller
     this.publish({ ...this.screen, refreshing: true })
     const failed = (error: unknown) => {
-      if (generation !== this.generation || this.lifetime.signal.aborted || this.consoleTarget !== target) return
+      if (generation !== this.generation || this.lifetime.signal.aborted || this.consoleTarget !== target || this.screen.kind !== "menu") return
       this.operation = undefined
       this.publish({ ...this.screen, refreshing: false, refreshError: t("cli.presenter.statusStale", "Status may be stale: {message}", { message: error instanceof Error ? error.message : String(error) }) })
     }
@@ -444,7 +454,7 @@ export class ExperiencePresenter {
       onSuccess: snapshot => ({ ok: true as const, snapshot }),
       onFailure: error => ({ ok: false as const, error })
     })), AbortSignal.any([controller.signal, this.lifetime.signal])).then(result => {
-      if (generation !== this.generation || this.lifetime.signal.aborted || this.consoleTarget !== target) return
+      if (generation !== this.generation || this.lifetime.signal.aborted || this.consoleTarget !== target || this.screen.kind !== "menu") return
       this.operation = undefined
       if (result.ok) this.showConsole(result.snapshot, target, true, t("cli.presenter.statusUpdated", "Status updated. Sync timing is unchanged."))
       else failed(result.error)

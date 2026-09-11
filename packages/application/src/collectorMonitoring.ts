@@ -1,6 +1,6 @@
 import type { CLISyncReport, CLISyncJob, ClientConfig, CollectorRunState } from "@atape/domain"
 import { Context, Effect, Option, Ref } from "effect"
-import type { CollectionCycleReport } from "./collector.ts"
+import type { CollectionCycleReport } from "./collectorContracts.ts"
 
 // Optional remote Seam for callers running a Collector without a device dashboard.
 export class CollectorDeviceGateway extends Context.Service<CollectorDeviceGateway, {

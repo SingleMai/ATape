@@ -8,7 +8,7 @@ import { ExperienceView } from "./view.ts"
 import { cliVersion } from "../version.ts"
 import { restartInstalledCLI } from "../runtime/restartCLI.ts"
 
-export const runInteractiveExperience = async (cli: ParsedCLI) => {
+export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonly kind: "interactive" }>) => {
   const runtime = ManagedRuntime.make(makeNodeClientLayer(defaultNodeClientPaths()))
   let renderer: ReturnType<typeof render> | undefined
   let restart = false
@@ -16,8 +16,8 @@ export const runInteractiveExperience = async (cli: ParsedCLI) => {
     restart = Boolean(requested)
     renderer?.unmount()
   }, {
-    path: cli.positionals[0] === "setup" ? cli.positionals[1] ?? process.cwd() : process.cwd(),
-    setup: cli.positionals[0] === "setup", environment: process.env, version: cliVersion,
+    path: cli.directory ?? process.cwd(),
+    setup: cli.setup, environment: process.env, version: cliVersion,
     ...(cli.options.instance ? { instance: cli.options.instance } : {}),
     ...(cli.options.noBrowser ? { noBrowser: true } : {})
   })

@@ -31,6 +31,7 @@ export type LocalProject = typeof LocalProject.Type
 export const AdapterInstallation = Schema.Struct({
   adapterId: Schema.String,
   packageName: Schema.String,
+  packageSlot: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/))),
   upgradeSpec: Schema.String,
   displayName: Schema.String,
   version: Schema.String,

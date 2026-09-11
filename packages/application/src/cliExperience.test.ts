@@ -41,7 +41,7 @@ const fixture = () => {
       detectSources: () => Effect.succeed(["codex"]), suggestDirectories: () => Effect.succeed([]),
       supportsGit: () => Effect.succeed(true), creationKey: () => Effect.succeed("stable-request")
     })),
-    Layer.succeed(AdapterPackages, AdapterPackages.of({ install: spec => Effect.sleep(10).pipe(Effect.andThen(Effect.sync(() => {
+    Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"), install: spec => Effect.sleep(10).pipe(Effect.andThen(Effect.sync(() => {
       packages.push(spec)
       if (failInstall) throw new Error("offline")
       const id = spec.includes("opencode") ? "opencode" : spec.includes("claude") ? "claude" : "codex"
@@ -73,7 +73,9 @@ const fixture = () => {
     Layer.succeed(CollectorRunStatusStore, CollectorRunStatusStore.of({
       read: () => Effect.succeed(runState), recordCycle: () => Effect.void, recordCollectorFailure: () => Effect.void
     })),
-    Layer.succeed(CollectorStateStore, CollectorStateStore.of({ snapshot: () => Effect.succeed({ installationId: "install-1", ...(checkpoint ? { checkpoint } : {}) }), commit: () => Effect.void }))
+    Layer.succeed(CollectorStateStore, CollectorStateStore.of({
+      capturedScopes: () => Effect.succeed(checkpoint && (checkpoint.canonicalPublished || checkpoint.rawObjects.length) ? [checkpoint] : []),
+      snapshot: () => Effect.succeed({ installationId: "install-1", ...(checkpoint ? { checkpoint } : {}) }), commit: () => Effect.void }))
   )
   return {
     run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) => Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
@@ -269,6 +271,10 @@ describe("CLI experience application Interface", () => {
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("up_to_date")
     client.record(state, { ...published, projectCreatedAt: "older-registration" })
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("waiting")
+    for (const wrongScope of [{ userId: "other-user" }, { instanceOrigin: "https://elsewhere.example" }, { projectId: "other-project" }, { adapterId: "disabled-adapter" }]) {
+      client.record(state, { ...published, ...wrongScope })
+      expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("waiting")
+    }
     client.record(state, { ...published, canonicalPublished: false })
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("waiting")
     client.record({ version: 1, jobs: [{ ...job, lastFailureAt: date, failureReason: "transport", failureMessage: "Offline", retryable: true }] }, published)
