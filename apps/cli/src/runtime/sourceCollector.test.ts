@@ -53,11 +53,46 @@ const setup = async () => {
       rawUnits: capture === null ? [] : (yield* journal.inspect(owner, capture.id, { kind: "raw", limit: 100 })).units, pending: yield* journal.pending(owner), checkpoint: owner.checkpoint,
       events: coverage.canonicalCaptureId === null ? [] : yield* journal.records(owner, coverage.canonicalCaptureId, { kind: "event" }) }
   })))
-  return { remote, native, project, adapter, run, host, cycle, inspect, opens: () => opens, discoveries: () => discoveries,
+  const progress = () => run(CollectorStateStore.use(states => states.snapshot(project.instanceOrigin, project.userId, project.id, adapter.adapterId)))
+  return { remote, native, project, adapter, run, host, cycle, inspect, progress, opens: () => opens, discoveries: () => discoveries,
     missing: () => { discoveryMissing = true } }
 }
 
 describe("Host source collection workflow", () => {
+  it("records confirmed Canonical progress across empty cycles and recovers older checkpoints without the source", async () => {
+    const f = await setup(); f.remote.policy(false)
+    expect((await f.progress()).checkpoint).toBeUndefined()
+    await f.cycle()
+    expect((await f.progress()).checkpoint).toMatchObject({ canonicalPublished: true, rawObjects: [] })
+    expect(await f.cycle()).toMatchObject({ canonicalBatches: 0, observations: 0 })
+    const saved = (await f.progress()).checkpoint!
+    expect(saved.canonicalPublished).toBe(true)
+
+    // Older Collector JSON has no progress field. Recovery must derive it from
+    // the real journal activation, even when discovery can no longer succeed.
+    const { canonicalPublished: _published, ...older } = saved
+    await f.run(CollectorStateStore.use(states => states.commit({ instanceOrigin: f.project.instanceOrigin, userId: f.project.userId,
+      projectId: f.project.id, adapterId: f.adapter.adapterId, expectedRevision: saved.revision,
+      checkpoint: { ...older, revision: saved.revision + 1 } })))
+    expect((await f.progress()).checkpoint?.canonicalPublished).toBeUndefined()
+    const opens = f.opens(); await rm(f.native.path); f.missing()
+    await expect(f.cycle()).rejects.toMatchObject({ reason: "collect" })
+    expect((await f.progress()).checkpoint?.canonicalPublished).toBe(true)
+    expect(f.opens()).toBe(opens)
+  })
+  it("does not treat discovery or an unsuccessful first capture as published progress", async () => {
+    const f = await setup()
+    const empty = { ...f.host, sourceCapture: { ...f.host.sourceCapture, discover: () => Effect.succeed({
+      sources: [], cursor: null, done: true, sourceFailures: [], sourceFailuresTruncated: false }) } }
+    expect(await f.cycle(empty)).toMatchObject({ observations: 0, canonicalBatches: 0 })
+    expect((await f.progress()).checkpoint?.canonicalPublished).not.toBe(true)
+    const broken = { ...f.host, sourceCapture: { ...f.host.sourceCapture, open: () => Effect.fail(new AdapterRuntimeError({
+      adapterId: "opencode", reason: "collect", retryable: true, message: "Controlled read failure." })) } }
+    expect(await f.cycle(broken)).toMatchObject({ observations: 0, canonicalBatches: 0,
+      sourceFailures: [{ source: f.native.metadata.origin.sourceId, reason: "io" }] })
+    expect((await f.progress()).checkpoint?.canonicalPublished).not.toBe(true)
+    expect((await f.inspect()).coverage.canonicalCaptureId).toBeNull()
+  })
   it("automatically retires superseded native memberships and sustains rewrites under unchanged admission", async () => {
     const f = await setup(), bounded = { ...limits, journal: { ...limits.journal, metadataEntries: 500 } }
     let previous: Awaited<ReturnType<typeof f.inspect>> | undefined
@@ -112,10 +147,12 @@ describe("Host source collection workflow", () => {
     const f = await setup(); f.remote.loseActivation()
     expect(await f.cycle()).toMatchObject({ observations: 1, sourceFailures: [{ source: f.native.metadata.origin.sourceId, reason: "io" }] })
     expect((await f.inspect()).coverage.canonicalCaptureId).toBeNull()
+    expect((await f.progress()).checkpoint?.canonicalPublished).not.toBe(true)
     const opens = f.opens(); await rm(f.native.path); f.missing()
     await expect(f.cycle(f.host, { ...limits, journal: { ...limits.journal, metadataEntries: 1 } })).rejects.toMatchObject({ reason: "collect" })
     const recovered = await f.inspect()
     expect(recovered.coverage.canonicalCaptureId).not.toBeNull()
+    expect((await f.progress()).checkpoint?.canonicalPublished).toBe(true)
     expect(f.remote.rawSent.length).toBeGreaterThan(0)
     expect(f.opens()).toBe(opens)
   })

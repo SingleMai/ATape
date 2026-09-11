@@ -370,6 +370,8 @@ export const CollectorCheckpoint = Schema.Struct({
   revision: Schema.Number,
   cursor: Schema.NullOr(Schema.String),
   rawObjects: Schema.Array(CollectorRawObjectProgress),
+  /** Historical confirmed publication; discovery or local preparation is insufficient. */
+  canonicalPublished: Schema.optionalKey(Schema.Boolean),
   updatedAt: Schema.String
 })
 export type CollectorCheckpoint = typeof CollectorCheckpoint.Type

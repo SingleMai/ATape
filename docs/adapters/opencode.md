@@ -721,3 +721,22 @@ Only the owned Project-matching remote Seam uses a TestAdapter in this focused
 regression; package installation, source reading, filesystem/Git inspection and
 durable bindings use production Implementations. This is Git attribution
 acceptance of the private artifact, not a package publication or default enablement.
+
+### Confirmed Project progress across empty cycles
+
+Source collection now records confirmed Canonical publication in its existing
+Collector checkpoint. The CLI experience keeps a captured Project up to date
+after an unchanged cycle, including with Raw disabled. Discovery and unsuccessful
+preparation do not establish this progress. Current failures, partial work,
+queued work and stopped collection retain their existing precedence.
+
+The existing bounded journal recovery walk restores the flag from an activated
+source checkpoint when older Collector JSON lacks it, even after source deletion.
+It also repairs progress after a lost activation receipt is reconciled. Inspection
+does not open or claim the journal or interpret a provider cursor; the generic
+checkpoint fact is separate from authoritative source coverage and Raw receipts.
+Tests exercise real persisted Collector state and the SQLite journal through their
+public Interfaces. See [ADR-0075](../architecture/adr/0075-confirmed-collector-progress.md).
+
+Final first release admission/support and ordinary detection/enablement remain
+open. The artifact is still private and explicitly configured.
