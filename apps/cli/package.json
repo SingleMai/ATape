@@ -41,7 +41,7 @@
     "i18n:extract": "i18next",
     "pack:release": "node scripts/pack.mjs",
     "prepack": "node scripts/build.mjs",
-    "test": "vitest run --exclude src/collectorServer.e2e.test.ts",
+    "test": "vitest run --no-file-parallelism --exclude src/collectorServer.e2e.test.ts",
     "test:e2e": "vitest run src/collectorServer.e2e.test.ts",
     "typecheck": "tsc -p tsconfig.json",
     "verify:package": "node scripts/verify-package.mjs",

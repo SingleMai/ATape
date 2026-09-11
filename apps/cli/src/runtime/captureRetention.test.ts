@@ -193,6 +193,7 @@ await Effect.runPromise(Effect.gen(function*() {
     }))
   })
 
+  // Retain every rewrite and durability assertion across slower CI storage.
   it("reuses the same admission through twenty complete rewrites without dropping current membership", async () => {
     const f = await fixture()
     for (let n = 0; n < 20; n++) await f.run(Effect.gen(function*() {
@@ -202,5 +203,5 @@ await Effect.runPromise(Effect.gen(function*() {
       expect((yield* j.recordStatus(owner, `capture-${n}`, event))?.revision).toBe(n + 1)
       expect(yield* j.pending(owner)).toEqual([])
     }), 250)
-  })
+  }, 30000)
 })

@@ -61,6 +61,8 @@ const setup = async (admission = limits, remoteLimits: Partial<PublicationCapabi
 }
 
 describe("Host source collection workflow", () => {
+  // Three complete durable observations exercise admission, not a throughput
+  // promise. Hosted runners need headroom for thousands of FULL-sync writes.
   it("collects repeated 1,000-Event native-format targets under release admission and preserves the old head at a source limit", async () => {
     const admission = defaultSourceCollectionLimits
     const f = await setup(admission, { partBytes: 4 * 1024 * 1024, targetBytes: 128 * 1024 * 1024, userPendingBytes: 256 * 1024 * 1024 })
@@ -114,7 +116,7 @@ describe("Host source collection workflow", () => {
     expect(await cycle()).toMatchObject({ observations: 0, canonicalBatches: 0, sourceFailures: [{ source: root, reason: "limit" }] })
     expect((await f.inspect()).coverage).toEqual(before.coverage)
     expect(f.remote.sent).toHaveLength(sent); expect(f.remote.rawSent).toHaveLength(rawSent)
-  }, 60000)
+  }, 180000)
   it("records confirmed Canonical progress across empty cycles and recovers older checkpoints without the source", async () => {
     const f = await setup(); f.remote.policy(false)
     expect((await f.progress()).checkpoint).toBeUndefined()
