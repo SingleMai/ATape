@@ -16,7 +16,7 @@ Read the guides for the task at hand rather than loading every document.
 | Change the Go Server | [Go](architecture/go.md) |
 | Change setup, commands, Tools or local configuration | [Setup and Adapters](cli/setup-and-adapters.md), [CLI user journey](cli/user-journey.md), [CLI package README](../apps/cli/README.md) |
 | Change Raw capture policy | [Raw capture](cli/raw-capture.md) |
-| Change source collection or add an Adapter | [Package and runtime contract](adapters/package-manifest.md), [Codex](adapters/codex.md), [Claude](adapters/claude.md), [OpenCode](adapters/opencode.md) |
+| Change source collection or add an Adapter | [Package and runtime contract](adapters/package-manifest.md), [Codex](adapters/codex.md), [Claude](adapters/claude.md), [OpenCode](adapters/opencode.md), [CodeBuddy Code CLI](adapters/codebuddy.md) |
 | Change atomic publication or recovery | [Capture and publication contract](architecture/opencode-capture-publication.md), [Server publication](architecture/publication-candidates.md) |
 | Change the reader, navigation or Search | [Workspace and Search](workspace-search.md) |
 | Change Team usage or CLI device reporting | [Team Overview](team-overview.md), [CLI synchronization dashboard](cli-devices.md) |

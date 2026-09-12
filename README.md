@@ -107,9 +107,9 @@ pnpm atape status
 
 Keep `ATAPE_DEVELOPMENT_ALLOW_HTTP=true` set for this local loopback session;
 production Instances use HTTPS. Tool selection is global to this local
-installation. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and retains durable progress. Codex/Claude advance a page cursor after both deliveries succeed; OpenCode atomically publishes a complete Canonical target and recovers Raw independently. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [OpenCode Adapter guide](docs/adapters/opencode.md), [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+installation. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and retains durable progress. Codex/Claude advance a page cursor after both deliveries succeed; OpenCode/CodeBuddy atomically publish a complete Canonical target and recovers Raw independently. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [CodeBuddy Adapter guide](docs/adapters/codebuddy.md), [OpenCode Adapter guide](docs/adapters/opencode.md), [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
 
-Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode Adapter tarballs with:
+Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode/CodeBuddy Adapter tarballs with:
 
 ```sh
 pnpm test:release

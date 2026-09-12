@@ -18,7 +18,7 @@ root = Path(root)
 project = root / "项目 space"
 project.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, ATAPE_HOME=str(root / "home"), ATAPE_INSTANCE_URL=origin,
-           ATAPE_CODEX_HOME=str(root / "absent-codex"), ATAPE_CLAUDE_HOME=str(root / "absent-claude"),
+           ATAPE_CODEX_HOME=str(root / "absent-codex"), ATAPE_CLAUDE_HOME=str(root / "absent-claude"), ATAPE_CODEBUDDY_HOME=str(root / "absent-codebuddy"),
            TERM="xterm-256color", ATAPE_DEVELOPMENT_ALLOW_HTTP="true")
 for name in ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
              "ATAPE_CONFIG_FILE", "ATAPE_COLLECTOR_STATE_FILE", "ATAPE_COLLECTOR_PROCESS_FILE", "ATAPE_COLLECTOR_STATUS_FILE",

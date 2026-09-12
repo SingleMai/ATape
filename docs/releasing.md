@@ -6,6 +6,7 @@ ATape's release pipeline includes four public MIT-licensed npm packages in one v
 - `@atape/adapter-codex`
 - `@atape/adapter-claude`
 - `@atape/adapter-opencode`
+- `@atape/adapter-codebuddy`
 
 The root, all public package manifests, private Web artifact, Server metadata,
 container labels, and Compose build contract carry the same explicit SemVer and
@@ -134,6 +135,7 @@ npm trust github @atape/cli --file release.yml --repo SingleMai/ATape --allow-pu
 npm trust github @atape/adapter-codex --file release.yml --repo SingleMai/ATape --allow-publish
 npm trust github @atape/adapter-claude --file release.yml --repo SingleMai/ATape --allow-publish
 npm trust github @atape/adapter-opencode --file release.yml --repo SingleMai/ATape --allow-publish
+npm trust github @atape/adapter-codebuddy --file release.yml --repo SingleMai/ATape --allow-publish
 ```
 
 Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and configure npm publishing access to disallow traditional tokens. GitHub-hosted runners receive short-lived credentials through the workflow's `id-token: write` permission. Public repositories and packages also receive npm provenance attestations.

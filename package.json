@@ -9,7 +9,7 @@
   },
   "scripts": {
     "atape": "node apps/cli/src/main.ts",
-    "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/adapter-opencode build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
+    "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/adapter-opencode build && pnpm --filter @atape/adapter-codebuddy build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
     "build:release:images": "node scripts/build-release-images.mjs",
     "check": "pnpm check:docs && pnpm check:architecture && pnpm -r typecheck && pnpm -r test && pnpm --filter @atape/web test:browser && pnpm test:e2e && pnpm test:go",
     "dev:server": "cd server && ATAPE_DEMO_MODE=true go run ./cmd/atape-server",
@@ -20,7 +20,7 @@
     "pack:adapter-codex": "pnpm --filter @atape/adapter-codex pack:release",
     "pack:adapter-claude": "pnpm --filter @atape/adapter-claude pack:release",
     "pack:release": "node scripts/pack-release.mjs",
-    "test:adapter-package": "pnpm --filter @atape/adapter-codex verify:package && pnpm --filter @atape/adapter-claude verify:package && pnpm --filter @atape/adapter-opencode verify:package",
+    "test:adapter-package": "pnpm --filter @atape/adapter-codex verify:package && pnpm --filter @atape/adapter-claude verify:package && pnpm --filter @atape/adapter-opencode verify:package && pnpm --filter @atape/adapter-codebuddy verify:package",
     "test:e2e": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/cli test:e2e",
     "test:cli-package": "pnpm --filter @atape/cli verify:package",
     "test:release": "pnpm test:cli-package && pnpm test:adapter-package && node scripts/verify-release.mjs",
@@ -37,7 +37,9 @@
     "check:docs": "node --test scripts/check-docs.test.mjs && node scripts/check-docs.mjs",
     "check:architecture": "node --test scripts/check-architecture.test.mjs && node scripts/check-architecture.mjs",
     "test:opencode-contract": "node --test scripts/verify-opencode-contract.test.mjs && node scripts/verify-opencode-contract.mjs",
-    "test:adapter-contracts": "pnpm test:e2e && pnpm test:opencode-contract"
+    "test:adapter-contracts": "pnpm test:e2e && pnpm test:opencode-contract && pnpm test:codebuddy-contract",
+    "pack:adapter-codebuddy": "pnpm --filter @atape/adapter-codebuddy pack:release",
+    "test:codebuddy-contract": "node scripts/verify-codebuddy-contract.mjs"
   },
   "devDependencies": {
     "github-slugger": "2.0.0",

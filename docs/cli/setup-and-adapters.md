@@ -175,9 +175,9 @@ Replace `<project-id>` with the `id` returned by `projects list`, not the displa
 
 ## Git conversation attribution
 
-Codex, Claude and OpenCode use the same Host attribution contract. Codex supplies the
+Codex, Claude, OpenCode and CodeBuddy use the same Host attribution contract. Codex supplies the
 original rollout CWD and recorded Git remote when available; Claude supplies the
-original root record's CWD; OpenCode supplies immutable session-creation evidence. The Host resolves the nearest repository when needed
+original root record's CWD; CodeBuddy supplies its first native user record's ID and CWD; OpenCode supplies immutable session-creation evidence. The Host resolves the nearest repository when needed
 and asks the configured Instance to match its remote in the selected Team. The
 server owns remote equivalence and repository aliases. A nested unrelated
 repository is excluded even when its path is under the configured checkout.
@@ -452,7 +452,7 @@ The redactor covers common credentials and environment values whose names end in
 
 Every listing command supports `--json` for scripts.
 
-The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md) and [OpenCode](../adapters/opencode.md) guides.
+The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md), [OpenCode](../adapters/opencode.md) and [CodeBuddy](../adapters/codebuddy.md) guides.
 
 ## Troubleshooting
 

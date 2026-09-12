@@ -12,7 +12,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 const fixture = async (override: (root: string) => Record<string, string> = () => ({})) => {
   const root = await mkdtemp(join(tmpdir(), "atape-guided-"))
   roots.push(root)
-  const environment = { ATAPE_HOME: root, ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"),
+  const environment = { ATAPE_HOME: root, ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(root, "missing-codebuddy"),
     XDG_DATA_HOME: join(root, "data"), OPENCODE_DB: "", ...override(root) }
   const paths = defaultNodeClientPaths(environment)
   const layer = makeCLISetupPlatformLayer(paths, environment)

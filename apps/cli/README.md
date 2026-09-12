@@ -55,7 +55,7 @@ included. Stop in Settings explicitly affects every Project.
 Git Projects cover the repository across worktrees and independent clones.
 Repeating setup from another checkout updates its locator while preserving
 sources and collection progress. `--type directory` applies only outside Git.
-Codex, Claude and OpenCode require shared Git attribution support on both CLI and Adapter.
+Codex, Claude, OpenCode and CodeBuddy require shared Git attribution support on both CLI and Adapter.
 
 The default Instance is `https://atape.net`; pass `--instance https://atape.example`
 for a self-hosted Instance. Local configuration, credentials and progress remain
@@ -96,7 +96,7 @@ pnpm test:release
 pnpm pack:release
 ```
 
-The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it without using the source tree at runtime. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification additionally exercises the independently bundled Codex, Claude and OpenCode Adapters and package replacement recovery. `release/SHA256SUMS` covers all four artifacts.
+The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it without using the source tree at runtime. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification additionally exercises the independently bundled Codex, Claude, OpenCode and CodeBuddy Adapters and package replacement recovery. `release/SHA256SUMS` covers all five artifacts.
 
 OpenCode reads local v1 SQLite history. Its accepted source/version/platform scope,
 source discovery, bounded defaults and Server prerequisite are documented in the

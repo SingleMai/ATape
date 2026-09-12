@@ -182,7 +182,7 @@ describe("CLI experience application Interface", () => {
   it("plans without installing/enabling/starting, then applies only the explicit selection", async () => {
     const client = fixture()
     const plan = await client.run(prepareGuidedSetup(input))
-    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false], ["opencode", false]])
+    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false], ["codebuddy", false], ["opencode", false]])
     expect(client.config().projects).toEqual([])
     expect(client.packages).toEqual([])
     expect(client.starts()).toBe(0)

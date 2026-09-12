@@ -2,6 +2,7 @@
 export const officialSources = [
   { id: "codex", label: "Codex", packageName: "@atape/adapter-codex" },
   { id: "claude", label: "Claude Code", packageName: "@atape/adapter-claude" },
+  { id: "codebuddy", label: "CodeBuddy Code CLI", packageName: "@atape/adapter-codebuddy" },
   { id: "opencode", label: "OpenCode", packageName: "@atape/adapter-opencode" }
 ] as const
 
