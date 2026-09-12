@@ -1,4 +1,4 @@
-import { Effect, Schema, Scope } from "effect"
+import { Effect, Schema } from "effect"
 import type { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, SourceCaptureFrame } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { prepareCanonicalSlice } from "./collectorPreparation.ts"

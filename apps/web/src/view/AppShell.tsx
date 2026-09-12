@@ -44,12 +44,16 @@ export const AppShell = ({
     document.addEventListener("pointerdown", dismiss)
     return () => document.removeEventListener("pointerdown", dismiss)
   }, [teamOpen])
-  const [projectFilter, setProjectFilter] = useState("")
   const teams = workspace._tag === "Ready" ? workspace.value.teams : []
   const team = teams.find((item) => item.id === currentTeamId) ?? teams[0]
+  const teamIdentity = team && <>
+    <span className="team-initial" aria-hidden="true">
+      {team.name.slice(0, 1).toUpperCase()}
+    </span>
+    <span className="team-trigger-name">{team.name}</span>
+  </>
   const projects = [...(team?.projects ?? [])]
     .sort((a, b) => a.name.localeCompare(b.name))
-    .filter((project) => project.name.toLocaleLowerCase().includes(projectFilter.toLocaleLowerCase()))
   return (
     <div className={`app-shell workspace-shell${collapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">
@@ -99,67 +103,47 @@ export const AppShell = ({
               }
             }}
           >
-            <button
+            {teams.length > 1 ? <button
               className="workspace-team-trigger"
               type="button"
               aria-label={t("appShell.teamOptionsFor", "Team options for {name}", { name: team.name })}
-              title={t("appShell.teamSettingsFor", "{name} · Team settings", { name: team.name })}
+              title={t("appShell.teamOptionsFor", "Team options for {name}", { name: team.name })}
               aria-expanded={teamOpen}
               aria-controls="workspace-team-options"
               onClick={() => setTeamOpen(!teamOpen)}
             >
-              <span className="team-initial" aria-hidden="true">
-                {team.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span className="team-trigger-name">{team.name}</span>
+              {teamIdentity}
               <span className="team-trigger-chevron" aria-hidden="true">
                 ⌄
               </span>
-            </button>
-            {teamOpen && (
+            </button> : <div className="workspace-team-trigger" title={team.name}>{teamIdentity}</div>}
+            {teamOpen && teams.length > 1 && (
               <nav id="workspace-team-options" className="workspace-team-options" aria-label={t("appShell.teamOptions", "Team options")}>
                 <strong>{team.name}</strong>
-                {teams.length > 1 && (
-                  <label>
-                    {t("appShell.switchTeam", "Switch team")}
-                    <select
-                      aria-label={t("appShell.team", "Team")}
-                      value={team.id}
-                      onChange={(event) => {
-                        setProjectFilter("")
-                        setTeamOpen(false)
-                        onOpenTeam(event.target.value)
-                      }}
-                    >
-                      {teams.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <button type="button" onClick={() => {
-                  teamControl.current?.querySelector<HTMLButtonElement>(".workspace-team-trigger")?.focus()
-                  setTeamOpen(false)
-                  openSettings({ section: "team", teamSlug: team.slug })
-                }}>{t("appShell.teamSettings", "Team settings")}</button>
+                <label>
+                  {t("appShell.switchTeam", "Switch team")}
+                  <select
+                    aria-label={t("appShell.team", "Team")}
+                    value={team.id}
+                    onChange={(event) => {
+                      setTeamOpen(false)
+                      onOpenTeam(event.target.value)
+                    }}
+                  >
+                    {teams.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </nav>
             )}
           </div>
         )}
         <div id="project-directory" className="project-directory">
           {team && <button type="button" className="workspace-overview-link" aria-current={!currentProjectId ? "page" : undefined} onClick={() => onOpenTeam(team.id)}><PanelIcon />{t("appShell.overview", "Overview")}</button>}
-          <label className="project-filter">
-            <span>{t("appShell.projects", "Projects")}</span>
-            <input
-              type="search"
-              aria-label={t("appShell.filterProjects", "Filter projects")}
-              placeholder={t("appShell.findProject", "Find a project…")}
-              value={projectFilter}
-              onChange={(event) => setProjectFilter(event.target.value)}
-            />
-          </label>
+          <p className="project-directory-label">{t("appShell.projects", "Projects")}</p>
           <nav className="project-navigation" aria-label={t("appShell.projects", "Projects")}>
             {projects.map((project) => (
               <button
@@ -191,7 +175,7 @@ export const AppShell = ({
               </div>
             )}
             {workspace._tag === "Ready" && projects.length === 0 && (
-              <p>{projectFilter ? t("appShell.noMatchingProjects", "No matching projects") : t("appShell.noCapturedProjects", "No captured projects yet")}</p>
+              <p>{t("appShell.noCapturedProjects", "No captured projects yet")}</p>
             )}
           </nav>
         </div>

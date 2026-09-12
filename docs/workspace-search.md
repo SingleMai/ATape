@@ -1,7 +1,10 @@
 # Workspace and global Search
 
-The workspace keeps a compact Team identity and an alphabetical, filterable
-Project directory in the sidebar. The Team name opens a menu containing Team settings and, when applicable, a Team switcher. This menu remains available when the sidebar is collapsed and in the mobile header.
+The workspace keeps a compact Team identity and an alphabetical Project directory
+in the sidebar, with no project-filter input. With multiple Teams, the Team name opens a
+Team switcher that remains available when the sidebar is collapsed and in the
+mobile header. A single Team displays its identity without a dropdown.
+Team settings is available from the account settings dialog.
 The sidebar can collapse; on small screens it starts collapsed. The Project page
 shows one deduplicated conversation list with All/Active controls. Reader content
 starts below a compact title and metadata line. Refresh settings, capture details,
