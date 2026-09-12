@@ -1,6 +1,6 @@
 # CodeBuddy Code CLI Adapter
 
-The CodeBuddy Adapter reads local primary CLI JSONL Sessions through the existing
+The CodeBuddy Adapter reads local primary and forked CLI JSONL Sessions through the existing
 [source-capture runtime](package-manifest.md#bounded-source-capture-capability).
 The Host owns Project attribution, redaction, stable revisions, frozen delivery,
 atomic publication, independent Raw receipts and crash recovery. No Server schema
@@ -17,9 +17,10 @@ applies to connected Projects. See [CLI setup](../cli/setup-and-adapters.md).
 `ATAPE_CODEBUDDY_HOME` overrides `CODEBUDDY_CONFIG_DIR`, otherwise the source home
 is `~/.codebuddy`. Both overrides must be absolute. Discovery enumerates
 `projects/*/*.jsonl` without following symlinks or recursing into child histories.
-Directory names are locators, not proof of Project membership. The original first
-user record supplies `sessionId`, `id` and absolute `cwd`; the native Session ID
-must match the file basename. Duplicate IDs are diagnosed instead of merged.
+Directory names are locators, not proof of Project membership. For an ordinary Session, the first user record supplies `sessionId`, `id` and
+absolute `cwd`; the native Session ID must match the file basename. A fork also
+requires native sidecar evidence and its first fork-owned user record, as described
+below. Duplicate storage IDs are diagnosed instead of merged.
 
 Directory Projects use Host path attribution; Git Projects use its existing
 original-source attribution across worktrees/clones. Later CWD changes or source
@@ -30,7 +31,8 @@ unknown, never inferred from the configured Project locator.
 
 Official references: [local directory structure](https://www.codebuddy.ai/docs/cli/codebuddy-dir), [CLI resume/fork options](https://www.codebuddy.ai/docs/cli/cli-reference) and [SDK Session management](https://www.codebuddy.ai/docs/cli/sdk-sessions). The installed 2.124.0 implementation and controlled samples establish the narrower scope below.
 
-The evidence-bound profile is `codebuddy.cli.jsonl.linear.1`, tested with native
+The evidence-bound profiles are `codebuddy.cli.jsonl.linear.1` and
+`codebuddy.cli.jsonl.fork.1`, tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -53,6 +55,33 @@ with partial fidelity. Spill placeholders remain placeholders, mark partial and
 do not cause arbitrary referenced file reads. Search uses the existing bounded
 Canonical projection, never full Raw/tool-value indexing.
 
+## Native CLI forks
+
+`--resume <id> --fork-session` copies history into an independent JSONL file and
+writes a sidecar containing `forkedFrom`. Copied records retain their previous
+Session IDs and message IDs; the first newly submitted user record carries the
+new fork ID. That ID must match the file basename. This first fork-owned record’s
+ID and CWD anchor the fork’s Origin; copied CWDs never authorize the fork for a
+Project. A prefix-only fork has unknown attribution until that record exists.
+
+In CLI 2.124.0, deserialization can restore the original root `sessionId` while
+retaining the fork filename as `storeId`. Native nested forks still record that
+root in `forkedFrom`, and ordinary fork resume appends records under the root ID.
+The Adapter therefore validates the complete linear parent chain and identity
+changes at user turns. After the first fork-owned turn, only the fork ID and its
+recorded root ID are accepted. Compaction, subagent markers and unknown sidecar
+fields remain unsupported. `/branch`, which rewrites IDs and stores `forkedAt`,
+is a different shape and is not covered by these samples.
+
+Forks are independent Sessions containing their copied prefix. Event, tool and
+usage identities are scoped to the fork storage ID, so its updates cannot replace
+the original Session. `forkedFrom` is retained in the first Raw record’s `sidecar`
+envelope; it is not fabricated into an immediate-parent Thread relation. Parent
+files need not remain present. Nested fork and resume samples include eight usage
+records: 55,032 input, 417 output and 22,144 cached-input tokens. These are the
+usage of the captured history, including copied responses; they are not proof of
+newly incurred spend. Cache is already part of input and is not added twice.
+
 Ordinary resume is a linear append. Every projected record must extend the
 previous record through `parentId`; first identity and CWD establish Origin.
 Identical repeated records are deduplicated; conflicting repeated IDs are
@@ -60,11 +89,11 @@ unsupported. A complete rewritten file with the same proven Origin can produce a
 replacement target and Host-assigned revisions. This does not establish support
 for native rewind/compaction semantics.
 
-Nonempty sidecar metadata, child-agent calls/Sessions, logical parents, branching, compaction and unknown
-parent-linked records are rejected. Nested subagent histories are not collected.
+Sidecar fields other than `forkedFrom`, child-agent calls/Sessions, logical parents,
+in-file branching, compaction and unknown parent-linked records are rejected. Nested subagent histories are not collected.
 These cases do not flatten child messages or replace the old target with a
-partial prefix. Wider native history support is the next increment and needs
-controlled samples proving membership, usage ownership and Original Project.
+partial prefix. Compaction and child-session support are the next increments and need controlled
+samples proving membership, usage ownership and Original Project.
 
 ## Consistency, bounds and recovery
 
@@ -85,7 +114,8 @@ Discovery admits 10,000 entries. Projection snapshot bytes are capped at 64 MiB.
 The Host independently bounds record size/count, Events/usage, pages, duration,
 journal capacity and remote admission. See the [current default limits](../architecture/adr/0076-source-collection-release-admission.md).
 This implementation rescans directories and reads a bounded full Session on
-comparison. It does not promise efficient processing of unbounded archives.
+comparison. Fork discovery also reads the bounded snapshot to find the original
+fork-owned record. It does not promise efficient processing of unbounded archives.
 Oversized or unsupported sources retain previously captured content and progress.
 
 With Raw off, projected frames retain no full source JSON. Re-enabling can archive
@@ -108,7 +138,7 @@ native provenance and synthetic coverage. Relevant verification commands:
 - `pnpm test:release` includes the exact CodeBuddy release artifact and Tools.
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
-21 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
+29 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
 contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
@@ -116,7 +146,12 @@ Fault injection and bounded recovery cycles use the source Node Host. Release pa
 CLI terminal behavior, Tools selection and relevant application/CLI regressions
 were also checked. The actual Web reader was opened against the controlled
 HTTP test Server: three native turns, two thoughts, both tool outcomes and final
-marker matched the fixture. This is local acceptance, not hosted CI or staging.
+marker matched the fixture. The fork contract additionally verifies cross-directory
+attribution, installed background collection and resume, independent reader/Search
+results, exact historical usage, sidecar Raw provenance and recovery after both
+history and metadata deletion. Browser acceptance of the recovered fork verified
+all six turns, including the copied tools, nested fork and continued reply, in
+its independent Project. This is local acceptance, not a staging attestation.
 
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
@@ -130,8 +165,8 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after initial collection; it writes the ephemeral test
-Server origin, reader identifiers and test Web cookie there. Point the Web dev
+for up to three minutes after fork recovery; it writes the ephemeral test
+Server origin, fork reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
 `atape_session_dev`, inspect the reader, then create `<file>.done` to continue.
 The test removes this scratch credential file on exit. Do not commit it.

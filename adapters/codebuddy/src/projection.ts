@@ -16,6 +16,7 @@ const counter = (value: unknown) => {
 export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: SourceOpenRequest) => {
   const sourceId = source.origin.sourceId, frames: SourceCaptureFrame[] = []
   const seen = new Map<string, string>(), calls = new Map<string, string>(), usages = new Map<string, string>()
+  let nativeSession: string | undefined, ownUserSeen = false
   let previous: string | undefined, events = 0, usageCount = 0, partial = false, latest = 0, title = "CodeBuddy session", active = false
   let frameBytes = 0
   const started = performance.now()
@@ -28,15 +29,22 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
       continue
     }
     seen.set(rowId, json)
-    if (row.sessionId != null && row.sessionId !== sourceId) fail("unsupported", "CodeBuddy history contains a copied or foreign Session identity.")
     if (row.logicalParentId != null || /compact|rewind|revert|resend|separator/i.test(String(row.type)) || provider.isCompactInternal === true || provider.isSummary === true)
       fail("unsupported", "CodeBuddy compaction and branched history are not supported by this profile.")
     const projected = ["message", "reasoning", "function_call", "function_call_result"].includes(String(row.type))
     if (projected) {
-      if (row.sessionId !== sourceId || (row.parentId ?? undefined) !== previous) fail("unsupported", "CodeBuddy history is not one complete linear parent chain.")
+      const currentSession = id(row.sessionId)
+      if (!source.forkedFrom && currentSession !== sourceId || currentSession.startsWith("agent-") ||
+        ownUserSeen && currentSession !== sourceId && currentSession !== source.forkedFrom)
+        fail("unsupported", "CodeBuddy history contains a foreign Session identity.")
+      if (nativeSession !== currentSession && (row.type !== "message" || row.role !== "user"))
+        fail("unsupported", "CodeBuddy Session identity changes outside a user turn.")
+      nativeSession = currentSession
+      if ((row.parentId ?? undefined) !== previous) fail("unsupported", "CodeBuddy history is not one complete linear parent chain.")
       if (provider.agent != null && provider.agent !== "cli") fail("unsupported", "CodeBuddy non-CLI agents require a wider source profile.")
       previous = rowId
     } else if (row.parentId != null) fail("unsupported", "CodeBuddy has an unsupported parent-linked record.")
+    else if (row.sessionId != null && row.sessionId !== nativeSession) fail("unsupported", "CodeBuddy history contains a foreign Session identity.")
     latest = Math.max(latest, Date.parse(iso(row.timestamp)))
     const output: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
     const emit = (slot: string, update: AcpSessionUpdate, fidelity: "native" | "partial" = "native") => {
@@ -57,7 +65,8 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
     if (row.type === "message") {
       if (row.role !== "user" && row.role !== "assistant") fail("unsupported", "CodeBuddy message role is unsupported.")
       blocks(row.content)
-      if (rowId === source.records[0]!.row.id) {
+      if (!ownUserSeen && row.role === "user" && row.sessionId === sourceId) {
+        ownUserSeen = true
         const candidate = output.map(e => "content" in e.update && e.update.content.type === "text" ? e.update.content.text : "").join(" ")
         // Never cut a token before the Host can redact the complete value.
         if (candidate && Buffer.byteLength(candidate) <= 200) title = candidate
@@ -108,7 +117,8 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
     } else if (provider.usage != null || provider.rawUsage != null) partial = true
     if (events > request.projection.events || usageCount > request.projection.usage || output.length > 500) fail("limit", "CodeBuddy projection exceeds its event or usage limit.")
     const frame: SourceCaptureFrame = { recordKey: identity("record", sourceId, rowId), events: output, usage,
-      ...(request.rawEnabled ? { raw: { format: "codebuddy.jsonl.v1", sourceSessionId: sourceId, recordId: rowId, json } } : {}) }
+      ...(request.rawEnabled ? { raw: { format: "codebuddy.jsonl.v1", sourceSessionId: sourceId, recordId: rowId, json,
+        ...(rowId === source.records[0]!.row.id && source.forkedFrom ? { sidecar: { format: "codebuddy.meta.v1", json: source.metadataJson } } : {}) } } : {}) }
     const bytes = Buffer.byteLength(JSON.stringify(frame))
     frameBytes += bytes
     if (bytes + Buffer.byteLength(JSON.stringify({ frames: [], done: false })) > request.projection.pageBytes || frameBytes > 64 * 1024 * 1024)
@@ -116,7 +126,7 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
     frames.push(frame)
   }
   const captureStatus = partial ? "partial" as const : "healthy" as const
-  const header: SourceCaptureHeader = { profile: "codebuddy.cli.jsonl.linear.1", origin: source.origin,
+  const header: SourceCaptureHeader = { profile: source.forkedFrom ? "codebuddy.cli.jsonl.fork.1" : "codebuddy.cli.jsonl.linear.1", origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "codebuddy-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
     threads: [{ sourceThreadId: sourceId, label: title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }

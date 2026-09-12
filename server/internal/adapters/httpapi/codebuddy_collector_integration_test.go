@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +16,11 @@ import (
 	"time"
 
 	postgresadapter "github.com/SingleMai/ATape/server/internal/adapters/postgres"
+	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
+	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -172,35 +176,6 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	if len(search("ATAPE_CODEBUDDY_TOOL_MARKER_21240").Results) == 0 {
 		t.Fatal("CodeBuddy native marker did not reach Search")
 	}
-	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
-	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": initial.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(review, payload, 0600); err != nil {
-			t.Fatal(err)
-		}
-		defer os.Remove(review)
-		deadline := time.NewTimer(3 * time.Minute)
-		defer deadline.Stop()
-		tick := time.NewTicker(200 * time.Millisecond)
-		defer tick.Stop()
-	reviewLoop:
-		for {
-			select {
-			case <-t.Context().Done():
-				t.Fatal("CodeBuddy browser review canceled")
-			case <-deadline.C:
-				t.Fatal("CodeBuddy browser review timed out")
-			case <-tick.C:
-				if _, err := os.Stat(review + ".done"); err == nil {
-					os.Remove(review + ".done")
-					break reviewLoop
-				}
-			}
-		}
-	}
 	noop := run("noop")
 	if noop.Head != initial.Head || noop.Observations != 0 || !bytes.Equal(noop.Records, initial.Records) {
 		t.Fatal("CodeBuddy unchanged polling changed identity or provenance")
@@ -259,4 +234,144 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	if len(search("CodeBuddyFinalNeedle").Results) != 1 || len(search("CodeBuddyRawOnlyNeedle").Results) != 0 {
 		t.Fatal("CodeBuddy Search mixed Raw with Canonical")
 	}
+	// A copied root CWD cannot authorize a fork created in another directory.
+	foreign := run("fork-foreign")
+	if foreign.Head != repaired.Head || foreign.Observations != 0 {
+		t.Fatal("CodeBuddy fork was attributed using its copied prefix")
+	}
+	create := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy fork"})
+	create.Header.Set("Authorization", "Bearer "+credential)
+	create.Header.Set("Idempotency-Key", "codebuddy-fork-project-21240")
+	created := httptest.NewRecorder()
+	h.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create fork Project: %d %s", created.Code, created.Body.String())
+	}
+	var forkProject projectDTO
+	decodeResponse(t, created, &forkProject)
+	projectID = forkProject.ID
+	fork := run("fork-initial")
+	if fork.SessionID == initial.SessionID || fork.Observations != 1 || fork.Pending != 0 {
+		t.Fatal("CodeBuddy fork did not receive its own publication identity")
+	}
+	_, forkEvents := read(fork.SessionID, 16)
+	encoded, _ = json.Marshal(forkEvents)
+	if !bytes.Contains(encoded, []byte("ATAPE_CODEBUDDY_TOOL_MARKER_21240")) || !bytes.Contains(encoded, []byte("ATAPE_NESTED_FORK_MARKER_21240")) {
+		t.Fatal("CodeBuddy fork lost its copied prefix or fork-owned message")
+	}
+	forkSearch := search("ATAPE_NESTED_FORK_MARKER_21240")
+	if len(forkSearch.Results) == 0 {
+		t.Fatal("CodeBuddy fork did not reach its own Project Search")
+	}
+	for _, result := range forkSearch.Results {
+		if result.SessionID != fork.SessionID {
+			t.Fatal("CodeBuddy fork Search returned another Session")
+		}
+	}
+	resumed := run("fork-resume")
+	_, forkEvents = read(resumed.SessionID, 18)
+	if resumed.SessionID != fork.SessionID || resumed.Head == fork.Head {
+		t.Fatal("CodeBuddy native resume lost the fork's storage identity")
+	}
+	invalid := run("fork-invalid")
+	if invalid.Head != resumed.Head || !bytes.Equal(invalid.Records, resumed.Records) {
+		t.Fatal("CodeBuddy invalid fork metadata replaced captured history")
+	}
+	if fixed := run("fork-repair"); fixed.Head != resumed.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy fork metadata repair replayed unchanged content")
+	}
+	if lost := run("fork-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy fork did not retain lost activation recovery")
+	}
+	recoveredFork := run("fork-recover")
+	_, forkEvents = read(recoveredFork.SessionID, 18)
+	encoded, _ = json.Marshal(forkEvents)
+	if recoveredFork.Pending != 0 || !bytes.Contains(encoded, []byte("CodeBuddyForkFrozenNeedle")) {
+		t.Fatal("CodeBuddy fork did not recover after history and metadata deletion")
+	}
+	if originalHead, _ := read(initial.SessionID, 14); originalHead != repaired.Head {
+		t.Fatal("CodeBuddy fork changed the original Session")
+	}
+	usageSnapshot, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount := 0
+	var inputTokens, outputTokens, cachedTokens int64
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID == fork.SessionID {
+			usageCount++
+			if usage.InputTokens != nil {
+				inputTokens += *usage.InputTokens
+			}
+			if usage.OutputTokens != nil {
+				outputTokens += *usage.OutputTokens
+			}
+			if usage.CacheReadTokens != nil {
+				cachedTokens += *usage.CacheReadTokens
+			}
+		}
+	}
+	if usageCount != 8 || inputTokens != 55032 || outputTokens != 417 || cachedTokens != 22144 {
+		t.Fatalf("CodeBuddy copied and resumed usage: records=%d input=%d output=%d cache=%d", usageCount, inputTokens, outputTokens, cachedTokens)
+	}
+	provenance, found, err := store.ConversationPage(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, fork.SessionID, "root", canonical.ConversationPageRequest{Limit: 1})
+	if err != nil || !found || len(provenance.Events) != 1 {
+		t.Fatalf("CodeBuddy fork provenance: %v", err)
+	}
+	objectID, key, valid := strings.Cut(provenance.Events[0].RawRef, "/records/")
+	if !valid {
+		t.Fatal("CodeBuddy fork lacks exact Raw provenance")
+	}
+	var raw rawarchive.ContentPage
+	decodeResponse(t, send("GET", "/api/v1/raw-objects/"+objectID+"/content?generation=1&limit=1", ""), &raw)
+	if len(raw.Chunks) != 1 || raw.NextCursor != "" {
+		t.Fatal("CodeBuddy fork Raw page exceeded its bound")
+	}
+	content, err := base64.StdEncoding.DecodeString(raw.Chunks[0].ContentBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var object struct {
+		Records map[string]struct {
+			Row json.RawMessage `json:"row"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(content, &object); err != nil || !bytes.Contains(object.Records[key].Row, []byte("forkedFrom")) {
+		t.Fatal("CodeBuddy fork Raw did not retain its native metadata")
+	}
+	if len(search("CodeBuddyForkFrozenNeedle").Results) == 0 {
+		t.Fatal("CodeBuddy recovered fork did not reach Search")
+	}
+	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
+	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredFork.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(review, payload, 0600); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(review)
+		deadline := time.NewTimer(3 * time.Minute)
+		defer deadline.Stop()
+		tick := time.NewTicker(200 * time.Millisecond)
+		defer tick.Stop()
+	reviewLoop:
+		for {
+			select {
+			case <-t.Context().Done():
+				t.Fatal("CodeBuddy browser review canceled")
+			case <-deadline.C:
+				t.Fatal("CodeBuddy browser review timed out")
+			case <-tick.C:
+				if _, err := os.Stat(review + ".done"); err == nil {
+					os.Remove(review + ".done")
+					break reviewLoop
+				}
+			}
+		}
+	}
+
 }

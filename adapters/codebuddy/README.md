@@ -26,12 +26,16 @@ Source resolution: `ATAPE_CODEBUDDY_HOME`, then `CODEBUDDY_CONFIG_DIR`, then
 `projects/*/*.jsonl`; it does not traverse symlinks or nested subagent files.
 
 The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
-from macOS arm64. It supports linear primary CLI Sessions, ordinary resume,
+from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks), ordinary resume,
 text/thoughts, tool calls/results and normalized per-response token usage.
-Fork/rewind/compaction, child agents, sidecar-dependent histories and external
+Rewind/compaction, `/branch`, child agents, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
 when enabled and marks capture partial.
+
+Fork identity and Project attribution come from its first fork-owned user record,
+with native sidecar proof. Copied usage describes captured history and is not
+new-spend evidence. The original parent file is not required.
 
 Each complete source snapshot is limited to 16 MiB; projection snapshots to
 64 MiB; discovery to 10,000 entries. Host row/page/event/deadline limits also

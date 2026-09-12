@@ -11,7 +11,9 @@ import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 import { defaultSourceCollectionLimits } from "@atape/application"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
-const sourceId = "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const forkPhase = input.phase.startsWith("fork-"), forkId = "atape-codebuddy-nested-fork-21240"
+const sourceId = forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const forkWorkspace = join(home, "fork-workspace")
 const sourceHome = join(home, "source"), directory = join(sourceHome, "projects", "opaque"), file = join(directory, `${sourceId}.jsonl`)
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
 const binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
@@ -21,6 +23,9 @@ const environment = { ...process.env, ATAPE_HOME: paths.atapeHome, ATAPE_CODEBUD
 process.env.ATAPE_CODEBUDDY_HOME = sourceHome
 const native = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-2.124.0.jsonl", import.meta.url), "utf8").replaceAll("/fixture/codebuddy-project", workspace)
 const at = "2026-09-12T16:00:00Z", adapterId = "codebuddy"
+const forkSource = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-nested-fork-2.124.0.jsonl", import.meta.url), "utf8")
+  .replaceAll("/fixture/codebuddy-project", workspace).replaceAll("/fixture/codebuddy-fork-project", forkWorkspace)
+const forkMeta = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-fork-2.124.0.meta.json", import.meta.url), "utf8")
 const save = (rows: unknown[]) => writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
 if (input.phase === "initial") {
   mkdirSync(directory, { recursive: true }); mkdirSync(workspace); mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 })
@@ -33,6 +38,25 @@ if (input.phase === "initial") {
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "acme", teamName: "Fixture", name: "CodeBuddy", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }
+if (input.phase === "fork-foreign") {
+  mkdirSync(forkWorkspace)
+  writeFileSync(join(directory, `${forkId}.jsonl`), forkSource.trimEnd().split("\n").slice(0, 21).join("\n") + "\n")
+  writeFileSync(join(directory, `${forkId}.meta.json`), forkMeta)
+}
+if (input.phase === "fork-initial") {
+  const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
+  config.projects.push({ ...config.projects[0], id: input.projectId, name: "CodeBuddy fork", path: forkWorkspace })
+  writeFileSync(paths.configFile, JSON.stringify(config))
+}
+if (input.phase === "fork-resume") writeFileSync(file, forkSource)
+if (input.phase === "fork-invalid") writeFileSync(file.replace(/\.jsonl$/, ".meta.json"), '{"forkedFrom":"unrelated"}')
+if (input.phase === "fork-repair") writeFileSync(file.replace(/\.jsonl$/, ".meta.json"), forkMeta)
+if (input.phase === "fork-lost") {
+  const values = forkSource.trimEnd().split("\n").map(line => JSON.parse(line))
+  values.at(-1).content[0].text = "CodeBuddyForkFrozenNeedle"
+  save(values)
+}
+if (input.phase === "fork-recover") { rmSync(file); rmSync(file.replace(/\.jsonl$/, ".meta.json")) }
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
   if (input.phase === "edit") values.push(
@@ -54,7 +78,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (input.phase === "lose-activation" && target.endsWith("/activate") && response.status === 200 || input.phase === "raw-only" && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "fork-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || input.phase === "raw-only" && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -84,7 +108,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (input.phase === "initial" || input.phase === "upgrade") {
+  if (["initial", "upgrade", "fork-initial", "fork-resume"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -112,12 +136,13 @@ const result = await Effect.runPromise(Effect.gen(function*() {
       const report = yield* runCollectionCycle()
       failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (input.phase === "malformed") { assert.ok(diagnostics > 0); break }
+      if (["malformed", "fork-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
+  if (input.phase === "fork-lost") assert.equal(lost, true)
   if (["noop", "raw-off", "recover-raw"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
   if (input.phase === "raw-on") { assert.equal(puts, 0); assert.ok(uploads > 0) }
@@ -127,6 +152,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   assert.equal(state.installationId, journal.binding.installationId)
   const sources = yield* journal.sources(input.projectId, adapterId, { limit: 100 })
   assert.equal(sources.length, 1, "Foreign Project was captured")
+  assert.equal(sources[0]!.sourceSessionId, sourceId)
   const owner = yield* journal.claim(sources[0]!), coverage = yield* journal.coverage(owner)
   const capture = (yield* journal.inspect(owner, coverage.canonicalCaptureId!, { kind: "canonical", limit: 1 })).capture
   const receipt = JSON.parse(capture.activationReceipt!) as { sessionId: string; head: string }
