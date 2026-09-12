@@ -636,6 +636,23 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	if len(search("CodeBuddyChildFrozenNeedle").Results) != 1 {
 		t.Fatal("CodeBuddy recovered child missing from Search")
 	}
+	// Independent provider contracts share a test User and the real deployment
+	// quota (32 reservations for 15 minutes). Advance only this completed fixture's
+	// reservation clock before the next provider runs; never enlarge that quota.
+	expired, err := pool.Exec(t.Context(), `UPDATE canonical_publication_reservations r
+		SET expires_at=clock_timestamp()-interval '1 second'
+		FROM canonical_publication_sources s
+		WHERE s.session_id=r.session_id AND s.captured_by_user_id=$1 AND s.adapter_id='codebuddy'`, userID)
+	if err != nil || expired.RowsAffected() == 0 {
+		t.Fatalf("expire completed CodeBuddy fixture reservations: %v", err)
+	}
+	if afterExpiry, _ := read(family.SessionID, 20); afterExpiry != recoveredFamily.Head {
+		t.Fatal("CodeBuddy reservation expiry changed selected history")
+	}
+	read(family.SessionID, 6, childID)
+	read(family.SessionID, 6, middleID)
+	read(family.SessionID, 2, leafID)
+	read(family.SessionID, 3, defaultID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
 		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredFamily.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})

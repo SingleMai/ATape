@@ -241,7 +241,10 @@ whole old target; Raw off/on preserves Canonical progress, and lost activation
 recovers every frozen member after all five source files are deleted. Browser
 acceptance opened the resumed child with its recovered content and followed
 root → intermediate child → leaf, confirming the three-level path and native
-leaf user/assistant messages in the existing side panel.
+leaf user/assistant messages in the existing side panel. The shared HTTP fixture
+advances only completed CodeBuddy reservation expiry before running the next
+Provider, preserving the deployment example’s finite per-User quota and verifying
+that expiry leaves the selected family readable.
 
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
