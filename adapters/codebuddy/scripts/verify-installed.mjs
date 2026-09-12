@@ -36,29 +36,34 @@ try {
     assert.equal(done, true); assert.equal(events, 12); assert.equal(usage, 5)
     await view.close()
   }
-  const forkId = "atape-codebuddy-nested-fork-21240"
-  await writeFile(join(dir, `${forkId}.jsonl`), await readFile(new URL("./native-nested-fork-2.124.0.jsonl", import.meta.url), "utf8"))
-  await writeFile(join(dir, `${forkId}.meta.json`), await readFile(new URL("./native-fork-2.124.0.meta.json", import.meta.url), "utf8"))
-  for (const rawEnabled of [false, true]) {
-    const view = await runtime.sourceCapture.open({ sourceId: forkId, limits, projection, rawEnabled, signal })
-    assert.equal(view.origin.cwd, "/fixture/codebuddy-fork-project")
-    assert.deepEqual(view.target, { events: 18, usage: 8, threads: 1 })
-    let events = 0, sidecars = 0, done = false
-    for (let count = 0; count < 30 && !done; count++) {
-      const page = await view.read(signal)
-      for (const frame of page.frames) {
-        events += frame.events.length
-        assert.equal(frame.raw !== undefined, rawEnabled)
-        if (frame.raw?.sidecar?.json.includes("forkedFrom")) sidecars++
+  for (const fixture of [
+    { name: "native-nested-fork", id: "atape-codebuddy-nested-fork-21240", cwd: "fork", events: 18, usage: 8, meta: "native-fork" },
+    { name: "native-compaction", id: "atape-codebuddy-compact-21240", cwd: "compact", events: 10, usage: 4 },
+    { name: "native-compaction-fork", id: "atape-codebuddy-compact-fork-21240", cwd: "compact", events: 12, usage: 5, meta: "native-compaction-fork" }
+  ]) {
+    await writeFile(join(dir, `${fixture.id}.jsonl`), await readFile(new URL(`./${fixture.name}-2.124.0.jsonl`, import.meta.url), "utf8"))
+    if (fixture.meta) await writeFile(join(dir, `${fixture.id}.meta.json`), await readFile(new URL(`./${fixture.meta}-2.124.0.meta.json`, import.meta.url), "utf8"))
+    for (const rawEnabled of [false, true]) {
+      const view = await runtime.sourceCapture.open({ sourceId: fixture.id, limits, projection, rawEnabled, signal })
+      assert.equal(view.origin.cwd, `/fixture/codebuddy-${fixture.cwd}-project`)
+      assert.deepEqual(view.target, { events: fixture.events, usage: fixture.usage, threads: 1 })
+      let events = 0, sidecars = 0, done = false
+      for (let count = 0; count < 30 && !done; count++) {
+        const page = await view.read(signal)
+        for (const frame of page.frames) {
+          events += frame.events.length
+          assert.equal(frame.raw !== undefined, rawEnabled)
+          if (frame.raw?.sidecar?.json.includes("forkedFrom")) sidecars++
+        }
+        done = page.done
       }
-      done = page.done
+      assert.equal(done, true); assert.equal(events, fixture.events); assert.equal(sidecars, rawEnabled && fixture.meta ? 1 : 0)
+      await view.close()
     }
-    assert.equal(done, true); assert.equal(events, 18); assert.equal(sidecars, rawEnabled ? 1 : 0)
-    await view.close()
   }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()
   await assert.rejects(view.read(signal))
 } finally { await runtime.close(); await rm(home, { recursive: true }) }
-process.stdout.write("Installed CodeBuddy native/fork/resume projection, original CWD, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed CodeBuddy native/fork/resume/compaction projection, original CWD, bounded pages, Raw off/on and cancellation verified.\n")
