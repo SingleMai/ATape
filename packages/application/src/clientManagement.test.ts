@@ -1,3 +1,4 @@
+import { CollectorDaemonProcess, CollectorDaemonProcessError } from "./collectorDaemonProcess.ts"
 import {
   AdapterProtocolVersion,
   emptyClientConfig,
@@ -33,9 +34,16 @@ const setupInput = (overrides: Partial<Parameters<typeof setupProject>[0]> = {})
 const fixture = (fixedUpgradeSpec?: string) => {
   let config: ClientConfig = emptyClientConfig()
   let version = "1.0.0"
+  let failRefresh = false, refreshes = 0
   let duringInstall: ((current: ClientConfig) => ClientConfig) | undefined
   const packageRequests: Array<string> = []
   const layer = Layer.mergeAll(
+    Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      refresh: () => Effect.suspend(() => { refreshes++; return failRefresh
+        ? Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "Could not refresh Host" }))
+        : Effect.succeed(false) }), inspect: () => Effect.succeed(undefined),
+      start: () => Effect.die("Unexpected start"), stop: () => Effect.die("Unexpected stop")
+    })),
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({
       transact: (change) => change(structuredClone(config)).pipe(
         Effect.tap((result) => Effect.sync(() => {
@@ -73,13 +81,23 @@ const fixture = (fixedUpgradeSpec?: string) => {
       })), Effect.map((installed) => ({ ...installed, version })))
     }))
   )
-  const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore | ProjectLocator | AdapterPackages>) =>
+  const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore | ProjectLocator | AdapterPackages | CollectorDaemonProcess>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
-  return { run, read: () => config, packageRequests,
+  return { run, read: () => config, packageRequests, refreshes: () => refreshes,
+    failRefresh: () => { failRefresh = true },
     duringInstall: (change: (current: ClientConfig) => ClientConfig) => { duringInstall = change } }
 }
 
 describe("Client management Module", () => {
+  it("requires the current Host before activating an installation and preserves config when refresh fails", async () => {
+    const client = fixture()
+    await client.run(installAdapter("@atape/adapter-codex"))
+    expect(client.refreshes()).toBe(1)
+    const before = structuredClone(client.read())
+    client.failRefresh()
+    await expect(client.run(upgradeAdapters("all"))).rejects.toMatchObject({ reason: "start" })
+    expect(client.read()).toEqual(before)
+  })
   it("preserves unrelated changes during package preparation and rejects a competing installation", async () => {
     const client = fixture()
     const first = (await client.run(installAdapter("@atape/adapter-codex"))).adapter

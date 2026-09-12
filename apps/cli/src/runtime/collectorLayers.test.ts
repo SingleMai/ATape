@@ -1,4 +1,5 @@
 import {
+  CollectorDaemonProcess,
   AdapterPackages,
   AdapterRuntimes,
   CLICredentialStore,
@@ -51,7 +52,7 @@ const fixture = async () => {
     ATAPE_REDACT_VALUES: JSON.stringify(["ultrasecretvalue"])
   })
   const run = <A, E>(effect: Effect.Effect<A, E,
-    ClientConfigStore | ProjectLocator | AdapterPackages | CollectorStateStore |
+    CollectorDaemonProcess | ClientConfigStore | ProjectLocator | AdapterPackages | CollectorStateStore |
     AdapterRuntimes | CollectorTransport | SecretRedactor | SourceCaptureCollector | CLICredentialStore>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
   return { root, paths, run }

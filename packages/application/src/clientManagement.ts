@@ -1,3 +1,4 @@
+import { refreshManagedCollector } from "./collectorDaemonProcess.ts"
 import type {
   AdapterInstallation,
   AdapterManifest,
@@ -285,6 +286,8 @@ export const installAdapter = Effect.fn("Client.installAdapter")(function*(packa
   // transaction below selects it for future collection cycles.
   const installed = yield* packages.install(packageSpec)
   yield* validateIdentifier("adapter", installed.manifest.adapterId)
+  // An old Host must understand the new installation layout before activation.
+  yield* refreshManagedCollector()
   return yield* store.transact<AdapterInstallResult, ClientManagementError | AdapterPackageError, never>((config) => Effect.gen(function*() {
     const previous = before.adapters.find(adapter => adapter.adapterId === installed.manifest.adapterId)
     if (!sameInstallation(config.adapters.find(adapter => adapter.adapterId === installed.manifest.adapterId), previous) ||

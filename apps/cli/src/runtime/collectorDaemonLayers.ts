@@ -13,8 +13,8 @@ import {
   type CollectorRunState
 } from "@atape/domain"
 import { execFile, spawn } from "node:child_process"
-import { randomUUID } from "node:crypto"
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
+import { createHash, randomUUID } from "node:crypto"
+import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { Effect, Layer, Option, Schema } from "effect"
 
@@ -28,6 +28,8 @@ const ProcessFileVersion = 1 as const
 const CollectorProcessRecord = Schema.Struct({
   version: Schema.Literal(ProcessFileVersion),
   token: Schema.String,
+  runtimeKey: Schema.optionalKey(Schema.String),
+  restartPending: Schema.optionalKey(Schema.Boolean),
   pid: Schema.Number,
   startedAt: Schema.String,
   intervalMs: Schema.Number,
@@ -68,6 +70,7 @@ const makeCollectorDaemonProcessLayer = (
   CollectorDaemonProcess,
   CollectorDaemonProcess.of({
     start: (options) => processStart(paths, entryFile, environment, options),
+    refresh: () => processRefresh(paths, entryFile, environment),
     stop: () => processStop(paths.collectorProcessFile),
     inspect: () => processInspect(paths.collectorProcessFile)
   })
@@ -82,54 +85,106 @@ const processStart = (
   if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
   return withProcessLock(paths.collectorProcessFile, async () => {
     const existing = await readProcessRecord(paths.collectorProcessFile)
+    const runtimeKey = await executableKey(entryFile)
     if (existing !== undefined && await isOwnedProcess(existing)) {
-      return { ...presentProcess(existing), created: false }
+      if (!existing.restartPending && existing.runtimeKey === runtimeKey) return { ...presentProcess(existing), created: false }
+      return restartProcess(paths, entryFile, environment, existing, runtimeKey)
     }
+    if (existing?.restartPending) return restartProcess(paths, entryFile, environment, existing, runtimeKey)
     if (existing !== undefined) await rm(paths.collectorProcessFile, { force: true })
+    return launchProcess(paths, entryFile, environment, options, runtimeKey)
+  }).pipe(Effect.uninterruptible)
+}
 
-    await mkdir(dirname(paths.collectorProcessFile), { recursive: true, mode: 0o700 })
-    await mkdir(dirname(paths.collectorLogFile), { recursive: true, mode: 0o700 })
-    const token = randomUUID()
-    const log = await open(paths.collectorLogFile, "a", 0o600)
-    let child
-    try {
-      child = spawn(process.execPath, [
-        resolve(entryFile),
-        "__collector-daemon",
-        "--interval", String(options.intervalMs / 1_000),
-        "--concurrency", String(options.concurrency),
-        "--daemon-token", token
-      ], {
-        detached: true,
-        env: environment,
-        stdio: ["ignore", log.fd, log.fd]
-      })
-    } finally {
-      await log.close()
+const processRefresh = (paths: NodeCollectorDaemonPaths, entryFile: string, environment: NodeJS.ProcessEnv) => {
+  // No managed daemon exists on Windows; Adapter maintenance remains available.
+  if (process.platform === "win32") return Effect.succeed(false)
+  return withProcessLock(paths.collectorProcessFile, async () => {
+    const existing = await readProcessRecord(paths.collectorProcessFile)
+    if (existing === undefined) return false
+    if (!existing.restartPending && !(await isOwnedProcess(existing))) {
+      await rm(paths.collectorProcessFile, { force: true })
+      return false
     }
-    if (child.pid === undefined) {
-      throw new CollectorDaemonProcessError({ reason: "start", message: "Node did not return a Collector process ID." })
-    }
-    child.unref()
-    const record: CollectorProcessRecord = {
-      version: ProcessFileVersion,
-      token,
-      pid: child.pid,
-      startedAt: new Date().toISOString(),
-      intervalMs: options.intervalMs,
-      concurrency: options.concurrency,
-      logFile: paths.collectorLogFile
-    }
-    await writeProcessRecord(paths.collectorProcessFile, record)
-    for (let attempt = 0; attempt < 40; attempt++) {
-      if (await isOwnedProcess(record)) return { ...presentProcess(record), created: true }
-      await delay(50)
-    }
-    await rm(paths.collectorProcessFile, { force: true })
-    throw new CollectorDaemonProcessError({
-      reason: "start",
-      message: `The Collector process exited during startup. Inspect ${paths.collectorLogFile}.`
+    // Read the replacement before stopping; an unreadable installation must
+    // not terminate a working Collector. Legacy metadata requires one restart.
+    const runtimeKey = await executableKey(entryFile)
+    if (!existing.restartPending && existing.runtimeKey === runtimeKey) return false
+    await restartProcess(paths, entryFile, environment, existing, runtimeKey)
+    return true
+  }).pipe(Effect.uninterruptible)
+}
+
+// Persist restart intent before terminating the old Host. A failed spawn or a
+// crashed maintenance command can resume without treating sync as user-stopped.
+const restartProcess = async (
+  paths: NodeCollectorDaemonPaths, entryFile: string, environment: NodeJS.ProcessEnv,
+  existing: CollectorProcessRecord, runtimeKey: string
+) => {
+  const pending = { ...existing, restartPending: true }
+  await writeProcessRecord(paths.collectorProcessFile, pending)
+  try {
+    if (await isOwnedProcess(existing)) await stopOwnedProcess(paths.collectorProcessFile, existing, false)
+    return await launchProcess(paths, entryFile, environment, existing, runtimeKey)
+  } catch (cause) {
+    await writeProcessRecord(paths.collectorProcessFile, pending)
+    throw cause
+  }
+}
+
+const executableKey = async (entryFile: string) => {
+  const entry = await realpath(resolve(entryFile))
+  return createHash("sha256").update(JSON.stringify([process.execPath, entry]))
+    .update(await readFile(entry)).digest("hex")
+}
+
+const launchProcess = async (
+  paths: NodeCollectorDaemonPaths, entryFile: string, environment: NodeJS.ProcessEnv,
+  options: ResolvedCollectorDaemonOptions, runtimeKey: string
+) => {
+  await mkdir(dirname(paths.collectorProcessFile), { recursive: true, mode: 0o700 })
+  await mkdir(dirname(paths.collectorLogFile), { recursive: true, mode: 0o700 })
+  const token = randomUUID()
+  const log = await open(paths.collectorLogFile, "a", 0o600)
+  let child
+  try {
+    child = spawn(process.execPath, [
+      resolve(entryFile),
+      "__collector-daemon",
+      "--interval", String(options.intervalMs / 1_000),
+      "--concurrency", String(options.concurrency),
+      "--daemon-token", token
+    ], {
+      detached: true,
+      env: environment,
+      stdio: ["ignore", log.fd, log.fd]
     })
+  } finally {
+    await log.close()
+  }
+  if (child.pid === undefined) {
+    throw new CollectorDaemonProcessError({ reason: "start", message: "Node did not return a Collector process ID." })
+  }
+  child.unref()
+  const record: CollectorProcessRecord = {
+    version: ProcessFileVersion,
+    token,
+    runtimeKey,
+    pid: child.pid,
+    startedAt: new Date().toISOString(),
+    intervalMs: options.intervalMs,
+    concurrency: options.concurrency,
+    logFile: paths.collectorLogFile
+  }
+  await writeProcessRecord(paths.collectorProcessFile, record)
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (await isOwnedProcess(record)) return { ...presentProcess(record), created: true }
+    await delay(50)
+  }
+  await rm(paths.collectorProcessFile, { force: true })
+  throw new CollectorDaemonProcessError({
+    reason: "start",
+    message: `The Collector process exited during startup. Inspect ${paths.collectorLogFile}.`
   })
 }
 
@@ -142,25 +197,29 @@ const processStop = (processFile: string) => {
       await rm(processFile, { force: true })
       return false
     }
-    process.kill(record.pid, "SIGTERM")
-    for (let attempt = 0; attempt < 100; attempt++) {
-      if (!(await isOwnedProcess(record))) {
-        await rm(processFile, { force: true })
-        return true
-      }
-      await delay(50)
+    return stopOwnedProcess(processFile, record)
+  }).pipe(Effect.uninterruptible)
+}
+
+const stopOwnedProcess = async (processFile: string, record: CollectorProcessRecord, clear = true) => {
+  process.kill(record.pid, "SIGTERM")
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (!(await isOwnedProcess(record))) {
+      if (clear) await rm(processFile, { force: true })
+      return true
     }
-    if (await isOwnedProcess(record)) process.kill(record.pid, "SIGKILL")
-    for (let attempt = 0; attempt < 40; attempt++) {
-      if (!(await isOwnedProcess(record))) break
-      await delay(50)
-    }
-    if (await isOwnedProcess(record)) {
-      throw new CollectorDaemonProcessError({ reason: "stop", message: "The managed Collector did not stop." })
-    }
-    await rm(processFile, { force: true })
-    return true
-  })
+    await delay(50)
+  }
+  if (await isOwnedProcess(record)) process.kill(record.pid, "SIGKILL")
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (!(await isOwnedProcess(record))) break
+    await delay(50)
+  }
+  if (await isOwnedProcess(record)) {
+    throw new CollectorDaemonProcessError({ reason: "stop", message: "The managed Collector did not stop." })
+  }
+  if (clear) await rm(processFile, { force: true })
+  return true
 }
 
 const processInspect = (processFile: string) => {
@@ -169,7 +228,7 @@ const processInspect = (processFile: string) => {
     const record = await readProcessRecord(processFile)
     if (record === undefined) return undefined
     if (await isOwnedProcess(record)) return presentProcess(record)
-    await rm(processFile, { force: true })
+    if (!record.restartPending) await rm(processFile, { force: true })
     return undefined
   })
 }
@@ -345,7 +404,6 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
   for (const failure of report.failures) {
     const previous = jobs.get(jobKey(failure.projectId, failure.adapterId))
     const next: CollectorJobRunStatus = {
-      ...(previous?.progress === undefined ? {} : { progress: previous.progress }),
       projectId: failure.projectId,
       adapterId: failure.adapterId,
       lastAttemptAt: report.completedAt,

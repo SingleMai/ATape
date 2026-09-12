@@ -1,5 +1,5 @@
 import { Context, Effect, Schema } from "effect"
-import { CollectorDaemonProcess } from "./collectorDaemon.ts"
+import { CollectorDaemonProcess, refreshManagedCollector } from "./collectorDaemonProcess.ts"
 import { stableVersion, newer } from "./releaseVersion.ts"
 
 const CLIUpgradeRecovery = Schema.Struct({ version: Schema.String, intervalMs: Schema.Number, concurrency: Schema.Number })
@@ -32,7 +32,7 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   const platform = yield* CLIUpgradePlatform
   const version = yield* platform.latest(false)
   if (!stableVersion(version)) return yield* new CLIUpgradeError({ reason: "check", message: "npm returned an invalid ATape version. Try again later." })
-  if (!newer(version, current)) return { version: current, updated: false, resumed: false }
+  if (!newer(version, current)) return { version: current, updated: false, resumed: yield* refreshManagedCollector() }
   const process = yield* CollectorDaemonProcess
   const running = yield* process.inspect()
   // Install and verify first: failed acquisition must not stop existing sync.
