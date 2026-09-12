@@ -222,7 +222,8 @@ try:
     terminals.append(terminal)
     terminal.wait("Your Projects")
     terminal.send("n")
-    terminal.wait("Connect a Project")
+    terminal.wait("Add project")
+    terminal.wait("Project directory")
     terminal.send("\x1b")
     terminal.wait("Your Projects")
     terminal.send("/")
@@ -231,7 +232,7 @@ try:
     assert terminal.process.poll() is None, "q in search exited the console"
     terminal.send("\x1b")
     terminal.send("\t")
-    terminal.wait("Actions: Add project")
+    terminal.wait("Actions: Tools and updates")
     terminal.send("\t")
     terminal.send("/")
     terminal.send("Package")
@@ -252,7 +253,7 @@ try:
     terminal.wait("Status updated. Sync timing is unchanged.")
     terminal.send("\x1b")
     terminal.wait("Your Projects")
-    terminal.send("\t\x1b[C\r")
+    terminal.send("\t\r")
     updates = terminal.wait("Check again")
     assert b"Tools and updates" in updates, "global tools did not open the updates page"
     assert f"Update ATape to {available}".encode() in updates, "skipped startup update is unavailable in Tools"
