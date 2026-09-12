@@ -83,7 +83,7 @@ test("searches across projects and retains filters, result scroll, and exact-mes
   await expect(input).toHaveValue("startup")
   await page.keyboard.press("Escape")
   await page.getByRole("button", { name: "Back to conversations", exact: true }).click()
-  await page.getByRole("button", { name: "Team options for Team A" }).click()
+  await page.getByRole("button", { name: "Open account security for Mai" }).click()
   await page.getByRole("button", { name: "Team settings" }).click()
   await page.keyboard.press("ControlOrMeta+k")
   await expect(input).toHaveValue("startup")
@@ -170,15 +170,26 @@ for (const width of [390, 1440]) {
 }
 
 for (const width of [320, 390, 1440]) {
-  test(`opens Team settings from the Team menu at ${width}px`, async ({ page }) => {
+  test(`shows a Team switcher only for multiple Teams at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 })
     await page.goto(projectPath)
+    await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Team options for Team A" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Team settings" })).toHaveCount(0)
+    await expect(page.locator(".workspace-team-control")).toHaveText("TTeam A")
+    await page.route("**/api/v1/workspace", async (route) => {
+      const response = await route.fetch(), data = await response.json()
+      data.teams.push({ ...data.teams[0], id: "team-b", slug: "team-b", displayName: "Team B" })
+      await route.fulfill({ json: data })
+    })
+    await page.reload()
     const trigger = page.getByRole("button", { name: "Team options for Team A" })
     await expect(trigger).toBeVisible()
     if (width > 640) await page.getByRole("button", { name: "Collapse sidebar" }).click()
     await trigger.click()
     const menu = page.getByRole("navigation", { name: "Team options", exact: true })
-    await expect(menu.getByRole("button", { name: "Team settings" })).toBeVisible()
+    await expect(menu.getByRole("button", { name: "Team settings" })).toHaveCount(0)
+    await expect(menu.getByRole("combobox", { name: "Team", exact: true })).toBeVisible()
     expect(
       await menu.evaluate((element) => {
         const rect = element.getBoundingClientRect()
@@ -186,13 +197,15 @@ for (const width of [320, 390, 1440]) {
       })
     ).toBe(true)
     await page.keyboard.press("Tab")
-    await expect(menu.getByRole("button", { name: "Team settings" })).toBeFocused()
+    await expect(menu.getByRole("combobox", { name: "Team", exact: true })).toBeFocused()
     await page.keyboard.press("Escape")
     await expect(menu).toBeHidden()
     await expect(trigger).toBeFocused()
     await trigger.click()
-    await menu.getByRole("button", { name: "Team settings" }).click()
-    await expect(page.getByRole("heading", { name: "Team & access" })).toBeVisible()
+    await menu.getByRole("combobox", { name: "Team", exact: true }).selectOption("team-b")
+    await expect(menu).toBeHidden()
+    await expect(page).toHaveURL("/teams/team-b")
+    await expect(page.getByRole("button", { name: "Team options for Team B" })).toBeVisible()
   })
 }
 
