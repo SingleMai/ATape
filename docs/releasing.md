@@ -1,6 +1,6 @@
 # Releasing ATape
 
-ATape's release pipeline includes four public MIT-licensed npm packages in one versioned release:
+ATape's release pipeline includes five public MIT-licensed npm packages in one versioned release:
 
 - `@atape/cli`
 - `@atape/adapter-codex`
@@ -65,9 +65,9 @@ node scripts/check-release-tag.mjs "$ATAPE_RELEASE_TAG"
 ```
 
 `test:release` checks the four-file, self-contained Adapter packages, builds all
-four checksummed tarballs and installs the CLI into a clean prefix. It installs
+five checksummed tarballs and installs the CLI into a clean prefix. It installs
 a disposable integration and verifies the installed console/daemon through a PTY.
-Release Adapter checks install Codex, Claude and OpenCode through the source Node
+Release Adapter checks install Codex, Claude, OpenCode and CodeBuddy through the source Node
 Host’s application Interface, then collect a controlled native Claude
 fixture through an authenticated loopback HTTP test Adapter. It replaces a
 test-only pre-release Claude package with the exact release tarball via
@@ -75,9 +75,9 @@ the original-source update Module Interface, checking unchanged checkpoints, no 
 stable Event identities and successful capture after append. The test-only package
 uses the current bundle with a distinct version; it is not historical compatibility
 evidence and never enters `release/`. Real Go persistence/read behavior remains
-covered by the CLI/Go end-to-end suite, including actual OpenCode package replacement,
+covered by the CLI/Go end-to-end suite, including actual OpenCode and CodeBuddy package replacement,
 independent Canonical/Raw progress, no-op recovery and background source changes.
-The exact checksummed OpenCode artifact also runs its installed source-capability
+The exact checksummed OpenCode and CodeBuddy artifacts also run their installed source-capability
 verification outside the checkout with controlled native data. The workflow publishes the exact release
 tarballs and attaches them plus `SHA256SUMS` to the GitHub Release.
 
@@ -99,7 +99,7 @@ gates merely by checking the index.
 
 ## First publication bootstrap
 
-npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new OpenCode Adapter):
+npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new CodeBuddy Adapter):
 
 1. Enable two-factor authentication on the npm owner account.
 2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.
@@ -118,8 +118,8 @@ For `@atape/adapter-opencode@0.5.0` only, the user requested local first publica
 with the already authenticated npm account, then later trusted-publisher setup.
 [ADR-0077](architecture/adr/0077-opencode-local-first-publication.md) records this
 exception, the exact artifact digest and the absence of GitHub build provenance
-for that one package version. All automated gates remain required. The ordinary
-tag workflow publishes the other three packages and verifies the already-published
+for that one package version. All automated gates remain required. For that release, the ordinary
+tag workflow covered the other three packages and verified the already-published
 OpenCode bytes before creating the GitHub Release.
 
 ## Switch to npm Trusted Publishing
@@ -144,4 +144,4 @@ Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and 
 
 ## Publication order and recovery
 
-The workflow publishes the CLI and all three Adapters sequentially, then creates the GitHub Release. If a later step fails, rerunning the same workflow is safe only when already-published npm integrity matches the locally rebuilt tarball. A mismatch stops publication and requires investigation; npm versions are immutable and must never be overwritten.
+The workflow publishes the CLI and all four Adapters sequentially, then creates the GitHub Release. If a later step fails, rerunning the same workflow is safe only when already-published npm integrity matches the locally rebuilt tarball. A mismatch stops publication and requires investigation; npm versions are immutable and must never be overwritten.
