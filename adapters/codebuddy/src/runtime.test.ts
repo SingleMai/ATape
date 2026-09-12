@@ -150,6 +150,53 @@ describe("CodeBuddy installed runtime Interface", () => {
     await writeFile(file.replace(/\.jsonl$/, ".meta.json"), variant === "meta-limit" ? "x".repeat(65537) : JSON.stringify(meta))
     await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: forkId })).rejects.toMatchObject({ reason: variant === "prefix-only" ? "attribution" : variant === "meta-limit" ? "limit" : "unsupported" })
   })
+  it.each([false, true])("captures native manual/automatic compaction and continued history (fork=%s)", async fork => {
+    const f = await fixture(), compactId = `atape-codebuddy-compact${fork ? "-fork" : ""}-21240`
+    const file = join(f.directory, `${compactId}.jsonl`), meta = file.replace(/\.jsonl$/, ".meta.json")
+    const native = await readFile(new URL(`./fixtures/native-compaction${fork ? "-fork" : ""}-2.124.0.jsonl`, import.meta.url), "utf8")
+    if (fork) await copyFile(new URL("./fixtures/native-compaction-fork-2.124.0.meta.json", import.meta.url), meta)
+    let initial: SourceCapturePage["frames"][number][] = []
+    if (!fork) {
+      await writeFile(file, serialize(rows(native).slice(0, 4)))
+      const view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: compactId })
+      initial = await read(view); await view.close()
+    }
+    await writeFile(file, native)
+    const view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: compactId })
+    expect(view.profile).toBe(`codebuddy.cli.jsonl.${fork ? "fork." : ""}compaction.1`)
+    expect(view.origin.cwd).toBe("/fixture/codebuddy-compact-project")
+    expect(view.target).toEqual({ events: fork ? 12 : 10, usage: fork ? 5 : 4, threads: 1 })
+    const origin = view.origin, frames = await read(view), events = frames.flatMap(frame => frame.events)
+    if (!fork) expect(events.slice(0, 3)).toEqual(initial.flatMap(frame => frame.events))
+    expect(frames[4]!.events[0]!.update).toMatchObject({ sessionUpdate: "user_message_chunk", content: { text: "/compact Keep the summary short: retain only the marker ATAPE_COMPACT_SEED_21240." } })
+    expect(frames[6]!.events[0]!.update).toMatchObject({ sessionUpdate: "agent_message_chunk", content: { text: expect.stringContaining("<conversation_history_summary>") } })
+    expect(frames[10]!.events).toEqual([]) // Engine-generated context is not a user turn.
+    expect(frames[10]!.raw).toMatchObject({ json: expect.stringContaining("logicalParentId") })
+    expect(frames.map(frame => (frame.raw as { json: string }).json).join("\n") + "\n").toBe(native)
+    expect(frames.flatMap(frame => frame.usage)).toHaveLength(fork ? 5 : 4)
+    const last = events.at(-1)!.update
+    expect(last).toMatchObject({ content: { text: expect.stringContaining(fork ? "ATAPE_COMPACT_FORK_21240" : "ATAPE_AUTO_COMPACT_21240") } })
+    await view.close()
+    const off = await f.runtime.sourceCapture.open({ ...f.request, sourceId: compactId, rawEnabled: false })
+    await rm(file); if (fork) await rm(meta)
+    expect(off.origin).toEqual(origin)
+    expect(await read(off)).toEqual(frames.map(({ raw: _, ...frame }) => frame))
+    await off.close()
+  })
+  it.each(["pending", "command", "summary", "logical-parent", "missing-prefix", "emergency", "model-summary", "interrupted"])("rejects unproven compaction %s without a partial view", async variant => {
+    const f = await fixture(), compactId = "atape-codebuddy-compact-21240", file = join(f.directory, `${compactId}.jsonl`)
+    const values = rows(await readFile(new URL("./fixtures/native-compaction-2.124.0.jsonl", import.meta.url), "utf8"))
+    if (variant === "pending") values.splice(6)
+    if (variant === "command") delete values[4].content[0].providerData.content
+    if (variant === "summary") values[6].content[0].text = "unfinished summary"
+    if (variant === "logical-parent") values[10].logicalParentId = values[0].id
+    if (variant === "missing-prefix") values.splice(0, 10)
+    if (variant === "emergency") values[10].providerData.compactType = "emergency-auto"
+    if (variant === "model-summary") values[10].providerData.isSummary = true
+    if (variant === "interrupted") values[6].providerData.agent = "cli"
+    await writeFile(file, serialize(values))
+    await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: compactId })).rejects.toMatchObject({ reason: variant === "pending" ? "format" : "unsupported" })
+  })
   it.each(["fork", "compaction", "branch", "foreign", "revision", "missing-origin"])("rejects %s without returning an incomplete target", async variant => {
     const f = await fixture(), values = rows(f.native)
     if (variant === "fork") await writeFile(f.file.replace(/\.jsonl$/, ".meta.json"), await readFile(new URL("./fixtures/native-fork-2.124.0.meta.json", import.meta.url), "utf8"))

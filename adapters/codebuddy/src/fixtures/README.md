@@ -41,3 +41,43 @@ so that separate native command remains unsupported. Nested child files live at
 Tests derive adversarial variants for malformed tails, attribution, duplicate
 identities, changed contents, bounds and recovery. Those variants are synthetic
 contract fixtures, not claims of additional native behavior or platform coverage.
+
+## Compaction samples
+
+`native-compaction-2.124.0.jsonl` was generated on 2026-09-12 UTC with the same
+native CLI version/platform. Four model responses produced 14 records:
+
+1. A tools-disabled literal seed (`hy4-preview-f`), producing four records.
+2. `/compact Keep the summary short: retain only the marker ATAPE_COMPACT_SEED_21240.`
+   using `--model hy3 --effort low --max-turns 3`, producing a native command,
+   thought and completed summary (seven total records).
+3. Ordinary `--resume` with another literal marker (ten total records).
+4. Ordinary `--resume` with `CODEBUDDY_PRE_MESSAGE_COMPACT=1` and
+   `CODEBUDDY_PRE_MESSAGE_COMPACT_PCT=1` scoped to that process. The installed
+   engineering strategy emits a `<cb_summary>` user context linked by
+   `logicalParentId`, then the real user/assistant turn (14 total records).
+
+All runs used `-p`, `--strict-mcp-config`, `--setting-sources ""` and `--tools ""`.
+A preceding compact attempt with the default model timed out after 150 seconds;
+its incomplete source was retained outside the repository, and the controlled
+file was restored to the exact four-record seed before the successful attempt.
+No incomplete output is presented as a successful native sample.
+
+The Adapter projects ten Events and four usage records. The automatic context
+has no Event and no invented usage. Original input is stored in the compact
+text block’s `providerData.content`; its expanded internal prompt remains Raw.
+Only the controlled absolute CWD was replaced with
+`/fixture/codebuddy-compact-project`. Native IDs, flags, parent links, timestamps,
+model responses and counters were retained. No sidecar was written for this
+ordinary compacted Session.
+
+`native-compaction-fork-2.124.0.jsonl` and its `.meta.json` are a native
+`--resume atape-codebuddy-compact-21240 --fork-session --session-id
+atape-codebuddy-compact-fork-21240` with one literal user/assistant turn. It copies
+all 14 prior records and projects 12 Events/five historical usage records.
+Only the same controlled CWD was normalized. Completed samples were copied to
+scratch storage before deleting the three exact, byte-verified controlled source
+files from the CLI home.
+
+Automatic LLM summaries, emergency compaction, pruning/rewind and child-session
+compaction have no native acceptance sample here and remain unsupported.

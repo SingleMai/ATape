@@ -6,6 +6,11 @@ const iso = (value: unknown) => {
   return new Date(value as number).toISOString()
 }
 const text = (value: unknown) => { if (typeof value !== "string") fail("format", "CodeBuddy text is invalid."); return value as string }
+const enclosed = (value: unknown, tag: string) => {
+  if (typeof value !== "string") return undefined
+  const content = value.trim(), start = `<${tag}>`, end = `</${tag}>`
+  return content.startsWith(start) && content.endsWith(end) ? content.slice(start.length, -end.length).trim() || undefined : undefined
+}
 const counter = (value: unknown) => {
   if (value === undefined) return undefined
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) fail("format", "CodeBuddy usage counter is invalid.")
@@ -17,6 +22,7 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
   const sourceId = source.origin.sourceId, frames: SourceCaptureFrame[] = []
   const seen = new Map<string, string>(), calls = new Map<string, string>(), usages = new Map<string, string>()
   let nativeSession: string | undefined, ownUserSeen = false
+  let manualCompact = false, hasCompaction = false
   let previous: string | undefined, events = 0, usageCount = 0, partial = false, latest = 0, title = "CodeBuddy session", active = false
   let frameBytes = 0
   const started = performance.now()
@@ -29,8 +35,39 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
       continue
     }
     seen.set(rowId, json)
-    if (row.logicalParentId != null || /compact|rewind|revert|resend|separator/i.test(String(row.type)) || provider.isCompactInternal === true || provider.isSummary === true)
-      fail("unsupported", "CodeBuddy compaction and branched history are not supported by this profile.")
+    let compactCommand: string | undefined, contextOnly = false
+    const compactAgent = provider.agent === "compact"
+    const marked = provider.isCompactInternal === true || provider.isSummary === true || provider.isCompacted === true || provider.compactType != null
+    if (compactAgent) {
+      hasCompaction = true
+      if (!manualCompact && row.type === "message" && row.role === "user" && !marked) {
+        const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
+        const command = object(content.providerData).content
+        if (content.type !== "input_text" || typeof command !== "string" || !/^\/compact(?:\s|$)/.test(command) || !previous)
+          fail("unsupported", "CodeBuddy compact command lacks its original user input.")
+        compactCommand = command as string; manualCompact = true
+      } else if (manualCompact && row.type === "reasoning" && !marked) {
+        // Native reasoning belongs to the user's explicit compact turn.
+      } else if (manualCompact && row.type === "message" && row.role === "assistant" &&
+        provider.isCompactInternal === true && provider.isSummary === true && provider.isCompacted === true && provider.compactType === "user-command") {
+        if (row.status !== "completed") fail("format", "CodeBuddy compaction has not completed; retry.")
+        const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
+        if (content.type !== "output_text" || !enclosed(enclosed(content.text, "conversation_history_summary"), "summary"))
+          fail("unsupported", "CodeBuddy compact output has no complete native summary.")
+        manualCompact = false
+      } else fail("unsupported", "CodeBuddy compact history has an unsupported transition.")
+    } else if (manualCompact && row.type !== "file-history-snapshot") {
+      fail("unsupported", "CodeBuddy compact history was interrupted before its summary.")
+    } else if (marked) {
+      const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
+      if (row.type !== "message" || row.role !== "user" || provider.compactType !== "pre-message-auto" ||
+        provider.isCompactInternal !== true || provider.isCompacted !== true || provider.isSummary !== false || provider.skipRun !== false ||
+        row.parentId != null || row.logicalParentId == null || content.type !== "input_text" || !enclosed(content.text, "cb_summary"))
+        fail("unsupported", "CodeBuddy automatic compaction requires a wider source profile.")
+      contextOnly = true; hasCompaction = true
+    }
+    if (row.logicalParentId != null && !contextOnly || /compact|rewind|revert|resend|separator/i.test(String(row.type)))
+      fail("unsupported", "CodeBuddy branched history is not supported by this profile.")
     const projected = ["message", "reasoning", "function_call", "function_call_result"].includes(String(row.type))
     if (projected) {
       const currentSession = id(row.sessionId)
@@ -40,8 +77,8 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
       if (nativeSession !== currentSession && (row.type !== "message" || row.role !== "user"))
         fail("unsupported", "CodeBuddy Session identity changes outside a user turn.")
       nativeSession = currentSession
-      if ((row.parentId ?? undefined) !== previous) fail("unsupported", "CodeBuddy history is not one complete linear parent chain.")
-      if (provider.agent != null && provider.agent !== "cli") fail("unsupported", "CodeBuddy non-CLI agents require a wider source profile.")
+      if (((contextOnly ? row.logicalParentId : row.parentId) ?? undefined) !== previous) fail("unsupported", "CodeBuddy history is not one complete parent chain.")
+      if (provider.agent != null && provider.agent !== "cli" && !compactAgent) fail("unsupported", "CodeBuddy non-CLI agents require a wider source profile.")
       previous = rowId
     } else if (row.parentId != null) fail("unsupported", "CodeBuddy has an unsupported parent-linked record.")
     else if (row.sessionId != null && row.sessionId !== nativeSession) fail("unsupported", "CodeBuddy history contains a foreign Session identity.")
@@ -56,7 +93,7 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
       for (const [index, content] of (value as unknown[]).entries()) {
         const block = object(content)
         if (["input_text", "output_text", "reasoning_text"].includes(String(block.type))) {
-          const contentText = text(block.text)
+          const contentText = compactCommand ?? text(block.text)
           if (contentText) emit(`block:${index}`, { sessionUpdate: thought ? "agent_thought_chunk" : row.role === "user" ? "user_message_chunk" : "agent_message_chunk",
             messageId: rowId, content: { type: "text", text: contentText } })
         } else partial = true // Images/blobs and unknown blocks remain in Raw only.
@@ -64,14 +101,14 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
     }
     if (row.type === "message") {
       if (row.role !== "user" && row.role !== "assistant") fail("unsupported", "CodeBuddy message role is unsupported.")
-      blocks(row.content)
+      if (!contextOnly) blocks(row.content)
       if (!ownUserSeen && row.role === "user" && row.sessionId === sourceId) {
         ownUserSeen = true
         const candidate = output.map(e => "content" in e.update && e.update.content.type === "text" ? e.update.content.text : "").join(" ")
         // Never cut a token before the Host can redact the complete value.
         if (candidate && Buffer.byteLength(candidate) <= 200) title = candidate
       }
-      active = row.role === "user" || row.status !== "completed"
+      if (!contextOnly) active = row.role === "user" || row.status !== "completed"
     } else if (row.type === "reasoning") {
       blocks(Array.isArray(row.rawContent) && row.rawContent.length ? row.rawContent : row.content, true)
       active = true
@@ -125,8 +162,10 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
       fail("limit", "CodeBuddy projection exceeds its page or 64 MiB snapshot budget.")
     frames.push(frame)
   }
+  if (manualCompact) fail("format", "CodeBuddy compaction has not completed; retry.")
   const captureStatus = partial ? "partial" as const : "healthy" as const
-  const header: SourceCaptureHeader = { profile: source.forkedFrom ? "codebuddy.cli.jsonl.fork.1" : "codebuddy.cli.jsonl.linear.1", origin: source.origin,
+  const profile = hasCompaction ? source.forkedFrom ? "fork.compaction" : "compaction" : source.forkedFrom ? "fork" : "linear"
+  const header: SourceCaptureHeader = { profile: `codebuddy.cli.jsonl.${profile}.1`, origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "codebuddy-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
     threads: [{ sourceThreadId: sourceId, label: title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }

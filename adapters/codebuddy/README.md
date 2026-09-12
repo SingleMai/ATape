@@ -27,8 +27,9 @@ Source resolution: `ATAPE_CODEBUDDY_HOME`, then `CODEBUDDY_CONFIG_DIR`, then
 
 The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
 from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks), ordinary resume,
-text/thoughts, tool calls/results and normalized per-response token usage.
-Rewind/compaction, `/branch`, child agents, unknown sidecar fields and external
+text/thoughts, tool calls/results, manual `/compact`, engineering pre-message
+automatic compaction and normalized per-response token usage.
+Rewind, `/branch`, emergency/LLM automatic compaction, child agents, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
 when enabled and marks capture partial.
@@ -36,6 +37,10 @@ when enabled and marks capture partial.
 Fork identity and Project attribution come from its first fork-owned user record,
 with native sidecar proof. Copied usage describes captured history and is not
 new-spend evidence. The original parent file is not required.
+
+Compaction retains the original transcript. Manual commands and summaries remain
+visible; engine-generated context is Raw-only. Incomplete manual compaction keeps
+the previous publication. Exact flags and remaining limits are in the guide.
 
 Each complete source snapshot is limited to 16 MiB; projection snapshots to
 64 MiB; discovery to 10,000 entries. Host row/page/event/deadline limits also

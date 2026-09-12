@@ -344,9 +344,108 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	if len(search("CodeBuddyForkFrozenNeedle").Results) == 0 {
 		t.Fatal("CodeBuddy recovered fork did not reach Search")
 	}
+	// Manual and pre-message compaction keep the captured transcript and its Origin.
+	compactCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy compaction"})
+	compactCreate.Header.Set("Authorization", "Bearer "+credential)
+	compactCreate.Header.Set("Idempotency-Key", "codebuddy-compaction-project-21240")
+	compactCreated := httptest.NewRecorder()
+	h.ServeHTTP(compactCreated, compactCreate)
+	if compactCreated.Code != http.StatusCreated {
+		t.Fatalf("create compaction Project: %d %s", compactCreated.Code, compactCreated.Body.String())
+	}
+	var compactProject projectDTO
+	decodeResponse(t, compactCreated, &compactProject)
+	projectID = compactProject.ID
+	compactInitial := run("compact-initial")
+	_, compactBefore := read(compactInitial.SessionID, 3)
+	compactManual := run("compact-manual")
+	_, compactEvents := read(compactManual.SessionID, 6)
+	encoded, _ = json.Marshal(compactEvents)
+	if compactManual.SessionID != compactInitial.SessionID || compactManual.Head == compactInitial.Head ||
+		!bytes.Contains(encoded, []byte("/compact Keep the summary short")) || bytes.Contains(encoded, []byte("IMPORTANT CONSTRAINTS")) ||
+		!bytes.Contains(encoded, []byte("conversation_history_summary")) {
+		t.Fatal("CodeBuddy manual compaction lost its Session, original command or summary")
+	}
+	compactResume := run("compact-resume")
+	read(compactResume.SessionID, 8)
+	compactAuto := run("compact-auto")
+	_, compactEvents = read(compactAuto.SessionID, 10)
+	beforePrefix, _ := json.Marshal(compactBefore)
+	afterPrefix, _ := json.Marshal(compactEvents[:3])
+	encoded, _ = json.Marshal(compactEvents)
+	if compactAuto.SessionID != compactInitial.SessionID || !bytes.Equal(beforePrefix, afterPrefix) ||
+		bytes.Contains(encoded, []byte("cb_summary")) || !bytes.Contains(encoded, []byte("ATAPE_AUTO_COMPACT_21240")) {
+		t.Fatal("CodeBuddy automatic compaction changed the prefix or fabricated a user context turn")
+	}
+	provenance, found, err = store.ConversationPage(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, compactAuto.SessionID, "root", canonical.ConversationPageRequest{Limit: 100})
+	if err != nil || !found || len(provenance.Events) != 10 {
+		t.Fatalf("CodeBuddy compact provenance: %v", err)
+	}
+	objectID, _, valid = strings.Cut(provenance.Events[9].RawRef, "/records/")
+	if !valid {
+		t.Fatal("CodeBuddy compact lacks native Raw provenance")
+	}
+	decodeResponse(t, send("GET", "/api/v1/raw-objects/"+objectID+"/content?generation=1&limit=1", ""), &raw)
+	if len(raw.Chunks) != 1 || raw.NextCursor != "" {
+		t.Fatal("CodeBuddy compact Raw page exceeded its bound")
+	}
+	content, err = base64.StdEncoding.DecodeString(raw.Chunks[0].ContentBase64)
+	if err != nil || !bytes.Contains(content, []byte("logicalParentId")) || !bytes.Contains(content, []byte("cb_summary")) {
+		t.Fatal("CodeBuddy omitted context was not preserved in Raw")
+	}
+	if pending := run("compact-pending"); pending.Head != compactAuto.Head || !bytes.Equal(pending.Records, compactAuto.Records) {
+		t.Fatal("CodeBuddy unfinished compaction replaced visible history")
+	}
+	if fixed := run("compact-repair"); fixed.Head != compactAuto.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy repaired compaction replayed unchanged content")
+	}
+	setRaw(false)
+	compactOff := run("compact-edit")
+	if compactOff.Head == compactAuto.Head {
+		t.Fatal("CodeBuddy compact Raw-off stopped Canonical updates")
+	}
+	setRaw(true)
+	compactOn := run("compact-reenable")
+	if compactOn.Head != compactOff.Head || !bytes.Equal(compactOn.Records, compactOff.Records) {
+		t.Fatal("CodeBuddy compact Raw re-enable changed Canonical provenance")
+	}
+	if lost := run("compact-raw-only"); lost.Pending == 0 || lost.Head != compactOn.Head {
+		t.Fatal("CodeBuddy context-only Raw response loss changed Canonical or lost recovery")
+	}
+	recoveredCompact := run("compact-recover")
+	read(recoveredCompact.SessionID, 10)
+	if recoveredCompact.Pending != 0 || recoveredCompact.Head != compactOn.Head || !bytes.Equal(recoveredCompact.Records, compactOn.Records) {
+		t.Fatal("CodeBuddy compact Raw recovery failed after source deletion")
+	}
+	if len(search("CodeBuddyCompactFinalNeedle").Results) != 1 || len(search("CodeBuddyCompactRawOnlyNeedle").Results) != 0 || len(search("IMPORTANT CONSTRAINTS").Results) != 0 {
+		t.Fatal("CodeBuddy compact Search lost Canonical or indexed internal context")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID == compactInitial.SessionID {
+			usageCount++
+			if usage.InputTokens != nil {
+				inputTokens += *usage.InputTokens
+			}
+			if usage.OutputTokens != nil {
+				outputTokens += *usage.OutputTokens
+			}
+			if usage.CacheReadTokens != nil {
+				cachedTokens += *usage.CacheReadTokens
+			}
+		}
+	}
+	if usageCount != 4 || inputTokens != 20757 || outputTokens != 1079 || cachedTokens != 6656 {
+		t.Fatalf("CodeBuddy compaction usage: records=%d input=%d output=%d cache=%d", usageCount, inputTokens, outputTokens, cachedTokens)
+	}
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredFork.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredCompact.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

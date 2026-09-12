@@ -32,7 +32,8 @@ unknown, never inferred from the configured Project locator.
 Official references: [local directory structure](https://www.codebuddy.ai/docs/cli/codebuddy-dir), [CLI resume/fork options](https://www.codebuddy.ai/docs/cli/cli-reference) and [SDK Session management](https://www.codebuddy.ai/docs/cli/sdk-sessions). The installed 2.124.0 implementation and controlled samples establish the narrower scope below.
 
 The evidence-bound profiles are `codebuddy.cli.jsonl.linear.1` and
-`codebuddy.cli.jsonl.fork.1`, tested with native
+`codebuddy.cli.jsonl.fork.1`, extended by `codebuddy.cli.jsonl.compaction.1` and
+`codebuddy.cli.jsonl.fork.compaction.1` when supported compaction is present. They are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -69,7 +70,7 @@ retaining the fork filename as `storeId`. Native nested forks still record that
 root in `forkedFrom`, and ordinary fork resume appends records under the root ID.
 The Adapter therefore validates the complete linear parent chain and identity
 changes at user turns. After the first fork-owned turn, only the fork ID and its
-recorded root ID are accepted. Compaction, subagent markers and unknown sidecar
+recorded root ID are accepted. Compaction follows the profile below; subagent markers and unknown sidecar
 fields remain unsupported. `/branch`, which rewrites IDs and stores `forkedAt`,
 is a different shape and is not covered by these samples.
 
@@ -89,11 +90,45 @@ unsupported. A complete rewritten file with the same proven Origin can produce a
 replacement target and Host-assigned revisions. This does not establish support
 for native rewind/compaction semantics.
 
-Sidecar fields other than `forkedFrom`, child-agent calls/Sessions, logical parents,
-in-file branching, compaction and unknown parent-linked records are rejected. Nested subagent histories are not collected.
-These cases do not flatten child messages or replace the old target with a
-partial prefix. Compaction and child-session support are the next increments and need controlled
-samples proving membership, usage ownership and Original Project.
+Sidecar fields other than `forkedFrom`, child-agent calls/Sessions, in-file branching
+and unknown parent-linked records are rejected. Nested subagent histories are not
+collected. These cases do not flatten child messages or replace the old target
+with a partial prefix. Child-session support is the next increment and requires
+controlled evidence for membership, usage ownership and Original Project.
+
+## Compaction with retained history
+
+Native manual `/compact` and the tested engineering `pre-message-auto` path append
+to the source file; they do not remove its original transcript. The Adapter keeps
+that transcript and its Event identities, follows validated compaction links, and
+continues in the same Session and Project. A fork can copy this compacted history
+without requiring the original file.
+
+| Native compaction record | Canonical | Raw |
+| --- | --- | --- |
+| `agent: compact` user command | Original `/compact` input from the text block’s `providerData.content` | Full expanded internal prompt and original command |
+| Compact reasoning and completed assistant summary | Native thought and assistant text in the explicit compact turn | Full records, flags and normalized model usage |
+| `pre-message-auto` user context with `isCompacted: true`, `isCompactInternal: true`, `isSummary: false` | No fabricated user turn; its `logicalParentId` must point to the preceding record | Complete `<cb_summary>` context and link |
+| Ordinary messages after either boundary | Existing user/assistant mapping, retaining the full earlier transcript | Same source records |
+
+The manual command must have its original input and a completed summary before
+an open view can escape. An interrupted or unfinished compact run preserves the
+previous publication and emits a source diagnostic. The automatic context record
+must have the tested native flags and complete wrapper; arbitrary logical parents,
+missing original prefixes and foreign identities remain unsupported. When Raw is
+off, internal context is omitted completely while conversation updates continue.
+
+The controlled sequence has four actual model responses, including the manual
+summary: 20,757 input, 1,079 output and 6,656 cached-input tokens. Engineering
+pre-message compaction itself has no model-response usage record, so the Adapter
+does not invent one. Copied fork usage retains the historical meaning described
+above. Context-only changes update Raw independently; response-loss recovery uses
+the frozen journal even after source deletion.
+
+This evidence does not establish automatic LLM summaries (`isSummary: true`),
+`emergency-auto`, content pruning, rewind, `/clear`, `/branch`, or compaction inside
+child Sessions. Those shapes remain unsupported rather than guessing their
+membership or original attribution.
 
 ## Consistency, bounds and recovery
 
@@ -138,7 +173,7 @@ native provenance and synthetic coverage. Relevant verification commands:
 - `pnpm test:release` includes the exact CodeBuddy release artifact and Tools.
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
-29 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
+39 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
 contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
@@ -151,7 +186,12 @@ attribution, installed background collection and resume, independent reader/Sear
 results, exact historical usage, sidecar Raw provenance and recovery after both
 history and metadata deletion. Browser acceptance of the recovered fork verified
 all six turns, including the copied tools, nested fork and continued reply, in
-its independent Project. This is local acceptance, not a staging attestation.
+its independent Project. The compaction contract verifies manual command recovery,
+retained prefix identity, automatic-context exclusion from Reader/Search, exact
+usage, Raw off/on and context-only Raw recovery after source deletion. Browser
+acceptance verified its four real user turns, the recovered `/compact` command,
+native summary and continued reply, with no extra automatic-context turn. This
+is local acceptance, not a staging attestation.
 
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
@@ -165,8 +205,8 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after fork recovery; it writes the ephemeral test
-Server origin, fork reader identifiers and test Web cookie there. Point the Web dev
+for up to three minutes after compaction recovery; it writes the ephemeral test
+Server origin, compaction reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
 `atape_session_dev`, inspect the reader, then create `<file>.done` to continue.
 The test removes this scratch credential file on exit. Do not commit it.
