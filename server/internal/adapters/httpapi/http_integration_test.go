@@ -396,6 +396,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	t.Run("publication transport", func(t *testing.T) {
 		assertHTTPPublicationContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
+	t.Run("native CodeBuddy Collector", func(t *testing.T) {
+		assertCodeBuddyCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
+	})
 	t.Run("native OpenCode Collector", func(t *testing.T) {
 		assertOpenCodeCollectorContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})

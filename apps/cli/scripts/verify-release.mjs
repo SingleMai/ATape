@@ -19,11 +19,13 @@ const releaseDirectory = release.releaseDirectory
 const cliPackage = release.packages.find((package_) => package_.name === "@atape/cli")
 const adapterPackage = release.packages.find((package_) => package_.name === "@atape/adapter-codex")
 const claudePackage = release.packages.find((package_) => package_.name === "@atape/adapter-claude")
+const codebuddyPackage = release.packages.find(package_ => package_.name === "@atape/adapter-codebuddy")
 const opencodePackage = release.packages.find(package_ => package_.name === "@atape/adapter-opencode")
-if (opencodePackage === undefined || cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
+if (codebuddyPackage === undefined || opencodePackage === undefined || cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
 const cliArtifact = join(releaseDirectory, cliPackage.artifactName)
 const adapterArtifact = join(releaseDirectory, adapterPackage.artifactName)
 const claudeArtifact = join(releaseDirectory, claudePackage.artifactName)
+const codebuddyArtifact = join(releaseDirectory, codebuddyPackage.artifactName)
 const opencodeArtifact = join(releaseDirectory, opencodePackage.artifactName)
 const temporaryRoot = await mkdtemp(join(tmpdir(), "atape-release-"))
 const installDirectory = join(temporaryRoot, "install")
@@ -48,6 +50,7 @@ const environment = {
   XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
   ATAPE_CODEX_HOME: codexHome,
   ATAPE_CLAUDE_HOME: claudeHome,
+  ATAPE_CODEBUDDY_HOME: join(temporaryRoot, "missing-codebuddy"),
   OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
   ATAPE_CLAUDE_SESSION_FILE: "",
   ATAPE_REDACT_VALUES: "[]"
@@ -119,9 +122,16 @@ try {
   const tools = await runtime.runPromise(inspectTools())
   assert.ok(tools.choices.some(choice => choice.id === "opencode" && choice.installed && choice.selected))
   await run(process.execPath, ["adapters/opencode/scripts/verify-package.mjs", opencodeArtifact], repositoryRoot)
+  const codebuddy = await runtime.runPromise(installAdapter(codebuddyArtifact))
+  assert.equal(codebuddy.adapter.adapterId, "codebuddy")
+  assert.equal(codebuddy.adapter.version, codebuddyPackage.version)
+  await configure(["codex", "claude", "opencode", "codebuddy"])
+  const updatedTools = await runtime.runPromise(inspectTools())
+  assert.ok(updatedTools.choices.some(choice => choice.id === "codebuddy" && choice.installed && choice.selected))
+  await run(process.execPath, ["adapters/codebuddy/scripts/verify-package.mjs", codebuddyArtifact], repositoryRoot)
   // The fixture artifact is kept outside release/ and never replaces publish bytes.
   await verifyChecksums()
-  process.stdout.write("Verified CLI artifact help, Codex/Claude/OpenCode artifacts through the source Node Host, and a versioned Claude replacement preserving capture progress. Installed console/daemon coverage is the separate CLI package gate.\n")
+  process.stdout.write("Verified CLI artifact help, Codex/Claude/OpenCode/CodeBuddy artifacts through the source Node Host, and a versioned Claude replacement preserving capture progress. Installed console/daemon coverage is the separate CLI package gate.\n")
 } finally {
   await runtime?.dispose()
   for (const key of Object.keys(environment)) {

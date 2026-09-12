@@ -6,7 +6,7 @@ The runtime requirements are in [package.json](../package.json) and
 [pnpm-workspace.yaml](../pnpm-workspace.yaml) and the lockfile. Install with
 `pnpm install --frozen-lockfile`. Browser checks use Playwright Chromium;
 `pnpm --filter @atape/web exec playwright install chromium` installs it locally.
-Package terminal checks require Python 3. PostgreSQL and installed OpenCode
+Package terminal checks require Python 3. PostgreSQL and installed source-capture Adapter
 integration checks require Docker.
 
 ## Code map
@@ -19,7 +19,7 @@ integration checks require Docker.
 | [packages/domain](../packages/domain/) | Shared domain types, Schemas and pure rules |
 | [packages/adapter-catalog](../packages/adapter-catalog/) | Shared official-tool metadata |
 | [packages/ui](../packages/ui/README.md) and [packages/i18n](../packages/i18n/) | Reusable presentation, semantic themes and localization support |
-| [adapters](../adapters/) | Codex, Claude and OpenCode provider Implementations; the Host loads their declared runtime capability |
+| [adapters](../adapters/) | Codex, Claude, OpenCode and CodeBuddy provider Implementations; the Host loads their declared runtime capability |
 | [server/internal](../server/internal/) | Go Modules for authentication, authorization, Team, Canonical ingestion, publication, conversation, Raw and Search; private infrastructure under `adapters` |
 | [server/cmd/atape-server](../server/cmd/atape-server/) | Server Composition Root and process lifetime |
 | [specs](../specs/), [scripts](../scripts/) and [workflows](../.github/workflows/) | Machine-readable contracts, verification, packaging and delivery gates |
@@ -42,7 +42,7 @@ regression when appropriate.
 | Web behavior | `pnpm --filter @atape/web typecheck`, `pnpm --filter @atape/web test`, and affected `test:browser` scenarios |
 | CLI commands or terminal behavior | `pnpm --filter @atape/cli typecheck`, `pnpm --filter @atape/cli test`, `pnpm test:cli-package` for the installed executable |
 | Adapter projection or package/runtime contract | Affected Adapter `typecheck` and `test`; `pnpm test:adapter-package` for installed artifacts |
-| Collector / Server delivery | `pnpm test:e2e` for Codex/Claude; `pnpm test:opencode-contract` for installed OpenCode over authenticated HTTP/PostgreSQL |
+| Collector / Server delivery | `pnpm test:e2e` for Codex/Claude; `pnpm test:opencode-contract` and `pnpm test:codebuddy-contract` for installed source-capture Adapters over authenticated HTTP/PostgreSQL |
 | Go Module | From `server/`, `go test ./internal/<module>/...`; use `pnpm test:go:integration` for persistence and authenticated boundaries, and race/fuzz checks when affected |
 | SQL migration or query | `pnpm generate:sqlc`, inspect generated changes, and run affected PostgreSQL integration checks |
 | Compose or backup/restore | `pnpm test:self-hosting:config`; `pnpm test:self-hosting:restore` for paired recovery in isolated containers/volumes |
@@ -51,7 +51,7 @@ regression when appropriate.
 `pnpm check` runs documentation and architecture checks, workspace typechecks and tests,
 Web browser tests, Codex/Claude E2E and Go unit suites. It does not include every
 release or PostgreSQL check. `pnpm test:go:integration` also runs installed
-OpenCode contracts; its name is narrower than its coverage.
+OpenCode and CodeBuddy contracts; its name is narrower than its coverage.
 
 `pnpm check:docs` parses Markdown links and headings, checks local file/anchor
 targets, concrete pnpm script names and documentation/ADR index coverage. It
@@ -61,7 +61,7 @@ prose matches product behavior. Reader response schemas are additionally compare
 with the exported Go JSON types by the HTTP contract tests.
 
 [CI](../.github/workflows/ci.yml) additionally verifies Web rollout/rollback,
-production builds, release tarballs, PostgreSQL/installed OpenCode contracts and
+production builds, release tarballs, PostgreSQL/installed source-capture Adapter contracts and
 Collector disk-exhaustion recovery. [Security](../.github/workflows/security.yml)
 and [Release](../.github/workflows/release.yml) define their additional gates.
 Read the workflows and package scripts when their exact scope matters.

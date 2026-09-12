@@ -1,0 +1,59 @@
+{
+  "name": "@atape/adapter-codebuddy",
+  "version": "0.5.1",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "prepack": "node scripts/build.mjs",
+    "verify:package": "node scripts/verify-package.mjs",
+    "pack:release": "node ../../scripts/pack-adapter.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "catalog:build",
+    "vitest": "catalog:build",
+    "effect": "catalog:",
+    "@atape/domain": "workspace:*",
+    "esbuild": "catalog:build",
+    "@atape/adapter-catalog": "workspace:*"
+  },
+  "description": "ATape Adapter for CodeBuddy Code CLI local JSONL sessions",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist/index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "atapeAdapter": {
+    "protocolVersion": "atape.adapter.v1alpha1",
+    "gitAttribution": "atape.git-attribution.v1",
+    "sourceCapture": "atape.source-capture.v1",
+    "adapterId": "codebuddy",
+    "displayName": "CodeBuddy Code CLI",
+    "entry": "./dist/index.js",
+    "harnesses": [
+      "codebuddy-code"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SingleMai/ATape.git",
+    "directory": "adapters/codebuddy"
+  },
+  "homepage": "https://github.com/SingleMai/ATape#readme",
+  "bugs": {
+    "url": "https://github.com/SingleMai/ATape/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

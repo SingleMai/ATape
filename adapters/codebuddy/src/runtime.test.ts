@@ -1,0 +1,174 @@
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { Schema } from "effect"
+import { SourceCaptureHeader, SourceCapturePage, SourceDiscoveryPage } from "@atape/domain"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { createAtapeAdapter } from "./runtime.ts"
+
+const roots: string[] = [], runtimes: Awaited<ReturnType<typeof createAtapeAdapter>>[] = []
+afterEach(async () => { for (const runtime of runtimes.splice(0)) await runtime.close(); vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
+const signal = () => new AbortController().signal
+const limits = { rowBytes: 65536, pageBytes: 262144, pageRows: 1, records: 1000, threads: 20, durationMs: 10000 }
+const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 }
+const sourceId = "atape-codebuddy-native-21240"
+const fixture = async () => {
+  const home = await mkdtemp(join(tmpdir(), "atape-codebuddy-")); roots.push(home)
+  const directory = join(home, "projects", "opaque-project-label"), file = join(directory, `${sourceId}.jsonl`)
+  await mkdir(directory, { recursive: true })
+  const native = await readFile(new URL("./fixtures/native-2.124.0.jsonl", import.meta.url), "utf8")
+  await writeFile(file, native)
+  vi.stubEnv("ATAPE_CODEBUDDY_HOME", home)
+  const lifetime = new AbortController()
+  const runtime = await createAtapeAdapter({ protocolVersion: "atape.adapter.v1alpha1", adapter: { id: "codebuddy", version: "0.5.1" }, project: { id: "project", type: "directory", path: "/unrelated/locator" }, signal: lifetime.signal })
+  runtimes.push(runtime)
+  const request = { sourceId, limits, projection, rawEnabled: true, signal: signal() }
+  return { home, directory, file, native, lifetime, runtime, request }
+}
+const read = async (view: Awaited<ReturnType<Awaited<ReturnType<typeof createAtapeAdapter>>["sourceCapture"]["open"]>>) => {
+  const frames: SourceCapturePage["frames"][number][] = []
+  for (let i = 0; i < 100; i++) {
+    const page = Schema.decodeUnknownSync(SourceCapturePage)(await view.read(signal()))
+    expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(projection.pageBytes)
+    expect(page.frames.length).toBeLessThanOrEqual(projection.pageItems)
+    frames.push(...page.frames)
+    if (page.done) return frames
+  }
+  throw new Error("Fixture failed to finish")
+}
+const rows = (native: string) => native.trim().split("\n").map(line => JSON.parse(line))
+const serialize = (values: unknown[]) => values.map(row => JSON.stringify(row) + "\n").join("")
+
+describe("CodeBuddy installed runtime Interface", () => {
+  it("projects native resume, thoughts, successful and failed tools, and per-response usage with original attribution", async () => {
+    const f = await fixture(), before = await stat(f.file)
+    const discovery = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
+    expect(discovery.sources).toEqual([{ sourceId, originKey: expect.any(String), cwd: "/fixture/codebuddy-project" }])
+    const view = await f.runtime.sourceCapture.open(f.request)
+    Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+    expect(view.target).toEqual({ events: 12, usage: 5, threads: 1 })
+    expect(view.session.captureStatus).toBe("healthy")
+    const frames = await read(view), events = frames.flatMap(f => f.events), usage = frames.flatMap(f => f.usage)
+    expect(events.map(e => e.update.sessionUpdate)).toEqual(["user_message_chunk", "agent_thought_chunk", "agent_message_chunk", "user_message_chunk", "tool_call", "tool_call_update", "agent_thought_chunk", "agent_message_chunk", "user_message_chunk", "tool_call", "tool_call_update", "agent_message_chunk"])
+    expect(events[5]!.update).toMatchObject({ status: "failed", title: "Read", toolCallId: (events[4]!.update as { toolCallId: string }).toolCallId })
+    expect(events[10]!.update).toMatchObject({ status: "completed" })
+    expect(events[11]!.update).toMatchObject({ content: { text: "ATAPE_CODEBUDDY_TOOL_MARKER_21240" } })
+    const expected = rows(f.native).filter(r => r.message?.usage).map(r => r.message.usage)
+    expect(usage.reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(expected.reduce((sum, row) => sum + row.input_tokens, 0))
+    expect(usage[0]).toMatchObject({ inputTokens: 6210, outputTokens: 40, cacheReadTokens: 512 })
+    expect(frames.map(f => (f.raw as { json: string }).json).join("\n") + "\n").toBe(f.native)
+    await view.close()
+    expect((await stat(f.file)).mtimeMs).toBe(before.mtimeMs)
+  })
+  it("freezes a view across source appends/deletion; Raw off retains identical canonical identities and no raw payloads", async () => {
+    const f = await fixture(), view = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await appendFile(f.file, "unfinished")
+    const off = await read(view)
+    expect(off.every(frame => frame.raw === undefined)).toBe(true)
+    await view.close()
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "format" })
+    await writeFile(f.file, f.native)
+    const fresh = await f.runtime.sourceCapture.open(f.request)
+    await rm(f.file)
+    const on = await read(fresh)
+    expect(on.map(({ raw: _, ...rest }) => rest)).toEqual(off)
+    await fresh.close()
+    expect((await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }) as SourceDiscoveryPage).sources).toEqual([])
+  })
+  it("keeps event identities after relocation and later CWD changes", async () => {
+    const f = await fixture(), first = await f.runtime.sourceCapture.open(f.request), initial = await read(first)
+    await first.close()
+    const changed = rows(f.native); for (const row of changed.slice(1)) row.cwd = "/different/project"
+    await writeFile(f.file, serialize(changed)); await rename(f.directory, join(f.home, "projects", "relocated"))
+    const moved = await f.runtime.sourceCapture.open(f.request)
+    expect(moved.origin.cwd).toBe("/fixture/codebuddy-project")
+    expect((await read(moved)).flatMap(f => f.events)).toEqual(initial.flatMap(f => f.events))
+    await moved.close()
+  })
+  it("isolates malformed and duplicate discovery sources and advances diagnostic-only pages", async () => {
+    const f = await fixture()
+    await writeFile(join(f.directory, "000-malformed.jsonl"), "broken\n")
+    const first = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
+    expect(first.sources).toEqual([]); expect(first.sourceFailures[0]?.reason).toBe("format"); expect(first.done).toBe(false)
+    const next = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: first.cursor, limits, signal: signal() }))
+    expect(next.sources[0]?.sourceId).toBe(sourceId)
+    const duplicate = join(f.home, "projects", "duplicate"); await mkdir(duplicate); await copyFile(f.file, join(duplicate, `${sourceId}.jsonl`))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "format" })
+    const bad = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
+    expect(bad.sourceFailures[0]?.reason).toBe("duplicate")
+  })
+  it.each(["fork", "compaction", "branch", "foreign", "revision", "missing-origin"])("rejects %s without returning an incomplete target", async variant => {
+    const f = await fixture(), values = rows(f.native)
+    if (variant === "fork") await writeFile(f.file.replace(/\.jsonl$/, ".meta.json"), await readFile(new URL("./fixtures/native-fork-2.124.0.meta.json", import.meta.url), "utf8"))
+    if (variant === "compaction") values[2].logicalParentId = values[0].id
+    if (variant === "branch") values[4].parentId = values[0].id
+    if (variant === "foreign") values[4].sessionId = "other"
+    if (variant === "revision") values.push({ ...values[3], content: [] })
+    if (variant === "missing-origin") delete values[0].cwd
+    await writeFile(f.file, serialize(values))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: variant === "missing-origin" ? "attribution" : "unsupported" })
+  })
+  it.each(["row", "records", "events", "page", "source"])("enforces %s bounds before a view escapes", async variant => {
+    const f = await fixture()
+    if (variant === "row") f.request.limits = { ...limits, rowBytes: 100 }
+    if (variant === "records") f.request.limits = { ...limits, records: 3 }
+    if (variant === "events") f.request.projection = { ...projection, events: 2 }
+    if (variant === "page") f.request.projection = { ...projection, pageBytes: 100 }
+    if (variant === "source") await writeFile(f.file, " ".repeat(16 * 1024 * 1024 + 1))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "limit" })
+  })
+  it("releases its view on close/cancellation, rejects overlapping opens, and ignores a repeated old close", async () => {
+    const f = await fixture(), first = await f.runtime.sourceCapture.open(f.request)
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "closed" })
+    await first.close(); const second = await f.runtime.sourceCapture.open(f.request); await first.close()
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "closed" })
+    f.lifetime.abort()
+    await expect(second.read(signal())).rejects.toBeDefined()
+    await expect(f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() })).rejects.toBeDefined()
+  })
+  it("deduplicates native response usage across tool calls and keeps copied usage out of unrelated Sessions", async () => {
+    const f = await fixture(), values = rows(f.native)
+    const call = values[6], another = { ...call, id: "parallel-call", callId: "parallel-call-id", parentId: call.id }
+    values.splice(7, 0, another); values[8].parentId = another.id
+    await writeFile(f.file, serialize(values))
+    const view = await f.runtime.sourceCapture.open(f.request)
+    expect(view.target).toEqual({ events: 13, usage: 5, threads: 1 })
+    await view.close()
+  })
+  it("does not cut a long first message into an unredactable title fragment", async () => {
+    const f = await fixture(), values = rows(f.native)
+    values[0].content[0].text = "x".repeat(190) + "SENSITIVE_TEST_TOKEN"
+    await writeFile(f.file, serialize(values))
+    const view = await f.runtime.sourceCapture.open(f.request)
+    expect(view.session.title).toBe("CodeBuddy session")
+    const frames = await read(view)
+    expect(frames[0]!.events[0]!.update).toMatchObject({ content: { text: values[0].content[0].text } })
+    await view.close()
+  })
+  it("returns a null terminal discovery cursor and restarts after cursor source deletion", async () => {
+    const f = await fixture()
+    const first = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
+    expect(first.done).toBe(true); expect(first.cursor).toBeNull()
+    const restarted = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: "removed-file", limits, signal: signal() }))
+    expect(restarted.sources).toEqual(first.sources)
+  })
+  it("marks external tool output partial and rejects child-agent calls", async () => {
+    const f = await fixture(), values = rows(f.native)
+    values[7].output.text = "<persisted-output>not-captured.txt</persisted-output>"
+    await writeFile(f.file, serialize(values))
+    const view = await f.runtime.sourceCapture.open(f.request)
+    expect(view.session.captureStatus).toBe("partial"); await view.close()
+    values[6].name = "Agent"; await writeFile(f.file, serialize(values))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "unsupported" })
+  })
+  it("does not follow a history symlink and marks unknown content partial", async () => {
+    const f = await fixture()
+    await symlink(f.file, join(f.directory, "linked.jsonl"))
+    expect((await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }) as SourceDiscoveryPage).sources).toHaveLength(1)
+    const values = rows(f.native); values[0].content.push({ type: "input_image", image: "blob:controlled" })
+    await writeFile(f.file, serialize(values))
+    const view = await f.runtime.sourceCapture.open(f.request)
+    expect(view.session.captureStatus).toBe("partial"); expect(view.target.events).toBe(12)
+    await view.close()
+  })
+})

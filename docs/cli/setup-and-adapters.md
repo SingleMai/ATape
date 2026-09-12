@@ -21,6 +21,7 @@ or its Adapter alone does not create conversations.
 | Codex | [Experimental rollout compatibility](../adapters/codex.md#supported-source-and-limits) |
 | Claude Code | [Supported linear JSONL history](../adapters/claude.md#sources-and-supported-history) |
 | OpenCode | [Accepted SQLite version/platforms and Server prerequisite](../adapters/opencode.md#supported-source-and-enablement) |
+| CodeBuddy Code CLI | [Supported primary JSONL Sessions and limits](../adapters/codebuddy.md#source-mapping-and-supported-scope) |
 
 Launch the installed `atape` executable from your Project
 directory. Source contributors can use `pnpm atape` from the ATape repository
@@ -143,9 +144,9 @@ this affects future collection on this machine and retains server history.
 
 ## Git conversation attribution
 
-Codex, Claude and OpenCode use the same Host attribution contract. Codex supplies the
+Codex, Claude, OpenCode and CodeBuddy use the same Host attribution contract. Codex supplies the
 original rollout CWD and recorded Git remote when available; Claude supplies the
-original root record's CWD; OpenCode supplies immutable session-creation evidence. The Host resolves the nearest repository when needed
+original root record's CWD; CodeBuddy supplies its first native user record's ID and CWD; OpenCode supplies immutable session-creation evidence. The Host resolves the nearest repository when needed
 and asks the configured Instance to match its remote in the selected Team. The
 server owns remote equivalence and repository aliases. A nested unrelated
 repository is excluded even when its path is under the configured checkout.
@@ -322,7 +323,7 @@ the server again during collection.
 
 The redactor covers common credentials and environment values whose names end in `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`, `DATABASE_URL`, or `DSN`. Add exact values with a JSON array in `ATAPE_REDACT_VALUES`. Identity fields are stable and are not rewritten, so Adapter authors must never place secrets in IDs.
 
-The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md) and [OpenCode](../adapters/opencode.md) guides.
+The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md), [OpenCode](../adapters/opencode.md) and [CodeBuddy](../adapters/codebuddy.md) guides.
 
 ## Troubleshooting
 Start with Project → Sync details. PgUp/PgDn pages all diagnostics retained in the

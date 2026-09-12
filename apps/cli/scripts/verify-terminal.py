@@ -18,7 +18,7 @@ root = Path(root)
 project = root / "项目 space"
 project.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, ATAPE_HOME=str(root / "home"), ATAPE_INSTANCE_URL=origin,
-           ATAPE_CODEX_HOME=str(root / "absent-codex"), ATAPE_CLAUDE_HOME=str(root / "absent-claude"),
+           ATAPE_CODEX_HOME=str(root / "absent-codex"), ATAPE_CLAUDE_HOME=str(root / "absent-claude"), ATAPE_CODEBUDDY_HOME=str(root / "absent-codebuddy"),
            TERM="xterm-256color", ATAPE_DEVELOPMENT_ALLOW_HTTP="true")
 for name in ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
              "ATAPE_CONFIG_FILE", "ATAPE_COLLECTOR_STATE_FILE", "ATAPE_COLLECTOR_PROCESS_FILE", "ATAPE_COLLECTOR_STATUS_FILE",
@@ -201,7 +201,7 @@ try:
     assert "interactive macOS or Linux terminal" in piped.stderr and "\x1b" not in piped.stderr
 
     fixture(adapter)
-    smoke_index = 3  # Three official tools precede the fixture integration.
+    smoke_index = 4  # Four official tools precede the fixture integration.
     # Configure tools once, then exercise login and the zero-Team detour during
     # Project connection without a second tool-selection step.
     def team_mode(enabled):

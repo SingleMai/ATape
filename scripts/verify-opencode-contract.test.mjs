@@ -9,3 +9,12 @@ test("OpenCode acceptance requires the actual named subtest to pass", () => {
   assert.throws(() => verifyOpenCodeResult([{ ...event, Action: "pass", Test: "some-other-test" }]), /missing or skipped/)
   assert.doesNotThrow(() => verifyOpenCodeResult([{ ...event, Action: "pass" }]))
 })
+
+import { requiredTest as codeBuddyTest, verifyCodeBuddyResult } from "./verify-codebuddy-contract.mjs"
+test("CodeBuddy acceptance cannot pass using only existing provider results", () => {
+  const event = { Test: codeBuddyTest, Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi" }
+  assert.throws(() => verifyCodeBuddyResult([]), /missing or skipped/)
+  assert.throws(() => verifyCodeBuddyResult([{ ...event, Action: "skip" }]), /missing or skipped/)
+  assert.throws(() => verifyCodeBuddyResult([{ ...event, Action: "pass", Test: requiredTest }]), /missing or skipped/)
+  assert.doesNotThrow(() => verifyCodeBuddyResult([{ ...event, Action: "pass" }]))
+})
