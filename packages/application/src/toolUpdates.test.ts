@@ -1,3 +1,4 @@
+import { CollectorDaemonProcess } from "./collectorDaemonProcess.ts"
 import { emptyClientConfig, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
@@ -13,6 +14,10 @@ const fixture = () => {
   let offline = false, installFailed = false
   const installs: string[] = [], checks: Array<{ name: string; cached: boolean }> = []
   const layer = Layer.mergeAll(
+    Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      refresh: () => Effect.succeed(false), inspect: () => Effect.succeed(undefined),
+      start: () => Effect.die("Unexpected start"), stop: () => Effect.die("Unexpected stop")
+    })),
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(structuredClone(config)).pipe(
       Effect.tap(result => Effect.sync(() => { if (result.config) config = result.config })), Effect.map(result => result.value)
     ) })),

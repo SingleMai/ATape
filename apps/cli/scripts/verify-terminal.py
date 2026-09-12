@@ -239,9 +239,19 @@ try:
     assert len(snapshot["projects"]) == 1 and snapshot["projects"][0]["adapterIds"] == ["smoke"]
     assert snapshot["projects"][0]["path"] == str(project.resolve())
 
+    # A direct same-version package replacement is completed when the installed
+    # interactive app opens. No removed business command is involved.
+    process_file = root / "home/state/collector-process.json"
+    previous_process = json.loads(process_file.read_text())
+    entry = Path(binary).resolve()
+    entry.write_text(entry.read_text() + "\n// package replacement before console startup\n")
     terminal = Terminal(("--no-browser",))
     terminals.append(terminal)
     terminal.wait("Your Projects")
+    refreshed_process = json.loads(process_file.read_text())
+    assert refreshed_process["pid"] != previous_process["pid"], "opening updated ATape retained the old Host"
+    for field in ("intervalMs", "concurrency"):
+        assert refreshed_process[field] == previous_process[field], "Host refresh changed " + field
     terminal.send("n")
     terminal.wait("Add project")
     terminal.wait("Project directory")
@@ -309,8 +319,16 @@ try:
     terminal.wait("Enter an npm package")
     terminal.send(str(adapter) + "\r")
     terminal.wait("Install integration?")
+    # The same safety boundary must apply when npm replaces the CLI while the
+    # console is already open, before Integration maintenance activates a slot.
+    previous_process = json.loads(process_file.read_text())
+    entry.write_text(entry.read_text() + "\n// package replacement during console lifetime\n")
     terminal.send("\x1b[B\r")
     terminal.wait("Integration installed.", seconds=30)
+    refreshed_process = json.loads(process_file.read_text())
+    assert refreshed_process["pid"] != previous_process["pid"], "integration activation retained the old Host"
+    for field in ("intervalMs", "concurrency"):
+        assert refreshed_process[field] == previous_process[field], "integration refresh changed " + field
     assert config()["enabledAdapterIds"] == [], "installation enabled capture"
     terminal.send("\x1b[B\r")
     terminal.wait("Remove unused integration versions?")
@@ -342,7 +360,7 @@ try:
     assert not running(), "confirmed stop did not stop the owned Collector"
     terminal.finish("q")
     terminals.pop()
-    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation, integration maintenance, language and background lifetime.")
+    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation, integration maintenance, executable replacement handoff, language and background lifetime.")
 finally:
     for terminal in terminals:
         terminal.abort()

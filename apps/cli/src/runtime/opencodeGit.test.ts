@@ -1,3 +1,4 @@
+import { makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
 import { AdapterRuntimes, CLISetupPlatform, installAdapter, makeGitSourceAttributionLayer,
   ProjectSetupGateway, ProjectSetupGatewayError, type SetupRemoteProject } from "@atape/application"
 import type { GitSource, LocalProject, SourceDiscoveryPage } from "@atape/domain"
@@ -71,7 +72,8 @@ describe("Installed OpenCode Git attribution", () => {
     if (!artifact) throw new Error("OpenCode pack did not produce an artifact")
     const paths = defaultNodeClientPaths({ ATAPE_HOME: join(root, "atape") })
     const adapter = (await Effect.runPromise(installAdapter(join(artifacts, artifact.filename)).pipe(Effect.provide(Layer.mergeAll(
-      makeConfigStoreLayer(paths.configFile), makeAdapterPackagesLayer(paths.adapterDirectory)
+      makeConfigStoreLayer(paths.configFile), makeAdapterPackagesLayer(paths.adapterDirectory),
+      makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "")
     ))))).adapter
     expect(await Effect.runPromise(CLISetupPlatform.use(platform => platform.supportsGit(adapter)).pipe(
       Effect.provide(makeCLISetupPlatformLayer(paths, {}))))).toBe(true)

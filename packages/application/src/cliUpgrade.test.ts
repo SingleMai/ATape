@@ -4,7 +4,7 @@ import { CollectorDaemonProcess, CollectorDaemonProcessError } from "./collector
 import { checkCLIUpgrade, CLIUpgradeError, CLIUpgradePlatform, upgradeCLI, resumeCLIUpgrade } from "./cliUpgrade.ts"
 
 const fixture = (version = "0.4.2", running = true) => {
-  let failInstall = false, failResume = false, installs = 0, stops = 0
+  let failInstall = false, failResume = false, installs = 0, stops = 0, stale = false
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
   const layer = Layer.mergeAll(
     Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
@@ -15,6 +15,7 @@ const fixture = (version = "0.4.2", running = true) => {
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      refresh: () => Effect.sync(() => { const changed = running && stale; stale = false; return changed }),
       inspect: () => Effect.sync(() => running ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
       stop: () => Effect.sync(() => { stops++; running = false; return true }),
       start: options => Effect.suspend(() => {
@@ -26,7 +27,7 @@ const fixture = (version = "0.4.2", running = true) => {
     }))
   )
   return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) => Effect.runPromise(effect.pipe(Effect.provide(layer))),
-    installs: () => installs, stops: () => stops, starts, running: () => running, failInstall: () => { failInstall = true }, failResume: (value = true) => { failResume = value } }
+    stale: () => { stale = true }, installs: () => installs, stops: () => stops, starts, running: () => running, failInstall: () => { failInstall = true }, failResume: (value = true) => { failResume = value } }
 }
 
 describe("CLI upgrade Module", () => {
@@ -40,6 +41,16 @@ describe("CLI upgrade Module", () => {
     expect((await stopped.run(upgradeCLI("0.4.1"))).resumed).toBe(false)
     expect(stopped.stops()).toBe(0)
     expect(stopped.starts).toEqual([])
+  })
+  it("finishes an external package update even when npm already reports the current version", async () => {
+    const client = fixture("0.4.2")
+    client.stale()
+    expect(await client.run(upgradeCLI("0.4.2"))).toEqual({ version: "0.4.2", updated: false, resumed: true })
+    expect(client.installs()).toBe(0)
+    expect(await client.run(upgradeCLI("0.4.2"))).toEqual({ version: "0.4.2", updated: false, resumed: false })
+    const stopped = fixture("0.4.2", false)
+    stopped.stale()
+    expect((await stopped.run(upgradeCLI("0.4.2"))).resumed).toBe(false)
   })
   it("does not downgrade, reinstall the current version, or upgrade development builds", async () => {
     for (const version of ["0.4.1", "0.4.0"]) {

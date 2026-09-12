@@ -230,11 +230,21 @@ running sync resumes with its settings; stopped sync stays stopped. Development
 builds and other package managers receive guidance instead of an inferred target.
 If sync cannot resume, use Resume sync and continue or return with sync stopped.
 
-For direct npm/tarball replacement, stop sync in Settings, exit ATape, install the
-replacement using npm, then reopen ATape and select Start sync if it was previously
-running. Restart older Collectors before using newer Adapter package slots. Verify
-the CLI version in Tools, update integrations there as needed, and inspect Project
-sync results. Installing a new version is not proof of successful conversation sync.
+Managed collection records the executable identity it started with. Opening ATape,
+installing or updating an integration, or selecting Start sync refreshes a running
+Host when the installed CLI changed, including a same-version reinstall. Legacy
+process metadata without an identity triggers one restart. The handoff preserves
+interval and concurrency, never starts user-stopped sync, and retains restart
+intent if it fails. Integration activation stops on a handoff error so an old Host
+cannot receive a new installation layout. An unchanged Host picks up Adapter-only
+updates on its next cycle without a restart.
+
+A direct npm/tarball replacement does not itself run ATape lifecycle management.
+Reopen ATape to complete the handoff. Older CLIs without this detection require
+Stop sync in Settings before replacement, then Start sync after reopening.
+Verify the installed version in Tools, update integrations there as needed, and
+inspect Project sync results. Installing a version is not proof of successful
+conversation sync.
 
 ## Run collection
 Connect and sync starts the managed background Collector. Home offers Start sync
@@ -245,7 +255,9 @@ Public foreground collection, scheduler commands and tuning flags are removed.
 The Collector continues bounded catch-up cycles while pages remain and waits
 30 seconds by default when caught up or after failures. It runs at most four
 Project/Adapter jobs concurrently by default. Project details report each tool’s
-last result and bounded counters without conversation bodies. Status refresh is
+last result and bounded counters without conversation bodies. Failed jobs omit
+previous backlog estimates instead of presenting stale zero counts as current
+progress; their last success time remains available. Status refresh is
 read-only and does not force a collection cycle.
 
 Git Project matching and ingestion each allow at most three attempts for transient

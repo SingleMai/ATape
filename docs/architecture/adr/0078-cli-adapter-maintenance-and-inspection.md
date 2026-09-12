@@ -29,8 +29,8 @@ collection requires runtime leases and is outside this increment. Existing recor
 without a slot keep their original installation path until explicitly upgraded.
 No old package tree is modified or implicitly migrated.
 An already-running Host from an older CLI cannot interpret a slot. Built-in CLI
-upgrade restarts managed collection; direct package-manager updates must restart
-the Host before using the new Adapter maintenance flow.
+upgrade restarts managed collection. The subsequent executable-handoff amendment
+below also covers maintenance after a direct package-manager replacement.
 
 ## Collection and inspection
 
@@ -71,3 +71,28 @@ concurrent configuration changes, account changes between requests, Raw-off idle
 cycles, and isolation of captured history by registration and enabled Adapter.
 CLI package verification checks the bundled executable. Package publication and
 Server deployment are separate actions and are not part of this increment.
+
+
+## Executable handoff amendment
+
+The existing CollectorDaemonProcess Interface gains a refresh operation: it
+compares the installed executable identity with a managed process record and
+restarts only stale running collection, preserving its schedule. This keeps
+filesystem identity, process ownership, serialization and recovery in the Node
+Implementation. The process contract is independent of collection/configuration
+Modules so Adapter activation can require refresh without a runtime import cycle.
+
+Comparing only package versions was rejected because a same-version reinstall can
+replace code and legacy daemons record no version. Restarting on every Adapter
+installation was rejected because current Hosts already load immutable slots on
+later cycles. The selected executable digest also covers path and Node executable
+identity; old metadata requires one refresh. Refresh never starts user-stopped
+sync. Restart intent is persisted before termination, survives a failed handoff,
+and can be cancelled by stopping sync in Settings. Package activation fails if refresh fails.
+
+Console entry, Adapter installation and the CLI update workflow invoke refresh;
+selecting Start sync also reconciles a stale existing process. These are operations
+inside the single interactive entry defined by [ADR-0081](0081-single-interactive-cli-entry.md),
+not public business commands. A direct external npm command does not itself execute
+ATape lifecycle management. No package lifecycle
+script, autonomous daemon replacement or Server deployment is introduced.

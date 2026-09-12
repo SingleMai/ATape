@@ -42,6 +42,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     install: () => Effect.sync(() => { installs++ }).pipe(Effect.andThen(failInstall
       ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "Installation failed" })) : Effect.void))
   })), ...(failFirstResume ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      refresh: () => Effect.succeed(false),
     inspect: () => Effect.sync(() => syncRunning ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
     stop: () => Effect.sync(() => { syncRunning = false; return true }),
     start: options => Effect.suspend(() => {
