@@ -1,6 +1,6 @@
 // Executed outside the checkout: only the installed tarball and Node builtins.
 import assert from "node:assert/strict"
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 const { createAtapeAdapter } = await import(pathToFileURL(process.argv[2]).href)
@@ -61,9 +61,28 @@ try {
       await view.close()
     }
   }
+  await cp(new URL("./native-family-2.124.0", import.meta.url), dir, { recursive: true })
+  for (const rawEnabled of [false, true]) {
+    const view = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-child-21240", limits, projection, rawEnabled, signal })
+    assert.deepEqual(view.target, { events: 37, usage: 15, threads: 5 })
+    assert.equal(view.origin.cwd, "/fixture/codebuddy-family-project")
+    assert.equal(view.threads.find(thread => thread.sourceThreadId === "agent-bc513377").parentSourceThreadId, "agent-60a8b853")
+    let done = false, events = 0, childLinks = 0, samples = 0
+    for (let count = 0; count < 30 && !done; count++) {
+      const page = await view.read(signal)
+      for (const frame of page.frames) {
+        events += frame.events.length; samples += frame.usage.length
+        childLinks += frame.events.filter(event => event.childSourceThreadId).length
+        assert.equal(frame.raw !== undefined, rawEnabled)
+      }
+      done = page.done
+    }
+    assert.equal(done, true); assert.equal(events, 37); assert.equal(samples, 15); assert.equal(childLinks, 5)
+    await view.close()
+  }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()
   await assert.rejects(view.read(signal))
 } finally { await runtime.close(); await rm(home, { recursive: true }) }
-process.stdout.write("Installed CodeBuddy native/fork/resume/compaction projection, original CWD, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed CodeBuddy native/fork/resume/compaction/family projection, original CWD, bounded pages, Raw off/on and cancellation verified.\n")

@@ -23,13 +23,16 @@ not enable collection. Start sync from Home and inspect **Project → Sync detai
 
 Source resolution: `ATAPE_CODEBUDDY_HOME`, then `CODEBUDDY_CONFIG_DIR`, then
 `~/.codebuddy`. Overrides must be absolute. Discovery reads
-`projects/*/*.jsonl`; it does not traverse symlinks or nested subagent files.
+`projects/*/*.jsonl`; it does not traverse symlinks. A root opens only child files proven by its
+completed native Agent receipts.
 
 The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
 from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks), ordinary resume,
 text/thoughts, tool calls/results, manual `/compact`, engineering pre-message
-automatic compaction and normalized per-response token usage.
-Rewind, `/branch`, emergency/LLM automatic compaction, child agents, unknown sidecar fields and external
+automatic compaction, completed foreground Agent families (resume and nesting),
+and normalized per-Thread response usage.
+Rewind, `/branch`, emergency/LLM automatic compaction, background/team/fork subagents,
+child compaction, forks with children, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
 when enabled and marks capture partial.
@@ -42,7 +45,11 @@ Compaction retains the original transcript. Manual commands and summaries remain
 visible; engine-generated context is Raw-only. Incomplete manual compaction keeps
 the previous publication. Exact flags and remaining limits are in the guide.
 
-Each complete source snapshot is limited to 16 MiB; projection snapshots to
+Parent Agent calls link to child Threads; the parent’s original Project owns all
+members even when child CWD differs. Missing or incomplete members retain the
+whole prior publication. See the guide for exact membership evidence.
+
+Each complete family snapshot (including metadata) is limited to 16 MiB; projection snapshots to
 64 MiB; discovery to 10,000 entries. Host row/page/event/deadline limits also
 apply. Incomplete final lines wait for a complete subsequent snapshot. Source
 removal preserves already captured history. All delivery and Raw recovery use

@@ -1,4 +1,4 @@
-import { appendFile, copyFile, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises"
+import { appendFile, copyFile, cp, mkdir, mkdtemp, readFile, rename, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Schema } from "effect"
@@ -197,6 +197,83 @@ describe("CodeBuddy installed runtime Interface", () => {
     await writeFile(file, serialize(values))
     await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: compactId })).rejects.toMatchObject({ reason: variant === "pending" ? "format" : "unsupported" })
   })
+  const family = async () => {
+    const f = await fixture(), familyId = "atape-codebuddy-child-21240"
+    await cp(new URL("./fixtures/native-family-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const parent = join(f.directory, `${familyId}.jsonl`), child = join(f.directory, familyId, "subagents", "agent-6b64fa37.jsonl")
+    return { ...f, parent, child, parentRows: rows(await readFile(parent, "utf8")), childRows: rows(await readFile(child, "utf8")), request: { ...f.request, sourceId: familyId } }
+  }
+  it("captures native child resume, nested children and parent compaction through stable linked Threads", async () => {
+    const f = await family()
+    // Unreferenced child files are present throughout; only native receipts admit them.
+    await writeFile(f.parent, serialize(f.parentRows.slice(0, 6))); await writeFile(f.child, serialize(f.childRows.slice(0, 3)))
+    const initial = await f.runtime.sourceCapture.open(f.request), before = await read(initial), origin = initial.origin
+    expect(initial.target).toEqual({ events: 8, usage: 3, threads: 2 }); await initial.close()
+    await writeFile(f.parent, serialize(f.parentRows.slice(0, 11))); await writeFile(f.child, serialize(f.childRows))
+    const resumed = await f.runtime.sourceCapture.open(f.request), resumedFrames = await read(resumed)
+    expect(resumed.target).toEqual({ events: 15, usage: 6, threads: 2 }); expect(resumed.origin).toEqual(origin)
+    const firstChild = before.flatMap(frame => frame.events).filter(event => event.sourceThreadId === "agent-6b64fa37")
+    expect(resumedFrames.flatMap(frame => frame.events).filter(event => event.sourceThreadId === "agent-6b64fa37").slice(0, 3)).toEqual(firstChild)
+    await resumed.close(); await writeFile(f.parent, serialize(f.parentRows))
+    const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+    expect(view.profile).toBe("codebuddy.cli.jsonl.family.1"); expect(view.target).toEqual({ events: 37, usage: 15, threads: 5 })
+    expect(view.threads.map(thread => [thread.sourceThreadId, thread.parentSourceThreadId])).toEqual([
+      [f.request.sourceId, undefined], ["agent-6b64fa37", f.request.sourceId], ["agent-60a8b853", f.request.sourceId], ["agent-64db2ff8", f.request.sourceId], ["agent-bc513377", "agent-60a8b853"]
+    ])
+    const events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+    expect(events.map(event => [event.sourceOrder, event.eventIndex])).toEqual(events.map((_, index) => [index, index]))
+    expect(events.filter(event => event.childSourceThreadId).map(event => event.childSourceThreadId)).toEqual(["agent-6b64fa37", "agent-6b64fa37", "agent-60a8b853", "agent-bc513377", "agent-64db2ff8"])
+    expect(events.filter(event => event.sourceThreadId === "agent-6b64fa37").slice(0, 3)).toEqual(firstChild)
+    expect(events.filter(event => event.sourceThreadId === "agent-bc513377").at(-1)!.update).toMatchObject({ content: { text: "ATAPE_LEAF_21240" } })
+    expect(usage.reduce((n, row) => n + (row.inputTokens ?? 0), 0)).toBe(108859)
+    expect(usage.reduce((n, row) => n + (row.outputTokens ?? 0), 0)).toBe(2886)
+    expect(usage.reduce((n, row) => n + (row.cacheReadTokens ?? 0), 0)).toBe(57664)
+    expect(usage.filter(row => row.sourceThreadId === "agent-6b64fa37")).toHaveLength(2)
+    expect(frames.filter(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId)).toHaveLength(17)
+    await view.close()
+    const changed = f.childRows.map(row => ({ ...row, cwd: "/foreign/child-cwd" }))
+    await writeFile(f.child, serialize(changed)); await rename(f.directory, join(f.home, "projects", "moved"))
+    const moved = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(join(f.home, "projects"), { recursive: true })
+    expect(moved.origin).toEqual(origin)
+    expect(await read(moved)).toEqual(frames.map(({ raw: _, ...frame }) => frame))
+    await moved.close()
+  })
+  it.each(["missing", "truncated", "prompt", "after", "last", "identity", "extra-turn", "pending", "path", "symlink", "background", "fork"])("refuses an incomplete or unproven child family: %s", async variant => {
+    const f = await family()
+    let reason = "unsupported"
+    if (variant === "missing") { await rm(f.child); reason = "io" }
+    if (variant === "truncated") { await appendFile(f.child, "unfinished"); reason = "format" }
+    if (variant === "prompt") f.parentRows[3].arguments = JSON.stringify({ ...JSON.parse(f.parentRows[3].arguments), prompt: "different prompt" })
+    if (variant === "after") f.parentRows[9].providerData.toolResult.subAgent.afterId = "not-the-previous-turn"
+    if (variant === "last") { f.parentRows[4].providerData.toolResult.subAgent.lastId = "missing-record"; reason = "format" }
+    if (variant === "identity") { f.childRows[2].sessionId = "foreign"; await writeFile(f.child, serialize(f.childRows)) }
+    if (variant === "extra-turn") { await appendFile(f.child, serialize([{ ...f.childRows[0], id: "unacknowledged", parentId: f.childRows.at(-1).id }])); reason = "format" }
+    if (variant === "pending") { f.parentRows.splice(4); reason = "format" }
+    if (variant === "path") { f.parentRows[4].providerData.toolResult.subAgent.sessionId = "../outside"; reason = "format" }
+    if (variant === "symlink") { const saved = join(f.home, "outside.jsonl"); await rename(f.child, saved); await symlink(saved, f.child); reason = "io" }
+    if (variant === "background") f.parentRows[3].arguments = JSON.stringify({ ...JSON.parse(f.parentRows[3].arguments), run_in_background: true })
+    if (variant === "fork") {
+      const forkId = "family-fork"
+      f.parentRows.push({ ...f.parentRows[0], id: "fork-owned", parentId: f.parentRows.at(-1).id, sessionId: forkId })
+      f.parent = join(f.directory, `${forkId}.jsonl`); f.request.sourceId = forkId
+      await writeFile(f.parent.replace(/\.jsonl$/, ".meta.json"), JSON.stringify({ forkedFrom: "atape-codebuddy-child-21240" }))
+    }
+    await writeFile(f.parent, serialize(f.parentRows))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
+  it.each(["threads", "records", "bytes"])("applies %s limits to the complete family", async variant => {
+    const f = await family()
+    if (variant === "threads") f.request.limits = { ...limits, threads: 3 }
+    if (variant === "records") f.request.limits = { ...limits, records: 24 }
+    if (variant === "bytes") {
+      f.request.limits = { ...limits, rowBytes: 16 * 1024 * 1024 }
+      f.parentRows[0].padding = "x".repeat(8 * 1024 * 1024); f.childRows[0].padding = "x".repeat(8 * 1024 * 1024)
+      await writeFile(f.parent, serialize(f.parentRows)); await writeFile(f.child, serialize(f.childRows))
+    }
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "limit" })
+  })
   it.each(["fork", "compaction", "branch", "foreign", "revision", "missing-origin"])("rejects %s without returning an incomplete target", async variant => {
     const f = await fixture(), values = rows(f.native)
     if (variant === "fork") await writeFile(f.file.replace(/\.jsonl$/, ".meta.json"), await readFile(new URL("./fixtures/native-fork-2.124.0.meta.json", import.meta.url), "utf8"))
@@ -252,14 +329,14 @@ describe("CodeBuddy installed runtime Interface", () => {
     const restarted = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: "removed-file", limits, signal: signal() }))
     expect(restarted.sources).toEqual(first.sources)
   })
-  it("marks external tool output partial and rejects child-agent calls", async () => {
+  it("marks external tool output partial and rejects malformed Agent calls", async () => {
     const f = await fixture(), values = rows(f.native)
     values[7].output.text = "<persisted-output>not-captured.txt</persisted-output>"
     await writeFile(f.file, serialize(values))
     const view = await f.runtime.sourceCapture.open(f.request)
     expect(view.session.captureStatus).toBe("partial"); await view.close()
     values[6].name = "Agent"; await writeFile(f.file, serialize(values))
-    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "unsupported" })
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "format" })
   })
   it("does not follow a history symlink and marks unknown content partial", async () => {
     const f = await fixture()

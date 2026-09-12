@@ -1,6 +1,6 @@
 # CodeBuddy Code CLI Adapter
 
-The CodeBuddy Adapter reads local primary and forked CLI JSONL Sessions through the existing
+The CodeBuddy Adapter reads local primary and forked CLI JSONL Sessions and completed foreground Agent families through the existing
 [source-capture runtime](package-manifest.md#bounded-source-capture-capability).
 The Host owns Project attribution, redaction, stable revisions, frozen delivery,
 atomic publication, independent Raw receipts and crash recovery. No Server schema
@@ -16,7 +16,8 @@ applies to connected Projects. See [CLI setup](../cli/setup-and-adapters.md).
 
 `ATAPE_CODEBUDDY_HOME` overrides `CODEBUDDY_CONFIG_DIR`, otherwise the source home
 is `~/.codebuddy`. Both overrides must be absolute. Discovery enumerates
-`projects/*/*.jsonl` without following symlinks or recursing into child histories.
+`projects/*/*.jsonl` without following symlinks. Opening a root then reads only
+child histories proved by its native Agent receipts; unrelated nested files are ignored.
 Directory names are locators, not proof of Project membership. For an ordinary Session, the first user record supplies `sessionId`, `id` and
 absolute `cwd`; the native Session ID must match the file basename. A fork also
 requires native sidecar evidence and its first fork-owned user record, as described
@@ -33,7 +34,8 @@ Official references: [local directory structure](https://www.codebuddy.ai/docs/c
 
 The evidence-bound profiles are `codebuddy.cli.jsonl.linear.1` and
 `codebuddy.cli.jsonl.fork.1`, extended by `codebuddy.cli.jsonl.compaction.1` and
-`codebuddy.cli.jsonl.fork.compaction.1` when supported compaction is present. They are tested with native
+`codebuddy.cli.jsonl.fork.compaction.1` when supported compaction is present. `codebuddy.cli.jsonl.family.1` covers the
+completed foreground Agent family described below, including root compaction. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -50,7 +52,8 @@ VS Code extension, all CLI versions, or other platforms.
 
 Input counters already include cached input; output includes reasoning. They are
 not added a second time. Missing counters remain unknown. Currency/credit values
-are not interpreted as money. Per-response usage is scoped to the root Thread.
+are not interpreted as money. Per-response usage belongs to the Thread containing that native model response.
+Parent tool results do not add the child response counters again.
 Tools are bounded through the shared value contract; oversized details are omitted
 with partial fidelity. Spill placeholders remain placeholders, mark partial and
 do not cause arbitrary referenced file reads. Search uses the existing bounded
@@ -70,8 +73,8 @@ retaining the fork filename as `storeId`. Native nested forks still record that
 root in `forkedFrom`, and ordinary fork resume appends records under the root ID.
 The Adapter therefore validates the complete linear parent chain and identity
 changes at user turns. After the first fork-owned turn, only the fork ID and its
-recorded root ID are accepted. Compaction follows the profile below; subagent markers and unknown sidecar
-fields remain unsupported. `/branch`, which rewrites IDs and stores `forkedAt`,
+recorded root ID are accepted. Compaction follows the profile below; unknown sidecar fields remain unsupported. Native fork resume can set
+`isSubAgent` even for an ordinary root; that flag alone does not establish child membership. `/branch`, which rewrites IDs and stores `forkedAt`,
 is a different shape and is not covered by these samples.
 
 Forks are independent Sessions containing their copied prefix. Event, tool and
@@ -90,11 +93,46 @@ unsupported. A complete rewritten file with the same proven Origin can produce a
 replacement target and Host-assigned revisions. This does not establish support
 for native rewind/compaction semantics.
 
-Sidecar fields other than `forkedFrom`, child-agent calls/Sessions, in-file branching
-and unknown parent-linked records are rejected. Nested subagent histories are not
-collected. These cases do not flatten child messages or replace the old target
-with a partial prefix. Child-session support is the next increment and requires
-controlled evidence for membership, usage ownership and Original Project.
+Sidecar fields other than `forkedFrom`, in-file branching and unknown parent-linked
+records are rejected without replacing previously published history.
+
+## Completed foreground Agent families
+
+Native `Agent` call/result pairs establish membership through structured
+`providerData.toolResult.subAgent` receipts. A child is stored at
+`<parent-native-session-id>/subagents/<agent-storage-id>.jsonl` within the root's
+Project bucket. Its internal Session UUID differs from the `agent-*` storage ID;
+nested children use their parent's internal UUID for the directory. Neither the
+child CWD nor that directory independently establishes Project ownership. The
+root's original CWD and Origin own the entire family.
+
+The Adapter validates the delegated prompt, agent type, completed assistant turn,
+receipt `lastId`, and resumed `afterId` chain before exposing any member. Native
+`lastId` can point to reasoning before the terminal response, so it is checked
+inside the turn rather than used as a visibility cutoff. Repeated calls that
+resume the same storage ID append to one Thread. Event, tool and usage identities
+are scoped by the root storage ID plus child storage ID; parent and child updates
+cannot overwrite one another. Each delegated turn follows its parent call and precedes the result; the complete
+family receives the global event order required by the Host.
+
+Each parent Agent tool call links to its child Thread. Nested calls preserve the
+Thread parent path, and Reader/Search can open and anchor the actual child Events.
+Raw envelopes retain both the owning root Session ID and child's storage Thread
+ID, alongside the unchanged native JSONL containing its internal UUID. Usage is
+attributed to the response's Thread, without copying parent tool-result counters.
+
+The native corpus covers a custom foreground Agent, its ordinary resume, a custom
+Agent calling another child, parent `/compact`, and a built-in `general-purpose`
+Agent afterward. It yields five Threads, 37 Events and 15 usage records: 108,859
+input, 2,886 output and 57,664 cached-input tokens. Cached input is included in
+input. Orphan files are not discovered as independent Sessions. A pending Agent
+call, missing/truncated child, mismatched receipt or unproven extra child turn
+rejects the complete new target; all previously published family members remain.
+
+Background, named/team and fork subagents, child compaction and forks containing
+child histories remain unsupported. Copied parent receipts alone do not prove a
+fork's child visibility frontier when the original children can keep appending.
+These shapes require additional native evidence before extending membership.
 
 ## Compaction with retained history
 
@@ -137,9 +175,10 @@ source interpretation may require a complete target; filenames alone do not
 prove immutable message history. The existing Host Interface hides replacement,
 comparison and recovery. The Adapter adds only provider reading/projection.
 
-An open reads at most 16 MiB from one regular JSONL file, validates complete UTF-8
-records, then checks inode/size/modification/change stamps and sidecar metadata
-before exposing a view. Concurrent source changes or an unfinished final line
+An open reads at most 16 MiB across the root, referenced children and sidecar
+metadata. It validates complete UTF-8 records and rechecks every member’s
+inode/size/modification/change stamps and metadata after the final member read
+before exposing a view. Record, Thread and duration budgets cover the complete family. Concurrent source changes or an unfinished final line
 produce a retryable-source situation with diagnostics; no partial target is
 published. The source handle is closed before the first projection page.
 All pages then come from that frozen bounded snapshot, including after source
@@ -173,7 +212,7 @@ native provenance and synthetic coverage. Relevant verification commands:
 - `pnpm test:release` includes the exact CodeBuddy release artifact and Tools.
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
-39 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
+55 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
 contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
@@ -193,6 +232,20 @@ acceptance verified its four real user turns, the recovered `/compact` command,
 native summary and continued reply, with no extra automatic-context turn. This
 is local acceptance, not a staging attestation.
 
+The family contract additionally checks actual installed background collection
+through initial delegation, resume, nesting, parent compaction and a built-in
+Agent. It checks original Project ownership despite foreign child CWD, stable
+child prefixes and links, per-Thread reader pagination and Search anchors, exact
+usage ownership and child Raw provenance. Incomplete/missing children retain the
+whole old target; Raw off/on preserves Canonical progress, and lost activation
+recovers every frozen member after all five source files are deleted. Browser
+acceptance opened the resumed child with its recovered content and followed
+root → intermediate child → leaf, confirming the three-level path and native
+leaf user/assistant messages in the existing side panel. The shared HTTP fixture
+advances only completed CodeBuddy reservation expiry before running the next
+Provider, preserving the deployment example’s finite per-User quota and verifying
+that expiry leaves the selected family readable.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -205,8 +258,8 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after compaction recovery; it writes the ephemeral test
-Server origin, compaction reader identifiers and test Web cookie there. Point the Web dev
+for up to three minutes after child-family recovery; it writes the ephemeral test
+Server origin, family reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
 `atape_session_dev`, inspect the reader, then create `<file>.done` to continue.
 The test removes this scratch credential file on exit. Do not commit it.

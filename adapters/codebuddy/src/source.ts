@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto"
 import { constants } from "node:fs"
 import { lstat, open, opendir } from "node:fs/promises"
-import { basename, isAbsolute, join } from "node:path"
+import { basename, dirname, isAbsolute, join } from "node:path"
 import { Schema } from "effect"
 import type { GitSource, SourceCaptureLimits, SourceDiscoveryPage } from "@atape/domain"
 
@@ -23,6 +23,10 @@ const utf8 = (bytes: Uint8Array): string => {
 }
 export const parse = (line: string): Row => {
   try { return decode(JSON.parse(line)) } catch { return fail("format", "CodeBuddy JSONL contains an invalid record.") }
+}
+export const failedTool = (row: Row) => {
+  const result = object(object(row.providerData).toolResult)
+  return row.status !== "completed" || result.error != null || object(result.rawResponse).is_error === true
 }
 const maxFiles = 10_000
 export const maxSnapshotBytes = 16 * 1024 * 1024
@@ -142,13 +146,130 @@ export const discover = async (home: string, cursor: string | null, limits: Sour
 }
 
 /** Freeze a bounded, complete UTF-8 view, then verify file and sidecar stamps. No source handle survives this operation. */
+type History = Awaited<ReturnType<typeof readHistory>>
+type ChildCall = { callId: string; prompt: string; afterId?: string; lastId: string }
+type ChildReference = { agent: string; label: string; calls: ChildCall[] }
+type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; history: History; callChildren: Map<string, string | undefined> }
+const segment = (value: unknown) => {
+  const name = id(value)
+  if (name === "." || name === ".." || /[\\/]/.test(name)) fail("format", "CodeBuddy child identity is not a file segment.")
+  return name
+}
+
+// Only completed, structured native Agent receipts authorize child-file reads.
+const references = (history: History) => {
+  const children = new Map<string, ChildReference>(), callChildren = new Map<string, string | undefined>()
+  const calls = new Map<string, Row>(), seen = new Map<string, string>()
+  for (const { row, json } of history.records) {
+    const rowId = id(row.id)
+    if (seen.has(rowId)) {
+      if (seen.get(rowId) !== json) fail("unsupported", "CodeBuddy repeated record revisions require a wider source profile.")
+      continue
+    }
+    seen.set(rowId, json)
+    if (row.type === "function_call" && row.name === "Agent") {
+      const callId = id(row.callId)
+      if (calls.has(callId)) fail("format", "CodeBuddy Agent call identity is duplicated.")
+      if (typeof row.arguments !== "string") fail("format", "CodeBuddy Agent arguments are invalid.")
+      const args = parse(row.arguments as string)
+      if (args.run_in_background === true || args.name != null || args.team_name != null || args.subagent_type === "fork")
+        fail("unsupported", "CodeBuddy background, team and fork subagents require a wider source profile.")
+      if (typeof args.prompt !== "string") fail("format", "CodeBuddy Agent prompt is unavailable.")
+      calls.set(callId, args)
+    } else if (row.type === "function_call_result" && row.name === "Agent") {
+      const callId = id(row.callId), args = calls.get(callId)
+      if (!args || callChildren.has(callId)) fail("format", "CodeBuddy Agent receipt has no unique call.")
+      const receipt = object(object(object(row.providerData).toolResult).subAgent)
+      if (receipt.sessionId == null && failedTool(row)) { callChildren.set(callId, undefined); continue }
+      if (receipt.sessionId == null) fail("format", "CodeBuddy Agent receipt is incomplete; retry.")
+      if (Object.keys(receipt).some(key => !["sessionId", "afterId", "lastId"].includes(key))) fail("unsupported", "CodeBuddy Agent receipt requires a wider source profile.")
+      const childId = segment(receipt.sessionId)
+      if (!/^agent-[a-zA-Z0-9_-]+$/.test(childId)) fail("unsupported", "CodeBuddy Agent storage identity is unsupported.")
+      if (args!.resume != null && args!.resume !== childId || args!.resume == null && receipt.afterId != null)
+        fail("unsupported", "CodeBuddy Agent resume identity is unproven.")
+      const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
+      const prior = children.get(childId)
+      if (prior && prior.agent !== agent) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
+      const label = typeof args!.description === "string" && args!.description && Buffer.byteLength(args!.description) <= 200 ? args!.description : "CodeBuddy child"
+      const ref = prior ?? { agent, label, calls: [] }
+      ref.calls.push({ callId, prompt: args!.prompt as string, ...(receipt.afterId == null ? {} : { afterId: id(receipt.afterId) }), lastId: id(receipt.lastId) })
+      children.set(childId, ref); callChildren.set(callId, childId)
+    }
+  }
+  if (calls.size !== callChildren.size) fail("format", "CodeBuddy Agent call has not completed; retry.")
+  return { children, callChildren }
+}
+
+const validateChild = (history: History, ref: ChildReference) => {
+  if (Object.keys(history.meta).length) fail("unsupported", "CodeBuddy child metadata requires a wider source profile.")
+  const records = [...new Map(history.records.map(record => [record.row.id, record])).values()].filter(({ row }) => ["message", "reasoning", "function_call", "function_call_result"].includes(String(row.type)))
+  const first = records[0]?.row ?? {}, nativeSessionId = segment(first.sessionId)
+  if (first.type !== "message" || first.role !== "user" || first.parentId != null || first.logicalParentId != null || object(first.providerData).agent !== ref.agent)
+    fail("unsupported", "CodeBuddy child has no original delegated user root.")
+  const users: number[] = []
+  for (const [index, { row }] of records.entries()) {
+    if (row.sessionId !== nativeSessionId) fail("unsupported", "CodeBuddy child changed its native Session identity.")
+    if (row.type === "message" && row.role === "user") users.push(index)
+  }
+  if (users.length !== ref.calls.length) fail("format", "CodeBuddy child turns and completed parent calls disagree; retry.")
+  for (const [index, at] of users.entries()) {
+    const call = ref.calls[index]!, user = records[at]!.row, turn = records.slice(at, users[index + 1])
+    const content = Array.isArray(user.content) && user.content.length === 1 ? object(user.content[0]) : {}
+    if (content.type !== "input_text" || content.text !== call.prompt || (user.parentId ?? undefined) !== call.afterId)
+      fail("unsupported", "CodeBuddy child prompt or resume boundary does not match its parent call.")
+    const last = turn.at(-1)!.row
+    // Native lastId can precede the final assistant; it is evidence, not a cutoff.
+    if (!turn.some(({ row }) => row.id === call.lastId) || last.type !== "message" || last.role !== "assistant" || last.status !== "completed")
+      fail("format", "CodeBuddy child result has not fully reached its history; retry.")
+  }
+  return nativeSessionId
+}
+
 export const snapshot = async (home: string, sourceId: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
+  const started = performance.now()
+  const check = () => { signal.throwIfAborted(); if (performance.now() - started > limits.durationMs) fail("limit", "CodeBuddy family snapshot exceeded its deadline.") }
   const files = (await inventory(home, signal)).filter(file => basename(file, ".jsonl") === sourceId)
   if (files.length !== 1) fail("format", "CodeBuddy source is missing or has duplicate identities.")
-  return snapshotFile(files[0]!, limits, signal)
+  const root = await snapshotFile(files[0]!, limits, signal), children: ChildSnapshot[] = []
+  const rootRefs = references(root), histories: History[] = [root], used = new Set<string>(), nativeIds = new Set([segment(root.records[0]!.row.sessionId)])
+  if (root.forkedFrom && rootRefs.children.size) fail("unsupported", "CodeBuddy forked child families require a proven copied-child frontier.")
+  let bytes = root.bytes, records = root.records.length
+  const pending = [{ id: sourceId, nativeSessionId: segment(root.records[0]!.row.sessionId), refs: rootRefs }]
+  for (let at = 0; at < pending.length; at++) {
+    const parent = pending[at]!
+    for (const [childId, ref] of parent.refs.children) {
+      check()
+      if (used.has(childId)) fail("unsupported", "CodeBuddy child has multiple parents or a cycle.")
+      used.add(childId)
+      if (used.size + 1 > limits.threads || records >= limits.records) fail("limit", "CodeBuddy family exceeds its thread or record budget.")
+      const parentDirectory = join(dirname(files[0]!), parent.nativeSessionId), childDirectory = join(parentDirectory, "subagents")
+      await checkDirectory(parentDirectory); await checkDirectory(childDirectory)
+      const child = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
+      bytes += child.bytes; records += child.records.length
+      const nativeSessionId = validateChild(child, ref), refs = references(child)
+      if (nativeIds.has(nativeSessionId)) fail("unsupported", "CodeBuddy child native Session identity is duplicated.")
+      nativeIds.add(nativeSessionId)
+      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, history: child, callChildren: refs.callChildren })
+      histories.push(child); pending.push({ id: childId, nativeSessionId, refs })
+    }
+  }
+  // Every member stays unchanged across the final member's read; no file survives open.
+  for (const history of histories) {
+    check()
+    await checkDirectory(dirname(history.file))
+    if (history !== root) await checkDirectory(dirname(dirname(history.file)))
+    if (history.fileStamp !== stamp(await lstat(history.file)) || history.metaStamp !== (await metadata(history.file, signal)).stamp)
+      fail("format", "CodeBuddy family changed while reading; retry with a fresh snapshot.")
+  }
+  return { ...root, children, callChildren: rootRefs.callChildren }
 }
 
 const snapshotFile = async (file: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
+  const history = await readHistory(file, limits, signal)
+  return { ...history, origin: origin(history.records.map(record => record.row), file, history.meta), forkedFrom: history.meta.forkedFrom as string | undefined }
+}
+
+const readHistory = async (file: string, limits: SourceCaptureLimits, signal: AbortSignal, byteLimit = maxSnapshotBytes) => {
   const started = performance.now()
   const check = () => { signal.throwIfAborted(); if (performance.now() - started > limits.durationMs) fail("limit", "CodeBuddy snapshot exceeded its deadline.") }
   const meta = await metadata(file, signal)
@@ -156,7 +277,7 @@ const snapshotFile = async (file: string, limits: SourceCaptureLimits, signal: A
   try {
     const before = await handle.stat()
     if (!before.isFile()) fail("format", "CodeBuddy source is not a regular file.")
-    if (before.size > maxSnapshotBytes) fail("limit", "CodeBuddy session exceeds the 16 MiB snapshot limit.")
+    if (before.size + Buffer.byteLength(meta.json ?? "") > byteLimit) fail("limit", "CodeBuddy family exceeds the 16 MiB snapshot limit.")
     const buffer = Buffer.alloc(before.size)
     for (let offset = 0; offset < buffer.length;) {
       check()
@@ -177,6 +298,6 @@ const snapshotFile = async (file: string, limits: SourceCaptureLimits, signal: A
     }
     if (stamp(before) !== stamp(await handle.stat()) || stamp(before) !== stamp(await lstat(file)) || meta.stamp !== (await metadata(file, signal)).stamp)
       fail("format", "CodeBuddy source changed while reading; retry with a fresh snapshot.")
-    return { records, origin: origin(records.map(record => record.row), file, meta.row), forkedFrom: meta.row.forkedFrom as string | undefined, metadataJson: meta.json }
+    return { records, file, fileStamp: stamp(before), metaStamp: meta.stamp, meta: meta.row, metadataJson: meta.json, bytes: buffer.length + Buffer.byteLength(meta.json ?? "") }
   } finally { await handle.close() }
 }
