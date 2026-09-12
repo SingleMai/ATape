@@ -117,12 +117,15 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		}
 		send("PUT", "/api/v1/users/me/raw-capture", `{"preference":"`+preference+`"}`)
 	}
-	read := func(sessionID string, expected int) (string, []conversation.Event) {
+	read := func(sessionID string, expected int, threadID ...string) (string, []conversation.Event) {
 		t.Helper()
 		head, after := "", ""
 		var events []conversation.Event
 		for n := 0; n < 20; n++ {
 			query := url.Values{"limit": {"2"}}
+			if len(threadID) != 0 {
+				query.Set("thread", threadID[0])
+			}
 			if head != "" {
 				query.Set("head", head)
 			}
@@ -443,9 +446,199 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	if usageCount != 4 || inputTokens != 20757 || outputTokens != 1079 || cachedTokens != 6656 {
 		t.Fatalf("CodeBuddy compaction usage: records=%d input=%d output=%d cache=%d", usageCount, inputTokens, outputTokens, cachedTokens)
 	}
+	// One root owns its completed Agent histories, even when child CWD names another Project.
+	familyCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy children"})
+	familyCreate.Header.Set("Authorization", "Bearer "+credential)
+	familyCreate.Header.Set("Idempotency-Key", "codebuddy-family-project-21240")
+	familyCreated := httptest.NewRecorder()
+	h.ServeHTTP(familyCreated, familyCreate)
+	if familyCreated.Code != http.StatusCreated {
+		t.Fatalf("create family Project: %d %s", familyCreated.Code, familyCreated.Body.String())
+	}
+	var familyProject projectDTO
+	decodeResponse(t, familyCreated, &familyProject)
+	projectID = familyProject.ID
+	links := func(events []conversation.Event) []conversation.ChildThreadRef {
+		var result []conversation.ChildThreadRef
+		for _, event := range events {
+			if event.ChildThread != nil {
+				result = append(result, *event.ChildThread)
+			}
+		}
+		return result
+	}
+	family := run("family-initial")
+	_, parentEvents := read(family.SessionID, 5)
+	initialLinks := links(parentEvents)
+	if len(initialLinks) != 1 || initialLinks[0].EventCount != 3 {
+		t.Fatal("CodeBuddy parent lost its completed child")
+	}
+	childID := initialLinks[0].ID
+	_, childBefore := read(family.SessionID, 3, childID)
+	familyResume := run("family-resume")
+	_, parentEvents = read(familyResume.SessionID, 9)
+	resumedLinks := links(parentEvents)
+	if familyResume.SessionID != family.SessionID || len(resumedLinks) != 2 || resumedLinks[0].ID != childID || resumedLinks[1].ID != childID {
+		t.Fatal("CodeBuddy Agent resume created another child or Session")
+	}
+	_, childAfter := read(family.SessionID, 6, childID)
+	beforePrefix, _ = json.Marshal(childBefore)
+	afterPrefix, _ = json.Marshal(childAfter[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) {
+		t.Fatal("CodeBuddy child resume rewrote captured prefix")
+	}
+	familyNested := run("family-nested")
+	_, parentEvents = read(familyNested.SessionID, 13)
+	nestedLinks := links(parentEvents)
+	if len(nestedLinks) != 3 {
+		t.Fatal("CodeBuddy nested parent link missing")
+	}
+	middleID := nestedLinks[2].ID
+	_, middleEvents := read(family.SessionID, 6, middleID)
+	leafLinks := links(middleEvents)
+	if len(leafLinks) != 1 {
+		t.Fatal("CodeBuddy nested leaf link missing")
+	}
+	leafID := leafLinks[0].ID
+	read(family.SessionID, 2, leafID)
+	var leafPage conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+family.SessionID+"?thread="+url.QueryEscape(leafID), ""), &leafPage)
+	if leafPage.Thread.ParentThreadID == nil || *leafPage.Thread.ParentThreadID != middleID || len(leafPage.ThreadPath) != 3 {
+		t.Fatal("CodeBuddy nested child lost its parent path")
+	}
+	familyCompact := run("family-compact")
+	_, parentEvents = read(familyCompact.SessionID, 15)
+	encoded, _ = json.Marshal(parentEvents)
+	if len(links(parentEvents)) != 3 || !bytes.Contains(encoded, []byte("/compact Keep the summary short")) {
+		t.Fatal("CodeBuddy root compaction lost its child family")
+	}
+	familyDefault := run("family-default")
+	_, parentEvents = read(familyDefault.SessionID, 20)
+	defaultLinks := links(parentEvents)
+	if len(defaultLinks) != 4 {
+		t.Fatal("CodeBuddy built-in Agent link missing")
+	}
+	defaultID := defaultLinks[3].ID
+	read(family.SessionID, 3, defaultID)
+	rootBeforeEdit, _ := json.Marshal(parentEvents)
+	leafSearch := search("ATAPE_LEAF_21240")
+	if len(leafSearch.Results) == 0 {
+		t.Fatal("CodeBuddy child missing from Search")
+	}
+	leafHits := 0
+	for _, result := range leafSearch.Results {
+		if result.SessionID != family.SessionID {
+			t.Fatal("CodeBuddy child Search escaped its owning family")
+		}
+		// The native parent compact summary also mentions this marker.
+		if result.ThreadID != leafID {
+			continue
+		}
+		leafHits++
+		var anchored conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+family.SessionID+"?thread="+url.QueryEscape(result.ThreadID)+"&at="+url.QueryEscape(result.EventID)+"&limit=2", ""), &anchored)
+		matched := false
+		for _, event := range anchored.Events {
+			matched = matched || event.ID == result.EventID
+		}
+		if !matched {
+			t.Fatal("CodeBuddy child Search anchor did not open its Event")
+		}
+	}
+	if leafHits == 0 {
+		t.Fatal("CodeBuddy native leaf Event missing from Search")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage := map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != family.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 15 || inputTokens != 108859 || outputTokens != 2886 || cachedTokens != 57664 ||
+		threadUsage[childID] != 2 || threadUsage[middleID] != 2 || threadUsage[leafID] != 1 || threadUsage[defaultID] != 1 {
+		t.Fatalf("CodeBuddy family usage ownership: records=%d input=%d output=%d cache=%d threads=%v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	provenance, found, err = store.ConversationPage(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, family.SessionID, childID, canonical.ConversationPageRequest{Limit: 100})
+	if err != nil || !found || len(provenance.Events) != 6 {
+		t.Fatalf("CodeBuddy child provenance: %v", err)
+	}
+	objectID, key, valid = strings.Cut(provenance.Events[5].RawRef, "/records/")
+	if !valid {
+		t.Fatal("CodeBuddy child lacks exact Raw provenance")
+	}
+	decodeResponse(t, send("GET", "/api/v1/raw-objects/"+objectID+"/content?generation=1&limit=1", ""), &raw)
+	if len(raw.Chunks) != 1 || raw.NextCursor != "" {
+		t.Fatal("CodeBuddy child Raw page exceeded its bound")
+	}
+	content, err = base64.StdEncoding.DecodeString(raw.Chunks[0].ContentBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(content, &object); err != nil || !bytes.Contains(object.Records[key].Row, []byte("agent-6b64fa37")) || !bytes.Contains(object.Records[key].Row, []byte("5bf17864-6951-4c7a-824a-6cd13283227d")) {
+		t.Fatal("CodeBuddy child Raw lost its storage or native Session identity")
+	}
+	for _, phase := range []string{"family-invalid", "family-missing"} {
+		if invalid := run(phase); invalid.Head != familyDefault.Head || !bytes.Equal(invalid.Records, familyDefault.Records) {
+			t.Fatal("CodeBuddy incomplete child replaced the visible family")
+		}
+		read(family.SessionID, 6, childID)
+	}
+	if fixed := run("family-repair"); fixed.Head != familyDefault.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy family repair replayed unchanged content")
+	}
+	setRaw(false)
+	familyOff := run("family-edit")
+	if familyOff.Head == familyDefault.Head {
+		t.Fatal("CodeBuddy child Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	familyOn := run("family-reenable")
+	if familyOn.Head != familyOff.Head || !bytes.Equal(familyOn.Records, familyOff.Records) {
+		t.Fatal("CodeBuddy child Raw re-enable changed Canonical provenance")
+	}
+	if lost := run("family-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy child activation loss did not retain frozen recovery")
+	}
+	recoveredFamily := run("family-recover")
+	if recoveredFamily.Pending != 0 {
+		t.Fatal("CodeBuddy family did not recover after all source files were deleted")
+	}
+	_, childAfter = read(family.SessionID, 6, childID)
+	encoded, _ = json.Marshal(childAfter)
+	if !bytes.Contains(encoded, []byte("CodeBuddyChildFrozenNeedle")) {
+		t.Fatal("CodeBuddy child recovery lost frozen bytes")
+	}
+	_, parentEvents = read(family.SessionID, 20)
+	encoded, _ = json.Marshal(parentEvents)
+	if !bytes.Equal(encoded, rootBeforeEdit) {
+		t.Fatal("CodeBuddy child edit changed its parent Events")
+	}
+	read(family.SessionID, 6, middleID)
+	read(family.SessionID, 2, leafID)
+	read(family.SessionID, 3, defaultID)
+	if len(search("CodeBuddyChildFrozenNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy recovered child missing from Search")
+	}
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredCompact.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredFamily.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

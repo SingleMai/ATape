@@ -35,8 +35,8 @@ and the fork filename as `storeId`; `forkSession` copies history and stores that
 restored ID in `forkedFrom`. The resumed native file therefore returns to the root
 `sessionId` without changing its storage file. These samples establish that behavior,
 not a general immediate-parent relation. `/branch` rewrites IDs and adds `forkedAt`,
-so that separate native command remains unsupported. Nested child files live at
-`<session>/subagents/agent-*.jsonl`; their membership is not yet covered.
+so that separate native command remains unsupported. Child membership evidence
+is recorded below.
 
 Tests derive adversarial variants for malformed tails, attribution, duplicate
 identities, changed contents, bounds and recovery. Those variants are synthetic
@@ -81,3 +81,37 @@ files from the CLI home.
 
 Automatic LLM summaries, emergency compaction, pruning/rewind and child-session
 compaction have no native acceptance sample here and remain unsupported.
+
+## Foreground Agent family samples
+
+`native-family-2.124.0/` contains five native JSONL files generated on macOS arm64
+on 2026-09-12 UTC with CodeBuddy Code CLI 2.124.0, `--model hy3 --effort low`,
+`-p --strict-mcp-config --setting-sources "" --max-turns 3`. The controlled parent
+used `--tools Agent --allowedTools Agent`; custom leaf agents had no tools, and
+the custom intermediate agent could call Agent. The built-in general-purpose
+agent was prompted to return a literal marker and made no tool calls.
+
+| Sequence | Root records | Child evidence | Projected totals |
+| --- | --- | --- | --- |
+| Initial custom `atape-fixture` delegation | 6 | `agent-6b64fa37`, three records | 2 Threads / 8 Events / 3 usage |
+| Resume that same Agent via `resume` argument | 11 | Same child now six records; receipt `afterId` matches prior terminal response | 2 / 15 / 6 |
+| Custom `atape-parent` delegates to `atape-leaf` | 16 | `agent-60a8b853`, six records; nested `agent-bc513377`, two | 4 / 27 / 11 |
+| Parent manual `/compact` with tools disabled | 18 | Existing children unchanged | 4 / 29 / 12 |
+| Built-in `general-purpose` delegation | 24 | `agent-64db2ff8`, three records | 5 / 37 / 15 |
+
+The final fixture retains the exact relative source paths. Child storage IDs are
+not their internal Session UUIDs. In particular the leaf file is below internal
+parent UUID `e8142638-13cc-4138-95b5-c9283398cb11`, not `agent-60a8b853`.
+The first child's receipt `lastId` points to reasoning preceding its completed
+assistant message. This rules out using that receipt field alone as a cutoff.
+Only the controlled absolute CWD was replaced with
+`/fixture/codebuddy-family-project`; IDs, flags, timestamps, prompts, parent links,
+receipts and usage are otherwise native. All five exact files were byte-verified
+against scratch copies and removed from the CLI home after sampling.
+
+Runtime and installed CLI contract fixtures replay the sequence using these
+record boundaries. Adversarial child edits, foreign child CWD, truncation,
+missing files, resource bounds and lost HTTP responses are controlled synthetic
+variants. They establish failure/recovery behavior, not additional native forms.
+Background/team/fork subagents, forks carrying children and child compaction have
+no native acceptance evidence in this increment.
