@@ -4,6 +4,9 @@
 
 When Raw capture is enabled, unknown or newly introduced Codex records remain available in Raw while being omitted from Canonical until ATape can map them without inventing semantics. The Web conversation flow renders only Canonical events; it does not add “missing capability” placeholders for omitted provider records.
 
+For a local build or release tarball, use Tools and updates → Integration maintenance
+to install its directory or full archive path, then Choose tools to sync.
+
 ## Supported source and limits
 
 Compatibility is exercised against the local rollout structure observed with
@@ -24,20 +27,18 @@ the console to add Codex to the global tool selection:
 
 ```sh
 pnpm --filter @atape/adapter-codex build
-pnpm atape adapters install ./adapters/codex
 pnpm atape
-pnpm atape start
 ```
 
 For a packaged release, install the independently bundled Adapter instead:
 
 ```sh
-atape adapters install "./atape-adapter-codex-<version>.tgz"
+atape
 ```
 
 Choose **Tools and updates**, add Codex to the existing selection, and review the
 affected Projects. Tool selection applies globally to connected Projects.
-Replace `<version>` with the coordinated release version for offline installation.
+For offline installation, enter the release Adapter tarball path in Integration maintenance.
 Maintainers can build and smoke-test that artifact with `pnpm test:adapter-package`, or verify it together with the packaged CLI using `pnpm test:release`. Installing it does not start a process. The Collector Host imports it only while collecting configured Projects with Codex enabled.
 
 ## Source discovery and Project boundary
@@ -156,7 +157,7 @@ bound; no payload or authorization result is stored there. Read/format/record-li
 failures retain progress and allow healthy Sessions to proceed; unchanged failed
 sources retry after 60 seconds and changed sources become eligible immediately.
 
-`atape status` reports the last completed cycle's acknowledged Canonical event
+Project → Sync details reports the last completed cycle's acknowledged Canonical event
 count, Raw transport bytes and duration, plus discovered source count and estimated
 pending Canonical Sessions / Raw bytes. These are progress measurements, not a
 promise that all source data has arrived. Inventory estimates refresh at discovery
@@ -174,7 +175,7 @@ are retained. See [ADR-0055](../architecture/adr/0055-codex-item-update-revision
 
 ## Recovery and verification
 
-Use Project details and `atape status --json` to distinguish queued history,
+Use Project → Sync details in ATape to distinguish queued history,
 partial source coverage and transport failure. The [CLI recovery guide](../cli/setup-and-adapters.md#troubleshooting)
 owns common recovery steps. Preserve Collector state and Git attribution evidence;
 fix the reported source format or restore trustworthy attribution before retrying.

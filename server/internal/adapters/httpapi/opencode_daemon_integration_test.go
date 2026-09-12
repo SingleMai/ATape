@@ -15,7 +15,8 @@ import (
 
 // This extends the actual HTTP/PostgreSQL contract using its existing account,
 // installed Adapter and frozen journal. Only native source mutations and reads of
-// test evidence use the fixture; all collection runs in the installed CLI, including package upgrade recovery.
+// test evidence use fixtures. Continuous collection runs in the installed CLI;
+// bounded package upgrade checks use the source Host through its Module Interface.
 func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, adapterTarball string, previous nativeCollectorSnapshot,
 	control func(string) []byte, snapshot func(string) nativeCollectorSnapshot, contentUploads func() int64,
 	read func() (string, []conversation.Event), readRaw func() []byte,
@@ -60,7 +61,16 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 		`ATAPE_REDACT_VALUES=["SENSITIVE_TEST_TOKEN"]`,
 	}
 	execute := func(ctx context.Context, args ...string) ([]byte, error) {
-		command := exec.CommandContext(ctx, "node", append([]string{entry}, args...)...)
+		input := map[string]string{"entry": entry, "phase": args[0]}
+		if len(args) > 1 {
+			input["argument"] = args[1]
+		}
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			return nil, err
+		}
+		command := exec.CommandContext(ctx, "node", filepath.Join(repository, "apps", "cli", "src", "runtime", "fixtures", "installed-collector.ts"))
+		command.Stdin = bytes.NewReader(encoded)
 		command.Dir, command.Env = root, environment
 		var stderr bytes.Buffer
 		command.Stderr = &stderr
@@ -75,7 +85,7 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		if _, err := execute(ctx, "stop", "--json"); err != nil {
+		if _, err := execute(ctx, "stop"); err != nil {
 			t.Errorf("cleanup installed daemon: %v", err)
 		}
 	})
@@ -109,7 +119,7 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 			Created bool `json:"created"`
 			PID     int  `json:"pid"`
 		}
-		command(&started, "start", "--interval", "10", "--concurrency", "1", "--json")
+		command(&started, "start")
 		if started.PID <= 0 {
 			t.Fatal("installed daemon has no process identity")
 		}
@@ -120,11 +130,11 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 		var stopped struct {
 			Stopped bool `json:"stopped"`
 		}
-		command(&stopped, "stop", "--json")
+		command(&stopped, "stop")
 		var current status
-		command(&current, "status", "--json")
+		command(&current, "inspect")
 		if !stopped.Stopped || current.Running {
-			t.Fatal("installed daemon did not stop through its public Interface")
+			t.Fatal("installed daemon did not stop through the process-owner Module Interface")
 		}
 	}
 	wait := func(after, oldHead, needle, expectedState string) string {
@@ -133,7 +143,7 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 		defer deadline.Stop()
 		var current status
 		for {
-			command(&current, "status", "--json")
+			command(&current, "inspect")
 			if !current.Running || len(current.CollectorFailure) != 0 {
 				t.Fatalf("installed daemon exited or failed globally: %+v", current)
 			}

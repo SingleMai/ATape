@@ -1,31 +1,26 @@
 import { describe, expect, it } from "vitest"
 import { parseCLI } from "./commandInput.ts"
 
-describe("CLI command input", () => {
-  it.each([
-    [[], "interactive"], [["setup", "a b"], "interactive"], [["--version"], "version"],
-    [["adapters", "upgrade", "--help"], "help"], [["status", "--json"], "status"],
-    [["login", "--no-browser", "--instance", "https://atape.example"], "login"],
-    [["setup", "--team", "one", "--create"], "setup"], [["projects", "list"], "projects.list"],
-    [["projects", "remove", "one"], "projects.remove"], [["adapters", "install", "./pkg"], "adapters.install"],
-    [["adapters", "upgrade", "--all"], "adapters.upgrade"], [["adapters", "upgrade", "codex"], "adapters.upgrade"],
-    [["adapters", "prune", "--keep", "0"], "adapters.prune"], [["tools", "configure", "--none"], "tools.configure"],
-    [["collect", "--once", "--json"], "collect"], [["start", "--interval", "30"], "start"],
-    [["language", "zh-CN"], "language"], [["__collector-daemon", "--daemon-token", "token"], "__collector-daemon"]
-  ] as const)("decodes %j into %s", (args, kind) => { expect(parseCLI(args).kind).toBe(kind) })
-
-  it("retains repeated tool choices in a command-specific value", () => {
-    expect(parseCLI(["--lang", "zh-CN", "tools", "configure", "--adapter", "codex", "--adapter", "opencode", "--apply"]))
-      .toEqual({ kind: "tools.configure", adapterIds: ["codex", "opencode"], options: { lang: "zh-CN", apply: true } })
+describe("single CLI entry", () => {
+  it.each([[[], "interactive"], [["--no-browser", "--lang", "zh-CN"], "interactive"],
+    [["--help"], "help"], [["-h"], "help"], [["--version"], "version"], [["-v"], "version"]] as const)("accepts %j", (args, kind) => {
+    expect(parseCLI(args).kind).toBe(kind)
   })
-
-  it.each([
-    ["status", "--team", "one"], ["tools", "list", "--apply"], ["tools", "configure", "--none", "--adapter", "codex"],
-    ["tools", "configure", "--project", "one", "--none"], ["setup", "--adapter", "codex"],
-    ["language", "en", "extra"], ["login", "extra"], ["adapters", "upgrade", "codex", "--all"],
-    ["adapters", "upgrade"], ["adapters", "install"], ["adapters", "prune", "extra"],
-    ["collect", "--json"], ["start", "--once"], ["logout", "--no-browser"], ["__collector-daemon"],
-    ["status", "--instance", "https://ignored.example"], ["--version", "status"], ["--help", "--apply"],
-    ["setup", "--team", ""], ["setup", "--team", "one", "--team", "two"], ["status", "--unknown"]
-  ])("rejects an invalid invocation %j", (...args) => { expect(() => parseCLI(args)).toThrow() })
+  it.each(["login", "logout", "setup", "projects", "tools", "adapters", "collect", "start", "stop", "status", "language", "upgrade", "help"])("removes the %s command", command => {
+    expect(() => parseCLI([command])).toThrow("Run atape")
+    expect(() => parseCLI([command, "--help"])).toThrow()
+  })
+  it.each([["--json"], ["--instance", "https://atape.net"], ["--help", "--version"], ["--help", "--no-browser"],
+    ["--lang", ""], ["--lang", "en", "--lang", "zh-CN"], ["--daemon-token", "token"],
+    ["__collector-daemon"], ["__collector-daemon", "--daemon-token", ""],
+    ["__collector-daemon", "--daemon-token", "token", "--interval", "1"],
+    ["__collector-daemon", "--daemon-token", "token", "--concurrency", "9"],
+    ["__collector-daemon", "--daemon-token", "token", "--interval", "1e2"],
+    ["__collector-daemon", "--daemon-token", "token", "extra"]])("rejects unsupported arguments %j", (...args) => {
+    expect(() => parseCLI(args)).toThrow()
+  })
+  it("retains only the process owner's internal Collector invocation", () => {
+    expect(parseCLI(["__collector-daemon", "--daemon-token", "owner", "--interval", "30", "--concurrency", "4"]))
+      .toEqual({ kind: "__collector-daemon", options: { daemonToken: "owner", intervalMs: 30000, concurrency: 4 } })
+  })
 })

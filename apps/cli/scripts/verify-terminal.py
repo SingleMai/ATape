@@ -25,6 +25,25 @@ for name in ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GIT_DIR", "GIT_WOR
              "ATAPE_COLLECTOR_LOG_FILE", "ATAPE_ADAPTER_DIRECTORY"):
     env.pop(name, None)
 
+fixture_script = Path(__file__).resolve().parent.parent / "src/runtime/fixtures/terminal-state.ts"
+
+def fixture(*args):
+    subprocess.run(["node", str(fixture_script), *args], env=env, cwd=root, capture_output=True, text=True, timeout=40, check=True)
+
+def config():
+    path = root / "home/config/client.json"
+    value = json.loads(path.read_text()) if path.exists() else {"projects": [], "enabledAdapterIds": []}
+    for project in value["projects"]:
+        project["adapterIds"] = value.get("enabledAdapterIds", [])
+    return value
+
+def running():
+    path = root / "home/state/collector-process.json"
+    if not path.exists(): return False
+    try: os.kill(json.loads(path.read_text())["pid"], 0)
+    except ProcessLookupError: return False
+    return True
+
 def cli(*args):
     return subprocess.run([binary, *args], env=env, cwd=root, capture_output=True, text=True, timeout=40, check=True).stdout
 
@@ -124,16 +143,19 @@ try:
         terminal.finish()
         terminals.pop()
         # Path controls run with an explicitly saved, inert fixture integration.
-        cli("adapters", "install", adapter, "--json")
-        cli("tools", "configure", "--adapter", "smoke", "--apply", "--json")
-        terminal = Terminal(("setup",))
+        fixture(adapter, "enabled")
+        terminal = Terminal()
+        terminal.wait("Your Projects")
+        terminal.send("n")
         terminals.append(terminal)
-        terminal.wait("Connect a Project")
+        terminal.wait("Project directory")
         terminal.send("项sp")
         terminal.drain(.5)
         assert "Search: 项sp".encode() in terminal.output, "typing did not start project-name search"
         assert "项目 space".encode() in terminal.output, "fuzzy project result was not shown"
         terminal.send("\x1b")
+        terminal.wait("Your Projects")
+        terminal.send("n")
         terminal.wait("Use current directory")
         terminal.send("\x15" + str(root) + "/项")
         terminal.drain(.4)
@@ -164,24 +186,22 @@ try:
         # Restore an unconfigured fixture for the next independent first-use run.
         (root / "home" / "config" / "client.json").unlink()
 
-    for args, overrides in (((), {"CI": "true"}), (("--version",), {}), (("status", "--json"), {})):
+    for args, overrides in (((), {"CI": "true"}), (("--version",), {}), (("--help",), {})):
         terminal = Terminal(args, overrides)
         terminals.append(terminal)
         terminal.process.wait(timeout=10)
         terminal.drain()
         assert b"\x1b" not in terminal.output, terminal.output
         assert b"Update available" not in terminal.output
-        if args == ("status", "--json"):
-            json.loads(terminal.output)
         assert termios.tcgetattr(terminal.slave) == terminal.before
         terminal.abort()
         terminals.pop()
-    piped = cli()
-    assert "Interactive setup needs" in piped and "\x1b" not in piped
+    piped = subprocess.run([binary], env=env, cwd=root, capture_output=True, text=True, timeout=10)
+    assert piped.returncode == 2 and not piped.stdout
+    assert "interactive macOS or Linux terminal" in piped.stderr and "\x1b" not in piped.stderr
 
-    cli("adapters", "install", adapter, "--json")
-    tools = json.loads(cli("tools", "list", "--json"))["tools"]
-    smoke_index = next(index for index, tool in enumerate(tools) if tool["id"] == "smoke")
+    fixture(adapter)
+    smoke_index = 3  # Three official tools precede the fixture integration.
     # Configure tools once, then exercise login and the zero-Team detour during
     # Project connection without a second tool-selection step.
     def team_mode(enabled):
@@ -206,17 +226,18 @@ try:
     team_mode(True)
     terminal.send("\x1b[B\r")
     terminal.wait("Review and connect")
-    config = json.loads(cli("projects", "list", "--json"))
-    assert not config["projects"], "setup enabled capture before confirmation"
+    snapshot = config()
+    assert not snapshot["projects"], "setup enabled capture before confirmation"
     terminal.send("\r")
     terminal.wait("No conversations yet", seconds=30)
     terminal.finish("q")
     terminals.pop()
-    status = json.loads(cli("status", "--json"))
-    assert status["running"], "exiting the console stopped background collection"
-    config = json.loads(cli("projects", "list", "--json"))
-    assert len(config["projects"]) == 1 and config["projects"][0]["adapterIds"] == ["smoke"]
-    assert config["projects"][0]["path"] == str(project.resolve())
+    assert running(), "exiting the console stopped background collection"
+    run_state = json.loads((root / "home/state/collector-status.json").read_text())
+    assert any(job["adapterId"] == "smoke" and job.get("lastSuccessAt") and not job.get("lastFailureAt") for job in run_state["jobs"]), run_state
+    snapshot = config()
+    assert len(snapshot["projects"]) == 1 and snapshot["projects"][0]["adapterIds"] == ["smoke"]
+    assert snapshot["projects"][0]["path"] == str(project.resolve())
 
     terminal = Terminal(("--no-browser",))
     terminals.append(terminal)
@@ -265,7 +286,7 @@ try:
     # Escape cancels the global change without changing capture authorization.
     terminal.send("\x1b")
     terminal.wait("Which conversations should ATape sync?")
-    assert json.loads(cli("projects", "list", "--json"))["projects"][0]["adapterIds"] == ["smoke"]
+    assert config()["projects"][0]["adapterIds"] == ["smoke"]
     terminal.send("\r")
     terminal.wait("Apply tools to all projects?")
     terminal.send("\x1b[B\r")
@@ -274,10 +295,56 @@ try:
     terminal.wait("Your Projects")
     terminal.finish("q")
     terminals.pop()
-    assert json.loads(cli("projects", "list", "--json"))["projects"][0]["adapterIds"] == []
-    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation and background lifetime.")
+    assert config()["projects"][0]["adapterIds"] == []
+    # Exercise the replacement for package maintenance and language/stop commands
+    # through the installed application, including default-Cancel reviews.
+    terminal = Terminal()
+    terminals.append(terminal)
+    terminal.wait("Your Projects")
+    terminal.send("\t\r")
+    terminal.wait("Check again")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Install from a package or path")
+    terminal.send("\r")
+    terminal.wait("Enter an npm package")
+    terminal.send(str(adapter) + "\r")
+    terminal.wait("Install integration?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Integration installed.", seconds=30)
+    assert config()["enabledAdapterIds"] == [], "installation enabled capture"
+    terminal.send("\x1b[B\r")
+    terminal.wait("Remove unused integration versions?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("unused versions.")
+    terminal.send("\x1b")
+    terminal.wait("Check again")
+    terminal.send("\x1b")
+    terminal.wait("Your Projects")
+    terminal.finish("q")
+    terminals.pop()
+    terminal = Terminal()
+    terminals.append(terminal)
+    terminal.wait("Your Projects")
+    terminal.send("\t\x1b[C\r")
+    terminal.wait("Accounts")
+    terminal.send("\x1b[B\r")
+    terminal.wait("English")
+    terminal.send("\r")
+    terminal.wait("Language saved.")
+    assert config()["locale"] == "en"
+    terminal.send("\x1b")
+    terminal.wait("Accounts")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Stop background sync?")
+    assert running(), "opening the stop review stopped sync"
+    terminal.send("\x1b[B\r")
+    terminal.wait("Your Projects")
+    assert not running(), "confirmed stop did not stop the owned Collector"
+    terminal.finish("q")
+    terminals.pop()
+    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation, integration maintenance, language and background lifetime.")
 finally:
     for terminal in terminals:
         terminal.abort()
-    try: cli("stop", "--json")
+    try: fixture("stop")
     except Exception: pass

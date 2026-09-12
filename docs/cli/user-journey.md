@@ -16,7 +16,7 @@ It is not an account-wide or Team-wide setting shared with other machines.
 
 The TUI names actual tools, such as Claude Code and Codex. The global Tools and
 updates page shows CLI and installed integration versions, installation source,
-latest releases and direct update actions. Explicit commands remain available. Installing
+latest releases and direct update actions. All operations use this console. Installing
 a package and authorizing capture remain distinct operations: an installed
 Adapter is not implicitly enabled, and enabling a tool does not discover or
 connect additional repositories.
@@ -66,16 +66,16 @@ without repeating setup or resetting progress.
 
 ## Daily use
 
-Before opening the welcome, Project list or explicit setup, ATape checks for a
+Before opening the welcome or Project list, ATape checks for a
 newer stable CLI. Results are cached for twelve hours; startup network access
 has a 1.5-second timeout. Offline failures proceed normally. When an update is
 available, the user must choose `Upgrade and continue` or `Skip` before entering.
 Skip applies only to this session. Escape exits. Successful upgrades restore the
 terminal and reopen the installed CLI with the original arguments, directory and
-ATAPE_HOME. Failures offer Retry and Skip. Scripts and JSON commands do not show
-this interactive choice.
+ATAPE_HOME. Failures offer Retry and Skip. Help and version do not show this choice. Non-interactive application launches fail
+with plain guidance.
 
-`atape upgrade` checks fresh metadata and updates the active npm global CLI
+Updating ATape from Tools and updates checks fresh metadata and updates the active npm global CLI
 installation. After installation is verified, it resumes the current home's
 previously running sync with its existing settings. Stopped sync stays stopped;
 Projects, sign-in and checkpoints remain intact. Equal/newer installed versions
@@ -113,7 +113,7 @@ persistent highlight; keyboard focus on a Project uses an accent rail, bold text
 and a low-contrast background. Navigation focus remains visually distinct.
 Wide terminals show full action labels; narrow terminals use shorter localized
 labels and retain the frame and selected action in the footer. Shortcut notation
-belongs in the footer. One-shot commands are not navigation destinations.
+belongs in the footer. All business operations are console destinations.
 
 Ink owns the shell, modal, terminal measurement, focus styling and responsive
 labels as Presentation concerns; presenter intents and workflow ownership remain
@@ -125,7 +125,7 @@ separate release work.
 Background sync state belongs in the home summary. If stopped, offer a contextual
 `Start sync` action there. Stopping is a global setting with an impact confirmation.
 Exiting leaves background sync running. After a reboot, the user can open `atape`
-and select Start sync, or invoke `atape start`; no automatic reboot recovery is
+and select Start sync; no automatic reboot recovery is
 introduced.
 
 ## Project details
@@ -191,6 +191,20 @@ sync. Technical failure messages remain in Sync details.
 Preserve the actual Collector semantics: an account failure currently can block
 global startup; changing account isolation is outside this UX increment.
 
+## Single entry and maintenance
+
+Run `atape` for every user operation. Only help/version and session language/no-browser
+flags remain public. Removed subcommands are rejected without compatibility aliases.
+Settings → Language persists the choice for future launches; a launch flag or
+ATAPE_LANG takes precedence. Tools → Integration maintenance installs trusted
+package/path sources with confirmation, refreshes an installed source and previews
+old-version cleanup. Cleanup defaults to Cancel and retains one inactive version
+per package plus all current/in-use versions.
+
+Project Sync details pages every retained source diagnostic; bounded report
+truncation is explicitly described. There is no public JSON or one-shot collection
+mode, Windows support or automation fallback. See [ADR-0081](../architecture/adr/0081-single-interactive-cli-entry.md).
+
 ## Implementation boundaries
 
 ATape has not launched publicly. Use one current configuration schema, with no
@@ -200,9 +214,8 @@ the global list. Development data is not automatically migrated or deleted.
 
 ADR-0040 records the domain change. The application Module owns tool selection,
 impact planning, installation, durable application and recovery through Effect.
-The presenter renders that Interface and emits intents. The Collector and explicit
-commands consume the same global rule. Project setup has no --adapter option;
-tools configure provides preview and explicit --apply.
+The presenter renders that Interface and emits intents. The Collector consumes the same global rule. Capture changes require a review in
+the console. Public business subcommands and their flags have been removed.
 
 Verify fresh install, second Project, global additions/removals, cancellation,
 interrupted installation, checkpoint preservation, no-Team and expired-login
@@ -221,8 +234,7 @@ Uninstalled integrations are set up through Choose tools to sync.
 An official integration installed from a file or URL is marked explicitly.
 Use published <tool> integration <version> replaces that source with the exact
 reviewed npm version and records the registry source for subsequent updates.
-A newer installed release is never downgraded. Custom publisher packages remain
-manual; matching an official adapter ID alone does not permit replacement.
+A newer installed release is never downgraded. Custom publisher packages use Integration maintenance; matching an official adapter ID alone does not permit replacement.
 
 Package maintenance preserves global selection, Projects and checkpoints and
 does not start stopped sync. A running Collector loads replacements on later
@@ -234,17 +246,20 @@ startup update prompt was skipped. Stale update selections require another check
 The ToolUpdates Module hides release comparison and source/installation checks.
 AdapterReleases is the npm metadata Seam; its Node Adapter shares bounded fetch
 and cache behavior with CLI upgrades. A unified page was chosen over per-tool
-settings pages to keep version maintenance in one global location. Existing
-command-line custom-source upgrades retain their original acquisition semantics.
+settings pages to keep version maintenance in one global location. Integration maintenance provides original-source refresh for custom packages,
+trusted package/path installation and preview/confirmed cleanup.
 
 Limits: no unattended or bulk integration updates; npm installation is not an
 atomic rollback transaction. Cancellation waits for npm termination before the
 configuration lock is released. Next increment: validate the published journey
 on actual existing installations before considering broader update automation.
 
-Validation: 86 application tests and 74 CLI tests pass, along with both package
-typechecks and the CLI build. A disposable real terminal run of the bundled CLI
-verified keyboard navigation from Projects to Tools and updates, current/latest
-versions, the explicit file-to-published action and clean exit without installing
-anything. Tests cover stale selection, failure/cancellation, custom publishers,
-per-package cache expiry, source replacement and CLI restart after startup Skip.
+Local verification for the single-entry change (2026-09-13): CLI/Application/Web
+unit suites and typechecks, installed CLI PTY/package acceptance, Codex/Claude Go
+HTTP E2E, the required OpenCode/PostgreSQL/installed-daemon contract, and selected
+Web CLI authorization/device browser checks passed. The PTY verifies trusted
+package installation, confirmed cleanup, saved language, confirmed stop and
+terminal restoration as well as setup and background lifetime. Release Adapter
+checks use the source Node Host and exact artifacts; installed CLI collection is
+verified separately. Documentation and architecture checks passed. This is local
+verification, not CI, package publication or deployment evidence.

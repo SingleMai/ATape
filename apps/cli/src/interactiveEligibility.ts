@@ -1,4 +1,4 @@
-import type { ParsedCLI } from "./commands.ts"
+import type { ParsedCLI } from "./commandInput.ts"
 
 export const requestsGuidedExperience = (cli: ParsedCLI): cli is Extract<ParsedCLI, { readonly kind: "interactive" }> =>
   cli.kind === "interactive"

@@ -89,7 +89,7 @@ export const pruneAdapterPackages = Effect.fn("Client.pruneAdapterPackages")(fun
 } = {}) {
   const keep = input.keep ?? 1
   if (!Number.isSafeInteger(keep) || keep < 0 || keep > 20) {
-    return yield* new ClientManagementError({ reason: "invalid", resource: "adapter", message: "--keep must be an integer from 0 to 20." })
+    return yield* new ClientManagementError({ reason: "invalid", resource: "adapter", message: "The retained version count must be an integer from 0 to 20." })
   }
   return yield* (yield* AdapterPackages).prune({ apply: input.apply === true, keep })
 })

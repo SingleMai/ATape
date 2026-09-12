@@ -109,7 +109,7 @@ const CredentialRows = ({
   readonly onRevoke: (credential: CLICredential) => void
 }) => {
   if (section._tag === "Failed") return <SectionFailure section={section} onRetry={onRetry} />
-  if (section.value.length === 0) return <div className="empty-row">{t("security.noDevices", "No connected CLI devices. Sign in with atape login on a device to connect it.")}</div>
+  if (section.value.length === 0) return <div className="empty-row">{t("security.noDevices", "No connected CLI devices. Open ATape and sign in on a device to connect it.")}</div>
   return section.value.map((credential) => (
     <details className="cli-device-details" key={credential.id}>
       <summary className="cli-device-summary">
@@ -136,11 +136,11 @@ const CredentialRows = ({
             <td>{adapter.lastSuccessAt ? relativeTime(adapter.lastSuccessAt) : t("security.notReported", "Not reported")}</td>
           </tr>)}</tbody>
         </table> : <p>{t("security.adapters", "Adapters: {value}", { value: credential.device?.adapters === undefined ? t("security.notReported", "Not reported") : t("security.noneInstalled", "None installed") })}</p>}
-        {credential.sync?.jobsTruncated && <p>{t("security.jobsTruncated", "Only part of this device’s job list is shown. Run")} <code>atape status</code> {t("security.locallyForAllJobs", "locally for all jobs.")}</p>}
-        {credential.device?.adaptersTruncated && <p>{t("security.adaptersTruncated", "Only part of the installed Adapter list is shown. Run")} <code>atape adapters list</code> {t("security.locally", "locally.")}</p>}
+        {credential.sync?.jobsTruncated && <p>{t("security.jobsTruncated", "Only part of this device’s job list is shown. Run")} <code>atape</code> {t("security.locallyForAllJobs", "on this device and open Projects for sync details.")}</p>}
+        {credential.device?.adaptersTruncated && <p>{t("security.adaptersTruncated", "Only part of the installed Adapter list is shown. Run")} <code>atape</code> {t("security.locally", "on this device and open Tools and updates.")}</p>}
         <div className="cli-version-row">
           <div><strong>{t("security.cliVersion", "atape-cli {version}", { version: credential.device ? `v${credential.device.version}` : t("security.versionNotReported", "version not reported") })}</strong><p>{credential.versionStatus}</p></div>
-          <details className="cli-upgrade"><summary>{t("security.upgradeGuide", "Upgrade guide")}</summary><p>{t("security.runOnDevice", "Run on this device:")}</p><code>atape upgrade</code><p>{t("security.updateAdapters", "Update Adapters:")}</p><code>atape adapters upgrade --all</code></details>
+          <details className="cli-upgrade"><summary>{t("security.upgradeGuide", "Upgrade guide")}</summary><p>{t("security.runOnDevice", "Run on this device:")}</p><code>atape</code><p>{t("security.updateAdapters", "Open Tools and updates to update ATape and its integrations.")}</p></details>
         </div>
         <div className="cli-device-foot"><span>{t("security.statusReceived", "Status received: {time}", { time: credential.reportedAt ? formatTime(credential.reportedAt) : t("security.notReported", "Not reported") })}</span><span>{t("security.connectedAt", "Connected {time}", { time: formatTime(credential.createdAt) })}</span>
           {credential.device?.versionCheckedAt && <span>{t("security.versionsChecked", "Versions checked: {time}", { time: formatTime(credential.device.versionCheckedAt) })}</span>}

@@ -204,14 +204,14 @@ it("discovers and incrementally collects native Claude sessions into existing co
     const repairable = jsonLines(records.map(r => r.sessionId ? { ...r, sessionId: "e2e-repaired-claude" } : r))
     await writeFile(brokenFile, repairable + "broken-json\n")
     // A nonzero CLI exit exposes partial collection, but healthy data is durable.
-    expect(onlyJob(await collect(fixture, serverUrl, 1))).toMatchObject({ observations: 2, rawChunks: 2,
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 2, rawChunks: 2,
       sourceFailures: [{ source: expect.stringContaining("a-broken.jsonl"), reason: "format" }] })
     expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(2)
     const appended = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=root`)
     expect(appended.events).toHaveLength(7)
     expect(appended.events.slice(0, 6).map(e => e.id)).toEqual(conversation.events.map(e => e.id))
     expect(appended.events.at(-1)?.text).toBe("Automatically discovered append")
-    expect(onlyJob(await collect(fixture, serverUrl, 1))).toMatchObject({ observations: 0, rawChunks: 0 })
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
     await writeFile(brokenFile, repairable)
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
     expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(3)
@@ -335,38 +335,25 @@ const configureClient = async (fixture: Fixture, serverUrl: string, adapterId: "
   }, null, 2)}\n`, { mode: 0o600 })
 }
 
-const collect = async (fixture: Fixture, serverUrl: string, expectedExit = 0) => {
-  const output = await execute(process.execPath, [
-    cliEntry,
-    "collect",
-    "--once",
-    "--project",
-    "support-notes",
-    "--json"
-  ], repositoryRoot, clientEnvironment(fixture, serverUrl), expectedExit)
-  return JSON.parse(output) as CollectionReport
-}
-
-const startCollector = async (fixture: Fixture, serverUrl: string) => JSON.parse(await execute(
+const invokeCollector = async (fixture: Fixture, serverUrl: string, phase: string, argument?: string) => JSON.parse(await execute(
   process.execPath,
-  [cliEntry, "start", "--interval", "10", "--concurrency", "2", "--json"],
+  [join(repositoryRoot, "apps/cli/src/runtime/fixtures/installed-collector.ts")],
   repositoryRoot,
-  clientEnvironment(fixture, serverUrl)
-)) as { readonly created: boolean; readonly pid: number; readonly intervalMs: number; readonly concurrency: number }
+  clientEnvironment(fixture, serverUrl),
+  JSON.stringify({ entry: cliEntry, phase, argument, concurrency: 2 })
+))
 
-const stopCollector = async (fixture: Fixture, serverUrl: string) => JSON.parse(await execute(
-  process.execPath,
-  [cliEntry, "stop", "--json"],
-  repositoryRoot,
-  clientEnvironment(fixture, serverUrl)
-)) as { readonly stopped: boolean }
+const collect = async (fixture: Fixture, serverUrl: string) =>
+  await invokeCollector(fixture, serverUrl, "cycle", "support-notes") as CollectionReport
 
-const collectorStatus = async (fixture: Fixture, serverUrl: string) => JSON.parse(await execute(
-  process.execPath,
-  [cliEntry, "status", "--json"],
-  repositoryRoot,
-  clientEnvironment(fixture, serverUrl)
-)) as ManagedCollectorStatus
+const startCollector = async (fixture: Fixture, serverUrl: string) =>
+  await invokeCollector(fixture, serverUrl, "start") as { readonly created: boolean; readonly pid: number; readonly intervalMs: number; readonly concurrency: number }
+
+const stopCollector = async (fixture: Fixture, serverUrl: string) =>
+  await invokeCollector(fixture, serverUrl, "stop") as { readonly stopped: boolean }
+
+const collectorStatus = async (fixture: Fixture, serverUrl: string) =>
+  await invokeCollector(fixture, serverUrl, "inspect") as ManagedCollectorStatus
 
 const waitForCollectorSuccess = async (fixture: Fixture, serverUrl: string) => {
   const deadline = Date.now() + 120_000
@@ -419,20 +406,21 @@ const execute = (
   args: ReadonlyArray<string>,
   cwd: string,
   environment: NodeJS.ProcessEnv,
-  expectedExit = 0
+  input: string
 ) => new Promise<string>((resolveOutput, reject) => {
-  execFile(executable, [...args], {
+  const child = execFile(executable, [...args], {
     cwd,
     env: environment,
     timeout: 30_000,
     maxBuffer: 16 * 1024 * 1024
   }, (error, stdout, stderr) => {
-    if ((error?.code ?? 0) !== expectedExit) {
-      reject(new Error(`Expected exit ${expectedExit}: ${error?.message ?? "exited successfully"}\n${stderr}\n${stdout}`))
+    if (error) {
+      reject(new Error(`Expected a successful Module invocation: ${error?.message ?? "exited successfully"}\n${stderr}\n${stdout}`))
       return
     }
     resolveOutput(stdout)
   })
+  child.stdin?.end(input)
 })
 
 const availablePort = () => new Promise<number>((resolvePort, reject) => {

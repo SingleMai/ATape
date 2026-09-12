@@ -3,7 +3,7 @@ import { decideProjectSetup, describeClientFailure,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
-  setActiveInstance, startExperienceCollector, stopExperienceCollector,
+  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, installAdapter, upgradeAdapters, pruneAdapterPackages,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
 } from "@atape/application"
 import type { AdapterSourceFailure, LocalProject } from "@atape/domain"
@@ -11,6 +11,7 @@ import { Effect, type Layer } from "effect"
 import { launchBrowser } from "../runtime/authenticationLayers.ts"
 import type { makeNodeClientLayer } from "../runtime/clientLayers.ts"
 import { t } from "../i18n/index.ts"
+import { isLocale } from "@atape/i18n"
 import { officialSourceLabel as toolLabel } from "@atape/adapter-catalog"
 
 export type ExperienceRequirements = Layer.Success<ReturnType<typeof makeNodeClientLayer>>
@@ -145,7 +146,7 @@ export class ExperiencePresenter {
   focusProject = (value: string) => { this.focusedProject = value }
   refresh = () => this.refreshConsole()
   constructor(private run: ExperienceRunner, private exit: (restart?: boolean) => void, private options: {
-    readonly path: string; readonly setup: boolean; readonly instance?: string; readonly noBrowser?: boolean
+    readonly path: string; readonly instance?: string; readonly noBrowser?: boolean
     readonly environment: NodeJS.ProcessEnv; readonly version: string
   }) { this.path = options.path }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -250,8 +251,7 @@ export class ExperiencePresenter {
       this.hasProjects = config.projects.length > 0
       this.toolsConfigured = config.toolsConfigured
       this.enabledTools = config.enabledAdapterIds
-      if (this.options.setup) this.connectProject()
-      else if (!this.hasProjects && !this.toolsConfigured) this.welcome()
+      if (!this.hasProjects && !this.toolsConfigured) this.welcome()
       else this.list()
     }, undefined, () => this.close())
     void this.run(Effect.gen(function*(this: ExperiencePresenter) {
@@ -287,7 +287,7 @@ export class ExperiencePresenter {
         t("cli.welcome.step1", "1. Choose the tools you use on this machine, once for all projects."),
         t("cli.welcome.step2", "2. Connect a directory. Git repositories include their worktrees and clones."),
         t("cli.welcome.step3", "3. Sign in if needed, then review and start syncing."),
-        t("cli.welcome.step4", "Sync continues after you exit. After a reboot, run atape start."),
+        t("cli.welcome.step4", "Sync continues after you exit. After a reboot, open ATape and select Start sync."),
         t("cli.welcome.step5", "Read conversations and manage your Team in the Web app.")
       ], options: [{ value: "connect", label: t("cli.welcome.connectProject", "Connect a project") }] },
       () => this.connectProject(), () => this.welcome())
@@ -548,8 +548,8 @@ export class ExperiencePresenter {
         ...(job.failureMessage ? [job.failureMessage] : []),
         ...(job.failureReason ? [failureGuidance(job.failureReason)] : []),
         ...(job.lastSuccessAt ? [t("cli.diagnostics.lastCompleted", "Last completed: {time}", { time: job.lastSuccessAt })] : []),
-        ...(job.sourceFailures?.slice(0, 3).flatMap(failure => [`${failure.source}`, sourceFailureGuidance(failure.reason)]) ?? []),
-        ...(job.sourceFailuresTruncated || (job.sourceFailures?.length ?? 0) > 3 ? [t("cli.diagnostics.moreSkipped", "More skipped sources: atape status --json")] : [])
+        ...(job.sourceFailures?.flatMap(failure => [`${failure.source}`, sourceFailureGuidance(failure.reason)]) ?? []),
+        ...(job.sourceFailuresTruncated ? [t("cli.diagnostics.moreSkipped", "This sync report contains only a sample of skipped sources. Later cycles may report additional sources.")] : [])
       ]), t("cli.diagnostics.refreshHint", "Refresh status only updates the page; it does not restart sync.")
     ], options: [
       ...(item.recovery.kind === "sign_in" ? [{ value: "login", label: t("cli.project.signInResume", "Sign in again and resume") }] : []),
@@ -626,16 +626,70 @@ export class ExperiencePresenter {
           ? t("cli.tools.usePublished", "Use published {label} integration {version}", { label: release.label, version: release.latest ?? "" })
           : t("cli.tools.updateRelease", "Update {name} to {version}", { name: releaseName(release), version: release.latest ?? "" }) })),
         { value: "configure", label: t("cli.tools.chooseTools", "Choose tools to sync") },
-        { value: "check", label: t("cli.tools.checkAgain", "Check again") }
+        { value: "check", label: t("cli.tools.checkAgain", "Check again") },
+        { value: "maintenance", label: t("cli.tools.maintenance", "Integration maintenance") }
       ] }, value => {
         if (value === "configure") this.configureTools(() => this.tools(back), () => this.tools(back))
         else if (value === "check") this.tools(back, true)
+        else if (value === "maintenance") this.maintenance(() => this.tools(back))
         else {
           const release = updateable.find(release => `update:${release.id}` === value)
           if (release) this.updateRelease(release, back)
         }
       }, back)
     }, undefined, back)
+  }
+  private maintenance(back: () => void, notice?: string) {
+    this.work(t("cli.tools.reading", "Reading tools"), inspectClient(), config => this.show({
+      kind: "menu", title: t("cli.tools.maintenance", "Integration maintenance"), ...(notice ? { notice } : {}),
+      details: [t("cli.maintenance.intro", "Install trusted packages, refresh their original source, or clean up old versions. Installation does not enable conversation capture."),
+        ...config.adapters.map(adapter => `${adapter.displayName} ${adapter.version} · ${adapter.upgradeSpec}`)],
+      options: [
+        { value: "install", label: t("cli.maintenance.install", "Install from a package or path") },
+        { value: "prune", label: t("cli.maintenance.prune", "Clean up old integration versions") },
+        ...config.adapters.map(adapter => ({ value: `refresh:${adapter.adapterId}`,
+          label: t("cli.maintenance.refresh", "Refresh {tool} from its original source", { tool: adapter.displayName }) }))
+      ]
+    }, value => {
+      const again = () => this.maintenance(back)
+      if (value === "install") this.installPackage(back)
+      else if (value === "prune") this.prunePackages(back)
+      else {
+        const adapter = config.adapters.find(adapter => value === `refresh:${adapter.adapterId}`)
+        if (adapter) this.confirm(t("cli.maintenance.refreshTitle", "Refresh integration?"), [adapter.displayName, adapter.upgradeSpec,
+          t("cli.maintenance.preserve", "Tool selection, connected projects and sync progress will be retained. Stopped sync stays stopped.")],
+          t("cli.maintenance.refreshAction", "Refresh integration"), () => this.work(t("cli.maintenance.working", "Updating integration"), upgradeAdapters(adapter.adapterId),
+            () => this.maintenance(back, t("cli.maintenance.updated", "Integration updated. Running sync will use it on its next attempt.")), undefined, again), again)
+      }
+    }, back), undefined, back)
+  }
+  private installPackage(back: () => void, initial = "") {
+    const again = () => this.maintenance(back)
+    this.show({ kind: "input", title: t("cli.maintenance.install", "Install from a package or path"), initial,
+      details: [t("cli.maintenance.source", "Enter an npm package, local directory, tarball path or HTTPS URL. Only install packages you trust.")]
+    }, value => {
+      const spec = String(value).trim()
+      if (!spec) return this.installPackage(back)
+      this.confirm(t("cli.maintenance.installTitle", "Install integration?"), [spec,
+        t("cli.maintenance.inert", "After installation, use Choose tools to sync to enable capture. Existing tool selection and sync progress are retained.")],
+        t("cli.maintenance.installAction", "Install integration"), () => this.work(t("cli.maintenance.installing", "Installing integration"), installAdapter(spec),
+          () => this.maintenance(back, t("cli.maintenance.installed", "Integration installed. Choose tools to sync controls capture.")),
+          error => this.failed(error, () => this.installPackage(back, spec), () => this.installPackage(back, spec)), () => this.installPackage(back, spec)),
+        () => this.installPackage(back, spec))
+    }, again)
+  }
+  private prunePackages(back: () => void) {
+    const again = () => this.maintenance(back)
+    this.work(t("cli.maintenance.inspecting", "Inspecting old versions"), pruneAdapterPackages(), report => {
+      const details = [t("cli.maintenance.retention", "Keep one inactive version per package. Current versions, versions in use and untracked installations are protected. Stop older ATape processes before cleanup."),
+        ...report.slots.map(slot => `${slot.packageName ?? slot.slot} ${slot.version ?? ""} · ${t(`cli.maintenance.slot.${slot.state}`)}`),
+        ...(report.more ? [t("cli.maintenance.more", "More versions remain. Review cleanup again after this pass.")] : [])]
+      if (!report.slots.some(slot => slot.state === "eligible")) return this.show({ kind: "menu", title: t("cli.maintenance.prune", "Clean up old integration versions"),
+        details: [t("cli.maintenance.none", "No old versions are eligible for cleanup."), ...details], options: [] }, () => {}, again)
+      this.confirm(t("cli.maintenance.pruneTitle", "Remove unused integration versions?"), details,
+        t("cli.maintenance.remove", "Remove unused versions"), () => this.work(t("cli.maintenance.removing", "Removing unused versions"), pruneAdapterPackages({ apply: true }),
+          result => this.maintenance(back, t("cli.maintenance.removed", "Removed {count} unused versions. Current installations and sync progress are retained.", { count: result.removed })), undefined, again), again)
+    }, undefined, again)
   }
   private updateRelease(release: ToolRelease, back: () => void, error?: unknown) {
     const recovery = error instanceof CLIUpgradeError ? error.recovery : undefined
@@ -648,6 +702,7 @@ export class ExperiencePresenter {
         ] }, value => {
           if (value === "continue" && recovery) this.close(true)
           else if (value === "check") this.tools(back, true)
+        else if (value === "maintenance") this.maintenance(() => this.tools(back))
           else if (value === "retry") this.applyRelease(release, back, recovery)
         }, recovery ? () => this.close(true) : () => this.tools(back))
     } else this.applyRelease(release, back)
@@ -694,11 +749,24 @@ export class ExperiencePresenter {
     this.work(t("cli.settings.reading", "Reading settings"), inspectCLIExperience(), snapshot => this.show({ kind: "menu", title: t("cli.console.settings", "Settings"),
       details: [t("cli.settings.server", "Server: {origin}", { origin: this.instanceOrigin }),
         snapshot.collector.running ? t("cli.settings.syncRunning", "Background sync is running. Exiting keeps it running.") : t("cli.settings.syncStopped", "Background sync is stopped.")],
-      options: [{ value: "accounts", label: t("cli.settings.accounts", "Accounts") }, { value: "server", label: t("cli.settings.changeServer", "Change server") },
+      options: [{ value: "accounts", label: t("cli.settings.accounts", "Accounts") },
+        { value: "language", label: t("cli.settings.language", "Language") }, { value: "server", label: t("cli.settings.changeServer", "Change server") },
         { value: snapshot.collector.running ? "stop" : "start", label: snapshot.collector.running
           ? t("cli.settings.stopAll", "Stop sync for all projects") : t("cli.console.startSync", "Start sync") }]
-    }, value => value === "accounts" ? this.accounts() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
+    }, value => value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
       : this.consoleAction(String(value)), () => this.list()))
+  }
+  private language() {
+    this.show({ kind: "menu", title: t("cli.settings.language", "Language"),
+      details: [t("cli.settings.languageHint", "Choose the language for future ATape sessions. A launch flag or ATAPE_LANG takes precedence.")],
+      options: [{ value: "en", label: "English" }, { value: "zh-CN", label: "简体中文" }]
+    }, value => {
+      if (typeof value !== "string" || !isLocale(value)) return
+      this.work(t("cli.settings.savingLanguage", "Saving language"), setClientLocale(value),
+        () => this.show({ kind: "menu", title: t("cli.settings.language", "Language"),
+          details: [t("cli.settings.languageSaved", "Language saved. Reopen ATape to use it.")], options: [] }, () => {}, () => this.settings()),
+        undefined, () => this.language())
+    }, () => this.settings())
   }
   private accounts() {
     this.work(t("cli.accounts.reading", "Reading accounts"), inspectClient(), config => {

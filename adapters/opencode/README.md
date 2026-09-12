@@ -20,7 +20,7 @@ The Server must expose `atape.publication.v1` with configured publication admiss
 For a locally built release candidate, install its package before selecting it:
 
 ```sh
-atape adapters install ./release/atape-adapter-opencode-<version>.tgz
+atape
 atape
 ```
 
@@ -73,3 +73,5 @@ Tests use controlled data, never personal history.
 
 See the [feature guide](https://github.com/SingleMai/ATape/blob/main/docs/adapters/opencode.md)
 for limits, native evidence, failure recovery and remaining scope.
+
+For release tarballs, install the full archive path in Tools and updates → Integration maintenance, then choose OpenCode in Choose tools to sync.

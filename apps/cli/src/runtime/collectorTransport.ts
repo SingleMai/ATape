@@ -110,7 +110,7 @@ const postJSON = <A, I>(
       retryable: response.status !== 401 &&
         (response.status === 408 || response.status === 429 || response.status >= 500),
       message: response.status === 401
-        ? `ATape ${operation} authentication failed; run \`atape login\` again.`
+        ? `ATape ${operation} authentication failed; open ATape and sign in again.`
         : `ATape ${operation} endpoint returned ${response.status}.${problemIdentity(response.body)}`
     }))),
   Effect.flatMap((response) => Schema.decodeUnknownEffect(schema)(response.body)),
