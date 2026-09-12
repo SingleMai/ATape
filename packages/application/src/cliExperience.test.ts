@@ -66,6 +66,7 @@ const fixture = () => {
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      refresh: () => Effect.succeed(false),
       inspect: () => Effect.succeed(running ? { pid: 10, startedAt: date, intervalMs: 30000, concurrency: 4, logFile: "/logs/collector" } : undefined),
       start: options => Effect.sync(() => { starts++; running = true; return { ...options, pid: 10, startedAt: date, logFile: "/logs/collector", created: true } }),
       stop: () => Effect.sync(() => { const was = running; running = false; return was })

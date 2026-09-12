@@ -48,6 +48,7 @@ const fixture = (config: ClientConfig, status: CollectorRunState) => {
       transact: (change) => change(config).pipe(Effect.map((result) => result.value))
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      refresh: () => Effect.succeed(false),
       start: (requested) => Effect.sync(() => {
         running = true
         options = requested

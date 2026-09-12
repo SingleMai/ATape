@@ -1,3 +1,4 @@
+import { CollectorDaemonProcess, type CollectorDaemonOptions, type ResolvedCollectorDaemonOptions } from "./collectorDaemonProcess.ts"
 import type {
   AdapterCollectionProgress,
   AdapterSourceFailure,
@@ -17,13 +18,7 @@ import {
   type CollectionCycleReport
 } from "./collector.ts"
 
-export class CollectorDaemonProcessError extends Schema.TaggedError<CollectorDaemonProcessError>()(
-  "CollectorDaemonProcessError",
-  {
-    reason: Schema.Literals(["io", "identity", "start", "stop"]),
-    message: Schema.String
-  }
-) {}
+export * from "./collectorDaemonProcess.ts"
 
 export class CollectorRunStatusError extends Schema.TaggedError<CollectorRunStatusError>()(
   "CollectorRunStatusError",
@@ -32,29 +27,6 @@ export class CollectorRunStatusError extends Schema.TaggedError<CollectorRunStat
     message: Schema.String
   }
 ) {}
-
-export type CollectorDaemonOptions = {
-  readonly intervalMs?: number
-  readonly concurrency?: number
-}
-
-export type ResolvedCollectorDaemonOptions = {
-  readonly intervalMs: number
-  readonly concurrency: number
-}
-
-export type CollectorDaemonProcessSnapshot = ResolvedCollectorDaemonOptions & {
-  readonly pid: number
-  readonly startedAt: string
-  readonly logFile: string
-  readonly created: boolean
-}
-
-export class CollectorDaemonProcess extends Context.Service<CollectorDaemonProcess, {
-  start(options: ResolvedCollectorDaemonOptions): Effect.Effect<CollectorDaemonProcessSnapshot, CollectorDaemonProcessError>
-  stop(): Effect.Effect<boolean, CollectorDaemonProcessError>
-  inspect(): Effect.Effect<Omit<CollectorDaemonProcessSnapshot, "created"> | undefined, CollectorDaemonProcessError>
-}>()("atape/application/CollectorDaemonProcess") {}
 
 export class CollectorRunStatusStore extends Context.Service<CollectorRunStatusStore, {
   read(): Effect.Effect<CollectorRunState, CollectorRunStatusError>
@@ -228,7 +200,7 @@ const presentJob = (
   : {
       projectId,
       adapterId,
-      ...(recorded.progress === undefined ? {} : { progress: recorded.progress }),
+      ...(recorded.failureMessage !== undefined || recorded.progress === undefined ? {} : { progress: recorded.progress }),
       ...(recorded.canonicalEvents === undefined ? {} : { canonicalEvents: recorded.canonicalEvents }),
       ...(recorded.rawBytes === undefined ? {} : { rawBytes: recorded.rawBytes }),
       ...(recorded.durationMs === undefined ? {} : { durationMs: recorded.durationMs }),

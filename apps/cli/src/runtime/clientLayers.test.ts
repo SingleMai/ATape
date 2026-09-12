@@ -1,4 +1,5 @@
 import {
+  CollectorDaemonProcess,
   inspectClient,
   installAdapter,
   upgradeAdapters,
@@ -46,7 +47,7 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
   const run = <A, E>(effect: Effect.Effect<
     A,
     E,
-    ClientConfigStore | ProjectLocator | AdapterPackages
+    CollectorDaemonProcess | ClientConfigStore | ProjectLocator | AdapterPackages
   >, signal?: AbortSignal) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined)
   return { root, paths, run }

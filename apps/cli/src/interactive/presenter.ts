@@ -1,5 +1,5 @@
 import { decideProjectSetup, describeClientFailure,
-  CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
+  CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, refreshManagedCollector, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
@@ -215,7 +215,7 @@ export class ExperiencePresenter {
   start() {
     if (this.started) return
     this.started = true
-    this.work(t("cli.presenter.checkingUpdates", "Checking for updates"), checkCLIUpgrade(this.options.version), version => {
+    this.work(t("cli.presenter.checkingUpdates", "Checking for updates"), refreshManagedCollector().pipe(Effect.andThen(checkCLIUpgrade(this.options.version))), version => {
       if (version) this.offerUpgrade(version)
       else this.openExperience()
     }, undefined, () => this.close())
