@@ -65,7 +65,7 @@ func assertOpenCodeInstalledUpgrade(t *testing.T, root, home, projectID, artifac
 	var installed struct {
 		Adapter adapter `json:"adapter"`
 	}
-	command(&installed, "adapters", "install", upgradeSource, "--json")
+	command(&installed, "install", upgradeSource)
 	if installed.Adapter.ID != "opencode" || installed.Adapter.Version != fixtureVersion {
 		t.Fatal("fixture package was not installed")
 	}
@@ -82,7 +82,7 @@ func assertOpenCodeInstalledUpgrade(t *testing.T, root, home, projectID, artifac
 			} `json:"jobs"`
 		}
 		beforeRequests := contentUploads()
-		command(&report, "collect", "--once", "--project", projectID, "--json")
+		command(&report, "cycle", projectID)
 		if noUploads && contentUploads() != beforeRequests {
 			t.Fatal("unchanged source sent Canonical or Raw content HTTP requests after upgrade")
 		}
@@ -128,7 +128,7 @@ func assertOpenCodeInstalledUpgrade(t *testing.T, root, home, projectID, artifac
 	var upgraded struct {
 		Adapters []adapter `json:"adapters"`
 	}
-	command(&upgraded, "adapters", "upgrade", "opencode", "--json")
+	command(&upgraded, "upgrade", "opencode")
 	if len(upgraded.Adapters) != 1 || upgraded.Adapters[0].ID != "opencode" || upgraded.Adapters[0].Version != version {
 		t.Fatalf("actual candidate upgrade failed: %+v", upgraded)
 	}

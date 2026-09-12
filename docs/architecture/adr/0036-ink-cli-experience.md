@@ -4,6 +4,8 @@
 - Date: 2026-09-08
 - Current feature guide: [CLI user journey](../../cli/user-journey.md)
 
+Public business commands are superseded by [ADR-0081](0081-single-interactive-cli-entry.md).
+
 ## Context
 
 Users currently assemble authentication, Project registration, Adapter installation,

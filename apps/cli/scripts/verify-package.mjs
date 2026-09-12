@@ -33,7 +33,6 @@ const environment = {
   OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
   ATAPE_REDACT_VALUES: "[]"
 }
-let collectorStarted = false
 let fixtureServer
 
 try {
@@ -59,14 +58,12 @@ try {
   ], temporaryRoot)
   const help = (await atape(["--help"])).stdout
   assert.match(help, /^ATape CLI/m)
-  assert.match(help, /atape upgrade/)
-  assert.match(help, /atape adapters prune/)
+  assert.match(help, /projects, tools and settings/)
+  assert.doesNotMatch(help, /atape (upgrade|adapters|setup|status)|__collector-daemon/)
   assert.equal((await atape(["--version"])).stdout.trim(), `ATape ${packageManifest.version}`)
-  await assert.rejects(atape(["status", "--team", "unused"]), error => error.cause?.code === 2)
-  assert.deepEqual(JSON.parse((await atape(["status", "--json"])).stdout), {
-    running: false,
-    jobs: []
-  })
+  for (const args of [["status"], ["login"], ["setup"], ["collect"], ["adapters", "prune"], []]) {
+    await assert.rejects(atape(args), error => error.cause?.code === 2)
+  }
 
   if (process.platform !== "win32") {
     const remote = await startFixtureServer()
@@ -74,57 +71,11 @@ try {
     environment.ATAPE_INSTANCE_URL = remote.origin
     await writeSmokeAdapter()
     process.stdout.write((await run("python3", [fileURLToPath(new URL("verify-terminal.py", import.meta.url)), binary, join(temporaryRoot, "terminal"), adapterSource, remote.origin], temporaryRoot, environment)).stdout)
-    const login = await atape(["login", "--no-browser", "--json"])
-    assert.deepEqual(JSON.parse(login.stdout), {
-      instanceOrigin: remote.origin,
-      apiOrigin: remote.origin,
-      user: { id: "package-user", displayName: "Package User" },
-      credentialId: "package-credential",
-      createdAt: "2026-09-06T00:00:00Z",
-      browserOpened: false,
-      warnings: []
-    })
-    assert.ok(!login.stdout.includes("atc_v1_"), "login stdout disclosed the bearer Credential")
-    assert.match(login.stderr, /Q7KM4W/)
 
-    await writeSmokeAdapter()
-    const firstInstall = JSON.parse((await atape(["adapters", "install", adapterSource, "--json"])).stdout)
-    const currentInstall = JSON.parse((await atape(["adapters", "install", adapterSource, "--json"])).stdout)
-    const preview = JSON.parse((await atape(["adapters", "prune", "--keep", "0", "--json"])).stdout)
-    assert.equal(preview.applied, false)
-    assert.equal(preview.slots.find(slot => slot.slot === firstInstall.adapter.packageSlot)?.state, "eligible")
-    const pruned = JSON.parse((await atape(["adapters", "prune", "--keep", "0", "--apply", "--json"])).stdout)
-    assert.equal(pruned.slots.find(slot => slot.slot === firstInstall.adapter.packageSlot)?.state, "removed")
-    assert.equal(pruned.slots.find(slot => slot.slot === currentInstall.adapter.packageSlot)?.state, "current")
-    await atape(["tools", "configure", "--adapter", "smoke", "--apply", "--json"])
-    const setup = JSON.parse((await atape([
-      "setup", projectDirectory, "--team", "package-team", "--create",
-      "--name", "Package Project", "--type", "directory", "--json"
-    ])).stdout)
-    assert.equal(setup.createdRemotely, true)
-    assert.equal(setup.project.userId, "package-user")
-    assert.equal(setup.project.teamId, "package-team-id")
-    assert.equal(setup.project.instanceOrigin, remote.origin)
-    const started = JSON.parse((await atape([
-      "start", "--interval", "10", "--concurrency", "1", "--json"
-    ])).stdout)
-    assert.equal(started.created, true)
-    collectorStarted = true
-    await waitForHealthyCollector()
-    assert.deepEqual(JSON.parse((await atape(["stop", "--json"])).stdout), { stopped: true })
-    collectorStarted = false
-    assert.equal(JSON.parse((await atape(["status", "--json"])).stdout).running, false)
-
-    await closeServer(fixtureServer)
-    fixtureServer = undefined
-    const logout = JSON.parse((await atape(["logout", "--json"])).stdout)
-    assert.equal(logout.signedOut, true)
-    assert.equal(logout.warnings.length, 1)
   }
 
   process.stdout.write(`Verified installable CLI tarball ${manifest.filename}\n`)
 } finally {
-  if (collectorStarted) await atape(["stop", "--json"]).catch(() => undefined)
   await closeServer(fixtureServer)
   await rm(temporaryRoot, { recursive: true, force: true })
 }
@@ -258,17 +209,6 @@ async function writeSmokeAdapter() {
     "})",
     ""
   ].join("\n"))
-}
-
-async function waitForHealthyCollector() {
-  for (let attempt = 0; attempt < 80; attempt++) {
-    const status = JSON.parse((await atape(["status", "--json"])).stdout)
-    const job = status.jobs.find((candidate) =>
-      candidate.projectId === "package-project" && candidate.adapterId === "smoke")
-    if (status.running === true && job?.state === "healthy") return
-    await new Promise((done) => setTimeout(done, 50))
-  }
-  throw new Error("Installed CLI Collector did not complete its smoke Adapter cycle.")
 }
 
 function atape(arguments_) {

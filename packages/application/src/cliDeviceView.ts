@@ -2,12 +2,12 @@ import type { CLICredential } from "@atape/domain"
 import { newer, stableVersion } from "./releaseVersion.ts"
 
 const reasons = {
-  unauthenticated: "Sign in again with atape login.",
+  unauthenticated: "Sign in again in ATape.",
   transport: "The CLI could not reach the server. Check its network connection.",
-  adapter: "The Adapter could not collect data. Check atape status locally.",
-  state: "The CLI could not save local progress. Check atape status and local disk access.",
+  adapter: "The Adapter could not collect data. Check the Project’s Sync details in ATape.",
+  state: "The CLI could not save local progress. Check Sync details in ATape and local disk access.",
   contract: "The Adapter returned incompatible data. Check for Adapter updates locally.",
-  partial: "Some sources could not be synchronized. Run atape status locally for details."
+  partial: "Some sources could not be synchronized. Open the Project’s Sync details in ATape for details."
 } as const
 
 export const cliVersionView = (current: string, latest?: string) => {
@@ -32,11 +32,11 @@ export const presentCLIDevice = (credential: CLICredential, now: number) => {
     : "Up to date"
   const guidance = !sync ? "Update the CLI and start the collector to report sync status."
     : stale ? "No status report in the last 2 minutes. The device may be asleep, disconnected, or the CLI may have stopped."
-    : sync.phase === "error" ? "The collector could not start a sync cycle. Run atape status locally."
+    : sync.phase === "error" ? "The collector could not start a sync cycle. Open the Project’s Sync details in ATape."
     : issues.length ? `${issues.length} Project/Adapter ${issues.length === 1 ? "job needs" : "jobs need"} attention. Open details, then check the CLI locally.`
     : sync.phase === "stopped" ? "Start the collector locally when you want to resume automatic synchronization."
     : sync.jobs.some(job => job.hasMore) ? "More content remains to be synchronized."
-    : sync.jobsTruncated ? "This device has more jobs than fit in a status report. Check atape status locally for the full list."
+    : sync.jobsTruncated ? "This device has more jobs than fit in a status report. Check the Project’s Sync details in ATape for the full list."
     : sync.jobs.length === 0 ? "Configure projects and enable an Adapter in the CLI."
     : "The CLI reports automatically, even when there is no new content."
   const successes = sync?.jobs.flatMap(job => job.lastSuccessAt ? [job.lastSuccessAt] : []) ?? []

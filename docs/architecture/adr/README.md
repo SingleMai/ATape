@@ -107,6 +107,8 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0079](0079-cli-module-boundaries.md) | Collector and CLI Module boundaries |
 | [0080](0080-cli-input-and-adapter-slot-lifetime.md) | CLI input and Adapter slot lifetime |
 
+| [0081](0081-single-interactive-cli-entry.md) | One interactive ATape entry |
+
 When adding a decision, choose an unused number and add it here. Preserve an old
 record's rationale when a later decision changes it; link the amendment or
 replacement in both directions where applicable. Do not rewrite historical

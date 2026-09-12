@@ -72,12 +72,12 @@ export const makeAuthenticatedHTTPClientLayer = (
           Effect.mapError(() => failure("local_store", "Could not read the local CLI credential."))
         )
         if (credential === undefined) {
-          return yield* failure("unauthenticated", `Sign in to ${input.instanceOrigin} with \`atape login\` first.`)
+          return yield* failure("unauthenticated", `Sign in to ${input.instanceOrigin} in ATape first.`)
         }
         if (input.expectedUserId !== undefined && credential.user.id !== input.expectedUserId) {
           return yield* failure(
             "identity_changed",
-            "The active CLI account differs from this local Project; run setup again for the current account."
+            "The active CLI account differs from this local Project; connect the Project again in ATape for the current account."
           )
         }
         yield* verifyPinnedTopology(authentication, credential, verified, allowLoopbackHttp)

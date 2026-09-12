@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { Effect } from "effect"
-import { parseCLI, runCommand } from "./commands.ts"
+import { parseCLI } from "./commandInput.ts"
+import { runCommand } from "./commands.ts"
 import { defaultNodeClientPaths, makeNodeClientLayer, readClientConfigLocale } from "./runtime/clientLayers.ts"
 import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
 import { initializeCliI18n, resolveCliLocale, t } from "./i18n/index.ts"
@@ -20,7 +21,7 @@ const main = async () => {
     readClientConfigLocale(defaultNodeClientPaths().configFile)
   ).catch(() => undefined)
   initializeCliI18n(resolveCliLocale({
-    ...(command.options.lang === undefined ? {} : { flag: command.options.lang }),
+    ...("lang" in command.options && command.options.lang !== undefined ? { flag: command.options.lang } : {}),
     environment: process.env,
     ...(configLocale === undefined ? {} : { config: configLocale })
   }))
@@ -31,7 +32,8 @@ const main = async () => {
     return
   }
   if (requestsGuidedExperience(command)) {
-    process.stdout.write(`${t("cli.error.interactiveUnsupported", "Interactive setup needs a macOS/Linux terminal. Configure tools with `atape tools configure --adapter <id> --apply`, then use `atape setup <directory> --team <slug> --create` and `atape start`, or `atape --help`.")}\n`)
+    process.stderr.write(`${t("cli.error.interactiveUnsupported", "ATape needs an interactive macOS or Linux terminal. Run atape there to manage projects, tools and settings. Use atape --help for launch options.")}\n`)
+    process.exitCode = 2
     return
   }
 

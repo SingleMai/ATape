@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest"
-import { parseCLI } from "./commands.ts"
+import { parseCLI } from "./commandInput.ts"
 import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
 
 describe("interactive entry selection", () => {
-  it("routes bare atape and unqualified setup to the guided experience", () => {
-    for (const args of [[], ["setup"], ["setup", "/work/a b"], ["--instance", "https://atape.net"], ["--lang", "zh-CN"]]) {
+  it("routes only the application entry to the guided experience", () => {
+    for (const args of [[], ["--no-browser"], ["--lang", "zh-CN"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(true)
     }
-    for (const args of [["--help"], ["--version"], ["status", "--json"], ["setup", "--json"], ["setup", "--team", "acme"], ["--lang", "zh-CN", "--json"], ["__collector-daemon", "--daemon-token", "test-token"]]) {
+    for (const args of [["--help"], ["--version"], ["__collector-daemon", "--daemon-token", "test-token"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(false)
     }
   })

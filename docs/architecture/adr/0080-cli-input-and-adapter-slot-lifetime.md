@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+Public business commands are superseded by [ADR-0081](0081-single-interactive-cli-entry.md).
+
 ## Decision
 
 Decode CLI arguments into a discriminated command Interface before constructing

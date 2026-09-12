@@ -148,7 +148,7 @@ const statusError = (status: number, resource: string) => new ProjectSetupGatewa
     : status === 429 || status >= 500 ? "unavailable"
     : "decode",
   message: status === 401
-    ? "The CLI credential is no longer valid; run `atape login` again."
+    ? "The CLI credential is no longer valid; open ATape and sign in again."
     : `The ATape ${resource} request was rejected (${status}).`
 })
 

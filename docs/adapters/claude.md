@@ -58,7 +58,7 @@ oversized tool values remain available only if Raw was actually captured.
 
 ## Recovery and upgrades
 
-Inspect `atape collect --once --json` and `atape status` for partial collection.
+Inspect Project → Sync details in ATape for partial collection.
 Source diagnostics are bounded, redacted and local; they do not assert that all
 failed files have been enumerated. Repair malformed data or restore the exact
 captured prefix to resume. Unsupported history needs an Adapter capability;

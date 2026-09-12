@@ -1,7 +1,7 @@
 import { createElement } from "react"
 import { render } from "ink"
 import { Effect, ManagedRuntime } from "effect"
-import type { ParsedCLI } from "../commands.ts"
+import type { ParsedCLI } from "../commandInput.ts"
 import { makeNodeClientLayer, defaultNodeClientPaths } from "../runtime/clientLayers.ts"
 import { ExperiencePresenter } from "./presenter.ts"
 import { ExperienceView } from "./view.ts"
@@ -16,9 +16,8 @@ export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonl
     restart = Boolean(requested)
     renderer?.unmount()
   }, {
-    path: cli.directory ?? process.cwd(),
-    setup: cli.setup, environment: process.env, version: cliVersion,
-    ...(cli.options.instance ? { instance: cli.options.instance } : {}),
+    path: process.cwd(),
+    environment: process.env, version: cliVersion,
     ...(cli.options.noBrowser ? { noBrowser: true } : {})
   })
   const stop = () => presenter.close()

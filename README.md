@@ -25,7 +25,7 @@ atape
 Run `atape` from the Project directory you want to connect. Choose your tools,
 sign in, create or join a Team if needed, and review the destination and historical
 import before confirming. The default Instance is `https://atape.net`; use
-`atape --instance https://atape.example` for your own Instance.
+Settings → Change server for your own Instance.
 
 The [setup guide](docs/cli/setup-and-adapters.md) covers supported sources,
 [first-sync verification](docs/cli/setup-and-adapters.md#confirm-the-first-sync),
@@ -49,7 +49,7 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). The same URL is the Server address passed to `atape setup`. PostgreSQL metadata and Raw source bytes live in separate named volumes and survive ordinary container recreation.
+Open [http://127.0.0.1:8080/](http://127.0.0.1:8080/). The same URL is the Server address entered in ATape Settings. PostgreSQL metadata and Raw source bytes live in separate named volumes and survive ordinary container recreation.
 
 The Web root opens the most recently captured Project. Before the first successful collection, it presents the CLI-first setup flow instead of redirecting to demo data.
 
@@ -91,23 +91,27 @@ Open [http://127.0.0.1:4187/](http://127.0.0.1:4187/).
 
 For CLI development, use the authenticated Compose Instance; the seeded demo
 cannot complete CLI sign-in. Create or join a Team in its Web app first, then use
-the explicit automation Interface below. Replace `/path/to/project` and
-`acme-engineering` with your directory and Team slug:
+the terminal application:
 
 ```sh
 export ATAPE_DEVELOPMENT_ALLOW_HTTP=true
-pnpm atape login --instance http://127.0.0.1:8080 --no-browser
+export ATAPE_INSTANCE_URL=http://127.0.0.1:8080
 pnpm --filter @atape/adapter-codex build
-pnpm atape adapters install ./adapters/codex
-pnpm atape tools configure --adapter codex --apply --json
-pnpm atape setup /path/to/project --team acme-engineering --create
-pnpm atape start
-pnpm atape status
+pnpm atape --no-browser
 ```
 
-Keep `ATAPE_DEVELOPMENT_ALLOW_HTTP=true` set for this local loopback session;
-production Instances use HTTPS. Tool selection is global to this local
-installation. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and retains durable progress. Codex/Claude advance a page cursor after both deliveries succeed; OpenCode atomically publishes a complete Canonical target and recovers Raw independently. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [OpenCode Adapter guide](docs/adapters/opencode.md), [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+For the local Adapter build, open Tools and updates → Integration maintenance and
+install `./adapters/codex`, then choose it in Choose tools to sync. On a fresh
+installation you can save an empty tool selection to reach the Project console
+before installing local packages. Add project connects the chosen directory after
+sign-in and review. Keep the loopback environment setting for later local sessions;
+production Instances use HTTPS.
+
+Background sync continues after the terminal closes. Start it from Home and stop
+it in Settings. Projects shows sync details and recovery. Codex/Claude advance page
+cursors after Canonical and Raw deliveries succeed; OpenCode atomically publishes
+Canonical targets and recovers Raw independently. See the [CLI guide](docs/cli/setup-and-adapters.md)
+and [Adapter contract](docs/adapters/package-manifest.md) for supported behavior.
 
 Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode Adapter tarballs with:
 
@@ -116,10 +120,11 @@ pnpm test:release
 pnpm pack:release
 ATAPE_PACKAGE_VERSION=$(node -p 'require("./package.json").version')
 npm install --global "./release/atape-cli-${ATAPE_PACKAGE_VERSION}.tgz"
-atape adapters install "./release/atape-adapter-codex-${ATAPE_PACKAGE_VERSION}.tgz"
 atape --version
+atape
 ```
 
+Install the Adapter tarball from Integration maintenance using its full path.
 The release directory also contains `SHA256SUMS`. Tag-driven publication is documented in [`docs/releasing.md`](docs/releasing.md).
 
 ## Verify

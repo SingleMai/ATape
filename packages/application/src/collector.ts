@@ -43,7 +43,7 @@ export const runCollector = Effect.fn("Collector.run")((options: RunCollectorOpt
     if (hasUnauthenticatedFailure(report)) {
       return yield* new CollectorConfigurationError({
         reason: "unauthenticated",
-        message: "The ATape Collector stopped because a CLI credential is missing, invalid, or expired. Run `atape login`."
+        message: "The ATape Collector stopped because a CLI credential is missing, invalid, or expired. Open ATape and sign in again."
       })
     }
     yield* Effect.logInfo("ATape collection cycle completed", {
