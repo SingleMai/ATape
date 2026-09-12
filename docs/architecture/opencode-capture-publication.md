@@ -1,8 +1,9 @@
 # OpenCode capture and publication contract
 
 This is the engineering contract selected with ADR-0058 and ADR-0059. See the
-[feature guide](../adapters/opencode.md) for landed increments and remaining
-production acceptance. OpenCode is not yet enabled as an Adapter.
+[feature guide](../adapters/opencode.md) for supported source/platform scope,
+landed increments and remaining acceptance. OpenCode is available in ordinary
+Tools selection; collection requires a Server advertising `atape.publication.v1`.
 It extends the existing pull architecture through an explicit capability; old
 Adapters and already captured legacy Sessions keep their existing write mode.
 
@@ -124,7 +125,8 @@ and does not evict another unacknowledged target to make room. It measures
 prepared content, not source DB file size; large independent Sessions can be
 processed separately. A target that exceeds available quota remains unpublished
 or keeps its old view and reports the required capacity. Numeric defaults are
-selected and stress-tested with the first release, not guessed from tiny models.
+selected in [ADR-0076](adr/0076-source-collection-release-admission.md), with
+the evidence and limits recorded in the feature guide.
 
 Keep current whole-record masking bounds until the byte-framed capability is
 implemented. Unsupported large Raw records are explicitly partial/limited;
@@ -217,9 +219,9 @@ unacknowledged delivery into success. Expired remote authority may require
 explicit reconciliation; it does not authorize old payload to bypass current
 permission checks.
 
-## 7. Required evidence before delivery
+## 7. Acceptance evidence
 
-The native prototype must exercise the selected public Interfaces: controlled
+Acceptance checks exercise the selected public Interfaces: controlled
 OpenCode SQLite/export parity; root/child/fork/revert/compaction; multiple pages
 and large values; source mutation and process restarts; missing parts; competing
 fences; activation commit with lost response; old receipt replay after a newer
@@ -227,8 +229,10 @@ head; head-aware readers and asynchronous Search; Raw recovery after a newer
 head; policy off/on and cancellation; journal/lease/receipt loss; quotas and
 cleanup. Include actual PostgreSQL/HTTP and supported-runtime/OS checks.
 
-The existing scratch SQLite models provide evidence for individual transaction
-and state-machine claims only. They do not satisfy these gates. Follow the
-repository cadence: land one usable capability increment through required PR
-checks before expanding the next. Package publication, Server deployment and
-running production migrations remain separate actions.
+The [feature guide](../adapters/opencode.md#verification) records delivered native,
+installed-package and HTTP/PostgreSQL evidence and its limits. Scratch SQLite
+models alone do not satisfy these gates. Candidate staging and publication
+evidence follow the [release guide](../releasing.md). When integration is requested,
+land one usable capability increment through required PR checks before expanding
+the next. Package publication, Server deployment and running production migrations
+remain separate actions.

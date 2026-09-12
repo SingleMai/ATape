@@ -1,11 +1,11 @@
 # CLI user journey: global tools and connected Projects
 
-Status: Global tool selection shipped in v0.4.0. Direct selection, reader
-recovery and local name search shipped in v0.4.1. CLI upgrade and startup
-choices shipped in v0.4.4. Tools and updates is included in the v0.4.6 release candidate.
-This specification supersedes per-Project tool selection in the earlier
-experience guide. Command and persistence behavior is documented in
-setup-and-adapters.md; ADR-0040 records the configuration decision.
+This is the current interaction specification for global tool selection,
+connected Projects, reader recovery, local name search, CLI upgrade and Tools
+and updates. Command and persistence behavior
+is documented in [setup and Adapters](setup-and-adapters.md);
+[ADR-0040](../architecture/adr/0040-global-cli-tools.md) records the configuration
+decision. Versioned release notes record delivery scope separately.
 
 ## User model and scope
 
@@ -32,8 +32,8 @@ identity applies only outside Git.
 1. `atape` opens the cassette welcome with one primary `Get started` action.
    Settings remain accessible for a self-hosted server. The welcome is not a
    mandatory stop on subsequent launches once initial setup is complete. The
-   theme-color cassette remains in the shared header on every interactive page,
-   adapting its size to the terminal rather than disappearing after first use.
+   spacious welcome uses the large theme-color cassette; daily pages retain an
+   inline cassette mark in the shared header.
 2. `Which conversations should ATape sync?` shows Claude Code and Codex with simple selection
    checkboxes. Detection may preselect tools on first use.
    Saving enables the chosen tools globally and installs their Adapters as
@@ -88,7 +88,7 @@ the welcome or tool configuration. A returning user adding another Project goes
 through directory, any missing authentication/destination choice, review, status.
 There is no tool-selection step in the Project flow.
 
-The home screen has three global entry points:
+The home screen exposes these global actions:
 
 | Entry | Responsibility |
 | --- | --- |
@@ -98,11 +98,29 @@ The home screen has three global entry points:
 
 The Project list shows names and sync outcomes. Since tool selection is global,
 do not repeat an identical tool list in every row. Show enabled tools once in
-the home summary. The action bar is above the list with a highlighted `[n] Add
-project` entry; `n` opens setup directly. Up from the first Project also reaches
-this action. `/` filters Projects, Enter opens one, and Tab moves to global
-actions. Shortcuts remain ordinary text while searching. Returning preserves
-filter, selection and scroll position.
+the home summary. Top navigation contains Projects, Tools and Settings;
+`Add project` appears as `n Add project` in the contextual footer. Pressing `n`
+opens a directory-picker modal over a muted, non-interactive Project workspace.
+The modal owns path input, suggestions and controls until it closes. If tools
+are not configured, this returning-user flow opens the picker first and proceeds
+to global tool selection after directory choice. `/` filters Projects, Enter
+opens one, and Tab moves to global actions. Shortcuts remain ordinary text while
+searching. Returning preserves filter, selection and scroll position.
+
+Interactive pages fill the terminal with a stable brand header, one framed
+workspace and a fixed contextual footer. The active Projects destination has a
+persistent highlight; keyboard focus on a Project uses an accent rail, bold text
+and a low-contrast background. Navigation focus remains visually distinct.
+Wide terminals show full action labels; narrow terminals use shorter localized
+labels and retain the frame and selected action in the footer. Shortcut notation
+belongs in the footer. One-shot commands are not navigation destinations.
+
+Ink owns the shell, modal, terminal measurement, focus styling and responsive
+labels as Presentation concerns; presenter intents and workflow ownership remain
+unchanged. Rendering coverage verifies terminal-height layout, navigation, frame,
+selected row, footer and the 42-column fallback. Conversation reading and other
+new destinations are outside this scope; broader terminal acceptance remains
+separate release work.
 
 Background sync state belongs in the home summary. If stopped, offer a contextual
 `Start sync` action there. Stopping is a global setting with an impact confirmation.

@@ -1,12 +1,14 @@
 # Canonical publication
 
-These are the candidate preparation, bounded validation and atomic activation
-increments of [ADR-0059](adr/0059-opencode-publication-and-recovery.md). The Module
+This guide describes candidate preparation, bounded validation and atomic
+activation under [ADR-0059](adr/0059-opencode-publication-and-recovery.md). The Module
 stores and validates candidates separately, then selects a complete head for
 Canonical reads. The HTTP Adapter and Server Composition Root expose it only
 when explicit candidate limits are configured.
 The full [publication contract](opencode-capture-publication.md) remains the
-acceptance baseline; OpenCode is not enabled by this increment.
+acceptance baseline. The [OpenCode guide](../adapters/opencode.md) records the
+integrated Collector and supported source scope; the
+[rollout procedure](../operations/opencode-rollout.md) covers Server enablement.
 
 ## Interface and ownership
 
@@ -187,8 +189,11 @@ The measured Event/Usage queries took about 8.7/6.8 ms and the indexed membershi
 count about 0.08 ms. These controlled measurements guard against query
 amplification; they do not establish production throughput or release limits.
 
-Before release: connect Collector recovery, independent Raw activation proof and OpenCode projection;
-then run the native-source and supported-platform acceptance in ADR-0059.
+Collector recovery, independent Raw activation proof and OpenCode projection are
+connected through the source-capture capability. See the
+[feature guide](../adapters/opencode.md) for that integration and its native-source,
+installed-runtime and supported-platform evidence. These Module measurements do
+not replace candidate-specific release acceptance.
 
 ## HTTP transport
 

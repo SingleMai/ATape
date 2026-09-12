@@ -2,26 +2,43 @@
 
 `@atape/adapter-codex` collects project-scoped local Codex rollout files and projects their completed conversation items into ATape's ACP-centered Adapter protocol. The Adapter is an experimental compatibility layer: Codex documents the CLI product, but does not publish the local rollout JSONL layout as a stable integration API.
 
-Unknown or newly introduced Codex records therefore remain available in Raw while being omitted from Canonical until ATape can map them without inventing semantics. The Web conversation flow renders only Canonical events; it does not add “missing capability” placeholders for omitted provider records.
+When Raw capture is enabled, unknown or newly introduced Codex records remain available in Raw while being omitted from Canonical until ATape can map them without inventing semantics. The Web conversation flow renders only Canonical events; it does not add “missing capability” placeholders for omitted provider records.
+
+## Supported source and limits
+
+Compatibility is exercised against the local rollout structure observed with
+Codex CLI **0.150.1**; this is not a general support promise for every Codex release.
+The Adapter reads local JSONL history and archived rollouts, including supported
+root/subagent relationships. Unknown record types are omitted from Canonical;
+Raw availability depends on the [capture policy](../cli/raw-capture.md).
+
+The [discovery rules](#source-discovery-and-project-boundary) define accepted paths
+and attribution. The [incremental contract](#incremental-and-raw-behavior) owns
+record, cursor and page bounds. Source deletion preserves already captured
+history; unsupported formats and missing attribution remain explicit diagnostics.
 
 ## Install and enable
 
-From this repository, build and install the ready-to-run local package, then enable it for a configured Project:
+From this repository, build and install the ready-to-run local package, then open
+the console to add Codex to the global tool selection:
 
 ```sh
 pnpm --filter @atape/adapter-codex build
 pnpm atape adapters install ./adapters/codex
-pnpm atape adapters enable codex --project payments-api
+pnpm atape
 pnpm atape start
 ```
 
 For a packaged release, install the independently bundled Adapter instead:
 
 ```sh
-atape adapters install ./atape-adapter-codex-0.1.0.tgz
+atape adapters install "./atape-adapter-codex-<version>.tgz"
 ```
 
-Maintainers can build and smoke-test that artifact with `pnpm test:adapter-package`, or verify it together with the packaged CLI using `pnpm test:release`. Installing it does not start a process. The Collector Host imports it only while collecting a Project for which `codex` is enabled.
+Choose **Tools and updates**, add Codex to the existing selection, and review the
+affected Projects. Tool selection applies globally to connected Projects.
+Replace `<version>` with the coordinated release version for offline installation.
+Maintainers can build and smoke-test that artifact with `pnpm test:adapter-package`, or verify it together with the packaged CLI using `pnpm test:release`. Installing it does not start a process. The Collector Host imports it only while collecting configured Projects with Codex enabled.
 
 ## Source discovery and Project boundary
 
@@ -63,7 +80,7 @@ Completed Codex items map as follows:
 | `ImageView` | `tool_call` with `read` kind |
 | `Extension` | `tool_call` with `other` kind |
 
-Private reasoning content is not promoted into Canonical. It remains part of the separately uploaded Raw source, subject to the Collector Host's client-side secret redaction.
+Private reasoning content is not promoted into Canonical. When Raw capture is enabled, it remains part of the separately uploaded Raw source, subject to the Collector Host's client-side secret redaction.
 
 ## Incremental and Raw behavior
 
@@ -91,7 +108,7 @@ The title index is read as a bounded, tolerant compatibility source: only the mo
 - Completed per-file offsets skip already emitted Canonical records after appends. Changed file sets, generations or same-size rewrites reproject idempotently. Stable source Event IDs preserve existing records.
 - Provider deletion is absence, not an ATape deletion signal. Already captured Canonical and Raw history remains on the server.
 
-Compatibility is currently exercised against the local structure observed with Codex CLI `0.150.1`. Fixture tests cover provider titles and renames, malformed title metadata, legacy Cursor backfill, root and subagent rollouts, copied-history filtering, Git worktree matching, incomplete active records, bounded pagination, Raw resumption, archival finalization, and provider deletion.
+Fixture tests cover provider titles and renames, malformed title metadata, legacy Cursor backfill, root and subagent rollouts, copied-history filtering, Git worktree matching, incomplete active records, bounded pagination, Raw resumption, archival finalization, and provider deletion.
 
 Tool titles remain bounded to 500 UTF-8 bytes after client-side redaction. A
 replacement marker can expand a title that already reached that limit; the shared
@@ -155,14 +172,19 @@ pages or lost their later text within a page. It replays Canonical history once
 with stable Event IDs and snapshot revisions; existing Raw acknowledgements
 are retained. See [ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md).
 
-The local repair was verified with 32 Codex tests, shared Collector/CLI tests,
-real CLI/Go end-to-end tests and the PostgreSQL replay contract. The running
-collector completed multiple consecutive bounded cycles without upload failures.
-A consistent database snapshot contained 260,202 Events and Search documents,
-with zero missing/stale documents or pending projection changes. Historical
-Canonical repair and Raw backfill were still running; unresolved attribution
-remained explicit local partial-coverage diagnostics. This is local/instance
-verification of the repair, not a published release or completed archive backfill.
+## Recovery and verification
+
+Use Project details and `atape status --json` to distinguish queued history,
+partial source coverage and transport failure. The [CLI recovery guide](../cli/setup-and-adapters.md#troubleshooting)
+owns common recovery steps. Preserve Collector state and Git attribution evidence;
+fix the reported source format or restore trustworthy attribution before retrying.
+Deleting checkpoints cannot make an unsupported rollout format compatible.
+
+Adapter tests exercise controlled source fixtures. `pnpm test:e2e` checks the real
+CLI/Go boundary, and `pnpm test:adapter-package` / `pnpm test:release` check installed
+artifacts and replacement recovery. These checks do not establish compatibility
+with arbitrary older binaries, every Codex version or manual acceptance of a
+new release candidate.
 
 ## Raw capture policy
 

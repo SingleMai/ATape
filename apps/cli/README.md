@@ -23,32 +23,14 @@ Checksummed `.tgz` files attached to each GitHub Release provide the equivalent 
 
 ## Upgrade
 
-Before opening the interactive console, ATape checks for a newer release using
-a twelve-hour cache and a short network timeout. If one is available, choose
-`Upgrade and continue` or `Skip`. Skip enters the original flow for this session;
-upgrading reopens the newly installed CLI with the same arguments and ATAPE_HOME.
-The choice appears again on later launches while an update remains available.
-An offline or failed check proceeds normally. Upgrade failures offer Retry and
-Skip; Escape exits instead of bypassing the choice.
-If installation succeeds but background sync cannot resume, choose
-`Resume sync and continue` to retry sync without reinstalling, or `Skip` to open
-the new CLI with sync stopped.
-
 ```sh
 atape upgrade
 ```
 
-This checks npm for the latest stable CLI and updates the active npm global
-installation. Already current versions need no action. After a successful
-upgrade, previously running background sync resumes with the same settings;
-stopped sync stays stopped. Use the same `ATAPE_HOME` as usual. Projects, login
-and sync checkpoints are retained. Adapter packages have their own
-`atape adapters upgrade --all` command.
-
-For an installation owned by another package manager, use that manager's update
-command. Repository development builds cannot upgrade themselves. Startup
-update choices do not appear in scripts or JSON output; `atape upgrade --json` returns
-the version and whether the CLI was updated and sync resumed.
+The interactive console also offers available updates. The built-in upgrade
+resumes previously running sync and preserves supported local state; Adapter
+updates are separate. See the [upgrade procedure](../../docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters)
+for manual package replacement, pinned Adapter sources and failed-resume recovery.
 
 ## First Project
 
@@ -91,10 +73,16 @@ Scripts and unsupported terminals retain explicit commands without entering Ink:
 atape login --no-browser
 atape tools configure --adapter codex --json
 atape tools configure --adapter codex --apply --json
-atape setup /path/to/project --team <team-slug> --create --json
+atape setup /path/to/project --team "<team-slug>" --create --json
 atape start --json
 atape status --json
 ```
+
+Replace `/path/to/project` and `<team-slug>` with your directory and Team. Use
+`atape projects list --json` to obtain Project IDs for later remove/filter commands.
+Follow [first-sync verification](../../docs/cli/setup-and-adapters.md#confirm-the-first-sync)
+and [troubleshooting](../../docs/cli/setup-and-adapters.md#troubleshooting) if capture
+is waiting, partial or failed.
 
 `--help` lists the complete automation Interface. Pipes, CI and `TERM=dumb` never
 wait for input.

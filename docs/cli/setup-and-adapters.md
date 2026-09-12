@@ -1,26 +1,72 @@
 # Local setup and Adapter management
 
-The [CLI experience initiative](experience-improvement.md) tracks the Ink setup
-and Project console. This guide also documents the explicit command Interface.
+The [CLI user journey](user-journey.md) describes interactive setup and the
+Project console. This guide documents configuration and the explicit command Interface.
 
 The ATape CLI keeps capture authorization explicit and local. `setup` records which Git repositories or ordinary directories may be observed, Adapter commands manage independently installed Harness integrations, and `collect` runs the bounded upload workflow.
 
+## Before you start
+
+Use Node.js 24 or newer and a macOS or Linux terminal for guided setup and
+managed background sync. Windows supports explicit foreground collection; the
+interactive console and managed process are unavailable there. Broader terminal
+acceptance limits are recorded in the [terminal validation record](production-terminal-validation.md).
+
+You need access to an ATape Instance and a Team on that Instance. New users can
+create or join a Team in Web onboarding during guided setup. Have a local Project
+directory and history from at least one supported coding tool; installing a tool
+or its Adapter alone does not create conversations.
+
+| Tool | Source compatibility and limits |
+| --- | --- |
+| Codex | [Experimental rollout compatibility](../adapters/codex.md#supported-source-and-limits) |
+| Claude Code | [Supported linear JSONL history](../adapters/claude.md#sources-and-supported-history) |
+| OpenCode | [Accepted SQLite version/platforms and Server prerequisite](../adapters/opencode.md#supported-source-and-enablement) |
+
+Commands below use the installed `atape` executable and can run from your Project
+directory. Source contributors can use `pnpm atape` from the ATape repository
+instead; build/install local Adapters as shown in [Tools and Adapter packages](#tools-and-adapter-packages).
+
 ## Install the CLI
 
-ATape's CLI is a public npm package containing one bundled `atape` executable with no workspace runtime dependencies. It requires Node.js 24 or newer.
+ATape's CLI is a public npm package containing one bundled `atape` executable with no workspace runtime dependencies.
 
 ```sh
 npm install --global @atape/cli
 atape --version
 ```
 
-The checksummed GitHub Release tarball remains an equivalent offline installation source. Repository maintainers create the complete CLI + Codex/Claude/OpenCode Adapter release set with `pnpm pack:release`, verify the clean installation boundary with `pnpm test:release`, and follow [`docs/releasing.md`](../releasing.md) for publication.
+Checksummed GitHub Release tarballs provide an offline package source. Install a
+downloaded CLI tarball with `npm install --global "./atape-cli-<version>.tgz"`,
+replacing `<version>` with its release version. Offline setup also needs the
+selected Adapter tarballs installed locally; browser authentication and sync
+still require access to the Instance. Maintainers build and verify release
+artifacts using the [release guide](../releasing.md).
 
 ## Guided setup and Project console
 
-Run `atape` in a macOS or Linux terminal. On first use it opens
-setup; after tools have been configured it opens your Project list, even when empty. `atape setup [directory]` opens the
-same guide to add another Project. Explicit command flags such as `--team`,
+From the directory you want to connect, run:
+
+```sh
+atape
+```
+
+The default Instance is `https://atape.net`. For a self-hosted Instance, use
+`atape --instance https://atape.example` with its Web origin. For the local
+[authenticated Compose deployment](../operations/self-hosting.md#first-installation):
+
+```sh
+export ATAPE_DEVELOPMENT_ALLOW_HTTP=true
+atape --instance http://127.0.0.1:8080
+```
+
+Keep that environment setting for later commands using this loopback Instance.
+The seeded `pnpm dev:server` demo does not provide browser/CLI authentication;
+use an authenticated Instance for this walkthrough.
+
+On first use the console opens setup; after tools have been configured it opens
+your Project list, even when empty. `atape setup [directory]` opens the same guide
+to add another Project. Explicit command flags such as `--team`,
 `--create` and `--json` retain the command workflow below.
 
 First use configures tools globally, then offers directory browsing, browser
@@ -53,49 +99,79 @@ creation retains a request key under `config/setup-requests/` to reuse the serve
 idempotency contract. Existing local directory registrations are reused. These
 files contain request keys, not conversation data.
 
+## Confirm the first sync
+
+After confirming the Project, open its details in the console. A running Collector
+only confirms that a process started. Wait for acknowledged conversation capture,
+then open the same Instance and Team in the Web app and inspect a Session from
+that Project. Check its source and recent messages, then verify that Search opens
+the expected conversation. Search uses a separate read model.
+
+```sh
+atape projects list --json
+atape tools list --json
+atape status --json
+```
+
+The first command identifies the connected Project and destination; the second
+shows the global tool selection. Status reports each Project/Adapter's latest
+cycle. A healthy cycle with zero observations may simply mean no attributable
+history. **Waiting** asks for a conversation in the connected repository;
+**queued history** means collection is continuing; **partial** means some sources
+were skipped and need inspection. See [Troubleshooting](#troubleshooting).
+
+Raw capture is disabled by default under the default Team policy, so an absent
+Raw archive does not by itself mean conversation sync failed. The
+[Raw capture guide](raw-capture.md) owns the policy, settings and backfill behavior.
+
 ## Sign in
 
 The CLI uses the Instance's browser login. It opens a short-lived approval page and also prints a six-character code so a headless terminal can finish the same flow:
 
 ```sh
-pnpm atape login
-pnpm atape login --instance https://atape.example
-pnpm atape login --no-browser
+atape login
+atape login --instance https://atape.example
+atape login --no-browser
 ```
 
 Instance selection is `--instance`, then `ATAPE_INSTANCE_URL`, then the last successfully selected Instance, then `https://atape.net`. Production credentials are sent only to a freshly rediscovered, exactly pinned HTTPS API origin; redirects and discovery drift fail closed. Plain HTTP requires `ATAPE_DEVELOPMENT_ALLOW_HTTP=true` and an all-loopback topology.
 
-Credentials are isolated by Instance. `pnpm atape logout [--instance ...]` removes the selected local credential even when remote revocation cannot be confirmed. Re-login durably stores the replacement before revoking the old credential.
+Credentials are isolated by Instance. `atape logout [--instance ...]` removes the selected local credential even when remote revocation cannot be confirmed. Re-login durably stores the replacement before revoking the old credential.
 
 ## Configure a Project
 
-Run setup from a Project directory:
+After sign-in and global tool configuration, run setup from a Project directory:
 
 ```sh
-pnpm atape setup --team acme-engineering --create
+atape setup --team acme-engineering --create
 ```
 
 Configure global tools, then provide a directory and Instance explicitly:
 
 ```sh
-pnpm atape tools configure --adapter codex
-pnpm atape tools configure --adapter codex --apply
-pnpm atape setup ../payments-api \
+atape tools configure --adapter codex
+atape tools configure --adapter codex --apply
+atape setup ../payments-api \
   --instance https://atape.example \
   --team acme-engineering \
   --create
 ```
 
-The User, Team, and Project authority always comes from the authenticated server; the CLI has no flags that let callers assert those identities. The default `--type auto` behavior promotes a path inside a Git worktree to the repository root, reads its `origin`, and searches every visible Team for an exact repository match. One exact match is attached automatically. No match requires an explicit Team and `--create`; ambiguous matches require an explicit selection. Git repositories always use repository identity, including worktrees and independent clones. `--type directory` is accepted only outside Git. `--type git` rejects paths outside a Git worktree or without an origin remote; fix the remote before continuing.
+The User, Team, and Project authority always comes from the authenticated server; the CLI has no flags that let callers assert those identities. The default `--type auto` behavior promotes a path inside a Git worktree to the repository root, reads its `origin`, and searches every visible Team for an exact repository match. One exact match is attached automatically. With no match, unattended setup requires `--create`; a single available Team can be selected automatically, while multiple possible Teams require `--team`. Git repositories always use repository identity, including worktrees and independent clones. `--type directory` is accepted only outside Git. `--type git` rejects paths outside a Git worktree or without an origin remote; fix the remote before continuing.
+
+The examples create a new Project. If the repository already has an exact match,
+omit `--create` to attach it; explicit creation rejects an existing match. Replace
+`acme-engineering` and `../payments-api` with your Team slug and directory. Explicit
+setup records the Project; run `atape start` afterwards to begin managed sync.
 
 Each local Project stores its verified Instance, User, Team, server Project, type, and resolved path; Git setup also stores the server repository identity. The path never crosses the HTTP boundary as identity. Repeating an identical setup is idempotent. Repeating Git setup from another checkout of the same Project updates the local path and verified display metadata while preserving enabled sources and collection progress. Tools are derived from the global selection; Project setup has no tool override. To change Project identity, remove the local Project and set it up again:
 
 ```sh
-pnpm atape projects list
-pnpm atape projects remove payments-api
+atape projects list
+atape projects remove "<project-id>"
 ```
 
-Removal only changes this machine's configuration. It never deletes conversation history already captured by the ATape server.
+Replace `<project-id>` with the `id` returned by `projects list`, not the display name or directory basename. Removal only changes this machine's configuration. It never deletes conversation history already captured by the ATape server.
 
 ## Git conversation attribution
 
@@ -134,11 +210,15 @@ The Tools screen manages one selection for all connected Projects on this
 machine. The equivalent commands preview changes unless `--apply` is explicit:
 
 ```sh
-pnpm atape tools list --json
-pnpm atape tools configure --adapter codex --adapter claude --json
-pnpm atape tools configure --adapter codex --adapter claude --apply --json
-pnpm atape tools configure --none --apply
+atape tools list --json
+atape tools configure --adapter codex --adapter claude --json
+atape tools configure --adapter codex --adapter claude --apply --json
+atape tools configure --none --apply
 ```
+
+The `--adapter` list is the complete desired selection, not an append operation.
+Check `tools list` first and include any enabled tools you intend to keep.
+`--none --apply` disables all tools for every connected Project.
 
 Added tools import attributable history and continue syncing for connected
 Projects. Disabled tools retain server history and checkpoints. A plan becomes
@@ -154,15 +234,17 @@ derive effective Project tools from the same global selection.
 An Adapter may come from the npm registry, a local package directory, an npm `.tgz` archive, or an HTTPS archive URL such as a GitHub Release asset:
 
 ```sh
-pnpm atape adapters install @atape/adapter-codex
-pnpm atape adapters install ../atape-adapter-custom
-pnpm atape adapters install ./release/atape-adapter-codex-0.1.0.tgz
-pnpm atape adapters install https://github.com/OWNER/ATape/releases/download/v0.1.0/atape-adapter-codex-0.1.0.tgz
+atape adapters install @atape/adapter-codex
+atape adapters install ../atape-adapter-custom
+atape adapters install "./release/atape-adapter-codex-<version>.tgz"
+atape adapters install "https://github.com/SingleMai/ATape/releases/download/v<version>/atape-adapter-codex-<version>.tgz"
 ```
 
-While developing this repository, install its first-party Codex Adapter directly:
+Replace `<version>` with the coordinated release version. While developing this
+repository, build and install its first-party Codex Adapter directly from the repository root:
 
 ```sh
+pnpm --filter @atape/adapter-codex build
 pnpm atape adapters install ./adapters/codex
 ```
 
@@ -174,8 +256,8 @@ There is no persistent sidecar per installed Adapter.
 Upgrade one Adapter or all installed Adapters:
 
 ```sh
-pnpm atape adapters upgrade codex
-pnpm atape adapters upgrade --all
+atape adapters upgrade codex
+atape adapters upgrade --all
 ```
 
 The interactive `Tools and updates` page shows current/latest versions and updates
@@ -208,14 +290,67 @@ sync with the updated CLI before upgrading Adapters. The built-in `atape upgrade
 flow already restarts previously running sync; a direct package-manager update
 requires `atape stop` followed by `atape start` so the Host understands package slots.
 
+## Upgrade the CLI and Adapters
+
+Before opening the interactive console, ATape checks for a newer release using
+a twelve-hour cache and a short network timeout. If one is available, choose
+`Upgrade and continue` or `Skip`. Skip enters the original flow for this session;
+upgrading reopens the newly installed CLI with the same arguments and ATAPE_HOME.
+The choice appears again on later launches while an update remains available.
+An offline or failed check proceeds normally. Upgrade failures offer Retry and
+Skip; Escape exits instead of bypassing the choice.
+If installation succeeds but background sync cannot resume, choose
+`Resume sync and continue` to retry sync without reinstalling, or `Skip` to open
+the new CLI with sync stopped.
+
+```sh
+atape upgrade
+```
+
+This checks npm for the latest stable CLI and updates the active npm global
+installation. Already current versions need no action. After a successful
+upgrade, previously running background sync resumes with the same settings;
+stopped sync stays stopped. Use the same `ATAPE_HOME` as usual. Projects, login
+and sync checkpoints are retained. Adapter packages have their own
+`atape adapters upgrade --all` command.
+
+For an installation owned by another package manager, use that manager's update
+command. Repository development builds cannot upgrade themselves. Startup
+update choices do not appear in scripts or JSON output; `atape upgrade --json` returns
+the version and whether the CLI was updated and sync resumed.
+
+After updating the CLI, review official Adapter updates in **Tools and updates**
+or use `atape adapters upgrade --all`. The latter preserves each package's source;
+a versioned local tarball or URL will not automatically switch to a newer release.
+See [Tools and Adapter packages](#tools-and-adapter-packages) for source switching.
+Check `atape --version`, `atape adapters list --json` and `atape status` afterwards.
+
+For a direct npm or other package-manager replacement, stop running sync before
+updating, then restart with the same local state and prior scheduling options:
+
+```sh
+atape stop
+npm install --global @atape/cli
+atape start
+atape status
+```
+
+Run the start step only if sync was previously running or you intend to enable it.
+Keep `ATAPE_HOME` and any individual path overrides unchanged; the
+[local-state section](#local-state) lists the files to preserve. This procedure
+preserves supported current state; it does not add migration support for earlier
+development configuration schemas. Follow the target release's compatibility
+notes and the relevant Adapter guide. Updating client packages does not update
+the Server or supply a missing Server capability.
+
 ## Run collection
 
 Start one managed background Collector after setup:
 
 ```sh
-pnpm atape start
-pnpm atape status
-pnpm atape stop
+atape start
+atape status
+atape stop
 ```
 
 On macOS and Linux, the process immediately continues successful cycles with remaining pages and stays alive after the starting terminal closes. When caught up or after a job failure, it waits 30 seconds by default before retrying. `status` reports whether the process is running plus each configured Project/Adapter's last success time, current failure reason, and latest bounded counters. It does not expose conversation bodies. The managed process does not promise restart after logout or reboot; an external supervisor may still invoke `collect --once` when boot persistence is required. Windows retains foreground `collect` until ATape can verify managed process ownership without relying on a reusable PID alone.
@@ -241,15 +376,20 @@ client failures with server traces before tuning deadlines or upload concurrency
 Run one bounded cycle for diagnosis or an external scheduler:
 
 ```sh
-pnpm atape collect --once
-pnpm atape collect --once --project payments-api --json
+atape collect --once
+atape collect --once --project "<project-id>" --json
 ```
+
+Use the Project `id` from `atape projects list --json` for `--project`. A one-shot
+cycle can upload confirmed sources and update progress; it is not a read-only
+diagnostic. Stop managed sync before foreground diagnosis to avoid two Collectors
+using the same state, then run `atape start` afterwards if it was running.
 
 Run continuously in the foreground for debugging, or configure the same interval and concurrency on the managed process:
 
 ```sh
-pnpm atape collect
-pnpm atape start --interval 10 --concurrency 4
+atape collect
+atape start --interval 10 --concurrency 4
 ```
 
 The Collector runs at most four Project/Adapter jobs concurrently by default and caps the value at eight. Within each job it pulls bounded pages sequentially. `Ctrl+C` and `SIGTERM` interrupt Adapter work and release loaded runtimes.
@@ -312,7 +452,25 @@ The redactor covers common credentials and environment values whose names end in
 
 Every listing command supports `--json` for scripts.
 
-The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex Adapter guide](../adapters/codex.md).
+The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md) and [OpenCode](../adapters/opencode.md) guides.
+
+## Troubleshooting
+
+Start with Project details and `atape status --json`. The latter is read-only and
+includes bounded job diagnostics; its `logFile` points to the managed Collector
+log when available. Use [Run collection](#run-collection) for a foreground cycle.
+
+| Symptom | Next action |
+| --- | --- |
+| No Team or wrong destination | Open Web onboarding on the intended Instance, create/join a Team, then Refresh. Check the Instance, account and Team in the connection review before confirming. |
+| No jobs or waiting for history | Check `atape projects list --json` and `atape tools list --json`. Enable the intended tools and create a supported conversation inside the connected repository. Source detection alone is not proof of readable history. |
+| Partial capture / `attribution` | Inspect the reported source and the [Git attribution rules](#git-conversation-attribution). Restore trustworthy original-repository evidence when possible; resetting progress cannot infer a missing identity. Healthy sources may continue. |
+| Authentication failure | Sign in to the affected Instance with the Project's bound account. The console offers sign-in and resume; after explicit `atape login --instance https://atape.example`, run `atape start` if sync stopped. Another account cannot adopt the existing binding. |
+| Retryable transport failure | Check Instance reachability and the latest job/log diagnostic. Managed sync retries; after an exhausted foreground cycle, rerun it once the Instance is reachable. |
+| Unsupported source, capability or limit | Follow the relevant Adapter guide. Upgrade the required CLI/Adapter together; missing Server publication support needs the operator's [OpenCode rollout procedure](../operations/opencode-rollout.md). A cursor reset does not add format support or capacity. |
+| CLI updated but sync stopped | Use **Resume sync and continue**, or `atape start` with the same state directory. If an older Collector remains running after direct package replacement, stop it and start the updated CLI. Check status afterwards. |
+| Missing/corrupt state or full disk | Preserve the entire [local state](#local-state), including capture bindings and journals. Free unrelated disk space or restore a consistent backup; do not delete checkpoints or journals to manufacture a fresh capture. |
+| Conversation visible but Raw absent | Check the [Raw policy](raw-capture.md) and the Adapter's recovery limits. Canonical and Raw acknowledgements are separate. |
 
 ## Implementation boundaries
 

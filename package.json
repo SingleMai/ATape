@@ -11,7 +11,7 @@
     "atape": "node apps/cli/src/main.ts",
     "build": "pnpm --filter @atape/adapter-codex build && pnpm --filter @atape/adapter-claude build && pnpm --filter @atape/adapter-opencode build && pnpm --filter @atape/cli build && pnpm --filter @atape/web build",
     "build:release:images": "node scripts/build-release-images.mjs",
-    "check": "pnpm check:architecture && pnpm -r typecheck && pnpm -r test && pnpm --filter @atape/web test:browser && pnpm test:e2e && pnpm test:go",
+    "check": "pnpm check:docs && pnpm check:architecture && pnpm -r typecheck && pnpm -r test && pnpm --filter @atape/web test:browser && pnpm test:e2e && pnpm test:go",
     "dev:server": "cd server && ATAPE_DEMO_MODE=true go run ./cmd/atape-server",
     "dev:web": "pnpm --filter @atape/web dev",
     "format:go": "cd server && gofmt -w .",
@@ -34,11 +34,14 @@
     "test:self-hosting:restore": "./scripts/rehearse-self-hosted-restore.sh",
     "test:collector-disk": "pnpm --filter @atape/cli verify:capture-disk",
     "pack:adapter-opencode": "pnpm --filter @atape/adapter-opencode pack:release",
+    "check:docs": "node --test scripts/check-docs.test.mjs && node scripts/check-docs.mjs",
     "check:architecture": "node --test scripts/check-architecture.test.mjs && node scripts/check-architecture.mjs",
     "test:opencode-contract": "node --test scripts/verify-opencode-contract.test.mjs && node scripts/verify-opencode-contract.mjs",
     "test:adapter-contracts": "pnpm test:e2e && pnpm test:opencode-contract"
   },
   "devDependencies": {
+    "github-slugger": "2.0.0",
+    "mdast-util-from-markdown": "2.0.3",
     "typescript": "catalog:build"
   }
 }

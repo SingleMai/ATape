@@ -1,8 +1,14 @@
 # ADR-0059: OpenCode publication and recovery contract
 
-- Status: Accepted design; Implementation and native acceptance pending
+- Status: Accepted design; implementation and native evidence recorded in the OpenCode guide
 - Date: 2026-09-10
 - Decision: [OpenCode identity, Raw and mutable-history contract](https://github.com/SingleMai/ATape/issues/113)
+
+Follow-up: the [OpenCode guide](../../adapters/opencode.md) records delivered
+increments and evidence. [ADR-0076](0076-source-collection-release-admission.md)
+defines the supported source/platform scope and admission defaults. The design
+below remains the acceptance baseline; candidate release evidence and Server
+rollout remain separate from implementation status.
 
 The user accepted delivering common atomic Canonical publication with the first
 OpenCode Adapter. A rewind followed by a new answer must replace the selected

@@ -1,5 +1,10 @@
 # Production CLI terminal validation
 
+This is a dated candidate validation record. Its hashes, package sizes and
+publication status describe the candidates below, not the current checkout.
+Use the [development guide](../development.md#verification) for current commands
+and the [release guide](../releasing.md) for acceptance of a new candidate.
+
 - Date: 2026-09-08
 - Scope: guided setup and Project console in the current working tree
 - Status: implemented and locally verified; not published or deployed

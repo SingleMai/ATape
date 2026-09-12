@@ -1,9 +1,8 @@
 # ADR-0025: Atomic Canonical Publication
 
-- Status: Accepted design; Implementation pending
+- Status: Accepted design; selected implementation detailed in ADR-0059
 - Date: 2026-09-07
-- [ADR-0059](0059-opencode-publication-and-recovery.md) schedules the first common publication capability for OpenCode; this remains unimplemented until the corresponding delivery passes its gates.
-- The no-payload-spool constraint has a scoped OpenCode exception in [ADR-0058](0058-opencode-sqlite-and-bounded-capture.md); this publication protocol remains pending.
+- Follow-up: [ADR-0059](0059-opencode-publication-and-recovery.md) selects the implemented source-capture path with [ADR-0058](0058-opencode-sqlite-and-bounded-capture.md)'s scoped pending-content exception. See [Canonical publication](../publication-candidates.md) for its Interface and the [OpenCode guide](../../adapters/opencode.md) for delivery evidence. Existing Codex/Claude Sessions retain their legacy write mode.
 
 Current ingestion upserts cannot withdraw an omitted Event or revise Thread parentage across bounded pages without exposing a partial result. ATape will add a provider-neutral publication capability: stage a patch against an immutable base or an explicit replacement, validate the complete target, then atomically activate it using a server-issued head and writer fence. This preserves the last successful view during updates and hides first publication until Canonical is ready, without teaching the server source continuation, fork, or rewind semantics.
 

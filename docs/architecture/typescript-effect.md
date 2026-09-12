@@ -27,7 +27,7 @@ A Web view may keep ephemeral interaction state such as focus, a disclosure togg
 
 Pure calculations remain ordinary pure TypeScript functions. Wrapping a deterministic transformation in Effect without a requirement, failure, resource, or asynchronous concern adds no Depth.
 
-## Suggested layout
+## Current layout
 
 ```text
 apps/
@@ -36,29 +36,35 @@ apps/
     src/presenters/       # user intents and ViewModel bindings
     src/runtime/          # Browser Layers and runtime execution
   cli/
-    src/commands/         # argument parsing and terminal rendering
+    src/commandInput.ts   # command grammar and typed input
+    src/commands.ts       # command presentation
+    src/interactive/      # Ink presentation
     src/runtime/          # Node Layers and runtime execution
-  adapter-host/
-    src/presentation/     # host protocol translation
-    src/runtime/
+
+adapters/
+  codex/                  # provider-specific source Implementations
+  claude/
+  opencode/
 
 packages/
   ui/                     # semantic tokens, themes, and pure React primitives
-  protocol/               # Canonical and wire Schemas
-  domain/                 # pure shared types and rules
+  domain/                 # shared Schemas, pure types and rules
   application/            # deep Effect Modules
-  platform-browser/       # Browser Adapters and Layers
-  platform-node/          # Node Adapters and Layers
+  adapter-catalog/        # pure official-tool metadata
+  i18n/                   # shared localization support
 ```
 
+The shared Adapter Host runs inside the CLI's Node runtime. Browser and Node
+Adapters live in their application's `src/runtime`; there are no separate
+`adapter-host`, `protocol` or `platform-*` packages in this checkout.
 Feature-specific code may live together when that improves Locality. The directory names are not a mandate to split every operation into multiple pass-through files.
 
 ## Import rules
 
 - `domain` imports neither Effect platform packages nor presentation frameworks.
 - `ui` imports React for pure presentation only; it imports no domain, application, routing, or platform package.
-- `application` may import core Effect and domain packages, but not Web views, CLI rendering, Browser implementations, or Node implementations.
-- platform packages implement requirements declared by application Modules.
+- `application` may import core Effect, domain packages and the pure Adapter catalog, but not Web views, CLI rendering, Browser implementations, or Node implementations.
+- Browser and Node Adapters implement requirements declared by application Modules.
 - views import ViewModel types and presenter bindings; they do not import transport clients or infrastructure Layers.
 - only runtime entry points assemble the complete Layer graph.
 
@@ -68,7 +74,14 @@ The `@atape/ui` package is the Interface for reusable visual primitives and sema
 
 Applications import the selected theme and foundation CSS once at their Composition Root. Views consume `@atape/ui` primitives and semantic tokens, never theme-specific hex values. A theme switch therefore replaces a token Adapter rather than changing product components.
 
-These rules should become CI-enforced import constraints once the monorepo scaffold exists.
+`pnpm check:architecture` runs the [architecture checker](../../scripts/check-architecture.mjs)
+and its regression tests as part of `pnpm check`. It checks production imports
+and runtime cycles in Web, CLI, provider Adapters, application, domain, UI,
+Adapter catalog and shared localization. Web views cannot import Browser Adapters;
+Browser Adapters cannot import Web presentation, and shared localization cannot
+import application or platform Implementations. These static checks do not prove
+Effect lifetime, business-rule ownership or every rule in this manual; those
+properties still require behavior tests and review.
 
 ## ViewModel contract
 
