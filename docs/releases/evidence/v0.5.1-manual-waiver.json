@@ -3,7 +3,7 @@
   "releaseVersion": "0.5.1",
   "authEpoch": "auth-v1",
   "status": "authorized",
-  "candidateCommit": "c06fde372e8f86392397ed6787f6c743dcda022a",
+  "candidateCommit": "63b3fd9f8876224b8d4f091d014523e06e7a0af1",
   "authorizedOn": "2026-09-12",
   "authorization": "The user explicitly requested: 提交下PR到 origin/main 然后发版. Under AGENTS.md and ADR-0048 this authorizes the v0.5.1 manual-only staging acceptance waiver for this exact candidate; automated CI, integration tests and security gates remain mandatory. This request does not authorize Server deployment or database migration.",
   "scope": "manual-staging-only",
