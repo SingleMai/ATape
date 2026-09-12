@@ -93,9 +93,9 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
 }
 
-const terminal = (presenter: ExperiencePresenter, rows = 14) => {
+const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
   const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode() {}, ref() {}, unref() {} })
-  const output = Object.assign(new PassThrough(), { columns: 80, rows, isTTY: true })
+  const output = Object.assign(new PassThrough(), { columns, rows, isTTY: true })
   let text = ""
   output.on("data", chunk => { text += stripVTControlCharacters(chunk.toString()) })
   const renderer = render(createElement(ExperienceView, { presenter }), {
@@ -257,13 +257,14 @@ describe("interactive navigation through the presenter Interface", () => {
     expect((await client.runtime.runPromise(inspectClient())).projects).toEqual([])
   })
 
-  it("keeps Add project visible and lets n open setup while n remains text during list search", async () => {
+  it("keeps Add project in the footer and opens it as a modal while n remains text during list search", async () => {
     const client = await fixture()
     await client.toolsReady()
     client.presenter.start()
     await client.wait(screen => screen.layout === "projects")
     const ui = terminal(client.presenter, 12)
-    await expect.poll(() => ui.frame()).toContain("[n] Add project")
+    await expect.poll(() => ui.frame()).toMatch(/Projects\s+Tools and updates\s+Settings/)
+    expect(ui.frame().trimEnd().split("\n").at(-1)).toContain("n Add")
     await ui.send("/")
     await ui.send("n")
     expect(client.presenter.getSnapshot().layout).toBe("projects")
@@ -271,6 +272,52 @@ describe("interactive navigation through the presenter Interface", () => {
     await ui.send("\x1b")
     await ui.send("n")
     await client.wait(screen => screen.pathInput === true)
+    const modal = ui.frame()
+    expect(modal).toContain("Add project")
+    expect(modal).toContain("Project directory")
+    expect(modal).toContain("Esc Close")
+    await ui.send("q")
+    expect(ui.frame()).toContain("Search: q")
+    expect(client.exited()).toBe(false)
+    await ui.send("\x1b")
+    await client.wait(screen => screen.layout === "projects")
+  })
+
+  it("renders the Project console as a full-height shell with navigation, a framed workspace and fixed controls", async () => {
+    const client = await fixture()
+    await client.seed("project")
+    const ui = terminal(client.presenter, 24)
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    await expect.poll(() => ui.frame()).toContain("▌ project")
+    const frame = ui.frame()
+    expect(frame).toContain("ATape · Your Projects")
+    expect(frame).toMatch(/Projects\s+Tools and updates\s+Settings/)
+    expect(frame).toContain("┌")
+    expect(frame).toContain("└")
+    expect(frame.trimEnd().split("\n").at(-1)).toContain("Tab Actions · q Exit")
+    expect(frame.split("\n")).toHaveLength(24)
+    await ui.send("n")
+    await client.wait(screen => screen.pathInput === true)
+    expect(ui.frame()).toContain("Project directory")
+    await ui.send("\x1b")
+    await client.wait(screen => screen.layout === "projects")
+    await ui.send("\t")
+    expect(ui.frame()).toContain("Actions: Tools and updates · ←→ Choose")
+  })
+
+  it("keeps the framed shell and compact navigation within a narrow terminal", async () => {
+    const client = await fixture()
+    await client.seed("project")
+    const ui = terminal(client.presenter, 14, 42)
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    await expect.poll(() => ui.frame()).toMatch(/Projects\s+Tools\s+Settings/)
+    const frame = ui.frame()
+    expect(frame).toMatch(/Projects\s+Tools\s+Settings/)
+    expect(frame).toContain("▌ project")
+    expect(frame.split("\n")).toHaveLength(14)
+    expect(frame.split("\n").every(line => line.length <= 42)).toBe(true)
   })
 
   it("types a fuzzy project name, browses the selected result, and clears search without leaving setup", async () => {
@@ -337,7 +384,7 @@ describe("interactive navigation through the presenter Interface", () => {
     const list = await client.wait(screen => screen.layout === "projects")
     expect(list.options).toHaveLength(2)
     expect(list.options?.every(option => option.value.startsWith("project:"))).toBe(true)
-    expect(list.actions?.map(action => action.value)).toEqual(["add", "tools", "settings"])
+    expect(list.actions?.map(action => action.value)).toEqual(["tools", "settings"])
     client.presenter.submit(`project:${second.instanceOrigin}:${second.id}`)
     await client.wait(screen => screen.title === "second")
     client.presenter.back()

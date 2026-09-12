@@ -293,11 +293,13 @@ export class ExperiencePresenter {
       () => this.connectProject(), () => this.welcome())
     }, () => this.close())
   }
-  private pathScreen() {
+  private pathScreen(configureToolsAfter = false) {
     this.show({ kind: "input", title: t("cli.path.title", "Connect a Project"), initial: this.path, pathInput: true,
       details: [t("cli.path.searchHint", "Type a project name to search here, or paste its path."), t("cli.path.searchDepth", "Search includes folders up to 3 levels below the current directory.")] }, value => {
       this.path = String(value)
-      this.prepare()
+      if (configureToolsAfter && (!this.toolsConfigured || this.enabledTools.length === 0)) {
+        this.configureTools(() => this.prepare(), () => this.pathScreen(true))
+      } else this.prepare()
     }, this.home)
     this.pathChanged(this.path)
   }
@@ -476,7 +478,6 @@ export class ExperiencePresenter {
       label: `${item.project.name} · ${statusLabel(item)} · ${item.project.teamName}`
     }))
     const actions = [
-      { value: "add", label: t("cli.console.addProject", "Add project") },
       { value: "tools", label: t("cli.console.toolsAndUpdates", "Tools and updates") }, { value: "settings", label: t("cli.console.settings", "Settings") },
       ...(!snapshot.collector.running && snapshot.projects.some(item => item.project.adapterIds.length > 0) ? [{ value: "start", label: t("cli.console.startSync", "Start sync") }] : [])
     ]
@@ -566,7 +567,7 @@ export class ExperiencePresenter {
     if (value.startsWith("project:")) {
       const selected = this.latest?.projects.find(item => `project:${item.project.instanceOrigin}:${item.project.id}` === value)
       if (selected) { this.focusedProject = value; this.detail(selected.project) }
-    } else if (value === "add") this.connectProject()
+    } else if (value === "add") this.pathScreen(true)
     else if (value === "exit") this.close()
     else if (value === "refresh") this.refreshConsole()
     else if (value === "start") this.work(t("cli.console.startingSync", "Starting background sync"), startExperienceCollector(), back, undefined, back)

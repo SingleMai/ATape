@@ -342,8 +342,8 @@ and live-account acceptance remain separate.
 
 ### Discoverable Add project and local name search
 
-The Project list puts its action bar above the rows and highlights `[n] Add
-project`. Pressing n opens setup directly; search input does not trigger it.
+The Project list exposes `n Add project` in its contextual footer. Pressing n
+opens setup directly; search input does not trigger it.
 Typing in directory browsing starts a fuzzy name search with ranked full-path
 results. Paste replaces the path; Esc clears search before returning. Selection
 still browses before the explicit connection action and review.
@@ -393,3 +393,31 @@ sync with its original parameters. Skip opens the installed CLI while leaving
 sync stopped. Regression coverage includes real subprocess cancellation, real
 PTY input after Ink teardown, and repeated recovery through the Module and
 presenter Interfaces. This work is included in the v0.4.4 release candidate.
+
+## Full-screen workspace shell
+
+The current presentation increment makes the existing alternate-screen experience
+read as one persistent terminal application without changing its navigation or
+workflow ownership. Interactive pages now fill the terminal with a stable brand
+header, one framed workspace and a fixed contextual control footer. The Project
+console promotes its persistent destinations into a top navigation row; one-shot
+commands are not presented as destinations. It does not introduce conversation
+reading or other new product destinations.
+
+The active Projects destination uses a persistent highlight. Keyboard focus in
+the Project list uses an accent rail, bold text and a low-contrast selection
+background, while action-bar focus remains visually distinct. Wide terminals show
+the complete action labels; narrow terminals use shorter localized labels, retain
+the framed workspace and keep the selected action readable in the footer. Shortcut
+notation stays in that footer rather than being mixed into the navigation labels.
+`Add project` opens as a focused modal over a muted Project workspace; its path
+input, directory suggestions and modal controls replace the background controls
+until the modal closes. The large cassette remains specific to the spacious welcome
+screen, with the inline cassette mark used throughout daily navigation.
+
+Presenter intents remain unchanged; the Project action model now contains only
+global destinations and commands. Ink owns the shell, modal, terminal measurement,
+focus styling and responsive labels as Presentation concerns.
+Rendering coverage fixes the shell at the reported terminal height and verifies
+the navigation, frame, selected row, footer and 42-column fallback. Publication
+and broader terminal acceptance remain separate release work.
