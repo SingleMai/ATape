@@ -4,7 +4,11 @@ import { defaultTheme, extendTheme } from "@inkjs/ui"
 // terminal background; Ink handles monochrome output when color is unavailable.
 export const terminalTheme = {
   accent: "#54c8ad",
-  border: "#237f70"
+  border: "#237f70",
+  modal: "#0b1b18",
+  selection: "#123f37",
+  selectionText: "#ecfffa",
+  focusText: "#082e28"
 } as const
 
 const selection = { styles: {
