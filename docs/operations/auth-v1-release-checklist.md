@@ -1,5 +1,13 @@
 # auth-v1 release checklist
 
+Scope: this checklist retains the v0.2.0 candidate identities and manual scenarios.
+For a current release, take version, minimum CLI, epoch and evidence paths from
+the [release contract](../../specs/auth-v1-release.json) and
+[gate index](../../specs/auth-v1-release-gates.json). The
+[release guide](../releasing.md#authorization-and-evidence) owns the current
+completed-acceptance and manual-waiver paths under ADR-0048. Its waiver path does
+not require marking the manual checks below as passed.
+
 This is the human half of the v0.2.0 release gate. CI is necessary but cannot
 prove the configured GitHub OAuth App, `atape.net` edge, backups, or operator
 rollback. Run this checklist against one immutable candidate commit and the two

@@ -8,9 +8,36 @@ The workspace now centers on a compact Project sidebar and a clean Session reade
 
 Reusable visual primitives, semantic tokens, and themes live in [`packages/ui`](packages/ui/README.md). Product pages consume that package while keeping their business-specific composition local to the Web app.
 
+Use the [documentation index](docs/README.md) to find feature guides, API contracts
+and operations, or the [development guide](docs/development.md) for the code map
+and checks relevant to a change.
+
+## Start capturing conversations
+
+Use an existing ATape Instance with Node.js 24+ and a macOS or Linux terminal:
+
+```sh
+npm install --global @atape/cli
+atape --version
+atape
+```
+
+Run `atape` from the Project directory you want to connect. Choose your tools,
+sign in, create or join a Team if needed, and review the destination and historical
+import before confirming. The default Instance is `https://atape.net`; use
+`atape --instance https://atape.example` for your own Instance.
+
+The [setup guide](docs/cli/setup-and-adapters.md) covers supported sources,
+[first-sync verification](docs/cli/setup-and-adapters.md#confirm-the-first-sync),
+[upgrades](docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters) and
+[recovery](docs/cli/setup-and-adapters.md#troubleshooting). Source checkout and
+Docker are needed only if you develop or self-host ATape.
+
 ## Self-host with Docker
 
-Requirements: Docker Engine and Docker Compose v2.
+Requirements: Docker Engine, Docker Compose v2, OpenSSL and a GitHub OAuth App.
+Follow the [self-hosting quick start](docs/operations/self-hosting.md#first-installation)
+for the exact callback URL and Provider configuration before starting Compose.
 
 Start a durable local ATape deployment:
 
@@ -36,7 +63,9 @@ docker compose down
 
 ## Run locally
 
-Requirements: Node.js 24+, pnpm 11, and Go 1.24+. PostgreSQL is optional for the seeded UI demo and required for durable Canonical storage.
+Requirements: Node.js 24+ and the pnpm version pinned in [package.json](package.json),
+plus the Go toolchain declared in [server/go.mod](server/go.mod). PostgreSQL is
+optional for the seeded UI demo and required for durable Canonical storage.
 
 Install dependencies:
 
@@ -60,35 +89,35 @@ pnpm dev:web
 
 Open [http://127.0.0.1:4187/](http://127.0.0.1:4187/).
 
-Run `atape` (or `pnpm atape` in this repository) for guided setup and the Ink Project console. It handles login, Team and repository selection, source confirmation and background sync.
-
-Against the authenticated Compose Instance, the explicit automation Interface also remains available:
+For CLI development, use the authenticated Compose Instance; the seeded demo
+cannot complete CLI sign-in. Create or join a Team in its Web app first, then use
+the explicit automation Interface below. Replace `/path/to/project` and
+`acme-engineering` with your directory and Team slug:
 
 ```sh
-ATAPE_DEVELOPMENT_ALLOW_HTTP=true pnpm atape login --instance http://127.0.0.1:8080 --no-browser
+export ATAPE_DEVELOPMENT_ALLOW_HTTP=true
+pnpm atape login --instance http://127.0.0.1:8080 --no-browser
+pnpm --filter @atape/adapter-codex build
 pnpm atape adapters install ./adapters/codex
-pnpm atape setup /path/to/project --team acme-engineering --create --adapter codex
+pnpm atape tools configure --adapter codex --apply --json
+pnpm atape setup /path/to/project --team acme-engineering --create
 pnpm atape start
 pnpm atape status
 ```
 
-The loopback command also requires `ATAPE_DEVELOPMENT_ALLOW_HTTP=true`; production and self-hosted Instances are HTTPS-only. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and retains durable progress. Codex/Claude advance a page cursor after both deliveries succeed; OpenCode atomically publishes a complete Canonical target and recovers Raw independently. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [OpenCode Adapter guide](docs/adapters/opencode.md), [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
+Keep `ATAPE_DEVELOPMENT_ALLOW_HTTP=true` set for this local loopback session;
+production Instances use HTTPS. Tool selection is global to this local
+installation. `start` launches one managed Collector that keeps running after the terminal closes. It dynamically loads only enabled Adapters, redacts secrets, commits Canonical and Raw independently, and retains durable progress. Codex/Claude advance a page cursor after both deliveries succeed; OpenCode atomically publishes a complete Canonical target and recovers Raw independently. Use `stop` to end it; use `collect --once` for a foreground diagnostic cycle. See the [OpenCode Adapter guide](docs/adapters/opencode.md), [Codex Adapter guide](docs/adapters/codex.md), [`docs/cli/setup-and-adapters.md`](docs/cli/setup-and-adapters.md), and the [`Adapter package and runtime contract`](docs/adapters/package-manifest.md).
 
 Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode Adapter tarballs with:
 
 ```sh
 pnpm test:release
 pnpm pack:release
-npm install --global ./release/atape-cli-0.1.0.tgz
-atape adapters install ./release/atape-adapter-codex-0.1.0.tgz
+ATAPE_PACKAGE_VERSION=$(node -p 'require("./package.json").version')
+npm install --global "./release/atape-cli-${ATAPE_PACKAGE_VERSION}.tgz"
+atape adapters install "./release/atape-adapter-codex-${ATAPE_PACKAGE_VERSION}.tgz"
 atape --version
-```
-
-The public npm packages use the `@atape` scope:
-
-```sh
-npm install --global @atape/cli
-atape
 ```
 
 The release directory also contains `SHA256SUMS`. Tag-driven publication is documented in [`docs/releasing.md`](docs/releasing.md).

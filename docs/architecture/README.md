@@ -2,13 +2,19 @@
 
 This directory is the engineering source of truth for ATape. It governs code shape across the TypeScript applications and the Go server. Product decisions explain what ATape does; this manual explains how implementations preserve those decisions.
 
-## Read order
+## Read for the affected area
 
-1. [Codebase design](codebase-design.md) defines the shared vocabulary and Deep Module rules.
-2. [TypeScript and Effect](typescript-effect.md) defines the Web, CLI, Collector, and Adapter Host rules.
-3. [Go server](go.md) defines the server Modules, Composition Root, concurrency, persistence, and transport rules.
-4. [Sources and attribution](sources.md) records the external material that informed this manual.
-5. [Architecture decisions](adr/README.md) records accepted implementation choices and their consequences.
+Read [Codebase design](codebase-design.md) for the shared vocabulary and Deep
+Module rules, then the guide for the language being changed:
+[TypeScript and Effect](typescript-effect.md) or [Go](go.md). Read both for a
+change crossing that boundary.
+
+Use the [documentation index](../README.md) for current feature/API contracts and
+the [ADR index](adr/README.md) for relevant decisions, amendments and rationale.
+Publication work also uses the [capture contract](opencode-capture-publication.md)
+and [Server publication Interface](publication-candidates.md).
+[Sources and attribution](sources.md) is background reading. The
+[development guide](../development.md) maps existing directories and checks.
 
 ## Governing model
 
@@ -66,4 +72,7 @@ For consequential Interfaces, design at least two substantially different shapes
 
 ## Status
 
-The architectural rules are accepted. Exact implementation choices are recorded in the ADR index. ADR-0017 fixes the Go HTTP Adapter on a closed route registry over the standard-library router.
+The architectural rules are accepted. ADR status records the decision at its
+stated scope; current feature guides describe implementation and remaining work.
+An accepted design does not prove delivery, publication or deployment. ADR-0017
+fixes the Go HTTP Adapter on a closed route registry over the standard-library router.

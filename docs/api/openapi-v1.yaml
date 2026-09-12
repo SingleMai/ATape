@@ -904,7 +904,7 @@ paths:
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       responses:
-        "200": {$ref: "#/components/responses/GenericJSON"}
+        "200": {$ref: "#/components/responses/ProjectMemory"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/projects/{projectId}/search:
@@ -922,7 +922,7 @@ paths:
         - {name: cursor, in: query, required: false, schema: {type: string}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50}}
       responses:
-        "200": {$ref: "#/components/responses/GenericJSON"}
+        "200": {$ref: "#/components/responses/SearchPage"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/sessions/{sessionId}:
@@ -942,7 +942,7 @@ paths:
         - {name: after, in: query, description: Previous nextEventId; requires head and excludes at., schema: {type: string, maxLength: 200}}
         - {name: at, in: query, description: Inclusive Event anchor for a search result; excludes after., schema: {type: string, maxLength: 200}}
       responses:
-        "200": {$ref: "#/components/responses/GenericJSON"}
+        "200": {$ref: "#/components/responses/Conversation"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
     delete:
@@ -1520,6 +1520,30 @@ components:
       headers:
         X-Request-ID: {$ref: "#/components/headers/RequestId"}
         ETag: {$ref: "#/components/headers/ETag"}
+    ProjectMemory:
+      description: Canonical ProjectMemory representation; Raw bodies are excluded.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ProjectMemory"}
+    SearchPage:
+      description: Canonical SearchPage representation; Raw bodies are excluded.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/SearchPage"}
+    Conversation:
+      description: Canonical Conversation representation; Raw bodies are excluded.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Conversation"}
     GenericJSON:
       description: Successful typed JSON representation; see the focused API document for the Module schema.
       headers:
@@ -1773,6 +1797,160 @@ components:
       schema: {type: integer, minimum: 1}
       description: Present for retryable 409, 429, and 503 outcomes.
   schemas:
+    ReaderProject:
+      type: object
+      additionalProperties: false
+      required: [id, teamId, name, type]
+      properties:
+        id: {type: string}
+        teamId: {type: string}
+        name: {type: string}
+        type: {type: string, enum: [git, directory]}
+    ReaderActor:
+      type: object
+      additionalProperties: false
+      required: [name, harness]
+      properties:
+        name: {type: string}
+        harness: {type: string}
+    ReaderSessionSummary:
+      type: object
+      additionalProperties: false
+      required: [id, title, summary, insight, actor, branch, status, updatedAt, eventCount, childThreadCount]
+      properties:
+        id: {type: string}
+        title: {type: string}
+        summary: {type: string}
+        insight: {type: string}
+        actor: {$ref: "#/components/schemas/ReaderActor"}
+        branch: {type: string}
+        status: {type: string, enum: [active, idle, ended]}
+        updatedAt: {type: string}
+        eventCount: {type: integer}
+        childThreadCount: {type: integer}
+    ProjectMemory:
+      type: object
+      additionalProperties: false
+      required: [project, capturedThrough, active, trail]
+      properties:
+        project: {$ref: "#/components/schemas/ReaderProject"}
+        capturedThrough: {type: string}
+        active: {type: array, items: {$ref: "#/components/schemas/ReaderSessionSummary"}}
+        trail: {type: array, items: {$ref: "#/components/schemas/ReaderSessionSummary"}}
+    ReaderCapturedUser:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, avatarUrl]
+      properties:
+        id: {type: string}
+        displayName: {type: string}
+        avatarUrl: {type: string}
+    ReaderSession:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, title, actor, branch, status, captureStatus, updatedAt]
+      properties:
+        capturedBy: {$ref: "#/components/schemas/ReaderCapturedUser"}
+        id: {type: string}
+        projectId: {type: string}
+        title: {type: string}
+        actor: {$ref: "#/components/schemas/ReaderActor"}
+        branch: {type: string}
+        status: {type: string, enum: [active, idle, ended]}
+        captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
+        updatedAt: {type: string}
+    ReaderThread:
+      type: object
+      additionalProperties: false
+      required: [id, label, captureStatus]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        parentThreadId: {type: string}
+        captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
+    ReaderThreadPathItem:
+      type: object
+      additionalProperties: false
+      required: [id, label]
+      properties:
+        id: {type: string}
+        label: {type: string}
+    ReaderChildThread:
+      type: object
+      additionalProperties: false
+      required: [id, label, summary, captureStatus, eventCount]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        summary: {type: string}
+        captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
+        eventCount: {type: integer}
+    ReaderToolUpdate:
+      type: object
+      additionalProperties: false
+      required: [sessionUpdate, toolCallId]
+      properties:
+        sessionUpdate: {type: string, enum: [tool_call, tool_call_update]}
+        toolCallId: {type: string}
+        title: {type: string}
+        kind: {type: string, enum: [read, edit, delete, move, search, execute, think, fetch, switch_mode, other]}
+        status: {type: string, enum: [pending, in_progress, completed, failed]}
+        rawInput: {}
+        rawOutput: {}
+      description: Decoded admitted ACP tool details. rawInput/rawOutput preserve arbitrary bounded JSON, including null; absence is distinct. Each value is limited to 65536 UTF-8 bytes, depth 32 and 10000 nodes before storage.
+      if:
+        properties: {sessionUpdate: {const: tool_call}}
+      then:
+        required: [title]
+    ReaderEvent:
+      type: object
+      additionalProperties: false
+      required: [id, kind, author, occurredAt, text]
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [message, thought, tool_call, tool_result, artifact, spawn, lifecycle, context, notice]}
+        author: {type: string}
+        occurredAt: {type: string}
+        text: {type: string}
+        toolLabel: {type: string}
+        tool: {$ref: "#/components/schemas/ReaderToolUpdate"}
+        childThread: {$ref: "#/components/schemas/ReaderChildThread"}
+    Conversation:
+      type: object
+      additionalProperties: false
+      required: [session, thread, threadPath, events]
+      properties:
+        head: {type: string}
+        nextEventId: {type: string}
+        session: {$ref: "#/components/schemas/ReaderSession"}
+        thread: {$ref: "#/components/schemas/ReaderThread"}
+        threadPath: {type: array, items: {$ref: "#/components/schemas/ReaderThreadPathItem"}}
+        events: {type: array, items: {$ref: "#/components/schemas/ReaderEvent"}}
+    SearchResult:
+      type: object
+      additionalProperties: false
+      required: [eventId, sessionId, sessionTitle, threadId, threadPath, author, harness, occurredAt, text]
+      properties:
+        eventId: {type: string}
+        sessionId: {type: string}
+        sessionTitle: {type: string}
+        threadId: {type: string}
+        threadPath: {type: array, items: {$ref: "#/components/schemas/ReaderThreadPathItem"}}
+        author: {type: string}
+        harness: {type: string}
+        occurredAt: {type: string}
+        text: {type: string}
+        toolLabel: {type: string}
+    SearchPage:
+      type: object
+      additionalProperties: false
+      required: [projectId, query, results]
+      properties:
+        projectId: {type: string}
+        query: {type: string}
+        indexedThrough: {type: string}
+        results: {type: array, items: {$ref: "#/components/schemas/SearchResult"}}
+        nextCursor: {type: string}
     PublicationScope:
       type: object
       additionalProperties: false

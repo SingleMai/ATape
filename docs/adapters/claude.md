@@ -1,124 +1,87 @@
-# Claude Code: first implemented vertical slice
+# Claude Code Adapter
 
-Install and use [@atape/adapter-claude](../../adapters/claude/README.md). The package
-is production-path code loaded by the existing Collector; it is not a scratch
-reader or an alternate uploader. Broader prototype expansion is paused under
-[ADR-0029](../architecture/adr/0029-claude-first-vertical-slice.md).
+The Claude Adapter discovers Project-scoped JSONL history and delivers it through
+ATape's paged Collector. The Host owns attribution, redaction, Canonical/Raw
+uploads and checkpoints. Claude uses the legacy batch write mode; it does not
+use OpenCode's atomic publication or SQLite capture journal.
 
-On 2026-09-07 the package was built, installed and enabled through the real CLI.
-It read the original 9,193-byte controlled native Claude 2.1.263 Session
-`5f7e23bb-372f-4ca5-9fac-c3af52778fca`, not its reserialized test fixture, and sent
-one Canonical batch plus one Raw chunk to an isolated loopback Go development
-server. The existing Web conversation page displayed six events, including Read
-completed/failed and `ATAPE_TOOL_DONE`. Its ordinary Raw drawer opened the source
-snapshot. A second collection returned zero observations, batches and chunks.
-No unrelated history was read and no configured remote instance received data.
+## Install and enable
 
-Initial vertical-slice checks: eight Adapter tests (including linked-worktree ownership),
-the real CLI/Go Claude and Codex end-to-end tests, six existing Codex Adapter tests,
-31 CLI tests, TypeScript checks for Adapter/CLI/Web, and Go HTTP/Composition Root
-tests. The native fixture was copied into the package's test fixtures, preserving
-its existing path substitutions; it no longer depends on scratch prototypes.
+Use **Tools and updates** to add Claude to the existing global tool selection,
+reviewing its effect on all connected Projects. Package installation alone does
+not authorize capture. See the [package README](../../adapters/claude/README.md)
+for local build/install commands and the [CLI guide](../cli/setup-and-adapters.md)
+for Project setup and tool management.
 
-The local demo required a generic bootstrap fix: its already explicit development
-Principal now supplies the browser session response instead of returning 503.
-No production authentication path was changed or credential issued. A separate
-pre-existing demo Workspace response-shape mismatch still affects its sidebar
-switcher; the Session and Raw direct routes were verified. Do not confuse this
-ephemeral in-memory demo with a durable deployed installation.
+## Sources and supported history
 
-Project-scoped automatic discovery is now implemented in the production Adapter.
-After installation and Project enablement, normal `collect` no longer needs a
-selected-file environment variable. It scans bounded headers under the Claude
-home, uses original CWD attribution, and stores incremental
-progress for multiple Sessions in the existing Host checkpoint. The original
-single-file override remains available. No server or view changes were needed.
+Discovery reads `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an
+absolute alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects
+an absolute single file for diagnostics. Symlinks and nested subagent histories
+are not traversed. The first UUID record's original CWD establishes attribution;
+directory names and later directory changes do not reassign a Session.
 
-Follow-on checks: 17 Adapter tests, 31 CLI tests, Adapter/CLI TypeScript checks and
-both real CLI/Go end-to-end tests passed. The Claude end-to-end case now uses an
-isolated Claude home without a selected-file override: one native-fixture Session
-appears in the existing conversation/Raw/Search APIs; a foreign CWD is excluded;
-a new Session and an appended answer produce two further observations; repeating
-collection produces zero observations. Existing Event IDs remain stable. This
-follow-on used synthetic native fixtures, not bulk uploads of local private history.
+Git Projects use shared Host attribution across worktrees and independent clones.
+Foreign repositories are excluded; missing original directories without retained
+evidence produce an attribution diagnostic. Both CLI and Adapter require
+`atape.git-attribution.v1`. Ordinary-directory matching remains path-scoped.
 
-The next production slice implements bounded shared tool input/output under
-[ADR-0030](../architecture/adr/0030-bounded-tool-details-implementation.md). The Host
-validates and redacts ACP values, the v2 Canonical profile persists their encoded
-JSON in current/version rows, and the existing conversation view shows collapsed
-Input/Output details. Tool summaries remain the Search projection; full tool
-values are not separately indexed. Claude refreshes old projections once using
-higher projection revisions without changing Event IDs or source revisions.
+The implemented source is a single-root, linear append-only UTF-8 JSONL history:
 
-Checks cover shared TypeScript/Go JSON vectors, Host credential masking, native
-Claude extraction/oversize omission, legacy reprojection, PostgreSQL current and
-version persistence across database reopening, escaped common view rendering,
-and the real CLI/Go Claude+Codex pipeline. The end-to-end fixture includes synthetic
-tool secrets and confirms they do not appear in Canonical or Raw responses.
-Deploy the server/migration before the new CLI; this turn does not publish a package
-or upgrade the user's running demo instance.
+- User/assistant text and bounded tool calls/results, including escaped Input/Output
+  details in the common reader. Tool summaries feed Search; full tool values do not.
+- Stable record UUID and physical block-slot Event identities, with per-Session
+  incremental progress and one changed Session per page.
+- Complete-line parsing, bounded text fragments and appendable Raw objects.
+  Source deletion retains captured history and checkpoints.
+- Source failure isolation: healthy Sessions continue; failed Sessions retain
+  progress and are retried. Duplicate identities are isolated rather than merged.
 
-Compaction and ambiguous branches remain explicitly rejected
-until their production support lands. Discovery capacity and unsupported-header
-behavior are documented in the package README; this is not unrestricted Claude
-archive compatibility.
+Continuation/compaction, branching/rewind, subagent and spill collection are not
+supported. Unknown content and nonempty thinking remain Raw when captured;
+tool-bearing projections retain partial fidelity. The retained controlled native
+fixture comes from Claude Code 2.1.263; it is not a blanket compatibility promise
+for every Claude version or history shape.
 
-## Delivery checkpoint
+## Bounds and Raw policy
 
-This increment contains the production Claude Adapter, Project discovery, shared
-tool details, migration 000010 and the common reader integration. It is integrated
-with main's narrative reading/index controls and larger Raw transport chunks; the
-original 4 MiB snapshot limit was subsequently replaced by streaming pagination
-(see the large-archive increment below). Local research models are not shipped.
+The [package README](../../adapters/claude/README.md#explicit-limits) owns detailed
+source/cursor ceilings: 16 MiB records, 256 KiB text fragments, bounded discovery
+and compressed metadata cursors. Large total archives stream across pages;
+changed files still require hashing previously captured bytes to verify prefixes.
+Smaller Host budgets may reject a record or fragment that cannot fit.
 
-The first increment landed in PR #71. The next bounded increment implements
-[source failure isolation](../architecture/adr/0031-source-failure-isolation.md):
-healthy Sessions proceed while failed sources retain their checkpoints. Shared
-redacted diagnostics reach one-shot CLI output and managed `partial` status, not
-server data. Native-fixture CLI/Go tests cover mixed healthy/broken discovery,
-nonzero partial exits, repair and incremental recovery without resets. Adapter
-tests also cover duplicate identities, oversized sources, changed prefixes,
-diagnostic limits and cancellation; existing Codex collection stays unchanged.
+The Adapter declares `atape.raw-capture.v1`. With Raw disabled, Canonical continues
+without advancing Raw upload receipts. Re-enabling Raw backfills retained source
+bytes under the [current capture policy](../cli/raw-capture.md). Unsupported or
+oversized tool values remain available only if Raw was actually captured.
 
-Source isolation landed in PR #73. The next increment adds Claude to the shared
-release contract, packing/checksums, npm publication list and GitHub assets. Both
-Adapters share the same installable-package verification; packaged CLI verification
-now captures the native fixture and replaces a distinct-version test package with
-the exact Claude release tarball. It verifies preserved cursor/Raw progress,
-zero duplicate uploads and a later append. Package version alone is not a cursor
-compatibility rule; schema and captured-prefix checks remain authoritative.
+## Recovery and upgrades
 
-The upgrade fixture re-versions the current bundle, not a historical release, so
-it proves package replacement/recovery mechanics only. No new old-version support
-or real deployment is claimed. Remaining release work is the existing candidate,
-staging/operations signoff and explicit publication/deployment workflow in the
-[release guide](../releasing.md); unsupported Claude history shapes stay deferred.
+Inspect `atape collect --once --json` and `atape status` for partial collection.
+Source diagnostics are bounded, redacted and local; they do not assert that all
+failed files have been enumerated. Repair malformed data or restore the exact
+captured prefix to resume. Unsupported history needs an Adapter capability;
+resetting a cursor does not make it supported.
 
-The CLI experience increment now replaces private Git common-directory matching
-with the [shared Host attribution Module](../architecture/adr/0037-shared-git-source-attribution.md).
-Codex and Claude follow the same server repository identity and alias rules,
-including independent clones. Established evidence survives changed origins and
-deleted directories; unknown historical identity becomes partial coverage.
-Git capture requires the new capability on both Host and Adapter. Directory
-matching and Claude's existing history-format limits remain unchanged.
+Preserve the full CLI state directory. A package-version change alone does not
+reset progress: the Adapter checks cursor schema and captured-prefix integrity.
+Unknown formats or changed prefixes fail explicitly. Package replacement tests
+prove recovery mechanics using re-versioned current bundles, not compatibility
+with every historical binary.
 
-## Large-archive increment
+The receiving Server must accept `atape.acp-centered.v2` before a CLI emitting
+bounded tool details is used. Existing v1 requests remain accepted without tool
+details. Use the coordinated release and [release guide](../releasing.md);
+package publication and Server deployment are separate actions.
 
-[ADR-0053](../architecture/adr/0053-large-archive-collection.md) replaces whole-file
-snapshots with resumable record parsing, stable appendable Raw objects and bounded
-text fragments. A 100 MiB fixture survives a fresh runtime on every page, preserves
-all Raw bytes, and publishes only an appended record afterward. A multi-MiB UTF-8
-message spans retryable Canonical pages without loss or duplicate fragments.
-Legacy checkpoints verify their committed prefix before one projection upgrade.
+## Verification and remaining work
 
-This does not add compaction, subagent or ambiguous-branch support. Strict prefix
-verification still reads previously captured bytes after a file changes. Raw
-transport remains ordered within an object; compression and a persistent parser
-index are future increments requiring separate measurements and compatibility work.
+Relevant checks are Adapter tests, `pnpm test:e2e`, `pnpm test:adapter-package`
+and `pnpm test:release`. They cover production discovery/projection, shared tool
+redaction, large-archive pagination, source failure isolation and installed-package
+replacement. They use controlled data, not personal history.
 
-## Raw capture policy
-
-This Adapter declares `atape.raw-capture.v1` and honors the host's
-`rawCaptureEnabled` flag. Disabled Raw does not advance upload receipts;
-Canonical continues and re-enabling backfills retained sources.
-See [Raw capture configuration](../cli/raw-capture.md).
+Wider Claude history support and
+changes to prefix-verification cost require their own compatibility evidence;
+no cursor reset, alternate uploader or implicit source migration is promised.

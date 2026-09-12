@@ -17,6 +17,9 @@ No functional Effect emulation library is part of the server foundation.
 
 ## Suggested layout
 
+The tree below illustrates responsibility boundaries; the
+[development code map](../development.md#code-map) links to the actual checkout.
+
 ```text
 server/
   cmd/
@@ -66,6 +69,11 @@ Fx provides process assembly and lifecycle management; it does not define the ar
 - A Module remains constructible and testable without an Fx container.
 
 If the dependency graph remains small, explicit construction in `main` is acceptable. Fx must earn its place by reducing lifecycle and assembly complexity, not by hiding ordinary constructors.
+
+`pnpm test:go` includes [the Fx import boundary check](../../server/architecture_test.go).
+It parses production Go imports across build targets and confines Fx and its
+subpackages to `cmd/` or the dedicated `internal/bootstrap/` Composition Root.
+It does not prove goroutine ownership or other behavioral lifetime guarantees.
 
 ## Transport separation
 

@@ -1,4 +1,4 @@
-# Claude Code Adapter — first implementation slice
+# Claude Code Adapter
 
 Discover Project-scoped Claude Code JSONL Sessions through ATape's normal
 Collector, shared ACP profile, server and existing conversation page.
@@ -6,13 +6,18 @@ Collector, shared ACP profile, server and existing conversation page.
 ```sh
 pnpm --filter @atape/adapter-claude build
 pnpm atape adapters install ./adapters/claude
-pnpm atape adapters enable claude --project YOUR_PROJECT
+pnpm atape
 pnpm atape collect --once --project YOUR_PROJECT --json
 ```
 
-For an offline packaged installation, `pnpm pack:release` now produces the CLI,
-Codex and Claude tarballs plus `SHA256SUMS` under `release/`. Install the CLI
-tarball, then use `atape adapters install ./release/atape-adapter-claude-0.4.8.tgz`.
+In **Tools and updates**, add Claude to the existing global selection and review
+the affected Projects. Installing an Adapter alone does not enable collection.
+For automation, use `atape tools configure` with the complete desired tool list;
+tool selection applies to every connected Project.
+
+For an offline packaged installation, `pnpm pack:release` produces the CLI and all
+three Adapter tarballs plus `SHA256SUMS` under `release/`. Install the matching CLI
+tarball, then use `atape adapters install ./release/atape-adapter-claude-<version>.tgz`.
 These local build commands do not publish to npm or deploy an instance.
 
 The Project must already be configured and authenticated normally. Discovery reads

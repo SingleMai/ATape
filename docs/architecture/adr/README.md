@@ -1,137 +1,113 @@
 # Architecture Decision Records
 
-[ADR-0074](0074-capture-observation-retention.md) retires superseded terminal
-observation memberships in bounded fenced batches while retaining source
-versions, current coverage, independent Raw obligations and replay receipts.
+ADRs record the decision, scope, alternatives and consequences at the time of
+writing. Acceptance is not proof that every proposed capability was implemented
+or that a candidate was published. Follow amendment links and use the
+[current documentation index](../../README.md) for supported behavior.
 
-[ADR-0060](0060-publication-raw-authority-and-receipts.md) defines independent
-Raw authority versions and immutable chunk receipt recovery for publication.
+## Delivery context
 
-[ADR-0059](0059-opencode-publication-and-recovery.md) selects common atomic
-publication and the OpenCode capture/recovery contract for the first increment;
-Implementation and native acceptance remain pending.
+- [CLI user journey](../../cli/user-journey.md) and
+  [setup and Adapters](../../cli/setup-and-adapters.md) describe current CLI behavior.
+- [OpenCode](../../adapters/opencode.md), the
+  [capture contract](../opencode-capture-publication.md) and
+  [Server publication](../publication-candidates.md) describe the selected
+  implementation of ADR-0025/0058/0059 and subsequent decisions. This does not
+  mark the broader byte-stream, metadata-only checkpoint or opaque-reference
+  proposals in ADR-0026/0027/0028 as fully delivered.
+- [Releasing](../../releasing.md) applies ADR-0048's standing authorization rule.
+  Per-version waiver ADRs and candidate validation statements are historical
+  evidence, not new approval requirements for each release.
 
-[ADR-0058](0058-opencode-sqlite-and-bounded-capture.md) records the accepted
-OpenCode read-only SQLite route and scoped permission for bounded pending
-content; ADR-0059 records the detailed contract, with Implementation pending.
+## Decision index
 
-[ADR-0057](0057-team-overview-and-structured-usage.md) adds structured Canonical
-usage, authorized Team aggregation and the management Overview.
+Each record appears once below in numeric order. Read its own status and later
+amendments for scope; keep delivery status in the relevant feature guide.
 
-[ADR-0049](0049-empty-collector-page-progress.md) accepts bounded empty-page
-continuations that advance the cursor without fabricating uploaded observations.
+| ADR | Decision |
+| --- | --- |
+| [0001](0001-web-runtime-and-view-stack.md) | Web Runtime and View Stack |
+| [0002](0002-ui-package-and-theming.md) | UI Package and Theming Boundary |
+| [0003](0003-canonical-ingestion-batches.md) | Canonical Ingestion Batch Interface |
+| [0004](0004-postgresql-canonical-persistence.md) | PostgreSQL Canonical Persistence Adapter |
+| [0005](0005-canonical-search-read-model.md) | Canonical Search Read Model |
+| [0006](0006-workspace-directory-and-project-types.md) | Workspace Directory and Project Types |
+| [0007](0007-raw-archive-chunks-and-generations.md) | Raw Archive Chunks and Generations |
+| [0008](0008-node-cli-and-on-demand-adapters.md) | Node CLI and On-Demand Adapter Packages |
+| [0009](0009-pull-adapter-runtime-and-checkpointed-collector.md) | Pull Adapter Runtime and Checkpointed Collector |
+| [0010](0010-compose-self-hosting-topology.md) | Compose Self-Hosting Topology |
+| [0011](0011-managed-local-collector-and-session-presence.md) | Managed Local Collector and Session Presence |
+| [0012](0012-single-bundle-cli-distribution.md) | Single-Bundle CLI Distribution |
+| [0013](0013-bounded-adapter-artifact-distribution.md) | Bounded Adapter Artifact Distribution |
+| [0014](0014-mit-and-tag-driven-package-publication.md) | MIT and Tag-Driven Package Publication |
+| [0015](0015-authentication-module-and-secret-state.md) | Deep Authentication Module and Opaque Secret State |
+| [0016](0016-team-module-and-authoritative-resource-authorization.md) | Team Module and Authoritative Resource Authorization |
+| [0017](0017-http-interface-and-route-security.md) | Closed HTTP Interface and Route Security Contract |
+| [0018](0018-auth-cutover-and-deployable-self-hosting.md) | Authenticated Cutover and Deployable Self-Hosting |
+| [0019](0019-low-cost-dogfood-egress.md) | Low-Cost Dogfood Host Egress |
+| [0020](0020-derived-conversation-narrative.md) | Derived Conversation Narrative |
+| [0021](0021-provider-session-titles-and-search-invalidation.md) | Provider Session Titles and Search Invalidation |
+| [0022](0022-canonical-priority-and-larger-raw-chunks.md) | Canonical-priority collection and larger Raw chunks |
+| [0023](0023-claude-source-conversation-topology.md) | Claude Source Conversation Topology |
+| [0024](0024-claude-origin-project-attribution.md) | Claude Origin Project Attribution |
+| [0025](0025-atomic-canonical-publication.md) | Atomic Canonical Publication |
+| [0026](0026-bounded-raw-byte-streams.md) | Bounded Raw Byte Streams |
+| [0027](0027-transactional-capture-checkpoints.md) | Transactional Capture Checkpoints and Independent Raw Recovery |
+| [0028](0028-shared-acp-tool-values-and-source-references.md) | Shared ACP Tool Values and Versioned Source References |
+| [0029](0029-claude-first-vertical-slice.md) | Claude first implementation slice on the existing Collector |
+| [0030](0030-bounded-tool-details-implementation.md) | Bounded shared tool details in the production pipeline |
+| [0031](0031-source-failure-isolation.md) | Source failure isolation and local diagnostics |
+| [0032](0032-claude-release-and-recovery.md) | Claude release artifacts and checkpoint recovery |
+| [0033](0033-continuous-dogfood-web-deployment.md) | Continuous dogfood Web deployment |
+| [0034](0034-v0.2.0-manual-release-waiver.md) | One-time v0.2.0 manual release waiver |
+| [0035](0035-global-search-workspace.md) | Global Search workspace |
+| [0036](0036-ink-cli-experience.md) | Ink CLI Experience and Shared Capture Workflows |
+| [0037](0037-shared-git-source-attribution.md) | Shared Git Source Attribution |
+| [0038](0038-v0.3.0-manual-release-waiver.md) | One-time v0.3.0 manual release waiver |
+| [0039](0039-v0.3.1-manual-release-waiver.md) | One-time v0.3.1 manual release waiver |
+| [0040](0040-global-cli-tools.md) | Global CLI tools |
+| [0041](0041-v0.4.0-manual-release-waiver.md) | One-time v0.4.0 manual release waiver |
+| [0042](0042-v0.4.1-manual-release-waiver.md) | One-time v0.4.1 manual release waiver |
+| [0043](0043-v0.4.2-manual-release-waiver.md) | One-time v0.4.2 manual release waiver |
+| [0044](0044-cli-self-upgrade.md) | CLI upgrade and startup update choice |
+| [0045](0045-v0.4.4-manual-release-waiver.md) | One-time v0.4.4 manual release waiver |
+| [0046](0046-v0.4.5-manual-release-waiver.md) | One-time v0.4.5 manual release waiver |
+| [0047](0047-cli-device-inventory.md) | Informational CLI device and sync monitoring |
+| [0048](0048-release-request-manual-acceptance.md) | Release requests authorize manual acceptance waivers |
+| [0049](0049-empty-collector-page-progress.md) | Commit empty pages that advance collection |
+| [0050](0050-bounded-compressed-codex-cursors.md) | Bounded compressed Codex cursors |
+| [0051](0051-codex-paginated-source-attribution.md) | Attribute Codex paginated source files independently |
+| [0052](0052-active-session-collection-scans.md) | Refresh only active sources on continuation pages |
+| [0053](0053-large-archive-collection.md) | Bounded collection of large archives |
+| [0054](0054-canonical-replay-provenance.md) | Canonical replay across Adapter upgrades |
+| [0055](0055-codex-item-update-revisions.md) | Codex item updates across collection pages |
+| [0056](0056-configurable-raw-capture.md) | Team and personal Raw capture policy |
+| [0057](0057-team-overview-and-structured-usage.md) | Team Overview and structured usage |
+| [0058](0058-opencode-sqlite-and-bounded-capture.md) | OpenCode SQLite acquisition and bounded pending capture |
+| [0059](0059-opencode-publication-and-recovery.md) | OpenCode publication and recovery contract |
+| [0060](0060-publication-raw-authority-and-receipts.md) | Independent Raw authority and immutable chunk receipts |
+| [0061](0061-independent-raw-observations.md) | Independent fresh Raw observations |
+| [0062](0062-source-record-versions-and-coverage.md) | Source record versions and independent coverage |
+| [0063](0063-opencode-scoped-source-views.md) | OpenCode scoped source views |
+| [0064](0064-opencode-projection-and-creation-origin.md) | OpenCode projection and creation Origin |
+| [0065](0065-host-canonical-preparation.md) | Host Canonical publication preparation |
+| [0066](0066-host-raw-preparation.md) | Host Raw preparation and receipt-aware reuse |
+| [0067](0067-collector-capture-bootstrap.md) | Collector installation binding and capture journal bootstrap |
+| [0068](0068-source-capture-runtime.md) | Explicit source capture runtime capability |
+| [0069](0069-source-comparison-before-capture.md) | Read-only source comparison before durable capture |
+| [0070](0070-source-collector-recovery-and-scheduling.md) | Source Collector recovery and scheduling |
+| [0071](0071-bounded-raw-manifest-browsing.md) | Bounded Raw manifest browsing |
+| [0072](0072-localization-boundary.md) | Localization boundary for Web and CLI |
+| [0073](0073-capture-journal-metadata-admission.md) | Capture journal metadata admission |
+| [0074](0074-capture-observation-retention.md) | Retire superseded capture record membership |
+| [0075](0075-confirmed-collector-progress.md) | Confirmed Canonical progress in Collector checkpoints |
+| [0076](0076-source-collection-release-admission.md) | Source collection admission for the first OpenCode release |
+| [0077](0077-opencode-local-first-publication.md) | Local first publication of OpenCode 0.5.0 |
+| [0078](0078-cli-adapter-maintenance-and-inspection.md) | Isolated Adapter maintenance and bounded CLI inspection |
+| [0079](0079-cli-module-boundaries.md) | Collector and CLI Module boundaries |
+| [0080](0080-cli-input-and-adapter-slot-lifetime.md) | CLI input and Adapter slot lifetime |
 
-[ADR-0046](0046-v0.4.5-manual-release-waiver.md) records the explicitly authorized,
-candidate-bound v0.4.5 manual staging waiver; automated gates remain required.
-
-[ADR-0045](0045-v0.4.4-manual-release-waiver.md) records the explicitly authorized,
-candidate-bound v0.4.4 manual staging waiver; all automated gates remain required.
-
-[ADR-0044](0044-cli-self-upgrade.md) records npm-owned CLI self-upgrade and
-cached startup Upgrade/Skip selection.
-
-[ADR-0043](0043-v0.4.2-manual-release-waiver.md) records the separately authorized,
-candidate-bound v0.4.2 manual staging waiver; automated gates remain required.
-
-[ADR-0042](0042-v0.4.1-manual-release-waiver.md) records the separately authorized,
-candidate-bound v0.4.1 manual staging waiver.
-
-[ADR-0041](0041-v0.4.0-manual-release-waiver.md) records the separately authorized,
-candidate-bound v0.4.0 manual staging waiver.
-
-[ADR-0040](0040-global-cli-tools.md) records global CLI tool configuration,
-one current configuration schema and shared Collector semantics.
-
-| ADR | Status | Decision |
-| --- | --- | --- |
-| [0001](0001-web-runtime-and-view-stack.md) | Accepted | Effect 4 RC, React 19, Vite 8, and TanStack Router for the v0.1 Web application |
-| [0002](0002-ui-package-and-theming.md) | Accepted | `@atape/ui`, semantic CSS custom properties, and theme Adapters for reusable presentation |
-| [0003](0003-canonical-ingestion-batches.md) | Accepted | Bounded idempotent Canonical batches with stable source identity and revision semantics |
-| [0004](0004-postgresql-canonical-persistence.md) | Accepted | Consumer-owned persistence Seams backed by PostgreSQL, pgx, and sqlc |
-| [0005](0005-canonical-search-read-model.md) | Accepted | Durable Canonical change feed and asynchronous project Search read model |
-| [0006](0006-workspace-directory-and-project-types.md) | Accepted | Server-backed Workspace directory with immutable `git` and `directory` Project types |
-| [0007](0007-raw-archive-chunks-and-generations.md) | Accepted | Separate Raw manifests and immutable bounded chunks with append generations |
-| [0008](0008-node-cli-and-on-demand-adapters.md) | Accepted | Effect-powered Node CLI with atomic local config and on-demand npm Adapter packages |
-| [0009](0009-pull-adapter-runtime-and-checkpointed-collector.md) | Accepted | Bounded pull Adapter runtime with redaction, separate Canonical/Raw commits, and CAS checkpoints |
-| [0010](0010-compose-self-hosting-topology.md) | Accepted | Same-origin Compose self-hosting with Nginx, Go, PostgreSQL, and separate durable Raw storage |
-| [0011](0011-managed-local-collector-and-session-presence.md) | Accepted | CLI-managed background collection, observable Project/Adapter status, and shared Session presence semantics |
-| [0012](0012-single-bundle-cli-distribution.md) | Accepted | One installable CLI bundle with independently loaded Adapter packages and tarball-level release verification |
-| [0013](0013-bounded-adapter-artifact-distribution.md) | Accepted | Bounded inert `.tgz`/HTTPS Adapter acquisition and separate checksummed CLI/Adapter release artifacts |
-| [0014](0014-mit-and-tag-driven-package-publication.md) | Accepted | MIT licensing and recoverable tag-driven npm/GitHub publication from one verified artifact set |
-| [0015](0015-authentication-module-and-secret-state.md) | Accepted | One deep Authentication Module with a narrow Federated Identity Adapter Seam and opaque secret persistence |
-| [0016](0016-team-module-and-authoritative-resource-authorization.md) | Accepted | Deep Team control plane plus pure policy and authoritative per-Module resource authorization |
-| [0017](0017-http-interface-and-route-security.md) | Accepted | Closed HTTP route classes, centralized transport security, RFC 9457, and OpenAPI drift checks |
-| [0018](0018-auth-cutover-and-deployable-self-hosting.md) | Accepted | Durable reviewed auth cutover, fail-closed serving modes, secret-file Compose, and paired PostgreSQL + Raw recovery |
-| [0019](0019-low-cost-dogfood-egress.md) | Accepted | Time-bounded HTTPS and Cloudflare Tunnel egress for the disposable AWS dogfood host |
-| [0020](0020-derived-conversation-narrative.md) | Accepted | Non-persisted Narrative Exchanges derived from Canonical Events for readable conversation views |
-| [0021](0021-provider-session-titles-and-search-invalidation.md) | Accepted | Provider-authored Session titles with deterministic fallback, Cursor backfill, and Search invalidation |
-| [0022](0022-canonical-priority-and-larger-raw-chunks.md) | Accepted | Canonical-priority collection with resumable Raw backfill and three MiB transport chunks |
-| [0023](0023-claude-source-conversation-topology.md) | Accepted | Active-path Claude projection, conservative continuation merging, self-contained forks, and child subagent Threads |
-| [0024](0024-claude-origin-project-attribution.md) | Accepted | Origin-based Claude Project attribution across worktrees, directory changes, and transcript relocation |
-| [0025](0025-atomic-canonical-publication.md) | Accepted design; Implementation pending | Provider-neutral staged Canonical targets, conditional atomic activation, recovery receipts and head-consistent reads/Search |
-| [0026](0026-bounded-raw-byte-streams.md) | Accepted design; Implementation pending | Bounded Raw byte frames, versioned cross-frame masking, deterministic packing and metadata-only replay |
-| [0027](0027-transactional-capture-checkpoints.md) | Accepted design; Implementation pending | Transactional metadata-only capture journal, explicit source coverage and independently fenced Raw recovery |
-| [0028](0028-shared-acp-tool-values-and-source-references.md) | Accepted design; Implementation pending | End-to-end common ACP tool values, deterministic v2 encoding and generation-specific pending Raw references |
-| [0036](0036-ink-cli-experience.md) | Accepted; implemented and verified locally | Ink setup and Project console over shared Effect workflows, with installed-artifact terminal validation |
-| [0037](0037-shared-git-source-attribution.md) | Accepted; implemented locally | Shared Host Git attribution, repository-based reattachment and durable source evidence for Codex/Claude |
-
-ADRs record consequential implementation decisions. A superseded ADR remains in the repository and links to its replacement.
-
-[ADR-0034](0034-v0.2.0-manual-release-waiver.md) records the user-authorized,
-candidate-bound v0.2.0 manual staging waiver without changing automated gates or
-pretending that staging acceptance passed.
-
-[ADR-0029](0029-claude-first-vertical-slice.md) records the user-directed switch to a first production Claude vertical slice on existing Interfaces, with the broader planned protocols deferred.
-
-[ADR-0030](0030-bounded-tool-details-implementation.md) implements bounded shared tool values with a versioned profile, Canonical persistence, Host redaction and common rendering; the remaining ADR-0028 work stays deferred.
-
-[ADR-0031](0031-source-failure-isolation.md) isolates individual Claude sources and adds bounded, redacted local diagnostics to the shared Collector Interface.
-
-[ADR-0032](0032-claude-release-and-recovery.md) adds Claude release artifacts and resumes supported checkpoint formats across package replacement without resetting source progress.
-
-[ADR-0033](0033-continuous-dogfood-web-deployment.md) deploys verified main commits to the dogfood Web container through a narrow SSM Interface, with rollback and retained lazy-load assets.
-
-[ADR-0035](0035-global-search-workspace.md) adds a persistent global Search dialog and bounded cross-project queries through the existing Search Module.
-| [0038](0038-v0.3.0-manual-release-waiver.md) | Accepted by explicit user authorization | Separate candidate-bound v0.3.0 manual staging waiver; all automated gates remain blocking |
-| [0039](0039-v0.3.1-manual-release-waiver.md) | Accepted by explicit user authorization | Separate candidate-bound v0.3.1 manual staging waiver for CLI self-test; all automated gates remain blocking |
-
-- [ADR-0047: Informational CLI device inventory](0047-cli-device-inventory.md)
-
-- [ADR-0048: Release requests authorize manual acceptance waivers](0048-release-request-manual-acceptance.md)
-
-- [ADR-0050: Bounded compressed Codex cursors](0050-bounded-compressed-codex-cursors.md)
-
-- [ADR-0051: Codex paginated source attribution](0051-codex-paginated-source-attribution.md)
-
-- [ADR-0052: Active Session collection scans](0052-active-session-collection-scans.md)
-
-- [ADR-0053: Bounded collection of large archives](0053-large-archive-collection.md)
-
-- [ADR-0054: Canonical replay across Adapter upgrades](0054-canonical-replay-provenance.md)
-
-- [ADR-0055: Codex item updates across collection pages](0055-codex-item-update-revisions.md)
-
-- [ADR-0056: Team and personal Raw capture policy](0056-configurable-raw-capture.md)
-
-- [ADR-0061: Independent fresh Raw observations](0061-independent-raw-observations.md)
-- [ADR-0062: Source record versions and independent coverage](0062-source-record-versions-and-coverage.md)
-- [ADR-0063: OpenCode scoped source views](0063-opencode-scoped-source-views.md)
-- [ADR-0064: OpenCode projection and creation Origin](0064-opencode-projection-and-creation-origin.md)
-- [ADR-0065: Host Canonical publication preparation](0065-host-canonical-preparation.md)
-- [ADR-0066: Host Raw preparation and receipt-aware reuse](0066-host-raw-preparation.md)
-- [ADR-0067: Collector installation binding and capture journal bootstrap](0067-collector-capture-bootstrap.md)
-- [ADR-0068: Explicit source capture runtime capability](0068-source-capture-runtime.md)
-
-- [ADR-0069: Read-only source comparison before durable capture](0069-source-comparison-before-capture.md)
-- [ADR-0070: Source Collector recovery and scheduling](0070-source-collector-recovery-and-scheduling.md)
-
-- [ADR-0071: Bounded Raw manifest browsing](0071-bounded-raw-manifest-browsing.md)
-- [ADR-0072: Localization boundary for Web and CLI](0072-localization-boundary.md)
-- [ADR-0073: Capture journal metadata admission](0073-capture-journal-metadata-admission.md)
-
-- [ADR-0075: Confirmed Canonical progress in Collector checkpoints](0075-confirmed-collector-progress.md)
-- [ADR-0076: Source collection admission for the first OpenCode release](0076-source-collection-release-admission.md)
-- [ADR-0077: Local first publication of OpenCode 0.5.0](0077-opencode-local-first-publication.md)
-- [ADR-0078: Isolated Adapter maintenance and bounded CLI inspection](0078-cli-adapter-maintenance-and-inspection.md)
-- [ADR-0079: Collector and CLI Module boundaries](0079-cli-module-boundaries.md)
-- [ADR-0080: CLI input and Adapter slot lifetime](0080-cli-input-and-adapter-slot-lifetime.md)
+When adding a decision, choose an unused number and add it here. Preserve an old
+record's rationale when a later decision changes it; link the amendment or
+replacement in both directions where applicable. Do not rewrite historical
+release authorization or evidence as if it applied to a new candidate.

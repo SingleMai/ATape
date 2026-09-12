@@ -1,6 +1,7 @@
 import { existsSync, globSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, isAbsolute, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isBuiltin } from "node:module"
 import { API } from "typescript/unstable/sync"
 import { SyntaxKind as K } from "typescript/unstable/ast"
 
@@ -20,8 +21,8 @@ export function checkArchitecture(root = repository) {
     packages.set(metadata.name, { directory: dirname(file), exports: metadata.exports })
   }
   const directories = [...packages.values()].map(p => p.directory).filter(directory =>
-    directory === "apps/cli" || directory.startsWith("adapters/") ||
-    ["packages/application", "packages/domain", "packages/ui", "packages/adapter-catalog"].includes(directory))
+    ["apps/cli", "apps/web"].includes(directory) || directory.startsWith("adapters/") ||
+    ["packages/application", "packages/domain", "packages/ui", "packages/adapter-catalog", "packages/i18n"].includes(directory))
   const api = new API({ cwd: root })
   const errors = [], graph = new Map()
   try {
@@ -111,6 +112,14 @@ export function checkArchitecture(root = repository) {
 }
 
 function boundaryViolation(file, specifier, target) {
+  if (inside(file, "apps/web")) {
+    if (isBuiltin(specifier) || target?.startsWith("apps/cli/") || target?.startsWith("adapters/")) return "Web cannot import Node or provider Implementations"
+    if (inside(file, "apps/web/src/view") && target?.startsWith("apps/web/src/runtime/")) return "Web views consume presenter bindings, not Browser Adapters"
+    if (inside(file, "apps/web/src/runtime") && (target?.startsWith("apps/web/src/view/") || target?.startsWith("apps/web/src/presenters/"))) return "Browser Adapters cannot depend on Web Presentation"
+  }
+  if (inside(file, "packages/i18n")) {
+    if (target ? !inside(target, "packages/i18n") : !["i18next", "i18next-icu", "intl-messageformat"].includes(specifier)) return "Shared localization cannot depend on application, presentation or platform Implementations"
+  }
   if (inside(file, "packages/application")) {
     if (target ? !inside(target, "packages/application") && !inside(target, "packages/domain") && target !== "packages/adapter-catalog/src/index.ts" : specifier !== "effect") {
       return "Application depends only on its own Modules, Domain, core Effect and the pure Adapter catalog"

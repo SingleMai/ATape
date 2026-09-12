@@ -2,7 +2,7 @@
 
 - Status: Accepted; implemented and verified locally, integration/publication pending
 - Date: 2026-09-08
-- Feature guide: [CLI experience improvement](../../cli/experience-improvement.md)
+- Current feature guide: [CLI user journey](../../cli/user-journey.md)
 
 ## Context
 

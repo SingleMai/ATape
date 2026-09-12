@@ -17,12 +17,22 @@ Membership, or Project ownership. `projectId` is only the target Resource
 locator; the server resolves its Team and current Membership before accepting
 the batch.
 
-The v1 transport uses the pinned ACP-centered profile. It accepts the shared
+The `atape.canonical.v1` transport accepts the legacy `atape.acp-centered.v1`
+profile and the current `atape.acp-centered.v2` profile. It accepts the shared
 event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`,
 `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol
 carries an explicit extension schema and version.
 
-## Example
+## Batch and publication write modes
+
+Codex and Claude use this batch endpoint. OpenCode's `atape.source-capture.v1`
+capability instead prepares complete targets through the separate
+[publication Interface](../architecture/publication-candidates.md). The Server
+reserves one write mode per source: batch ingestion cannot mutate a reserved
+publication source, and publication cannot adopt an existing legacy Session.
+An Adapter upgrade is not an implicit write-mode migration.
+
+## Legacy-compatible example
 
 ```json
 {
@@ -100,8 +110,9 @@ carries an explicit extension schema and version.
 }
 ```
 
-The first successful observation returns `201 Created`. Replaying the exact
-batch returns `200 OK` with `replayed: true`. Reusing a batch or entity revision
+Creating a Session with a new batch returns `201 Created`; another batch for an
+existing Session returns `200 OK`. Replaying the exact batch returns `200 OK`
+with `replayed: true`. Reusing a batch or entity revision
 with different content returns `409 Conflict`. An archived Project remains
 readable but rejects new Canonical ingestion; a deleted or inaccessible Project
 is concealed as nonexistent at the authorization boundary.
@@ -137,3 +148,58 @@ replay-safe after a server restart.
 
 The complete HTTP contract, route classes, body ceilings, and shared RFC 9457
 Problem registry are machine-readable in [OpenAPI v1](openapi-v1.yaml).
+
+## v2 tool details
+
+Keep `protocolVersion: "atape.canonical.v1"` and set
+`canonicalProfileVersion: "atape.acp-centered.v2"` to include `toolUpdateJson` on
+an Event. This field is a JSON-encoded string containing the admitted ACP
+`tool_call` or `tool_call_update`, with `toolCallId` and optional `title`, `kind`,
+`status`, `rawInput` and `rawOutput`. A `tool_call` requires a nonempty title.
+For example, the Event may include:
+
+```json
+{
+  "toolUpdateJson": "{\"sessionUpdate\":\"tool_call_update\",\"toolCallId\":\"read-1\",\"status\":\"completed\",\"rawOutput\":{\"ok\":true}}"
+}
+```
+
+The complete encoded update is limited to 140,000 UTF-8 bytes. Each input/output
+value is limited to 65,536 bytes, depth 32 and 10,000 nodes; duplicate JSON keys,
+unknown update fields and invalid enum values are rejected. Absence, JSON null,
+false, zero and empty values remain distinct. v1 rejects tool details.
+
+The Host redacts before encoding. The Server validates `kind` against the admitted
+tool update (with the child-Thread `spawn` exception) and derives `text` and
+`toolLabel` from it; readers expose decoded `tool` data.
+Search indexes summaries rather than complete input/output. See
+[conversation reads](conversation.md) and [ADR-0030](../architecture/adr/0030-bounded-tool-details-implementation.md).
+
+## Structured usage
+
+Both accepted profiles may include up to 500 `usage` records per batch. Each
+record identifies `sourceUsageId`, `sourceThreadId`, a positive safe-integer
+`revision`, `occurredAt`, and `model`. Its Thread must appear in the batch.
+Include at least one of `inputTokens`, `outputTokens`, `cacheReadTokens` or
+`cacheWriteTokens`. Omit unknown counters; zero is a known measurement.
+
+```json
+{
+  "sourceUsageId": "native-message-42",
+  "sourceThreadId": "native-root",
+  "revision": 1,
+  "occurredAt": "2026-09-04T20:55:12+08:00",
+  "model": "example-model",
+  "inputTokens": 120,
+  "outputTokens": 30,
+  "cacheReadTokens": 80,
+  "cacheWriteTokens": 10
+}
+```
+
+Counters are nonnegative integers no larger than 9,007,199,254,740,991. Input
+includes cache subdivisions; when input is supplied, cache read plus cache write
+cannot exceed it. Repeated identities within a batch are rejected. Stable source
+identity and revision semantics prevent replay from double-counting usage.
+Usage is Canonical data and is collected independently of Raw policy; see
+[Team Overview](../team-overview.md) for aggregation and interpretation limits.
