@@ -12,12 +12,14 @@ From the repository root:
 ```sh
 pnpm --filter @atape/adapter-codebuddy build
 pnpm pack:adapter-codebuddy
-atape adapters install ./release/atape-adapter-codebuddy-0.5.1.tgz
+atape
 ```
 
-Use **Tools and updates** to add CodeBuddy Code CLI to the existing selection.
+Open **Tools and updates → Integration maintenance → Install from a package or path**
+and install `./release/atape-adapter-codebuddy-0.5.1.tgz`. Then use **Choose tools to sync**
+to add CodeBuddy Code CLI to the existing selection.
 Review the affected connected Projects before applying. Installation alone does
-not enable collection. Run `atape collect --once --json` to inspect the result.
+not enable collection. Start sync from Home and inspect **Project → Sync details**.
 
 Source resolution: `ATAPE_CODEBUDDY_HOME`, then `CODEBUDDY_CONFIG_DIR`, then
 `~/.codebuddy`. Overrides must be absolute. Discovery reads

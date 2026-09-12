@@ -23,7 +23,7 @@ export const makeCLIUpgradePlatformLayer = (
     try: async signal => {
       return latestPublishedVersion(home, "@atape/cli", cached, signal, fetchMetadata)
     },
-    catch: () => new CLIUpgradeError({ reason: "check", message: "Could not check for updates. Check your connection and try atape upgrade again." })
+    catch: () => new CLIUpgradeError({ reason: "check", message: "Could not check for updates. Check your connection and try the update again in Tools and updates." })
   }),
   install: version => Effect.callback<void, CLIUpgradeError>(resume => {
     const cancellation = new AbortController()
@@ -51,7 +51,7 @@ export const makeCLIUpgradePlatformLayer = (
       } finally { await lock.close(); await rm(lockPath, { force: true }) }
     })()
     task.then(() => resume(Effect.void), cause => resume(Effect.fail(cause instanceof CLIUpgradeError ? cause : new CLIUpgradeError({ reason: "install",
-      message: "ATape could not be upgraded. Check your connection and installation permissions, then retry atape upgrade." }))))
+      message: "ATape could not be upgraded. Check your connection and installation permissions, then retry in Tools and updates." }))))
     // Effect interruption waits for process termination and lock cleanup.
     return Effect.promise(async () => { cancellation.abort(); await task.catch(() => {}) })
   })

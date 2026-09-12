@@ -164,7 +164,7 @@ export const planProjectSetup = Effect.fn("ProjectSetup.plan")(function*(input: 
   if (local.type === "git" && local.repositoryRemote === undefined) {
     return yield* new ProjectSetupError({
       reason: "missing_git_remote",
-      message: "This Git worktree has no origin remote. Configure a supported origin remote and run setup again."
+      message: "This Git worktree has no origin remote. Configure a supported origin remote and connect the Project again in ATape."
     })
   }
   const workspace = yield* gateway.loadWorkspace(input.instanceOrigin)

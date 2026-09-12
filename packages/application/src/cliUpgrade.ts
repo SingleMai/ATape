@@ -53,7 +53,7 @@ export const resumeCLIUpgrade = Effect.fn("CLIUpgrade.resume")(function*(recover
     Effect.andThen(process.start({ intervalMs: recovery.intervalMs, concurrency: recovery.concurrency })),
     Effect.uninterruptible,
     Effect.mapError(() => new CLIUpgradeError({ reason: "resume", recovery,
-      message: `ATape ${recovery.version} is installed, but sync could not resume. Retry resuming sync or run atape start with the same ATAPE_HOME.` }))
+      message: `ATape ${recovery.version} is installed, but sync could not resume. Retry resuming sync or open ATape with the same ATAPE_HOME and select Start sync.` }))
   )
   return { version: recovery.version, updated: true, resumed: true }
 })

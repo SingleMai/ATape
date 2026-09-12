@@ -41,7 +41,9 @@ async function run() {
     if (code !== 0 || malformed) throw new Error(`Go Adapter contracts failed (exit ${code}).`)
     verifyOpenCodeResult(events)
     if (args.includes("--all")) verifyCodeBuddyResult(events)
-    console.log("Required OpenCode/PostgreSQL/installed-daemon contract passed.")
+    console.log(args.includes("--all")
+      ? "Required OpenCode and CodeBuddy/PostgreSQL/installed-daemon contracts passed."
+      : "Required OpenCode/PostgreSQL/installed-daemon contract passed.")
   } finally {
     lines.close()
     process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", terminate)

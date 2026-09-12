@@ -3,10 +3,11 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { CaptureJournals, CLICredentialStore, CollectorStateStore, runCollectionCycle } from "@atape/application"
+import { CaptureJournals, CLICredentialStore, CollectorStateStore, runCollectionCycle, installAdapter, planToolChange, applyToolChange, startManagedCollector, stopManagedCollector, inspectManagedCollector } from "@atape/application"
 import { type StoredCLICredential } from "@atape/domain"
-import { Effect, Logger } from "effect"
+import { Effect, Layer, Logger } from "effect"
 import { makeNodeClientLayer, defaultNodeClientPaths } from "../clientLayers.ts"
+import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 import { defaultSourceCollectionLimits } from "@atape/application"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
@@ -18,7 +19,6 @@ const environment = { ...process.env, ATAPE_HOME: paths.atapeHome, ATAPE_CODEBUD
   ATAPE_CODEX_HOME: join(home, "missing-codex"), ATAPE_CLAUDE_HOME: join(home, "missing-claude"), OPENCODE_DB: join(home, "missing-opencode"),
   ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_COLLECTOR_DAEMON: "0", TEST_SECRET: "SENSITIVE_TEST_TOKEN" }
 process.env.ATAPE_CODEBUDDY_HOME = sourceHome
-const cli = (...args: string[]) => JSON.parse(execFileSync(process.execPath, [binary, ...args, "--json"], { cwd: home, env: environment, encoding: "utf8", timeout: 120000, stdio: ["ignore", "pipe", "pipe"] }))
 const native = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-2.124.0.jsonl", import.meta.url), "utf8").replaceAll("/fixture/codebuddy-project", workspace)
 const at = "2026-09-12T16:00:00Z", adapterId = "codebuddy"
 const save = (rows: unknown[]) => writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
@@ -59,15 +59,15 @@ const faultFetch: typeof fetch = async (url, init) => {
   }
   return response
 }
-const layer = makeNodeClientLayer(paths, environment, fetch, faultFetch)
+const layer = Layer.merge(makeNodeClientLayer(paths, environment, fetch, faultFetch), makeNodeCollectorDaemonLayer(paths, binary, environment))
 const result = await Effect.runPromise(Effect.gen(function*() {
   if (input.phase === "initial") {
     const credentials = yield* CLICredentialStore
     const credential: StoredCLICredential = { version: 1, instanceOrigin: input.origin, apiOrigin: input.origin, credential: input.credential,
       credentialId: "integration-credential", capabilityVersion: "atape-cli.v1", createdAt: at, user: { id: input.userId, displayName: "Fixture" } }
     yield* credentials.replace({ credential })
-    assert.equal(cli("adapters", "install", input.tarball).adapter.adapterId, adapterId)
-    cli("tools", "configure", "--adapter", adapterId, "--apply")
+    assert.equal((yield* installAdapter(input.tarball)).adapter.adapterId, adapterId)
+    yield* planToolChange([adapterId]).pipe(Effect.flatMap(applyToolChange))
   }
   if (input.phase === "upgrade") {
     const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
@@ -79,15 +79,34 @@ const result = await Effect.runPromise(Effect.gen(function*() {
     const manifest = JSON.parse(readFileSync(join(fixture, "package.json"), "utf8")); manifest.version += "-codebuddy-replacement"
     writeFileSync(join(fixture, "package.json"), JSON.stringify(manifest))
     const packed = JSON.parse(execFileSync("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", home], { cwd: fixture, encoding: "utf8" }))
-    assert.equal(cli("adapters", "install", join(home, packed[0].filename)).adapter.version, manifest.version)
+    assert.equal((yield* installAdapter(join(home, packed[0].filename))).adapter.version, manifest.version)
   }
   let observations = 0, failures = 0, diagnostics = 0
-  // Exercise the actual installed CLI collection command, then inspect its real journal.
+  // The console's Module Interfaces own setup; collection runs in the installed
+  // executable. Every phase stops its owned process before inspecting the journal.
   if (input.phase === "initial" || input.phase === "upgrade") {
-    const report = cli("collect", "--once", "--project", input.projectId)
-    assert.deepEqual(report.failures, [])
-    if (input.phase === "upgrade") for (const job of report.jobs) { assert.equal(job.canonicalBatches, 0); assert.equal(job.rawChunks, 0) }
-    observations = report.jobs.reduce((n: number, job: { observations: number }) => n + job.observations, 0)
+    const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
+    const job = yield* Effect.acquireUseRelease(
+      startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
+      () => Effect.gen(function*() {
+        for (let attempt = 0; attempt < 200; attempt++) {
+          const status = yield* inspectManagedCollector()
+          assert.ok(status.running, "Installed Collector exited")
+          assert.equal(status.collectorFailure, undefined)
+          const current = status.jobs.find(job => job.adapterId === adapterId && job.projectId === input.projectId)
+          if (status.lastCycleCompletedAt && status.lastCycleCompletedAt !== before && current && !current.hasMore) {
+            assert.equal(current.state, "healthy", JSON.stringify(current))
+            return current
+          }
+          yield* Effect.sleep(100)
+        }
+        throw new Error("Installed CodeBuddy Collector did not complete a cycle")
+      }),
+      () => stopManagedCollector().pipe(Effect.orDie)
+    )
+    assert.equal((yield* inspectManagedCollector()).running, false)
+    if (input.phase === "upgrade") { assert.equal(job.canonicalBatches, 0); assert.equal(job.rawChunks, 0) }
+    observations = job.observations ?? 0
   } else {
     for (let cycle = 0; cycle < 5; cycle++) {
       const report = yield* runCollectionCycle()

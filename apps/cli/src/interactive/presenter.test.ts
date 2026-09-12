@@ -14,7 +14,7 @@ import { ExperiencePresenter, type Screen } from "./presenter.ts"
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
-const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false) => {
+const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false) => {
   const root = await mkdtemp(join(tmpdir(), "atape-presenter-"))
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
@@ -25,9 +25,14 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   let syncRunning = failFirstResume
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
   const toolInstalls: string[] = []
+  const prunes: boolean[] = []
   const base = Layer.mergeAll(makeNodeClientLayer(defaultNodeClientPaths(environment), environment),
     Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: () => toolUpdate ? Effect.succeed("0.4.4") : Effect.fail(new ToolUpdateError({ message: "offline" })) })),
-    ...(toolUpdate ? [Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"), install: spec => Effect.sync(() => {
+    ...(toolUpdate ? [Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: input => maintenance ? Effect.sync(() => {
+      prunes.push(input.apply)
+      return { applied: input.apply, removed: input.apply ? 1 : 0, more: false,
+        slots: [{ slot: "old", packageName: "@atape/adapter-codex", version: "0.1.0", state: input.apply ? "removed" as const : "eligible" as const }] }
+    }) : Effect.die("Unexpected package maintenance"), install: spec => Effect.sync(() => {
       toolInstalls.push(spec)
       return { packageName: "@atape/adapter-codex", upgradeSpec: "@atape/adapter-codex", version: "0.4.4",
         manifest: { protocolVersion: "atape.adapter.v1alpha1", adapterId: "codex", displayName: "Codex", entry: "./index.js", harnesses: ["codex"] } }
@@ -60,7 +65,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     nextDelay = undefined
     return delay ? delay.then(() => runtime.runPromise(effect, { signal })) : runtime.runPromise(effect, { signal })
   }, restart => { exited = true; restarted = Boolean(restart) }, {
-    path: root, setup, noBrowser: true, environment, version: update ? "0.4.1" : "development"
+    path: root, noBrowser: true, environment, version: update ? "0.4.1" : "development"
   })
   cleanup.push(async () => { releases.forEach(release => release()); presenter.close(); await runtime.dispose(); await rm(root, { recursive: true, force: true }) })
   const wait = async (matches: (screen: Screen) => boolean) => {
@@ -90,7 +95,12 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
         upgradeSpec: "@atape/adapter-codex", installedAt: "2026-09-08T00:00:00Z", updatedAt: "2026-09-08T00:00:00Z" }]
     } }))
   }))
-  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
+  const start = presenter.start.bind(presenter)
+  if (setup) presenter.start = () => {
+    start()
+    void wait(screen => screen.layout === "projects").then(() => presenter.submit("add"))
+  }
+  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
 }
 
 const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
@@ -112,6 +122,57 @@ const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
+  it("saves a language from Settings without modifying tool or project choices", async () => {
+    const client = await fixture()
+    await client.toolsReady()
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("settings")
+    await client.wait(screen => screen.title === "Settings")
+    client.presenter.submit("language")
+    await client.wait(screen => screen.title === "Language")
+    client.presenter.submit("zh-CN")
+    await client.wait(screen => screen.details.includes("Language saved. Reopen ATape to use it."))
+    expect(await client.runtime.runPromise(inspectClient())).toMatchObject({ locale: "zh-CN", enabledAdapterIds: ["codex"], projects: [] })
+    client.presenter.back()
+    await client.wait(screen => screen.title === "Settings")
+  })
+  it("requires review for package installation and cleanup, preserving capture selection on cancel and apply", async () => {
+    const client = await fixture(false, undefined, false, false, true, true)
+    await client.toolsReady()
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("tools")
+    await client.wait(screen => screen.title === "Tools and updates")
+    client.presenter.submit("maintenance")
+    await client.wait(screen => screen.title === "Integration maintenance")
+    client.presenter.submit("install")
+    await client.wait(screen => screen.kind === "input")
+    client.presenter.submit("/trusted/local-package")
+    const review = await client.wait(screen => screen.title === "Install integration?")
+    expect(review.options?.[0]?.value).toBe("back")
+    expect(client.toolInstalls).toEqual([])
+    client.presenter.back()
+    expect(client.presenter.getSnapshot().initial).toBe("/trusted/local-package")
+    client.presenter.submit("/trusted/local-package")
+    await client.wait(screen => screen.title === "Install integration?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.title === "Integration maintenance")
+    expect(client.toolInstalls).toEqual(["/trusted/local-package"])
+    client.presenter.submit("prune")
+    const cleanup = await client.wait(screen => screen.title === "Remove unused integration versions?")
+    expect(cleanup.options?.[0]?.value).toBe("back")
+    expect(client.prunes).toEqual([false])
+    client.presenter.back()
+    await client.wait(screen => screen.title === "Integration maintenance")
+    expect(client.prunes).toEqual([false])
+    client.presenter.submit("prune")
+    await client.wait(screen => screen.title === "Remove unused integration versions?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => Boolean(screen.notice?.includes("Removed 1")))
+    expect(client.prunes).toEqual([false, false, true])
+    expect(await client.runtime.runPromise(inspectClient())).toMatchObject({ enabledAdapterIds: ["codex"], projects: [] })
+  })
   it("shows versions, switches a local integration to its published release and returns home with Escape", async () => {
     const client = await fixture(false, undefined, false, false, true)
     await client.toolsReady()
@@ -320,7 +381,7 @@ describe("interactive navigation through the presenter Interface", () => {
     expect(frame.split("\n").every(line => line.length <= 42)).toBe(true)
   })
 
-  it("types a fuzzy project name, browses the selected result, and clears search without leaving setup", async () => {
+  it("types a fuzzy project name, browses the selected result, and clears search when reopening Add project", async () => {
     const client = await fixture(true)
     await client.toolsReady()
     const path = join(client.root, "work/Payments-Service")
@@ -332,6 +393,8 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.suggestions?.some(item => item.path === path + "/") ?? false)
     expect(ui.frame()).toContain("Search: pmts")
     await ui.send("\x1b")
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("add")
     await client.wait(screen => screen.pathInput === true && !screen.directoriesLoading)
     expect(ui.frame()).not.toContain("Search: pmts")
     await ui.send("pmts")
@@ -372,7 +435,7 @@ describe("interactive navigation through the presenter Interface", () => {
     expect((await client.runtime.runPromise(inspectClient())).enabledAdapterIds).toEqual([])
   })
 
-  it("explicit setup skips the welcome while bare atape separates Projects from global actions", async () => {
+  it("Add project opens the picker while home separates Projects from global actions", async () => {
     const explicit = await fixture(true)
     await explicit.toolsReady()
     explicit.presenter.start()
@@ -501,6 +564,27 @@ describe("interactive navigation through the presenter Interface", () => {
     // Allow the real filesystem-backed refresh to finish after navigation.
     await new Promise(resolve => setTimeout(resolve, 150))
     expect(client.presenter.getSnapshot().kind).toBe("sources")
+  })
+
+  it("shows every retained source diagnostic and identifies report truncation inside ATape", async () => {
+    const client = await fixture()
+    const project = await client.seed("partial", true)
+    await client.runtime.runPromise(Effect.gen(function*() {
+      yield* (yield* CollectorRunStatusStore).recordCycle({
+        startedAt: "2026-09-08T00:00:00Z", completedAt: "2026-09-08T00:00:01Z", failures: [],
+        jobs: [{ projectId: project.id, adapterId: "codex", pages: 1, observations: 1, canonicalBatches: 1, rawChunks: 0, redactions: 0, hasMore: false,
+          sourceFailures: Array.from({ length: 5 }, (_, index) => ({ source: `source-${index}`, reason: "format" as const })), sourceFailuresTruncated: true }]
+      })
+    }))
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit(`project:${project.instanceOrigin}:${project.id}`)
+    await client.wait(screen => screen.title === "partial")
+    client.presenter.submit("diagnostics")
+    const details = client.presenter.getSnapshot().details
+    for (let index = 0; index < 5; index++) expect(details).toContain(`source-${index}`)
+    expect(details.join(" ")).toContain("only a sample")
+    expect(details.join(" ")).not.toContain("atape status")
   })
 
   it("prioritizes the required fix and keeps diagnostics refresh read-only and in place", async () => {

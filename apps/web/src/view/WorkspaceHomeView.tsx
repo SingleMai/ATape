@@ -74,7 +74,7 @@ export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
           number={2}
           eyebrow={t("home.step2Eyebrow", "Review your choices")}
           title={t("home.step2Title", "Confirm the Project and sources")}
-          command={"atape setup /path/to/project"}
+          command={"atape"}
         >
           {t("home.step2Body", "Review the Instance, Team, Project and conversation sources. Confirm once to install the selected integrations, import history and start ongoing sync.")}
         </SetupStep>
@@ -82,9 +82,9 @@ export const WorkspaceHomeView = ({ state, onRetry }: Props) => {
           number={3}
           eyebrow={t("home.step3Eyebrow", "Create shared memory")}
           title={t("home.step3Title", "Check progress in your Project console")}
-          command={"atape\n# After a reboot:\natape start"}
+          command={"atape"}
         >
-          {t("home.step3Body", "The terminal distinguishes waiting for a conversation, syncing and partial coverage. You can close it while background sync continues.")}
+          {t("home.step3Body", "The terminal shows sync progress and problems. Closing it leaves background sync running. After a reboot, open ATape and select Start sync.")}
         </SetupStep>
       </div>
 

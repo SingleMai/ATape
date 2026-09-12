@@ -5,19 +5,17 @@ Collector, shared ACP profile, server and existing conversation page.
 
 ```sh
 pnpm --filter @atape/adapter-claude build
-pnpm atape adapters install ./adapters/claude
 pnpm atape
-pnpm atape collect --once --project YOUR_PROJECT --json
 ```
 
 In **Tools and updates**, add Claude to the existing global selection and review
 the affected Projects. Installing an Adapter alone does not enable collection.
-For automation, use `atape tools configure` with the complete desired tool list;
+In Tools and updates, use Choose tools to sync;
 tool selection applies to every connected Project.
 
 For an offline packaged installation, `pnpm pack:release` produces the CLI and all
 three Adapter tarballs plus `SHA256SUMS` under `release/`. Install the matching CLI
-tarball, then use `atape adapters install ./release/atape-adapter-claude-<version>.tgz`.
+tarball, then install the Claude Adapter tarball path in Tools and updates → Integration maintenance.
 These local build commands do not publish to npm or deploy an instance.
 
 The Project must already be configured and authenticated normally. Discovery reads
@@ -92,9 +90,9 @@ committed progress and are retried next cycle. Repair a malformed source or rest
 its exact captured prefix to resume it. Unsupported history needs a future Adapter
 capability, not a cursor reset. No automatic deletion or permanent quarantine occurs.
 
-`atape collect --once --json` includes the diagnostics and exits nonzero for partial
+Project → Sync details includes the diagnostics for partial
 collection. Text output lists escaped source paths and generic reasons; the Host
-masks configured secrets. Background `atape status` shows `partial` and continues
+masks configured secrets. Project status shows `partial` and continues
 collecting. Reports retain up to 32 distinct diagnostics with a truncation flag,
 not an exact count of all failed files. A clean cycle clears previous diagnostics.
 Global discovery/cursor capacity, corrupt checkpoints and Host/transport failures
@@ -131,3 +129,5 @@ explicit migration or rejection. See [ADR-0032](../../docs/architecture/adr/0032
 Claude Code 2.1.263 invocation, with home/temporary paths substituted. It is not
 byte-identical original Raw and contains only synthetic prompt/tool content.
 Tests invoke this production Adapter, not a separate model of its behavior.
+
+For a local development build, install `./adapters/claude` through Integration maintenance before choosing tools.

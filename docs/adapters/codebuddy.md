@@ -93,7 +93,7 @@ a fresh source observation without altering unchanged Canonical provenance.
 Activation and Raw response loss recover independently from frozen journal data,
 including after source deletion. Preserve the entire ATAPE_HOME; reinstalling or
 resetting progress is not a repair for unsupported source semantics. Inspect
-`atape collect --once --json` and `atape status` for source health.
+**Project → Sync details** in the `atape` console for source health.
 
 ## Verification and delivery status
 
@@ -109,7 +109,10 @@ native provenance and synthetic coverage. Relevant verification commands:
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
 21 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
-contract, and the shared PostgreSQL/OpenCode contract suite. Release packaging,
+contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
+installation and selection use the console’s application Modules; initial collection
+and replacement collection run in the actual installed background executable.
+Fault injection and bounded recovery cycles use the source Node Host. Release packaging,
 CLI terminal behavior, Tools selection and relevant application/CLI regressions
 were also checked. The actual Web reader was opened against the controlled
 HTTP test Server: three native turns, two thoughts, both tool outcomes and final

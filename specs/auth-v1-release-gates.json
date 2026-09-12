@@ -38,7 +38,8 @@
         {"path": "apps/cli/src/runtime/authenticationLayers.test.ts", "contains": "Node CLI Credential store Adapter"},
         {"path": "apps/cli/src/runtime/clientLayers.test.ts", "contains": "reads only current configuration without rewriting unsupported data"},
         {"path": "apps/cli/src/collectorServer.e2e.test.ts", "contains": "real Go APIs"},
-        {"path": "scripts/verify-release.mjs", "contains": "Verified packaged CLI"}
+        {"path": "apps/cli/scripts/verify-package.mjs", "contains": "Verified installable CLI tarball"},
+        {"path": "apps/cli/scripts/verify-release.mjs", "contains": "Verified CLI artifact help, Codex/Claude/OpenCode artifacts through the source Node Host"}
       ],
       "manualRequirements": []
     },

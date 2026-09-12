@@ -376,7 +376,7 @@ const execFileText = (file: string, args: ReadonlyArray<string>) => new Promise<
 const delay = (milliseconds: number) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
 const unsupportedManagedProcessPlatform = () => new CollectorDaemonProcessError({
   reason: "identity",
-  message: "Managed background collection currently supports macOS and Linux. Use `atape collect` on Windows."
+  message: "Managed background collection currently supports macOS and Linux. Windows is not supported."
 })
 const jobKey = (projectId: string, adapterId: string) => `${projectId}\0${adapterId}`
 const hasCode = (cause: unknown, code: string): cause is NodeJS.ErrnoException =>

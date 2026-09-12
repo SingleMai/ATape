@@ -6,7 +6,7 @@ The runtime requirements are in [package.json](../package.json) and
 [pnpm-workspace.yaml](../pnpm-workspace.yaml) and the lockfile. Install with
 `pnpm install --frozen-lockfile`. Browser checks use Playwright Chromium;
 `pnpm --filter @atape/web exec playwright install chromium` installs it locally.
-Package terminal checks require Python 3. PostgreSQL and installed OpenCode
+Package terminal checks require Python 3. PostgreSQL and installed source-capture Adapter
 integration checks require Docker.
 
 ## Code map
@@ -61,7 +61,7 @@ prose matches product behavior. Reader response schemas are additionally compare
 with the exported Go JSON types by the HTTP contract tests.
 
 [CI](../.github/workflows/ci.yml) additionally verifies Web rollout/rollback,
-production builds, release tarballs, PostgreSQL/installed OpenCode contracts and
+production builds, release tarballs, PostgreSQL/installed source-capture Adapter contracts and
 Collector disk-exhaustion recovery. [Security](../.github/workflows/security.yml)
 and [Release](../.github/workflows/release.yml) define their additional gates.
 Read the workflows and package scripts when their exact scope matters.

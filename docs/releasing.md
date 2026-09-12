@@ -66,10 +66,12 @@ node scripts/check-release-tag.mjs "$ATAPE_RELEASE_TAG"
 
 `test:release` checks the four-file, self-contained Adapter packages, builds all
 four checksummed tarballs and installs the CLI into a clean prefix. It installs
-Codex, Claude and OpenCode through that CLI, then collects a controlled native Claude
+a disposable integration and verifies the installed console/daemon through a PTY.
+Release Adapter checks install Codex, Claude and OpenCode through the source Node
+Host’s application Interface, then collect a controlled native Claude
 fixture through an authenticated loopback HTTP test Adapter. It replaces a
 test-only pre-release Claude package with the exact release tarball via
-`adapters upgrade claude`, checking unchanged checkpoints, no duplicate upload,
+the original-source update Module Interface, checking unchanged checkpoints, no duplicate upload,
 stable Event identities and successful capture after append. The test-only package
 uses the current bundle with a distinct version; it is not historical compatibility
 evidence and never enters `release/`. Real Go persistence/read behavior remains
