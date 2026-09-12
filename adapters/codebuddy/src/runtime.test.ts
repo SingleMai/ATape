@@ -97,6 +97,59 @@ describe("CodeBuddy installed runtime Interface", () => {
     const bad = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
     expect(bad.sourceFailures[0]?.reason).toBe("duplicate")
   })
+  it.each(["fork", "nested-fork"])("captures native %s with copied history, isolated identities and fork-owned attribution", async kind => {
+    const f = await fixture(), forkId = `atape-codebuddy-${kind}-21240`
+    const file = join(f.directory, `${forkId}.jsonl`), meta = file.replace(/\.jsonl$/, ".meta.json")
+    const native = await readFile(new URL(`./fixtures/native-${kind}-2.124.0.jsonl`, import.meta.url), "utf8")
+    const metadata = await readFile(new URL("./fixtures/native-fork-2.124.0.meta.json", import.meta.url), "utf8")
+    await writeFile(file, native); await writeFile(meta, metadata)
+    const rootView = await f.runtime.sourceCapture.open(f.request), rootFrames = await read(rootView)
+    await rootView.close()
+    let cursor: string | null = null
+    const sources: SourceDiscoveryPage["sources"][number][] = []
+    do {
+      const page = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor, limits, signal: signal() }))
+      expect(page.sourceFailures).toEqual([]); sources.push(...page.sources); cursor = page.cursor
+    } while (cursor)
+    const expectedCwd = kind === "fork" ? "/fixture/codebuddy-project" : "/fixture/codebuddy-fork-project"
+    expect(sources.find(source => source.sourceId === forkId)?.cwd).toBe(expectedCwd)
+    const view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: forkId })
+    expect(view.profile).toBe("codebuddy.cli.jsonl.fork.1")
+    expect(view.origin).toEqual(sources.find(source => source.sourceId === forkId))
+    expect(view.target).toEqual({ events: kind === "fork" ? 14 : 18, usage: kind === "fork" ? 6 : 8, threads: 1 })
+    expect(view.session.title).toBe(rows(native).find(row => row.sessionId === forkId).content[0].text)
+    const origin = view.origin, frames = await read(view), events = frames.flatMap(frame => frame.events)
+    const content = (event: typeof events[number]) => { const { toolCallId: _, ...value } = event.update as typeof event.update & { toolCallId?: string }; return value }
+    expect(events.slice(0, 12).map(content)).toEqual(rootFrames.flatMap(frame => frame.events).map(content))
+    expect(events[5]!.update).toMatchObject({ toolCallId: (events[4]!.update as { toolCallId: string }).toolCallId })
+    expect(events.every(event => !rootFrames.flatMap(frame => frame.events).some(root => root.sourceEventId === event.sourceEventId))).toBe(true)
+    expect(frames[0]!.raw).toMatchObject({ sidecar: { format: "codebuddy.meta.v1", json: metadata } })
+    expect(frames.map(frame => (frame.raw as { json: string }).json).join("\n") + "\n").toBe(native)
+    await view.close()
+    // The source snapshot is self-contained even without the original parent.
+    await rm(f.file)
+    const offView = await f.runtime.sourceCapture.open({ ...f.request, sourceId: forkId, rawEnabled: false })
+    await rm(meta); await rm(file)
+    const off = await read(offView)
+    expect(off).toEqual(frames.map(({ raw: _, ...frame }) => frame))
+    expect(offView.origin).toEqual(origin)
+    await offView.close()
+    await writeFile(file, native)
+    await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: forkId })).rejects.toMatchObject({ reason: "unsupported" })
+  })
+  it.each(["parent", "prefix-only", "foreign-suffix", "assistant-transition", "meta-shape", "meta-limit"])("rejects an unproven fork %s", async variant => {
+    const f = await fixture(), forkId = "atape-codebuddy-fork-21240", file = join(f.directory, `${forkId}.jsonl`)
+    const values = rows(await readFile(new URL("./fixtures/native-fork-2.124.0.jsonl", import.meta.url), "utf8"))
+    let meta: object = { forkedFrom: sourceId }
+    if (variant === "parent") meta = { forkedFrom: "unrelated" }
+    if (variant === "prefix-only") values.splice(15)
+    if (variant === "foreign-suffix") values.push({ ...values.at(-1), id: "foreign", parentId: values.at(-1).id, sessionId: "unrelated", role: "user" })
+    if (variant === "assistant-transition") values.at(-1).sessionId = sourceId
+    if (variant === "meta-shape") meta = { forkedFrom: sourceId, forkedAt: 1 }
+    await writeFile(file, serialize(values))
+    await writeFile(file.replace(/\.jsonl$/, ".meta.json"), variant === "meta-limit" ? "x".repeat(65537) : JSON.stringify(meta))
+    await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: forkId })).rejects.toMatchObject({ reason: variant === "prefix-only" ? "attribution" : variant === "meta-limit" ? "limit" : "unsupported" })
+  })
   it.each(["fork", "compaction", "branch", "foreign", "revision", "missing-origin"])("rejects %s without returning an incomplete target", async variant => {
     const f = await fixture(), values = rows(f.native)
     if (variant === "fork") await writeFile(f.file.replace(/\.jsonl$/, ".meta.json"), await readFile(new URL("./fixtures/native-fork-2.124.0.meta.json", import.meta.url), "utf8"))

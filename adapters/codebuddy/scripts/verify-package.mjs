@@ -39,7 +39,9 @@ try {
   // Copy both inputs out of the workspace. The child imports only the installed
   // bundle and Node builtins; workspace module resolution cannot rescue it.
   await copyFile(new URL("./verify-installed.mjs", import.meta.url), join(root, "verify-installed.mjs"))
-  await copyFile(new URL("../src/fixtures/native-2.124.0.jsonl", import.meta.url), join(root, "native-2.124.0.jsonl"))
+  for (const name of ["native-2.124.0.jsonl", "native-nested-fork-2.124.0.jsonl", "native-fork-2.124.0.meta.json"]) {
+    await copyFile(new URL(`../src/fixtures/${name}`, import.meta.url), join(root, name))
+  }
   const result = await run(process.execPath, [join(root, "verify-installed.mjs"), join(entryRoot, manifest.atapeAdapter.entry), manifest.version], root)
   process.stdout.write(`Verified CodeBuddy tarball ${basename(artifact)} (${size} bytes)\n${result.stdout}`)
 } finally {

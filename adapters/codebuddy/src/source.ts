@@ -55,16 +55,53 @@ export const inventory = async (home: string, signal: AbortSignal): Promise<stri
   return files.sort()
 }
 
-export const origin = (row: Row, file: string): GitSource => {
+const origin = (rows: ReadonlyArray<Row>, file: string, meta: Row): GitSource => {
+  const row = rows[0]!
   if (row.type !== "message" || row.role !== "user" || row.parentId != null || row.logicalParentId != null)
     fail("unsupported", "CodeBuddy requires an original, unbranched user root.")
-  const sourceId = id(row.sessionId)
-  if (basename(file, ".jsonl") !== sourceId || sourceId.startsWith("agent-")) fail("unsupported", "CodeBuddy copied or subagent histories are not supported.")
-  if (typeof row.cwd !== "string" || !isAbsolute(row.cwd)) fail("attribution", "CodeBuddy original CWD is unavailable.")
-  return { sourceId, originKey: identity("origin", sourceId, id(row.id)), cwd: row.cwd as string }
+  const sourceId = id(basename(file, ".jsonl")), rootId = id(row.sessionId)
+  if (sourceId.startsWith("agent-") || rootId.startsWith("agent-")) fail("unsupported", "CodeBuddy subagent histories require a wider source profile.")
+  let first = row
+  if (meta.forkedFrom !== undefined) {
+    if (id(meta.forkedFrom) !== rootId || rootId === sourceId) fail("unsupported", "CodeBuddy fork metadata does not match its copied root.")
+    // 2.124.0 resumes with the copied root's sessionId and the fork's storeId.
+    // Its first fork-owned user record anchors storage identity and creation CWD.
+    first = rows.find(row => row.sessionId === sourceId) ?? {}
+    if (first.type !== "message" || first.role !== "user" || first.parentId == null)
+      fail("attribution", "CodeBuddy fork has no original fork-owned user record.")
+  } else if (rootId !== sourceId) fail("unsupported", "CodeBuddy copied histories require native fork metadata.")
+  if (typeof first.cwd !== "string" || !isAbsolute(first.cwd)) fail("attribution", "CodeBuddy original CWD is unavailable.")
+  return { sourceId, originKey: identity("origin", sourceId, id(first.id)), cwd: first.cwd as string }
+}
+
+const metadata = async (file: string, signal: AbortSignal) => {
+  const path = file.replace(/\.jsonl$/, ".meta.json")
+  try {
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const before = await handle.stat()
+      if (!before.isFile() || before.size > 64 * 1024) fail("limit", "CodeBuddy metadata exceeds its bound.")
+      const buffer = Buffer.alloc(before.size)
+      for (let at = 0; at < buffer.length;) {
+        signal.throwIfAborted()
+        const { bytesRead } = await handle.read(buffer, at, buffer.length - at, at)
+        if (!bytesRead) fail("format", "CodeBuddy metadata changed; retry.")
+        at += bytesRead
+      }
+      if (stamp(before) !== stamp(await handle.stat()) || stamp(before) !== stamp(await lstat(path))) fail("format", "CodeBuddy metadata changed; retry.")
+      const json = utf8(buffer), row = parse(json)
+      if (Object.keys(row).some(key => key !== "forkedFrom")) fail("unsupported", "CodeBuddy metadata requires a wider source profile.")
+      if (row.forkedFrom !== undefined) id(row.forkedFrom)
+      return { stamp: stamp(before), row, json }
+    } finally { await handle.close() }
+  } catch (e) { if (missing(e)) return { stamp: "absent", row: {} as Row, json: undefined }; throw e }
 }
 
 const readHeader = async (file: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
+  const meta = await metadata(file, signal)
+  // A copied prefix cannot attribute a fork. Find its own first record within
+  // the same bounded, stamp-checked snapshot used by open.
+  if (meta.row.forkedFrom !== undefined) return (await snapshotFile(file, limits, signal)).origin
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const s = await handle.stat()
@@ -79,8 +116,8 @@ const readHeader = async (file: string, limits: SourceCaptureLimits, signal: Abo
     }
     const end = buffer.subarray(0, offset).indexOf(10)
     if (end < 0) fail(offset > limits.rowBytes ? "limit" : "format", "CodeBuddy original record is oversized or incomplete.")
-    if (stamp(s) !== stamp(await handle.stat())) fail("format", "CodeBuddy source changed during discovery; retry.")
-    return origin(parse(utf8(buffer.subarray(0, end))), file)
+    if (stamp(s) !== stamp(await handle.stat()) || meta.stamp !== (await metadata(file, signal)).stamp) fail("format", "CodeBuddy source changed during discovery; retry.")
+    return origin([parse(utf8(buffer.subarray(0, end)))], file, meta.row)
   } finally { await handle.close() }
 }
 
@@ -108,26 +145,13 @@ export const discover = async (home: string, cursor: string | null, limits: Sour
 export const snapshot = async (home: string, sourceId: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
   const files = (await inventory(home, signal)).filter(file => basename(file, ".jsonl") === sourceId)
   if (files.length !== 1) fail("format", "CodeBuddy source is missing or has duplicate identities.")
-  const file = files[0]!, metaFile = file.replace(/\.jsonl$/, ".meta.json")
+  return snapshotFile(files[0]!, limits, signal)
+}
+
+const snapshotFile = async (file: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
   const started = performance.now()
   const check = () => { signal.throwIfAborted(); if (performance.now() - started > limits.durationMs) fail("limit", "CodeBuddy snapshot exceeded its deadline.") }
-  const metadata = async () => {
-    try {
-      const handle = await open(metaFile, constants.O_RDONLY | constants.O_NOFOLLOW)
-      try {
-        const before = await handle.stat()
-        if (!before.isFile() || before.size > 64 * 1024) fail("limit", "CodeBuddy metadata exceeds its bound.")
-        const buffer = Buffer.alloc(before.size)
-        const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
-        if (bytesRead !== buffer.length || stamp(before) !== stamp(await handle.stat())) fail("format", "CodeBuddy metadata changed; retry.")
-        return { stamp: stamp(before), row: parse(utf8(buffer)) }
-      } finally { await handle.close() }
-    } catch (e) { if (missing(e)) return { stamp: "absent", row: {} as Row }; throw e }
-  }
-  const meta = await metadata()
-  if (meta.row.forkedFrom != null || meta.row.parentSessionId != null || meta.row.isForkedCompactionSession === true)
-    fail("unsupported", "CodeBuddy fork, compaction and child sessions require a wider source profile.")
-  if (Object.keys(meta.row).length) fail("unsupported", "CodeBuddy sidecar-dependent histories require a wider source profile.")
+  const meta = await metadata(file, signal)
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const before = await handle.stat()
@@ -151,8 +175,8 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
       records.push({ row: parse(json), json }); offset = end + 1
       if (records.length > limits.records) fail("limit", "CodeBuddy session exceeds the source record limit.")
     }
-    if (stamp(before) !== stamp(await handle.stat()) || stamp(before) !== stamp(await lstat(file)) || meta.stamp !== (await metadata()).stamp)
+    if (stamp(before) !== stamp(await handle.stat()) || stamp(before) !== stamp(await lstat(file)) || meta.stamp !== (await metadata(file, signal)).stamp)
       fail("format", "CodeBuddy source changed while reading; retry with a fresh snapshot.")
-    return { records, origin: origin(records[0]!.row, file) }
+    return { records, origin: origin(records.map(record => record.row), file, meta.row), forkedFrom: meta.row.forkedFrom as string | undefined, metadataJson: meta.json }
   } finally { await handle.close() }
 }
