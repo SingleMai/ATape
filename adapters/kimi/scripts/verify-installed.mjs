@@ -39,7 +39,7 @@ try {
     await view.close()
   }
   assert.equal(await readFile(file, "utf8"), native)
-  for (const [name, eventCount, usageCount, input] of [["context", 6, 7, 728], ["auto", 4, 3, 190205], ["clear", 2, 1, 108]]) {
+  for (const [name, eventCount, usageCount, input] of [["context", 6, 7, 728], ["auto", 4, 3, 190205], ["clear", 2, 1, 108], ["fork", 8, 9, 947], ["nested-fork", 10, 10, 1058]]) {
     const state = await readFile(new URL(`./${name}-0.42.0.state.json`, import.meta.url), "utf8"), id = JSON.parse(state).id
     const directory = join(home, "sessions", "opaque", id)
     await mkdir(join(directory, "agents", "main"), { recursive: true })
@@ -61,11 +61,12 @@ try {
       assert.equal(frames.flatMap(f => f.usage).reduce((sum, row) => sum + row.inputTokens, 0), input)
       assert.ok(frames.every(f => (f.raw !== undefined) === rawEnabled))
       const events = JSON.stringify(frames.flatMap(f => f.events))
-      if (name === "context") for (const absent of ["KimiUndoBefore", "KimiUndoAfter", "KimiContextReply4", "KimiContextReply7"]) assert.ok(!events.includes(absent))
+      if (["context", "fork", "nested-fork"].includes(name)) for (const absent of ["KimiUndoBefore", "KimiUndoAfter", "KimiContextReply4", "KimiContextReply7"]) assert.ok(!events.includes(absent))
       await view.close()
     }
+    await rm(directory, { recursive: true }) // Forks also work without ancestor sources.
   }
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort(); await assert.rejects(view.read(signal))
 } finally { await runtime.close(); await rm(home, { recursive: true }) }
-process.stdout.write("Installed Kimi native resume, undo, manual/auto compaction, /clear, usage, original CWD, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed Kimi native resume, undo, manual/auto compaction, /clear, whole-session and nested forks, usage, original CWD, bounded pages, Raw off/on and cancellation verified.\n")

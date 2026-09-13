@@ -10,7 +10,7 @@ import { makeNodeClientLayer, defaultNodeClientPaths } from "../clientLayers.ts"
 import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
-const specimen = input.phase.startsWith("context-") ? "context" : input.phase === "auto" ? "auto" : input.phase === "clear" ? "clear" : "native"
+const specimen = input.phase === "nested-fork" ? "nested-fork" : input.phase.startsWith("fork-") ? "fork" : input.phase.startsWith("context-") ? "context" : input.phase === "auto" ? "auto" : input.phase === "clear" ? "clear" : "native"
 const home = input.home, workspace = join(home, "workspace"), adapterId = "kimi"
 const native = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.jsonl`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
 const metadata = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.state.json`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
@@ -25,10 +25,10 @@ process.env.ATAPE_KIMI_HOME = sourceHome
 const at = "2026-09-13T00:00:00Z"
 const save = (rows: unknown[]) => writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
 const restore = (wire: string) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, wire); writeFileSync(join(directory, "state.json"), metadata) }
-const contextLength: Record<string, number> = { "context-seed": 32, "context-undo": 34, "context-restore": 34, "context-compact": 52, "context-afterundo": 68, "context-final": 88, "context-incomplete": 50 }
+const contextLength: Record<string, number> = { "context-seed": 32, "context-undo": 34, "context-restore": 34, "context-compact": 52, "context-afterundo": 68, "context-final": 88, "context-incomplete": 50, "fork-seed": 89, "fork-resume": 102, "fork-undo": 104, "fork-restore": 104, "fork-final": 117 }
 if (contextLength[input.phase]) restore(native.split("\n").slice(0, contextLength[input.phase]).join("\n") + "\n")
-if (["auto", "clear"].includes(input.phase)) restore(native)
-if (["context-recover", "context-recover-raw"].includes(input.phase)) rmSync(directory, { recursive: true })
+if (["auto", "clear", "nested-fork"].includes(input.phase)) restore(native)
+if (["context-recover", "context-recover-raw", "fork-recover", "fork-delete"].includes(input.phase)) rmSync(directory, { recursive: true })
 if (input.phase === "context-raw-loss") {
   const rows = native.trim().split("\n").map(line => JSON.parse(line)); rows[49].extraRawField = "KimiCompactionRawOnly"; save(rows)
 }
@@ -68,7 +68,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "context-undo"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "context-raw-loss"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "context-undo", "fork-undo"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "context-raw-loss"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -120,9 +120,9 @@ const result = await Effect.runPromise(Effect.gen(function*() {
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["context-undo", "context-raw-loss"].includes(input.phase)) assert.equal(lost, true)
+  if (["context-undo", "context-raw-loss", "fork-undo"].includes(input.phase)) assert.equal(lost, true)
   if (input.phase === "context-recover-raw") assert.equal(uploads, 0)
-  if (input.phase === "context-raw-on") { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["context-raw-on", "fork-raw-on"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   if (["noop", "raw-off", "recover-raw"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
   if (input.phase === "raw-on") { assert.equal(puts, 0); assert.ok(uploads > 0) }

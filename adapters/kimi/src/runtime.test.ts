@@ -41,6 +41,70 @@ const read = async (view: Awaited<ReturnType<Awaited<ReturnType<typeof createAta
   throw new Error("Fixture failed to finish")
 }
 describe("Kimi source-capture runtime Interface", () => {
+  it("captures a native fork independently through copied history, resume, undo and replacement", async () => {
+    const f = await fixture("fork")
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [length, eventCount, usageCount, input, output] of [[89, 6, 7, 728, 98], [102, 8, 8, 837, 117], [104, 6, 8, 837, 117], [117, 8, 9, 947, 137]]) {
+      await writeFile(f.file, serialize(f.rows.slice(0, length)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+      expect(view.profile).toBe("kimi.code.wire.fork.1")
+      expect(view.session.captureStatus).toBe("healthy")
+      expect(view.target).toEqual({ events: eventCount, usage: usageCount, threads: 1 })
+      const events = frames.flatMap(f => f.events), usage = frames.flatMap(f => f.usage)
+      expect(events.slice(0, 6)).toEqual(previous.length ? previous.flatMap(f => f.events).slice(0, 6) : events)
+      expect(usage.slice(0, previous.flatMap(f => f.usage).length)).toEqual(previous.flatMap(f => f.usage))
+      expect(usage.reduce((sum, u) => sum + u.inputTokens!, 0)).toBe(input)
+      expect(usage.reduce((sum, u) => sum + u.outputTokens!, 0)).toBe(output)
+      expect(events.every(e => e.sourceThreadId === f.request.sourceId)).toBe(true)
+      expect(frames.slice(1).map(f => (f.raw as { json: string }).json).join("\n") + "\n").toBe(serialize(f.rows.slice(0, length)))
+      previous = frames; await view.close()
+    }
+    expect(JSON.stringify(previous.flatMap(f => f.events))).toContain("KimiForkReplacement")
+    expect(JSON.stringify(previous.flatMap(f => f.events))).not.toContain("KimiForkNext")
+    expect(JSON.stringify(previous)).toContain("KimiForkNext")
+    const frozen = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    expect(await read(frozen)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+  })
+  it("keeps parent, fork and nested-fork identities distinct without requiring the parent source", async () => {
+    const f = await fixture("context"), parent = await f.runtime.sourceCapture.open(f.request), parentFrames = await read(parent); await parent.close()
+    const allIds = new Set(parentFrames.flatMap(f => f.events).map(e => e.sourceEventId))
+    const usageIds = new Set(parentFrames.flatMap(f => f.usage).map(u => u.sourceUsageId))
+    for (const [name, eventCount, usageCount, input, output] of [["fork", 8, 9, 947, 137], ["nested-fork", 10, 10, 1058, 158]] as const) {
+      const meta = await readFile(new URL(`./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8"), sid = JSON.parse(meta).id
+      const directory = join(f.home, "sessions", "opaque", sid)
+      await mkdir(join(directory, "agents", "main"), { recursive: true }); await writeFile(join(directory, "state.json"), meta)
+      await writeFile(join(directory, "agents", "main", "wire.jsonl"), await readFile(new URL(`./fixtures/${name}-0.42.0.jsonl`, import.meta.url)))
+      const view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: sid }), frames = await read(view)
+      expect(view.target).toEqual({ events: eventCount, usage: usageCount, threads: 1 })
+      expect(view.origin.originKey).not.toBe(parent.origin.originKey)
+      expect(view.origin.cwd).toBe(parent.origin.cwd)
+      for (const e of frames.flatMap(f => f.events)) { expect(allIds.has(e.sourceEventId)).toBe(false); allIds.add(e.sourceEventId) }
+      for (const u of frames.flatMap(f => f.usage)) { expect(usageIds.has(u.sourceUsageId)).toBe(false); usageIds.add(u.sourceUsageId) }
+      expect(frames.flatMap(f => f.usage).reduce((sum, u) => sum + u.inputTokens!, 0)).toBe(input)
+      expect(frames.flatMap(f => f.usage).reduce((sum, u) => sum + u.outputTokens!, 0)).toBe(output)
+      await view.close()
+      const discovery = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits: { ...limits, pageRows: 10 }, signal: signal() }))
+      expect(discovery.sourceFailures).toEqual([])
+      expect(discovery.sources.some(s => s.sourceId === sid)).toBe(true)
+      // Next iteration has only the nested fork and no readable ancestors.
+      await rm(directory, { recursive: true })
+      await rm(f.directory, { recursive: true, force: true })
+    }
+  })
+  it.each(["missing-marker", "missing-parent", "self-parent", "invalid-parent", "active-marker", "compaction-marker", "unfinished-copy"])("rejects %s fork boundaries without exposing a target", async kind => {
+    const f = await fixture("fork"), meta = JSON.parse(f.metadata)
+    if (kind === "missing-marker") f.rows.splice(88, 1)
+    if (kind === "missing-parent") delete meta.forkedFrom
+    if (kind === "self-parent") meta.forkedFrom = meta.id
+    if (kind === "invalid-parent") meta.forkedFrom = {}
+    if (kind === "active-marker") f.rows.splice(94, 0, f.rows[88])
+    if (kind === "compaction-marker") f.rows.splice(48, 0, f.rows[88])
+    if (kind === "unfinished-copy") f.rows.splice(88)
+    await writeFile(f.state, JSON.stringify(meta)); await writeFile(f.file, serialize(f.rows))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toBeDefined()
+  })
   it("replays native undo, replacement and repeated manual compaction while retaining expenditure and surviving identities", async () => {
     const f = await fixture("context")
     let previous: SourceCapturePage["frames"][number][] = []
