@@ -4,6 +4,22 @@ import { fail, id, identity, object, time, type Row, type snapshot } from "./sou
 type Source = Awaited<ReturnType<typeof snapshot>>
 const text = (v: unknown) => { if (typeof v !== "string") fail("format", "Grok text is invalid."); return v as string }
 const counter = (v: unknown) => { if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 0) fail("format", "Grok usage counter is invalid."); return v as number }
+const toolKinds = { read_file: "read", run_terminal_command: "execute", grep: "search", search_replace: "edit" } as const
+const toolOutput = (name: string, value: unknown) => {
+  if (value === undefined) return undefined
+  const row = object(value)
+  if (name === "run_terminal_command") return row.output_for_prompt
+  if (name !== "grep") return value
+  if (row.type !== "GrepSearch") fail("unsupported", "Grok search output has an unsupported format.")
+  const decode = (value: unknown) => {
+    if (!Array.isArray(value) || !value.every(n => Number.isInteger(n) && n >= 0 && n <= 255)) fail("format", "Grok search output is not a byte array.")
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(value as number[])) }
+    catch { return fail("format", "Grok search output is not valid UTF-8.") }
+  }
+  // Native byte arrays must become text before the Host masks them and the Reader displays them.
+  // Keep exit code 1 (no matches) independent of the native completed status.
+  return { stdout: decode(row.stdout), stderr: decode(row.stderr), exit_code: counter(row.exit_code), match_count: counter(row.match_count) }
+}
 const occurred = (row: Row) => {
   const n = object(object(row.params)._meta).agentTimestampMs
   if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0 || n > 8_640_000_000_000_000) fail("format", "Grok event timestamp is unavailable.")
@@ -95,18 +111,18 @@ export const project = (source: Source, request: SourceOpenRequest) => {
           const nativeId = id(update.toolCallId), toolCallId = identity("tool", sourceId, prompt, nativeId)
           if (kind === "tool_call") {
             const name = id(update.title)
-            if (name !== "read_file" && name !== "run_terminal_command") fail("unsupported", "Grok tool requires a wider native profile than file reads and foreground commands.")
+            if (!Object.hasOwn(toolKinds, name)) fail("unsupported", "Grok tool requires a wider native profile than file reads, foreground commands, grep and search_replace.")
             if (tools.has(toolCallId)) fail("format", "Grok tool identity is duplicated.")
             tools.add(toolCallId); calls.set(nativeId, { done: false, name })
             const bounded = isBoundedToolValue(update.rawInput); partial ||= !bounded
-            emit({ sessionUpdate: "tool_call", toolCallId, title: name, kind: name === "read_file" ? "read" : "execute", status: "pending", ...(bounded ? { rawInput: update.rawInput } : {}) }, bounded ? "native" : "partial")
+            emit({ sessionUpdate: "tool_call", toolCallId, title: name, kind: toolKinds[name as keyof typeof toolKinds], status: "pending", ...(bounded ? { rawInput: update.rawInput } : {}) }, bounded ? "native" : "partial")
           } else {
             const call = calls.get(nativeId)
             if (!call || call.done) fail("format", "Grok tool update has no open call.")
             const status = update.status
             if (status != null && status !== "completed" && status !== "failed" && status !== "in_progress" && status !== "pending") fail("unsupported", "Grok tool status is unsupported.")
             call!.done = status === "completed" || status === "failed"
-            const result = call!.name === "run_terminal_command" && update.rawOutput !== undefined ? object(update.rawOutput).output_for_prompt : update.rawOutput
+            const result = toolOutput(call!.name, update.rawOutput)
             const inputBounded = update.rawInput === undefined || isBoundedToolValue(update.rawInput)
             const outputBounded = update.rawOutput === undefined || result !== undefined && isBoundedToolValue(result)
             const bounded = inputBounded && outputBounded; partial ||= !bounded

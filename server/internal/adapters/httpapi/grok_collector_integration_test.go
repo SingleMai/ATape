@@ -259,9 +259,29 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	if len(search("GrokFinalNeedle").Results) != 1 || len(search("GrokRawOnlyNeedle").Results) != 0 {
 		t.Fatal("Grok Search mixed Raw with Canonical")
 	}
+	setRaw(false)
+	toolCapture := run("tools-initial")
+	_, toolEvents := read(toolCapture.SessionID, 11)
+	toolJSON, _ := json.Marshal(toolEvents)
+	if toolCapture.Observations != 1 || !bytes.Contains(toolJSON, []byte("GrokSearchOutputNeedle")) || bytes.Contains(toolJSON, []byte("SENSITIVE_TEST_TOKEN")) ||
+		!bytes.Contains(toolJSON, []byte(`"stdout":"`)) || !bytes.Contains(toolJSON, []byte("version=before")) || !bytes.Contains(toolJSON, []byte("version=after")) {
+		t.Fatal("Grok native search/edit details or byte-output masking did not reach Reader with Raw off")
+	}
+	if matches := len(search("ATAPE_GROK_EDIT_DONE_20260913").Results); matches != 2 || len(search("GrokSearchOutputNeedle").Results) != 0 {
+		t.Fatalf("Grok Search must locate the native prompt/reply pair; matches=%d want=2", matches)
+	}
+	toolNoop := run("tools-noop")
+	if toolNoop.Head != toolCapture.Head || toolNoop.Observations != 0 || !bytes.Equal(toolNoop.Records, toolCapture.Records) {
+		t.Fatal("Grok search/edit polling changed Event identity or provenance")
+	}
+	setRaw(true)
+	toolRaw := run("tools-raw-on")
+	if toolRaw.Head != toolCapture.Head || !bytes.Equal(toolRaw.Records, toolCapture.Records) {
+		t.Fatal("Grok search/edit Raw enablement changed Canonical provenance")
+	}
 
 	if review := os.Getenv("ATAPE_GROK_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recovered.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recovered.SessionID, "toolsSessionId": toolCapture.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

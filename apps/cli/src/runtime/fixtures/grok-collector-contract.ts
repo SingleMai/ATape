@@ -11,8 +11,8 @@ import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 import { defaultSourceCollectionLimits } from "@atape/application"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
-const gitPhase = input.phase.startsWith("git-")
-const sourceId = gitPhase ? "01a0988a-e389-73f0-a5d6-fcd91c1f822b" : "01a0987a-554b-7073-934d-da914245adbf", home = gitPhase ? join(input.home, "git-case") : input.home, workspace = join(home, "workspace")
+const gitPhase = input.phase.startsWith("git-"), toolsPhase = input.phase.startsWith("tools-")
+const sourceId = gitPhase ? "01a0988a-e389-73f0-a5d6-fcd91c1f822b" : toolsPhase ? "88789e9d-9240-47c6-8a89-0842fc706348" : "01a0987a-554b-7073-934d-da914245adbf", home = gitPhase ? join(input.home, "git-case") : toolsPhase ? join(input.home, "tools-case") : input.home, workspace = join(home, "workspace")
 const worktree = join(home, "worktree")
 const sourceHome = join(home, "source"), directory = join(sourceHome, "sessions", "opaque", sourceId), file = join(directory, "updates.jsonl")
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
@@ -26,10 +26,10 @@ const writeNative = (stage: string, dest = directory, id = sourceId, cwd = works
   mkdirSync(dest, { recursive: true })
   for (const name of ["summary.json", "signals.json", "updates.jsonl"]) {
     const native = readFileSync(new URL(`../../../../../adapters/grok/src/fixtures/native-1.0.3/${stage}/${name}`, import.meta.url), "utf8")
-    writeFileSync(join(dest, name), native.replaceAll("/fixture/grok-project", cwd).replaceAll("/fixture/grok-worktree", cwd).replaceAll(sourceId, id))
+    writeFileSync(join(dest, name), native.replaceAll("/fixture/grok-project", cwd).replaceAll("/fixture/grok-worktree", cwd).replaceAll("/fixture/grok-edit", cwd).replaceAll(sourceId, id))
   }
 }
-if (input.phase === "initial" || input.phase === "git-initial") {
+if (input.phase === "initial" || input.phase === "git-initial" || input.phase === "tools-initial") {
   mkdirSync(workspace, { recursive: true }); mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 })
   if (gitPhase) {
     const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { stdio: "pipe" })
@@ -42,14 +42,20 @@ if (input.phase === "initial" || input.phase === "git-initial") {
     git(cwd, "init"); git(cwd, "remote", "add", "origin", "https://github.com/atape-fixtures/other.git")
     writeNative("worktree", join(sourceHome, "sessions", "foreign", foreign), foreign, cwd)
   } else {
-    writeNative("resumed")
+    writeNative(toolsPhase ? "edit" : "resumed")
     const foreign = "01a0987a-554b-7073-934d-da914245adbe", cwd = join(home, "foreign-project"); mkdirSync(cwd)
-    writeNative("resumed", join(sourceHome, "sessions", "foreign", foreign), foreign, cwd)
+    writeNative(toolsPhase ? "edit" : "resumed", join(sourceHome, "sessions", "foreign", foreign), foreign, cwd)
   }
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "acme", teamName: "Fixture", name: "Grok", type: gitPhase ? "git" : "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
+}
+if (input.phase === "tools-initial") {
+  const rows = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  // Synthetic marker exists only in search output, encoded as native bytes.
+  rows[3].params.update.rawOutput.stdout.push(...Buffer.from("\nGrokSearchOutputNeedle SENSITIVE_TEST_TOKEN"))
+  writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
 }
 if (input.phase === "git-relocated") {
   rmSync(workspace, { recursive: true }); rmSync(worktree, { recursive: true })
@@ -84,7 +90,7 @@ const faultFetch: typeof fetch = async (url, init) => {
 }
 const layer = Layer.merge(makeNodeClientLayer(paths, environment, fetch, faultFetch), makeNodeCollectorDaemonLayer(paths, binary, environment))
 const result = await Effect.runPromise(Effect.gen(function*() {
-  if (input.phase === "initial" || input.phase === "git-initial") {
+  if (input.phase === "initial" || input.phase === "git-initial" || input.phase === "tools-initial") {
     const credentials = yield* CLICredentialStore
     const credential: StoredCLICredential = { version: 1, instanceOrigin: input.origin, apiOrigin: input.origin, credential: input.credential,
       credentialId: "integration-credential", capabilityVersion: "atape-cli.v1", createdAt: at, user: { id: input.userId, displayName: "Fixture" } }
@@ -107,7 +113,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (["initial", "upgrade", "edit", "git-initial"].includes(input.phase)) {
+  if (["initial", "upgrade", "edit", "git-initial", "tools-initial"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -143,7 +149,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
   if (["noop", "raw-off", "recover-raw"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
-  if (["raw-on"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["raw-on", "tools-raw-on"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)
