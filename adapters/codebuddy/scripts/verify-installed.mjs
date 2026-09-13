@@ -146,6 +146,27 @@ try {
     assert.equal(done, true); assert.equal(links, 4); assert.equal(users, 8); assert.equal(events, 38); assert.equal(contexts, rawEnabled ? 4 : 0)
     await view.close()
   }
+  await cp(new URL("./native-fork-family-2.124.0", import.meta.url), dir, { recursive: true })
+  for (const rawEnabled of [false, true]) {
+    const view = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-fork-child-nested-21240", limits, projection, rawEnabled, signal })
+    assert.equal(view.profile, "codebuddy.cli.jsonl.family.fork.1")
+    assert.deepEqual(view.target, { events: 30, usage: 13, threads: 4 })
+    assert.equal(view.threads.find(thread => thread.sourceThreadId === "agent-375d1c88").parentSourceThreadId, "agent-d40e1747")
+    let done = false, events = 0, leafRows = 0, usage = 0
+    for (let count = 0; count < 40 && !done; count++) {
+      const page = await view.read(signal)
+      for (const frame of page.frames) {
+        assert.equal(frame.raw !== undefined, rawEnabled)
+        assert.ok(!JSON.stringify(frame).includes("ATAPE_ORIGINAL_LEAF_LATER_21240"))
+        assert.ok(!JSON.stringify(frame).includes("ATAPE_ORIGINAL_NESTED_LATER_21240"))
+        events += frame.events.length; usage += frame.usage.length
+        leafRows += frame.events.filter(event => event.sourceThreadId === "agent-375d1c88").length
+      }
+      done = page.done
+    }
+    assert.equal(done, true); assert.equal(events, 30); assert.equal(usage, 13); assert.equal(leafRows, 3)
+    await view.close()
+  }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()

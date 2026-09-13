@@ -1356,9 +1356,163 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	}
 	expireReservations()
 	read(recoveredMulti.SessionID, 11)
+	// Copied foreground descendants retain their own completion frontiers, including nested children.
+	forkFamilyCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy fork family"})
+	forkFamilyCreate.Header.Set("Authorization", "Bearer "+credential)
+	forkFamilyCreate.Header.Set("Idempotency-Key", "codebuddy-fork-family-project-21240")
+	forkFamilyCreated := httptest.NewRecorder()
+	h.ServeHTTP(forkFamilyCreated, forkFamilyCreate)
+	if forkFamilyCreated.Code != http.StatusCreated {
+		t.Fatalf("create fork family Project: %d %s", forkFamilyCreated.Code, forkFamilyCreated.Body.String())
+	}
+	var forkFamilyProject projectDTO
+	decodeResponse(t, forkFamilyCreated, &forkFamilyProject)
+	projectID = forkFamilyProject.ID
+	forkFamilyInitial := run("fork-family-initial")
+	_, forkParent := read(forkFamilyInitial.SessionID, 15)
+	forkLinks := links(forkParent)
+	if len(forkLinks) != 3 || forkLinks[0].ID != forkLinks[1].ID {
+		t.Fatal("CodeBuddy fork lost its resumed copied child")
+	}
+	forkDirectID, forkMiddleID := forkLinks[0].ID, forkLinks[2].ID
+	read(forkFamilyInitial.SessionID, 5, forkDirectID)
+	_, forkMiddle := read(forkFamilyInitial.SessionID, 5, forkMiddleID)
+	if len(links(forkMiddle)) != 1 {
+		t.Fatal("CodeBuddy fork lost its nested child link")
+	}
+	forkLeafID := links(forkMiddle)[0].ID
+	_, forkLeaf := read(forkFamilyInitial.SessionID, 3, forkLeafID)
+	if forkLeaf[2].Text != "ATAPE_FORK_LEAF_SEED_21240" {
+		t.Fatal("CodeBuddy fork cutoff dropped the response after lastId reasoning")
+	}
+	if pending := run("fork-family-pending"); pending.Head != forkFamilyInitial.Head || !bytes.Equal(pending.Records, forkFamilyInitial.Records) {
+		t.Fatal("CodeBuddy incomplete copied child replaced the fork")
+	}
+	if growth := run("fork-family-growth"); growth.Head != forkFamilyInitial.Head || growth.Observations != 0 || !bytes.Equal(growth.Records, forkFamilyInitial.Records) {
+		t.Fatal("CodeBuddy original descendants' growth changed the fork")
+	}
+	forkFamilyResumed := run("fork-family-resume")
+	_, forkResumedParent := read(forkFamilyResumed.SessionID, 17)
+	beforePrefix, _ = json.Marshal(forkParent)
+	afterPrefix, _ = json.Marshal(forkResumedParent[:15])
+	if forkFamilyResumed.SessionID != forkFamilyInitial.SessionID || !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(forkResumedParent) != 5 {
+		t.Fatal("CodeBuddy fork parent resume changed copied history")
+	}
+	_, forkLeafAfter := read(forkFamilyResumed.SessionID, 3, forkLeafID)
+	beforePrefix, _ = json.Marshal(forkLeaf)
+	afterPrefix, _ = json.Marshal(forkLeafAfter)
+	if !bytes.Equal(beforePrefix, afterPrefix) {
+		t.Fatal("CodeBuddy fork parent resume expanded the copied leaf")
+	}
+	if invalid := run("fork-family-invalid"); invalid.Head != forkFamilyResumed.Head || !bytes.Equal(invalid.Records, forkFamilyResumed.Records) {
+		t.Fatal("CodeBuddy unproven copied child replaced the fork")
+	}
+	if fixed := run("fork-family-repair"); fixed.Head != forkFamilyResumed.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy copied child repair replayed unchanged data")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != forkFamilyResumed.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 13 || inputTokens != 98806 || outputTokens != 577 || cachedTokens != 56896 || threadUsage["root"] != 8 || threadUsage[forkDirectID] != 2 || threadUsage[forkMiddleID] != 2 || threadUsage[forkLeafID] != 1 {
+		t.Fatalf("CodeBuddy copied usage ownership: %d %d %d %d %v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	if len(search("ATAPE_ORIGINAL_LEAF_LATER_21240").Results) != 0 || len(search("ATAPE_ORIGINAL_NESTED_LATER_21240").Results) != 0 {
+		t.Fatal("CodeBuddy fork Search exposed later original descendants")
+	}
+	setRaw(false)
+	forkFamilyOff := run("fork-family-edit")
+	if forkFamilyOff.Head == forkFamilyResumed.Head || len(search("CodeBuddyForkFamilyPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy copied child Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	forkFamilyOn := run("fork-family-reenable")
+	if forkFamilyOn.Head != forkFamilyOff.Head || !bytes.Equal(forkFamilyOn.Records, forkFamilyOff.Records) {
+		t.Fatal("CodeBuddy copied child Raw-on changed Canonical provenance")
+	}
+	if lost := run("fork-family-raw-only"); lost.Pending == 0 || lost.Head != forkFamilyOn.Head {
+		t.Fatal("CodeBuddy copied child Raw response loss lost recovery")
+	}
+	forkFamilyRawRecovered := run("fork-family-raw-recover")
+	if forkFamilyRawRecovered.Pending != 0 || forkFamilyRawRecovered.Head != forkFamilyOn.Head || !bytes.Equal(forkFamilyRawRecovered.Records, forkFamilyOn.Records) {
+		t.Fatal("CodeBuddy copied child Raw recovery failed after deleting all five sources")
+	}
+	var forkFamilyArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+forkFamilyResumed.SessionID+"/raw", ""), &forkFamilyArchive)
+	var forkFamilyRaw strings.Builder
+	for _, archived := range forkFamilyArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy copied family Raw exceeded its object bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		forkFamilyRaw.Write(decoded)
+	}
+	for _, native := range []string{"CodeBuddyForkFamilyRawOnlyNeedle", "forkedFrom", "agent-97ab43b2", "agent-d40e1747", "agent-375d1c88", "86fdc533-54c6-47b6-ac7e-22d0c7f3fe6b", "0676ccedded74e7b97a5e9fac19ce854"} {
+		if !strings.Contains(forkFamilyRaw.String(), native) {
+			t.Fatalf("CodeBuddy copied family Raw lost %s", native)
+		}
+	}
+	for _, outside := range []string{"ATAPE_ORIGINAL_LEAF_LATER_21240", "ATAPE_ORIGINAL_NESTED_LATER_21240"} {
+		if strings.Contains(forkFamilyRaw.String(), outside) {
+			t.Fatal("CodeBuddy copied Raw included a later original turn")
+		}
+	}
+	if len(search("CodeBuddyForkFamilyRawOnlyNeedle").Results) != 0 {
+		t.Fatal("CodeBuddy copied Raw entered Search")
+	}
+	if lost := run("fork-family-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy fork family activation loss lost recovery")
+	}
+	recoveredForkFamily := run("fork-family-recover")
+	if recoveredForkFamily.Pending != 0 {
+		t.Fatal("CodeBuddy fork family recovery left pending work")
+	}
+	read(recoveredForkFamily.SessionID, 17)
+	read(recoveredForkFamily.SessionID, 5, forkDirectID)
+	read(recoveredForkFamily.SessionID, 5, forkMiddleID)
+	_, forkLeafAfter = read(recoveredForkFamily.SessionID, 3, forkLeafID)
+	if forkLeafAfter[2].Text != "CodeBuddyForkFamilyFrozenNeedle" {
+		t.Fatal("CodeBuddy fork family recovery lost frozen leaf bytes")
+	}
+	forkHits := search("CodeBuddyForkFamilyFrozenNeedle")
+	if len(forkHits.Results) != 1 || forkHits.Results[0].ThreadID != forkLeafID {
+		t.Fatal("CodeBuddy recovered fork leaf missing from Search")
+	}
+	var forkAnchored conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+recoveredForkFamily.SessionID+"?thread="+url.QueryEscape(forkLeafID)+"&at="+url.QueryEscape(forkHits.Results[0].EventID)+"&limit=2", ""), &forkAnchored)
+	if len(forkAnchored.ThreadPath) != 3 {
+		t.Fatal("CodeBuddy fork leaf Search lost the three-level path")
+	}
+	expireReservations()
+	read(recoveredForkFamily.SessionID, 17)
+	read(recoveredForkFamily.SessionID, 3, forkLeafID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredMulti.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkFamily.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
