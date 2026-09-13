@@ -1,5 +1,5 @@
 import { isBoundedToolValue, type AcpSessionUpdate, type SourceCaptureFrame, type SourceCaptureHeader, type SourceOpenRequest } from "@atape/domain"
-import { fail, failedTool, id, identity, object, type Row, type snapshot } from "./source.ts"
+import { fail, failedTool, historyRecords, id, identity, object, type Row, type snapshot } from "./source.ts"
 
 const iso = (value: unknown) => {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 8_640_000_000_000_000) fail("format", "CodeBuddy timestamp is invalid.")
@@ -24,21 +24,16 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   const records = child?.history.records ?? source.records, callChildren = child?.callChildren ?? source.callChildren
   const frames: SourceCaptureFrame[] = [], turns: SourceCaptureFrame[][] = [[]]
   let userTurns = 0
-  const seen = new Map<string, string>(), calls = new Map<string, string>(), usages = new Map<string, string>()
+  const calls = new Map<string, string>(), usages = new Map<string, string>()
   let nativeSession: string | undefined, ownUserSeen = false
   let manualCompact = false, hasCompaction = false, hasEmergency = false
   let emergency: "continue" | "response" | undefined, delegatedIntent: string | undefined
   let previous: string | undefined, events = 0, usageCount = 0, partial = false, latest = 0, title = "CodeBuddy session", active = false
   let frameBytes = 0
-  for (const { row, json } of records) {
+  for (const { row, json, sibling } of historyRecords(records)) {
     request.signal.throwIfAborted()
     if (performance.now() - started > request.limits.durationMs) fail("limit", "CodeBuddy projection exceeded its deadline.")
     const rowId = id(row.id), provider = object(row.providerData)
-    if (seen.has(rowId)) {
-      if (seen.get(rowId) !== json) fail("unsupported", "CodeBuddy repeated record revisions require a wider source profile.")
-      continue
-    }
-    seen.set(rowId, json)
     const inboxOnly = !child && source.internalMessages.has(rowId)
     let compactCommand: string | undefined, contextOnly = false
     const compactAgent = provider.agent === "compact"
@@ -107,7 +102,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       if (nativeSession !== currentSession && (row.type !== "message" || row.role !== "user"))
         fail("unsupported", "CodeBuddy Session identity changes outside a user turn.")
       nativeSession = currentSession
-      if (((contextOnly ? row.logicalParentId : row.parentId) ?? undefined) !== previous) fail("unsupported", "CodeBuddy history is not one complete parent chain.")
+      if (!sibling && ((contextOnly ? row.logicalParentId : row.parentId) ?? undefined) !== previous) fail("unsupported", "CodeBuddy history is not one complete parent chain.")
       if (provider.agent != null && provider.agent !== (child?.agent ?? "cli") && !compactAgent) fail("unsupported", "CodeBuddy non-CLI agents require a wider source profile.")
       previous = rowId
     } else if (row.parentId != null) fail("unsupported", "CodeBuddy has an unsupported parent-linked record.")
@@ -115,7 +110,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
     latest = Math.max(latest, Date.parse(iso(row.timestamp)))
     const output: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
     const emit = (slot: string, update: AcpSessionUpdate, fidelity: "native" | "partial" = "native", childThreadId?: string) => {
-      output.push({ sourceEventId: identity("event", namespace, rowId, slot), sourceThreadId: threadId,
+      output.push({ sourceEventId: sibling ? identity("event-call", namespace, rowId, id(row.callId), slot) : identity("event", namespace, rowId, slot), sourceThreadId: threadId,
         sourceOrder: events, eventIndex: events++, orderFidelity: "derived", fidelity, occurredAt: iso(row.timestamp), update, ...(childThreadId === undefined ? {} : { childSourceThreadId: childThreadId }) })
     }
     const blocks = (value: unknown, thought = false) => {
@@ -191,7 +186,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       }
     } else if (provider.usage != null || provider.rawUsage != null) partial = true
     if (events > request.projection.events || usageCount > request.projection.usage || output.length > 500) fail("limit", "CodeBuddy projection exceeds its event or usage limit.")
-    const frame: SourceCaptureFrame = { recordKey: identity("record", namespace, rowId), events: output, usage,
+    const frame: SourceCaptureFrame = { recordKey: sibling ? identity("record-call", namespace, rowId, id(row.callId)) : identity("record", namespace, rowId), events: output, usage,
       ...(request.rawEnabled ? { raw: { format: "codebuddy.jsonl.v1", sourceSessionId: sourceId, ...(child ? { sourceThreadId: threadId } : {}), recordId: rowId, json,
         ...(!child && rowId === source.records[0]!.row.id && source.forkedFrom ? { sidecar: { format: "codebuddy.meta.v1", json: source.metadataJson } } : {}) } } : {}) }
     const bytes = Buffer.byteLength(JSON.stringify(frame))

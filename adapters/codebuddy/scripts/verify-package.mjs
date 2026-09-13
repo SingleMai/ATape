@@ -39,7 +39,7 @@ try {
   // Copy both inputs out of the workspace. The child imports only the installed
   // bundle and Node builtins; workspace module resolution cannot rescue it.
   await copyFile(new URL("./verify-installed.mjs", import.meta.url), join(root, "verify-installed.mjs"))
-  for (const name of ["native-2.124.0.jsonl", "native-nested-fork-2.124.0.jsonl", "native-fork-2.124.0.meta.json", "native-compaction-2.124.0.jsonl", "native-compaction-fork-2.124.0.jsonl", "native-compaction-fork-2.124.0.meta.json"]) {
+  for (const name of ["native-multitool-2.124.0.jsonl", "native-2.124.0.jsonl", "native-nested-fork-2.124.0.jsonl", "native-fork-2.124.0.meta.json", "native-compaction-2.124.0.jsonl", "native-compaction-fork-2.124.0.jsonl", "native-compaction-fork-2.124.0.meta.json"]) {
     await copyFile(new URL(`../src/fixtures/${name}`, import.meta.url), join(root, name))
   }
   await cp(new URL("../src/fixtures/native-family-2.124.0", import.meta.url), join(root, "native-family-2.124.0"), { recursive: true })

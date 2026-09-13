@@ -272,3 +272,34 @@ human turns. Installed contract relocation adjusts the native intent excerpt to
 the relocated controlled prompt and supplies a foreign child CWD; these are
 synthetic attribution inputs. Raw policy edits, source deletion and lost HTTP
 responses test recovery rather than additional native formats.
+
+## Ordinary multi-tool sample
+
+`native-multitool-2.124.0.jsonl` was generated on 2026-09-13 UTC (2026-09-14
+Singapore time), macOS arm64, CLI 2.124.0. Three independent invocations used
+`-p --strict-mcp-config --setting-sources "" --model hy3 --effort low
+--max-turns 4 --tools Read --allowedTools Read --output-format json`, with
+`PRE_MESSAGE_COMPACT=0` and `CODEBUDDY_AUTOCOMPACT_PCT_OVERRIDE=100`. The first
+created `atape-codebuddy-multitool-21240`; the other two resumed it normally.
+
+The first prompt requested a seed marker without tools. The second requested
+Read of two controlled marker-only files in the same response. Both calls
+completed and the assistant returned the pair marker. The third requested a
+resume marker without tools. Captured boundaries are 4, 11 and 14 JSONL records
+(3, 9 and 11 Events respectively). A runtime test also reads the seven-record
+prefix to verify that the first tool call's existing identity survives the
+second sibling's arrival.
+
+One-based records 7 and 8 share `id=7b50079b29654d3684c42cafc72ed0ef` and
+`parentId`, with distinct `callId` and the same model response. Only record 8
+carries normalized usage; records 9 and 10 contain the matching results with
+separate IDs. The four usage samples total 28,477 input, 145 output and 21,376
+cached input. Only the controlled absolute CWD and file paths were replaced with
+`/fixture/codebuddy-multitool-project`; all other native fields are retained. The controlled source was byte-verified
+against its retained scratch copy and removed from the CLI home.
+
+Derived tests mutate parent/Session/model identities, repeat or revise calls,
+interrupt the group, change results, attach early usage and substitute delegation.
+Installed acceptance additionally changes Raw policy, adds a Raw-only field to
+the second sibling, drops committed HTTP responses and deletes the source. These
+are fault and recovery inputs, not additional native format evidence.

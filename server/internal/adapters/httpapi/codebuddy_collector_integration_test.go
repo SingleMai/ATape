@@ -1210,9 +1210,155 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy emergency child edit changed parent Events")
 	}
 	read(emergency.SessionID, 19, emergencyChildID)
+	// Ordinary native tools share one row ID, but each call/result and Raw frame is distinct.
+	multiCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy ordinary tools"})
+	multiCreate.Header.Set("Authorization", "Bearer "+credential)
+	multiCreate.Header.Set("Idempotency-Key", "codebuddy-multitool-project-21240")
+	multiCreated := httptest.NewRecorder()
+	h.ServeHTTP(multiCreated, multiCreate)
+	if multiCreated.Code != http.StatusCreated {
+		t.Fatalf("create multi-tool Project: %d %s", multiCreated.Code, multiCreated.Body.String())
+	}
+	var multiProject projectDTO
+	decodeResponse(t, multiCreated, &multiProject)
+	projectID = multiProject.ID
+	multiInitial := run("multi-initial")
+	_, multiBefore := read(multiInitial.SessionID, 3)
+	if pending := run("multi-pending"); pending.Head != multiInitial.Head || !bytes.Equal(pending.Records, multiInitial.Records) {
+		t.Fatal("CodeBuddy incomplete tool group replaced visible history")
+	}
+	multiComplete := run("multi-complete")
+	_, multiEvents := read(multiComplete.SessionID, 9)
+	beforePrefix, _ = json.Marshal(multiBefore)
+	afterPrefix, _ = json.Marshal(multiEvents[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) {
+		t.Fatal("CodeBuddy tool group changed the existing prefix")
+	}
+	multiResumed := run("multi-resume")
+	_, multiEvents = read(multiResumed.SessionID, 11)
+	if multiResumed.SessionID != multiInitial.SessionID || humanTurns(multiEvents) != 3 {
+		t.Fatal("CodeBuddy tool group resume lost its Session or turns")
+	}
+	for index := 4; index < 6; index++ {
+		call, result := multiEvents[index], multiEvents[index+2]
+		if call.Tool == nil || result.Tool == nil || call.Tool.ToolCallID != result.Tool.ToolCallID || result.Tool.Status == nil || *result.Tool.Status != "completed" {
+			t.Fatal("CodeBuddy tool group result does not match its call")
+		}
+	}
+	if multiEvents[4].Tool.ToolCallID == multiEvents[5].Tool.ToolCallID {
+		t.Fatal("CodeBuddy sibling tool calls collided")
+	}
+	provenance, found, err = store.ConversationPage(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, multiResumed.SessionID, "root", canonical.ConversationPageRequest{Limit: 100})
+	if err != nil || !found || len(provenance.Events) != 11 {
+		t.Fatalf("CodeBuddy tool group provenance: %v", err)
+	}
+	if provenance.Events[4].RawRef == provenance.Events[5].RawRef {
+		t.Fatal("CodeBuddy sibling calls share one Raw record reference")
+	}
+	for index, nativeCall := range []string{"chatcmpl-tool-9c26c1f2d46c37d5", "chatcmpl-tool-9271197b571a0a23"} {
+		objectID, recordKey, valid := strings.Cut(provenance.Events[4+index].RawRef, "/records/")
+		if !valid {
+			t.Fatal("CodeBuddy sibling lacks a Raw reference")
+		}
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+objectID+"/content?generation=1&limit=1", ""), &page)
+		if len(page.Chunks) != 1 || page.NextCursor != "" {
+			t.Fatal("CodeBuddy sibling Raw page exceeded its bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(decoded, &object); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(object.Records[recordKey].Row, []byte(nativeCall)) || !bytes.Contains(object.Records[recordKey].Row, []byte("7b50079b29654d3684c42cafc72ed0ef")) {
+			t.Fatal("CodeBuddy sibling Raw reference resolves to another native call")
+		}
+	}
+	if invalid := run("multi-invalid"); invalid.Head != multiResumed.Head || !bytes.Equal(invalid.Records, multiResumed.Records) {
+		t.Fatal("CodeBuddy mixed model responses replaced the selected head")
+	}
+	if fixed := run("multi-repair"); fixed.Head != multiResumed.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy tool group repair replayed unchanged content")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != multiResumed.SessionID {
+			continue
+		}
+		usageCount++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 4 || inputTokens != 28477 || outputTokens != 145 || cachedTokens != 21376 {
+		t.Fatalf("CodeBuddy tool group usage: %d %d %d %d", usageCount, inputTokens, outputTokens, cachedTokens)
+	}
+	setRaw(false)
+	multiOff := run("multi-edit")
+	if multiOff.Head == multiResumed.Head || len(search("CodeBuddyMultiPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy tool group Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	multiOn := run("multi-reenable")
+	if multiOn.Head != multiOff.Head || !bytes.Equal(multiOn.Records, multiOff.Records) {
+		t.Fatal("CodeBuddy tool group Raw-on changed Canonical provenance")
+	}
+	if lost := run("multi-raw-only"); lost.Pending == 0 || lost.Head != multiOn.Head {
+		t.Fatal("CodeBuddy sibling-only Raw response loss lost recovery")
+	}
+	multiRawRecovered := run("multi-raw-recover")
+	if multiRawRecovered.Pending != 0 || multiRawRecovered.Head != multiOn.Head || !bytes.Equal(multiRawRecovered.Records, multiOn.Records) {
+		t.Fatal("CodeBuddy sibling-only Raw recovery failed after source deletion")
+	}
+	var multiArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+multiResumed.SessionID+"/raw", ""), &multiArchive)
+	var multiRaw strings.Builder
+	for _, archived := range multiArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy multi-tool Raw exceeded its object bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		multiRaw.Write(decoded)
+	}
+	for _, native := range []string{"CodeBuddyMultiRawOnlyNeedle", "7b50079b29654d3684c42cafc72ed0ef", "chatcmpl-tool-9c26c1f2d46c37d5", "chatcmpl-tool-9271197b571a0a23", "ATAPE_MULTITOOL_ALPHA_21240", "ATAPE_MULTITOOL_BETA_21240"} {
+		if !strings.Contains(multiRaw.String(), native) {
+			t.Fatalf("CodeBuddy sibling Raw lost %s", native)
+		}
+	}
+	if len(search("CodeBuddyMultiRawOnlyNeedle").Results) != 0 {
+		t.Fatal("CodeBuddy sibling Raw entered Search")
+	}
+	if lost := run("multi-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy multi-tool activation loss lost recovery")
+	}
+	recoveredMulti := run("multi-recover")
+	_, multiEvents = read(recoveredMulti.SessionID, 11)
+	if recoveredMulti.Pending != 0 || multiEvents[10].Text != "CodeBuddyMultiFrozenNeedle" || len(search("CodeBuddyMultiFrozenNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy multi-tool frozen recovery failed after source deletion")
+	}
+	expireReservations()
+	read(recoveredMulti.SessionID, 11)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredEmergency.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredMulti.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

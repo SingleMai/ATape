@@ -64,6 +64,34 @@ with partial fidelity. Spill placeholders remain placeholders, mark partial and
 do not cause arbitrary referenced file reads. Search uses the existing bounded
 Canonical projection, never full Raw/tool-value indexing.
 
+## Ordinary multi-tool responses
+
+CLI 2.124.0 can store two ordinary tool calls from one model response with the
+same native record `id` and `parentId`, but distinct `callId` values. The controlled
+Read/Read sample proves this sibling shape, followed by separate results in the
+normal parent chain. The first call retains its existing Event and Raw record
+identity; later siblings use a separate identity namespace qualified by their
+native call ID. Raw JSON and its original shared record ID remain unchanged.
+
+Only adjacent siblings with matching Session, parent, agent and model-response
+metadata are admitted. Every sibling must have one matching result before the
+group is exposed; unfinished or conflicting groups preserve the previous target.
+In the native sample only the final call carries normalized response usage, so
+the pair contributes one usage item. Earlier sibling usage, grouped Agent/Task/
+SendMessage delegation, and noncontiguous repeated revisions remain unsupported.
+
+The native three-turn sample contains 11 Events and four usage samples totaling
+28,477 input, 145 output and 21,376 cached-input tokens. Cache is included in input.
+The runtime, standalone tarball and installed CLI contract replay initial history,
+complete parallel reads and ordinary resume, preserving the earlier prefix. The
+contract also checks distinct call/result and Raw references, exact usage, pending
+and invalid-group preservation, Raw off/on, Raw-only recovery and frozen activation
+recovery after source deletion. This does not establish concurrent message delivery
+or any new child-delegation format. Browser acceptance on 2026-09-14 verified
+three real turns, both tool inputs, both matching marker outputs and the recovered
+final reply in the existing Web reader. The 116 runtime tests, Adapter/CLI typechecks,
+standalone tarball and documentation/architecture checks passed locally.
+
 ## Native CLI forks
 
 `--resume <id> --fork-session` copies history into an independent JSONL file and
@@ -94,7 +122,7 @@ newly incurred spend. Cache is already part of input and is not added twice.
 Ordinary resume is a linear append. Every projected record must extend the
 previous record through `parentId`; first identity and CWD establish Origin.
 Identical repeated records are deduplicated; conflicting repeated IDs are
-unsupported. A complete rewritten file with the same proven Origin can produce a
+unsupported except for the proven ordinary-tool siblings described above. A complete rewritten file with the same proven Origin can produce a
 replacement target and Host-assigned revisions. This does not establish support
 for native rewind/compaction semantics.
 
@@ -414,9 +442,9 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after emergency-compaction family recovery (the enclosing test
+for up to three minutes after ordinary multi-tool recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
-Server origin, family reader identifiers and test Web cookie there. Point the Web dev
+Server origin, reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
 `atape_session_dev`, inspect the reader, then create `<file>.done` to continue.
 The test removes this scratch credential file on exit. Do not commit it.
