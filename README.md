@@ -109,11 +109,11 @@ production Instances use HTTPS.
 
 Background sync continues after the terminal closes. Start it from Home and stop
 it in Settings. Projects shows sync details and recovery. Codex/Claude advance page
-cursors after Canonical and Raw deliveries succeed; OpenCode/CodeBuddy/Kimi atomically publish
+cursors after Canonical and Raw deliveries succeed; OpenCode/CodeBuddy/Kimi/Grok atomically publish
 Canonical targets and recover Raw independently. See the [CLI guide](docs/cli/setup-and-adapters.md)
 and [Adapter contract](docs/adapters/package-manifest.md) for supported behavior.
 
-Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode/CodeBuddy/Kimi Adapter tarballs with:
+Build and verify the installable, zero-runtime-dependency CLI and Codex/Claude/OpenCode/CodeBuddy/Kimi/Grok Adapter tarballs with:
 
 ```sh
 pnpm test:release
