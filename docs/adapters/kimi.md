@@ -35,7 +35,8 @@ native identities. Source deletion does not delete captured history.
 
 ## Evidence and supported profiles
 
-`kimi.code.wire.linear.1` and `kimi.code.wire.context.1` support Kimi Code CLI **0.42.0**, metadata v2 and
+`kimi.code.wire.linear.1`, `kimi.code.wire.context.1` and
+`kimi.code.wire.fork.1` support Kimi Code CLI **0.42.0**, metadata v2 and
 Wire **1.5**, as verified on macOS arm64 with Node 24.18.0. The official npm CLI
 created a controlled three-turn Session, including two native `--continue` runs,
 thought/text streaming and successful/failed `Read` tools. A local deterministic
@@ -68,6 +69,7 @@ Source evidence is pinned to release commit
 | Completed manual/automatic `full_compaction` envelope | Retains previous conversation; internal summary creates no human/assistant Event | Complete envelope and summary |
 | Compaction session `usage.record` | Separate usage from the matching request; identity from Session + native begin-line position | Original counters |
 | `context.undo` | Removes the last N user turns and their replies/tools after the most recent compaction; retains all expenditure | Undo and original removed records |
+| Session `forkedFrom` + native `forked` marker | Independent Session/root Thread; copied Events and usage receive the new Session identity | Parent ID and complete copied Wire |
 | CLI `/clear` (alias `/new`) | New independent Session; old captured history remains | Separate state/Wire |
 | Unknown non-context records/content or external images | Raw-only; capture marked partial | Original line; no referenced file reads |
 
@@ -150,19 +152,49 @@ compactions. Automatic compaction has 4 Events and 3 usage items (190205 input,
 the local endpoint to trigger native automatic compaction. `/clear` has a new
 Session with 2 Events and 1 usage item (108 input, 18 output, 20 cached input).
 
+## Whole-session forks
+
+The fork profile supports native `kimi fork <sessionId>`, including a fork of a
+fork. The CLI copies the complete Wire history, appends a `forked` marker and
+creates metadata with a new Session ID, creation time, original workspace CWD and
+`forkedFrom`. The Adapter captures that copy as an independent Session/root Thread.
+The parent link remains in Raw metadata; it does not fabricate a child Thread.
+It needs neither the parent source nor a previously captured parent. Resuming or
+undoing the fork changes only that Session; deleting either source leaves captured
+history selected. Existing native compaction and undo semantics apply to the copy.
+
+Message, tool and usage identities are scoped by the new Session ID, so inherited
+UUIDs do not collide with ancestor records. The complete copy includes historical
+response and compaction usage, including undone responses. These are **captured
+history**, not evidence of newly incurred spend: summing parent and fork totals
+counts the copied responses in each Session. No cost or cross-Session billing
+deduplication is inferred. Native markers carry no parent ID; the parent comes
+from metadata. Missing parent metadata, self-parenting, a missing marker or a
+marker during an unfinished turn/compaction produces a diagnostic.
+
+Native fixtures verify a fork after two compactions, independent resume, undo,
+replacement and a second fork. The final first fork has 8 visible Events and
+9 usage items (947 input, 137 output, 180 cached input); the nested fork has
+10 Events and 10 usage items (1058 input, 158 output, 200 cached input). The
+original parent remains at 6 Events and 7 usage items. Upstream
+[Session lifecycle and copy boundaries](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/packages/agent-core-v2/src/workspace/sessionLifecycle/sessionLifecycleService.ts)
+and the [CLI fork command](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/apps/kimi-code/src/cli/sub/fork.ts)
+are pinned to the same release as the native fixtures.
+
 ## Unsupported scope and next increment
 
 Only the new Node-based Kimi Code CLI is in scope. Legacy Python kimi-cli is
-intentionally excluded and is not a compatibility backlog. Both profiles require
+intentionally excluded and is not a compatibility backlog. All profiles require
 metadata v2/Wire 1.5; other versions, Kimi IDE formats and other platforms remain
 unverified.
 
-Forks, child/independent agents, `Agent`/`AgentSwarm` calls, steering,
+Child/independent agents, `Agent`/`AgentSwarm` calls, steering,
 cancellation, interrupted/failed/retried steps, low-level `context.clear`, unknown
 context operations and mixed/tree storage remain unsupported. Previously
-captured content remains selected. The next increment needs native fork ownership
-and copied-prefix usage evidence, or child membership and response usage
-ownership, before claiming those behaviors.
+captured content remains selected. SDK historical-turn forks remain unverified;
+the CLI whole-session copy is the validated fork operation. The next increment needs native child membership and
+response usage ownership, or interruption/retry evidence, before claiming those
+behaviors.
 
 ## Verification and delivery
 
@@ -195,6 +227,14 @@ Raw-off/on preserved Canonical provenance, incomplete compaction preserved the
 last target, and Search excluded undone replies and internal summaries. Local
 Web acceptance displayed the three retained manual turns, two automatic-compaction
 turns and independent new `/clear` Session, all with healthy capture status.
+
+Fork verification on 2026-09-14 passed 70 Adapter behavior tests, Adapter/CLI
+typechecks, independent tarball installation and the installed HTTP/PostgreSQL
+contract. It verified independent Session/Event/usage identities, native copied
+usage totals, parent absence, fork undo activation recovery after response loss
+and source deletion, stable provenance across Raw-off/on, and reader/Search
+membership through replacement and nested fork. Local Web acceptance displayed
+four retained turns in the fork and five in its nested fork, both healthy.
 
 The package is included in official Tools detection/selection, build, packing,
 release verification and artifact upload sets. Local implementation, CI, merge,

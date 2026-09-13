@@ -34,7 +34,8 @@ The corpus is not evidence for legacy kimi-cli or newer/older Wire versions.
 Runtime tests derive synthetic mutations to exercise limits, malformed/incomplete
 records, source relocation/deletion, invalid relationships, Raw policy and lifetime.
 The installed HTTP contract uses these native records plus explicitly synthetic
-resume/edit and fault-injection steps. These synthetic cases are not native fork, child or interruption acceptance.
+resume/edit and fault-injection steps. Synthetic mutations are not native behavior evidence; fork acceptance uses the
+additional native fixtures below. Child agents and interruption remain unverified.
 
 
 ## Native context operations
@@ -89,3 +90,38 @@ Upstream semantics are recorded in `contextTranscript.ts` and
 `undoable: false` for preserved expenditure. All are pinned to the release commit
 above. Tests mutate copies to reject incomplete/retried compactions, malformed
 counters, undo across boundaries and unknown context operations.
+
+
+## Native whole-session forks
+
+`fork-0.42.0` and `nested-fork-0.42.0` were generated on 2026-09-14
+with the same published CLI, isolated home/Project and local endpoint. Only the
+three controlled paths were substituted as above. The source `context` Session
+remained byte-identical at 88 records throughout these operations.
+
+`kimi fork <context-session-id>` copied those 88 records verbatim and appended
+one native `forked` marker. New metadata contains a distinct `id`/`createdAt`,
+original CWD and direct `forkedFrom`. The marker has no parent ID, and its timestamp
+slightly precedes metadata creation. Headless `--resume <fork-id>` produced the
+next prompt/reply; native TUI `/undo 1` removed it, followed by headless replacement.
+
+| Native action | Wire prefix length | Visible Events | Usage items | Input / output |
+| --- | ---: | ---: | ---: | ---: |
+| Whole-session fork of `context` | 89 | 6 | 7 | 728 / 98 |
+| `KimiForkNext`, response 9 | 102 | 8 | 8 | 837 / 117 |
+| `/undo 1` in the fork | 104 | 6 | 8 | 837 / 117 |
+| `KimiForkReplacement`, response 10 | 117 | 8 | 9 | 947 / 137 |
+| `kimi fork <fork-id>`, then `KimiNestedForkNext`, response 11 | 130 | 10 | 10 | 1058 / 158 |
+
+The nested fork copies all 117 records and adds another marker before its own
+continuation. Its parent remains at 117 records. Cached input is 20 per response
+(180 and 200 respectively), already included in input totals. Usage includes
+copied and undone responses and compactions, matching native `usageAgentModel`
+without a fork reset. It represents each Session's captured history; it is not
+proof that copied responses incurred new spend.
+
+The public CLI uses the whole-session copy path in `sessionLifecycleService.ts`;
+its SDK also exposes historical turn slicing, which this corpus does not validate.
+Tests use actual native prefixes above, plus explicitly synthetic invalid-marker
+and metadata mutations for diagnostics. Neither source-parent availability nor
+a previously captured parent is required. All sources contain only the main agent.

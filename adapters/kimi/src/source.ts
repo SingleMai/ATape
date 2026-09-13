@@ -74,7 +74,7 @@ const metadata = async (path: string, check: () => void) => {
   const sourceId = id(row.id)
   if (row.version !== 2) fail("unsupported", "Kimi requires version 2 Session metadata.")
   if (sourceId !== basename(path)) fail("format", "Kimi Session metadata disagrees with its storage identity.")
-  if (row.forkedFrom != null) fail("unsupported", "Kimi forks require a wider source profile.")
+  if (row.forkedFrom != null && id(row.forkedFrom) === sourceId) fail("format", "Kimi Session cannot be its own fork parent.")
   const agents = object(row.agents), main = object(agents.main)
   if (Object.keys(agents).length !== 1 || main.type !== "main" || main.parentAgentId != null || main.forkedFrom != null)
     fail("unsupported", "Kimi child or independent agents require a wider source profile.")

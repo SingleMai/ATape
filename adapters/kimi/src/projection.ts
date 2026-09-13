@@ -28,6 +28,7 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
   let step: { uuid: string; turnId: string; number: number; model?: string; calls: Map<string, { uuid: string; name: string; done: boolean }> } | undefined
   const turns: number[] = [], visibleFrames: number[] = []
   let undoFloor = 0, compactedThrough = 0, contextHistory = false
+  let forkMarkers = 0
   let compaction: { line: number; model?: string; alias?: string; used: boolean; applied: boolean } | undefined
   const add = (key: string, output: SourceCaptureFrame["events"], usage: SourceCaptureFrame["usage"], raw: unknown) => {
     const recordKey = identity("record", sourceId, key)
@@ -84,6 +85,12 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
         // Native context maintenance is not an additional human turn.
         if (!["date_change", "permission_mode"].includes(String(origin.variant))) partial = true
       } else fail("unsupported", "Kimi message origin requires a wider source profile.")
+    } else if (row.type === "forked") {
+      if (source.meta.forkedFrom == null || active || step || compaction || !messages.size)
+        fail("unsupported", "Kimi fork marker has no complete copied history or Session parent.")
+      // Whole-session CLI forks copy Wire verbatim. Inherited markers describe
+      // older forks; each new Session owns the complete copy and its later edits.
+      forkMarkers++
     } else if (row.type === "llm.request") {
       if (compaction) {
         if (row.kind !== "compaction" || compaction.model !== undefined) fail("unsupported", "Kimi compaction retries require a wider source profile.")
@@ -197,12 +204,13 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
   }
   if (step || compaction) fail("format", "Kimi has an incomplete model step or compaction; retry after it finishes.")
   if (messages.size !== prompts.size || !messages.size) fail("format", "Kimi user prompt has not reached its context record; retry.")
+  if (source.meta.forkedFrom != null && !forkMarkers) fail("unsupported", "Kimi fork lacks its native copied-history boundary.")
   const firstVisible = turns.length ? frames[turns[0]!]!.events : []
   const firstText = firstVisible.map(event => "content" in event.update && event.update.content.type === "text" ? event.update.content.text : "").join(" ")
   if (firstText && Buffer.byteLength(firstText) <= 200) title = firstText
   if (typeof source.meta.title === "string" && source.meta.title && Buffer.byteLength(source.meta.title) <= 200) title = source.meta.title
   const captureStatus = partial ? "partial" : "healthy"
-  const header: SourceCaptureHeader = { profile: contextHistory ? "kimi.code.wire.context.1" : "kimi.code.wire.linear.1", origin: source.origin,
+  const header: SourceCaptureHeader = { profile: forkMarkers ? "kimi.code.wire.fork.1" : contextHistory ? "kimi.code.wire.context.1" : "kimi.code.wire.linear.1", origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "kimi-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
     threads: [{ sourceThreadId: sourceId, label: title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }

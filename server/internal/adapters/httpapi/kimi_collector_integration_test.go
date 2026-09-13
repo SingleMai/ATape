@@ -410,9 +410,79 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	if retainedHead != finalContext.Head || len(search("KimiKeepAfter").Results) == 0 || len(search("KimiNewAfterClear").Results) == 0 {
 		t.Fatal("Kimi /clear or source deletion removed captured history")
 	}
+	// Native whole-session forks carry their own copied history and expenditure.
+	// The parent source is already deleted; no cross-source lookup can rescue this.
+	setRaw(false)
+	fork := run("fork-seed")
+	_, forkEvents := read(fork.SessionID, 6)
+	if fork.SessionID == seed.SessionID {
+		t.Fatal("Kimi fork reused its parent's Session")
+	}
+	assertUsage(fork.SessionID, 7, 728, 98, 140)
+	seenIDs := map[string]bool{}
+	for _, event := range finalEvents {
+		seenIDs[event.ID] = true
+	}
+	for _, event := range forkEvents {
+		if seenIDs[event.ID] {
+			t.Fatal("Kimi copied Event reused its parent's identity")
+		}
+	}
+	resumedFork := run("fork-resume")
+	read(fork.SessionID, 8)
+	assertUsage(fork.SessionID, 8, 837, 117, 160)
+	if len(search("KimiForkNext").Results) != 1 {
+		t.Fatal("Kimi independent fork continuation missing from Search")
+	}
+	if run("fork-undo").Pending == 0 {
+		t.Fatal("Kimi fork undo activation loss was not recoverable")
+	}
+	recoveredFork := run("fork-recover")
+	forkHead, retainedFork := read(fork.SessionID, 6)
+	beforeJSON, _ = json.Marshal(forkEvents)
+	afterJSON, _ = json.Marshal(retainedFork)
+	if recoveredFork.Pending != 0 || recoveredFork.Head != forkHead || forkHead == resumedFork.Head || !bytes.Equal(beforeJSON, afterJSON) {
+		t.Fatal("Kimi fork undo recovery changed retained history or provenance")
+	}
+	if len(search("KimiForkNext").Results) != 0 {
+		t.Fatal("Kimi undone fork turn remained searchable")
+	}
+	assertUsage(fork.SessionID, 8, 837, 117, 160)
+	run("fork-restore")
+	finalFork := run("fork-final")
+	_, finalForkEvents := read(fork.SessionID, 8)
+	assertUsage(fork.SessionID, 9, 947, 137, 180)
+	setRaw(true)
+	forkOn := run("fork-raw-on")
+	if forkOn.Head != finalFork.Head || !bytes.Equal(forkOn.Records, finalFork.Records) {
+		t.Fatal("Kimi fork Raw-on changed Canonical provenance")
+	}
+	run("fork-delete")
+	nested := run("nested-fork")
+	_, nestedEvents := read(nested.SessionID, 10)
+	assertUsage(nested.SessionID, 10, 1058, 158, 200)
+	for _, event := range finalForkEvents {
+		seenIDs[event.ID] = true
+	}
+	for _, event := range nestedEvents {
+		if seenIDs[event.ID] {
+			t.Fatal("Kimi nested fork reused an ancestor Event identity")
+		}
+	}
+	if nested.SessionID == fork.SessionID || nested.SessionID == seed.SessionID || len(search("KimiNestedForkNext").Results) != 1 || len(search("KimiForkReplacement").Results) != 2 || len(search("KimiForkNext").Results) != 0 {
+		t.Fatal("Kimi nested fork lost independent identity or copied visible history")
+	}
+	if head, _ := read(seed.SessionID, 6); head != finalContext.Head {
+		t.Fatal("Kimi fork changed its parent's head")
+	}
+	if head, _ := read(fork.SessionID, 8); head != finalFork.Head {
+		t.Fatal("Kimi nested fork or source deletion changed its parent's head")
+	}
+	assertUsage(seed.SessionID, 7, 728, 98, 140)
+	assertUsage(fork.SessionID, 9, 947, 137, 180)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_KIMI_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
