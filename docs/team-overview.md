@@ -326,7 +326,7 @@ require a future searchable directory Interface.
 
 The first scaling increment from
 [ADR-0085](architecture/adr/0085-overview-indexed-facts-and-aggregation.md) is
-implemented locally. Migration `000020_overview_publication_facts.sql` adds
+implemented. Migration `000020_overview_publication_facts.sql` adds
 body-free message/Usage relations, time/model indexes and a nullable per-part
 `overview_version` marker. Validation uses the already normalized Canonical batch
 and bulk copies facts in its existing transaction; the version marker commits
@@ -384,8 +384,11 @@ Rollout sequence:
 The API, Go aggregation and existing fact/directory limits remain unchanged.
 Indexed reads remove repeated body parsing but still transfer matching facts.
 Additional row/index/WAL storage is outside the existing logical pending-payload
-budget. This increment is not a large-Team capacity increase and has not been
-migrated or deployed on the production instance.
+budget. This increment is not a large-Team capacity increase. The hosted instance
+deployed commit `d8549b2` and migrated through schema 20 on 2026-09-13 UTC;
+all six retained publication parts were subsequently backfilled. See the
+[candidate-bound rollout evidence](releases/evidence/overview-d8549b2-rollout.md)
+for recovery points, authenticated measurements and remaining acceptance limits.
 
 Local PostgreSQL verification covers differential dashboard results across full
 fallback, partial backfill and full coverage, including an empty part, split
