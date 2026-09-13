@@ -106,12 +106,12 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0078](0078-cli-adapter-maintenance-and-inspection.md) | Isolated Adapter maintenance and bounded CLI inspection |
 | [0079](0079-cli-module-boundaries.md) | Collector and CLI Module boundaries |
 | [0080](0080-cli-input-and-adapter-slot-lifetime.md) | CLI input and Adapter slot lifetime |
+| [0081](0081-single-interactive-cli-entry.md) | One interactive ATape entry |
 | [0082](0082-overview-deferred-previews.md) | Overview facts and deferred previews |
 | [0083](0083-filtered-overview-and-session-pages.md) | Filtered Overview facts and independent Session pages |
 | [0084](0084-overview-compact-options-and-diagnostics.md) | Compact Overview options and operation diagnostics |
 | [0085](0085-overview-indexed-facts-and-aggregation.md) | Indexed Overview facts before database aggregation |
 
-| [0081](0081-single-interactive-cli-entry.md) | One interactive ATape entry |
 
 When adding a decision, choose an unused number and add it here. Preserve an old
 record's rationale when a later decision changes it; link the amendment or
