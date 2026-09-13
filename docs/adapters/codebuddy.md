@@ -328,7 +328,7 @@ native provenance and synthetic coverage. Relevant verification commands:
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
 103 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
-contract, and the shared PostgreSQL/CodeBuddy/Kimi/OpenCode contract suite. Following the single-entry CLI change,
+contract, and the shared PostgreSQL/CodeBuddy/Grok/Kimi/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
 Fault injection and bounded recovery cycles use the source Node Host. Release packaging,
@@ -400,7 +400,7 @@ successful spilled Read results, the two-level Thread path, and the recovered
 final child reply. Actual assistant thoughts remain visible, including native
 references to compaction. The partial capture status reflects the native external
 output placeholders. Adapter/CLI typechecks, 103 runtime tests, independent
-package installation and the full PostgreSQL/CodeBuddy/Kimi/OpenCode suite passed.
+package installation and the full PostgreSQL/CodeBuddy/Grok/Kimi/OpenCode suite passed.
 
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
