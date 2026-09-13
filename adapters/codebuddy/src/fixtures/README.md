@@ -79,8 +79,8 @@ Only the same controlled CWD was normalized. Completed samples were copied to
 scratch storage before deleting the three exact, byte-verified controlled source
 files from the CLI home.
 
-Automatic LLM summaries, emergency compaction, pruning/rewind and child-session
-compaction have no native acceptance sample here and remain unsupported.
+Pre-message LLM summaries, pruning/rewind and manual/pre-message child compaction
+have no native acceptance sample here. Emergency evidence is recorded below.
 
 ## Foreground Agent family samples
 
@@ -216,3 +216,59 @@ completion-duration edit, committed HTTP response loss and deletion of both
 source files. These mutations establish preservation and recovery guarantees;
 they are not additional native feature claims. Generic inbox messages, concurrent
 message batching and background-flag resume remain outside this evidence.
+
+## Emergency compaction samples
+
+`native-emergency-2.124.0/` contains two native JSONL histories generated on
+2026-09-13 UTC on macOS arm64 with CLI 2.124.0, `--model hy3 --effort low` and
+`-p --strict-mcp-config --setting-sources "" --output-format json`. A custom
+`atape-compact` foreground child first had no tools, then only Read, then no
+tools on the final resume. The parent allowed Agent (and Read only during the
+controlled file scenarios); it called only Agent. Pre-message compaction was
+disabled in all four runs because the native interceptor excludes subagents.
+
+| Sequence | Root / child records | Projected totals |
+| --- | --- | --- |
+| Marker-only foreground launch | 6 / 3 | 2 Threads / 8 Events / 3 usage |
+| Resume; Read rejects 600 lines; root emergency compacts | 14 / 8 | 2 / 18 / 7 |
+| Resume; Read 300 lines; child emergency compacts and continues | 20 / 18 | 2 / 31 / 12 |
+| Marker-only resume after compaction | 25 / 21 | 2 / 38 / 15 |
+
+Emergency triggers used process-scoped `CODEBUDDY_AUTOCOMPACT_PCT_OVERRIDE=5` for
+the second run and `10` for the third; the final run used `100`. Root turn limits
+were three/four/four/three, and child call limits one/four/four/one. The controlled
+file contains generated marker lines, with no personal data. The first Read
+reported 33,300 estimated tokens above its 20,000-token limit. The later 300-line
+Read succeeded but spilled its large output. After native compaction, the child
+called Read again and returned its marker. Both calls, their recorded spill
+placeholders and the earlier failed Read are retained. The external spill files
+are not fixtures or Adapter inputs.
+
+The child remains `agent-1fc648c0` with UUID
+`5167c3b9-23a8-4593-8ba2-4dd5185a574e`. Native foreground receipts keep the
+`afterId` chain; `lastId` points to reasoning before the terminal assistant.
+Root records 11–12 and child records 12–13 (one-based) are emergency summary and
+continuation pairs, connected through `logicalParentId`. The native child
+continuation uses the current delegated prompt's first 200 JavaScript code units
+plus `...`. Those four internal records have no Event or usage. Real replies,
+thoughts and tools before and after compaction remain in their original Threads.
+
+The corpus has 15 normalized model responses: eight parent and seven child,
+totaling 151,085 input, 1,795 output and 75,840 cached input. The separate
+`runOneTime` summary calls do not persist normalized usage in these JSONL
+histories, so these totals describe the stored responses rather than all spend.
+
+Only controlled absolute paths were normalized: CWD/prompt paths to
+`/fixture/codebuddy-child-compact-project-000000000000000` and recorded spill
+locations to `/fixture/codebuddy-home/projects/controlled-child-compact`.
+The CWD replacement deliberately preserves length so the native 200-code-unit
+intent excerpt remains exact. IDs, flags, summaries, record boundaries and
+counters are otherwise native. Two histories and two controlled spill files were
+byte-verified against retained scratch copies and removed from the CLI home.
+
+Runtime tests replay native boundaries and derive incomplete summaries, malformed
+continuation text, wrong intents/links/flags, unexpected context usage and extra
+human turns. Installed contract relocation adjusts the native intent excerpt to
+the relocated controlled prompt and supplies a foreign child CWD; these are
+synthetic attribution inputs. Raw policy edits, source deletion and lost HTTP
+responses test recovery rather than additional native formats.

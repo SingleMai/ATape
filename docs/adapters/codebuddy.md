@@ -38,7 +38,9 @@ The evidence-bound profiles are `codebuddy.cli.jsonl.linear.1` and
 completed foreground Agent family described below, including root compaction.
 `codebuddy.cli.jsonl.family.background.1` additionally covers the bounded automatic-team
 background launches described below; `codebuddy.cli.jsonl.family.background.turns.1`
-adds proven serial continuation and framework notifications. All are tested with native
+adds proven serial continuation and framework notifications. `codebuddy.cli.jsonl.emergency.1`
+and `codebuddy.cli.jsonl.family.emergency.1` cover the completed emergency compaction
+sequence below. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -132,8 +134,9 @@ input. Orphan files are not discovered as independent Sessions. A pending Agent
 call, missing/truncated child, mismatched receipt or unproven extra child turn
 rejects the complete new target; all previously published family members remain.
 
-Named/team and fork subagents, child compaction and forks containing
-child histories remain unsupported. The next section defines the narrower supported
+Named/team and fork subagents, manual/pre-message child compaction and forks
+containing child histories remain unsupported. Completed foreground child
+emergency compaction is described below. The next section defines the narrower supported
 automatic-team background shape. Copied parent receipts alone do not prove a
 fork's child visibility frontier when the original children can keep appending.
 These shapes require additional native evidence before extending membership.
@@ -240,10 +243,45 @@ does not invent one. Copied fork usage retains the historical meaning described
 above. Context-only changes update Raw independently; response-loss recovery uses
 the frozen journal even after source deletion.
 
-This evidence does not establish automatic LLM summaries (`isSummary: true`),
-`emergency-auto`, content pruning, rewind, `/clear`, `/branch`, or compaction inside
-child Sessions. Those shapes remain unsupported rather than guessing their
-membership or original attribution.
+This pre-message evidence does not establish its automatic LLM-summary variant
+(`isSummary: true`), content pruning, rewind, `/clear`, `/branch`, or manual/pre-message
+compaction inside children. The next section covers the distinct emergency path.
+
+## Completed emergency compaction
+
+The native `MaxToken` strategy appends an `emergency-auto` user context with
+`isSummary: true`, `isCompacted: true`, `isCompactInternal: true` and `skipRun: false`.
+It wraps the generated summary in `conversation_history_summary`. A second
+internal user record requests continuation. Both use `logicalParentId` to extend
+the complete stored transcript. The original messages and tool results remain.
+
+The Adapter admits the observed completed sequence in an ordinary root or a
+foreground Agent child. Both internal records are Raw-only. Their exact flags,
+wrappers, continuation text and parent chain must match; the following real
+assistant response must complete before the new view is exposed. A child
+continuation includes its current delegated prompt, truncated by the native
+200-code-unit rule. It stays in the same delegated turn, so neither internal
+input becomes a new parent call or a human turn. Native thoughts can quote these
+instructions; those actual thoughts remain visible and searchable. Unknown or incomplete sequences
+preserve the complete previous family and produce a source diagnostic.
+
+The controlled corpus includes root emergency compaction, child emergency
+compaction during Read, and ordinary Agent resume afterward. All four parent
+calls link to the same child storage ID and internal UUID. Its two Threads have
+38 Events and 15 stored model-response usage samples: 151,085 input, 1,795 output,
+75,840 cached input (already included in input). The summary generator's separate
+one-time model call does not persist normalized response usage in these JSONL
+records; the Adapter does not invent that missing measurement.
+
+The native Read first rejects a request above its token limit. Later successful
+reads spill large output into separate files; their recorded placeholders remain
+visible and mark capture partial. The Adapter does not read those spill files.
+These are native tool outcomes, not inferred content loss caused by compaction.
+
+Emergency compaction in forks or background children, manual/pre-message child
+compaction and other pruning/rewind paths remain unsupported. Their membership
+and continuation behavior need separate evidence.
+
 
 ## Consistency, bounds and recovery
 
@@ -289,8 +327,8 @@ native provenance and synthetic coverage. Relevant verification commands:
 - `pnpm test:release` includes the exact CodeBuddy release artifact and Tools.
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
-90 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
-contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
+103 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
+contract, and the shared PostgreSQL/CodeBuddy/Kimi/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
 Fault injection and bounded recovery cycles use the source Node Host. Release packaging,
@@ -350,6 +388,20 @@ panel, verified its three delegated turns and recovered final reply, and confirm
 that the root has only its three real user turns with no framework-notification
 turns. The shared PostgreSQL/OpenCode suite also passed.
 
+The emergency contract replays initial delegation, root compaction, foreground
+child compaction and another child resume through the installed CLI. It verifies
+two stable Threads, 38 Events and 15 per-Thread usage samples, with all four
+parent links opening the same child. Pending or invalid summary/continue pairs
+preserve the complete old family. Raw off/on, Raw-only edits and lost upload or
+activation responses recover after both source files are deleted; internal
+context changes do not rewrite Canonical Events or enter Search. Browser
+acceptance verified four real turns in each Thread, the failed Read and both
+successful spilled Read results, the two-level Thread path, and the recovered
+final child reply. Actual assistant thoughts remain visible, including native
+references to compaction. The partial capture status reflects the native external
+output placeholders. Adapter/CLI typechecks, 103 runtime tests, independent
+package installation and the full PostgreSQL/CodeBuddy/Kimi/OpenCode suite passed.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -362,7 +414,7 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after continuation-family recovery (the enclosing test
+for up to three minutes after emergency-compaction family recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, family reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
