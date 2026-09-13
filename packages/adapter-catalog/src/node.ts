@@ -14,7 +14,10 @@ export const openCodeDatabasePath = (environment: Environment, home: string) => 
   return configured ? isAbsolute(configured) || configured === ":memory:" ? configured : join(data, configured) : join(data, "opencode.db")
 }
 
+export const grokHome = (environment: Environment, home: string) => environment.ATAPE_GROK_HOME || environment.GROK_HOME || join(home, ".grok")
+
 const locations = {
+  grok: { kind: "directory", resolve: grokHome },
   codex: { kind: "directory", resolve: codexHome },
   claude: { kind: "directory", resolve: claudeHome },
   codebuddy: { kind: "directory", resolve: codeBuddyHome },

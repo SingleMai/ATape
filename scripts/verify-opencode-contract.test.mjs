@@ -18,3 +18,12 @@ test("CodeBuddy acceptance cannot pass using only existing provider results", ()
   assert.throws(() => verifyCodeBuddyResult([{ ...event, Action: "pass", Test: requiredTest }]), /missing or skipped/)
   assert.doesNotThrow(() => verifyCodeBuddyResult([{ ...event, Action: "pass" }]))
 })
+
+import { requiredTest as grokTest, verifyGrokResult } from "./verify-grok-contract.mjs"
+test("Grok acceptance cannot pass using another provider or a skipped subtest", () => {
+  const event = { Test: grokTest, Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi" }
+  assert.throws(() => verifyGrokResult([]), /missing or skipped/)
+  assert.throws(() => verifyGrokResult([{ ...event, Action: "skip" }]), /missing or skipped/)
+  assert.throws(() => verifyGrokResult([{ ...event, Action: "pass", Test: requiredTest }]), /missing or skipped/)
+  assert.doesNotThrow(() => verifyGrokResult([{ ...event, Action: "pass" }]))
+})

@@ -19,12 +19,14 @@ const releaseDirectory = release.releaseDirectory
 const cliPackage = release.packages.find((package_) => package_.name === "@atape/cli")
 const adapterPackage = release.packages.find((package_) => package_.name === "@atape/adapter-codex")
 const claudePackage = release.packages.find((package_) => package_.name === "@atape/adapter-claude")
+const grokPackage = release.packages.find(package_ => package_.name === "@atape/adapter-grok")
 const codebuddyPackage = release.packages.find(package_ => package_.name === "@atape/adapter-codebuddy")
 const opencodePackage = release.packages.find(package_ => package_.name === "@atape/adapter-opencode")
-if (codebuddyPackage === undefined || opencodePackage === undefined || cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
+if (grokPackage === undefined || codebuddyPackage === undefined || opencodePackage === undefined || cliPackage === undefined || adapterPackage === undefined || claudePackage === undefined) throw new Error("Release packages are incomplete.")
 const cliArtifact = join(releaseDirectory, cliPackage.artifactName)
 const adapterArtifact = join(releaseDirectory, adapterPackage.artifactName)
 const claudeArtifact = join(releaseDirectory, claudePackage.artifactName)
+const grokArtifact = join(releaseDirectory, grokPackage.artifactName)
 const codebuddyArtifact = join(releaseDirectory, codebuddyPackage.artifactName)
 const opencodeArtifact = join(releaseDirectory, opencodePackage.artifactName)
 const temporaryRoot = await mkdtemp(join(tmpdir(), "atape-release-"))
@@ -50,6 +52,7 @@ const environment = {
   XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
   ATAPE_CODEX_HOME: codexHome,
   ATAPE_CLAUDE_HOME: claudeHome,
+  ATAPE_GROK_HOME: join(temporaryRoot, "missing-grok"),
   ATAPE_CODEBUDDY_HOME: join(temporaryRoot, "missing-codebuddy"),
   OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
   ATAPE_CLAUDE_SESSION_FILE: "",
@@ -129,9 +132,16 @@ try {
   const updatedTools = await runtime.runPromise(inspectTools())
   assert.ok(updatedTools.choices.some(choice => choice.id === "codebuddy" && choice.installed && choice.selected))
   await run(process.execPath, ["adapters/codebuddy/scripts/verify-package.mjs", codebuddyArtifact], repositoryRoot)
+  const grok = await runtime.runPromise(installAdapter(grokArtifact))
+  assert.equal(grok.adapter.adapterId, "grok")
+  assert.equal(grok.adapter.version, grokPackage.version)
+  await configure(["codex", "claude", "opencode", "codebuddy", "grok"])
+  const grokTools = await runtime.runPromise(inspectTools())
+  assert.ok(grokTools.choices.some(choice => choice.id === "grok" && choice.installed && choice.selected))
+  await run(process.execPath, ["adapters/grok/scripts/verify-package.mjs", grokArtifact], repositoryRoot)
   // The fixture artifact is kept outside release/ and never replaces publish bytes.
   await verifyChecksums()
-  process.stdout.write("Verified CLI artifact help, Codex/Claude/OpenCode/CodeBuddy artifacts through the source Node Host, and a versioned Claude replacement preserving capture progress. Installed console/daemon coverage is the separate CLI package gate.\n")
+  process.stdout.write("Verified CLI artifact help, Codex/Claude/OpenCode/CodeBuddy/Grok artifacts through the source Node Host, and a versioned Claude replacement preserving capture progress. Installed console/daemon coverage is the separate CLI package gate.\n")
 } finally {
   await runtime?.dispose()
   for (const key of Object.keys(environment)) {

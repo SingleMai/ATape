@@ -12,13 +12,19 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 const fixture = async (override: (root: string) => Record<string, string> = () => ({})) => {
   const root = await mkdtemp(join(tmpdir(), "atape-guided-"))
   roots.push(root)
-  const environment = { ATAPE_HOME: root, ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(root, "missing-codebuddy"),
+  const environment = { ATAPE_HOME: root, ATAPE_GROK_HOME: join(root, "missing-grok"), ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(root, "missing-codebuddy"),
     XDG_DATA_HOME: join(root, "data"), OPENCODE_DB: "", ...override(root) }
   const paths = defaultNodeClientPaths(environment)
   const layer = makeCLISetupPlatformLayer(paths, environment)
   return { root, paths, run: <A, E>(effect: Effect.Effect<A, E, CLISetupPlatform>) => Effect.runPromise(effect.pipe(Effect.provide(layer))) }
 }
 describe("Node guided setup Adapter", () => {
+  it("detects Grok from the selected home without reading transcripts", async () => {
+    const client = await fixture(root => ({ ATAPE_GROK_HOME: join(root, "selected-grok") }))
+    await mkdir(join(client.root, "selected-grok"))
+    await writeFile(join(client.root, "selected-grok", "updates.jsonl"), "Not a transcript: detection only inspects metadata.")
+    expect(await client.run(CLISetupPlatform.use(platform => platform.detectSources()))).toEqual(["grok"])
+  })
   it.each(["default", "named", "absolute", "memory", "directory", "missing"])("detects OpenCode %s location using file metadata only", async kind => {
     const client = await fixture(root => ({ OPENCODE_DB: kind === "absolute" ? join(root, "selected.db") :
       kind === "memory" ? ":memory:" : kind === "named" ? "named.db" : "" }))
