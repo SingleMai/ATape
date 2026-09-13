@@ -147,19 +147,49 @@ export const discover = async (home: string, cursor: string | null, limits: Sour
 
 /** Freeze a bounded, complete UTF-8 view, then verify file and sidecar stamps. No source handle survives this operation. */
 type History = Awaited<ReturnType<typeof readHistory>>
-type ChildCall = { callId: string; prompt: string; afterId?: string; lastId?: string }
-type ChildReference = { agent: string; label: string; calls: ChildCall[]; backgroundName?: string }
-type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; delegatedPrompt?: string; history: History; callChildren: Map<string, string | undefined> }
+type ChildCall = { callId: string; prompt: string } & (
+  { mode: "foreground"; afterId?: string; lastId: string } |
+  { mode: "background"; summary: string } |
+  { mode: "message"; summary: string; sentAt: number }
+)
+type ChildReference = { agent: string; label: string; calls: ChildCall[]; backgroundName?: string; backgroundDescription?: string; hasMessages?: true }
+type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; background: boolean; continuing: boolean; delegatedPrompts: Map<string, string>; history: History; callChildren: Map<string, string | undefined> }
 const segment = (value: unknown) => {
   const name = id(value)
   if (name === "." || name === ".." || /[\\/]/.test(name)) fail("format", "CodeBuddy child identity is not a file segment.")
   return name
 }
 
+const teammateMessage = (from: string, summary: string, content: string) =>
+  `<teammate-message teammate_id="${from}" summary="${summary}">\n${content}\n</teammate-message>`
+
+// Only these observed framework notifications are context, not human turns.
+// Unknown inbox messages keep the previous publication until their meaning is proven.
+const internalNotice = (row: Row, children: Map<string, ChildReference>, names: Map<string, string | undefined>) => {
+  const meta = object(object(row.providerData).teammateMessage)
+  const block = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
+  if (Object.keys(meta).some(key => !["from", "summary", "color", "timestamp"].includes(key)) || block.type !== "input_text" ||
+    typeof meta.timestamp !== "string" || !Number.isFinite(Date.parse(meta.timestamp)) || typeof block.text !== "string" || typeof meta.summary !== "string")
+    fail("unsupported", "CodeBuddy inbox notification metadata is unproven.")
+  const name = meta.from === "system" ? (meta.summary as string).split(" ", 1)[0]! : meta.from
+  const childId = typeof name === "string" ? names.get(name) : undefined, ref = childId === undefined ? undefined : children.get(childId)
+  if (!ref || ref.backgroundName !== name) fail("unsupported", "CodeBuddy inbox notification has no unique background child.")
+  if (meta.from === name && ref!.hasMessages && meta.summary === `${name} reactivated — processing new messages` &&
+    block.text === teammateMessage(name as string, meta.summary as string, `Teammate "${name}" has been reactivated to process new message(s) from team-lead.`)) return
+  if (meta.from === "system") {
+    for (const description of new Set([ref!.backgroundDescription, ...(ref!.hasMessages ? [name] : [])])) {
+      if (description === undefined || meta.summary !== `${name} completed: ${description}`) continue
+      const prefix = `<teammate-message teammate_id="system" summary="${meta.summary}">\n[Framework Auto-Notification]\nTeammate "${name}" completed successfully.${description ? `\nTask: ${description}` : ""}\nDuration: `
+      if ((block.text as string).startsWith(prefix) && /^(?:\d+m )?\d+s\n<\/teammate-message>$/.test((block.text as string).slice(prefix.length))) return
+    }
+  }
+  fail("unsupported", "CodeBuddy inbox notification requires a wider source profile.")
+}
+
 // Only completed, structured native Agent receipts authorize child-file reads.
 const references = (history: History, root = false) => {
-  const children = new Map<string, ChildReference>(), callChildren = new Map<string, string | undefined>()
-  const calls = new Map<string, Row>(), seen = new Map<string, string>()
+  const children = new Map<string, ChildReference>(), callChildren = new Map<string, string | undefined>(), names = new Map<string, string | undefined>()
+  const calls = new Map<string, { args: Row; name: string; sentAt: unknown; childId?: string }>(), seen = new Map<string, string>(), internalMessages = new Set<string>()
   for (const { row, json } of history.records) {
     const rowId = id(row.id)
     if (seen.has(rowId)) {
@@ -167,23 +197,47 @@ const references = (history: History, root = false) => {
       continue
     }
     seen.set(rowId, json)
-    if (root && row.type === "message" && row.role === "user" && Array.isArray(row.content) &&
-      row.content.some(block => typeof object(block).text === "string" && /^\s*<teammate-message(?:\s|>)/.test(object(block).text as string)))
-      fail("unsupported", "CodeBuddy teammate inbox turns require a wider source profile.")
-    if (row.type === "function_call" && row.name === "Agent") {
+    if (root && row.type === "message" && row.role === "user" && (object(row.providerData).teammateMessage != null || Array.isArray(row.content) &&
+      row.content.some(block => typeof object(block).text === "string" && /^\s*<teammate-message(?:\s|>)/.test(object(block).text as string)))) {
+      internalNotice(row, children, names); internalMessages.add(rowId)
+    }
+    const sendsToChild = root && row.name === "SendMessage" && names.size > 0
+    if (row.type === "function_call" && (row.name === "Agent" || sendsToChild)) {
       const callId = id(row.callId)
-      if (calls.has(callId)) fail("format", "CodeBuddy Agent call identity is duplicated.")
-      if (typeof row.arguments !== "string") fail("format", "CodeBuddy Agent arguments are invalid.")
+      if (calls.has(callId)) fail("format", "CodeBuddy delegation call identity is duplicated.")
+      if (typeof row.arguments !== "string") fail("format", "CodeBuddy delegation arguments are invalid.")
       const args = parse(row.arguments as string)
+      if (sendsToChild) {
+        const childId = typeof args.recipient === "string" ? names.get(args.recipient) : undefined
+        if (args.type !== "message" || typeof args.content !== "string" || typeof args.summary !== "string" || childId === undefined)
+          fail("unsupported", "CodeBuddy follow-up message has no unique supported background recipient.")
+        calls.set(callId, { args, name: "SendMessage", sentAt: row.timestamp, childId: childId! }); continue
+      }
       if (args.name != null || args.team_name != null || args.subagent_type === "fork" ||
         args.run_in_background === true && (!root || args.resume != null))
         fail("unsupported", "CodeBuddy named, nested background, resumed background and fork subagents require a wider source profile.")
       if (typeof args.prompt !== "string") fail("format", "CodeBuddy Agent prompt is unavailable.")
-      calls.set(callId, args)
-    } else if (row.type === "function_call_result" && row.name === "Agent") {
-      const callId = id(row.callId), args = calls.get(callId)
+      calls.set(callId, { args, name: "Agent", sentAt: row.timestamp })
+    } else if (row.type === "function_call_result" && (row.name === "Agent" || sendsToChild)) {
+      const callId = id(row.callId), call = calls.get(callId), args = call?.args
       if (!args || callChildren.has(callId)) fail("format", "CodeBuddy Agent receipt has no unique call.")
+      if (call!.name !== row.name) fail("format", "CodeBuddy delegation receipt changed tool name.")
       const result = object(object(row.providerData).toolResult), receipt = object(result.subAgent)
+      if (call!.name === "SendMessage") {
+        if (failedTool(row)) { callChildren.set(callId, undefined); continue }
+        const renderer = object(result.renderer)
+        if (renderer.type !== "send-message" || typeof renderer.value !== "string" || typeof result.content !== "string")
+          fail("unsupported", "CodeBuddy follow-up message has no supported delivery receipt.")
+        const delivered = parse(result.content as string), routing = object(delivered.routing), rendered = parse(renderer.value as string)
+        if (delivered.success !== true || delivered.notice != null || routing.sender !== "team-lead" || routing.target !== `@${args!.recipient}` ||
+          routing.content !== args!.content || routing.summary !== args!.summary || rendered.type !== "message" || rendered.sender !== "team-lead" ||
+          rendered.recipient !== args!.recipient || rendered.summary !== args!.summary || rendered.resultMessage !== "Delivered")
+          fail("unsupported", "CodeBuddy follow-up delivery and parent call disagree.")
+        if (typeof call!.sentAt !== "number" || !Number.isSafeInteger(call!.sentAt)) fail("format", "CodeBuddy follow-up timestamp is invalid.")
+        children.get(call!.childId!)!.hasMessages = true
+        children.get(call!.childId!)!.calls.push({ mode: "message", callId, prompt: args!.content as string, summary: args!.summary as string, sentAt: call!.sentAt as number })
+        callChildren.set(callId, call!.childId!); continue
+      }
       if (args!.run_in_background === true) {
         // 2.124.0 launches background Agents as automatic team members. A durable
         // structured spawn receipt, not human output or transient team files,
@@ -200,7 +254,8 @@ const references = (history: History, root = false) => {
         if (children.has(childId)) fail("unsupported", "CodeBuddy background child has multiple launch calls.")
         const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
         const label = typeof spawn.description === "string" && spawn.description && Buffer.byteLength(spawn.description) <= 200 ? spawn.description : "CodeBuddy child"
-        children.set(childId, { agent, label, backgroundName: spawn.name as string, calls: [{ callId, prompt: args!.prompt as string }] })
+        children.set(childId, { agent, label, backgroundName: spawn.name as string, ...(typeof spawn.description === "string" ? { backgroundDescription: spawn.description } : {}), calls: [{ mode: "background", callId, prompt: args!.prompt as string, summary: `Initial task assignment for ${spawn.name}` }] })
+        names.set(spawn.name as string, names.has(spawn.name as string) ? undefined : childId)
         callChildren.set(callId, childId); continue
       }
       if (receipt.sessionId == null && failedTool(row)) { callChildren.set(callId, undefined); continue }
@@ -212,15 +267,15 @@ const references = (history: History, root = false) => {
         fail("unsupported", "CodeBuddy Agent resume identity is unproven.")
       const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
       const prior = children.get(childId)
-      if (prior && (prior.agent !== agent || prior.backgroundName !== undefined)) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
+      if (prior && prior.agent !== agent) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
       const label = typeof args!.description === "string" && args!.description && Buffer.byteLength(args!.description) <= 200 ? args!.description : "CodeBuddy child"
       const ref = prior ?? { agent, label, calls: [] }
-      ref.calls.push({ callId, prompt: args!.prompt as string, ...(receipt.afterId == null ? {} : { afterId: id(receipt.afterId) }), lastId: id(receipt.lastId) })
+      ref.calls.push({ mode: "foreground", callId, prompt: args!.prompt as string, ...(receipt.afterId == null ? {} : { afterId: id(receipt.afterId) }), lastId: id(receipt.lastId) })
       children.set(childId, ref); callChildren.set(callId, childId)
     }
   }
   if (calls.size !== callChildren.size) fail("format", "CodeBuddy Agent call has not completed; retry.")
-  return { children, callChildren }
+  return { children, callChildren, internalMessages }
 }
 
 const validateChild = (history: History, ref: ChildReference) => {
@@ -229,7 +284,7 @@ const validateChild = (history: History, ref: ChildReference) => {
   const first = records[0]?.row ?? {}, nativeSessionId = segment(first.sessionId)
   if (first.type !== "message" || first.role !== "user" || first.parentId != null || first.logicalParentId != null || object(first.providerData).agent !== ref.agent)
     fail("unsupported", "CodeBuddy child has no original delegated user root.")
-  const users: number[] = []
+  const users: number[] = [], delegatedPrompts = new Map<string, string>()
   for (const [index, { row }] of records.entries()) {
     if (row.sessionId !== nativeSessionId) fail("unsupported", "CodeBuddy child changed its native Session identity.")
     if (row.type === "message" && row.role === "user") users.push(index)
@@ -238,16 +293,21 @@ const validateChild = (history: History, ref: ChildReference) => {
   for (const [index, at] of users.entries()) {
     const call = ref.calls[index]!, user = records[at]!.row, turn = records.slice(at, users[index + 1])
     const content = Array.isArray(user.content) && user.content.length === 1 ? object(user.content[0]) : {}
-    const prompt = ref.backgroundName === undefined ? call.prompt :
-      `<teammate-message teammate_id="team-lead" summary="Initial task assignment for ${ref.backgroundName}">\n${call.prompt}\n</teammate-message>`
-    if (content.type !== "input_text" || content.text !== prompt || (user.parentId ?? undefined) !== call.afterId)
+    const prompt = call.mode === "foreground" ? call.prompt : teammateMessage("team-lead", call.summary, call.prompt)
+    const previous = records[at - 1]?.row
+    const afterId = call.mode === "foreground" ? call.afterId : previous?.id
+    if (content.type !== "input_text" || content.text !== prompt || (user.parentId ?? undefined) !== afterId)
       fail("unsupported", "CodeBuddy child prompt or resume boundary does not match its parent call.")
+    if (call.mode === "message" && (previous?.type !== "message" || previous.role !== "assistant" || previous.status !== "completed" ||
+      typeof previous.timestamp !== "number" || call.sentAt < previous.timestamp))
+      fail("unsupported", "CodeBuddy overlapping background messages require a wider source profile.")
+    if (call.mode !== "foreground") delegatedPrompts.set(id(user.id), call.prompt)
     const last = turn.at(-1)!.row
     // Native lastId can precede the final assistant; it is evidence, not a cutoff.
-    if (ref.backgroundName === undefined && !turn.some(({ row }) => row.id === call.lastId) || last.type !== "message" || last.role !== "assistant" || last.status !== "completed")
+    if (call.mode === "foreground" && !turn.some(({ row }) => row.id === call.lastId) || last.type !== "message" || last.role !== "assistant" || last.status !== "completed")
       fail("format", "CodeBuddy child result has not fully reached its history; retry.")
   }
-  return nativeSessionId
+  return { nativeSessionId, delegatedPrompts }
 }
 
 export const snapshot = async (home: string, sourceId: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
@@ -271,11 +331,11 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
       await checkDirectory(parentDirectory); await checkDirectory(childDirectory)
       const child = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
       bytes += child.bytes; records += child.records.length
-      const nativeSessionId = validateChild(child, ref), refs = references(child)
+      const { nativeSessionId, delegatedPrompts } = validateChild(child, ref), refs = references(child)
       if (ref.backgroundName !== undefined && refs.children.size) fail("unsupported", "CodeBuddy background child delegation requires a wider source profile.")
       if (nativeIds.has(nativeSessionId)) fail("unsupported", "CodeBuddy child native Session identity is duplicated.")
       nativeIds.add(nativeSessionId)
-      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, ...(ref.backgroundName === undefined ? {} : { delegatedPrompt: ref.calls[0]!.prompt }), history: child, callChildren: refs.callChildren })
+      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, background: ref.backgroundName !== undefined, continuing: ref.backgroundName !== undefined && ref.calls.length > 1, delegatedPrompts, history: child, callChildren: refs.callChildren })
       histories.push(child); pending.push({ id: childId, nativeSessionId, refs })
     }
   }
@@ -287,7 +347,7 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
     if (history.fileStamp !== stamp(await lstat(history.file)) || history.metaStamp !== (await metadata(history.file, signal)).stamp)
       fail("format", "CodeBuddy family changed while reading; retry with a fresh snapshot.")
   }
-  return { ...root, children, callChildren: rootRefs.callChildren }
+  return { ...root, children, callChildren: rootRefs.callChildren, internalMessages: rootRefs.internalMessages }
 }
 
 const snapshotFile = async (file: string, limits: SourceCaptureLimits, signal: AbortSignal) => {

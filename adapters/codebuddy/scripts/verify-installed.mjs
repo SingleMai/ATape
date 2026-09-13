@@ -101,6 +101,27 @@ try {
     assert.equal(done, true); assert.equal(events, 24); assert.equal(samples, 9); assert.equal(links, 2); assert.equal(wrappers, rawEnabled ? 2 : 0)
     await view.close()
   }
+  await cp(new URL("./native-background-turns-2.124.0", import.meta.url), dir, { recursive: true })
+  for (const rawEnabled of [false, true]) {
+    const view = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-background-turns-21240", limits, projection, rawEnabled, signal })
+    assert.equal(view.profile, "codebuddy.cli.jsonl.family.background.turns.1")
+    assert.deepEqual(view.target, { events: 24, usage: 10, threads: 2 })
+    let done = false, links = 0, notices = 0, childUsers = 0
+    for (let count = 0; count < 30 && !done; count++) {
+      const page = await view.read(signal)
+      for (const frame of page.frames) {
+        assert.equal(frame.raw !== undefined, rawEnabled)
+        links += frame.events.filter(event => event.childSourceThreadId === "agent-6004ad24").length
+        childUsers += frame.events.filter(event => event.sourceThreadId === "agent-6004ad24" && event.update.sessionUpdate === "user_message_chunk").length
+        if (frame.raw?.json.includes('"teammateMessage"')) {
+          assert.equal(frame.events.length, 0); notices++
+        }
+      }
+      done = page.done
+    }
+    assert.equal(done, true); assert.equal(links, 3); assert.equal(childUsers, 3); assert.equal(notices, rawEnabled ? 2 : 0)
+    await view.close()
+  }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()

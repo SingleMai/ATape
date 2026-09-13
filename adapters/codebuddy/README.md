@@ -30,10 +30,11 @@ The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
 from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks), ordinary resume,
 text/thoughts, tool calls/results, manual `/compact`, engineering pre-message
 automatic compaction, completed foreground Agent families (resume and nesting),
-and root-level one-shot background Agent launches through native automatic teams,
+and root-level background Agents through native automatic teams (serial SendMessage
+continuation and ordinary foreground resume),
 with normalized per-Thread response usage.
-Rewind, `/branch`, emergency/LLM automatic compaction, named teams/inbox turns,
-live or resumed background children, nested background launches, fork subagents,
+Rewind, `/branch`, emergency/LLM automatic compaction, named teams/generic inbox turns,
+overlapping or batched background messages, broadcasts, nested background launches, fork subagents,
 child compaction, forks with children, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
@@ -49,9 +50,10 @@ the previous publication. Exact flags and remaining limits are in the guide.
 
 Parent Agent calls link to child Threads; the parent’s original Project owns all
 members even when child CWD differs. Missing or incomplete members retain the
-whole prior publication. Background child initial-assignment wrappers stay in Raw;
-the reader shows the delegated prompt. Team mailboxes are not read or converted
-into parent notifications. See the guide for exact membership evidence.
+whole prior publication. Background assignment/follow-up wrappers stay in Raw;
+the reader shows the delegated prompt. Proven SendMessage and Agent resume calls
+link to the same child. Known reactivation/completion notifications are Raw-only;
+other inbox shapes are unsupported. Team mailboxes are not read. See the guide for exact membership evidence.
 
 Each complete family snapshot (including metadata) is limited to 16 MiB; projection snapshots to
 64 MiB; discovery to 10,000 entries. Host row/page/event/deadline limits also
