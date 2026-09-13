@@ -41,7 +41,7 @@ if (input.phase === "initial") {
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
-    id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "acme", teamName: "Fixture", name: "Kimi", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
+    id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "kimi-contract", teamName: "Kimi contract", name: "Kimi", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))

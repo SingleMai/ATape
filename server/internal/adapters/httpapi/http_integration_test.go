@@ -410,7 +410,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		assertGrokCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
 	t.Run("native Kimi Collector", func(t *testing.T) {
-		assertKimiCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
+		assertKimiCollectorContract(t, handler, modules, pool)
 	})
 	t.Run("native OpenCode Collector", func(t *testing.T) {
 		assertOpenCodeCollectorContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)

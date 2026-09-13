@@ -107,10 +107,11 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 		Completed        string          `json:"lastCycleCompletedAt"`
 		CollectorFailure json.RawMessage `json:"collectorFailure"`
 		Jobs             []struct {
-			ProjectID string `json:"projectId"`
-			AdapterID string `json:"adapterId"`
-			State     string `json:"state"`
-			HasMore   bool   `json:"hasMore"`
+			ProjectID      string          `json:"projectId"`
+			AdapterID      string          `json:"adapterId"`
+			State          string          `json:"state"`
+			HasMore        bool            `json:"hasMore"`
+			SourceFailures json.RawMessage `json:"sourceFailures"`
 		} `json:"jobs"`
 	}
 	start := func() (bool, int) {
@@ -162,7 +163,8 @@ func assertOpenCodeInstalledDaemon(t *testing.T, repository, origin, projectID, 
 			}
 			select {
 			case <-deadline.C:
-				t.Fatalf("installed daemon did not reach %s: %+v", expectedState, current)
+				encoded, _ := json.Marshal(current)
+				t.Fatalf("installed daemon did not reach %s: %s", expectedState, encoded)
 			case <-t.Context().Done():
 				t.Fatal(t.Context().Err())
 			case <-time.After(250 * time.Millisecond):
