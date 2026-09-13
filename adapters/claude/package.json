@@ -1,6 +1,6 @@
 {
   "name": "@atape/adapter-claude",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "ATape Adapter for project-scoped Claude Code local sessions",
   "license": "MIT",
   "type": "module",

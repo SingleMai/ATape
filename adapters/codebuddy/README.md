@@ -16,7 +16,7 @@ atape
 ```
 
 Open **Tools and updates → Integration maintenance → Install from a package or path**
-and install `./release/atape-adapter-codebuddy-0.5.1.tgz`. Then use **Choose tools to sync**
+and install `./release/atape-adapter-codebuddy-0.5.2.tgz`. Then use **Choose tools to sync**
 to add CodeBuddy Code CLI to the existing selection.
 Review the affected connected Projects before applying. Installation alone does
 not enable collection. Start sync from Home and inspect **Project → Sync details**.

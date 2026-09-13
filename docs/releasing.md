@@ -1,6 +1,6 @@
 # Releasing ATape
 
-ATape's release pipeline includes six public MIT-licensed npm packages in one versioned release:
+ATape's release pipeline includes seven public MIT-licensed npm packages in one versioned release:
 
 - `@atape/cli`
 - `@atape/adapter-codex`
@@ -101,11 +101,11 @@ gates merely by checking the index.
 
 ## First publication bootstrap
 
-npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new Kimi and Grok Adapters):
+npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new CodeBuddy, Kimi and Grok Adapters):
 
 1. Enable two-factor authentication on the npm owner account.
 2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.
-3. Add it to the GitHub repository as the `NPM_TOKEN` Actions secret. This route requires explicitly wiring that secret into the publication step; the current workflow uses OIDC without a token fallback.
+3. Add it to the GitHub repository as the `NPM_TOKEN` Actions secret. Only the publication step receives it as `NODE_AUTH_TOKEN`; ordinary CI and verification steps do not receive it. When the secret is absent, existing packages use their configured OIDC Trusted Publisher. A new package needs the bootstrap token before tagging.
 4. After the required checks and evidence pass, push the matching release tag.
 
 ```sh
