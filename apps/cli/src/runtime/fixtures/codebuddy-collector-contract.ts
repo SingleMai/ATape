@@ -15,7 +15,9 @@ const forkPhase = input.phase.startsWith("fork-"), forkId = "atape-codebuddy-nes
 const compactPhase = input.phase.startsWith("compact-"), compactId = "atape-codebuddy-compact-21240"
 const familyPhase = input.phase.startsWith("family-"), familyId = "atape-codebuddy-child-21240"
 const backgroundPhase = input.phase.startsWith("background-"), backgroundId = "atape-codebuddy-background-21240"
-const sourceId = backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const turnsPhase = input.phase.startsWith("turns-"), turnsId = "atape-codebuddy-background-turns-21240"
+const sourceId = turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const turnsWorkspace = join(home, "turns-workspace")
 const forkWorkspace = join(home, "fork-workspace")
 const compactWorkspace = join(home, "compact-workspace")
 const familyWorkspace = join(home, "family-workspace"), backgroundWorkspace = join(home, "background-workspace")
@@ -137,6 +139,58 @@ if (["background-edit", "background-lost"].includes(input.phase)) {
   writeFileSync(backgroundChild, rows.map(row => JSON.stringify(row) + "\n").join(""))
 }
 if (input.phase === "background-recover") for (const relative of backgroundFiles) rmSync(join(directory, relative))
+const turnsChild = join(directory, turnsId, "subagents", "agent-6004ad24.jsonl")
+const turnsFiles = [`${turnsId}.jsonl`, `${turnsId}/subagents/agent-6004ad24.jsonl`]
+const turnsLength: Record<string, [number, number]> = {
+  "turns-initial": [6, 3], "turns-pending": [11, 4], "turns-message": [11, 6],
+  "turns-notices": [15, 6], "turns-resume": [20, 9], "turns-repair": [20, 9]
+}
+if (input.phase === "turns-initial") {
+  mkdirSync(turnsWorkspace)
+  const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
+  config.projects.push({ ...config.projects[0], id: input.projectId, name: "CodeBuddy continuation", path: turnsWorkspace })
+  writeFileSync(paths.configFile, JSON.stringify(config))
+}
+if (input.phase in turnsLength) {
+  for (const [index, relative] of turnsFiles.entries()) {
+    const destination = join(directory, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    const rows = readFileSync(new URL(`../../../../../adapters/codebuddy/src/fixtures/native-background-turns-2.124.0/${relative}`, import.meta.url), "utf8")
+      .replaceAll("/fixture/codebuddy-background-turns-project", index === 0 ? turnsWorkspace : workspace).trimEnd().split("\n")
+    writeFileSync(destination, rows.slice(0, turnsLength[input.phase]![index]).join("\n") + "\n")
+  }
+}
+if (input.phase === "turns-invalid") {
+  const rows = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  const receipt = JSON.parse(rows[9].providerData.toolResult.content)
+  receipt.routing.content = "Unproven delivery"
+  rows[9].providerData.toolResult.content = JSON.stringify(receipt)
+  save(rows)
+}
+if (input.phase === "turns-lost") {
+  for (const relative of turnsFiles) {
+    const destination = join(directory, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(join(home, "frozen-turns", relative), destination)
+  }
+}
+if (["turns-edit", "turns-lost"].includes(input.phase)) {
+  const rows = readFileSync(turnsChild, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  rows.at(-1).content[0].text = input.phase === "turns-edit" ? "CodeBuddyContinuingPolicyNeedle" : "CodeBuddyContinuingFrozenNeedle"
+  writeFileSync(turnsChild, rows.map(row => JSON.stringify(row) + "\n").join(""))
+}
+if (input.phase === "turns-raw-only") {
+  const rows = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  assert.ok(rows[12].content[0].text.includes("Duration: 2s"))
+  rows[12].content[0].text = rows[12].content[0].text.replace("Duration: 2s", "Duration: 902s")
+  save(rows)
+  for (const relative of turnsFiles) {
+    const destination = join(home, "frozen-turns", relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(join(directory, relative), destination)
+  }
+}
+if (["turns-raw-recover", "turns-recover"].includes(input.phase)) for (const relative of turnsFiles) rmSync(join(directory, relative))
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
   if (input.phase === "edit") values.push(
@@ -158,7 +212,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only", "turns-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -188,7 +242,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume"].includes(input.phase)) {
+  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -216,16 +270,16 @@ const result = await Effect.runPromise(Effect.gen(function*() {
       const report = yield* runCollectionCycle()
       failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["fork-lost", "compact-raw-only", "family-lost", "background-lost"].includes(input.phase)) assert.equal(lost, true)
-  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit"].includes(input.phase)) assert.equal(uploads, 0)
+  if (["fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "turns-raw-only"].includes(input.phase)) assert.equal(lost, true)
+  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
-  if (["raw-on", "compact-reenable", "family-reenable", "background-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)

@@ -816,9 +816,217 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	}
 	read(background.SessionID, 3, backgroundChildID)
 	read(background.SessionID, 6, reporterID)
+
+	// A delivered follow-up and ordinary foreground resume append to the same background Thread.
+	turnsCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy continuation"})
+	turnsCreate.Header.Set("Authorization", "Bearer "+credential)
+	turnsCreate.Header.Set("Idempotency-Key", "codebuddy-turns-project-21240")
+	turnsCreated := httptest.NewRecorder()
+	h.ServeHTTP(turnsCreated, turnsCreate)
+	if turnsCreated.Code != http.StatusCreated {
+		t.Fatalf("create continuation Project: %d %s", turnsCreated.Code, turnsCreated.Body.String())
+	}
+	var turnsProject projectDTO
+	decodeResponse(t, turnsCreated, &turnsProject)
+	projectID = turnsProject.ID
+	turns := run("turns-initial")
+	_, parentEvents = read(turns.SessionID, 5)
+	turnsLinks := links(parentEvents)
+	if len(turnsLinks) != 1 {
+		t.Fatal("CodeBuddy continuing child launch missing")
+	}
+	turnsChildID := turnsLinks[0].ID
+	_, childBefore = read(turns.SessionID, 3, turnsChildID)
+	if pending := run("turns-pending"); pending.Head != turns.Head || !bytes.Equal(pending.Records, turns.Records) {
+		t.Fatal("CodeBuddy delivered but unfinished child replaced the visible family")
+	}
+	read(turns.SessionID, 5)
+	read(turns.SessionID, 3, turnsChildID)
+	messageTurns := run("turns-message")
+	_, parentEvents = read(turns.SessionID, 9)
+	turnsLinks = links(parentEvents)
+	if messageTurns.SessionID != turns.SessionID || len(turnsLinks) != 2 || turnsLinks[0].ID != turnsChildID || turnsLinks[1].ID != turnsChildID {
+		t.Fatal("CodeBuddy SendMessage created another child or lost its link")
+	}
+	_, childAfter = read(turns.SessionID, 6, turnsChildID)
+	beforePrefix, _ = json.Marshal(childBefore)
+	afterPrefix, _ = json.Marshal(childAfter[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) || strings.HasPrefix(childAfter[3].Text, "<teammate-message") {
+		t.Fatal("CodeBuddy follow-up changed prior Events or exposed its wrapper")
+	}
+	humanTurns := func(events []conversation.Event) int {
+		count := 0
+		for _, event := range events {
+			if event.Author == "User" {
+				count++
+			}
+		}
+		return count
+	}
+	run("turns-notices")
+	_, parentEvents = read(turns.SessionID, 11)
+	encoded, _ = json.Marshal(parentEvents)
+	if bytes.Contains(encoded, []byte("Framework Auto-Notification")) || humanTurns(parentEvents) != 2 {
+		t.Fatal("CodeBuddy framework inbox notices became human turns")
+	}
+	resumedTurns := run("turns-resume")
+	_, parentEvents = read(turns.SessionID, 15)
+	rootBeforeEdit, _ = json.Marshal(parentEvents)
+	turnsLinks = links(parentEvents)
+	if resumedTurns.SessionID != turns.SessionID || len(turnsLinks) != 3 || humanTurns(parentEvents) != 3 {
+		t.Fatal("CodeBuddy resumed background family lost its root turns")
+	}
+	for _, link := range turnsLinks {
+		if link.ID != turnsChildID || link.EventCount != 9 {
+			t.Fatal("CodeBuddy continuation links do not share the same complete Thread")
+		}
+	}
+	_, childBefore = read(turns.SessionID, 9, turnsChildID)
+	beforePrefix, _ = json.Marshal(childAfter)
+	afterPrefix, _ = json.Marshal(childBefore[:6])
+	if !bytes.Equal(beforePrefix, afterPrefix) || childBefore[0].Text != "Reply exactly ATAPE_BG_FIRST_21240. Do not use tools." ||
+		childBefore[3].Text != "Reply exactly ATAPE_BG_SECOND_21240. Do not use tools." || childBefore[6].Text != "Reply exactly ATAPE_BG_RESUME_21240. Do not use tools." {
+		t.Fatal("CodeBuddy foreground resume changed prior turns or delegated prompts")
+	}
+	turnsHits := 0
+	for _, result := range search("ATAPE_BG_RESUME_21240").Results {
+		if result.SessionID != turns.SessionID {
+			t.Fatal("CodeBuddy continuation escaped its original Project")
+		}
+		if result.ThreadID != turnsChildID {
+			continue
+		}
+		turnsHits++
+		var anchored conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+turns.SessionID+"?thread="+url.QueryEscape(turnsChildID)+"&at="+url.QueryEscape(result.EventID)+"&limit=2", ""), &anchored)
+		matched := false
+		for _, event := range anchored.Events {
+			matched = matched || event.ID == result.EventID
+		}
+		if !matched || len(anchored.ThreadPath) != 2 || anchored.Thread.ParentThreadID == nil || *anchored.Thread.ParentThreadID != "root" {
+			t.Fatal("CodeBuddy continuation Search anchor or parent path missing")
+		}
+	}
+	if turnsHits == 0 {
+		t.Fatal("CodeBuddy continued child missing from Search")
+	}
+	provenance, found, err = store.ConversationPage(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, turns.SessionID, turnsChildID, canonical.ConversationPageRequest{Limit: 100})
+	if err != nil || !found || len(provenance.Events) != 9 {
+		t.Fatalf("CodeBuddy continuing child provenance: %v", err)
+	}
+	objectID, key, valid = strings.Cut(provenance.Events[3].RawRef, "/records/")
+	if !valid {
+		t.Fatal("CodeBuddy continuing child lacks exact Raw provenance")
+	}
+	decodeResponse(t, send("GET", "/api/v1/raw-objects/"+objectID+"/content?generation=1&limit=1", ""), &raw)
+	if len(raw.Chunks) != 1 || raw.NextCursor != "" {
+		t.Fatal("CodeBuddy continuing child Raw page exceeded its bound")
+	}
+	content, err = base64.StdEncoding.DecodeString(raw.Chunks[0].ContentBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(content, &object); err != nil || !bytes.Contains(object.Records[key].Row, []byte("teammate-message")) ||
+		!bytes.Contains(object.Records[key].Row, []byte("agent-6004ad24")) || !bytes.Contains(object.Records[key].Row, []byte("c1782681-ecb5-4124-83e6-4b12c4a8b743")) {
+		t.Fatal("CodeBuddy follow-up Raw lost its wrapper or child identities")
+	}
+	if invalid := run("turns-invalid"); invalid.Head != resumedTurns.Head || !bytes.Equal(invalid.Records, resumedTurns.Records) {
+		t.Fatal("CodeBuddy unproven delivery replaced the visible family")
+	}
+	read(turns.SessionID, 15)
+	read(turns.SessionID, 9, turnsChildID)
+	if fixed := run("turns-repair"); fixed.Head != resumedTurns.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy repaired delivery replayed unchanged content")
+	}
+	setRaw(false)
+	turnsOff := run("turns-edit")
+	if turnsOff.Head == resumedTurns.Head || len(search("CodeBuddyContinuingPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy continuation Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	turnsOn := run("turns-reenable")
+	if turnsOn.Head != turnsOff.Head || !bytes.Equal(turnsOn.Records, turnsOff.Records) {
+		t.Fatal("CodeBuddy continuation Raw re-enable changed Canonical provenance")
+	}
+	if lost := run("turns-raw-only"); lost.Pending == 0 || lost.Head != turnsOn.Head {
+		t.Fatal("CodeBuddy framework-only Raw response loss changed Canonical or lost recovery")
+	}
+	recoveredTurnsRaw := run("turns-raw-recover")
+	if recoveredTurnsRaw.Pending != 0 || recoveredTurnsRaw.Head != turnsOn.Head || !bytes.Equal(recoveredTurnsRaw.Records, turnsOn.Records) {
+		t.Fatal("CodeBuddy framework Raw recovery failed after all source files were deleted")
+	}
+	if len(search("Framework Auto-Notification").Results) != 0 || len(search("902s").Results) != 0 {
+		t.Fatal("CodeBuddy framework-only Raw entered Search")
+	}
+	var turnsArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+turns.SessionID+"/raw", ""), &turnsArchive)
+	var noticesRaw strings.Builder
+	for _, archived := range turnsArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy continuation Raw was not a bounded immutable upload")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		noticesRaw.Write(decoded)
+	}
+	for _, native := range []string{"Duration: 902s", "73a4fcbf-a1a2-481e-b083-378345b2f73e", "53b33b51-ecf7-4abb-b935-d7bc99d31e5e", "teammateMessage"} {
+		if !strings.Contains(noticesRaw.String(), native) {
+			t.Fatalf("CodeBuddy framework Raw recovery lost %s", native)
+		}
+	}
+	if lost := run("turns-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy continuation activation loss did not retain frozen recovery")
+	}
+	recoveredTurns := run("turns-recover")
+	if recoveredTurns.Pending != 0 {
+		t.Fatal("CodeBuddy continuation recovery left pending work")
+	}
+	_, childAfter = read(turns.SessionID, 9, turnsChildID)
+	beforePrefix, _ = json.Marshal(childBefore[:6])
+	afterPrefix, _ = json.Marshal(childAfter[:6])
+	if !bytes.Equal(beforePrefix, afterPrefix) || childAfter[8].Text != "CodeBuddyContinuingFrozenNeedle" || len(search("CodeBuddyContinuingFrozenNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy continuation recovery changed earlier turns or lost frozen content")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != turns.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 10 || inputTokens != 100306 || outputTokens != 801 || cachedTokens != 74880 || threadUsage["root"] != 7 || threadUsage[turnsChildID] != 3 {
+		t.Fatalf("CodeBuddy continuation usage ownership: records=%d input=%d output=%d cache=%d threads=%v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	expireReservations()
+	if afterExpiry, events := read(turns.SessionID, 15); afterExpiry != recoveredTurns.Head {
+		t.Fatal("CodeBuddy continuation reservation expiry changed selected history")
+	} else if encoded, _ := json.Marshal(events); !bytes.Equal(encoded, rootBeforeEdit) {
+		t.Fatal("CodeBuddy continuing child edit changed parent Events")
+	}
+	read(turns.SessionID, 9, turnsChildID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredBackground.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredTurns.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

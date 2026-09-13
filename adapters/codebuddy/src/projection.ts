@@ -38,6 +38,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       continue
     }
     seen.set(rowId, json)
+    const inboxOnly = !child && source.internalMessages.has(rowId)
     let compactCommand: string | undefined, contextOnly = false
     const compactAgent = provider.agent === "compact"
     const marked = provider.isCompactInternal === true || provider.isSummary === true || provider.isCompacted === true || provider.compactType != null
@@ -97,7 +98,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       for (const [index, content] of (value as unknown[]).entries()) {
         const block = object(content)
         if (["input_text", "output_text", "reasoning_text"].includes(String(block.type))) {
-          const contentText = compactCommand ?? (child?.delegatedPrompt !== undefined && row.role === "user" ? child.delegatedPrompt : text(block.text))
+          const contentText = compactCommand ?? child?.delegatedPrompts.get(rowId) ?? text(block.text)
           if (contentText) emit(`block:${index}`, { sessionUpdate: thought ? "agent_thought_chunk" : row.role === "user" ? "user_message_chunk" : "agent_message_chunk",
             messageId: rowId, content: { type: "text", text: contentText } })
         } else partial = true // Images/blobs and unknown blocks remain in Raw only.
@@ -105,14 +106,14 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
     }
     if (row.type === "message") {
       if (row.role !== "user" && row.role !== "assistant") fail("unsupported", "CodeBuddy message role is unsupported.")
-      if (!contextOnly) blocks(row.content)
+      if (!contextOnly && !inboxOnly) blocks(row.content)
       if (!ownUserSeen && row.role === "user" && row.sessionId === (child?.nativeSessionId ?? sourceId)) {
         ownUserSeen = true
         const candidate = output.map(e => "content" in e.update && e.update.content.type === "text" ? e.update.content.text : "").join(" ")
         // Never cut a token before the Host can redact the complete value.
         if (candidate && Buffer.byteLength(candidate) <= 200) title = candidate
       }
-      if (!contextOnly) active = row.role === "user" || row.status !== "completed"
+      if (!contextOnly && !inboxOnly) active = row.role === "user" || row.status !== "completed"
     } else if (row.type === "reasoning") {
       blocks(Array.isArray(row.rawContent) && row.rawContent.length ? row.rawContent : row.content, true)
       active = true
@@ -212,7 +213,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
       for (let index = turn!.length - 1; index >= 0; index--) pending.push(turn![index]!)
     }
   }
-  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: source.children.some(child => child.delegatedPrompt !== undefined) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
+  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: (source.internalMessages.size || source.children.some(child => child.continuing)) ? "codebuddy.cli.jsonl.family.background.turns.1" : source.children.some(child => child.background) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
     session: { ...root.header.session, reportedEventCount: events, updatedAt: latest, status: active ? "active" : "idle", captureStatus: partial ? "partial" : "healthy" },
     target: { events, usage, threads: threads.length } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "CodeBuddy family header exceeds its page budget.")

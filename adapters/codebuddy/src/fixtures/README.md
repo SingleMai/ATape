@@ -161,6 +161,58 @@ Installed acceptance replays these native boundaries, then applies synthetic
 foreign child CWD, missing child, Raw policy edits and committed response loss.
 Its recovery deletes all three source files and uses frozen Host data. The source
 corpus has nine usage records: 74,371 input, 1,162 output and 43,072 cached input.
-Cached input is already included in input. Named teams, inbox turns, multi-round
-background work, child resume/nesting, disabled-team fallback and child compaction
-remain unverified and unsupported.
+Cached input is already included in input. Continuation evidence follows below.
+Named teams, generic inbox turns, nested background delegation, disabled-team
+fallback and child compaction remain unverified and unsupported.
+
+## Background continuation samples
+
+`native-background-turns-2.124.0/` contains two native histories generated on
+2026-09-13 UTC on macOS arm64 with CLI 2.124.0, `--model hy3 --effort low`,
+`-p --strict-mcp-config --setting-sources ""`, and scoped
+`CODEBUDDY_CODE_EXPERIMENTAL_AGENT_TEAMS=1`. The custom `atape-continuation`
+child had no tools and replied only with controlled literal markers.
+
+A persistent `--input-format stream-json --output-format stream-json` parent
+process allowed only Agent and SendMessage (`--max-turns 4`). Its first prompt
+requested one background launch. After its child completed, the second input
+requested one SendMessage to that member. Closing stdin after both replies let
+the native parent process its framework inbox. A separate process then used
+ordinary `--resume`, allowed only Agent, and requested a foreground Agent resume
+of the existing storage ID (`--max-turns 3`). No external recipient was involved.
+
+| Snapshot boundary | Root / child records | Projected totals |
+| --- | --- | --- |
+| Initial completed launch | 6 / 3 | 2 Threads / 8 Events / 3 usage |
+| Completed serial SendMessage | 11 / 6 | 2 / 15 / 6 |
+| Native reactivation and completion notices | 15 / 6 | 2 / 17 / 7 |
+| Foreground resume after CLI restart | 20 / 9 | 2 / 24 / 10 |
+
+The child remains `agent-6004ad24`, with internal UUID
+`c1782681-ecb5-4124-83e6-4b12c4a8b743`. The SendMessage receipt has no child ID or
+turn boundary; its structured routing, earlier unique spawn name and exact next
+child wrapper jointly prove membership. The call timestamp follows the prior
+terminal response. The foreground resume receipt's `afterId` equals the second
+terminal ID; `lastId` points to third-turn reasoning before the completed reply.
+This third user prompt is plain text, unlike the two earlier team-lead wrappers.
+
+Root records 12 and 13 (one-based) carry native `providerData.teammateMessage`
+metadata and exact reactivation/completion templates. They have no Canonical
+Events or invented usage. The following native assistant thought/reply remains
+visible. The ten usage records total 100,306 input, 801 output and 74,880 cached
+input; seven belong to the parent and three to the child. Cache is part of input.
+
+Only the controlled CWD was replaced with
+`/fixture/codebuddy-background-turns-project`. All other fields, IDs, timestamps,
+wrappers, notifications, receipts and usage are native. Both histories were
+byte-verified against retained scratch copies and removed from the CLI home;
+the exact controlled automatic-team files were also backed up and removed.
+
+Tests replay these boundaries and derive adversarial pending/missing turns,
+mismatched routing/renderer/wrapper, unknown or duplicate recipients, broadcasts,
+overlap, invalid resume receipts and unknown framework metadata/body/status.
+Installed acceptance adds foreign child CWD, Raw policy changes, a synthetic
+completion-duration edit, committed HTTP response loss and deletion of both
+source files. These mutations establish preservation and recovery guarantees;
+they are not additional native feature claims. Generic inbox messages, concurrent
+message batching and background-flag resume remain outside this evidence.

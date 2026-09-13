@@ -37,7 +37,8 @@ The evidence-bound profiles are `codebuddy.cli.jsonl.linear.1` and
 `codebuddy.cli.jsonl.fork.compaction.1` when supported compaction is present. `codebuddy.cli.jsonl.family.1` covers the
 completed foreground Agent family described below, including root compaction.
 `codebuddy.cli.jsonl.family.background.1` additionally covers the bounded automatic-team
-background launches described below. All are tested with native
+background launches described below; `codebuddy.cli.jsonl.family.background.turns.1`
+adds proven serial continuation and framework notifications. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -172,14 +173,43 @@ received the marker, but neither that parent run nor its subsequent ordinary
 resume appended an inbox message to the root JSONL. The Adapter therefore does
 not fabricate a parent notification from child output or mailbox state.
 
-Named teams, inbox turns, live multi-round background agents, resuming a background
-child, background launches inside children, delegation by a background child,
-team-disabled foreground fallback,
-and fork/compaction inside a background child remain outside this profile. These
-need additional native samples before extending visibility and relationship
-semantics. Ordinary parent resume and additional one-shot background launches are
-covered; a completed assistant turn is a snapshot frontier, not a claim that the
-native team member can never receive another task.
+## Serial background continuation
+
+After a completed background child turn, a root `SendMessage` with `type: message`
+can append another turn to the same Thread. The recipient must resolve uniquely
+to an earlier automatic-team spawn. Both the structured `send-message` renderer
+and delivery JSON must match the sender, recipient, summary and content. The
+child's next user record must contain that exact native team-lead wrapper and
+extend its prior completed turn. A send timestamp before the previous terminal
+response is unsupported. The SendMessage call links to the existing child; its
+wrapper remains Raw while the delegated prompt appears in the reader.
+
+An ordinary foreground `Agent` call with `resume: <agent-storage-id>` can then
+continue that background child, including after the parent CLI restarts. Its
+native `afterId`/`lastId` receipt and plain child prompt must match the same history
+and UUID. This differs from `run_in_background: true` combined with `resume`,
+which is outside the supported profile.
+
+Two observed root inbox records are framework context: reactivation after a
+proven follow-up and successful completion of a known member. Exact native
+metadata and message templates are required. Their original records stay Raw;
+they create no human Event or invented usage. Native assistant responses to
+these notifications remain visible. Unknown senders, arbitrary inbox contents,
+failed/canceled notification templates and ambiguous member names retain the
+whole previous publication with a diagnostic. Team mailboxes are never read.
+
+The native sequence contains one background launch, one serial SendMessage,
+two framework notices and one foreground resume: two Threads, 24 Events and
+ten usage records (100,306 input, 801 output, 74,880 cached input, already included
+in input). Three child turns share their storage ID and internal UUID; all three
+parent calls open that same Thread. Earlier Event identities remain stable.
+
+Named teams, generic inbox/peer messages, broadcasts, overlapping or batched
+follow-ups, background launches inside children, delegation by a background child,
+team-disabled foreground fallback, fork/compaction inside a background child,
+and forks containing children remain unsupported. Ordinary parent resume and
+additional one-shot launches remain covered. A completed assistant turn is a
+snapshot frontier, not a claim that the native member cannot receive more work.
 
 ## Compaction with retained history
 
@@ -259,7 +289,7 @@ native provenance and synthetic coverage. Relevant verification commands:
 - `pnpm test:release` includes the exact CodeBuddy release artifact and Tools.
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
-73 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
+90 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
 contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
@@ -306,6 +336,20 @@ the recovered frozen reply, and the second showed the delegated prompt,
 SendMessage call/result and native final reply under the two-level Thread path.
 The parent retained exactly its three real user turns.
 
+The continuation contract replays the four native boundaries through the installed
+CLI: initial launch, completed SendMessage, framework notices and foreground
+resume. It verifies one stable child, exact earlier prefixes, three real parent
+turns, Search anchors, ten per-Thread usage samples and native wrapper/UUID Raw
+provenance. A pending child or mismatched delivery preserves every old member.
+Raw off/on continues Canonical; loss of a framework-only Raw upload response
+recovers after deletion of both source files without changing the selected head
+or Event provenance. Lost activation similarly recovers the frozen three-turn
+child after source deletion. Framework notices remain archived and absent from
+Search. Browser acceptance opened all three parent links into the same child
+panel, verified its three delegated turns and recovered final reply, and confirmed
+that the root has only its three real user turns with no framework-notification
+turns. The shared PostgreSQL/OpenCode suite also passed.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -318,7 +362,7 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after background-family recovery (the enclosing test
+for up to three minutes after continuation-family recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, family reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name

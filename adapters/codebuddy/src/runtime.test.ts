@@ -341,6 +341,86 @@ describe("CodeBuddy installed runtime Interface", () => {
     if (variant === "truncated") reason = "format"
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
+  const backgroundTurns = async () => {
+    const f = await fixture(), id = "atape-codebuddy-background-turns-21240"
+    await cp(new URL("./fixtures/native-background-turns-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const parent = join(f.directory, `${id}.jsonl`), child = join(f.directory, id, "subagents", "agent-6004ad24.jsonl")
+    return { ...f, parent, child, parentRows: rows(await readFile(parent, "utf8")), childRows: rows(await readFile(child, "utf8")), request: { ...f.request, sourceId: id } }
+  }
+  it("preserves one background child through SendMessage reactivation, native notices and foreground resume", async () => {
+    const f = await backgroundTurns()
+    let previous: SourceCapturePage["frames"][number][] = [], origin: unknown
+    for (const [parentRows, childRows, events, usage] of [[6, 3, 8, 3], [11, 6, 15, 6], [15, 6, 17, 7], [20, 9, 24, 10]]) {
+      await writeFile(f.parent, serialize(f.parentRows.slice(0, parentRows))); await writeFile(f.child, serialize(f.childRows.slice(0, childRows)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view), captured = frames.flatMap(frame => frame.events)
+      Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+      expect(view.target).toEqual({ events, usage, threads: 2 })
+      expect(view.profile).toBe(`codebuddy.cli.jsonl.family.background${parentRows! > 6 ? ".turns" : ""}.1`)
+      expect(view.session.captureStatus).toBe("healthy")
+      origin ??= view.origin; expect(view.origin).toEqual(origin)
+      expect(captured.slice(0, previous.flatMap(frame => frame.events).length)).toEqual(previous.flatMap(frame => frame.events))
+      expect(captured.map(event => [event.sourceOrder, event.eventIndex])).toEqual(captured.map((_, index) => [index, index]))
+      previous = frames; await view.close()
+    }
+    const events = previous.flatMap(frame => frame.events), usage = previous.flatMap(frame => frame.usage)
+    expect(events.filter(event => event.childSourceThreadId).map(event => [event.update.sessionUpdate, event.childSourceThreadId])).toEqual([
+      ["tool_call", "agent-6004ad24"], ["tool_call", "agent-6004ad24"], ["tool_call", "agent-6004ad24"]
+    ])
+    const childUsers = events.filter(event => event.sourceThreadId === "agent-6004ad24" && event.update.sessionUpdate === "user_message_chunk")
+    expect(childUsers.map(event => (event.update as { content: { text: string } }).content.text)).toEqual([
+      "Reply exactly ATAPE_BG_FIRST_21240. Do not use tools.", "Reply exactly ATAPE_BG_SECOND_21240. Do not use tools.", "Reply exactly ATAPE_BG_RESUME_21240. Do not use tools."
+    ])
+    expect(events.filter(event => event.sourceThreadId === f.request.sourceId && event.update.sessionUpdate === "user_message_chunk")).toHaveLength(3)
+    for (const at of [11, 12]) {
+      const notice = previous.find(frame => (frame.raw as { recordId: string }).recordId === f.parentRows[at].id)!
+      expect(notice.events).toEqual([]); expect(notice.usage).toEqual([])
+      expect(notice.raw).toMatchObject({ json: JSON.stringify(f.parentRows[at]) })
+    }
+    expect(usage.filter(row => row.sourceThreadId === "agent-6004ad24")).toHaveLength(3)
+    expect(usage.reduce((n, row) => n + (row.inputTokens ?? 0), 0)).toBe(100306)
+    expect(usage.reduce((n, row) => n + (row.outputTokens ?? 0), 0)).toBe(801)
+    expect(usage.reduce((n, row) => n + (row.cacheReadTokens ?? 0), 0)).toBe(74880)
+    // Supported framework context changes remain independent of Canonical data.
+    f.parentRows[12].content[0].text = f.parentRows[12].content[0].text.replace("Duration: 2s", "Duration: 902s")
+    await writeFile(f.parent, serialize(f.parentRows))
+    await writeFile(f.child, serialize(f.childRows.map(row => ({ ...row, cwd: "/foreign/child-cwd" }))))
+    await rename(f.directory, join(f.home, "projects", "moved"))
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(join(f.home, "projects"), { recursive: true })
+    expect(off.origin).toEqual(origin)
+    expect(await read(off)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+    await off.close()
+  })
+  it.each(["pending-receipt", "pending-child", "missing-turn", "routing", "renderer", "unregistered", "recipient", "broadcast", "wrapper", "overlap", "resume-boundary", "notice-metadata", "notice-sender", "notice-body", "notice-status", "duplicate-name"])("refuses unproven background continuation: %s", async variant => {
+    const f = await backgroundTurns()
+    let reason = "unsupported"
+    if (variant === "pending-receipt") { f.parentRows.splice(9); reason = "format" }
+    if (variant === "pending-child") { f.childRows.splice(7); reason = "format" }
+    if (variant === "missing-turn") { f.childRows.splice(6); reason = "format" }
+    const result = f.parentRows[9]?.providerData?.toolResult
+    if (variant === "routing") result.content = JSON.stringify({ ...JSON.parse(result.content), routing: { ...JSON.parse(result.content).routing, content: "different task" } })
+    if (variant === "renderer") result.renderer.value = JSON.stringify({ ...JSON.parse(result.renderer.value), sender: "unknown" })
+    if (variant === "unregistered") result.content = JSON.stringify({ ...JSON.parse(result.content), notice: "pending registration" })
+    if (variant === "recipient" || variant === "broadcast") f.parentRows[8].arguments = JSON.stringify({ ...JSON.parse(f.parentRows[8].arguments), ...(variant === "recipient" ? { recipient: "unrelated" } : { type: "broadcast" }) })
+    if (variant === "wrapper") f.childRows[3].content[0].text = "unwrapped task"
+    if (variant === "overlap") f.parentRows[8].timestamp = f.childRows[2].timestamp - 1
+    if (variant === "resume-boundary") f.parentRows[18].providerData.toolResult.subAgent.afterId = f.childRows[2].id
+    if (variant === "notice-metadata") delete f.parentRows[11].providerData.teammateMessage
+    if (variant === "notice-sender") f.parentRows[11].providerData.teammateMessage.from = "unrelated"
+    if (variant === "notice-body") f.parentRows[11].content[0].text += "Additional unproven instructions"
+    if (variant === "notice-status") f.parentRows[12].content[0].text = f.parentRows[12].content[0].text.replace("completed successfully", "failed")
+    if (variant === "duplicate-name") {
+      const call = structuredClone(f.parentRows[3]), receipt = structuredClone(f.parentRows[4])
+      call.id = "another-launch"; call.callId = "another-call"; call.parentId = f.parentRows[5].id
+      receipt.id = "another-result"; receipt.callId = call.callId; receipt.parentId = call.id
+      const renderer = receipt.providerData.toolResult.renderer
+      renderer.value = JSON.stringify({ ...JSON.parse(renderer.value), taskId: "agent-another" })
+      f.parentRows[6].parentId = receipt.id
+      f.parentRows.splice(6, 0, call, receipt)
+    }
+    await writeFile(f.parent, serialize(f.parentRows)); await writeFile(f.child, serialize(f.childRows))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
   it.each(["threads", "records", "bytes"])("applies %s limits to the complete family", async variant => {
     const f = await family()
     if (variant === "threads") f.request.limits = { ...limits, threads: 3 }
