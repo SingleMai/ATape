@@ -30,12 +30,14 @@ The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
 from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks), ordinary resume,
 text/thoughts, tool calls/results, manual `/compact`, engineering pre-message
 automatic compaction, completed foreground Agent families (resume and nesting),
-and root-level background Agents through native automatic teams (serial SendMessage
+root-level background Agents through native automatic teams (serial SendMessage
 continuation and ordinary foreground resume),
-with normalized per-Thread response usage.
-Rewind, `/branch`, emergency/LLM automatic compaction, named teams/generic inbox turns,
+completed emergency compaction in roots and foreground children, and normalized
+per-Thread response usage.
+Rewind, `/branch`, pre-message LLM summaries, named teams/generic inbox turns,
 overlapping or batched background messages, broadcasts, nested background launches, fork subagents,
-child compaction, forks with children, unknown sidecar fields and external
+manual/pre-message child compaction, emergency compaction in background children
+or forks, forks with children, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
 when enabled and marks capture partial.
@@ -45,7 +47,9 @@ with native sidecar proof. Copied usage describes captured history and is not
 new-spend evidence. The original parent file is not required.
 
 Compaction retains the original transcript. Manual commands and summaries remain
-visible; engine-generated context is Raw-only. Incomplete manual compaction keeps
+visible; engine-generated context is Raw-only. Completed emergency summary/continue
+pairs preserve the original transcript and stay within the same delegated turn.
+Incomplete manual or emergency compaction keeps
 the previous publication. Exact flags and remaining limits are in the guide.
 
 Parent Agent calls link to child Threads; the parent’s original Project owns all

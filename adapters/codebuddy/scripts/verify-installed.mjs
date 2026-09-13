@@ -122,6 +122,29 @@ try {
     assert.equal(done, true); assert.equal(links, 3); assert.equal(childUsers, 3); assert.equal(notices, rawEnabled ? 2 : 0)
     await view.close()
   }
+  await cp(new URL("./native-emergency-2.124.0", import.meta.url), dir, { recursive: true })
+  for (const rawEnabled of [false, true]) {
+    const view = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-child-compact-21240", limits: { ...limits, rowBytes: 131072 }, projection, rawEnabled, signal })
+    assert.equal(view.profile, "codebuddy.cli.jsonl.family.emergency.1")
+    assert.deepEqual(view.target, { events: 38, usage: 15, threads: 2 })
+    assert.equal(view.session.captureStatus, "partial") // Native Read output spill stays a placeholder.
+    let done = false, links = 0, contexts = 0, users = 0, events = 0
+    for (let count = 0; count < 40 && !done; count++) {
+      const page = await view.read(signal)
+      for (const frame of page.frames) {
+        assert.equal(frame.raw !== undefined, rawEnabled)
+        links += frame.events.filter(event => event.childSourceThreadId === "agent-1fc648c0").length
+        users += frame.events.filter(event => event.update.sessionUpdate === "user_message_chunk").length
+        events += frame.events.length
+        if (frame.raw && JSON.parse(frame.raw.json).providerData?.isCompactInternal) {
+          assert.equal(frame.events.length, 0); assert.equal(frame.usage.length, 0); contexts++
+        }
+      }
+      done = page.done
+    }
+    assert.equal(done, true); assert.equal(links, 4); assert.equal(users, 8); assert.equal(events, 38); assert.equal(contexts, rawEnabled ? 4 : 0)
+    await view.close()
+  }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()

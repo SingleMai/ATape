@@ -287,7 +287,9 @@ const validateChild = (history: History, ref: ChildReference) => {
   const users: number[] = [], delegatedPrompts = new Map<string, string>()
   for (const [index, { row }] of records.entries()) {
     if (row.sessionId !== nativeSessionId) fail("unsupported", "CodeBuddy child changed its native Session identity.")
-    if (row.type === "message" && row.role === "user") users.push(index)
+    // Internal compaction inputs belong to the existing delegated turn. Projection
+    // validates their exact shape and chain before a complete view can escape.
+    if (row.type === "message" && row.role === "user" && object(row.providerData).isCompactInternal !== true) users.push(index)
   }
   if (users.length !== ref.calls.length) fail("format", "CodeBuddy child turns and completed parent calls disagree; retry.")
   for (const [index, at] of users.entries()) {
