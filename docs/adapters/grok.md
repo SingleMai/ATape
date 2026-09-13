@@ -120,7 +120,7 @@ samples from synthetic mutations. Verification entry points:
 - `pnpm test:release` includes the Grok tarball and Tools selection.
 - `pnpm test:go:integration` explicitly requires the Grok subtest to pass.
 
-Local acceptance on 2026-09-13 passed 24 runtime behavior tests, standalone tarball
+Local acceptance on 2026-09-13 passed 25 runtime behavior tests, standalone tarball
 installation without lifecycle scripts, and the installed CLI/HTTP/PostgreSQL
 contract. Three controlled turns reached the Web reader with successful/failed
 file reads, foreground command output, a masked test secret and the recovered

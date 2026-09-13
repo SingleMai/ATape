@@ -91,6 +91,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
           if (kind === "agent_message_chunk") assistant = true
         } else if (kind === "tool_call" || kind === "tool_call_update") {
           if (!user) fail("format", "Grok tool has no user turn.")
+          if (object(update.rawInput).is_background === true || object(update.rawOutput).truncated === true) fail("unsupported", "Grok background or spilled tool output requires a wider native profile.")
           const nativeId = id(update.toolCallId), toolCallId = identity("tool", sourceId, prompt, nativeId)
           if (kind === "tool_call") {
             const name = id(update.title)
@@ -105,7 +106,6 @@ export const project = (source: Source, request: SourceOpenRequest) => {
             const status = update.status
             if (status != null && status !== "completed" && status !== "failed" && status !== "in_progress" && status !== "pending") fail("unsupported", "Grok tool status is unsupported.")
             call!.done = status === "completed" || status === "failed"
-            if (object(update.rawInput).is_background === true || object(update.rawOutput).truncated === true) fail("unsupported", "Grok background or spilled tool output requires a wider native profile.")
             const result = call!.name === "run_terminal_command" && update.rawOutput !== undefined ? object(update.rawOutput).output_for_prompt : update.rawOutput
             const inputBounded = update.rawInput === undefined || isBoundedToolValue(update.rawInput)
             const outputBounded = update.rawOutput === undefined || result !== undefined && isBoundedToolValue(result)

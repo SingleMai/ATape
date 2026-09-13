@@ -80,12 +80,13 @@ describe("Grok source-capture runtime Interface", () => {
     expect((frames[0]!.raw as any).records).toHaveLength(2)
     expect(view.target.events).toBe(5); await view.close()
   })
-  it.each(["non-text", "unknown-update", "unknown-tool", "background", "spilled"])("diagnoses %s content without exposing a partial new target", async kind => {
+  it.each(["non-text", "unknown-update", "unknown-tool", "background-call", "background", "spilled"])("diagnoses %s content without exposing a partial new target", async kind => {
     const f = await fixture("shell")
     await mutate(f, "updates.jsonl", rows => {
       if (kind === "non-text") rows[0].params.update.content = { type: "image", data: "x", mimeType: "image/png" }
       if (kind === "unknown-update") rows[1].params.update.sessionUpdate = "rewind"
       if (kind === "unknown-tool") rows[1].params.update.title = "task"
+      if (kind === "background-call") rows[13].params.update.rawInput.is_background = true
       if (kind === "background") rows[15].params.update.rawInput.is_background = true
       if (kind === "spilled") rows[16].params.update.rawOutput.truncated = true
     })
