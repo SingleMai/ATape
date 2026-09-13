@@ -36,7 +36,12 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Skip("set ATAPE_INTEGRATION_TESTS=1 to run HTTP PostgreSQL integration tests")
 	}
 	configureHTTPDockerHost(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	timeout := 3 * time.Minute
+	if os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE") != "" {
+		// The optional browser review owns a further bounded three-minute pause.
+		timeout += 3 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	container, err := postgrescontainer.Run(ctx,
 		"postgres:17-alpine",

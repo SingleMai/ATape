@@ -80,9 +80,30 @@ try {
     assert.equal(done, true); assert.equal(events, 37); assert.equal(samples, 15); assert.equal(childLinks, 5)
     await view.close()
   }
+  await cp(new URL("./native-background-2.124.0", import.meta.url), dir, { recursive: true })
+  for (const rawEnabled of [false, true]) {
+    const view = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-background-21240", limits, projection, rawEnabled, signal })
+    assert.equal(view.profile, "codebuddy.cli.jsonl.family.background.1")
+    assert.deepEqual(view.target, { events: 24, usage: 9, threads: 3 })
+    assert.equal(view.origin.cwd, "/fixture/codebuddy-background-project")
+    let done = false, events = 0, links = 0, samples = 0, wrappers = 0
+    for (let count = 0; count < 30 && !done; count++) {
+      const page = await view.read(signal)
+      for (const frame of page.frames) {
+        events += frame.events.length; samples += frame.usage.length
+        links += frame.events.filter(event => event.childSourceThreadId).length
+        assert.equal(frame.raw !== undefined, rawEnabled)
+        assert.ok(!JSON.stringify(frame.events).includes("<teammate-message"))
+        if (frame.raw?.json.includes("<teammate-message")) wrappers++
+      }
+      done = page.done
+    }
+    assert.equal(done, true); assert.equal(events, 24); assert.equal(samples, 9); assert.equal(links, 2); assert.equal(wrappers, rawEnabled ? 2 : 0)
+    await view.close()
+  }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()
   await assert.rejects(view.read(signal))
 } finally { await runtime.close(); await rm(home, { recursive: true }) }
-process.stdout.write("Installed CodeBuddy native/fork/resume/compaction/family projection, original CWD, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed CodeBuddy native/fork/resume/compaction/foreground/background family projection, original CWD, bounded pages, Raw off/on and cancellation verified.\n")

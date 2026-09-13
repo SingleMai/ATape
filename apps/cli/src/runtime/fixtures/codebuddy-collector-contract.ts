@@ -14,10 +14,11 @@ const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: st
 const forkPhase = input.phase.startsWith("fork-"), forkId = "atape-codebuddy-nested-fork-21240"
 const compactPhase = input.phase.startsWith("compact-"), compactId = "atape-codebuddy-compact-21240"
 const familyPhase = input.phase.startsWith("family-"), familyId = "atape-codebuddy-child-21240"
-const sourceId = familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const backgroundPhase = input.phase.startsWith("background-"), backgroundId = "atape-codebuddy-background-21240"
+const sourceId = backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
 const forkWorkspace = join(home, "fork-workspace")
 const compactWorkspace = join(home, "compact-workspace")
-const familyWorkspace = join(home, "family-workspace")
+const familyWorkspace = join(home, "family-workspace"), backgroundWorkspace = join(home, "background-workspace")
 const sourceHome = join(home, "source"), directory = join(sourceHome, "projects", "opaque"), file = join(directory, `${sourceId}.jsonl`)
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
 const binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
@@ -110,6 +111,32 @@ if (["family-edit", "family-lost"].includes(input.phase)) {
   writeFileSync(childFile, rows.map(row => JSON.stringify(row) + "\n").join(""))
 }
 if (input.phase === "family-recover") for (const relative of familyFiles) rmSync(join(directory, relative))
+const backgroundChild = join(directory, backgroundId, "subagents", "agent-aeb3d60f.jsonl")
+const backgroundFiles = [`${backgroundId}.jsonl`, `${backgroundId}/subagents/agent-aeb3d60f.jsonl`, `${backgroundId}/subagents/agent-93604b67.jsonl`]
+const backgroundLength: Record<string, number> = { "background-initial": 9, "background-pending": 15, "background-complete": 15, "background-resume": 18, "background-repair": 18 }
+if (input.phase === "background-initial") {
+  mkdirSync(backgroundWorkspace)
+  const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
+  config.projects.push({ ...config.projects[0], id: input.projectId, name: "CodeBuddy background", path: backgroundWorkspace })
+  writeFileSync(paths.configFile, JSON.stringify(config))
+}
+if (input.phase in backgroundLength) {
+  for (const relative of backgroundFiles) {
+    const destination = join(directory, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    const rows = readFileSync(new URL(`../../../../../adapters/codebuddy/src/fixtures/native-background-2.124.0/${relative}`, import.meta.url), "utf8")
+      .replaceAll("/fixture/codebuddy-background-project", relative === `${backgroundId}.jsonl` ? backgroundWorkspace : workspace).trimEnd().split("\n")
+    const length = relative === `${backgroundId}.jsonl` ? backgroundLength[input.phase] : input.phase === "background-pending" && relative.endsWith("agent-93604b67.jsonl") ? 1 : rows.length
+    writeFileSync(destination, rows.slice(0, length).join("\n") + "\n")
+  }
+}
+if (input.phase === "background-missing") rmSync(backgroundChild)
+if (["background-edit", "background-lost"].includes(input.phase)) {
+  const rows = readFileSync(backgroundChild, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  rows.at(-1).content[0].text = input.phase === "background-edit" ? "CodeBuddyBackgroundPolicyNeedle" : "CodeBuddyBackgroundFrozenNeedle"
+  writeFileSync(backgroundChild, rows.map(row => JSON.stringify(row) + "\n").join(""))
+}
+if (input.phase === "background-recover") for (const relative of backgroundFiles) rmSync(join(directory, relative))
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
   if (input.phase === "edit") values.push(
@@ -131,7 +158,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "fork-lost", "family-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -161,7 +188,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default"].includes(input.phase)) {
+  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -189,16 +216,16 @@ const result = await Effect.runPromise(Effect.gen(function*() {
       const report = yield* runCollectionCycle()
       failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["fork-lost", "compact-raw-only", "family-lost"].includes(input.phase)) assert.equal(lost, true)
-  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit"].includes(input.phase)) assert.equal(uploads, 0)
+  if (["fork-lost", "compact-raw-only", "family-lost", "background-lost"].includes(input.phase)) assert.equal(lost, true)
+  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
-  if (["raw-on", "compact-reenable", "family-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["raw-on", "compact-reenable", "family-reenable", "background-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)

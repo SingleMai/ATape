@@ -147,9 +147,9 @@ export const discover = async (home: string, cursor: string | null, limits: Sour
 
 /** Freeze a bounded, complete UTF-8 view, then verify file and sidecar stamps. No source handle survives this operation. */
 type History = Awaited<ReturnType<typeof readHistory>>
-type ChildCall = { callId: string; prompt: string; afterId?: string; lastId: string }
-type ChildReference = { agent: string; label: string; calls: ChildCall[] }
-type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; history: History; callChildren: Map<string, string | undefined> }
+type ChildCall = { callId: string; prompt: string; afterId?: string; lastId?: string }
+type ChildReference = { agent: string; label: string; calls: ChildCall[]; backgroundName?: string }
+type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; delegatedPrompt?: string; history: History; callChildren: Map<string, string | undefined> }
 const segment = (value: unknown) => {
   const name = id(value)
   if (name === "." || name === ".." || /[\\/]/.test(name)) fail("format", "CodeBuddy child identity is not a file segment.")
@@ -157,7 +157,7 @@ const segment = (value: unknown) => {
 }
 
 // Only completed, structured native Agent receipts authorize child-file reads.
-const references = (history: History) => {
+const references = (history: History, root = false) => {
   const children = new Map<string, ChildReference>(), callChildren = new Map<string, string | undefined>()
   const calls = new Map<string, Row>(), seen = new Map<string, string>()
   for (const { row, json } of history.records) {
@@ -167,19 +167,42 @@ const references = (history: History) => {
       continue
     }
     seen.set(rowId, json)
+    if (root && row.type === "message" && row.role === "user" && Array.isArray(row.content) &&
+      row.content.some(block => typeof object(block).text === "string" && /^\s*<teammate-message(?:\s|>)/.test(object(block).text as string)))
+      fail("unsupported", "CodeBuddy teammate inbox turns require a wider source profile.")
     if (row.type === "function_call" && row.name === "Agent") {
       const callId = id(row.callId)
       if (calls.has(callId)) fail("format", "CodeBuddy Agent call identity is duplicated.")
       if (typeof row.arguments !== "string") fail("format", "CodeBuddy Agent arguments are invalid.")
       const args = parse(row.arguments as string)
-      if (args.run_in_background === true || args.name != null || args.team_name != null || args.subagent_type === "fork")
-        fail("unsupported", "CodeBuddy background, team and fork subagents require a wider source profile.")
+      if (args.name != null || args.team_name != null || args.subagent_type === "fork" ||
+        args.run_in_background === true && (!root || args.resume != null))
+        fail("unsupported", "CodeBuddy named, nested background, resumed background and fork subagents require a wider source profile.")
       if (typeof args.prompt !== "string") fail("format", "CodeBuddy Agent prompt is unavailable.")
       calls.set(callId, args)
     } else if (row.type === "function_call_result" && row.name === "Agent") {
       const callId = id(row.callId), args = calls.get(callId)
       if (!args || callChildren.has(callId)) fail("format", "CodeBuddy Agent receipt has no unique call.")
-      const receipt = object(object(object(row.providerData).toolResult).subAgent)
+      const result = object(object(row.providerData).toolResult), receipt = object(result.subAgent)
+      if (args!.run_in_background === true) {
+        // 2.124.0 launches background Agents as automatic team members. A durable
+        // structured spawn receipt, not human output or transient team files,
+        // authorizes this one-shot child's storage ID and delegated prompt.
+        const renderer = object(result.renderer)
+        if (failedTool(row) || receipt.sessionId != null || renderer.type !== "team-member-spawned")
+          fail("unsupported", "CodeBuddy background Agent has no supported successful spawn receipt.")
+        if (typeof renderer.value !== "string") fail("format", "CodeBuddy background spawn receipt is incomplete.")
+        const spawn = parse(renderer.value as string), childId = segment(spawn.taskId)
+        if (Object.keys(spawn).some(key => !["name", "description", "teamName", "color", "taskId", "prompt"].includes(key)) ||
+          !/^agent-[a-zA-Z0-9_-]+$/.test(childId) || typeof spawn.name !== "string" || !/^[a-zA-Z0-9_-]+$/.test(spawn.name) ||
+          spawn.teamName !== `_auto_${history.records[0]!.row.sessionId}` || spawn.prompt !== args!.prompt || spawn.description !== args!.description)
+          fail("unsupported", "CodeBuddy background spawn identity or prompt is unproven.")
+        if (children.has(childId)) fail("unsupported", "CodeBuddy background child has multiple launch calls.")
+        const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
+        const label = typeof spawn.description === "string" && spawn.description && Buffer.byteLength(spawn.description) <= 200 ? spawn.description : "CodeBuddy child"
+        children.set(childId, { agent, label, backgroundName: spawn.name as string, calls: [{ callId, prompt: args!.prompt as string }] })
+        callChildren.set(callId, childId); continue
+      }
       if (receipt.sessionId == null && failedTool(row)) { callChildren.set(callId, undefined); continue }
       if (receipt.sessionId == null) fail("format", "CodeBuddy Agent receipt is incomplete; retry.")
       if (Object.keys(receipt).some(key => !["sessionId", "afterId", "lastId"].includes(key))) fail("unsupported", "CodeBuddy Agent receipt requires a wider source profile.")
@@ -189,7 +212,7 @@ const references = (history: History) => {
         fail("unsupported", "CodeBuddy Agent resume identity is unproven.")
       const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
       const prior = children.get(childId)
-      if (prior && prior.agent !== agent) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
+      if (prior && (prior.agent !== agent || prior.backgroundName !== undefined)) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
       const label = typeof args!.description === "string" && args!.description && Buffer.byteLength(args!.description) <= 200 ? args!.description : "CodeBuddy child"
       const ref = prior ?? { agent, label, calls: [] }
       ref.calls.push({ callId, prompt: args!.prompt as string, ...(receipt.afterId == null ? {} : { afterId: id(receipt.afterId) }), lastId: id(receipt.lastId) })
@@ -215,11 +238,13 @@ const validateChild = (history: History, ref: ChildReference) => {
   for (const [index, at] of users.entries()) {
     const call = ref.calls[index]!, user = records[at]!.row, turn = records.slice(at, users[index + 1])
     const content = Array.isArray(user.content) && user.content.length === 1 ? object(user.content[0]) : {}
-    if (content.type !== "input_text" || content.text !== call.prompt || (user.parentId ?? undefined) !== call.afterId)
+    const prompt = ref.backgroundName === undefined ? call.prompt :
+      `<teammate-message teammate_id="team-lead" summary="Initial task assignment for ${ref.backgroundName}">\n${call.prompt}\n</teammate-message>`
+    if (content.type !== "input_text" || content.text !== prompt || (user.parentId ?? undefined) !== call.afterId)
       fail("unsupported", "CodeBuddy child prompt or resume boundary does not match its parent call.")
     const last = turn.at(-1)!.row
     // Native lastId can precede the final assistant; it is evidence, not a cutoff.
-    if (!turn.some(({ row }) => row.id === call.lastId) || last.type !== "message" || last.role !== "assistant" || last.status !== "completed")
+    if (ref.backgroundName === undefined && !turn.some(({ row }) => row.id === call.lastId) || last.type !== "message" || last.role !== "assistant" || last.status !== "completed")
       fail("format", "CodeBuddy child result has not fully reached its history; retry.")
   }
   return nativeSessionId
@@ -231,7 +256,7 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
   const files = (await inventory(home, signal)).filter(file => basename(file, ".jsonl") === sourceId)
   if (files.length !== 1) fail("format", "CodeBuddy source is missing or has duplicate identities.")
   const root = await snapshotFile(files[0]!, limits, signal), children: ChildSnapshot[] = []
-  const rootRefs = references(root), histories: History[] = [root], used = new Set<string>(), nativeIds = new Set([segment(root.records[0]!.row.sessionId)])
+  const rootRefs = references(root, true), histories: History[] = [root], used = new Set<string>(), nativeIds = new Set([segment(root.records[0]!.row.sessionId)])
   if (root.forkedFrom && rootRefs.children.size) fail("unsupported", "CodeBuddy forked child families require a proven copied-child frontier.")
   let bytes = root.bytes, records = root.records.length
   const pending = [{ id: sourceId, nativeSessionId: segment(root.records[0]!.row.sessionId), refs: rootRefs }]
@@ -247,9 +272,10 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
       const child = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
       bytes += child.bytes; records += child.records.length
       const nativeSessionId = validateChild(child, ref), refs = references(child)
+      if (ref.backgroundName !== undefined && refs.children.size) fail("unsupported", "CodeBuddy background child delegation requires a wider source profile.")
       if (nativeIds.has(nativeSessionId)) fail("unsupported", "CodeBuddy child native Session identity is duplicated.")
       nativeIds.add(nativeSessionId)
-      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, history: child, callChildren: refs.callChildren })
+      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, ...(ref.backgroundName === undefined ? {} : { delegatedPrompt: ref.calls[0]!.prompt }), history: child, callChildren: refs.callChildren })
       histories.push(child); pending.push({ id: childId, nativeSessionId, refs })
     }
   }

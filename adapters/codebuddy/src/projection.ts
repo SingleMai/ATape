@@ -97,7 +97,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       for (const [index, content] of (value as unknown[]).entries()) {
         const block = object(content)
         if (["input_text", "output_text", "reasoning_text"].includes(String(block.type))) {
-          const contentText = compactCommand ?? text(block.text)
+          const contentText = compactCommand ?? (child?.delegatedPrompt !== undefined && row.role === "user" ? child.delegatedPrompt : text(block.text))
           if (contentText) emit(`block:${index}`, { sessionUpdate: thought ? "agent_thought_chunk" : row.role === "user" ? "user_message_chunk" : "agent_message_chunk",
             messageId: rowId, content: { type: "text", text: contentText } })
         } else partial = true // Images/blobs and unknown blocks remain in Raw only.
@@ -178,7 +178,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   return { header, frames, turns, bytes: frameBytes }
 }
 
-/** Insert each delegated turn at its parent call, then assign the Host’s global event order. */
+/** Traverse delegated turns at their calls for stable global order; native timestamps retain asynchronous timing. */
 export const project = (source: Source, request: SourceOpenRequest) => {
   const started = performance.now(), root = projectThread(source, request, started, 64 * 1024 * 1024)
   const threads = [...root.header.threads], children = new Map<string, ReturnType<typeof projectThread>>()
@@ -212,7 +212,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
       for (let index = turn!.length - 1; index >= 0; index--) pending.push(turn![index]!)
     }
   }
-  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: "codebuddy.cli.jsonl.family.1" } : {}), threads,
+  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: source.children.some(child => child.delegatedPrompt !== undefined) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
     session: { ...root.header.session, reportedEventCount: events, updatedAt: latest, status: active ? "active" : "idle", captureStatus: partial ? "partial" : "healthy" },
     target: { events, usage, threads: threads.length } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "CodeBuddy family header exceeds its page budget.")
