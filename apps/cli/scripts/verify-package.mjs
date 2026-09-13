@@ -30,6 +30,7 @@ const environment = {
   XDG_CONFIG_HOME: join(temporaryRoot, "xdg-config"),
   XDG_DATA_HOME: join(temporaryRoot, "xdg-data"),
   XDG_STATE_HOME: join(temporaryRoot, "xdg-state"),
+  ATAPE_GROK_HOME: join(temporaryRoot, "missing-grok"),
   ATAPE_CODEBUDDY_HOME: join(temporaryRoot, "missing-codebuddy"),
   ATAPE_KIMI_HOME: join(temporaryRoot, "missing-kimi"),
   OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
