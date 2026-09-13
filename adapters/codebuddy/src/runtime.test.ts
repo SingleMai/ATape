@@ -421,6 +421,63 @@ describe("CodeBuddy installed runtime Interface", () => {
     await writeFile(f.parent, serialize(f.parentRows)); await writeFile(f.child, serialize(f.childRows))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
+  const emergencyFamily = async () => {
+    const f = await fixture(), id = "atape-codebuddy-child-compact-21240"
+    await cp(new URL("./fixtures/native-emergency-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const parent = join(f.directory, id + ".jsonl"), child = join(f.directory, id, "subagents", "agent-1fc648c0.jsonl")
+    return { ...f, parent, child, parentRows: rows(await readFile(parent, "utf8")), childRows: rows(await readFile(child, "utf8")),
+      request: { ...f.request, sourceId: id, limits: { ...limits, rowBytes: 131072 } } }
+  }
+  it("retains native parent/child emergency history, resumes one child and keeps internal context Raw-only", async () => {
+    const f = await emergencyFamily()
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [parentCount, childCount, events, usage] of [[6, 3, 8, 3], [14, 8, 18, 7], [20, 18, 31, 12], [25, 21, 38, 15]] as const) {
+      await writeFile(f.parent, serialize(f.parentRows.slice(0, parentCount)))
+      await writeFile(f.child, serialize(f.childRows.slice(0, childCount)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      expect(view.target).toEqual({ events, usage, threads: 2 })
+      expect(view.profile).toBe(parentCount === 6 ? "codebuddy.cli.jsonl.family.1" : "codebuddy.cli.jsonl.family.emergency.1")
+      // The native Read results explicitly spill large output; the Adapter never follows those files.
+      expect(view.session.captureStatus).toBe(childCount >= 18 ? "partial" : "healthy")
+      expect(frames.flatMap(frame => frame.events).slice(0, previous.flatMap(frame => frame.events).length)).toEqual(previous.flatMap(frame => frame.events))
+      previous = frames; await view.close()
+    }
+    const events = previous.flatMap(frame => frame.events), usage = previous.flatMap(frame => frame.usage)
+    expect(events.map(event => [event.sourceOrder, event.eventIndex])).toEqual(events.map((_, index) => [index, index]))
+    expect(events.filter(event => event.childSourceThreadId).map(event => event.childSourceThreadId)).toEqual(Array(4).fill("agent-1fc648c0"))
+    expect(events.filter(event => event.update.sessionUpdate === "user_message_chunk")).toHaveLength(8)
+    expect(events.filter(event => event.sourceThreadId === "agent-1fc648c0").at(-1)!.update).toMatchObject({ content: { text: "ATAPE_CHILD_AFTER_COMPACT_21240" } })
+    const contexts = previous.filter(frame => JSON.parse((frame.raw as { json: string }).json).providerData?.isCompactInternal)
+    expect(contexts).toHaveLength(4)
+    expect(contexts.every(frame => frame.events.length === 0 && frame.usage.length === 0)).toBe(true)
+    expect(usage).toHaveLength(15); expect(usage.filter(row => row.sourceThreadId === "agent-1fc648c0")).toHaveLength(7)
+    expect(usage.reduce((n, row) => n + (row.inputTokens ?? 0), 0)).toBe(151085)
+    expect(usage.reduce((n, row) => n + (row.outputTokens ?? 0), 0)).toBe(1795)
+    expect(usage.reduce((n, row) => n + (row.cacheReadTokens ?? 0), 0)).toBe(75840)
+    f.childRows[11].content[0].text = f.childRows[11].content[0].text.replace("</conversation_history_summary>", "EmergencyRawOnlyNeedle</conversation_history_summary>")
+    await writeFile(f.child, serialize(f.childRows.map(row => ({ ...row, cwd: "/foreign/child-cwd" }))))
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.parent); await rm(f.child)
+    expect(await read(off)).toEqual(previous.map(({ raw: _, ...frame }) => frame)); await off.close()
+  })
+  it.each(["root-summary-pending", "child-summary-pending", "root-continue", "child-intent", "summary-parent", "continue-parent", "summary-wrapper", "flags", "context-usage", "extra-human", "child-manual", "child-pre-message"])("refuses incomplete or unproven emergency compaction: %s", async variant => {
+    const f = await emergencyFamily()
+    let reason = "unsupported"
+    if (variant === "root-summary-pending") { f.parentRows.splice(11); f.childRows.splice(8); reason = "format" }
+    if (variant === "child-summary-pending") { f.parentRows.splice(20); f.childRows.splice(12); reason = "format" }
+    if (variant === "root-continue") f.parentRows[11].content[0].text = "Unproven continue instruction"
+    if (variant === "child-intent") f.childRows[12].content[0].text = f.childRows[12].content[0].text.replace("offset 1", "offset 2")
+    if (variant === "summary-parent") f.childRows[11].logicalParentId = f.childRows[8].id
+    if (variant === "continue-parent") f.childRows[12].logicalParentId = f.childRows[10].id
+    if (variant === "summary-wrapper") f.childRows[11].content[0].text = "unwrapped summary"
+    if (variant === "flags") f.childRows[11].providerData.isSummary = false
+    if (variant === "context-usage") f.childRows[11].message = { usage: { input_tokens: 1 } }
+    if (variant === "extra-human") { delete f.childRows[12].providerData.isCompactInternal; reason = "format" }
+    if (variant === "child-manual") f.childRows[11].providerData.agent = "compact"
+    if (variant === "child-pre-message") f.childRows[11].providerData.compactType = "pre-message-auto"
+    await writeFile(f.parent, serialize(f.parentRows)); await writeFile(f.child, serialize(f.childRows))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
   it.each(["threads", "records", "bytes"])("applies %s limits to the complete family", async variant => {
     const f = await family()
     if (variant === "threads") f.request.limits = { ...limits, threads: 3 }

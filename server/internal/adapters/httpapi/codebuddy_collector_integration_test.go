@@ -1024,9 +1024,195 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy continuing child edit changed parent Events")
 	}
 	read(turns.SessionID, 9, turnsChildID)
+	// Emergency compaction appends internal context inside the existing delegated turn.
+	emergencyCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy emergency compaction"})
+	emergencyCreate.Header.Set("Authorization", "Bearer "+credential)
+	emergencyCreate.Header.Set("Idempotency-Key", "codebuddy-emergency-project-21240")
+	emergencyCreated := httptest.NewRecorder()
+	h.ServeHTTP(emergencyCreated, emergencyCreate)
+	if emergencyCreated.Code != http.StatusCreated {
+		t.Fatalf("create emergency Project: %d %s", emergencyCreated.Code, emergencyCreated.Body.String())
+	}
+	var emergencyProject projectDTO
+	decodeResponse(t, emergencyCreated, &emergencyProject)
+	projectID = emergencyProject.ID
+	emergency := run("emergency-initial")
+	_, parentEvents = read(emergency.SessionID, 5)
+	emergencyLinks := links(parentEvents)
+	if len(emergencyLinks) != 1 {
+		t.Fatal("CodeBuddy emergency fixture lost its child launch")
+	}
+	emergencyChildID := emergencyLinks[0].ID
+	_, childBefore = read(emergency.SessionID, 3, emergencyChildID)
+	emergencyRoot := run("emergency-root")
+	_, parentEvents = read(emergency.SessionID, 10)
+	if emergencyRoot.SessionID != emergency.SessionID || humanTurns(parentEvents) != 2 {
+		t.Fatal("CodeBuddy root emergency created an internal user turn")
+	}
+	_, childAfter = read(emergency.SessionID, 8, emergencyChildID)
+	beforePrefix, _ = json.Marshal(childBefore)
+	afterPrefix, _ = json.Marshal(childAfter[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) {
+		t.Fatal("CodeBuddy root emergency changed the earlier child")
+	}
+	if pending := run("emergency-pending"); pending.Head != emergencyRoot.Head || !bytes.Equal(pending.Records, emergencyRoot.Records) {
+		t.Fatal("CodeBuddy unfinished child emergency replaced the visible family")
+	}
+	read(emergency.SessionID, 10)
+	read(emergency.SessionID, 8, emergencyChildID)
+	run("emergency-child")
+	_, parentEvents = read(emergency.SessionID, 15)
+	_, childBefore = read(emergency.SessionID, 16, emergencyChildID)
+	beforePrefix, _ = json.Marshal(childAfter)
+	afterPrefix, _ = json.Marshal(childBefore[:8])
+	encoded, _ = json.Marshal(childBefore)
+	if humanTurns(parentEvents) != 3 || humanTurns(childBefore) != 3 || !bytes.Equal(beforePrefix, afterPrefix) ||
+		!bytes.Contains(encoded, []byte("persisted-output")) {
+		t.Fatal("CodeBuddy child emergency lost its original transcript or exposed internal context")
+	}
+	for _, event := range childBefore {
+		if event.Author == "User" && strings.HasPrefix(event.Text, "Please continue based on the summarized context") {
+			t.Fatal("CodeBuddy internal emergency continuation became a human turn")
+		}
+	}
+	emergencyResumed := run("emergency-resume")
+	_, parentEvents = read(emergency.SessionID, 19)
+	rootBeforeEdit, _ = json.Marshal(parentEvents)
+	emergencyLinks = links(parentEvents)
+	if emergencyResumed.SessionID != emergency.SessionID || len(emergencyLinks) != 4 || humanTurns(parentEvents) != 4 {
+		t.Fatal("CodeBuddy post-emergency resume lost its parent turns")
+	}
+	for _, link := range emergencyLinks {
+		if link.ID != emergencyChildID || link.EventCount != 19 {
+			t.Fatal("CodeBuddy post-emergency resume created another child")
+		}
+	}
+	_, childAfter = read(emergency.SessionID, 19, emergencyChildID)
+	beforePrefix, _ = json.Marshal(childBefore)
+	afterPrefix, _ = json.Marshal(childAfter[:16])
+	if !bytes.Equal(beforePrefix, afterPrefix) || childAfter[18].Text != "ATAPE_CHILD_AFTER_COMPACT_21240" || humanTurns(childAfter) != 4 {
+		t.Fatal("CodeBuddy post-emergency resume changed earlier child turns")
+	}
+	emergencyHits := 0
+	for _, result := range search("ATAPE_CHILD_AFTER_COMPACT_21240").Results {
+		if result.SessionID != emergency.SessionID {
+			t.Fatal("CodeBuddy emergency Search escaped its original Project")
+		}
+		if result.ThreadID != emergencyChildID {
+			continue
+		}
+		emergencyHits++
+		var anchored conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+emergency.SessionID+"?thread="+url.QueryEscape(emergencyChildID)+"&at="+url.QueryEscape(result.EventID)+"&limit=2", ""), &anchored)
+		matched := false
+		for _, event := range anchored.Events {
+			matched = matched || event.ID == result.EventID
+		}
+		if !matched || len(anchored.ThreadPath) != 2 {
+			t.Fatal("CodeBuddy post-emergency Search anchor or path missing")
+		}
+	}
+	if emergencyHits == 0 {
+		t.Fatal("CodeBuddy post-emergency child missing from Search")
+	}
+	if invalid := run("emergency-invalid"); invalid.Head != emergencyResumed.Head || !bytes.Equal(invalid.Records, emergencyResumed.Records) {
+		t.Fatal("CodeBuddy unproven emergency context replaced the visible family")
+	}
+	read(emergency.SessionID, 19)
+	read(emergency.SessionID, 19, emergencyChildID)
+	if fixed := run("emergency-repair"); fixed.Head != emergencyResumed.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy emergency repair replayed unchanged data")
+	}
+	setRaw(false)
+	emergencyOff := run("emergency-edit")
+	if emergencyOff.Head == emergencyResumed.Head || len(search("CodeBuddyEmergencyPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy emergency Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	emergencyOn := run("emergency-reenable")
+	if emergencyOn.Head != emergencyOff.Head || !bytes.Equal(emergencyOn.Records, emergencyOff.Records) {
+		t.Fatal("CodeBuddy emergency Raw re-enable changed Canonical provenance")
+	}
+	if lost := run("emergency-raw-only"); lost.Pending == 0 || lost.Head != emergencyOn.Head {
+		t.Fatal("CodeBuddy child compact Raw-only response loss changed Canonical or lost recovery")
+	}
+	emergencyRawRecovered := run("emergency-raw-recover")
+	if emergencyRawRecovered.Pending != 0 || emergencyRawRecovered.Head != emergencyOn.Head || !bytes.Equal(emergencyRawRecovered.Records, emergencyOn.Records) {
+		t.Fatal("CodeBuddy child compact Raw recovery failed after both source files were deleted")
+	}
+	if len(search("CodeBuddyEmergencyRawOnlyNeedle").Results) != 0 {
+		t.Fatal("CodeBuddy child compact Raw entered Search")
+	}
+	var emergencyArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+emergency.SessionID+"/raw", ""), &emergencyArchive)
+	var emergencyRaw strings.Builder
+	for _, archived := range emergencyArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy emergency Raw exceeded its immutable object bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		emergencyRaw.Write(decoded)
+	}
+	for _, native := range []string{"CodeBuddyEmergencyRawOnlyNeedle", "6e979b7f-a116-4516-9b69-0cd54b94dacd", "e5d053d3-035d-4c1d-b9bd-72fcb5caf234",
+		"cd73d706-d20c-45ab-bba1-63906b49021f", "547a547a-3484-4e85-b7cd-f64fef7decc4", "agent-1fc648c0", "5167c3b9-23a8-4593-8ba2-4dd5185a574e"} {
+		if !strings.Contains(emergencyRaw.String(), native) {
+			t.Fatalf("CodeBuddy emergency Raw recovery lost native provenance %s", native)
+		}
+	}
+	if lost := run("emergency-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy emergency activation loss did not retain frozen recovery")
+	}
+	recoveredEmergency := run("emergency-recover")
+	if recoveredEmergency.Pending != 0 {
+		t.Fatal("CodeBuddy emergency recovery left pending work")
+	}
+	_, childAfter = read(emergency.SessionID, 19, emergencyChildID)
+	beforePrefix, _ = json.Marshal(childBefore)
+	afterPrefix, _ = json.Marshal(childAfter[:16])
+	if !bytes.Equal(beforePrefix, afterPrefix) || childAfter[18].Text != "CodeBuddyEmergencyFrozenNeedle" || len(search("CodeBuddyEmergencyFrozenNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy emergency recovery lost the original transcript or frozen continuation")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != emergency.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 15 || inputTokens != 151085 || outputTokens != 1795 || cachedTokens != 75840 || threadUsage["root"] != 8 || threadUsage[emergencyChildID] != 7 {
+		t.Fatalf("CodeBuddy emergency usage ownership: records=%d input=%d output=%d cache=%d threads=%v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	expireReservations()
+	if afterExpiry, events := read(emergency.SessionID, 19); afterExpiry != recoveredEmergency.Head {
+		t.Fatal("CodeBuddy emergency reservation expiry changed selected history")
+	} else if encoded, _ := json.Marshal(events); !bytes.Equal(encoded, rootBeforeEdit) {
+		t.Fatal("CodeBuddy emergency child edit changed parent Events")
+	}
+	read(emergency.SessionID, 19, emergencyChildID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredTurns.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredEmergency.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
