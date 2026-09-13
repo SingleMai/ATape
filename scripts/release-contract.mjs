@@ -9,6 +9,7 @@ const PackageDefinitions = [
   { path: "adapters/codex/package.json", name: "@atape/adapter-codex", directory: "adapters/codex" },
   { path: "adapters/claude/package.json", name: "@atape/adapter-claude", directory: "adapters/claude" },
   { path: "adapters/codebuddy/package.json", name: "@atape/adapter-codebuddy", directory: "adapters/codebuddy" },
+  { path: "adapters/kimi/package.json", name: "@atape/adapter-kimi", directory: "adapters/kimi" },
   { path: "adapters/opencode/package.json", name: "@atape/adapter-opencode", directory: "adapters/opencode" }
 ]
 

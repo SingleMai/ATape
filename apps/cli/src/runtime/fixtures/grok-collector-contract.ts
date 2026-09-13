@@ -18,7 +18,7 @@ const sourceHome = join(home, "source"), directory = join(sourceHome, "sessions"
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
 const binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
 const environment = { ...process.env, ATAPE_HOME: paths.atapeHome, ATAPE_GROK_HOME: sourceHome,
-  ATAPE_CODEX_HOME: join(home, "missing-codex"), ATAPE_CLAUDE_HOME: join(home, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(home, "missing-codebuddy"), OPENCODE_DB: join(home, "missing-opencode"),
+  ATAPE_KIMI_HOME: join(home, "missing-kimi"), ATAPE_CODEX_HOME: join(home, "missing-codex"), ATAPE_CLAUDE_HOME: join(home, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(home, "missing-codebuddy"), OPENCODE_DB: join(home, "missing-opencode"),
   ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_COLLECTOR_DAEMON: "0", TEST_SECRET: "SENSITIVE_TEST_TOKEN" }
 process.env.ATAPE_GROK_HOME = sourceHome
 const at = "2026-09-13T00:00:00Z", adapterId = "grok"

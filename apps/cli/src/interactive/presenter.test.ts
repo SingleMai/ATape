@@ -19,7 +19,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
     XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
-    ATAPE_GROK_HOME: join(root, "no-grok"), ATAPE_CODEX_HOME: join(root, "no-codex"), ATAPE_CLAUDE_HOME: join(root, "no-claude"), ATAPE_CODEBUDDY_HOME: join(root, "no-codebuddy"), OPENCODE_DB: join(root, "no-opencode.db")
+    ATAPE_KIMI_HOME: join(root, "no-kimi"), ATAPE_GROK_HOME: join(root, "no-grok"), ATAPE_CODEX_HOME: join(root, "no-codex"), ATAPE_CLAUDE_HOME: join(root, "no-claude"), ATAPE_CODEBUDDY_HOME: join(root, "no-codebuddy"), OPENCODE_DB: join(root, "no-opencode.db")
   }
   let installs = 0, restarted = false
   let syncRunning = failFirstResume
@@ -415,7 +415,7 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.title === "Tools and updates")
     client.presenter.submit("configure")
     const tools = await client.wait(screen => screen.kind === "sources")
-    expect(tools.options).toEqual([{ value: "codex", label: "Codex" }, { value: "claude", label: "Claude Code" }, { value: "codebuddy", label: "CodeBuddy Code CLI" }, { value: "opencode", label: "OpenCode" }, { value: "grok", label: "Grok Build" }])
+    expect(tools.options).toEqual([{ value: "codex", label: "Codex" }, { value: "claude", label: "Claude Code" }, { value: "codebuddy", label: "CodeBuddy Code CLI" }, { value: "kimi", label: "Kimi Code CLI" }, { value: "opencode", label: "OpenCode" }, { value: "grok", label: "Grok Build" }])
     expect(tools.selected).toEqual(["codex"])
     client.presenter.back()
     await client.wait(screen => screen.title === "Tools and updates")
