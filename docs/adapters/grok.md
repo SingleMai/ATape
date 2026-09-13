@@ -37,7 +37,8 @@ reassign a Session or substitute for original CWD.
 The evidence-bound profile is `grok.build.updates.linear.1`, tested with **Grok
 Build 1.0.3 (1a29d5bc12d4)** on **macOS arm64**. It supports completed root text
 conversations, ordinary headless resume, successful/failed `read_file` calls,
-foreground `run_terminal_command` calls and persisted per-turn/model token usage.
+foreground `run_terminal_command` calls, `grep` searches (including no matches),
+`search_replace` edits and persisted per-turn/model token usage.
 This is not a general claim for every Grok tool, version, TUI behavior, ACP client
 or platform. Native `agent_thought_chunk` text uses the same projection; the
 controlled native corpus contains reasoning counters but no persisted thoughts.
@@ -56,6 +57,8 @@ rewind and compaction features and does not prove this Adapter supports them.
 | `user_message_chunk` and `agent_message_chunk` | ACP text, ordered by persisted position | Original JSON lines |
 | Adjacent text fragments | One complete content unit before Host redaction | All contributing original lines in order |
 | `tool_call` and `tool_call_update` | Correlated call, update and completed/failed result; bounded input/output | Original provider fields and content |
+| `grep` output | Strict UTF-8 decoded stdout/stderr and native exit/match counters; no-match exit 1 retains native completed status | Original byte arrays and match details |
+| `search_replace` input/result | Edit kind, old/new strings, applied edit context and native status in bounded tool details | Original diff content, locations and provider metadata |
 | Foreground command output | Textual `output_for_prompt`; referenced terminal files are not opened | Original inline output and spill locator |
 | `_x.ai/session/update: turn_completed` | One usage item per native prompt/model; no fabricated message | Complete native usage including unknown counters/cost fields |
 | `hook_execution` | No conversation Event | Native hook telemetry |
@@ -98,6 +101,15 @@ non-text messages also reject the new target with a diagnostic. A rejected new
 turn retains the previously captured conversation; it does not fabricate success
 or partially activate the new turn.
 
+Search continues to index Canonical conversation text and tool labels. Tool
+input/output details, including decoded grep results and edit payloads, are
+available in Reader but are not searched by the current shared Search contract.
+The Adapter does not fabricate assistant messages from tool output. Native edit
+diff content and locations remain in Raw; the existing Canonical tool Interface
+retains bounded input and result details. Native failed search_replace output
+has not been sampled; the requested invalid-operation probe produced only an
+assistant refusal, which is not evidence of a failed tool execution.
+
 Unknown fields on supported records remain in Raw. Bounded tool-value omissions
 are explicitly partial. With Raw off, returned frames contain no full native JSON;
 Canonical continues. Re-enabling archives a fresh source observation without
@@ -120,7 +132,7 @@ samples from synthetic mutations. Verification entry points:
 - `pnpm test:release` includes the Grok tarball and Tools selection.
 - `pnpm test:go:integration` explicitly requires the Grok subtest to pass.
 
-Local acceptance on 2026-09-13 passed 25 runtime behavior tests, standalone tarball
+Local acceptance on 2026-09-13 passed 32 runtime behavior tests, standalone tarball
 installation without lifecycle scripts, and the installed CLI/HTTP/PostgreSQL
 contract. Three controlled turns reached the Web reader with successful/failed
 file reads, foreground command output, a masked test secret and the recovered
@@ -141,5 +153,9 @@ The local release tarball/Tools gate and shared PostgreSQL/OpenCode/CodeBuddy/Gr
 contracts also passed. The official catalog, build/release set and CI contract include Grok. Implementation,
 local verification, merging, npm publication and Server deployment are separate
 states; this guide does not assert publication or deployment. The next increment
-needs native evidence for editing/search tools and interrupted/cancelled turns,
-then fork/rewind/compaction and child membership before extending those claims.
+needs native evidence for additional tools, failed edits and interrupted/cancelled
+turns, then fork/rewind/compaction and child membership before extending those
+claims. Search/edit acceptance additionally verifies decoded byte-output masking
+with Raw off, unchanged polling and Raw re-enable without changing provenance.
+Two additional native samples cover a successful grep/read/edit turn and a
+no-match grep turn; they do not widen the tested version or platform.

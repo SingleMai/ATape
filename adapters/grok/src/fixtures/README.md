@@ -46,3 +46,21 @@ Projects and adds synthetic secret/search markers and complete-record edits for
 policy and recovery assertions. It injects lost activation/Raw responses after
 Server commit, then deletes all three source files. Neither those edits nor the
 fault injection are claims about Grok's native edit/rewind behavior.
+
+`edit` is a separate native Session with a grep match, required read_file and
+successful search_replace changing marker.txt from version=before to version=after.
+It has 12 updates, 11 Events and one usage row (57,670 input, 1,417 output,
+43,072 cached input). Original numeric stdout/stderr bytes are retained after
+path sanitization; the Adapter decodes them before Host redaction. Native diff
+content has old/new text and line context; bounded Canonical tool input/output
+retains the edits while the original ACP diff and location fields remain Raw.
+
+`empty-search` is a separate native Session with no grep matches: six updates,
+five Events and one usage row. Native status is completed even though exit_code
+is 1. Both used the same no-memory/no-subagents/no-web/no-plan headless workflow
+as above; the edit run allowed its controlled file modification. Two intervening
+restricted-tool probes produced assistant refusals without tool calls and are not
+committed as tool evidence. A synthetic HTTP marker is appended only to grep's
+encoded stdout to verify masking before Reader exposure with Raw disabled. The
+shared Search Interface searches conversation text and tool labels, not tool
+input/output payloads; tests retain that distinction.

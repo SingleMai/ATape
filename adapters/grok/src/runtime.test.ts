@@ -14,12 +14,13 @@ const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 
 const sourceId = "01a0987a-554b-7073-934d-da914245adbf"
 const fixture = async (stage = "resumed") => {
   const home = await mkdtemp(join(tmpdir(), "atape-grok-test-")); roots.push(home)
-  const directory = join(home, "sessions", "opaque-location", sourceId); await mkdir(directory, { recursive: true })
+  const selectedId = stage === "edit" ? "88789e9d-9240-47c6-8a89-0842fc706348" : stage === "empty-search" ? "f0d683d2-d72e-4956-9a5b-a07eeb68e6fb" : sourceId
+  const directory = join(home, "sessions", "opaque-location", selectedId); await mkdir(directory, { recursive: true })
   await cp(new URL(`./fixtures/native-1.0.3/${stage}/`, import.meta.url), directory, { recursive: true })
   vi.stubEnv("ATAPE_GROK_HOME", home)
   const lifetime = new AbortController(), runtime = await createAtapeAdapter({ protocolVersion: "atape.adapter.v1alpha1", adapter: { id: "grok", version: "0.5.1" }, project: { id: "project", type: "directory", path: "/unrelated/locator" }, signal: lifetime.signal })
   runtimes.push(runtime)
-  return { home, directory, lifetime, runtime, request: { sourceId, limits, projection, rawEnabled: true, signal: signal() } }
+  return { home, directory, lifetime, runtime, request: { sourceId: selectedId, limits, projection, rawEnabled: true, signal: signal() } }
 }
 const read = async (view: Awaited<ReturnType<Awaited<ReturnType<typeof createAtapeAdapter>>["sourceCapture"]["open"]>>) => {
   Schema.decodeUnknownSync(SourceCaptureHeader)(view)
@@ -39,6 +40,28 @@ const mutate = async (f: Awaited<ReturnType<typeof fixture>>, file: string, edit
 }
 
 describe("Grok source-capture runtime Interface", () => {
+  it("captures native grep and search_replace with readable results and edit details", async () => {
+    const f = await fixture("edit"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    const events = frames.flatMap(f => f.events)
+    expect(view.target).toEqual({ events: 11, usage: 1, threads: 1 })
+    expect(events[1]!.update).toMatchObject({ title: "grep", kind: "search" })
+    expect(events[3]!.update).toMatchObject({ status: "completed", rawOutput: { stdout: expect.stringContaining("1:ATAPE_GROK_SEARCH_NEEDLE_20260913"), stderr: "", exit_code: 0, match_count: 1 } })
+    expect(events[7]!.update).toMatchObject({ title: "search_replace", kind: "edit", rawInput: { old_string: "version=before", new_string: "version=after" } })
+    expect(events[9]!.update).toMatchObject({ status: "completed", rawOutput: { EditsApplied: { old_string: "version=before", new_string: "version=after" } } })
+    expect(frames.flatMap(f => f.usage)[0]).toMatchObject({ inputTokens: 57670, outputTokens: 1417, cacheReadTokens: 43072 })
+    expect(JSON.stringify(frames.map(f => f.raw))).toContain("oldText")
+    await view.close()
+  })
+  it("preserves a native no-match search as completed even with exit code one", async () => {
+    const f = await fixture("empty-search"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    expect(frames.flatMap(f => f.events)[3]!.update).toMatchObject({ status: "completed", rawOutput: { stdout: expect.stringContaining("No matches found"), exit_code: 1, match_count: 0 } })
+    await view.close()
+  })
+  it.each([[-1], [256], [1.5], [255], "encoded"].map(bytes => ({ bytes })))("rejects malformed search bytes before exposing a target: $bytes", async ({ bytes }) => {
+    const f = await fixture("edit")
+    await mutate(f, "updates.jsonl", rows => rows[3].params.update.rawOutput.stdout = bytes)
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "format" })
+  })
   it("captures the native foreground command and keeps hook telemetry in Raw", async () => {
     const f = await fixture("shell"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
     expect(view.target).toEqual({ events: 15, usage: 3, threads: 1 })
