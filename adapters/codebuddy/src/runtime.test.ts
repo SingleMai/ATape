@@ -240,7 +240,7 @@ describe("CodeBuddy installed runtime Interface", () => {
     expect(await read(moved)).toEqual(frames.map(({ raw: _, ...frame }) => frame))
     await moved.close()
   })
-  it.each(["missing", "truncated", "prompt", "after", "last", "identity", "extra-turn", "pending", "path", "symlink", "background", "fork"])("refuses an incomplete or unproven child family: %s", async variant => {
+  it.each(["missing", "truncated", "prompt", "after", "last", "identity", "extra-turn", "pending", "path", "symlink", "background"])("refuses an incomplete or unproven child family: %s", async variant => {
     const f = await family()
     let reason = "unsupported"
     if (variant === "missing") { await rm(f.child); reason = "io" }
@@ -254,13 +254,80 @@ describe("CodeBuddy installed runtime Interface", () => {
     if (variant === "path") { f.parentRows[4].providerData.toolResult.subAgent.sessionId = "../outside"; reason = "format" }
     if (variant === "symlink") { const saved = join(f.home, "outside.jsonl"); await rename(f.child, saved); await symlink(saved, f.child); reason = "io" }
     if (variant === "background") f.parentRows[3].arguments = JSON.stringify({ ...JSON.parse(f.parentRows[3].arguments), run_in_background: true })
-    if (variant === "fork") {
-      const forkId = "family-fork"
-      f.parentRows.push({ ...f.parentRows[0], id: "fork-owned", parentId: f.parentRows.at(-1).id, sessionId: forkId })
-      f.parent = join(f.directory, `${forkId}.jsonl`); f.request.sourceId = forkId
-      await writeFile(f.parent.replace(/\.jsonl$/, ".meta.json"), JSON.stringify({ forkedFrom: "atape-codebuddy-child-21240" }))
-    }
     await writeFile(f.parent, serialize(f.parentRows))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
+  const forkFamily = async () => {
+    const f = await fixture(), originalId = "atape-codebuddy-fork-child-root-21240", forkId = "atape-codebuddy-fork-child-nested-21240"
+    await cp(new URL("./fixtures/native-fork-family-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const file = join(f.directory, `${forkId}.jsonl`), child = join(f.directory, originalId, "subagents", "agent-d40e1747.jsonl")
+    const leaf = join(f.directory, "dc73f83c-3107-474d-bb1e-13952cff1643", "subagents", "agent-375d1c88.jsonl")
+    return { ...f, originalId, forkId, file, child, leaf, native: await readFile(file, "utf8"), request: { ...f.request, sourceId: forkId } }
+  }
+  it("freezes copied foreground descendants at native receipts while the original family continues", async () => {
+    const f = await forkFamily(), original = await f.runtime.sourceCapture.open({ ...f.request, sourceId: f.originalId })
+    expect(original.target).toEqual({ events: 37, usage: 16, threads: 4 })
+    const originalFrames = await read(original); await original.close()
+    const before = await f.runtime.sourceCapture.open(f.request), frames = await read(before), header = before.session
+    expect(before.profile).toBe("codebuddy.cli.jsonl.family.fork.1")
+    expect(before.target).toEqual({ events: 30, usage: 13, threads: 4 })
+    expect(before.origin.cwd).toBe("/fixture/codebuddy-fork-family-project")
+    expect(before.threads.find(thread => thread.sourceThreadId === "agent-375d1c88")!.parentSourceThreadId).toBe("agent-d40e1747")
+    const events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+    expect(events.filter(event => event.childSourceThreadId)).toHaveLength(4)
+    expect(events.map(event => event.sourceOrder)).toEqual(events.map((_, index) => index))
+    expect(events.every(event => !originalFrames.flatMap(frame => frame.events).some(original => original.sourceEventId === event.sourceEventId))).toBe(true)
+    expect(usage.reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(98806)
+    expect(usage.reduce((sum, row) => sum + row.outputTokens!, 0)).toBe(577)
+    expect(usage.reduce((sum, row) => sum + (row.cacheReadTokens ?? 0), 0)).toBe(56896)
+    expect(JSON.stringify(frames)).not.toContain("ATAPE_ORIGINAL_LEAF_LATER_21240")
+    expect(JSON.stringify(frames)).not.toContain("ATAPE_ORIGINAL_NESTED_LATER_21240")
+    expect(JSON.stringify(frames)).toContain("ATAPE_ORIGINAL_CHILD_LATER_21240") // This older turn preceded the nested fork.
+    const leafFrames = frames.filter(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId === "agent-375d1c88")
+    expect(leafFrames).toHaveLength(3) // Native lastId is reasoning; keep its following assistant too.
+    expect(leafFrames.at(-1)!.events[0]!.update).toMatchObject({ content: { text: "ATAPE_FORK_LEAF_SEED_21240" } })
+    expect(frames.filter(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId === "agent-d40e1747")).toHaveLength(5)
+    expect(frames.filter(frame => !(frame.raw as { sourceThreadId?: string }).sourceThreadId).map(frame => (frame.raw as { json: string }).json).join("\n") + "\n").toBe(f.native)
+    await before.close()
+    // A new unfinished delegated turn outside the copied frontier changes neither view nor Raw.
+    const later = rows(await readFile(f.leaf, "utf8"))
+    later.splice(4); later[3].timestamp += 1000000
+    await writeFile(f.leaf, serialize(later)); await rm(join(f.directory, `${f.originalId}.jsonl`))
+    const unchanged = await f.runtime.sourceCapture.open(f.request)
+    expect(unchanged.session).toEqual(header); expect(await read(unchanged)).toEqual(frames); await unchanged.close()
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    expect(await read(off)).toEqual(frames.map(({ raw: _, ...frame }) => frame)); await off.close()
+  })
+  it("retains the single-child fork's earlier frontier across original growth and ordinary fork resume", async () => {
+    const f = await forkFamily(), simpleId = "atape-codebuddy-fork-child-copy-21240", file = join(f.directory, `${simpleId}.jsonl`)
+    const native = await readFile(file, "utf8")
+    await writeFile(file, serialize(rows(native).slice(0, 9)))
+    const initial = await f.runtime.sourceCapture.open({ ...f.request, sourceId: simpleId })
+    expect(initial.target).toEqual({ events: 10, usage: 4, threads: 2 })
+    const before = await read(initial); await initial.close(); await writeFile(file, native)
+    const resumed = await f.runtime.sourceCapture.open({ ...f.request, sourceId: simpleId }), frames = await read(resumed)
+    expect(resumed.target).toEqual({ events: 12, usage: 5, threads: 2 }); expect(frames.slice(0, before.length)).toEqual(before)
+    expect(JSON.stringify(frames)).not.toContain("ATAPE_ORIGINAL_CHILD_LATER_21240")
+    expect(frames.flatMap(frame => frame.usage).reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(39864)
+    await resumed.close()
+  })
+  it.each(["missing-child", "missing-leaf", "missing-receipt", "pending-assistant", "next-user", "prompt", "parent-chain", "foreground-after-fork"])("preserves a fork when its copied child boundary is unproven: %s", async variant => {
+    const f = await forkFamily()
+    let reason = "unsupported"
+    if (variant === "missing-child") { await rm(f.child); reason = "io" }
+    if (variant === "missing-leaf") { await rm(f.leaf); reason = "io" }
+    const values = rows(f.native), child = rows(await readFile(f.leaf, "utf8").catch(() => "{}"))
+    if (variant === "missing-receipt") { values[14].providerData.toolResult.subAgent.lastId = "missing"; reason = "format" }
+    if (variant === "pending-assistant") { child.splice(2); await writeFile(f.leaf, serialize(child)); reason = "format" }
+    if (variant === "next-user") { child.splice(2, 1); await writeFile(f.leaf, serialize(child)); reason = "format" }
+    if (variant === "prompt") { child[0].content[0].text = "different"; await writeFile(f.leaf, serialize(child)) }
+    if (variant === "parent-chain") { child[2].parentId = "foreign"; await writeFile(f.leaf, serialize(child)) }
+    if (variant === "foreground-after-fork") {
+      const original = rows(await readFile(join(f.directory, `${f.originalId}.jsonl`), "utf8")), tail = original.slice(16)
+      tail[0].parentId = values.at(-1).id; values.push(...tail)
+    }
+    await writeFile(f.file, serialize(values))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
   const background = async () => {
@@ -270,6 +337,13 @@ describe("CodeBuddy installed runtime Interface", () => {
     const reporter = join(f.directory, backgroundId, "subagents", "agent-93604b67.jsonl")
     return { ...f, parent, child, reporter, parentRows: rows(await readFile(parent, "utf8")), childRows: rows(await readFile(child, "utf8")), request: { ...f.request, sourceId: backgroundId } }
   }
+  it("keeps copied automatic-team background families unsupported", async () => {
+    const f = await background(), forkId = "controlled-background-fork", values = f.parentRows
+    values.push({ ...values[0], id: "fork-owned", parentId: values.at(-1).id, sessionId: forkId })
+    const file = join(f.directory, `${forkId}.jsonl`)
+    await writeFile(file, serialize(values)); await writeFile(file.replace(/\.jsonl$/, ".meta.json"), JSON.stringify({ forkedFrom: f.request.sourceId }))
+    await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: forkId })).rejects.toMatchObject({ reason: "unsupported" })
+  })
   it("captures completed native background launches and ordinary parent resume without inventing inbox messages", async () => {
     const f = await background()
     await writeFile(f.parent, serialize(f.parentRows.slice(0, 9)))

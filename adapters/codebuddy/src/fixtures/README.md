@@ -303,3 +303,51 @@ interrupt the group, change results, attach early usage and substitute delegatio
 Installed acceptance additionally changes Raw policy, adds a Raw-only field to
 the second sibling, drops committed HTTP responses and deletes the source. These
 are fault and recovery inputs, not additional native format evidence.
+
+## Forks with copied foreground children
+
+`native-fork-family-2.124.0/` contains eight controlled files: three root JSONL
+histories, two fork sidecars and three child JSONLs. They were generated on
+2026-09-13 UTC (2026-09-14 Singapore time), macOS arm64, CLI 2.124.0. Eight print-mode
+invocations used `--strict-mcp-config --setting-sources "" --model hy3 --effort low
+--max-turns 3 --tools Agent --allowedTools Agent --output-format json`, with
+`PRE_MESSAGE_COMPACT=0` and `CODEBUDDY_AUTOCOMPACT_PCT_OVERRIDE=100`. The custom
+`atape-fork-child` has no tools; `atape-fork-parent` allows only Agent. Only the
+requested marker delegations were performed in an otherwise empty scratch directory.
+
+| Native action | Stored result |
+| --- | --- |
+| Create original root and foreground child | root 6 rows; `agent-97ab43b2` 3 |
+| Fork original root; tool-free marker | simple fork 9 rows; child file unchanged |
+| Resume original child | original root 11; same child 5; simple fork unchanged |
+| Resume simple fork without tools | simple fork 11; captured child remains first 3 rows |
+| Original root delegates a parent which delegates a leaf | original root 16; `agent-d40e1747` 5; `agent-375d1c88` 3 |
+| Fork the original root again | three-level fork 19; child files unchanged |
+| Resume the original parent and leaf | original root 22; parent 9; leaf 5; fork unchanged |
+| Resume the three-level fork without tools | three-level fork 21; captured parent/leaf remain 5/3 |
+
+Both forks have `forkedFrom: atape-codebuddy-fork-child-root-21240`. No child
+files were copied by the CLI. Direct children remain under that original root's
+`subagents` directory; the leaf is under its parent's UUID
+`dc73f83c-3107-474d-bb1e-13952cff1643`. The simple fork selects only the first turn
+of `agent-97ab43b2`; the later fork legitimately copies both of its turns. Later
+original parent/leaf turns are excluded independently. The first direct child
+and leaf receipts name reasoning before their terminal assistant; those assistant
+answers must remain present.
+
+The simple resumed fork contains 12 Events and five usage samples: 39,864 input,
+177 output, 19,136 cache. The three-level resumed fork contains 30 Events and 13
+usage samples: 98,806 input, 577 output, 56,896 cache. Copied responses represent
+captured history, not new spend. Only the controlled absolute CWD was replaced
+with `/fixture/codebuddy-fork-family-project`; all other fields, sidecars and IDs
+are native. All eight native source files were byte-verified against retained
+scratch copies before removing their owned CLI project bucket.
+
+Derived tests delete selected children, truncate the receipt boundary, change
+prompts/parents, append unfinished original turns and attempt new delegation
+after the fork. Installed acceptance rewrites CWDs to prove fork-owned attribution,
+uses the actual installed CLI for initial capture, original growth and parent
+resume, mutates Raw policy/content, drops committed HTTP responses and deletes
+all five installed sources. The original root JSONL is absent throughout that
+installed contract. These mutations prove attribution and recovery, not additional
+native formats or support for delegation launched from a fork.

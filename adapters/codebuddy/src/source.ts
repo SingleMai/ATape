@@ -356,6 +356,24 @@ const validateChild = (history: History, ref: ChildReference) => {
   return { nativeSessionId, delegatedPrompts }
 }
 
+// A CLI fork copies Agent receipts, not child files. lastId can be the final
+// reasoning row: include its completed assistant, then exclude the shared file's
+// later turns. Every selected prefix still passes normal prompt/receipt validation.
+const copiedChild = (history: History, ref: ChildReference): History => {
+  if (ref.calls.some(call => call.mode !== "foreground")) fail("unsupported", "CodeBuddy copied background children require a wider source profile.")
+  const call = ref.calls.at(-1)!
+  if (call.mode !== "foreground") return fail("unsupported", "CodeBuddy copied child has no foreground completion receipt.")
+  const anchor = history.records.findIndex(({ row }) => row.id === call.lastId)
+  if (anchor < 0) fail("format", "CodeBuddy copied child completion has not reached its history; retry.")
+  for (let end = anchor; end < history.records.length; end++) {
+    const row = history.records[end]!.row
+    if (row.type === "message" && row.role === "assistant" && row.status === "completed")
+      return { ...history, records: history.records.slice(0, end + 1) }
+    if (end > anchor && row.type === "message" && row.role === "user") break
+  }
+  return fail("format", "CodeBuddy copied child has no completed response at its receipt boundary; retry.")
+}
+
 export const snapshot = async (home: string, sourceId: string, limits: SourceCaptureLimits, signal: AbortSignal) => {
   const started = performance.now()
   const check = () => { signal.throwIfAborted(); if (performance.now() - started > limits.durationMs) fail("limit", "CodeBuddy family snapshot exceeded its deadline.") }
@@ -363,7 +381,11 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
   if (files.length !== 1) fail("format", "CodeBuddy source is missing or has duplicate identities.")
   const root = await snapshotFile(files[0]!, limits, signal), children: ChildSnapshot[] = []
   const rootRefs = references(root, true), histories: History[] = [root], used = new Set<string>(), nativeIds = new Set([segment(root.records[0]!.row.sessionId)])
-  if (root.forkedFrom && rootRefs.children.size) fail("unsupported", "CodeBuddy forked child families require a proven copied-child frontier.")
+  if (root.forkedFrom && rootRefs.children.size) {
+    const own = root.records.findIndex(({ row }) => row.sessionId === sourceId)
+    if (root.records.slice(own).some(({ row }) => row.type === "function_call" && rootRefs.callChildren.get(id(row.callId)) !== undefined))
+      fail("unsupported", "CodeBuddy child delegation after a fork requires a wider source profile.")
+  }
   let bytes = root.bytes, records = root.records.length
   const pending = [{ id: sourceId, nativeSessionId: segment(root.records[0]!.row.sessionId), refs: rootRefs }]
   for (let at = 0; at < pending.length; at++) {
@@ -377,11 +399,12 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
       await checkDirectory(parentDirectory); await checkDirectory(childDirectory)
       const child = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
       bytes += child.bytes; records += child.records.length
-      const { nativeSessionId, delegatedPrompts } = validateChild(child, ref), refs = references(child)
+      const visible = root.forkedFrom ? copiedChild(child, ref) : child
+      const { nativeSessionId, delegatedPrompts } = validateChild(visible, ref), refs = references(visible)
       if (ref.backgroundName !== undefined && refs.children.size) fail("unsupported", "CodeBuddy background child delegation requires a wider source profile.")
       if (nativeIds.has(nativeSessionId)) fail("unsupported", "CodeBuddy child native Session identity is duplicated.")
       nativeIds.add(nativeSessionId)
-      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, background: ref.backgroundName !== undefined, continuing: ref.backgroundName !== undefined && ref.calls.length > 1, delegatedPrompts, history: child, callChildren: refs.callChildren })
+      children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, background: ref.backgroundName !== undefined, continuing: ref.backgroundName !== undefined && ref.calls.length > 1, delegatedPrompts, history: visible, callChildren: refs.callChildren })
       histories.push(child); pending.push({ id: childId, nativeSessionId, refs })
     }
   }

@@ -40,7 +40,8 @@ completed foreground Agent family described below, including root compaction.
 background launches described below; `codebuddy.cli.jsonl.family.background.turns.1`
 adds proven serial continuation and framework notifications. `codebuddy.cli.jsonl.emergency.1`
 and `codebuddy.cli.jsonl.family.emergency.1` cover the completed emergency compaction
-sequence below. All are tested with native
+sequence below. `codebuddy.cli.jsonl.family.fork.1` adds the copied foreground
+family described below. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -129,6 +130,41 @@ for native rewind/compaction semantics.
 Sidecar fields other than `forkedFrom`, in-file branching and unknown parent-linked
 records are rejected without replacing previously published history.
 
+## Forks with copied foreground children
+
+A CLI fork copies completed Agent receipts in its root history, while child files
+remain under the original native parent Session directory. The Adapter follows
+only those copied receipts. For each child it finds the final copied `lastId`,
+includes the completed assistant at or following that boundary, and
+validates the selected prefix against all copied prompts and `afterId` receipts.
+This also retains the final answer when native `lastId` names its preceding
+reasoning. Nested child receipts are read from that selected prefix, so each
+level has its own boundary.
+
+Original children may subsequently append more turns. Those later records do not
+enter the fork's Events, usage, Raw or Search and do not change its selected head.
+A resumed child whose earlier turns were already copied retains those turns.
+The fork is an independent Session with all Event/tool/usage identities scoped
+to its storage ID. Its first fork-owned user CWD owns the whole copied family;
+copied root or child CWDs cannot move it to another Project. The original root
+JSONL need not remain present, but the referenced child files are required until
+a complete view is frozen. A missing or incomplete selected child preserves the
+entire previous target.
+
+The CLI 2.124.0 native corpus covers a single-child fork and a three-level fork,
+ordinary parent resumes, and later original child/leaf continuation. The resumed
+single-child fork has two Threads, 12 Events and five usage records (39,864 input,
+177 output, 19,136 cache). The resumed three-level fork has four Threads, 30 Events
+and 13 usage records (98,806 input, 577 output, 56,896 cache). These are historical
+copied counters, not newly incurred spend. Cache is already part of input.
+
+Successful child delegation from the fork, copied background
+children, fork subagents and emergency compaction in forks remain unsupported.
+The Adapter still reads and stamp-checks bounded complete physical files before
+selecting prefixes; growth beyond the shared file/record/byte limits is diagnosed,
+even when it lies beyond the copied boundary. A malformed physical file requires
+retry rather than an unverified partial read.
+
 ## Completed foreground Agent families
 
 Native `Agent` call/result pairs establish membership through structured
@@ -162,12 +198,12 @@ input. Orphan files are not discovered as independent Sessions. A pending Agent
 call, missing/truncated child, mismatched receipt or unproven extra child turn
 rejects the complete new target; all previously published family members remain.
 
-Named/team and fork subagents, manual/pre-message child compaction and forks
-containing child histories remain unsupported. Completed foreground child
+Named/team and fork subagents and manual/pre-message child compaction remain
+unsupported. Forks can retain copied foreground histories as described above. Completed foreground child
 emergency compaction is described below. The next section defines the narrower supported
-automatic-team background shape. Copied parent receipts alone do not prove a
-fork's child visibility frontier when the original children can keep appending.
-These shapes require additional native evidence before extending membership.
+automatic-team background shape. Copied foreground boundaries use the native
+completion evidence above; other shapes need additional evidence before extending
+membership.
 
 ## Completed background Agent launches
 
@@ -238,7 +274,7 @@ parent calls open that same Thread. Earlier Event identities remain stable.
 Named teams, generic inbox/peer messages, broadcasts, overlapping or batched
 follow-ups, background launches inside children, delegation by a background child,
 team-disabled foreground fallback, fork/compaction inside a background child,
-and forks containing children remain unsupported. Ordinary parent resume and
+and forks containing background children remain unsupported. Ordinary parent resume and
 additional one-shot launches remain covered. A completed assistant turn is a
 snapshot frontier, not a claim that the native member cannot receive more work.
 
@@ -430,6 +466,19 @@ references to compaction. The partial capture status reflects the native externa
 output placeholders. Adapter/CLI typechecks, 103 runtime tests, independent
 package installation and the full PostgreSQL/CodeBuddy/Grok/Kimi/OpenCode suite passed.
 
+The copied-foreground-fork contract verifies four Threads, 30 Events and 13 usage
+samples through the installed CLI, with original root JSONL absent and copied
+CWDs naming another configured Project. Growth of the original middle/leaf files
+leaves the fork head, Events and Raw unchanged; incomplete or mismatched selected
+children preserve the old family. Raw off/on, Raw-only response loss and lost
+activation recover after all five source files are deleted. Search opens the
+recovered leaf under its three-level path and excludes later original descendants.
+Browser acceptance on 2026-09-14 verified the five root turns and followed root →
+copied middle → copied leaf, with only the original delegated turn in each nested
+Thread and the recovered leaf reply present. Adapter/CLI typechecks, 126 runtime
+tests, independent tarball installation and documentation/architecture checks
+passed locally; this is not staging or publication evidence.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -442,7 +491,7 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after ordinary multi-tool recovery (the enclosing test
+for up to three minutes after copied foreground fork-family recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
