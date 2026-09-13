@@ -1,6 +1,6 @@
 # CodeBuddy Code CLI Adapter
 
-The CodeBuddy Adapter reads local primary and forked CLI JSONL Sessions and completed foreground Agent families through the existing
+The CodeBuddy Adapter reads local primary and forked CLI JSONL Sessions and completed foreground/background Agent families through the existing
 [source-capture runtime](package-manifest.md#bounded-source-capture-capability).
 The Host owns Project attribution, redaction, stable revisions, frozen delivery,
 atomic publication, independent Raw receipts and crash recovery. No Server schema
@@ -35,7 +35,9 @@ Official references: [local directory structure](https://www.codebuddy.ai/docs/c
 The evidence-bound profiles are `codebuddy.cli.jsonl.linear.1` and
 `codebuddy.cli.jsonl.fork.1`, extended by `codebuddy.cli.jsonl.compaction.1` and
 `codebuddy.cli.jsonl.fork.compaction.1` when supported compaction is present. `codebuddy.cli.jsonl.family.1` covers the
-completed foreground Agent family described below, including root compaction. All are tested with native
+completed foreground Agent family described below, including root compaction.
+`codebuddy.cli.jsonl.family.background.1` additionally covers the bounded automatic-team
+background launches described below. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -129,10 +131,55 @@ input. Orphan files are not discovered as independent Sessions. A pending Agent
 call, missing/truncated child, mismatched receipt or unproven extra child turn
 rejects the complete new target; all previously published family members remain.
 
-Background, named/team and fork subagents, child compaction and forks containing
-child histories remain unsupported. Copied parent receipts alone do not prove a
+Named/team and fork subagents, child compaction and forks containing
+child histories remain unsupported. The next section defines the narrower supported
+automatic-team background shape. Copied parent receipts alone do not prove a
 fork's child visibility frontier when the original children can keep appending.
 These shapes require additional native evidence before extending membership.
+
+## Completed background Agent launches
+
+In CLI 2.124.0, `run_in_background: true` launches an Agent as a member of an
+automatic team. Its parent result has `providerData.toolResult.renderer.type:
+team-member-spawned`; the renderer's JSON value supplies `taskId`, member name,
+team name, description and delegated prompt. It has no foreground `subAgent`
+receipt. The Adapter validates that structured value against the call and the
+root's `_auto_<native-session-id>` team, then reads the corresponding
+`<root-native-session-id>/subagents/<taskId>.jsonl`. It does not read team configs,
+mailboxes or task output files, or infer membership from human-readable output.
+
+This profile admits root-level launches with one completed child turn. The child
+must start with the exact native `teammate-message` initial assignment matching
+its member name and delegated prompt, and end with a completed assistant message.
+The reader shows the delegated prompt; the full wrapper stays in Raw. Parent
+calls link to their child Threads, and response usage belongs to the originating
+Thread. Pending, missing or truncated children, repeated launch identities and
+unproven extra child turns reject the entire new target and retain the whole
+previous publication. A completed parent `TaskOutput` tool is not proof that the
+child has finished; the sample reports a running task at that point.
+
+The native corpus contains two background launches across ordinary parent
+resume, followed by another tools-disabled parent resume: three Threads,
+24 Events and nine usage records, totaling 74,371 input, 1,162 output and 43,072
+cached-input tokens. Cache is included in input. The first child finished after
+the parent's final reply. The family uses deterministic delegation traversal for
+the Host's global order, retaining native timestamps; this order does not imply
+that a background child completed before its spawn result.
+
+The second child called `SendMessage` once. Its successful tool result and final
+reply are captured in that child Thread. The controlled local team-lead mailbox
+received the marker, but neither that parent run nor its subsequent ordinary
+resume appended an inbox message to the root JSONL. The Adapter therefore does
+not fabricate a parent notification from child output or mailbox state.
+
+Named teams, inbox turns, live multi-round background agents, resuming a background
+child, background launches inside children, delegation by a background child,
+team-disabled foreground fallback,
+and fork/compaction inside a background child remain outside this profile. These
+need additional native samples before extending visibility and relationship
+semantics. Ordinary parent resume and additional one-shot background launches are
+covered; a completed assistant turn is a snapshot frontier, not a claim that the
+native team member can never receive another task.
 
 ## Compaction with retained history
 
@@ -212,7 +259,7 @@ native provenance and synthetic coverage. Relevant verification commands:
 - `pnpm test:release` includes the exact CodeBuddy release artifact and Tools.
 
 Local verification on 2026-09-13 (macOS arm64) passed Adapter typechecks and
-55 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
+73 runtime tests, independent tarball installation, the installed CLI/HTTP/PostgreSQL
 contract, and the shared PostgreSQL/OpenCode contract suite. Following the single-entry CLI change,
 installation and selection use the console’s application Modules; initial collection
 and replacement collection run in the actual installed background executable.
@@ -246,6 +293,19 @@ advances only completed CodeBuddy reservation expiry before running the next
 Provider, preserving the deployment example’s finite per-User quota and verifying
 that expiry leaves the selected family readable.
 
+The background contract verifies actual installed collection of the first launch,
+completion of a second child and ordinary parent resume, including foreign child
+CWD, stable earlier Events and per-Thread usage. It checks Reader links and paths,
+child Search anchors, exact Raw wrapper/UUID provenance, pending or missing child
+preservation, Raw off/on and recovery from a lost activation response after all
+three source files are deleted. Completed foreground and background fixture
+groups expire only their own test User's CodeBuddy reservations, so the expanded
+suite stays isolated without changing production admission limits. Browser
+acceptance opened both background children from their parent: the first showed
+the recovered frozen reply, and the second showed the delegated prompt,
+SendMessage call/result and native final reply under the two-level Thread path.
+The parent retained exactly its three real user turns.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -258,7 +318,8 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after child-family recovery; it writes the ephemeral test
+for up to three minutes after background-family recovery (the enclosing test
+adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, family reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
 `atape_session_dev`, inspect the reader, then create `<file>.done` to continue.

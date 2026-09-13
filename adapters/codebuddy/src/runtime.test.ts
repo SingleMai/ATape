@@ -263,6 +263,84 @@ describe("CodeBuddy installed runtime Interface", () => {
     await writeFile(f.parent, serialize(f.parentRows))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
+  const background = async () => {
+    const f = await fixture(), backgroundId = "atape-codebuddy-background-21240"
+    await cp(new URL("./fixtures/native-background-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const parent = join(f.directory, `${backgroundId}.jsonl`), child = join(f.directory, backgroundId, "subagents", "agent-aeb3d60f.jsonl")
+    const reporter = join(f.directory, backgroundId, "subagents", "agent-93604b67.jsonl")
+    return { ...f, parent, child, reporter, parentRows: rows(await readFile(parent, "utf8")), childRows: rows(await readFile(child, "utf8")), request: { ...f.request, sourceId: backgroundId } }
+  }
+  it("captures completed native background launches and ordinary parent resume without inventing inbox messages", async () => {
+    const f = await background()
+    await writeFile(f.parent, serialize(f.parentRows.slice(0, 9)))
+    const first = await f.runtime.sourceCapture.open(f.request), before = await read(first), origin = first.origin
+    expect(first.target).toEqual({ events: 11, usage: 4, threads: 2 }); await first.close()
+    await writeFile(f.parent, serialize(f.parentRows))
+    const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+    expect(view.profile).toBe("codebuddy.cli.jsonl.family.background.1")
+    expect(view.target).toEqual({ events: 24, usage: 9, threads: 3 })
+    expect(view.origin).toEqual(origin); expect(view.origin.cwd).toBe("/fixture/codebuddy-background-project")
+    expect(view.threads.map(thread => [thread.sourceThreadId, thread.parentSourceThreadId])).toEqual([
+      [f.request.sourceId, undefined], ["agent-aeb3d60f", f.request.sourceId], ["agent-93604b67", f.request.sourceId]
+    ])
+    const events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+    expect(events.slice(0, 11)).toEqual(before.flatMap(frame => frame.events))
+    expect(events.map(event => [event.sourceOrder, event.eventIndex])).toEqual(events.map((_, index) => [index, index]))
+    expect(events.filter(event => event.childSourceThreadId).map(event => event.childSourceThreadId)).toEqual(["agent-aeb3d60f", "agent-93604b67"])
+    const childEvents = events.filter(event => event.sourceThreadId === "agent-aeb3d60f")
+    expect(childEvents[0]!.update).toMatchObject({ content: { text: "Reply exactly ATAPE_BACKGROUND_CHILD_21240. Do not use tools." } })
+    expect(childEvents.at(-1)!.occurredAt > before.flatMap(frame => frame.events).at(-1)!.occurredAt).toBe(true)
+    expect(events.filter(event => event.sourceThreadId === f.request.sourceId && event.update.sessionUpdate === "user_message_chunk")).toHaveLength(3)
+    expect(JSON.stringify(events.map(event => event.update))).not.toContain("<teammate-message")
+    expect(events.filter(event => event.sourceThreadId === "agent-93604b67").map(event => event.update)).toContainEqual(expect.objectContaining({ title: "SendMessage", status: "completed" }))
+    expect(usage.reduce((n, row) => n + (row.inputTokens ?? 0), 0)).toBe(74371)
+    expect(usage.reduce((n, row) => n + (row.outputTokens ?? 0), 0)).toBe(1162)
+    expect(usage.reduce((n, row) => n + (row.cacheReadTokens ?? 0), 0)).toBe(43072)
+    expect(usage.filter(row => row.sourceThreadId === "agent-93604b67")).toHaveLength(2)
+    expect(frames.find(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId === "agent-aeb3d60f")!.raw).toMatchObject({
+      sourceSessionId: f.request.sourceId, json: expect.stringContaining('<teammate-message teammate_id=')
+    })
+    await view.close()
+    await writeFile(f.child, serialize(f.childRows.map(row => ({ ...row, cwd: "/foreign/child-cwd" }))))
+    await rename(f.directory, join(f.home, "projects", "moved"))
+    const frozen = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(join(f.home, "projects"), { recursive: true })
+    expect(frozen.origin).toEqual(origin)
+    expect(await read(frozen)).toEqual(frames.map(({ raw: _, ...frame }) => frame))
+    await frozen.close()
+  })
+  it.each(["pending-launch", "pending-child", "missing", "truncated", "wrapper", "renderer", "team", "prompt", "path", "named", "resume", "failed", "extra-turn", "compaction", "inbox", "duplicate-launch", "child-delegation"])("refuses an unproven background target: %s", async variant => {
+    const f = await background(), spawn = f.parentRows[4].providerData.toolResult.renderer
+    let reason = "unsupported"
+    if (variant === "pending-launch") { f.parentRows.splice(4); reason = "format" }
+    if (variant === "pending-child") { f.childRows.splice(1); reason = "format" }
+    if (variant === "missing") { await rm(f.child); reason = "io" }
+    if (variant === "wrapper") f.childRows[0].content[0].text = "unproven task"
+    if (variant === "renderer") spawn.type = "unknown-spawn"
+    if (variant === "team") spawn.value = JSON.stringify({ ...JSON.parse(spawn.value), teamName: "unrelated" })
+    if (variant === "prompt") spawn.value = JSON.stringify({ ...JSON.parse(spawn.value), prompt: "unrelated" })
+    if (variant === "path") { spawn.value = JSON.stringify({ ...JSON.parse(spawn.value), taskId: "../outside" }); reason = "format" }
+    if (variant === "named" || variant === "resume") f.parentRows[3].arguments = JSON.stringify({ ...JSON.parse(f.parentRows[3].arguments), [variant === "named" ? "name" : "resume"]: "agent-aeb3d60f" })
+    if (variant === "failed") f.parentRows[4].status = "failed"
+    if (variant === "extra-turn") { f.childRows.push({ ...f.childRows[0], id: "extra-turn", parentId: f.childRows.at(-1).id }); reason = "format" }
+    if (variant === "compaction") f.childRows[2].providerData.isCompacted = true
+    if (variant === "inbox") f.parentRows[15].content[0].text = '<teammate-message teammate_id="atape-reporter-1">notice</teammate-message>'
+    if (variant === "child-delegation") {
+      const foreground = rows(await readFile(new URL("./fixtures/native-family-2.124.0/atape-codebuddy-child-21240.jsonl", import.meta.url), "utf8"))
+      f.childRows[2].parentId = foreground[4].id
+      f.childRows.splice(2, 0, ...foreground.slice(3, 5).map((row, index) => ({ ...row, sessionId: f.childRows[0].sessionId,
+        parentId: index === 0 ? f.childRows[1].id : foreground[3].id, providerData: { ...row.providerData, agent: "atape-background" } })))
+    }
+    if (variant === "duplicate-launch") {
+      f.parentRows[12].arguments = f.parentRows[3].arguments
+      f.parentRows[13].providerData.toolResult.renderer = spawn
+    }
+    await writeFile(f.parent, serialize(f.parentRows))
+    if (variant !== "missing") await writeFile(f.child, serialize(f.childRows) + (variant === "truncated" ? "unfinished" : ""))
+    if (variant === "truncated") reason = "format"
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
   it.each(["threads", "records", "bytes"])("applies %s limits to the complete family", async variant => {
     const f = await family()
     if (variant === "threads") f.request.limits = { ...limits, threads: 3 }

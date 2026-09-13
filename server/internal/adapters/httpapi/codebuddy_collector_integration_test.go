@@ -639,13 +639,16 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	// Independent provider contracts share a test User and the real deployment
 	// quota (32 reservations for 15 minutes). Advance only this completed fixture's
 	// reservation clock before the next provider runs; never enlarge that quota.
-	expired, err := pool.Exec(t.Context(), `UPDATE canonical_publication_reservations r
-		SET expires_at=clock_timestamp()-interval '1 second'
-		FROM canonical_publication_sources s
-		WHERE s.session_id=r.session_id AND s.captured_by_user_id=$1 AND s.adapter_id='codebuddy'`, userID)
-	if err != nil || expired.RowsAffected() == 0 {
-		t.Fatalf("expire completed CodeBuddy fixture reservations: %v", err)
+	expireReservations := func() {
+		expired, err := pool.Exec(t.Context(), `UPDATE canonical_publication_reservations r
+			SET expires_at=clock_timestamp()-interval '1 second'
+			FROM canonical_publication_sources s
+			WHERE s.session_id=r.session_id AND s.captured_by_user_id=$1 AND s.adapter_id='codebuddy'`, userID)
+		if err != nil || expired.RowsAffected() == 0 {
+			t.Fatalf("expire completed CodeBuddy fixture reservations: %v", err)
+		}
 	}
+	expireReservations()
 	if afterExpiry, _ := read(family.SessionID, 20); afterExpiry != recoveredFamily.Head {
 		t.Fatal("CodeBuddy reservation expiry changed selected history")
 	}
@@ -653,9 +656,169 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	read(family.SessionID, 6, middleID)
 	read(family.SessionID, 2, leafID)
 	read(family.SessionID, 3, defaultID)
+	backgroundCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy background"})
+	backgroundCreate.Header.Set("Authorization", "Bearer "+credential)
+	backgroundCreate.Header.Set("Idempotency-Key", "codebuddy-background-project-21240")
+	backgroundCreated := httptest.NewRecorder()
+	h.ServeHTTP(backgroundCreated, backgroundCreate)
+	if backgroundCreated.Code != http.StatusCreated {
+		t.Fatalf("create background Project: %d %s", backgroundCreated.Code, backgroundCreated.Body.String())
+	}
+	var backgroundProject projectDTO
+	decodeResponse(t, backgroundCreated, &backgroundProject)
+	projectID = backgroundProject.ID
+	background := run("background-initial")
+	_, parentEvents = read(background.SessionID, 8)
+	backgroundLinks := links(parentEvents)
+	if len(backgroundLinks) != 1 || backgroundLinks[0].EventCount != 3 {
+		t.Fatal("CodeBuddy background spawn did not link its complete child")
+	}
+	backgroundChildID := backgroundLinks[0].ID
+	_, childBefore = read(background.SessionID, 3, backgroundChildID)
+	beforePrefix, _ = json.Marshal(childBefore)
+	if pending := run("background-pending"); pending.Head != background.Head || !bytes.Equal(pending.Records, background.Records) {
+		t.Fatal("CodeBuddy pending background child replaced the selected family")
+	}
+	read(background.SessionID, 8)
+	read(background.SessionID, 3, backgroundChildID)
+	completeBackground := run("background-complete")
+	_, parentEvents = read(background.SessionID, 13)
+	backgroundLinks = links(parentEvents)
+	if completeBackground.SessionID != background.SessionID || len(backgroundLinks) != 2 || backgroundLinks[0].ID != backgroundChildID {
+		t.Fatal("CodeBuddy second background launch changed prior membership")
+	}
+	reporterID := backgroundLinks[1].ID
+	_, reporterEvents := read(background.SessionID, 6, reporterID)
+	encoded, _ = json.Marshal(reporterEvents)
+	if !bytes.Contains(encoded, []byte("SendMessage")) || !bytes.Contains(encoded, []byte("ATAPE_BACKGROUND_REPORTED_21240")) {
+		t.Fatal("CodeBuddy background reporting tool or final answer missing")
+	}
+	resumedBackground := run("background-resume")
+	_, parentEvents = read(background.SessionID, 15)
+	rootBeforeEdit, _ = json.Marshal(parentEvents)
+	if resumedBackground.SessionID != background.SessionID || bytes.Contains(rootBeforeEdit, []byte("teammate-message")) || bytes.Count(rootBeforeEdit, []byte(`"author":"User"`)) != 3 {
+		t.Fatal("CodeBuddy parent resume invented an inbox turn or another Session")
+	}
+	_, childAfter = read(background.SessionID, 3, backgroundChildID)
+	afterPrefix, _ = json.Marshal(childAfter)
+	if !bytes.Equal(beforePrefix, afterPrefix) {
+		t.Fatal("CodeBuddy background completion/resume changed the previous child")
+	}
+	var reporterPage conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+background.SessionID+"?thread="+url.QueryEscape(reporterID), ""), &reporterPage)
+	if reporterPage.Thread.ParentThreadID == nil || *reporterPage.Thread.ParentThreadID != "root" || len(reporterPage.ThreadPath) != 2 {
+		t.Fatal("CodeBuddy background child lost its parent path")
+	}
+	reporterHits := 0
+	for _, result := range search("ATAPE_BACKGROUND_REPORTED_21240").Results {
+		if result.SessionID != background.SessionID {
+			t.Fatal("CodeBuddy background Search escaped the original Project")
+		}
+		if result.ThreadID != reporterID {
+			continue
+		}
+		reporterHits++
+		var anchored conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+background.SessionID+"?thread="+url.QueryEscape(reporterID)+"&at="+url.QueryEscape(result.EventID)+"&limit=2", ""), &anchored)
+		matched := false
+		for _, event := range anchored.Events {
+			matched = matched || event.ID == result.EventID
+		}
+		if !matched {
+			t.Fatal("CodeBuddy background Search anchor did not open its Event")
+		}
+	}
+	if reporterHits == 0 {
+		t.Fatal("CodeBuddy background child missing from Search")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != background.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 9 || inputTokens != 74371 || outputTokens != 1162 || cachedTokens != 43072 || threadUsage["root"] != 6 || threadUsage[backgroundChildID] != 1 || threadUsage[reporterID] != 2 {
+		t.Fatalf("CodeBuddy background usage ownership: records=%d input=%d output=%d cache=%d threads=%v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	provenance, found, err = store.ConversationPage(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, background.SessionID, backgroundChildID, canonical.ConversationPageRequest{Limit: 100})
+	if err != nil || !found || len(provenance.Events) != 3 {
+		t.Fatalf("CodeBuddy background provenance: %v", err)
+	}
+	objectID, key, valid = strings.Cut(provenance.Events[0].RawRef, "/records/")
+	if !valid {
+		t.Fatal("CodeBuddy background child lacks exact Raw provenance")
+	}
+	decodeResponse(t, send("GET", "/api/v1/raw-objects/"+objectID+"/content?generation=1&limit=1", ""), &raw)
+	if len(raw.Chunks) != 1 || raw.NextCursor != "" {
+		t.Fatal("CodeBuddy background Raw page exceeded its bound")
+	}
+	content, err = base64.StdEncoding.DecodeString(raw.Chunks[0].ContentBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(content, &object); err != nil || !bytes.Contains(object.Records[key].Row, []byte("teammate-message")) ||
+		!bytes.Contains(object.Records[key].Row, []byte("agent-aeb3d60f")) || !bytes.Contains(object.Records[key].Row, []byte("f8ac30c1-d2eb-4ceb-8f78-51b8223fd568")) {
+		t.Fatal("CodeBuddy background Raw lost its native wrapper or child identities")
+	}
+	if missing := run("background-missing"); missing.Head != resumedBackground.Head || !bytes.Equal(missing.Records, resumedBackground.Records) {
+		t.Fatal("CodeBuddy missing background child replaced the visible family")
+	}
+	read(background.SessionID, 15)
+	read(background.SessionID, 3, backgroundChildID)
+	read(background.SessionID, 6, reporterID)
+	if fixed := run("background-repair"); fixed.Head != resumedBackground.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy background repair replayed unchanged content")
+	}
+	setRaw(false)
+	backgroundOff := run("background-edit")
+	if backgroundOff.Head == resumedBackground.Head || len(search("CodeBuddyBackgroundPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy background Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	backgroundOn := run("background-reenable")
+	if backgroundOn.Head != backgroundOff.Head || !bytes.Equal(backgroundOn.Records, backgroundOff.Records) {
+		t.Fatal("CodeBuddy background Raw re-enable changed Canonical provenance")
+	}
+	if lost := run("background-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy background activation loss did not retain frozen recovery")
+	}
+	recoveredBackground := run("background-recover")
+	if recoveredBackground.Pending != 0 {
+		t.Fatal("CodeBuddy background recovery left pending work")
+	}
+	_, childAfter = read(background.SessionID, 3, backgroundChildID)
+	encoded, _ = json.Marshal(childAfter)
+	if !bytes.Contains(encoded, []byte("CodeBuddyBackgroundFrozenNeedle")) || strings.HasPrefix(childAfter[0].Text, "<teammate-message") || len(search("CodeBuddyBackgroundFrozenNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy background recovery lost frozen content or exposed its internal wrapper")
+	}
+	expireReservations()
+	if afterExpiry, events := read(background.SessionID, 15); afterExpiry != recoveredBackground.Head {
+		t.Fatal("CodeBuddy background reservation expiry changed selected history")
+	} else if encoded, _ := json.Marshal(events); !bytes.Equal(encoded, rootBeforeEdit) {
+		t.Fatal("CodeBuddy background child edit changed parent Events")
+	}
+	read(background.SessionID, 3, backgroundChildID)
+	read(background.SessionID, 6, reporterID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredFamily.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredBackground.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

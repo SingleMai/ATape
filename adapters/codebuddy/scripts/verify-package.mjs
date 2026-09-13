@@ -43,6 +43,7 @@ try {
     await copyFile(new URL(`../src/fixtures/${name}`, import.meta.url), join(root, name))
   }
   await cp(new URL("../src/fixtures/native-family-2.124.0", import.meta.url), join(root, "native-family-2.124.0"), { recursive: true })
+  await cp(new URL("../src/fixtures/native-background-2.124.0", import.meta.url), join(root, "native-background-2.124.0"), { recursive: true })
   const result = await run(process.execPath, [join(root, "verify-installed.mjs"), join(entryRoot, manifest.atapeAdapter.entry), manifest.version], root)
   process.stdout.write(`Verified CodeBuddy tarball ${basename(artifact)} (${size} bytes)\n${result.stdout}`)
 } finally {

@@ -113,5 +113,54 @@ Runtime and installed CLI contract fixtures replay the sequence using these
 record boundaries. Adversarial child edits, foreign child CWD, truncation,
 missing files, resource bounds and lost HTTP responses are controlled synthetic
 variants. They establish failure/recovery behavior, not additional native forms.
-Background/team/fork subagents, forks carrying children and child compaction have
-no native acceptance evidence in this increment.
+Named teams, forks carrying children and child compaction have no native
+acceptance evidence. Background evidence is recorded below.
+
+## Background Agent samples
+
+`native-background-2.124.0/` contains three native JSONL files generated on
+2026-09-13 UTC on macOS arm64 with CLI 2.124.0, `--model hy3 --effort low`,
+`-p --strict-mcp-config --setting-sources "" --output-format json`. The scoped
+`CODEBUDDY_CODE_EXPERIMENTAL_AGENT_TEAMS=1` enabled the native automatic-team path.
+
+| Sequence | Root records | Child evidence | Projected totals |
+| --- | --- | --- | --- |
+| One `atape-background` launch, `run_in_background: true`, then one `TaskOutput` | 9 | `agent-aeb3d60f`, three records | 2 Threads / 11 Events / 4 usage |
+| Ordinary parent resume launches `atape-reporter` | 15 | `agent-93604b67`, six records including one SendMessage | 3 / 22 / 8 |
+| Tools-disabled parent resume | 18 | Both children unchanged | 3 / 24 / 9 |
+
+The first parent used `--tools Agent,TaskOutput --allowedTools Agent,TaskOutput`,
+`--max-turns 5`, and a custom child with no tools. The second allowed
+Agent/TaskOutput/SendMessage, but called only Agent; its custom child had only
+SendMessage and sent one literal marker to the controlled local team-lead inbox.
+The final parent used `--tools "" --max-turns 1`. No external recipient or personal
+source history was involved.
+
+Each spawn result carries a `team-member-spawned` renderer with JSON `taskId`,
+`name`, `teamName`, `description`, `color` and `prompt`, without `subAgent.lastId`.
+The child's first user message wraps the prompt in an exact `teammate-message`
+initial assignment. Internal child UUIDs are respectively
+`f8ac30c1-d2eb-4ceb-8f78-51b8223fd568` and
+`f151ed56-1dbf-4b0f-aeb3-4fb1555c267e`; filenames retain their `agent-*` storage IDs.
+All three exact source histories and controlled team files were byte-verified
+against retained scratch copies and removed from the CLI home after sampling.
+Only the controlled absolute CWD was replaced with
+`/fixture/codebuddy-background-project`. All other fields, identities, timestamps,
+relationships, prompts and counters are retained.
+
+Observed intermediate snapshots had a completed spawn receipt and only the
+child's initial user record; the first root's final reply preceded its child's
+final reply. TaskOutput returned a running-team-member message. SendMessage
+reported delivery into the controlled team-lead mailbox, but no parent inbox turn
+was appended, including on the final parent resume. Tests must not invent one.
+The native team config was recreated across parent resume, so current team files
+cannot prove historical child membership. Snapshot cuts and adversarial changes
+in tests establish atomic preservation, not additional supported native forms.
+
+Installed acceptance replays these native boundaries, then applies synthetic
+foreign child CWD, missing child, Raw policy edits and committed response loss.
+Its recovery deletes all three source files and uses frozen Host data. The source
+corpus has nine usage records: 74,371 input, 1,162 output and 43,072 cached input.
+Cached input is already included in input. Named teams, inbox turns, multi-round
+background work, child resume/nesting, disabled-team fallback and child compaction
+remain unverified and unsupported.
