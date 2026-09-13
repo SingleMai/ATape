@@ -243,7 +243,7 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	}
 	run("repair")
 	usageSnapshot, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/SingleMai/ATape/server/internal/authentication"
+	"github.com/SingleMai/ATape/server/internal/canonical"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -191,7 +192,7 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		t.Fatal("Grok resume or shared redaction failed")
 	}
 	usageSnapshot, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
