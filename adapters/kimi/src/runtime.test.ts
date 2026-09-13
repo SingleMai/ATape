@@ -111,6 +111,16 @@ describe("Kimi source-capture runtime Interface", () => {
     expect((await read(view)).flatMap(f => f.events)).toEqual([])
     expect(view.session.title).toBe(JSON.parse(f.metadata).title)
   })
+  it("removes complete tool/thought turns through a multi-turn undo while retaining their usage and Raw", async () => {
+    const f = await fixture(), original = await f.runtime.sourceCapture.open(f.request), before = await read(original); await original.close()
+    await appendFile(f.file, serialize([{ type: "context.undo", count: 2, time: f.rows.at(-1).time + 1 }]))
+    const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    expect(view.target).toEqual({ events: 3, usage: 5, threads: 1 })
+    expect(frames.flatMap(f => f.events)).toEqual(before.flatMap(f => f.events).slice(0, 3))
+    expect(frames.flatMap(f => f.usage)).toEqual(before.flatMap(f => f.usage))
+    expect(JSON.stringify(frames.flatMap(f => f.events))).not.toContain("tool_call")
+    expect(JSON.stringify(frames)).toContain("ATAPE_KIMI_TOOL_MARKER_0420")
+  })
   it.each(["zero", "negative", "fraction", "too-many", "cross-boundary", "active", "missing-begin", "missing-request", "range", "legacy", "model", "duplicate-usage", "retry", "counter", "cancel", "missing-apply", "incomplete-begin", "incomplete-usage", "incomplete-apply"])("rejects %s context mutations before exposing a replacement", async kind => {
     const f = await fixture("context")
     if (["zero", "negative", "fraction", "too-many"].includes(kind)) f.rows[32].count = { zero: 0, negative: -1, fraction: 0.5, "too-many": 3 }[kind]

@@ -187,7 +187,7 @@ the synthetic recovered fourth turn retained its masked input and final reply.
 Search and exact usage were checked through the authenticated HTTP contract.
 This is local acceptance, not hosted CI or manual staging evidence.
 
-Context-history verification on 2026-09-14 passed 60 Adapter behavior tests,
+Context-history verification on 2026-09-14 passed 61 Adapter behavior tests,
 Adapter/CLI typechecks, independent tarball installation and the installed
 HTTP/PostgreSQL contract. Native undo activation recovered after a lost response
 and source deletion; compaction Raw receipt recovery preserved the selected head.
