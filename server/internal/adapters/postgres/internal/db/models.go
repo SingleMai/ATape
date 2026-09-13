@@ -77,29 +77,6 @@ type CanonicalPublicationSource struct {
 	CurrentHead      *string
 }
 
-type CanonicalSession struct {
-	ID                 string
-	ProjectID          string
-	SourceKey          string
-	Revision           int64
-	Digest             string
-	Title              string
-	Summary            string
-	Insight            string
-	ActorName          string
-	ActorHarness       string
-	Branch             string
-	Status             string
-	CaptureStatus      string
-	UpdatedAt          time.Time
-	ReportedEventCount int64
-	CapturedByUserID   pgtype.UUID
-	RecordState        string
-	DeletedAt          pgtype.Timestamptz
-	DeletedByUserID    pgtype.UUID
-	CaptureLineage     string
-}
-
 type CanonicalThread struct {
 	SessionID      string
 	ID             string
@@ -163,18 +140,4 @@ type VisibleCanonicalThread struct {
 	Summary        string
 	ParentThreadID *string
 	CaptureStatus  string
-}
-
-type VisibleCanonicalUsage struct {
-	SourceKey        string
-	SessionID        string
-	ThreadID         string
-	Revision         int64
-	Digest           string
-	OccurredAt       time.Time
-	Model            string
-	InputTokens      *int64
-	OutputTokens     *int64
-	CacheReadTokens  *int64
-	CacheWriteTokens *int64
 }

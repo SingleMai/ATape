@@ -296,7 +296,7 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy fork changed the original Session")
 	}
 	usageSnapshot, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +424,7 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy compact Search lost Canonical or indexed internal context")
 	}
 	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +549,7 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy native leaf Event missing from Search")
 	}
 	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +732,7 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy background child missing from Search")
 	}
 	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -992,7 +992,7 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy continuation recovery changed earlier turns or lost frozen content")
 	}
 	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1178,7 +1178,7 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 		t.Fatal("CodeBuddy emergency recovery lost the original transcript or frozen continuation")
 	}
 	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC))
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

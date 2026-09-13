@@ -10,10 +10,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/httpapi"
@@ -553,6 +555,15 @@ func ownServerLifetime(
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "overview-facts" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := runOverviewFactsCommand(ctx, os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "Overview facts failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "auth-cutover" {
 		if err := runAuthCutoverCommand(context.Background(), os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintf(os.Stderr, "auth cutover failed: %v\n", err)

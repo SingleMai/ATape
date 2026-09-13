@@ -7,7 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/publication"
+	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 	"github.com/testcontainers/testcontainers-go"
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -65,6 +69,7 @@ func TestPublicationActivation(t *testing.T) {
 			t.Fatalf("wanted %s, got %v", code, err)
 		}
 	}
+	var validationSamples []time.Duration
 	stage := func(s *postgresadapter.PublicationStore, b ingestion.Batch, base string, validate bool) publication.Attempt {
 		t.Helper()
 		r, e := s.Reserve(ctx, cli, publication.Scope{ProjectID: b.ProjectID, InstallationID: b.Source.InstallationID, AdapterID: b.Source.AdapterID, SourceSessionID: b.Session.SourceSessionID, OriginKey: "origin"})
@@ -91,7 +96,9 @@ func TestPublicationActivation(t *testing.T) {
 			t.Fatal(e)
 		}
 		if validate {
+			started := time.Now()
 			a, e = s.Validate(ctx, cli, a.ID)
+			validationSamples = append(validationSamples, time.Since(started))
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -138,6 +145,122 @@ func TestPublicationActivation(t *testing.T) {
 		}
 		return p
 	}
+	t.Run("overview reads mixed legacy Threads and publication Events within the request budget", func(t *testing.T) {
+		legacy, e := ingestion.NewIngestor(reader).ApplyBatch(ctx, cli, batch("overview-legacy"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		// Reproduce the production topology: many retained legacy Threads plus
+		// a selected publication body. A legacy-only volume fixture misses the
+		// repeated JSON decoding caused by joining the two selected-head views.
+		_, e = pool.Exec(ctx, `INSERT INTO canonical_threads
+(session_id,id,source_key,revision,digest,label,summary,parent_thread_id,capture_status)
+SELECT session_id,'overview-child-'||n,'overview-child-'||n,revision,digest,label,summary,id,capture_status
+FROM canonical_threads CROSS JOIN generate_series(1,1043) n WHERE session_id=$1 AND id='root'`, legacy.SessionID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		b := batch("overview-published")
+		root := "provider-root"
+		b.Threads = append(b.Threads, ingestion.Thread{SourceThreadID: "child", ParentSourceThreadID: &root, Revision: 1, Label: "Worker", CaptureStatus: "healthy"})
+		template := b.Events
+		b.Events = nil
+		for n := 0; n < 500; n++ {
+			event := template[n%2]
+			event.SourceEventID = "overview-event-" + strconv.Itoa(n)
+			event.SourceOrder = int64(n + 1)
+			event.Text = strings.Repeat("Captured conversation. ", 50)
+			if n == 0 {
+				event.SourceThreadID = "child"
+			}
+			if n == 498 {
+				event.Text = "Latest published request."
+			}
+			if n == 499 {
+				event.Text = "Earlier sentence. Latest published reply."
+			}
+			b.Events = append(b.Events, event)
+		}
+		b.Session.ReportedEventCount = len(b.Events)
+		publishedIDs := map[string]bool{}
+		for n := 0; n < 8; n++ {
+			b.Session.SourceSessionID = "overview-published-" + strconv.Itoa(n)
+			publishedIDs[activate(stage(store, b, "", true)).SessionID] = true
+		}
+		t.Cleanup(func() {
+			for id := range publishedIDs {
+				if err := reader.DeleteSession(ctx, web, id, "cleanup-"+id); err != nil {
+					t.Error(err)
+				}
+			}
+			if err := reader.DeleteSession(ctx, web, legacy.SessionID, "cleanup-legacy"); err != nil {
+				t.Error(err)
+			}
+		})
+		// Exercise the caller's Interface under a deadline, not an exact plan
+		// shape. Keep ample headroom for CI while detecting multiplicative reads.
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		started := time.Now()
+		view, e := teamoverview.New(reader).Open(readCtx, web, canonicalcontract.TestTeamID, teamoverview.Query{From: "2026-09-04", To: "2026-09-04"})
+		if e != nil {
+			t.Fatal(e)
+		}
+		t.Logf("mixed publication Overview read: %s", time.Since(started))
+		if view.Metrics.Sessions != 9 || view.Metrics.Messages != 1993 || view.Previous.Messages != 0 || len(view.Sessions) != 9 {
+			t.Fatalf("mixed overview metrics: %+v", view.Metrics)
+		}
+		// Compare both paths on the identical retained dataset, alternating to
+		// reduce cache/order bias. Bodies remain intact for page previews.
+		ids := make([]string, 0, len(publishedIDs))
+		for id := range publishedIDs {
+			ids = append(ids, id)
+		}
+		var indexed, fallback []time.Duration
+		for n := 0; n < 6; n++ {
+			covered := n%2 == 0
+			var version any
+			if covered {
+				version = 1
+			}
+			if _, e := pool.Exec(ctx, `UPDATE canonical_publication_parts p SET overview_version=$2
+FROM canonical_publication_sources s WHERE p.attempt_id=s.current_head::uuid AND s.session_id=ANY($1::text[])`, ids, version); e != nil {
+				t.Fatal(e)
+			}
+			started := time.Now()
+			comparison, e := teamoverview.New(reader).Open(readCtx, web, canonicalcontract.TestTeamID, teamoverview.Query{From: "2026-09-04", To: "2026-09-04"})
+			elapsed := time.Since(started)
+			if e != nil || !reflect.DeepEqual(comparison.Metrics, view.Metrics) || !reflect.DeepEqual(comparison.Previous, view.Previous) || len(comparison.Sessions) != len(view.Sessions) {
+				t.Fatalf("indexed/fallback comparison: %+v %v", comparison.Metrics, e)
+			}
+			if covered {
+				indexed = append(indexed, elapsed)
+			} else {
+				fallback = append(fallback, elapsed)
+			}
+		}
+		if _, e := pool.Exec(ctx, `UPDATE canonical_publication_parts p SET overview_version=1
+FROM canonical_publication_sources s WHERE p.attempt_id=s.current_head::uuid AND s.session_id=ANY($1::text[])`, ids); e != nil {
+			t.Fatal(e)
+		}
+		slices.Sort(indexed)
+		slices.Sort(fallback)
+		t.Logf("same-data Overview medians (3 samples each): indexed=%s fallback=%s", indexed[1], fallback[1])
+		var payloadBytes, projectionBytes int64
+		if e := pool.QueryRow(ctx, `SELECT (SELECT coalesce(sum(stored_bytes),0)::bigint FROM canonical_publication_parts),
+pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('overview_publication_usage')`).Scan(&payloadBytes, &projectionBytes); e != nil {
+			t.Fatal(e)
+		}
+		samples := slices.Clone(validationSamples)
+		slices.Sort(samples)
+		t.Logf("8 x 500-message fixture: normalized payload=%d bytes, facts including indexes=%d bytes; validation median=%s max=%s (no baseline write-cost claim)", payloadBytes, projectionBytes, samples[len(samples)/2], samples[len(samples)-1])
+
+		for _, session := range view.Sessions {
+			if publishedIDs[session.ID] && (session.Input != "Latest published request." || session.Output != "Latest published reply.") {
+				t.Fatalf("published preview: %+v", session)
+			}
+		}
+	})
 	t.Run("complete head selection replaces reads counts and Search without replaying an older receipt", func(t *testing.T) {
 		b := batch("replacement")
 		b.Events[0].Text = "retained-needle"
@@ -264,6 +387,25 @@ func TestPublicationActivation(t *testing.T) {
 			t.Fatal("late worker changed selected Search eligibility")
 		}
 	})
+	t.Run("unknown-time disclosure follows the selected publication head", func(t *testing.T) {
+		b := batch("unknown-time-head")
+		for i := range b.Events {
+			b.Events[i].OccurredAt = "1970-01-01T00:00:00Z"
+		}
+		first := activate(stage(store, b, "", true))
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04", Agent: "unmatched"}
+		module := teamoverview.New(reader)
+		page, e := module.OpenSessions(ctx, web, canonicalcontract.TestTeamID, query)
+		if e != nil || page.UnknownTimeSessions != 1 || page.Metrics.Sessions != 0 {
+			t.Fatalf("unknown published messages: %+v %v", page, e)
+		}
+		b.Events = nil
+		activate(stage(store, b, first.Head, true))
+		page, e = module.OpenSessions(ctx, web, canonicalcontract.TestTeamID, query)
+		if e != nil || page.UnknownTimeSessions != 0 {
+			t.Fatalf("withdrawn unknown messages: %+v %v", page, e)
+		}
+	})
 	t.Run("withdrawn child topology and usage disappear from visible aggregates", func(t *testing.T) {
 		b := batch("child-rewind")
 		root := "provider-root"
@@ -273,6 +415,7 @@ func TestPublicationActivation(t *testing.T) {
 		b.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call_update","toolCallId":"call-1","title":"Read","status":"completed","rawOutput":"done"}`
 		tokens := int64(100)
 		b.Usage = []ingestion.Usage{{SourceUsageID: "root-usage", SourceThreadID: root, Revision: 1, OccurredAt: b.Events[0].OccurredAt, InputTokens: &tokens}, {SourceUsageID: "child-usage", SourceThreadID: "child", Revision: 1, OccurredAt: b.Events[1].OccurredAt, InputTokens: &tokens}}
+		b.Usage[1].Model = "published-child-model"
 		first := activate(stage(store, b, "", true))
 		rootPage, _, e := reader.ConversationPage(ctx, web, first.SessionID, "root", canonical.ConversationPageRequest{Limit: 1})
 		if e != nil {
@@ -290,7 +433,7 @@ func TestPublicationActivation(t *testing.T) {
 		}
 		from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 		until := from.AddDate(1, 0, 0)
-		overview, e := reader.Overview(ctx, web, canonicalcontract.TestTeamID, from, until)
+		overview, e := reader.Overview(ctx, web, canonicalcontract.TestTeamID, from, until, canonical.OverviewFilter{}, nil)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -303,6 +446,11 @@ func TestPublicationActivation(t *testing.T) {
 		if count != 2 {
 			t.Fatalf("first usage=%d", count)
 		}
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04", Model: "published-child-model"}
+		page, e := teamoverview.New(reader).OpenSessions(ctx, web, canonicalcontract.TestTeamID, query)
+		if e != nil || page.Metrics.Sessions != 1 || page.Metrics.Messages != 1 || page.Metrics.Tokens.Input == nil || *page.Metrics.Tokens.Input != tokens || len(page.Sessions) != 1 || page.Sessions[0].ID != first.SessionID || page.Sessions[0].Input == "" {
+			t.Fatalf("published child model page: %+v %v", page, e)
+		}
 		b.Threads = b.Threads[:1]
 		b.Events = b.Events[:1]
 		b.Usage = b.Usage[:1]
@@ -312,7 +460,7 @@ func TestPublicationActivation(t *testing.T) {
 		if !errors.As(e, &refresh) || refresh.Head != second.Head {
 			t.Fatalf("withdrawn Thread continuation must refresh: %v", e)
 		}
-		overview, e = reader.Overview(ctx, web, canonicalcontract.TestTeamID, from, until)
+		overview, e = reader.Overview(ctx, web, canonicalcontract.TestTeamID, from, until, canonical.OverviewFilter{}, nil)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -327,6 +475,10 @@ func TestPublicationActivation(t *testing.T) {
 		}
 		if count != 1 {
 			t.Fatalf("replacement usage=%d", count)
+		}
+		page, e = teamoverview.New(reader).OpenSessions(ctx, web, canonicalcontract.TestTeamID, query)
+		if e != nil || page.Metrics.Sessions != 0 || len(page.Sessions) != 0 {
+			t.Fatalf("withdrawn model must leave filtered page: %+v %v", page, e)
 		}
 		project, _, e := reader.Project(ctx, web, b.ProjectID)
 		if e != nil {

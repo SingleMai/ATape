@@ -96,6 +96,16 @@ rejecting a candidate does not permit redefining an already validated source
 version. Deterministic invalid input rolls back the current part and leaves the
 candidate available for explicit rejection, without skipping it.
 
+Overview also prepares body-free message and Usage facts from each fixed batch
+inside the validation transaction. Bulk fact inserts and the explicit per-part
+projection version commit with progress, including empty parts; a failure rolls
+back the unit. These facts remain invisible until their head is selected, and
+follow part reclamation. Old validated parts have an authorized-read JSON fallback
+and a bounded administrative backfill path. See
+[Overview operations](../team-overview.md#indexed-publication-facts-and-operations)
+for schema, rollout, storage costs and current verification. This adds no
+per-record work to activation and does not change immutable upload receipts.
+
 ## Activation, selected reads and Search
 
 Activate reads only one bounded fixed unit for its already validated header. It

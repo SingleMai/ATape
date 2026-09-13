@@ -113,12 +113,62 @@ WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID, first, last)
 		if _, err = dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query); !errors.Is(err, canonical.ErrOverviewCapacity) {
 			t.Fatalf("over-capacity read must reject partial totals: %v", err)
 		}
+		small := canonicalcontract.ValidBatch()
+		small.BatchID, small.Session.SourceSessionID = "small-filtered", "small-filtered"
+		small.Session.Actor.Harness = "Small Agent"
+		if _, err = ingestion.NewIngestor(store).ApplyBatch(ctx, canonicalcontract.CLIPrincipal(), small); err != nil {
+			t.Fatal(err)
+		}
+		query.Agent = "Small Agent"
+		started = time.Now()
+		page, err := dashboard.OpenSessions(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query)
+		if err != nil || page.Metrics.Messages != 1 || page.Metrics.Sessions != 1 || len(page.Sessions) != 1 || len(page.Options.Agents) != 2 {
+			t.Fatalf("dimension filter should recover from unrelated over-capacity facts: %+v %v", page, err)
+		}
+		t.Logf("filtered Session page beside 100,002 unrelated messages: %s", time.Since(started))
+		query.Agent = ""
 		query.From, query.To = "2026-09-07", "2026-09-07"
 		if empty, err := dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query); err != nil || empty.Metrics.Messages != 0 {
 			t.Fatalf("shorter range should recover: %+v, %v", empty.Metrics, err)
 		}
 	})
+	t.Run("overview cancellation interrupts a blocked query and retains diagnostics", func(t *testing.T) {
+		lock, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = lock.Rollback(ctx) }()
+		if _, err = lock.Exec(ctx, "LOCK TABLE workspace_teams IN ACCESS EXCLUSIVE MODE"); err != nil {
+			t.Fatal(err)
+		}
+		deadline, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+		defer cancel()
+		page, err := teamoverview.New(store).OpenSessions(deadline, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, teamoverview.Query{From: "2026-09-04", To: "2026-09-04", Agent: "Small Agent"})
+		if !errors.Is(err, context.DeadlineExceeded) || page.Diagnostics.Stages["directory"] <= 0 || len(page.Sessions) != 0 {
+			t.Fatalf("canceled read: %+v %v", page, err)
+		}
+		if err = lock.Rollback(ctx); err != nil {
+			t.Fatal(err)
+		}
+		page, err = teamoverview.New(store).OpenSessions(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, teamoverview.Query{From: "2026-09-04", To: "2026-09-04", Agent: "Small Agent"})
+		if err != nil || page.Metrics.Sessions != 1 || page.Diagnostics.Stages["events"] <= 0 || page.Diagnostics.Aggregate <= 0 {
+			t.Fatalf("read after cancellation: %+v %v", page, err)
+		}
+	})
 	t.Run("bounded Raw manifests", func(t *testing.T) {
+		// This contract exercises cursor ordering, not the container wall clock.
+		// Use deterministic creation times so host/VM clock corrections cannot
+		// reorder sequential fixture uploads.
+		if _, err := pool.Exec(ctx, `CREATE SEQUENCE raw_manifest_fixture_clock;
+ALTER TABLE raw_objects ALTER COLUMN created_at SET DEFAULT
+ (timestamptz '2026-09-01' + nextval('raw_manifest_fixture_clock') * interval '1 second');`); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if _, err := pool.Exec(ctx, `ALTER TABLE raw_objects ALTER COLUMN created_at SET DEFAULT clock_timestamp(); DROP SEQUENCE raw_manifest_fixture_clock;`); err != nil {
+				t.Error(err)
+			}
+		}()
 		created, err := ingestion.NewIngestor(store).ApplyBatch(ctx, canonicalcontract.CLIPrincipal(), func() ingestion.Batch {
 			batch := canonicalcontract.ValidBatch()
 			batch.BatchID = "manifest-pages"
@@ -136,8 +186,9 @@ WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID, first, last)
 		cursor := rawcontract.Manifest(t, archive, canonicalcontract.CLIPrincipal(), canonicalcontract.WebPrincipal(), created.SessionID)
 		// Pre-auth cutover archives retain their original opaque object IDs.
 		// Pagination must not impose the newer derived r_<hex> identity format.
-		if _, err := pool.Exec(ctx, `WITH inserted AS (INSERT INTO raw_objects (id,project_id,session_id,source_name,media_type,adapter_id,adapter_version,captured_at,client_redacted,current_generation,generation_count)
-SELECT 'legacy-raw-page-'||n,project_id,session_id,source_name,media_type,adapter_id,adapter_version,captured_at,client_redacted,1,1
+		// Fix fixture order explicitly; VM clock adjustments must not choose which IDs lead.
+		if _, err := pool.Exec(ctx, `WITH inserted AS (INSERT INTO raw_objects (id,project_id,session_id,source_name,media_type,adapter_id,adapter_version,captured_at,client_redacted,current_generation,generation_count,created_at)
+SELECT 'legacy-raw-page-'||n,project_id,session_id,source_name,media_type,adapter_id,adapter_version,captured_at,client_redacted,1,1,(SELECT max(created_at)+interval '1 second' FROM raw_objects WHERE session_id=$1)
 FROM (SELECT * FROM raw_objects WHERE session_id=$1 LIMIT 1) original CROSS JOIN generate_series(1,3) n RETURNING id)
 INSERT INTO raw_generations (object_id,generation,size_bytes,chunk_count,finalized) SELECT id,1,0,0,true FROM inserted;`, created.SessionID); err != nil {
 			t.Fatal(err)
@@ -160,7 +211,7 @@ INSERT INTO raw_generations (object_id,generation,size_bytes,chunk_count,finaliz
 	})
 	canonicalcontract.Run(t, func(t *testing.T) canonicalcontract.Store {
 		if _, err := pool.Exec(context.Background(), `
-TRUNCATE canonical_publication_projection_changes, canonical_publication_members, canonical_publication_record_versions,
+TRUNCATE overview_publication_messages, overview_publication_usage, canonical_publication_projection_changes, canonical_publication_members, canonical_publication_record_versions,
          canonical_publication_parts, canonical_publication_attempts,
          canonical_publication_reservations, canonical_publication_sources,
          project_search_documents, project_search_checkpoints,
@@ -177,7 +228,7 @@ TRUNCATE canonical_publication_projection_changes, canonical_publication_members
 
 	t.Run("authoritative resource authorization", func(t *testing.T) {
 		if _, err := pool.Exec(context.Background(), `
-TRUNCATE canonical_publication_projection_changes, canonical_publication_members, canonical_publication_record_versions,
+TRUNCATE overview_publication_messages, overview_publication_usage, canonical_publication_projection_changes, canonical_publication_members, canonical_publication_record_versions,
          canonical_publication_parts, canonical_publication_attempts,
          canonical_publication_reservations, canonical_publication_sources,
          project_search_documents, project_search_checkpoints,
@@ -425,7 +476,7 @@ WHERE id = $1`, canonicalcontract.TestProjectID); err != nil {
 	})
 
 	if _, err := pool.Exec(context.Background(), `
-TRUNCATE canonical_publication_projection_changes, canonical_publication_members, canonical_publication_record_versions,
+TRUNCATE overview_publication_messages, overview_publication_usage, canonical_publication_projection_changes, canonical_publication_members, canonical_publication_record_versions,
          canonical_publication_parts, canonical_publication_attempts,
          canonical_publication_reservations, canonical_publication_sources,
          project_search_documents, project_search_checkpoints,
@@ -605,7 +656,7 @@ DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 19; got != want {
+	if got, want := migrationCount, 20; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))

@@ -1,4 +1,5 @@
 import type { OverviewDetail, OverviewSelection, OverviewSession, OverviewTokens, TeamOverview } from "@atape/domain"
+import { overviewMemberDetails } from "@atape/domain"
 import { Button } from "@atape/ui"
 import { useState } from "react"
 import type { useOverviewPresenter } from "../presenters/overviewPresenter"
@@ -94,7 +95,7 @@ export function TeamOverviewView({ presenter: p, selection: s, onChange, onOpenS
       </section>
     </> : <section className="overview-detail"><header className="overview-section-heading"><div><button type="button" className="overview-back" onClick={() => update({ view: "overview" })}>{t("overview.backToOverview", "← Overview")}</button><h2>{({ members: t("overview.metric.teamMembers", "Team members"), activeMembers: t("overview.metric.activeMembers", "Active members"), projects: t("overview.detail.projects", "Project activity"), sessions: t("overview.metric.sessions", "Sessions"), usage: t("overview.detail.usage", "Token usage") } as const)[s.view]}</h2></div></header>
       {s.view === "sessions" ? <><SessionGrid rows={data.sessions} onOpen={onOpenSession} showUsage /><div className="overview-pagination"><span>{t("overview.sessionPage", "{total} sessions · Page {page}", { total: data.totalSessions, page: data.page + 1 })}</span><Button variant="secondary" disabled={data.page === 0} onClick={() => onChange({ page: data.page - 1 })}>{t("common.previous", "Previous")}</Button><Button variant="secondary" disabled={(data.page + 1) * data.limit >= data.totalSessions} onClick={() => onChange({ page: data.page + 1 })}>{t("common.next", "Next")}</Button></div></>
-        : <DetailTable page={s.page} onPage={page => onChange({ page })} rows={s.view === "members" ? data.options.members.filter(m => m.current).map(m => data.members.find(v => v.id === m.id) ?? m) : s.view === "activeMembers" ? data.members : s.view === "projects" ? data.projects : data.models}
+        : <DetailTable page={s.page} onPage={page => onChange({ page })} rows={s.view === "members" ? overviewMemberDetails(data) : s.view === "activeMembers" ? data.members : s.view === "projects" ? data.projects : data.models}
           onSelect={row => update({ ...(s.view === "members" || s.view === "activeMembers" ? { member: row.id } : s.view === "projects" ? { project: row.id } : { model: row.id }), view: "sessions" })} />}
       {s.view === "usage" && <p className="overview-coverage">{t("overview.usageNote", "Cache is included in input. Session counts across models overlap. Model names reflect the source-reported or configured model.")}</p>}
     </section>}
