@@ -21,11 +21,15 @@ import (
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool, projectID, teamID, userID, credential string, cookie *http.Cookie, csrf string) {
+func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool) {
 	t.Helper()
+	project, grant, credential := kimiCollectorActor(t, modules, pool)
+	projectID, teamID, userID, csrf := project.ID, project.TeamID, grant.User.ID, grant.CSRFToken
+	cookie := &http.Cookie{Name: "__Secure-atape_session", Value: grant.SessionSecret}
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	handler, err := NewHandler(Config{InstanceOrigin: origin, WebOrigin: origin, APIOrigin: origin, DevelopmentAllowHTTP: true}, modules)
@@ -291,9 +295,124 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	if err := json.Unmarshal(content, &object); err != nil || !bytes.Contains(object.Records[key].Row, []byte("context.append_message")) {
 		t.Fatal("Kimi Raw did not retain its native message")
 	}
+	assertUsage := func(sessionID string, count int, input, output, cache int64) {
+		t.Helper()
+		snapshot, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+			time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, in, out, cached := 0, int64(0), int64(0), int64(0)
+		for _, usage := range snapshot.Usage {
+			if usage.SessionID != sessionID {
+				continue
+			}
+			n++
+			if usage.Model != "atape-context-model" {
+				t.Fatalf("Kimi compaction attributed to model alias: %s", usage.Model)
+			}
+			if usage.InputTokens != nil {
+				in += *usage.InputTokens
+			}
+			if usage.OutputTokens != nil {
+				out += *usage.OutputTokens
+			}
+			if usage.CacheReadTokens != nil {
+				cached += *usage.CacheReadTokens
+			}
+		}
+		if n != count || in != input || out != output || cached != cache {
+			t.Fatalf("Kimi context usage: records=%d input=%d output=%d cache=%d", n, in, out, cached)
+		}
+	}
+	seed := run("context-seed")
+	_, seedEvents := read(seed.SessionID, 4)
+	if len(search("KimiContextReply2").Results) != 1 {
+		t.Fatal("Kimi pre-undo reply missing from Search")
+	}
+	undoLost := run("context-undo")
+	if undoLost.Pending == 0 {
+		t.Fatal("Kimi undo activation loss did not remain recoverable")
+	}
+	undo := run("context-recover")
+	undoHead, undoEvents := read(seed.SessionID, 2)
+	if undo.Pending != 0 || undo.Head != undoHead || undo.Head == seed.Head {
+		t.Fatal("Kimi undo failed to recover after source deletion")
+	}
+	beforeJSON, _ := json.Marshal(seedEvents[:2])
+	afterJSON, _ := json.Marshal(undoEvents)
+	if !bytes.Equal(beforeJSON, afterJSON) {
+		t.Fatal("Kimi undo changed retained message identity or provenance")
+	}
+	if len(search("KimiContextReply2").Results) != 0 {
+		t.Fatal("Kimi undone reply remained searchable")
+	}
+	assertUsage(seed.SessionID, 2, 203, 23, 40)
+	run("context-restore")
+	compact := run("context-compact")
+	_, compactEvents := read(seed.SessionID, 4)
+	assertUsage(seed.SessionID, 4, 410, 50, 80)
+	if len(search("KimiContextReply3").Results) != 1 || len(search("KimiContextReply4").Results) != 0 {
+		t.Fatal("Kimi compaction changed reader history or indexed its internal summary")
+	}
+	postUndo := run("context-afterundo")
+	_, postEvents := read(seed.SessionID, 4)
+	beforeJSON, _ = json.Marshal(compactEvents)
+	afterJSON, _ = json.Marshal(postEvents)
+	if !bytes.Equal(beforeJSON, afterJSON) || postUndo.Head == compact.Head {
+		t.Fatal("Kimi post-compaction undo changed retained messages or lost new expenditure")
+	}
+	assertUsage(seed.SessionID, 5, 515, 65, 100)
+	setRaw(false)
+	finalContext := run("context-final")
+	_, finalEvents := read(seed.SessionID, 6)
+	assertUsage(seed.SessionID, 7, 728, 98, 140)
+	encoded, _ = json.Marshal(finalEvents)
+	for _, absent := range []string{"KimiUndoBefore", "KimiUndoAfter", "KimiContextReply2", "KimiContextReply4", "KimiContextReply5", "KimiContextReply7"} {
+		if bytes.Contains(encoded, []byte(absent)) {
+			t.Fatalf("Kimi hidden context became a visible Event: %s", absent)
+		}
+	}
+	if len(search("KimiContextReply6").Results) != 1 || len(search("KimiContextReply7").Results) != 0 {
+		t.Fatal("Kimi second compaction or Raw-off search failed")
+	}
+	setRaw(true)
+	contextOn := run("context-raw-on")
+	if contextOn.Head != finalContext.Head || !bytes.Equal(contextOn.Records, finalContext.Records) {
+		t.Fatal("Kimi context Raw-on changed Canonical provenance")
+	}
+	incomplete := run("context-incomplete")
+	if incomplete.Head != finalContext.Head || incomplete.Checkpoint != contextOn.Checkpoint {
+		t.Fatal("Kimi unfinished compaction replaced the published target")
+	}
+	run("context-final")
+	contextRawLost := run("context-raw-loss")
+	if contextRawLost.Pending == 0 {
+		t.Fatal("Kimi compaction Raw response loss was not recoverable")
+	}
+	contextRawRecovered := run("context-recover-raw")
+	if contextRawRecovered.Pending != 0 || contextRawRecovered.Head != finalContext.Head {
+		t.Fatal("Kimi compaction Raw recovery changed history")
+	}
+	if len(search("KimiCompactionRawOnly").Results) != 0 {
+		t.Fatal("Kimi compaction Raw leaked into Search")
+	}
+	auto := run("auto")
+	read(auto.SessionID, 4)
+	assertUsage(auto.SessionID, 3, 190205, 36, 60)
+	clear := run("clear")
+	if clear.SessionID == seed.SessionID || clear.SessionID == auto.SessionID {
+		t.Fatal("Kimi /clear reused another Session identity")
+	}
+	read(clear.SessionID, 2)
+	assertUsage(clear.SessionID, 1, 108, 18, 20)
+	retainedHead, _ := read(seed.SessionID, 6)
+	if retainedHead != finalContext.Head || len(search("KimiKeepAfter").Results) == 0 || len(search("KimiNewAfterClear").Results) == 0 {
+		t.Fatal("Kimi /clear or source deletion removed captured history")
+	}
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_KIMI_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recovered.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -321,4 +440,65 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		}
 	}
 
+}
+
+// Keep the deployment example's real 32-reservation account quota. This growing
+// native-history corpus owns an account, rather than exhausting another Adapter's
+// quota or changing production admission just to fit the combined test suite.
+func kimiCollectorActor(t *testing.T, modules Modules, pool *pgxpool.Pool) (team.Project, authentication.WebSessionGrant, string) {
+	t.Helper()
+	ctx := t.Context()
+	challenge, err := modules.Authentication.BeginFederatedLogin(ctx, authentication.BeginFederatedLoginInput{
+		Intent: authentication.SignInIntent, ProviderRegistrationID: "github", ReturnTo: "/", RequestID: "kimi-sign-in",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorization, err := url.Parse(challenge.AuthorizationURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grant, err := modules.Authentication.CompleteFederatedLogin(ctx, authentication.CompleteFederatedLoginInput{
+		ProviderRegistrationID: "github", State: authorization.Query().Get("state"), BrowserBinding: challenge.BrowserBinding,
+		AuthorizationServerIssuer: "https://identity.example/oauth", AuthorizationCode: "kimi-collector-user", RequestID: "kimi-sign-in-complete",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, err := modules.Authentication.AuthenticateWeb(ctx, grant.SessionSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := modules.Teams.CreateTeam(ctx, team.CreateTeamInput{
+		Principal: web.Principal, Slug: "kimi-contract", DisplayName: "Kimi contract", OperationKey: strings.Repeat("K", 22), RequestID: "kimi-team",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := modules.Teams.CreateProject(ctx, team.CreateProjectInput{
+		Principal: web.Principal, TeamSlug: created.Team.Slug, Spec: team.ProjectSpec{Type: team.FolderProject, Name: "Kimi native history"},
+		OperationKey: strings.Repeat("P", 22), RequestID: "kimi-project",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	device, err := modules.Authentication.CreateCLIDeviceAuthorization(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := modules.Authentication.ResolveCLIDeviceAuthorization(ctx, web.Principal, device.UserCode, "kimi-cli-resolve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := modules.Authentication.DecideCLIDeviceAuthorization(ctx, web.Principal, view.ID, authentication.ApproveCLI, "kimi-cli-approve"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE auth_cli_device_authorizations SET next_poll_at=clock_timestamp()-interval '1 second' WHERE id=$1`, device.ID); err != nil {
+		t.Fatal(err)
+	}
+	credential, err := modules.Authentication.PollCLIDeviceAuthorization(ctx, device.DeviceCode, "kimi-cli-poll")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return project, grant, credential.CredentialSecret
 }

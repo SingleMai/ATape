@@ -10,7 +10,11 @@ import { makeNodeClientLayer, defaultNodeClientPaths } from "../clientLayers.ts"
 import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
-const home = input.home, workspace = join(home, "workspace"), sourceId = "session_12c751bb-0285-49a2-9379-aacbf56d1bd4", adapterId = "kimi"
+const specimen = input.phase.startsWith("context-") ? "context" : input.phase === "auto" ? "auto" : input.phase === "clear" ? "clear" : "native"
+const home = input.home, workspace = join(home, "workspace"), adapterId = "kimi"
+const native = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.jsonl`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
+const metadata = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.state.json`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
+const sourceId = JSON.parse(metadata).id as string
 const sourceHome = join(home, "source"), directory = join(sourceHome, "sessions", "opaque", sourceId), file = join(directory, "agents", "main", "wire.jsonl")
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
 const binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
@@ -18,11 +22,16 @@ const environment = { ...process.env, ATAPE_HOME: paths.atapeHome, ATAPE_KIMI_HO
   ATAPE_CODEX_HOME: join(home, "missing-codex"), ATAPE_CLAUDE_HOME: join(home, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(home, "missing-codebuddy"), OPENCODE_DB: join(home, "missing-opencode"),
   ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_COLLECTOR_DAEMON: "0", TEST_SECRET: "SENSITIVE_TEST_TOKEN" }
 process.env.ATAPE_KIMI_HOME = sourceHome
-const native = readFileSync(new URL("../../../../../adapters/kimi/src/fixtures/native-0.42.0.jsonl", import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
-const metadata = readFileSync(new URL("../../../../../adapters/kimi/src/fixtures/native-0.42.0.state.json", import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
 const at = "2026-09-13T00:00:00Z"
 const save = (rows: unknown[]) => writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
 const restore = (wire: string) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, wire); writeFileSync(join(directory, "state.json"), metadata) }
+const contextLength: Record<string, number> = { "context-seed": 32, "context-undo": 34, "context-restore": 34, "context-compact": 52, "context-afterundo": 68, "context-final": 88, "context-incomplete": 50 }
+if (contextLength[input.phase]) restore(native.split("\n").slice(0, contextLength[input.phase]).join("\n") + "\n")
+if (["auto", "clear"].includes(input.phase)) restore(native)
+if (["context-recover", "context-recover-raw"].includes(input.phase)) rmSync(directory, { recursive: true })
+if (input.phase === "context-raw-loss") {
+  const rows = native.trim().split("\n").map(line => JSON.parse(line)); rows[49].extraRawField = "KimiCompactionRawOnly"; save(rows)
+}
 if (input.phase === "initial") {
   mkdirSync(workspace); mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 }); restore(native)
   const foreign = join(sourceHome, "sessions", "opaque", "foreign-kimi-session")
@@ -32,7 +41,7 @@ if (input.phase === "initial") {
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
-    id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "acme", teamName: "Fixture", name: "Kimi", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
+    id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "kimi-contract", teamName: "Kimi contract", name: "Kimi", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
@@ -59,7 +68,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (input.phase === "lose-activation" && target.endsWith("/activate") && response.status === 200 || input.phase === "raw-only" && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "context-undo"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "context-raw-loss"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -105,12 +114,15 @@ const result = await Effect.runPromise(Effect.gen(function*() {
     for (let cycle = 0; cycle < 5; cycle++) {
       const report = yield* runCollectionCycle(); failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["malformed", "unsupported"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["malformed", "unsupported", "context-incomplete"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
+  if (["context-undo", "context-raw-loss"].includes(input.phase)) assert.equal(lost, true)
+  if (input.phase === "context-recover-raw") assert.equal(uploads, 0)
+  if (input.phase === "context-raw-on") { assert.equal(puts, 0); assert.ok(uploads > 0) }
   if (["noop", "raw-off", "recover-raw"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
   if (input.phase === "raw-on") { assert.equal(puts, 0); assert.ok(uploads > 0) }
@@ -119,8 +131,10 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)
   assert.equal(state.installationId, journal.binding.installationId)
   const sources = yield* journal.sources(input.projectId, adapterId, { limit: 100 })
-  assert.equal(sources.length, 1, "Foreign Project was captured"); assert.equal(sources[0]!.sourceSessionId, sourceId)
-  const owner = yield* journal.claim(sources[0]!), coverage = yield* journal.coverage(owner)
+  assert.ok(sources.every(source => source.sourceSessionId !== "foreign-kimi-session"), "Foreign Project was captured")
+  if (specimen === "native") assert.equal(sources.length, 1)
+  const selected = sources.find(source => source.sourceSessionId === sourceId); assert.ok(selected)
+  const owner = yield* journal.claim(selected), coverage = yield* journal.coverage(owner)
   const capture = (yield* journal.inspect(owner, coverage.canonicalCaptureId!, { kind: "canonical", limit: 1 })).capture
   const receipt = JSON.parse(capture.activationReceipt!) as { sessionId: string; head: string }
   const pending = yield* journal.pending(owner), records = yield* journal.records(owner, capture.id, { kind: "event", limit: 100 })

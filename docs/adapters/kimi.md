@@ -33,9 +33,9 @@ across clones/worktrees and saved original attribution follow
 Projects are excluded before opening. Relocation and title changes preserve
 native identities. Source deletion does not delete captured history.
 
-## Evidence and first supported profile
+## Evidence and supported profiles
 
-`kimi.code.wire.linear.1` supports Kimi Code CLI **0.42.0**, metadata v2 and
+`kimi.code.wire.linear.1` and `kimi.code.wire.context.1` support Kimi Code CLI **0.42.0**, metadata v2 and
 Wire **1.5**, as verified on macOS arm64 with Node 24.18.0. The official npm CLI
 created a controlled three-turn Session, including two native `--continue` runs,
 thought/text streaming and successful/failed `Read` tools. A local deterministic
@@ -64,7 +64,11 @@ Source evidence is pinned to release commit
 | Loop `tool.call` | ACP call; identity scoped by Session + step UUID + tool ID | Original line and arguments |
 | Loop `tool.result` | Correlated result; `isError` determines failed/completed | Original output and note |
 | Loop `step.end.usage` | One usage item per native step UUID, with actual model from matching `llm.request` | Original counters |
-| `usage.record`, token estimates, system prompt/tool schemas | No duplicate usage or conversation Event | Original line |
+| Turn `usage.record`, token estimates, system prompt/tool schemas | No duplicate usage or conversation Event | Original line |
+| Completed manual/automatic `full_compaction` envelope | Retains previous conversation; internal summary creates no human/assistant Event | Complete envelope and summary |
+| Compaction session `usage.record` | Separate usage from the matching request; identity from Session + native begin-line position | Original counters |
+| `context.undo` | Removes the last N user turns and their replies/tools after the most recent compaction; retains all expenditure | Undo and original removed records |
+| CLI `/clear` (alias `/new`) | New independent Session; old captured history remains | Separate state/Wire |
 | Unknown non-context records/content or external images | Raw-only; capture marked partial | Original line; no referenced file reads |
 
 Input tokens equal `inputOther + inputCacheRead + inputCacheCreation`; cache is
@@ -83,8 +87,7 @@ Canonical text projection, never full Raw or system context.
 
 ## Consistency, limits and recovery
 
-Source-capture was selected because Wire can be migrated/rewritten and future
-profiles may replace visible members. The paged observation alternative would
+Source-capture handles Wire migration/rewrites and undo replacing visible members. The paged observation alternative would
 move comparison, replay and Raw progress policy into this provider. The existing
 source-capture Interface keeps those responsibilities in the Host; this increment
 introduces no new Seam or protocol.
@@ -113,20 +116,53 @@ and [Raw policy](../cli/raw-capture.md). Preserve the whole `ATAPE_HOME`; resett
 progress does not repair unsupported source semantics. Inspect **Project → Sync
 details** for source health.
 
+## Compaction, undo and clear
+
+The context profile follows native 0.42.0 transcript replay. A completed manual
+`/compact` or automatic compaction preserves earlier reading history and stable
+message IDs. Its summary is model context, not an additional conversation turn.
+Automatic compaction may follow a new user prompt before that prompt’s model step.
+That user stays visible but belongs to the compaction boundary for later undo.
+
+`/undo N` removes the last N user turns and their assistant/tool Events, and
+replaces visible membership atomically. It cannot cross the latest compaction.
+The original lines remain in Raw. Native usage is not undoable: previously spent
+response tokens and compaction tokens remain in statistics. Compaction has no
+native response UUID, so its usage identity uses the append-only begin-line
+position within the Session; target replacement handles a rewritten source.
+Actual model names come from matching requests, not configured aliases.
+`tokensBefore`, `tokensAfter` and `summaryOutputTokens` are context estimates and
+never become usage. Missing response counters remain unknown.
+
+A compaction envelope must contain one matching request, its modern context
+boundary and completion. Multiple requests/retries, overlapping operations,
+invalid undo ranges and unfinished/cancelled compactions produce diagnostics and
+preserve the previous target. CLI `/clear` creates a new native Session rather
+than emitting low-level `context.clear`; an empty new Session is not captured
+until its first prompt reaches context. Native saved titles remain authoritative,
+even if they contain text from an undone turn; undo removes Event content from
+reader/Search, not the separately saved title.
+
+Controlled native manual history has 6 retained Events and 7 usage items
+(728 input, 98 output, 140 cached input), including both undone responses and both
+compactions. Automatic compaction has 4 Events and 3 usage items (190205 input,
+36 output, 60 cached input); the high input counter was deliberately supplied by
+the local endpoint to trigger native automatic compaction. `/clear` has a new
+Session with 2 Events and 1 usage item (108 input, 18 output, 20 cached input).
+
 ## Unsupported scope and next increment
 
-This profile rejects forks, child/independent agents, `Agent`/`AgentSwarm` calls,
-compaction, undo, clear, steering, cancellation, interrupted/failed/retried steps,
-unknown context operations and mixed/tree storage. Previously captured content
-remains selected. Only metadata v2/Wire 1.5 are admitted; legacy Python kimi-cli,
-other Wire versions, Kimi IDE formats and other platforms are unverified.
+Only the new Node-based Kimi Code CLI is in scope. Legacy Python kimi-cli is
+intentionally excluded and is not a compatibility backlog. Both profiles require
+metadata v2/Wire 1.5; other versions, Kimi IDE formats and other platforms remain
+unverified.
 
-The next increment needs controlled native evidence for the selected behavior:
-compaction/undo visible membership and preserved IDs; fork creation ownership and
-copied-prefix usage meaning; or child membership and response-level usage
-ownership. Those can use the existing replacement-target contract when their
-native identity and visibility semantics are proven. They are not included in
-this first support claim.
+Forks, child/independent agents, `Agent`/`AgentSwarm` calls, steering,
+cancellation, interrupted/failed/retried steps, low-level `context.clear`, unknown
+context operations and mixed/tree storage remain unsupported. Previously
+captured content remains selected. The next increment needs native fork ownership
+and copied-prefix usage evidence, or child membership and response usage
+ownership, before claiming those behaviors.
 
 ## Verification and delivery
 
@@ -150,6 +186,15 @@ three native turns, their thoughts and both tool outcomes matched the fixture;
 the synthetic recovered fourth turn retained its masked input and final reply.
 Search and exact usage were checked through the authenticated HTTP contract.
 This is local acceptance, not hosted CI or manual staging evidence.
+
+Context-history verification on 2026-09-14 passed 61 Adapter behavior tests,
+Adapter/CLI typechecks, independent tarball installation and the installed
+HTTP/PostgreSQL contract. Native undo activation recovered after a lost response
+and source deletion; compaction Raw receipt recovery preserved the selected head.
+Raw-off/on preserved Canonical provenance, incomplete compaction preserved the
+last target, and Search excluded undone replies and internal summaries. Local
+Web acceptance displayed the three retained manual turns, two automatic-compaction
+turns and independent new `/clear` Session, all with healthy capture status.
 
 The package is included in official Tools detection/selection, build, packing,
 release verification and artifact upload sets. Local implementation, CI, merge,

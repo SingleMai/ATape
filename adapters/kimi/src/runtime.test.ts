@@ -13,12 +13,13 @@ const limits = { rowBytes: 1048576, pageBytes: 2097152, pageRows: 1, records: 10
 const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 2097152 }
 const sourceId = "session_12c751bb-0285-49a2-9379-aacbf56d1bd4"
 const serialize = (rows: unknown[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
-const fixture = async () => {
+const fixture = async (name = "native") => {
   const home = await mkdtemp(join(tmpdir(), "atape-kimi-")); roots.push(home)
+  const native = await readFile(new URL(`./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
+  const metadata = await readFile(new URL(`./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
+  const sourceId = JSON.parse(metadata).id as string
   const directory = join(home, "sessions", "opaque", sourceId), file = join(directory, "agents", "main", "wire.jsonl"), state = join(directory, "state.json")
   await mkdir(join(directory, "agents", "main"), { recursive: true })
-  const native = await readFile(new URL("./fixtures/native-0.42.0.jsonl", import.meta.url), "utf8")
-  const metadata = await readFile(new URL("./fixtures/native-0.42.0.state.json", import.meta.url), "utf8")
   await writeFile(file, native); await writeFile(state, metadata)
   vi.stubEnv("ATAPE_KIMI_HOME", home)
   const lifetime = new AbortController()
@@ -40,6 +41,118 @@ const read = async (view: Awaited<ReturnType<Awaited<ReturnType<typeof createAta
   throw new Error("Fixture failed to finish")
 }
 describe("Kimi source-capture runtime Interface", () => {
+  it("replays native undo, replacement and repeated manual compaction while retaining expenditure and surviving identities", async () => {
+    const f = await fixture("context")
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [length, eventCount, usageCount, input, output] of [[32, 4, 2, 203, 23], [34, 2, 2, 203, 23], [46, 4, 3, 306, 36], [52, 4, 4, 410, 50], [66, 6, 5, 515, 65], [68, 4, 5, 515, 65], [82, 6, 6, 621, 81], [88, 6, 7, 728, 98]]) {
+      await writeFile(f.file, serialize(f.rows.slice(0, length)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+      expect(view.target).toEqual({ events: eventCount, usage: usageCount, threads: 1 })
+      expect(view.session.captureStatus).toBe("healthy")
+      const events = frames.flatMap(f => f.events), usage = frames.flatMap(f => f.usage)
+      expect(events.map(e => e.eventIndex)).toEqual(events.map((_, i) => i))
+      expect(events.map(e => e.sourceOrder)).toEqual(events.map((_, i) => i))
+      for (const event of events) {
+        const retained = previous.flatMap(f => f.events).find(e => e.sourceEventId === event.sourceEventId)
+        if (retained) expect(event).toEqual(retained)
+      }
+      expect(usage.slice(0, previous.flatMap(f => f.usage).length)).toEqual(previous.flatMap(f => f.usage))
+      expect(usage.reduce((sum, u) => sum + u.inputTokens!, 0)).toBe(input)
+      expect(usage.reduce((sum, u) => sum + u.outputTokens!, 0)).toBe(output)
+      expect(usage.map(u => u.model)).toEqual(Array(usageCount).fill("atape-context-model"))
+      expect(frames.slice(1).map(f => (f.raw as { json: string }).json).join("\n") + "\n").toBe(serialize(f.rows.slice(0, length)))
+      await view.close(); previous = frames
+    }
+    const canonical = JSON.stringify(previous.flatMap(f => f.events))
+    for (const absent of ["KimiUndoBefore", "KimiUndoAfter", "KimiContextReply2", "KimiContextReply4", "KimiContextReply5", "KimiContextReply7", "contextSummary"]) expect(canonical).not.toContain(absent)
+    for (const present of ["KimiKeepOne", "KimiKeepTwo", "KimiKeepAfter", "KimiContextReply1", "KimiContextReply3", "KimiContextReply6"]) expect(canonical).toContain(present)
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    expect(off.profile).toBe("kimi.code.wire.context.1")
+    await rm(f.directory, { recursive: true })
+    expect(await read(off)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+  })
+  it("keeps the user before native automatic compaction visible and accounts for its separate response", async () => {
+    const f = await fixture("auto"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    expect(view.target).toEqual({ events: 4, usage: 3, threads: 1 })
+    expect(view.session.captureStatus).toBe("healthy")
+    const events = frames.flatMap(f => f.events), usage = frames.flatMap(f => f.usage)
+    expect(events.map(e => e.update.sessionUpdate)).toEqual(["user_message_chunk", "agent_message_chunk", "user_message_chunk", "agent_message_chunk"])
+    expect(JSON.stringify(events)).toContain("KimiAutoNext")
+    expect(JSON.stringify(events)).not.toContain("KimiContextReply2")
+    expect(usage.reduce((sum, u) => sum + u.inputTokens!, 0)).toBe(190205)
+    expect(usage.reduce((sum, u) => sum + u.outputTokens!, 0)).toBe(36)
+    await view.close()
+    await appendFile(f.file, serialize([{ type: "context.undo", count: 1, time: f.rows.at(-1).time }]))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: "unsupported" })
+  })
+  it("discovers native /clear as a new independent session without changing the old capture", async () => {
+    const f = await fixture("context"), before = await f.runtime.sourceCapture.open(f.request), frames = await read(before); await before.close()
+    const metadata = await readFile(new URL("./fixtures/clear-0.42.0.state.json", import.meta.url), "utf8"), clearId = JSON.parse(metadata).id
+    const directory = join(f.home, "sessions", "opaque", clearId)
+    await mkdir(join(directory, "agents", "main"), { recursive: true }); await writeFile(join(directory, "state.json"), metadata)
+    await writeFile(join(directory, "agents", "main", "wire.jsonl"), await readFile(new URL("./fixtures/clear-0.42.0.jsonl", import.meta.url)))
+    const found = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits: { ...limits, pageRows: 10 }, signal: signal() }))
+    expect(found.sources.map(s => s.sourceId).sort()).toEqual([f.request.sourceId, clearId].sort())
+    expect(new Set(found.sources.map(s => s.originKey)).size).toBe(2)
+    const old = await f.runtime.sourceCapture.open(f.request); expect(await read(old)).toEqual(frames); await old.close()
+    const fresh = await f.runtime.sourceCapture.open({ ...f.request, sourceId: clearId }), next = await read(fresh)
+    expect(fresh.target).toEqual({ events: 2, usage: 1, threads: 1 })
+    expect(JSON.stringify(next.flatMap(f => f.events))).toContain("KimiNewAfterClear")
+    expect(next.flatMap(f => f.usage)[0]).toMatchObject({ inputTokens: 108, outputTokens: 18 })
+    expect(next.flatMap(f => f.events).every(e => !frames.flatMap(f => f.events).some(old => old.sourceEventId === e.sourceEventId))).toBe(true)
+  })
+  it("allows undo of every uncompressed turn without removing usage", async () => {
+    const f = await fixture("context")
+    await writeFile(f.file, serialize([...f.rows.slice(0, 32), { type: "context.undo", count: 2, time: f.rows[32].time }]))
+    const view = await f.runtime.sourceCapture.open(f.request)
+    Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+    expect(view.target).toEqual({ events: 0, usage: 2, threads: 1 })
+    expect((await read(view)).flatMap(f => f.events)).toEqual([])
+    expect(view.session.title).toBe(JSON.parse(f.metadata).title)
+  })
+  it("removes complete tool/thought turns through a multi-turn undo while retaining their usage and Raw", async () => {
+    const f = await fixture(), original = await f.runtime.sourceCapture.open(f.request), before = await read(original); await original.close()
+    await appendFile(f.file, serialize([{ type: "context.undo", count: 2, time: f.rows.at(-1).time + 1 }]))
+    const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    expect(view.target).toEqual({ events: 3, usage: 5, threads: 1 })
+    expect(frames.flatMap(f => f.events)).toEqual(before.flatMap(f => f.events).slice(0, 3))
+    expect(frames.flatMap(f => f.usage)).toEqual(before.flatMap(f => f.usage))
+    expect(JSON.stringify(frames.flatMap(f => f.events))).not.toContain("tool_call")
+    expect(JSON.stringify(frames)).toContain("ATAPE_KIMI_TOOL_MARKER_0420")
+  })
+  it.each(["zero", "negative", "fraction", "too-many", "cross-boundary", "active", "missing-begin", "missing-request", "range", "legacy", "model", "duplicate-usage", "retry", "counter", "cancel", "missing-apply", "incomplete-begin", "incomplete-usage", "incomplete-apply"])("rejects %s context mutations before exposing a replacement", async kind => {
+    const f = await fixture("context")
+    if (["zero", "negative", "fraction", "too-many"].includes(kind)) f.rows[32].count = { zero: 0, negative: -1, fraction: 0.5, "too-many": 3 }[kind]
+    if (kind === "cross-boundary") f.rows.splice(68, 0, { ...f.rows[66] })
+    if (kind === "active") f.rows.splice(31, 0, { ...f.rows[32] })
+    if (kind === "missing-begin") f.rows.splice(46, 1)
+    if (kind === "missing-request") f.rows.splice(47, 1)
+    if (kind === "range") f.rows[49].wireLines.end++
+    if (kind === "legacy") delete f.rows[49].keptUserMessageCount
+    if (kind === "model") f.rows[48].model = "unrelated"
+    if (kind === "duplicate-usage") f.rows.splice(49, 0, f.rows[48])
+    if (kind === "retry") f.rows.splice(48, 0, f.rows[47])
+    if (kind === "counter") f.rows[48].usage.output = -1
+    if (kind === "cancel") f.rows[51].type = "full_compaction.cancel"
+    if (kind === "missing-apply") f.rows.splice(49, 1)
+    if (kind === "incomplete-begin") f.rows.splice(47)
+    if (kind === "incomplete-usage") f.rows.splice(49)
+    if (kind === "incomplete-apply") f.rows.splice(50)
+    await writeFile(f.file, serialize(f.rows))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toBeDefined()
+  })
+  it("does not invent missing compaction counters or turn context token estimates into usage", async () => {
+    const f = await fixture("context")
+    f.rows[48].usage = { output: 14 }; f.rows[84].usage = {}
+    f.rows[49].tokensAfter = 999999; f.rows[85].summaryOutputTokens = 999999
+    await writeFile(f.file, serialize(f.rows))
+    const view = await f.runtime.sourceCapture.open(f.request), usage = (await read(view)).flatMap(f => f.usage)
+    expect(usage).toHaveLength(6)
+    expect(usage[3]).toMatchObject({ outputTokens: 14 })
+    expect(usage[3]!.inputTokens).toBeUndefined()
+    expect(JSON.stringify(usage)).not.toContain("999999")
+  })
   it("captures native resume, thoughts, both tool outcomes and exact response usage without double counting", async () => {
     const f = await fixture(), before = await stat(f.file)
     const discovery = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))

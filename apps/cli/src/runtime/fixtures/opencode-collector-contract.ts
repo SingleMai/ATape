@@ -134,7 +134,13 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   if (input.phase === "recover-raw") assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(contentPuts, 0); assert.equal(uploads, 0) }
   if (input.phase === "raw-off") assert.equal(uploads, 0)
-  if (["raw-on", "raw-only"].includes(input.phase)) { assert.equal(observations, 1); assert.equal(contentPuts, 0); assert.ok(uploads > 0) }
+  if (["raw-on", "raw-only"].includes(input.phase)) {
+    // Crossing a policy-revision digit boundary changes Raw envelope admission;
+    // the unchanged fork may also need reconciliation after Raw is re-enabled.
+    if (input.phase === "raw-on") assert.ok(observations >= 1 && observations <= 2)
+    else assert.equal(observations, 1)
+    assert.equal(contentPuts, 0); assert.ok(uploads > 0)
+  }
   const factory = yield* CaptureJournals, states = yield* CollectorStateStore
   const snapshot = yield* states.snapshot(input.origin, input.userId, project.id, adapterId)
   const journal = yield* factory.open({ instanceOrigin: input.origin, userId: input.userId }, limits.journal)

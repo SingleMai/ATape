@@ -21,12 +21,14 @@ Overrides must be absolute. The Adapter reads `sessions/*/*/state.json` and the
 matching `agents/main/wire.jsonl`; it does not need Kimi installed or credentials.
 The Server must advertise `atape.publication.v1`.
 
-Supports ordinary completed main-agent turns and resume, user/assistant text,
-thoughts, tool outcomes and response usage. Forks, subagents, compaction, undo,
-clear, steering, interrupted/retried turns, legacy Python kimi-cli and tree
-storage are outside this first profile. Unsupported sources retain previously
-captured history and produce diagnostics. Images/blobs are Raw-only; referenced
-files are not opened.
+Supports completed main-agent turns and resume, user/assistant text, thoughts,
+tool outcomes, manual/automatic compaction, `/undo`, `/clear` as a new Session,
+and response usage. Undo removes visible turns while retaining expenditure;
+compaction preserves reading history and keeps internal summaries in Raw.
+Forks, subagents, steering, interrupted/retried turns and tree storage remain
+unsupported. Legacy Python kimi-cli is intentionally excluded. Unsupported
+sources retain previously captured history and produce diagnostics. Images/blobs
+are Raw-only; referenced files are not opened.
 
 The [Kimi guide](../../docs/adapters/kimi.md) owns detailed support, identity,
 Raw policy, bounds, recovery and verification evidence.
