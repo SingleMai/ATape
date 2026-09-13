@@ -527,6 +527,56 @@ describe("CodeBuddy installed runtime Interface", () => {
     expect(view.target).toEqual({ events: 13, usage: 5, threads: 1 })
     await view.close()
   })
+  it("captures native ordinary tool siblings with unique Raw records, stable appends and one response usage", async () => {
+    const f = await fixture(), multiId = "atape-codebuddy-multitool-21240", file = join(f.directory, `${multiId}.jsonl`)
+    const native = await readFile(new URL("./fixtures/native-multitool-2.124.0.jsonl", import.meta.url), "utf8"), values = rows(native)
+    let prefix: SourceCapturePage["frames"][number][] = []
+    for (const [length, count] of [[4, 3], [7, 5], [11, 9], [14, 11]]) {
+      await writeFile(file, serialize(values.slice(0, length)))
+      const view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: multiId })
+      expect(view.target.events).toBe(count)
+      const frames = await read(view)
+      expect(frames.slice(0, prefix.length)).toEqual(prefix)
+      prefix = frames; await view.close()
+    }
+    const events = prefix.flatMap(frame => frame.events), samples = prefix.flatMap(frame => frame.usage)
+    expect(new Set(prefix.map(frame => frame.recordKey)).size).toBe(14)
+    expect(new Set(events.map(event => event.sourceEventId)).size).toBe(11)
+    const calls = events.filter(event => event.update.sessionUpdate === "tool_call")
+    const results = events.filter(event => event.update.sessionUpdate === "tool_call_update")
+    expect(calls).toHaveLength(2); expect(results).toHaveLength(2)
+    for (const [index, result] of results.entries()) expect(result.update).toMatchObject({ status: "completed", toolCallId: (calls[index]!.update as { toolCallId: string }).toolCallId })
+    expect(new Set(calls.map(event => (event.update as { toolCallId: string }).toolCallId)).size).toBe(2)
+    expect(samples).toHaveLength(4)
+    expect(samples.reduce((sum, sample) => sum + sample.inputTokens!, 0)).toBe(28477)
+    expect(samples.reduce((sum, sample) => sum + sample.outputTokens!, 0)).toBe(145)
+    expect(samples.reduce((sum, sample) => sum + sample.cacheReadTokens!, 0)).toBe(21376)
+    expect(prefix.map(frame => (frame.raw as { json: string }).json).join("\n") + "\n").toBe(native)
+    // Repeated native rows do not create extra calls or Raw identities.
+    await writeFile(file, serialize([...values.slice(0, 8), values[6], ...values.slice(8)]))
+    const duplicate = await f.runtime.sourceCapture.open({ ...f.request, sourceId: multiId })
+    expect(await read(duplicate)).toEqual(prefix); await duplicate.close()
+    const frozen = await f.runtime.sourceCapture.open({ ...f.request, sourceId: multiId, rawEnabled: false })
+    await rm(file)
+    expect(await read(frozen)).toEqual(prefix.map(({ raw: _, ...frame }) => frame)); await frozen.close()
+  })
+  it.each(["pending-calls", "pending-result", "wrong-parent", "foreign-session", "foreign-response", "foreign-model", "revised-call", "interleaved-call", "duplicate-result", "wrong-result", "early-usage", "delegation"])("rejects incomplete or unproven native tool groups: %s", async variant => {
+    const f = await fixture(), multiId = "atape-codebuddy-multitool-21240", values = rows(await readFile(new URL("./fixtures/native-multitool-2.124.0.jsonl", import.meta.url), "utf8"))
+    if (variant === "pending-calls") values.splice(8)
+    if (variant === "pending-result") values.splice(9)
+    if (variant === "wrong-parent") values[7].parentId = values[6].id
+    if (variant === "foreign-session") values[7].sessionId = "foreign"
+    if (variant === "foreign-response") values[7].providerData.messageId = "foreign"
+    if (variant === "foreign-model") values[7].providerData.model = "foreign"
+    if (variant === "revised-call") values[7].callId = values[6].callId
+    if (variant === "interleaved-call") values.splice(7, 0, values.splice(8, 1)[0])
+    if (variant === "duplicate-result") values[9].callId = values[8].callId
+    if (variant === "wrong-result") values[9].name = "Bash"
+    if (variant === "early-usage") values[6].message = values[7].message
+    if (variant === "delegation") values[7].name = "SendMessage"
+    await writeFile(join(f.directory, `${multiId}.jsonl`), serialize(values))
+    await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: multiId })).rejects.toMatchObject({ reason: ["pending-calls", "pending-result", "duplicate-result", "wrong-result"].includes(variant) ? "format" : "unsupported" })
+  })
   it("does not cut a long first message into an unredactable title fragment", async () => {
     const f = await fixture(), values = rows(f.native)
     values[0].content[0].text = "x".repeat(190) + "SENSITIVE_TEST_TOKEN"

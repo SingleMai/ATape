@@ -37,6 +37,7 @@ try {
     await view.close()
   }
   for (const fixture of [
+    { name: "native-multitool", id: "atape-codebuddy-multitool-21240", cwd: "multitool", events: 11, usage: 4 },
     { name: "native-nested-fork", id: "atape-codebuddy-nested-fork-21240", cwd: "fork", events: 18, usage: 8, meta: "native-fork" },
     { name: "native-compaction", id: "atape-codebuddy-compact-21240", cwd: "compact", events: 10, usage: 4 },
     { name: "native-compaction-fork", id: "atape-codebuddy-compact-fork-21240", cwd: "compact", events: 12, usage: 5, meta: "native-compaction-fork" }

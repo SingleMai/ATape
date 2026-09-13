@@ -28,7 +28,7 @@ completed native Agent receipts.
 
 The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
 from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks), ordinary resume,
-text/thoughts, tool calls/results, manual `/compact`, engineering pre-message
+text/thoughts, tool calls/results (including completed ordinary multi-tool responses), manual `/compact`, engineering pre-message
 automatic compaction, completed foreground Agent families (resume and nesting),
 root-level background Agents through native automatic teams (serial SendMessage
 continuation and ordinary foreground resume),

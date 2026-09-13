@@ -28,6 +28,55 @@ export const failedTool = (row: Row) => {
   const result = object(object(row.providerData).toolResult)
   return row.status !== "completed" || result.error != null || object(result.rawResponse).is_error === true
 }
+type NativeRecord = { row: Row; json: string }
+/** Native tool siblings share a row ID. Preserve the first call's existing key,
+ * qualify later calls by callId, and admit only a complete ordinary-tool group. */
+export const historyRecords = (records: ReadonlyArray<NativeRecord>) => {
+  const unique: (NativeRecord & { sibling: boolean })[] = []
+  const seen = new Map<string, Map<string, string>>()
+  for (const record of records) {
+    const { row, json } = record, rowId = id(row.id)
+    const variants = seen.get(rowId), callId = row.type === "function_call" ? id(row.callId) : ""
+    if (variants?.has(callId)) {
+      if (variants.get(callId) !== json) fail("unsupported", "CodeBuddy repeated record revisions require a wider source profile.")
+      continue
+    }
+    const sibling = variants !== undefined
+    if (sibling && (!callId || variants.has("") || unique.at(-1)?.row.id !== rowId))
+      fail("unsupported", "CodeBuddy repeated record revisions require a wider source profile.")
+    const next = variants ?? new Map<string, string>(); next.set(callId, json); seen.set(rowId, next)
+    unique.push({ ...record, sibling })
+  }
+  for (let at = 0; at < unique.length; at++) {
+    let end = at + 1
+    while (unique[end]?.sibling) end++
+    if (end === at + 1) continue
+    const first = unique[at]!.row, provider = object(first.providerData), calls = new Map<string, unknown>()
+    id(provider.messageId); id(provider.model)
+    for (let index = at; index < end; index++) {
+      const row = unique[index]!.row, data = object(row.providerData)
+      if (row.type !== "function_call" || ["Agent", "Task", "SendMessage"].includes(String(row.name)) ||
+        row.sessionId !== first.sessionId || row.parentId !== first.parentId || row.logicalParentId != null ||
+        ["messageId", "model", "agent", "traceId", "conversationRequestId"].some(key => data[key] !== provider[key]) ||
+        data.isCompactInternal != null || data.compactType != null ||
+        index < end - 1 && (Object.keys(object(object(row.message).usage)).length || data.usage != null || data.rawUsage != null))
+        fail("unsupported", "CodeBuddy tool siblings have unproven response or delegation semantics.")
+      calls.set(id(row.callId), row.name)
+    }
+    // Native results have their own IDs and resume the ordinary parent chain.
+    // A partial group must not publish a target or reserve unstable source keys.
+    for (let index = end; index < end + (end - at); index++) {
+      const result = unique[index]?.row ?? {}
+      if (result.type !== "function_call_result" || !calls.has(id(result.callId)))
+        fail("format", "CodeBuddy tool group has not reached every result; retry.")
+      const callId = id(result.callId)
+      if (result.name !== calls.get(callId)) fail("format", "CodeBuddy tool group result changed its tool name.")
+      calls.delete(callId)
+    }
+    at = end - 1
+  }
+  return unique
+}
 const maxFiles = 10_000
 export const maxSnapshotBytes = 16 * 1024 * 1024
 const stamp = (s: Awaited<ReturnType<typeof lstat>>) => `${s.dev}:${s.ino}:${s.size}:${s.mtimeMs}:${s.ctimeMs}`
@@ -189,14 +238,9 @@ const internalNotice = (row: Row, children: Map<string, ChildReference>, names: 
 // Only completed, structured native Agent receipts authorize child-file reads.
 const references = (history: History, root = false) => {
   const children = new Map<string, ChildReference>(), callChildren = new Map<string, string | undefined>(), names = new Map<string, string | undefined>()
-  const calls = new Map<string, { args: Row; name: string; sentAt: unknown; childId?: string }>(), seen = new Map<string, string>(), internalMessages = new Set<string>()
-  for (const { row, json } of history.records) {
+  const calls = new Map<string, { args: Row; name: string; sentAt: unknown; childId?: string }>(), internalMessages = new Set<string>()
+  for (const { row } of historyRecords(history.records)) {
     const rowId = id(row.id)
-    if (seen.has(rowId)) {
-      if (seen.get(rowId) !== json) fail("unsupported", "CodeBuddy repeated record revisions require a wider source profile.")
-      continue
-    }
-    seen.set(rowId, json)
     if (root && row.type === "message" && row.role === "user" && (object(row.providerData).teammateMessage != null || Array.isArray(row.content) &&
       row.content.some(block => typeof object(block).text === "string" && /^\s*<teammate-message(?:\s|>)/.test(object(block).text as string)))) {
       internalNotice(row, children, names); internalMessages.add(rowId)
@@ -280,7 +324,7 @@ const references = (history: History, root = false) => {
 
 const validateChild = (history: History, ref: ChildReference) => {
   if (Object.keys(history.meta).length) fail("unsupported", "CodeBuddy child metadata requires a wider source profile.")
-  const records = [...new Map(history.records.map(record => [record.row.id, record])).values()].filter(({ row }) => ["message", "reasoning", "function_call", "function_call_result"].includes(String(row.type)))
+  const records = historyRecords(history.records).filter(({ row }) => ["message", "reasoning", "function_call", "function_call_result"].includes(String(row.type)))
   const first = records[0]?.row ?? {}, nativeSessionId = segment(first.sessionId)
   if (first.type !== "message" || first.role !== "user" || first.parentId != null || first.logicalParentId != null || object(first.providerData).agent !== ref.agent)
     fail("unsupported", "CodeBuddy child has no original delegated user root.")

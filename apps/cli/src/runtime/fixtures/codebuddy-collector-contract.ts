@@ -17,7 +17,9 @@ const familyPhase = input.phase.startsWith("family-"), familyId = "atape-codebud
 const backgroundPhase = input.phase.startsWith("background-"), backgroundId = "atape-codebuddy-background-21240"
 const turnsPhase = input.phase.startsWith("turns-"), turnsId = "atape-codebuddy-background-turns-21240"
 const emergencyPhase = input.phase.startsWith("emergency-"), emergencyId = "atape-codebuddy-child-compact-21240"
-const sourceId = emergencyPhase ? emergencyId : turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const multiPhase = input.phase.startsWith("multi-"), multiId = "atape-codebuddy-multitool-21240"
+const multiWorkspace = join(input.home, "multitool-workspace")
+const sourceId = multiPhase ? multiId : emergencyPhase ? emergencyId : turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
 const turnsWorkspace = join(home, "turns-workspace"), emergencyWorkspace = join(home, "emergency-workspace")
 const forkWorkspace = join(home, "fork-workspace")
 const compactWorkspace = join(home, "compact-workspace")
@@ -250,6 +252,28 @@ if (["emergency-edit", "emergency-lost", "emergency-raw-only"].includes(input.ph
   }
 }
 if (["emergency-raw-recover", "emergency-recover"].includes(input.phase)) for (const relative of emergencyFiles) rmSync(join(directory, relative))
+const multiSource = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-multitool-2.124.0.jsonl", import.meta.url), "utf8")
+  .replaceAll("/fixture/codebuddy-multitool-project", multiWorkspace)
+if (input.phase === "multi-initial") {
+  mkdirSync(multiWorkspace)
+  const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
+  config.projects.push({ ...config.projects[0], id: input.projectId, name: "CodeBuddy ordinary tools", path: multiWorkspace })
+  writeFileSync(paths.configFile, JSON.stringify(config))
+}
+const multiLength: Record<string, number> = { "multi-initial": 4, "multi-pending": 9, "multi-complete": 11, "multi-resume": 14, "multi-repair": 14 }
+if (input.phase in multiLength) writeFileSync(file, multiSource.trimEnd().split("\n").slice(0, multiLength[input.phase]).join("\n") + "\n")
+if (input.phase === "multi-invalid") {
+  const values = multiSource.trimEnd().split("\n").map(line => JSON.parse(line)); values[7].providerData.messageId = "foreign-response"; save(values)
+}
+if (input.phase === "multi-lost") writeFileSync(file, readFileSync(join(home, "frozen-multi.jsonl")))
+if (["multi-edit", "multi-lost", "multi-raw-only"].includes(input.phase)) {
+  const values = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  if (input.phase === "multi-raw-only") values[7].extraRawField = "CodeBuddyMultiRawOnlyNeedle"
+  else values.at(-1).content[0].text = input.phase === "multi-edit" ? "CodeBuddyMultiPolicyNeedle" : "CodeBuddyMultiFrozenNeedle"
+  save(values)
+  if (input.phase === "multi-raw-only") cpSync(file, join(home, "frozen-multi.jsonl"))
+}
+if (["multi-raw-recover", "multi-recover"].includes(input.phase)) rmSync(file)
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
   if (input.phase === "edit") values.push(
@@ -271,7 +295,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost", "emergency-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only", "turns-raw-only", "emergency-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost", "multi-lost", "emergency-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "multi-raw-only", "compact-raw-only", "turns-raw-only", "emergency-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -301,7 +325,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume", "emergency-initial", "emergency-root", "emergency-child", "emergency-resume"].includes(input.phase)) {
+  if (["multi-initial", "multi-complete", "multi-resume", "initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume", "emergency-initial", "emergency-root", "emergency-child", "emergency-resume"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -329,16 +353,16 @@ const result = await Effect.runPromise(Effect.gen(function*() {
       const report = yield* runCollectionCycle()
       failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid", "emergency-pending", "emergency-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["multi-pending", "multi-invalid", "malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid", "emergency-pending", "emergency-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "emergency-lost", "turns-raw-only", "emergency-raw-only"].includes(input.phase)) assert.equal(lost, true)
-  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover", "emergency-edit", "emergency-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
+  if (["multi-raw-only", "fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "multi-lost", "emergency-lost", "turns-raw-only", "emergency-raw-only"].includes(input.phase)) assert.equal(lost, true)
+  if (["multi-edit", "multi-raw-recover", "noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover", "emergency-edit", "emergency-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
-  if (["raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable", "emergency-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["multi-reenable", "raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable", "emergency-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)
