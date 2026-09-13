@@ -19,7 +19,9 @@ const turnsPhase = input.phase.startsWith("turns-"), turnsId = "atape-codebuddy-
 const emergencyPhase = input.phase.startsWith("emergency-"), emergencyId = "atape-codebuddy-child-compact-21240"
 const multiPhase = input.phase.startsWith("multi-"), multiId = "atape-codebuddy-multitool-21240"
 const multiWorkspace = join(input.home, "multitool-workspace")
-const sourceId = multiPhase ? multiId : emergencyPhase ? emergencyId : turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const forkFamilyPhase = input.phase.startsWith("fork-family-"), forkFamilyId = "atape-codebuddy-fork-child-nested-21240"
+const forkFamilyWorkspace = join(input.home, "fork-family-workspace")
+const sourceId = forkFamilyPhase ? forkFamilyId : multiPhase ? multiId : emergencyPhase ? emergencyId : turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
 const turnsWorkspace = join(home, "turns-workspace"), emergencyWorkspace = join(home, "emergency-workspace")
 const forkWorkspace = join(home, "fork-workspace")
 const compactWorkspace = join(home, "compact-workspace")
@@ -274,6 +276,50 @@ if (["multi-edit", "multi-lost", "multi-raw-only"].includes(input.phase)) {
   if (input.phase === "multi-raw-only") cpSync(file, join(home, "frozen-multi.jsonl"))
 }
 if (["multi-raw-recover", "multi-recover"].includes(input.phase)) rmSync(file)
+const forkFamilyOriginal = "atape-codebuddy-fork-child-root-21240"
+const forkFamilyFiles = [forkFamilyId + ".jsonl", forkFamilyId + ".meta.json", forkFamilyOriginal + "/subagents/agent-97ab43b2.jsonl",
+  forkFamilyOriginal + "/subagents/agent-d40e1747.jsonl", "dc73f83c-3107-474d-bb1e-13952cff1643/subagents/agent-375d1c88.jsonl"]
+const forkFamilyLeaf = join(directory, forkFamilyFiles[4]!)
+if (input.phase === "fork-family-initial") {
+  mkdirSync(forkFamilyWorkspace)
+  const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
+  config.projects.push({ ...config.projects[0], id: input.projectId, name: "CodeBuddy fork family", path: forkFamilyWorkspace })
+  writeFileSync(paths.configFile, JSON.stringify(config))
+}
+const forkFamilyLength: Record<string, [number, number, number]> = {
+  "fork-family-initial": [19, 5, 3], "fork-family-pending": [19, 4, 3], "fork-family-growth": [19, 9, 5],
+  "fork-family-resume": [21, 9, 5], "fork-family-repair": [21, 9, 5]
+}
+if (input.phase in forkFamilyLength) {
+  for (const [index, relative] of forkFamilyFiles.entries()) {
+    const destination = join(directory, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    const text = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-fork-family-2.124.0/" + relative, import.meta.url), "utf8")
+    if (index === 1) { writeFileSync(destination, text); continue }
+    const values = text.trimEnd().split("\n").map(line => JSON.parse(line))
+    // Only the fork's own original user CWD attributes this Project. Copied and child CWDs name a different configured Project.
+    for (const row of values) row.cwd = index === 0 && row.sessionId === forkFamilyId ? forkFamilyWorkspace : workspace
+    const length = forkFamilyLength[input.phase]!
+    const count = index === 0 ? length[0] : index === 3 ? length[1] : index === 4 ? length[2] : values.length
+    writeFileSync(destination, values.slice(0, count).map(row => JSON.stringify(row) + "\n").join(""))
+  }
+}
+if (input.phase === "fork-family-lost") for (const relative of forkFamilyFiles) {
+  const destination = join(directory, relative); mkdirSync(dirname(destination), { recursive: true })
+  cpSync(join(home, "frozen-fork-family", relative), destination)
+}
+if (["fork-family-invalid", "fork-family-edit", "fork-family-raw-only", "fork-family-lost"].includes(input.phase)) {
+  const values = readFileSync(forkFamilyLeaf, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  if (input.phase === "fork-family-invalid") values[0].content[0].text = "unproven copied prompt"
+  else if (input.phase === "fork-family-raw-only") values[1].extraRawField = "CodeBuddyForkFamilyRawOnlyNeedle"
+  else values[2].content[0].text = input.phase === "fork-family-edit" ? "CodeBuddyForkFamilyPolicyNeedle" : "CodeBuddyForkFamilyFrozenNeedle"
+  writeFileSync(forkFamilyLeaf, values.map(row => JSON.stringify(row) + "\n").join(""))
+  if (input.phase === "fork-family-raw-only") for (const relative of forkFamilyFiles) {
+    const destination = join(home, "frozen-fork-family", relative); mkdirSync(dirname(destination), { recursive: true })
+    cpSync(join(directory, relative), destination)
+  }
+}
+if (["fork-family-recover", "fork-family-raw-recover"].includes(input.phase)) for (const relative of forkFamilyFiles) rmSync(join(directory, relative))
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
   if (input.phase === "edit") values.push(
@@ -295,7 +341,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost", "multi-lost", "emergency-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "multi-raw-only", "compact-raw-only", "turns-raw-only", "emergency-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["fork-family-lost", "lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost", "multi-lost", "emergency-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["fork-family-raw-only", "raw-only", "multi-raw-only", "compact-raw-only", "turns-raw-only", "emergency-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -325,7 +371,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (["multi-initial", "multi-complete", "multi-resume", "initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume", "emergency-initial", "emergency-root", "emergency-child", "emergency-resume"].includes(input.phase)) {
+  if (["fork-family-initial", "fork-family-growth", "fork-family-resume", "multi-initial", "multi-complete", "multi-resume", "initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume", "emergency-initial", "emergency-root", "emergency-child", "emergency-resume"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -353,16 +399,16 @@ const result = await Effect.runPromise(Effect.gen(function*() {
       const report = yield* runCollectionCycle()
       failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["multi-pending", "multi-invalid", "malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid", "emergency-pending", "emergency-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["fork-family-pending", "fork-family-invalid", "multi-pending", "multi-invalid", "malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid", "emergency-pending", "emergency-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["multi-raw-only", "fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "multi-lost", "emergency-lost", "turns-raw-only", "emergency-raw-only"].includes(input.phase)) assert.equal(lost, true)
-  if (["multi-edit", "multi-raw-recover", "noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover", "emergency-edit", "emergency-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
+  if (["fork-family-lost", "fork-family-raw-only", "multi-raw-only", "fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "multi-lost", "emergency-lost", "turns-raw-only", "emergency-raw-only"].includes(input.phase)) assert.equal(lost, true)
+  if (["fork-family-edit", "fork-family-raw-recover", "multi-edit", "multi-raw-recover", "noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover", "emergency-edit", "emergency-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
-  if (["multi-reenable", "raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable", "emergency-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["fork-family-reenable", "multi-reenable", "raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable", "emergency-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)

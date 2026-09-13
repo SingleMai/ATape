@@ -242,7 +242,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
       for (let index = turn!.length - 1; index >= 0; index--) pending.push(turn![index]!)
     }
   }
-  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: emergency ? "codebuddy.cli.jsonl.family.emergency.1" : (source.internalMessages.size || source.children.some(child => child.continuing)) ? "codebuddy.cli.jsonl.family.background.turns.1" : source.children.some(child => child.background) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
+  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: source.forkedFrom ? "codebuddy.cli.jsonl.family.fork.1" : emergency ? "codebuddy.cli.jsonl.family.emergency.1" : (source.internalMessages.size || source.children.some(child => child.continuing)) ? "codebuddy.cli.jsonl.family.background.turns.1" : source.children.some(child => child.background) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
     session: { ...root.header.session, reportedEventCount: events, updatedAt: latest, status: active ? "active" : "idle", captureStatus: partial ? "partial" : "healthy" },
     target: { events, usage, threads: threads.length } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "CodeBuddy family header exceeds its page budget.")
