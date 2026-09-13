@@ -26,7 +26,8 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   let userTurns = 0
   const seen = new Map<string, string>(), calls = new Map<string, string>(), usages = new Map<string, string>()
   let nativeSession: string | undefined, ownUserSeen = false
-  let manualCompact = false, hasCompaction = false
+  let manualCompact = false, hasCompaction = false, hasEmergency = false
+  let emergency: "continue" | "response" | undefined, delegatedIntent: string | undefined
   let previous: string | undefined, events = 0, usageCount = 0, partial = false, latest = 0, title = "CodeBuddy session", active = false
   let frameBytes = 0
   for (const { row, json } of records) {
@@ -42,8 +43,32 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
     let compactCommand: string | undefined, contextOnly = false
     const compactAgent = provider.agent === "compact"
     const marked = provider.isCompactInternal === true || provider.isSummary === true || provider.isCompacted === true || provider.compactType != null
-    if (child && (compactAgent || marked || row.logicalParentId != null)) fail("unsupported", "CodeBuddy child compaction requires a wider source profile.")
-    if (compactAgent) {
+    if (child && compactAgent) fail("unsupported", "CodeBuddy child manual compaction requires a wider source profile.")
+    if (emergency === "response" && row.type === "message" && row.role === "user")
+      fail("unsupported", "CodeBuddy emergency continuation was interrupted before its response.")
+    if (emergency === "continue") {
+      const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
+      const intent = delegatedIntent && (delegatedIntent.length > 200 ? delegatedIntent.substring(0, 200) + "..." : delegatedIntent)
+      const expected = child && intent
+        ? 'Please continue based on the summarized context above. Your original task was: "' + intent + '" Maintain the same approach and level of detail.'
+        : "Please continue with the conversation based on the summarized context above. Maintain the same level of detail and helpfulness as before the summarization."
+      if (row.type !== "message" || row.role !== "user" || content.type !== "input_text" || content.text !== expected ||
+        provider.isCompactInternal !== true || provider.skipRun !== false || provider.isSummary != null || provider.isCompacted != null ||
+        provider.compactType != null || row.parentId != null || row.logicalParentId == null)
+        fail("unsupported", "CodeBuddy emergency continuation has no exact native context input.")
+      contextOnly = true; emergency = "response"
+    } else if (provider.compactType === "emergency-auto") {
+      const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
+      if (source.forkedFrom || child?.background || !previous || manualCompact || emergency ||
+        row.type !== "message" || row.role !== "user" || provider.isCompactInternal !== true || provider.isSummary !== true ||
+        provider.isCompacted !== true || provider.skipRun !== false || content.type !== "input_text" ||
+        !enclosed(content.text, "conversation_history_summary") || row.parentId != null || row.logicalParentId == null)
+        fail("unsupported", "CodeBuddy emergency summary requires a wider source profile.")
+      contextOnly = true; hasEmergency = true; hasCompaction = true; emergency = "continue"
+    }
+    if (contextOnly) {
+      // Native emergency summary/continue pairs retain the original transcript in Raw.
+    } else if (compactAgent) {
       hasCompaction = true
       if (!manualCompact && row.type === "message" && row.role === "user" && !marked) {
         const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
@@ -65,7 +90,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       fail("unsupported", "CodeBuddy compact history was interrupted before its summary.")
     } else if (marked) {
       const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
-      if (row.type !== "message" || row.role !== "user" || provider.compactType !== "pre-message-auto" ||
+      if (child || row.type !== "message" || row.role !== "user" || provider.compactType !== "pre-message-auto" ||
         provider.isCompactInternal !== true || provider.isCompacted !== true || provider.isSummary !== false || provider.skipRun !== false ||
         row.parentId != null || row.logicalParentId == null || content.type !== "input_text" || !enclosed(content.text, "cb_summary"))
         fail("unsupported", "CodeBuddy automatic compaction requires a wider source profile.")
@@ -113,7 +138,14 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
         // Never cut a token before the Host can redact the complete value.
         if (candidate && Buffer.byteLength(candidate) <= 200) title = candidate
       }
-      if (!contextOnly && !inboxOnly) active = row.role === "user" || row.status !== "completed"
+      if (!contextOnly && !inboxOnly) {
+        active = row.role === "user" || row.status !== "completed"
+        if (row.role === "assistant" && row.status === "completed") emergency = undefined
+        if (child && row.role === "user") {
+          const content = object((row.content as unknown[])[0])
+          delegatedIntent = text(content.text)
+        }
+      }
     } else if (row.type === "reasoning") {
       blocks(Array.isArray(row.rawContent) && row.rawContent.length ? row.rawContent : row.content, true)
       active = true
@@ -144,6 +176,8 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
     // Native normalized message.usage includes cached input and reasoning output.
     // Several tool calls may carry the same model response: count that response once.
     const normalized = object(object(row.message).usage)
+    if (contextOnly && (Object.keys(normalized).length || provider.usage != null || provider.rawUsage != null))
+      fail("unsupported", "CodeBuddy internal compact context has unproven response usage.")
     if (Object.keys(normalized).length) {
       const modelMessage = id(provider.messageId), key = identity("usage", namespace, modelMessage)
       const inputTokens = counter(normalized.input_tokens), outputTokens = counter(normalized.output_tokens)
@@ -165,29 +199,29 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
     if (bytes + Buffer.byteLength(JSON.stringify({ frames: [], done: false })) > request.projection.pageBytes || frameBytes > byteBudget)
       fail("limit", "CodeBuddy projection exceeds its page or 64 MiB snapshot budget.")
     frames.push(frame)
-    if (child && row.type === "message" && row.role === "user" && userTurns++ > 0) turns.push([])
+    if (child && !contextOnly && row.type === "message" && row.role === "user" && userTurns++ > 0) turns.push([])
     turns.at(-1)!.push(frame)
   }
-  if (manualCompact) fail("format", "CodeBuddy compaction has not completed; retry.")
+  if (manualCompact || emergency) fail("format", "CodeBuddy compaction has not completed; retry.")
   const captureStatus = partial ? "partial" as const : "healthy" as const
-  const profile = hasCompaction ? source.forkedFrom ? "fork.compaction" : "compaction" : source.forkedFrom ? "fork" : "linear"
+  const profile = hasEmergency ? "emergency" : hasCompaction ? source.forkedFrom ? "fork.compaction" : "compaction" : source.forkedFrom ? "fork" : "linear"
   const header: SourceCaptureHeader = { profile: `codebuddy.cli.jsonl.${profile}.1`, origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "codebuddy-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
     threads: [{ sourceThreadId: threadId, ...(child ? { parentSourceThreadId: child.parentId } : {}), label: child?.label ?? title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "CodeBuddy header exceeds its page budget.")
-  return { header, frames, turns, bytes: frameBytes }
+  return { header, frames, turns, emergency: hasEmergency, bytes: frameBytes }
 }
 
 /** Traverse delegated turns at their calls for stable global order; native timestamps retain asynchronous timing. */
 export const project = (source: Source, request: SourceOpenRequest) => {
   const started = performance.now(), root = projectThread(source, request, started, 64 * 1024 * 1024)
   const threads = [...root.header.threads], children = new Map<string, ReturnType<typeof projectThread>>()
-  let bytes = root.bytes, events = root.header.target.events, usage = root.header.target.usage
+  let bytes = root.bytes, events = root.header.target.events, usage = root.header.target.usage, emergency = root.emergency
   let latest = root.header.session.updatedAt, active = root.header.session.status === "active", partial = root.header.session.captureStatus === "partial"
   for (const child of source.children) {
     const planned = projectThread(source, { ...request, projection: { ...request.projection, events: request.projection.events - events, usage: request.projection.usage - usage } }, started, 64 * 1024 * 1024 - bytes, child)
-    children.set(child.id, planned)
+    children.set(child.id, planned); emergency ||= planned.emergency
     threads.push(...planned.header.threads)
     bytes += planned.bytes; events += planned.header.target.events; usage += planned.header.target.usage
     latest = latest > planned.header.session.updatedAt ? latest : planned.header.session.updatedAt
@@ -213,7 +247,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
       for (let index = turn!.length - 1; index >= 0; index--) pending.push(turn![index]!)
     }
   }
-  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: (source.internalMessages.size || source.children.some(child => child.continuing)) ? "codebuddy.cli.jsonl.family.background.turns.1" : source.children.some(child => child.background) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
+  const header: SourceCaptureHeader = { ...root.header, ...(source.children.length ? { profile: emergency ? "codebuddy.cli.jsonl.family.emergency.1" : (source.internalMessages.size || source.children.some(child => child.continuing)) ? "codebuddy.cli.jsonl.family.background.turns.1" : source.children.some(child => child.background) ? "codebuddy.cli.jsonl.family.background.1" : "codebuddy.cli.jsonl.family.1" } : {}), threads,
     session: { ...root.header.session, reportedEventCount: events, updatedAt: latest, status: active ? "active" : "idle", captureStatus: partial ? "partial" : "healthy" },
     target: { events, usage, threads: threads.length } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "CodeBuddy family header exceeds its page budget.")

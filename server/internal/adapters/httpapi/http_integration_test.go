@@ -36,7 +36,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Skip("set ATAPE_INTEGRATION_TESTS=1 to run HTTP PostgreSQL integration tests")
 	}
 	configureHTTPDockerHost(t)
-	timeout := 3 * time.Minute
+	// Four installed Adapter contracts run sequentially with this shared fixture.
+	// Their successful CI run can exceed three minutes before the final Search checks.
+	timeout := 5 * time.Minute
 	if os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE") != "" {
 		// The optional browser review owns a further bounded three-minute pause.
 		timeout += 3 * time.Minute

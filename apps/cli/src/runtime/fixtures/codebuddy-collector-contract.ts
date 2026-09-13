@@ -16,8 +16,9 @@ const compactPhase = input.phase.startsWith("compact-"), compactId = "atape-code
 const familyPhase = input.phase.startsWith("family-"), familyId = "atape-codebuddy-child-21240"
 const backgroundPhase = input.phase.startsWith("background-"), backgroundId = "atape-codebuddy-background-21240"
 const turnsPhase = input.phase.startsWith("turns-"), turnsId = "atape-codebuddy-background-turns-21240"
-const sourceId = turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
-const turnsWorkspace = join(home, "turns-workspace")
+const emergencyPhase = input.phase.startsWith("emergency-"), emergencyId = "atape-codebuddy-child-compact-21240"
+const sourceId = emergencyPhase ? emergencyId : turnsPhase ? turnsId : backgroundPhase ? backgroundId : familyPhase ? familyId : compactPhase ? compactId : forkPhase && input.phase !== "fork-foreign" ? forkId : "atape-codebuddy-native-21240", home = input.home, workspace = join(home, "workspace")
+const turnsWorkspace = join(home, "turns-workspace"), emergencyWorkspace = join(home, "emergency-workspace")
 const forkWorkspace = join(home, "fork-workspace")
 const compactWorkspace = join(home, "compact-workspace")
 const familyWorkspace = join(home, "family-workspace"), backgroundWorkspace = join(home, "background-workspace")
@@ -191,6 +192,64 @@ if (input.phase === "turns-raw-only") {
   }
 }
 if (["turns-raw-recover", "turns-recover"].includes(input.phase)) for (const relative of turnsFiles) rmSync(join(directory, relative))
+const emergencyChild = join(directory, emergencyId, "subagents", "agent-1fc648c0.jsonl")
+const emergencyFiles = [emergencyId + ".jsonl", emergencyId + "/subagents/agent-1fc648c0.jsonl"]
+const emergencyLength: Record<string, [number, number]> = {
+  "emergency-initial": [6, 3], "emergency-root": [14, 8], "emergency-pending": [20, 12],
+  "emergency-child": [20, 18], "emergency-resume": [25, 21], "emergency-repair": [25, 21]
+}
+if (input.phase === "emergency-initial") {
+  mkdirSync(emergencyWorkspace)
+  const config = JSON.parse(readFileSync(paths.configFile, "utf8"))
+  config.projects.push({ ...config.projects[0], id: input.projectId, name: "CodeBuddy emergency compaction", path: emergencyWorkspace })
+  writeFileSync(paths.configFile, JSON.stringify(config))
+}
+if (input.phase in emergencyLength) {
+  for (const [index, relative] of emergencyFiles.entries()) {
+    const destination = join(directory, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    const rows = readFileSync(new URL("../../../../../adapters/codebuddy/src/fixtures/native-emergency-2.124.0/" + relative, import.meta.url), "utf8")
+      .replaceAll("/fixture/codebuddy-child-compact-project-000000000000000", emergencyWorkspace).trimEnd().split("\n").map(line => JSON.parse(line))
+    let intent = ""
+    for (const row of rows) {
+      if (index !== 1) continue
+      row.cwd = workspace // A foreign child CWD cannot reassign this family.
+      if (row.type === "message" && row.role === "user") {
+        if (!row.providerData?.isCompactInternal) intent = row.content[0].text
+        else if (!row.providerData.isSummary) {
+          // Relocating the controlled prompt changes its native 200-code-unit excerpt.
+          const excerpt = intent.length > 200 ? intent.substring(0, 200) + "..." : intent
+          row.content[0].text = 'Please continue based on the summarized context above. Your original task was: "' + excerpt + '" Maintain the same approach and level of detail.'
+        }
+      }
+    }
+    writeFileSync(destination, rows.slice(0, emergencyLength[input.phase]![index]).map(row => JSON.stringify(row) + "\n").join(""))
+  }
+}
+if (input.phase === "emergency-invalid") {
+  const rows = readFileSync(emergencyChild, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  rows[12].content[0].text = "Unproven internal continuation"
+  writeFileSync(emergencyChild, rows.map(row => JSON.stringify(row) + "\n").join(""))
+}
+if (input.phase === "emergency-lost") {
+  for (const relative of emergencyFiles) {
+    const destination = join(directory, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(join(home, "frozen-emergency", relative), destination)
+  }
+}
+if (["emergency-edit", "emergency-lost", "emergency-raw-only"].includes(input.phase)) {
+  const rows = readFileSync(emergencyChild, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  if (input.phase === "emergency-raw-only") rows[11].content[0].text = rows[11].content[0].text.replace("</conversation_history_summary>", "CodeBuddyEmergencyRawOnlyNeedle</conversation_history_summary>")
+  else rows.at(-1).content[0].text = input.phase === "emergency-edit" ? "CodeBuddyEmergencyPolicyNeedle" : "CodeBuddyEmergencyFrozenNeedle"
+  writeFileSync(emergencyChild, rows.map(row => JSON.stringify(row) + "\n").join(""))
+  if (input.phase === "emergency-raw-only") for (const relative of emergencyFiles) {
+    const destination = join(home, "frozen-emergency", relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(join(directory, relative), destination)
+  }
+}
+if (["emergency-raw-recover", "emergency-recover"].includes(input.phase)) for (const relative of emergencyFiles) rmSync(join(directory, relative))
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {
   const values = readFileSync(file, "utf8").trim().split("\n").map(line => JSON.parse(line))
   if (input.phase === "edit") values.push(
@@ -212,7 +271,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only", "turns-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "fork-lost", "family-lost", "background-lost", "turns-lost", "emergency-lost"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "compact-raw-only", "turns-raw-only", "emergency-raw-only"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -242,7 +301,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   let observations = 0, failures = 0, diagnostics = 0
   // The console's Module Interfaces own setup; collection runs in the installed
   // executable. Every phase stops its owned process before inspecting the journal.
-  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume"].includes(input.phase)) {
+  if (["initial", "upgrade", "fork-initial", "fork-resume", "compact-initial", "compact-manual", "compact-resume", "compact-auto", "family-initial", "family-resume", "family-nested", "family-compact", "family-default", "background-initial", "background-complete", "background-resume", "turns-initial", "turns-message", "turns-notices", "turns-resume", "emergency-initial", "emergency-root", "emergency-child", "emergency-resume"].includes(input.phase)) {
     const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
     const job = yield* Effect.acquireUseRelease(
       startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -270,16 +329,16 @@ const result = await Effect.runPromise(Effect.gen(function*() {
       const report = yield* runCollectionCycle()
       failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["malformed", "fork-invalid", "compact-pending", "family-invalid", "family-missing", "background-pending", "background-missing", "turns-pending", "turns-invalid", "emergency-pending", "emergency-invalid"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "turns-raw-only"].includes(input.phase)) assert.equal(lost, true)
-  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
+  if (["fork-lost", "compact-raw-only", "family-lost", "background-lost", "turns-lost", "emergency-lost", "turns-raw-only", "emergency-raw-only"].includes(input.phase)) assert.equal(lost, true)
+  if (["noop", "raw-off", "recover-raw", "compact-edit", "compact-recover", "family-edit", "background-edit", "turns-edit", "turns-raw-recover", "emergency-edit", "emergency-raw-recover"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
-  if (["raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["raw-on", "compact-reenable", "family-reenable", "background-reenable", "turns-reenable", "emergency-reenable"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   const journal = yield* journals.open({ instanceOrigin: input.origin, userId: input.userId }, defaultSourceCollectionLimits.journal)
