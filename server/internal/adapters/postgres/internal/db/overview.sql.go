@@ -13,36 +13,76 @@ import (
 )
 
 const overviewEvents = `-- name: OverviewEvents :many
-SELECT e.session_id,e.thread_id,e.author,
-CASE WHEN e.author=s.actor_name THEN left(e.text,1500) ELSE right(e.text,1500) END::text AS text,
-e.occurred_at,e.source_order,e.event_index,(t.parent_thread_id IS NULL)::boolean AS root
-FROM visible_canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
-JOIN canonical_projects p ON p.id=s.project_id
-JOIN visible_canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
-WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' AND e.kind='message'
-AND e.occurred_at>=$2::timestamptz AND e.occurred_at<$3::timestamptz
-ORDER BY e.session_id,e.source_order,e.event_index,e.id LIMIT 100001
+WITH selected_parts AS MATERIALIZED (
+ SELECT source.session_id,p.ordinal,convert_from(p.validated_body,'UTF8')::jsonb AS body
+ FROM canonical_publication_sources source
+ JOIN canonical_publication_parts p ON p.attempt_id=source.current_head::uuid AND p.format_version=1
+ WHERE source.session_id=ANY($5::text[]) AND p.overview_version IS DISTINCT FROM 1
+), fallback_events AS MATERIALIZED (
+ SELECT (j.value->>'ID')::text AS id,p.session_id,p.ordinal,(j.value->>'ThreadID')::text AS thread_id,
+ (j.value->>'Author')::text AS author,(j.value->>'OccurredAt')::timestamptz AS occurred_at,
+ (j.value->>'SourceOrder')::bigint AS source_order,(j.value->>'EventIndex')::bigint AS event_index
+ FROM selected_parts p CROSS JOIN LATERAL jsonb_array_elements(p.body->'Events') AS j(value)
+ WHERE j.value->>'Kind'='message' AND (j.value->>'OccurredAt')::timestamptz>=$6::timestamptz
+ AND (j.value->>'OccurredAt')::timestamptz<$7::timestamptz
+), fallback_threads AS MATERIALIZED (
+ SELECT p.session_id,p.ordinal,(j.value->>'ID')::text AS id,(j.value->>'ParentThreadID')::text AS parent_thread_id
+ FROM selected_parts p CROSS JOIN LATERAL jsonb_array_elements(p.body->'Threads') AS j(value)
+), events AS (
+ SELECT e.id,e.session_id,e.author,e.occurred_at,e.source_order,e.event_index,(t.parent_thread_id IS NULL)::boolean AS root
+ FROM canonical_events e JOIN canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
+ WHERE e.session_id=ANY($5::text[]) AND e.kind='message'
+ AND e.occurred_at>=$6::timestamptz AND e.occurred_at<$7::timestamptz
+ UNION ALL
+ SELECT m.event_id,source.session_id,m.author,m.occurred_at,m.source_order,m.event_index,m.root
+ FROM canonical_publication_sources source
+ JOIN overview_publication_messages m ON m.attempt_id=source.current_head::uuid
+ JOIN canonical_publication_parts p ON p.attempt_id=m.attempt_id AND p.ordinal=m.part_ordinal AND p.overview_version=1
+ WHERE source.session_id=ANY($5::text[])
+ AND m.occurred_at>=$6::timestamptz AND m.occurred_at<$7::timestamptz
+ UNION ALL
+ SELECT e.id,e.session_id,e.author,e.occurred_at,e.source_order,e.event_index,(t.parent_thread_id IS NULL)::boolean
+ FROM fallback_events e JOIN fallback_threads t ON t.session_id=e.session_id AND t.ordinal=e.ordinal AND t.id=e.thread_id
+)
+SELECT e.id,e.session_id,e.author,e.occurred_at,e.source_order,e.event_index,e.root
+FROM events e WHERE NOT $1::boolean
+ OR (e.occurred_at>=$2::timestamptz AND e.session_id=ANY($3::text[]))
+ OR (e.occurred_at<$2::timestamptz AND e.session_id=ANY($4::text[]))
+LIMIT 100001
 `
 
 type OverviewEventsParams struct {
-	TeamID    string
-	FromTime  time.Time
-	UntilTime time.Time
+	ModelFiltered         bool
+	PeriodFrom            time.Time
+	CurrentModelSessions  []string
+	PreviousModelSessions []string
+	SessionIds            []string
+	FromTime              time.Time
+	UntilTime             time.Time
 }
 
 type OverviewEventsRow struct {
+	ID          string
 	SessionID   string
-	ThreadID    string
 	Author      string
-	Text        string
 	OccurredAt  time.Time
 	SourceOrder int64
 	EventIndex  int64
 	Root        bool
 }
 
+// Only uncovered parts decode bodies. Every validated part carries the same
+// complete topology, so mixed covered/uncovered parts need no header-body read.
 func (q *Queries) OverviewEvents(ctx context.Context, arg OverviewEventsParams) ([]OverviewEventsRow, error) {
-	rows, err := q.db.Query(ctx, overviewEvents, arg.TeamID, arg.FromTime, arg.UntilTime)
+	rows, err := q.db.Query(ctx, overviewEvents,
+		arg.ModelFiltered,
+		arg.PeriodFrom,
+		arg.CurrentModelSessions,
+		arg.PreviousModelSessions,
+		arg.SessionIds,
+		arg.FromTime,
+		arg.UntilTime,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -51,10 +91,9 @@ func (q *Queries) OverviewEvents(ctx context.Context, arg OverviewEventsParams) 
 	for rows.Next() {
 		var i OverviewEventsRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.SessionID,
-			&i.ThreadID,
 			&i.Author,
-			&i.Text,
 			&i.OccurredAt,
 			&i.SourceOrder,
 			&i.EventIndex,
@@ -92,6 +131,115 @@ func (q *Queries) OverviewMembers(ctx context.Context, teamID string) ([]Overvie
 	for rows.Next() {
 		var i OverviewMembersRow
 		if err := rows.Scan(&i.ID, &i.Name, &i.Current); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const overviewModels = `-- name: OverviewModels :many
+SELECT DISTINCT model FROM (
+ SELECT u.model FROM canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
+ JOIN canonical_projects p ON p.id=s.project_id
+ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
+ AND u.occurred_at>=$2::timestamptz AND u.occurred_at<$3::timestamptz
+ UNION ALL
+ SELECT u.model FROM canonical_publication_sources source
+ JOIN canonical_sessions s ON s.id=source.session_id JOIN canonical_projects p ON p.id=s.project_id
+ JOIN overview_publication_usage u ON u.attempt_id=source.current_head::uuid
+ JOIN canonical_publication_parts part ON part.attempt_id=u.attempt_id AND part.ordinal=u.part_ordinal AND part.overview_version=1
+ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
+ AND u.occurred_at>=$2::timestamptz AND u.occurred_at<$3::timestamptz
+ UNION ALL
+ SELECT j."Model" AS model FROM canonical_publication_sources source
+ JOIN canonical_sessions s ON s.id=source.session_id JOIN canonical_projects p ON p.id=s.project_id
+ JOIN canonical_publication_parts part ON part.attempt_id=source.current_head::uuid AND part.format_version=1 AND part.overview_version IS DISTINCT FROM 1
+ CROSS JOIN LATERAL jsonb_to_recordset(convert_from(part.validated_body,'UTF8')::jsonb->'Usage') AS j("Model" text,"OccurredAt" timestamptz)
+ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
+ AND j."OccurredAt">=$2::timestamptz AND j."OccurredAt"<$3::timestamptz
+) models ORDER BY model LIMIT 100001
+`
+
+type OverviewModelsParams struct {
+	TeamID    string
+	FromTime  time.Time
+	UntilTime time.Time
+}
+
+// The option directory retains models outside the active dimensions without
+// transferring their usage records to the application.
+func (q *Queries) OverviewModels(ctx context.Context, arg OverviewModelsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, overviewModels, arg.TeamID, arg.FromTime, arg.UntilTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			return nil, err
+		}
+		items = append(items, model)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const overviewPreviews = `-- name: OverviewPreviews :many
+WITH selected_members AS MATERIALIZED (
+ SELECT m.attempt_id,m.part_ordinal,m.entry_index,m.record_id,s.actor_name
+ FROM canonical_publication_sources source
+ JOIN canonical_sessions s ON s.id=source.session_id
+ JOIN canonical_publication_members m ON m.attempt_id=source.current_head::uuid AND m.kind='event'
+ WHERE source.session_id=ANY($1::text[])
+ AND m.record_id=ANY($2::text[])
+), selected_parts AS MATERIALIZED (
+ SELECT p.attempt_id,p.ordinal,convert_from(p.validated_body,'UTF8')::jsonb AS body
+ FROM canonical_publication_parts p
+ JOIN (SELECT DISTINCT attempt_id,part_ordinal FROM selected_members) selected
+ ON selected.attempt_id=p.attempt_id AND selected.part_ordinal=p.ordinal
+ WHERE p.format_version=1
+)
+SELECT e.id,CASE WHEN e.author=s.actor_name THEN left(e.text,1500) ELSE right(e.text,1500) END::text AS text
+FROM canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
+WHERE e.id=ANY($2::text[]) AND e.session_id=ANY($1::text[])
+UNION ALL
+SELECT m.record_id AS id,
+CASE WHEN p.body->'Events'->m.entry_index->>'Author'=m.actor_name
+ THEN left(p.body->'Events'->m.entry_index->>'Text',1500)
+ ELSE right(p.body->'Events'->m.entry_index->>'Text',1500) END::text AS text
+FROM selected_members m JOIN selected_parts p ON p.attempt_id=m.attempt_id AND p.ordinal=m.part_ordinal
+`
+
+type OverviewPreviewsParams struct {
+	SessionIds []string
+	EventIds   []string
+}
+
+type OverviewPreviewsRow struct {
+	ID   string
+	Text string
+}
+
+// Membership locates exact current-head parts before decoding any body. A part
+// containing several selected Events is decoded once, then indexed directly.
+func (q *Queries) OverviewPreviews(ctx context.Context, arg OverviewPreviewsParams) ([]OverviewPreviewsRow, error) {
+	rows, err := q.db.Query(ctx, overviewPreviews, arg.SessionIds, arg.EventIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OverviewPreviewsRow{}
+	for rows.Next() {
+		var i OverviewPreviewsRow
+		if err := rows.Scan(&i.ID, &i.Text); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -141,40 +289,36 @@ func (q *Queries) OverviewProjects(ctx context.Context, teamID string) ([]Overvi
 }
 
 const overviewSessions = `-- name: OverviewSessions :many
-SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title, s.summary, s.insight, s.actor_name, s.actor_harness, s.branch, s.status, s.capture_status, s.updated_at, s.reported_event_count, s.captured_by_user_id, s.record_state, s.deleted_at, s.deleted_by_user_id, s.capture_lineage FROM canonical_sessions s JOIN canonical_projects p ON p.id=s.project_id
+SELECT s.id,s.project_id,s.captured_by_user_id,s.title,s.actor_name,s.actor_harness
+FROM canonical_sessions s JOIN canonical_projects p ON p.id=s.project_id
 WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' ORDER BY s.id LIMIT 100001
 `
 
-func (q *Queries) OverviewSessions(ctx context.Context, teamID string) ([]CanonicalSession, error) {
+type OverviewSessionsRow struct {
+	ID               string
+	ProjectID        string
+	CapturedByUserID pgtype.UUID
+	Title            string
+	ActorName        string
+	ActorHarness     string
+}
+
+func (q *Queries) OverviewSessions(ctx context.Context, teamID string) ([]OverviewSessionsRow, error) {
 	rows, err := q.db.Query(ctx, overviewSessions, teamID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []CanonicalSession{}
+	items := []OverviewSessionsRow{}
 	for rows.Next() {
-		var i CanonicalSession
+		var i OverviewSessionsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
-			&i.SourceKey,
-			&i.Revision,
-			&i.Digest,
+			&i.CapturedByUserID,
 			&i.Title,
-			&i.Summary,
-			&i.Insight,
 			&i.ActorName,
 			&i.ActorHarness,
-			&i.Branch,
-			&i.Status,
-			&i.CaptureStatus,
-			&i.UpdatedAt,
-			&i.ReportedEventCount,
-			&i.CapturedByUserID,
-			&i.RecordState,
-			&i.DeletedAt,
-			&i.DeletedByUserID,
-			&i.CaptureLineage,
 		); err != nil {
 			return nil, err
 		}
@@ -217,11 +361,30 @@ func (q *Queries) OverviewTeam(ctx context.Context, arg OverviewTeamParams) (Ove
 }
 
 const overviewUnknownTimes = `-- name: OverviewUnknownTimes :one
-SELECT count(DISTINCT e.session_id)::bigint FROM visible_canonical_events e
-JOIN canonical_sessions s ON s.id=e.session_id JOIN canonical_projects p ON p.id=s.project_id
-WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active' AND e.kind='message' AND e.occurred_at<'2000-01-01'::timestamptz
+SELECT count(DISTINCT session_id)::bigint FROM (
+ SELECT e.session_id FROM canonical_events e
+ JOIN canonical_sessions s ON s.id=e.session_id JOIN canonical_projects p ON p.id=s.project_id
+ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
+ AND e.kind='message' AND e.occurred_at<'2000-01-01'::timestamptz
+ UNION ALL
+ SELECT source.session_id FROM canonical_publication_sources source
+ JOIN canonical_sessions s ON s.id=source.session_id JOIN canonical_projects p ON p.id=s.project_id
+ JOIN overview_publication_messages m ON m.attempt_id=source.current_head::uuid
+ JOIN canonical_publication_parts part ON part.attempt_id=m.attempt_id AND part.ordinal=m.part_ordinal AND part.overview_version=1
+ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
+ AND m.occurred_at<'2000-01-01'::timestamptz
+ UNION ALL
+ SELECT source.session_id FROM canonical_publication_sources source
+ JOIN canonical_sessions s ON s.id=source.session_id JOIN canonical_projects p ON p.id=s.project_id
+ JOIN canonical_publication_parts part ON part.attempt_id=source.current_head::uuid AND part.format_version=1 AND part.overview_version IS DISTINCT FROM 1
+ CROSS JOIN LATERAL jsonb_to_recordset(convert_from(part.validated_body,'UTF8')::jsonb->'Events')
+ AS j("Kind" text,"OccurredAt" timestamptz)
+ WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
+ AND j."Kind"='message' AND j."OccurredAt"<'2000-01-01'::timestamptz
+) unknown_messages
 `
 
+// Indexed facts and a narrow fallback retain Team-wide disclosure.
 func (q *Queries) OverviewUnknownTimes(ctx context.Context, teamID string) (int64, error) {
 	row := q.db.QueryRow(ctx, overviewUnknownTimes, teamID)
 	var column_1 int64
@@ -230,34 +393,67 @@ func (q *Queries) OverviewUnknownTimes(ctx context.Context, teamID string) (int6
 }
 
 const overviewUsage = `-- name: OverviewUsage :many
-SELECT u.source_key, u.session_id, u.thread_id, u.revision, u.digest, u.occurred_at, u.model, u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens FROM visible_canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
-JOIN canonical_projects p ON p.id=s.project_id
-WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
-AND u.occurred_at>=$2::timestamptz AND u.occurred_at<$3::timestamptz
-ORDER BY u.session_id,u.occurred_at,u.source_key LIMIT 100001
+WITH selected_parts AS MATERIALIZED (
+ SELECT source.session_id,convert_from(p.validated_body,'UTF8')::jsonb AS body
+ FROM canonical_publication_sources source
+ JOIN canonical_publication_parts p ON p.attempt_id=source.current_head::uuid AND p.format_version=1
+ WHERE source.session_id=ANY($5::text[]) AND p.overview_version IS DISTINCT FROM 1
+), usage AS (
+ SELECT session_id,thread_id,occurred_at,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens
+ FROM canonical_usage WHERE session_id=ANY($5::text[])
+ UNION ALL
+ SELECT source.session_id,u.thread_id,u.occurred_at,u.model,u.input_tokens,u.output_tokens,u.cache_read_tokens,u.cache_write_tokens
+ FROM canonical_publication_sources source JOIN overview_publication_usage u ON u.attempt_id=source.current_head::uuid
+ JOIN canonical_publication_parts p ON p.attempt_id=u.attempt_id AND p.ordinal=u.part_ordinal AND p.overview_version=1
+ WHERE source.session_id=ANY($5::text[])
+ UNION ALL
+ SELECT p.session_id,j."ThreadID",j."OccurredAt",j."Model",j."InputTokens",j."OutputTokens",j."CacheReadTokens",j."CacheWriteTokens"
+ FROM selected_parts p CROSS JOIN LATERAL jsonb_to_recordset(p.body->'Usage')
+ AS j("ThreadID" text,"OccurredAt" timestamptz,"Model" text,"InputTokens" bigint,"OutputTokens" bigint,"CacheReadTokens" bigint,"CacheWriteTokens" bigint)
+)
+SELECT session_id,thread_id,occurred_at,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens
+FROM usage WHERE occurred_at>=$1::timestamptz AND occurred_at<$2::timestamptz
+AND (NOT $3::boolean OR model=$4::text)
+LIMIT 100001
 `
 
 type OverviewUsageParams struct {
-	TeamID    string
-	FromTime  time.Time
-	UntilTime time.Time
+	FromTime      time.Time
+	UntilTime     time.Time
+	ModelFiltered bool
+	ModelName     string
+	SessionIds    []string
 }
 
-func (q *Queries) OverviewUsage(ctx context.Context, arg OverviewUsageParams) ([]VisibleCanonicalUsage, error) {
-	rows, err := q.db.Query(ctx, overviewUsage, arg.TeamID, arg.FromTime, arg.UntilTime)
+type OverviewUsageRow struct {
+	SessionID        string
+	ThreadID         string
+	OccurredAt       time.Time
+	Model            string
+	InputTokens      *int64
+	OutputTokens     *int64
+	CacheReadTokens  *int64
+	CacheWriteTokens *int64
+}
+
+func (q *Queries) OverviewUsage(ctx context.Context, arg OverviewUsageParams) ([]OverviewUsageRow, error) {
+	rows, err := q.db.Query(ctx, overviewUsage,
+		arg.FromTime,
+		arg.UntilTime,
+		arg.ModelFiltered,
+		arg.ModelName,
+		arg.SessionIds,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []VisibleCanonicalUsage{}
+	items := []OverviewUsageRow{}
 	for rows.Next() {
-		var i VisibleCanonicalUsage
+		var i OverviewUsageRow
 		if err := rows.Scan(
-			&i.SourceKey,
 			&i.SessionID,
 			&i.ThreadID,
-			&i.Revision,
-			&i.Digest,
 			&i.OccurredAt,
 			&i.Model,
 			&i.InputTokens,

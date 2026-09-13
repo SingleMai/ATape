@@ -367,8 +367,7 @@ function TeamWorkspaceRoute() {
   const selection = teamRoute.useSearch()
   const session = useAuthenticatedSession()
   const navigate = useNavigate()
-  const { view: _view, metric: _metric, ...query } = selection
-  const presenter = useOverviewPresenter(session.user.id, params.teamId, query)
+  const presenter = useOverviewPresenter(session.user.id, params.teamId, selection)
   const savedScroll = useElementScrollRestoration({ getElement: () => window })
   const restore = useRef(savedScroll ? { ...savedScroll } : undefined)
   const ready = presenter.state._tag === "Ready"

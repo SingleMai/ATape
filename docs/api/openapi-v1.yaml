@@ -120,6 +120,7 @@ paths:
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
+        - {name: options, in: query, description: Request compact filter choices; omission retains legacy statistic fields for older clients., schema: {type: string, enum: [compact]}}
         - {name: days, in: query, schema: {type: integer, minimum: 1, maximum: 366, default: 30}}
         - {name: from, in: query, schema: {type: string, format: date}}
         - {name: to, in: query, schema: {type: string, format: date}}
@@ -132,9 +133,46 @@ paths:
       responses:
         "200":
           description: Consistent authorized overview snapshot
+          headers:
+            Server-Timing:
+              description: Module and persistence durations in milliseconds; excludes authentication and serialization.
+              schema: {type: string}
           content:
             application/json:
               schema: {$ref: "#/components/schemas/TeamOverview"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/teams/{teamId}/overview/sessions:
+    parameters:
+      - {name: teamId, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: getTeamOverviewSessions
+      x-atape-authorization-actions: [team.read_metadata]
+      tags: [Teams]
+      summary: Read a consistent Session page with summary metrics and filter options
+      description: Source-time statistics in Asia/Singapore. Input Tokens include cache subdivisions. Coverage denotes reported records, not guaranteed complete usage. Ranges exceeding the bounded snapshot capacity return validation_failed rather than partial statistics.
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: options, in: query, description: Request compact filter choices; omission retains legacy statistic fields for older clients., schema: {type: string, enum: [compact]}}
+        - {name: days, in: query, schema: {type: integer, minimum: 1, maximum: 366, default: 30}}
+        - {name: from, in: query, schema: {type: string, format: date}}
+        - {name: to, in: query, schema: {type: string, format: date}}
+        - {name: project, in: query, schema: {type: string}}
+        - {name: member, in: query, schema: {type: string}}
+        - {name: agent, in: query, schema: {type: string}}
+        - {name: model, in: query, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 10}}
+      responses:
+        "200":
+          description: Consistent authorized overview snapshot
+          headers:
+            Server-Timing:
+              description: Module and persistence durations in milliseconds; excludes authentication and serialization.
+              schema: {type: string}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TeamOverviewSessionPage"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/teams/{teamSlug}/raw-capture:
     parameters:
@@ -2493,6 +2531,18 @@ components:
         sessions: {type: integer}
         projects: {type: integer}
         tokens: {$ref: "#/components/schemas/OverviewTokens"}
+    OverviewOption:
+      type: object
+      additionalProperties: false
+      description: Compact choices contain only id, name and current. Default responses additionally include legacy empty statistic fields.
+      required: [id, name, current]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        current: {type: boolean}
+        sessions: {type: integer}
+        projects: {type: integer}
+        tokens: {$ref: "#/components/schemas/OverviewTokens"}
     TeamOverview:
       type: object
       required: [teamId, teamName, timezone, from, to, updatedAt, metrics, previous, trend, options, members, projects, models, sessions, totalSessions, page, limit, unknownTimeSessions]
@@ -2518,13 +2568,52 @@ components:
         options:
           type: object
           properties:
-            projects: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
-            members: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+            projects: {type: array, items: {$ref: "#/components/schemas/OverviewOption"}}
+            members: {type: array, items: {$ref: "#/components/schemas/OverviewOption"}}
             agents: {type: array, items: {type: string}}
             models: {type: array, items: {type: string}}
         members: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
         projects: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
         models: {type: array, items: {$ref: "#/components/schemas/OverviewDetail"}}
+        sessions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              projectId: {type: string}
+              projectName: {type: string}
+              memberId: {type: string}
+              memberName: {type: string}
+              agent: {type: string}
+              title: {type: string}
+              updatedAt: {$ref: "#/components/schemas/Timestamp"}
+              input: {type: string}
+              output: {type: string}
+              tokens: {$ref: "#/components/schemas/OverviewTokens"}
+        totalSessions: {type: integer}
+        page: {type: integer}
+        limit: {type: integer}
+        unknownTimeSessions: {type: integer}
+    TeamOverviewSessionPage:
+      type: object
+      required: [teamId, teamName, timezone, from, to, updatedAt, metrics, previous, options, sessions, totalSessions, page, limit, unknownTimeSessions]
+      properties:
+        teamId: {type: string}
+        teamName: {type: string}
+        timezone: {type: string}
+        from: {type: string, format: date}
+        to: {type: string, format: date}
+        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+        metrics: {$ref: "#/components/schemas/OverviewMetrics"}
+        previous: {$ref: "#/components/schemas/OverviewMetrics"}
+        options:
+          type: object
+          properties:
+            projects: {type: array, items: {$ref: "#/components/schemas/OverviewOption"}}
+            members: {type: array, items: {$ref: "#/components/schemas/OverviewOption"}}
+            agents: {type: array, items: {type: string}}
+            models: {type: array, items: {type: string}}
         sessions:
           type: array
           items:

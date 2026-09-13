@@ -166,6 +166,9 @@ func (s *PublicationStore) Validate(ctx context.Context, p authentication.Princi
 		if err = q.StoreValidatedPublicationPart(ctx, db.StoreValidatedPublicationPartParams{AttemptID: id, Ordinal: ordinal, ValidatedBody: encoded}); err != nil {
 			return a, persist("store fixed Canonical unit", err)
 		}
+		if err = prepareOverviewFacts(ctx, q, id, ordinal, normalized); err != nil {
+			return a, err
+		}
 		targetBytes, err := json.Marshal(input.Target)
 		if err != nil {
 			return a, persist("encode target counts", err)

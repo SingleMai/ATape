@@ -4,9 +4,11 @@ package teamoverview
 
 import (
 	"context"
-	"fmt"
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"sort"
 	"strings"
 	"time"
@@ -15,7 +17,7 @@ import (
 )
 
 type Store interface {
-	Overview(context.Context, authentication.Principal, string, time.Time, time.Time) (canonical.OverviewSnapshot, error)
+	Overview(context.Context, authentication.Principal, string, time.Time, time.Time, canonical.OverviewFilter, canonical.OverviewPreviewSelection) (canonical.OverviewSnapshot, error)
 }
 type Module struct {
 	store Store
@@ -77,34 +79,93 @@ type Session struct {
 	Output      string `json:"output"`
 	Tokens      Tokens `json:"tokens"`
 }
+type Option struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Current bool   `json:"current"`
+}
 type Options struct {
-	Projects []Detail `json:"projects"`
-	Members  []Detail `json:"members"`
+	Projects []Option `json:"projects"`
+	Members  []Option `json:"members"`
 	Agents   []string `json:"agents"`
 	Models   []string `json:"models"`
 }
+
+// Diagnostics describe this operation only, never cached business data.
+type Diagnostics struct {
+	Total, Aggregate time.Duration
+	Stages           map[string]time.Duration
+}
 type Result struct {
-	TeamID              string    `json:"teamId"`
-	TeamName            string    `json:"teamName"`
-	Timezone            string    `json:"timezone"`
-	From                string    `json:"from"`
-	To                  string    `json:"to"`
-	UpdatedAt           string    `json:"updatedAt"`
-	Metrics             Metrics   `json:"metrics"`
-	Previous            Metrics   `json:"previous"`
-	Trend               []Bucket  `json:"trend"`
-	Options             Options   `json:"options"`
-	Members             []Detail  `json:"members"`
-	Projects            []Detail  `json:"projects"`
-	Models              []Detail  `json:"models"`
-	Sessions            []Session `json:"sessions"`
-	TotalSessions       int       `json:"totalSessions"`
-	Page                int       `json:"page"`
-	Limit               int       `json:"limit"`
-	UnknownTimeSessions int       `json:"unknownTimeSessions"`
+	Diagnostics         Diagnostics `json:"-"`
+	TeamID              string      `json:"teamId"`
+	TeamName            string      `json:"teamName"`
+	Timezone            string      `json:"timezone"`
+	From                string      `json:"from"`
+	To                  string      `json:"to"`
+	UpdatedAt           string      `json:"updatedAt"`
+	Metrics             Metrics     `json:"metrics"`
+	Previous            Metrics     `json:"previous"`
+	Trend               []Bucket    `json:"trend"`
+	Options             Options     `json:"options"`
+	Members             []Detail    `json:"members"`
+	Projects            []Detail    `json:"projects"`
+	Models              []Detail    `json:"models"`
+	Sessions            []Session   `json:"sessions"`
+	TotalSessions       int         `json:"totalSessions"`
+	Page                int         `json:"page"`
+	Limit               int         `json:"limit"`
+	UnknownTimeSessions int         `json:"unknownTimeSessions"`
+}
+
+// SessionPage contains everything visible in Session detail from one snapshot.
+// Chart and dimension-table aggregates are intentionally absent.
+type SessionPage struct {
+	Diagnostics         Diagnostics `json:"-"`
+	TeamID              string      `json:"teamId"`
+	TeamName            string      `json:"teamName"`
+	Timezone            string      `json:"timezone"`
+	From                string      `json:"from"`
+	To                  string      `json:"to"`
+	UpdatedAt           string      `json:"updatedAt"`
+	Metrics             Metrics     `json:"metrics"`
+	Previous            Metrics     `json:"previous"`
+	Options             Options     `json:"options"`
+	Sessions            []Session   `json:"sessions"`
+	TotalSessions       int         `json:"totalSessions"`
+	Page                int         `json:"page"`
+	Limit               int         `json:"limit"`
+	UnknownTimeSessions int         `json:"unknownTimeSessions"`
 }
 
 func (m *Module) Open(ctx context.Context, principal authentication.Principal, teamID string, q Query) (Result, error) {
+	return m.open(ctx, principal, teamID, q, overviewAggregation)
+}
+func (m *Module) OpenSessions(ctx context.Context, principal authentication.Principal, teamID string, q Query) (SessionPage, error) {
+	r, err := m.open(ctx, principal, teamID, q, sessionAggregation)
+	if err != nil {
+		return SessionPage{Diagnostics: r.Diagnostics}, err
+	}
+	return SessionPage{Diagnostics: r.Diagnostics, TeamID: r.TeamID, TeamName: r.TeamName, Timezone: r.Timezone, From: r.From, To: r.To, UpdatedAt: r.UpdatedAt, Metrics: r.Metrics, Previous: r.Previous, Options: r.Options, Sessions: r.Sessions, TotalSessions: r.TotalSessions, Page: r.Page, Limit: r.Limit, UnknownTimeSessions: r.UnknownTimeSessions}, nil
+}
+
+func (m *Module) open(ctx context.Context, principal authentication.Principal, teamID string, q Query, mode aggregationMode) (result Result, err error) {
+	started := time.Now()
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	operation := "TeamOverview.Open"
+	if mode == sessionAggregation {
+		operation = "TeamOverview.OpenSessions"
+	}
+	ctx, span := otel.Tracer("atape/teamoverview").Start(ctx, operation)
+	defer func() {
+		result.Diagnostics.Total = time.Since(started)
+		span.SetAttributes(attribute.Float64("overview.total_ms", float64(result.Diagnostics.Total)/float64(time.Millisecond)), attribute.Float64("overview.aggregate_ms", float64(result.Diagnostics.Aggregate)/float64(time.Millisecond)))
+		if err != nil {
+			span.SetStatus(codes.Error, "overview failed")
+		}
+		span.End()
+	}()
 	loc, _ := time.LoadLocation("Asia/Singapore")
 	now := m.now().In(loc)
 	until := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, 1)
@@ -151,24 +212,60 @@ func (m *Module) Open(ctx context.Context, principal authentication.Principal, t
 	if readUntil.After(now.Add(time.Nanosecond)) {
 		readUntil = now.Add(time.Nanosecond)
 	}
-	snapshot, err := m.store.Overview(ctx, principal, teamID, previousFrom, readUntil)
+	result = Result{Timezone: loc.String(), From: from.Format("2006-01-02"), To: until.AddDate(0, 0, -1).Format("2006-01-02"), UpdatedAt: now.UTC().Format(time.RFC3339Nano), Page: q.Page, Limit: q.Limit}
+	var current aggregation
+	snapshot, err := m.store.Overview(ctx, principal, teamID, previousFrom, readUntil, canonical.OverviewFilter{Project: q.Project, Member: q.Member, Agent: q.Agent, Model: q.Model, PeriodFrom: from}, func(facts canonical.OverviewSnapshot) []string {
+		if ctx.Err() != nil {
+			return nil
+		}
+		aggregateStarted := time.Now()
+		defer func() { result.Diagnostics.Aggregate = time.Since(aggregateStarted) }()
+		result.Options = options(facts)
+		current = aggregate(facts, q, from, until, loc, mode)
+		result.Metrics = current.metrics
+		if ctx.Err() != nil {
+			return nil
+		}
+		result.Previous = aggregate(facts, q, previousFrom, from, loc, metricsAggregation).metrics
+		if ctx.Err() != nil {
+			return nil
+		}
+		result.Trend = current.trend
+		result.Members = current.members
+		result.Projects = current.projects
+		result.Models = current.models
+		result.TotalSessions = len(current.sessions)
+		start := min(q.Page*q.Limit, len(current.sessions))
+		end := min(start+q.Limit, len(current.sessions))
+		result.Sessions = current.sessions[start:end]
+		ids := make([]string, 0, 2*len(result.Sessions))
+		for _, session := range result.Sessions {
+			selected := current.previews[session.ID]
+			if selected.input != "" {
+				ids = append(ids, selected.input)
+			}
+			if selected.output != "" {
+				ids = append(ids, selected.output)
+			}
+		}
+		return ids
+	})
+	result.Diagnostics.Stages = snapshot.Timings
 	if err != nil {
-		return Result{}, err
+		return Result{Diagnostics: result.Diagnostics}, err
 	}
-	result := Result{TeamID: snapshot.Team.ID, TeamName: snapshot.Team.Name, Timezone: loc.String(), From: from.Format("2006-01-02"), To: until.AddDate(0, 0, -1).Format("2006-01-02"), UpdatedAt: now.UTC().Format(time.RFC3339Nano), Page: q.Page, Limit: q.Limit, UnknownTimeSessions: snapshot.UnknownTimeSessions}
-	result.Options = options(snapshot)
-	current := aggregate(snapshot, q, from, until, loc)
-	previous := aggregate(snapshot, q, previousFrom, from, loc)
-	result.Metrics = current.metrics
-	result.Previous = previous.metrics
-	result.Trend = current.trend
-	result.Members = current.members
-	result.Projects = current.projects
-	result.Models = current.models
-	result.TotalSessions = len(current.sessions)
-	start := min(q.Page*q.Limit, len(current.sessions))
-	end := min(start+q.Limit, len(current.sessions))
-	result.Sessions = current.sessions[start:end]
+	if err := ctx.Err(); err != nil {
+		return Result{Diagnostics: result.Diagnostics}, err
+	}
+	result.TeamID, result.TeamName = snapshot.Team.ID, snapshot.Team.Name
+	result.UnknownTimeSessions = snapshot.UnknownTimeSessions
+	for i := range result.Sessions {
+		session := &result.Sessions[i]
+		selected := current.previews[session.ID]
+		session.Input = preview(snapshot.Previews[selected.input])
+		session.Output = lastSentence(snapshot.Previews[selected.output])
+	}
+
 	return result, nil
 }
 
@@ -178,7 +275,7 @@ type tokenSum struct {
 	sessions                   map[string]bool
 }
 
-func (t *tokenSum) add(u canonical.UsageRecord) {
+func (t *tokenSum) add(u canonical.OverviewUsage) {
 	if t.sessions == nil {
 		t.sessions = map[string]bool{}
 		t.input = true
@@ -240,21 +337,36 @@ type group struct {
 func newGroup() *group {
 	return &group{sessions: map[string]bool{}, projects: map[string]bool{}, members: map[string]bool{}}
 }
-func (g *group) mark(s canonical.SessionRecord) {
+func (g *group) mark(s canonical.OverviewSession) {
+	if g.sessions[s.ID] {
+		return
+	}
 	g.sessions[s.ID] = true
 	g.projects[s.ProjectID] = true
 	g.members[s.CapturedByUserID] = true
 }
 
+type aggregationMode int
+
+const (
+	metricsAggregation aggregationMode = iota
+	sessionAggregation
+	overviewAggregation
+)
+
+type sessionPreview struct{ input, output string }
+
 type aggregation struct {
+	previews                  map[string]sessionPreview
 	metrics                   Metrics
 	trend                     []Bucket
 	members, projects, models []Detail
 	sessions                  []Session
 }
 
-func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc *time.Location) aggregation {
-	result := aggregation{trend: []Bucket{}, members: []Detail{}, projects: []Detail{}, models: []Detail{}, sessions: []Session{}}
+func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc *time.Location, mode aggregationMode) aggregation {
+	details := mode != metricsAggregation
+	result := aggregation{previews: map[string]sessionPreview{}, trend: []Bucket{}, members: []Detail{}, projects: []Detail{}, models: []Detail{}, sessions: []Session{}}
 	memberNames := map[string]canonical.OverviewMember{}
 	projectNames := map[string]string{}
 	for _, m := range s.Members {
@@ -266,15 +378,17 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 	for _, p := range s.Projects {
 		projectNames[p.ID] = p.Name
 	}
-	sessions := map[string]canonical.SessionRecord{}
+	sessions := map[string]canonical.OverviewSession{}
 	modelsForSession := map[string]bool{}
 	selectedModel := q.Model
 	if selectedModel == "__unknown__" {
 		selectedModel = ""
 	}
-	for _, u := range s.Usage {
-		if u.Model == selectedModel && !u.OccurredAt.Before(from) && u.OccurredAt.Before(until) {
-			modelsForSession[u.SessionID] = true
+	if q.Model != "" {
+		for _, u := range s.Usage {
+			if u.Model == selectedModel && !u.OccurredAt.Before(from) && u.OccurredAt.Before(until) {
+				modelsForSession[u.SessionID] = true
+			}
 		}
 	}
 	for _, v := range s.Sessions {
@@ -291,7 +405,11 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 	latest := map[string]time.Time{}
 	input := map[string]canonical.OverviewEvent{}
 	output := map[string]canonical.OverviewEvent{}
-	messages := map[string]bool{}
+	type messageKey struct {
+		session string
+		order   int64
+	}
+	messages := map[messageKey]bool{}
 	pick := func(groups map[string]*group, key string) *group {
 		g := groups[key]
 		if g == nil {
@@ -300,9 +418,16 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 		}
 		return g
 	}
-	mark := func(session canonical.SessionRecord, at time.Time) []*group {
-		day := at.In(loc).Format("2006-01-02") + "\x00" + session.Actor.Harness
-		groups := []*group{all, pick(byMember, session.CapturedByUserID), pick(byProject, session.ProjectID), pick(byDay, day), pick(bySession, session.ID)}
+	mark := func(session canonical.OverviewSession, at time.Time) []*group {
+		if !details {
+			all.mark(session)
+			return []*group{all}
+		}
+		groups := []*group{all, pick(bySession, session.ID)}
+		if mode == overviewAggregation {
+			day := at.In(loc).Format("2006-01-02") + "\x00" + session.Actor.Harness
+			groups = append(groups, pick(byMember, session.CapturedByUserID), pick(byProject, session.ProjectID), pick(byDay, day))
+		}
 		for _, g := range groups {
 			g.mark(session)
 		}
@@ -321,12 +446,12 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 			continue
 		}
 		if e.Author == v.Actor.Name {
-			messages[fmt.Sprintf("%s:%d", v.ID, e.Order)] = true
-			if old, ok := input[v.ID]; !ok || e.Order > old.Order || e.Order == old.Order && e.Index > old.Index {
+			messages[messageKey{v.ID, e.Order}] = true
+			if old, ok := input[v.ID]; details && (!ok || laterEvent(e, old)) {
 				input[v.ID] = e
 			}
 		} else {
-			if old, ok := output[v.ID]; !ok || e.Order > old.Order || e.Order == old.Order && e.Index > old.Index {
+			if old, ok := output[v.ID]; details && (!ok || laterEvent(e, old)) {
 				output[v.ID] = e
 			}
 		}
@@ -339,15 +464,20 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 		for _, g := range mark(v, u.OccurredAt) {
 			g.tokens.add(u)
 		}
-		g := pick(byModel, u.Model)
-		g.mark(v)
-		g.tokens.add(u)
+		if mode == overviewAggregation {
+			g := pick(byModel, u.Model)
+			g.mark(v)
+			g.tokens.add(u)
+		}
 	}
 	result.metrics.ActiveMembers = len(all.members)
 	result.metrics.Projects = len(all.projects)
 	result.metrics.Sessions = len(all.sessions)
 	result.metrics.Messages = len(messages)
 	result.metrics.Tokens = all.tokens.get()
+	if !details {
+		return result
+	}
 	for key, g := range byDay {
 		parts := strings.SplitN(key, "\x00", 2)
 		result.trend = append(result.trend, Bucket{Date: parts[0], Agent: parts[1], Sessions: len(g.sessions), Members: len(g.members), Tokens: g.tokens.get()})
@@ -388,9 +518,10 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 		in, out := input[id], output[id]
 		reply := ""
 		if out.Order >= in.Order {
-			reply = lastSentence(out.Text)
+			reply = out.ID
 		}
-		result.sessions = append(result.sessions, Session{ID: id, ProjectID: v.ProjectID, ProjectName: projectNames[v.ProjectID], MemberID: v.CapturedByUserID, MemberName: name, Agent: v.Actor.Harness, Title: v.Title, UpdatedAt: latest[id].UTC().Format(time.RFC3339Nano), Input: preview(in.Text), Output: reply, Tokens: g.tokens.get()})
+		result.previews[id] = sessionPreview{input: in.ID, output: reply}
+		result.sessions = append(result.sessions, Session{ID: id, ProjectID: v.ProjectID, ProjectName: projectNames[v.ProjectID], MemberID: v.CapturedByUserID, MemberName: name, Agent: v.Actor.Harness, Title: v.Title, UpdatedAt: latest[id].UTC().Format(time.RFC3339Nano), Tokens: g.tokens.get()})
 	}
 	sort.Slice(result.sessions, func(i, j int) bool {
 		a, b := result.sessions[i], result.sessions[j]
@@ -398,28 +529,33 @@ func aggregate(s canonical.OverviewSnapshot, q Query, from, until time.Time, loc
 	})
 	return result
 }
+
+// A stable identity tie-break preserves preview choice without sorting every fact.
+func laterEvent(a, b canonical.OverviewEvent) bool {
+	return a.Order > b.Order || a.Order == b.Order && (a.Index > b.Index || a.Index == b.Index && a.ID < b.ID)
+}
 func sortDetails(v []Detail) {
 	sort.Slice(v, func(i, j int) bool {
 		return v[i].Sessions > v[j].Sessions || v[i].Sessions == v[j].Sessions && v[i].Name < v[j].Name
 	})
 }
 func options(s canonical.OverviewSnapshot) Options {
-	r := Options{Projects: []Detail{}, Members: []Detail{}, Agents: []string{}, Models: []string{}}
+	r := Options{Projects: []Option{}, Members: []Option{}, Agents: []string{}, Models: []string{}}
 	agents, models := map[string]bool{}, map[string]bool{}
 	for _, p := range s.Projects {
-		r.Projects = append(r.Projects, Detail{ID: p.ID, Name: p.Name, Current: p.State == "active"})
+		r.Projects = append(r.Projects, Option{ID: p.ID, Name: p.Name, Current: p.State == "active"})
 	}
 	for _, m := range s.Members {
-		r.Members = append(r.Members, Detail{ID: m.ID, Name: m.Name, Current: m.Current})
+		r.Members = append(r.Members, Option{ID: m.ID, Name: m.Name, Current: m.Current})
 	}
 	for _, v := range s.Sessions {
 		agents[v.Actor.Harness] = true
 	}
-	for _, u := range s.Usage {
-		if u.Model == "" {
+	for _, model := range s.Models {
+		if model == "" {
 			models["__unknown__"] = true
 		} else {
-			models[u.Model] = true
+			models[model] = true
 		}
 	}
 	for k := range agents {
@@ -430,8 +566,12 @@ func options(s canonical.OverviewSnapshot) Options {
 	}
 	sort.Strings(r.Agents)
 	sort.Strings(r.Models)
-	sortDetails(r.Projects)
-	sortDetails(r.Members)
+	sort.Slice(r.Projects, func(i, j int) bool {
+		return r.Projects[i].Name < r.Projects[j].Name || r.Projects[i].Name == r.Projects[j].Name && r.Projects[i].ID < r.Projects[j].ID
+	})
+	sort.Slice(r.Members, func(i, j int) bool {
+		return r.Members[i].Name < r.Members[j].Name || r.Members[i].Name == r.Members[j].Name && r.Members[i].ID < r.Members[j].ID
+	})
 	return r
 }
 func preview(text string) string {

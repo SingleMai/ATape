@@ -5,6 +5,8 @@ package canonicalcontract
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -155,6 +157,168 @@ func Run(t *testing.T, factory Factory) {
 		outsider.UserID = "01991b70-4d2b-7c96-a532-5818faba2e79"
 		if _, err = dashboard.Open(t.Context(), outsider, TestTeamID, query); err == nil {
 			t.Fatal("outsider read overview")
+		}
+	})
+	t.Run("Overview unknown-time disclosure is Team-wide and follows deletion", func(t *testing.T) {
+		store := factory(t)
+		batch := ValidBatch()
+		for i := range batch.Events {
+			batch.Events[i].OccurredAt = "1970-01-01T00:00:00Z"
+		}
+		created, err := ingestion.NewIngestor(store).ApplyBatch(t.Context(), CLIPrincipal(), batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		module := teamoverview.New(store)
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04", Agent: "unmatched"}
+		page, err := module.OpenSessions(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || page.UnknownTimeSessions != 1 || page.Metrics.Sessions != 0 {
+			t.Fatalf("unknown-time disclosure: %+v %v", page, err)
+		}
+		if err := store.DeleteSession(t.Context(), WebPrincipal(), created.SessionID, ""); err != nil {
+			t.Fatal(err)
+		}
+		page, err = module.OpenSessions(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || page.UnknownTimeSessions != 0 {
+			t.Fatalf("deleted unknown-time disclosure: %+v %v", page, err)
+		}
+	})
+	t.Run("Overview scopes facts by dimensions and independent model periods without narrowing options", func(t *testing.T) {
+		store := factory(t)
+		writer := ingestion.NewIngestor(store)
+		for n := 0; n < 2; n++ {
+			batch := ValidBatch()
+			batch.BatchID = fmt.Sprintf("period-filter-%d", n)
+			batch.Session.SourceSessionID = batch.BatchID
+			batch.Session.Actor.Harness = fmt.Sprintf("Agent-%d", n)
+			previous := batch.Events[0]
+			previous.SourceEventID = "previous-request"
+			previous.OccurredAt = "2026-09-03T10:00:00+08:00"
+			previous.SourceOrder = 3
+			batch.Events = append(batch.Events, previous)
+			input := int64(10)
+			batch.Usage = []ingestion.Usage{
+				{SourceUsageID: "current", SourceThreadID: "provider-root", Revision: 1, OccurredAt: batch.Events[0].OccurredAt, Model: fmt.Sprintf("current-%d", n), InputTokens: &input},
+				{SourceUsageID: "previous", SourceThreadID: "provider-root", Revision: 1, OccurredAt: previous.OccurredAt, Model: fmt.Sprintf("previous-%d", n), InputTokens: &input},
+			}
+			if _, err := writer.ApplyBatch(t.Context(), CLIPrincipal(), batch); err != nil {
+				t.Fatal(err)
+			}
+		}
+		from := time.Date(2026, 9, 2, 16, 0, 0, 0, time.UTC)
+		filter := canonical.OverviewFilter{Project: TestProjectID, Member: TestUserID, Agent: "Agent-0", Model: "previous-0", PeriodFrom: from.Add(24 * time.Hour)}
+		facts, err := store.Overview(t.Context(), WebPrincipal(), TestTeamID, from, from.Add(48*time.Hour), filter, nil)
+		if err != nil || len(facts.Events) != 1 || len(facts.Usage) != 1 || len(facts.Models) != 4 || len(facts.Sessions) != 2 {
+			t.Fatalf("filtered facts/full directory: %+v %v", facts, err)
+		}
+		if !facts.Events[0].At.Before(filter.PeriodFrom) || facts.Usage[0].Model != "previous-0" {
+			t.Fatalf("wrong model period: %+v", facts)
+		}
+		dashboard := teamoverview.New(store)
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04", Agent: "Agent-0", Model: "previous-0"}
+		page, err := dashboard.OpenSessions(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || page.Metrics.Sessions != 0 || page.Previous.Sessions != 1 || page.Previous.Messages != 1 || len(page.Sessions) != 0 || len(page.Options.Agents) != 2 || len(page.Options.Models) != 4 {
+			t.Fatalf("independent model periods: %+v %v", page, err)
+		}
+		query.Model = "current-0"
+		page, err = dashboard.OpenSessions(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || page.Metrics.Messages != 1 || page.Previous.Sessions != 0 || len(page.Sessions) != 1 || page.Sessions[0].Input != "Which layer should own retries?" {
+			t.Fatalf("current model period: %+v %v", page, err)
+		}
+		for _, unmatched := range []canonical.OverviewFilter{{Project: "other-project"}, {Member: "other-member"}, {Agent: "other-agent"}, {Model: "other-model", PeriodFrom: filter.PeriodFrom}} {
+			facts, err := store.Overview(t.Context(), WebPrincipal(), TestTeamID, from, from.Add(48*time.Hour), unmatched, nil)
+			if err != nil || len(facts.Events) != 0 || len(facts.Usage) != 0 || len(facts.Models) != 4 || len(facts.Sessions) != 2 {
+				t.Fatalf("unmatched filter: %+v %v", facts, err)
+			}
+		}
+	})
+	t.Run("Overview defers bounded previews and preserves pagination and comparison metrics", func(t *testing.T) {
+		store := factory(t)
+		writer := ingestion.NewIngestor(store)
+		expected := map[string]string{}
+		for n := 0; n < 13; n++ {
+			batch := ValidBatch()
+			batch.BatchID = fmt.Sprintf("preview-batch-%d", n)
+			batch.Session.SourceSessionID = fmt.Sprintf("preview-%d", n)
+			batch.Session.Title = fmt.Sprintf("Session %d", n)
+			batch.Events[0].Text = fmt.Sprintf("Request %d", n)
+			batch.Events[1].Text = fmt.Sprintf("Earlier sentence. Reply %d.", n)
+			if n == 12 {
+				for i := range batch.Events {
+					batch.Events[i].OccurredAt = "2026-09-03T10:00:00+08:00"
+				}
+			}
+			created, err := writer.ApplyBatch(t.Context(), CLIPrincipal(), batch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n < 12 {
+				expected[created.SessionID] = fmt.Sprintf("%d", n)
+			}
+		}
+		from := time.Date(2026, 9, 2, 16, 0, 0, 0, time.UTC)
+		until := from.Add(48 * time.Hour)
+		var selectedID string
+		snapshot, err := store.Overview(t.Context(), WebPrincipal(), TestTeamID, from, until, canonical.OverviewFilter{}, func(facts canonical.OverviewSnapshot) []string {
+			if len(facts.Events) != 26 || len(facts.Previews) != 0 {
+				t.Fatalf("unexpected facts: %d Events, %d previews", len(facts.Events), len(facts.Previews))
+			}
+			selectedID = facts.Events[0].ID
+			return []string{selectedID, selectedID}
+		})
+		if err != nil || len(snapshot.Previews) != 1 || snapshot.Previews[selectedID] == "" {
+			t.Fatalf("selected preview: %+v %v", snapshot.Previews, err)
+		}
+		facts, err := store.Overview(t.Context(), WebPrincipal(), TestTeamID, from, until, canonical.OverviewFilter{}, nil)
+		if err != nil || len(facts.Events) != 26 || len(facts.Previews) != 0 {
+			t.Fatalf("facts-only read: %v", err)
+		}
+		for _, selection := range []canonical.OverviewPreviewSelection{
+			func(canonical.OverviewSnapshot) []string { return []string{"outside-snapshot"} },
+			func(canonical.OverviewSnapshot) []string { return make([]string, 101) },
+		} {
+			if _, err = store.Overview(t.Context(), WebPrincipal(), TestTeamID, from, until, canonical.OverviewFilter{}, selection); err == nil {
+				t.Fatal("invalid preview selection accepted")
+			}
+		}
+		outsider := WebPrincipal()
+		outsider.UserID = "01991b70-4d2b-7c96-a532-5818faba2e79"
+		called := false
+		if _, err = store.Overview(t.Context(), outsider, TestTeamID, from, until, canonical.OverviewFilter{}, func(canonical.OverviewSnapshot) []string { called = true; return nil }); err == nil || called {
+			t.Fatal("unauthorized selector saw facts")
+		}
+		dashboard := teamoverview.New(store)
+		query := teamoverview.Query{From: "2026-09-04", To: "2026-09-04"}
+		first, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || len(first.Sessions) != 10 || first.TotalSessions != 12 || first.Metrics.Messages != 12 || first.Previous.Messages != 1 || first.Previous.Sessions != 1 {
+			t.Fatalf("first page: %+v %v", first, err)
+		}
+		query.Page = 1
+		second, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || len(second.Sessions) != 2 || !reflect.DeepEqual(first.Metrics, second.Metrics) || !reflect.DeepEqual(first.Previous, second.Previous) || !reflect.DeepEqual(first.Trend, second.Trend) {
+			t.Fatalf("second page: %+v %v", second, err)
+		}
+		page, err := dashboard.OpenSessions(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || !reflect.DeepEqual(page.Sessions, second.Sessions) || !reflect.DeepEqual(page.Metrics, second.Metrics) || !reflect.DeepEqual(page.Previous, second.Previous) || !reflect.DeepEqual(page.Options, second.Options) || page.TotalSessions != second.TotalSessions || page.Page != 1 || page.Limit != 10 {
+			t.Fatalf("independent Session page: %+v %v", page, err)
+		}
+		if _, err = dashboard.OpenSessions(t.Context(), outsider, TestTeamID, query); err == nil {
+			t.Fatal("unauthorized Session page read")
+		}
+		seen := map[string]bool{}
+		for _, page := range []teamoverview.Result{first, second} {
+			for _, session := range page.Sessions {
+				suffix, ok := expected[session.ID]
+				if !ok || seen[session.ID] || session.Input != "Request "+suffix || session.Output != "Reply "+suffix+"." {
+					t.Fatalf("wrong page preview: %+v", session)
+				}
+				seen[session.ID] = true
+			}
+		}
+		query.Page = 2
+		empty, err := dashboard.Open(t.Context(), WebPrincipal(), TestTeamID, query)
+		if err != nil || len(empty.Sessions) != 0 || empty.TotalSessions != 12 || !reflect.DeepEqual(first.Metrics, empty.Metrics) {
+			t.Fatalf("empty page: %+v %v", empty, err)
 		}
 	})
 	t.Run("accepts package and wire-profile upgrades only when Event content is unchanged", func(t *testing.T) {

@@ -136,12 +136,20 @@ const server = http.createServer(async (request, response) => {
     state.overviewRevision = Number(url.searchParams.get("revision") || 0)
     return empty(response)
   }
-  if (/^\/api\/v1\/teams\/[^/]+\/overview$/.test(path)) {
+  if (/^\/api\/v1\/teams\/[^/]+\/overview(?:\/sessions)?$/.test(path)) {
     if (!requireWeb(request, response)) return
     if (state.failOverview) return problem(response, 503, "service_unavailable")
     const selected = path.includes("/created-team/") ? state.createdTeam : team
     if (!selected) return problem(response, 404, "not_found")
-    return json(response, 200, overviewFixture(selected, url.searchParams, { revision: state.overviewRevision, empty: selected.id === "created-team" && !state.createdProjectVisible }))
+    const data = overviewFixture(selected, url.searchParams, { revision: state.overviewRevision, empty: selected.id === "created-team" && !state.createdProjectVisible })
+    if (url.searchParams.get("options") === "compact") {
+      for (const key of ["projects", "members"]) data.options[key] = data.options[key].map(({ id, name, current }) => ({ id, name, current }))
+    }
+    if (path.endsWith("/sessions")) {
+      const { trend, members, projects, models, ...page } = data
+      return json(response, 200, page)
+    }
+    return json(response, 200, data)
   }
 
   if (path === "/api/v1/users/me/raw-capture" || path === "/api/v1/teams/team-a/raw-capture") {
