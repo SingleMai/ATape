@@ -173,7 +173,7 @@ provenance merely to add Raw. Recovery can continue after source deletion using
 only frozen units and receipts. These rules replace the paged observation replay
 and Raw-append ordering above for this capability.
 
-The [CodeBuddy Code CLI Adapter](codebuddy.md) also uses this capability for bounded local JSONL snapshots.
+The [CodeBuddy Code CLI Adapter](codebuddy.md) and [Kimi Code CLI Adapter](kimi.md) also use this capability for bounded local JSONL snapshots.
 
 The authoritative types remain in `packages/domain/src/collector.ts`; see
 [ADR-0068](../architecture/adr/0068-source-capture-runtime.md) and

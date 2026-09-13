@@ -121,6 +121,7 @@ jobs:
             release/atape-adapter-claude-*.tgz
             release/atape-adapter-opencode-*.tgz
             release/atape-adapter-codebuddy-*.tgz
+            release/atape-adapter-kimi-*.tgz
             release/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
@@ -136,6 +137,7 @@ jobs:
           release/atape-adapter-claude-*.tgz
           release/atape-adapter-opencode-*.tgz
           release/atape-adapter-codebuddy-*.tgz
+          release/atape-adapter-kimi-*.tgz
           release/SHA256SUMS
           --verify-tag
           --generate-notes

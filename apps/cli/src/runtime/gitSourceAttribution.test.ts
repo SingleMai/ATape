@@ -3,16 +3,17 @@ import {
   ProjectSetupGateway, ProjectSetupGatewayError, makeGitSourceAttributionLayer,
   type GitBindingScope, type SetupRemoteProject
 } from "@atape/application"
-import type { GitSource, LocalProject } from "@atape/domain"
-import { Effect, Layer } from "effect"
+import { SourceDiscoveryPage, type GitSource, type LocalProject } from "@atape/domain"
+import { Effect, Layer, Schema } from "effect"
 import { execFile } from "node:child_process"
-import { mkdtemp, mkdir, realpath, rm, readdir, stat, symlink, writeFile } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, realpath, rm, readdir, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeProjectLocatorLayer } from "./clientLayers.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
+import { createAtapeAdapter as createKimiAdapter } from "../../../../adapters/kimi/src/runtime.ts"
 
 const execute = promisify(execFile)
 const roots: string[] = []
@@ -66,6 +67,34 @@ const fixture = async () => {
 const source = (cwd: string, sourceId = "session"): GitSource => ({ sourceId, originKey: "original-root", cwd })
 
 describe("Git Source Attribution Interface with real Git and filesystem", () => {
+  it("attributes actual Kimi discovery across clones/worktrees and preserves its original evidence after deletion", async () => {
+    const f = await fixture(), clone = await f.repo("kimi-clone"), nested = await f.repo("repo/nested-kimi", "https://github.com/acme/foreign.git")
+    await f.git(f.project.path, "-c", "user.name=ATape", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "fixture")
+    const worktree = join(f.root, "kimi-worktree"); await f.git(f.project.path, "worktree", "add", "--detach", worktree)
+    const home = join(f.root, "kimi-source"), metadata = JSON.parse(await readFile(new URL("../../../../adapters/kimi/src/fixtures/native-0.42.0.state.json", import.meta.url), "utf8"))
+    for (const [name, cwd] of [["clone", clone], ["worktree", worktree], ["foreign", nested], ["unknown", join(f.root, "missing")]]) {
+      const directory = join(home, "sessions", "opaque", `kimi-${name}`); await mkdir(directory, { recursive: true })
+      await writeFile(join(directory, "state.json"), JSON.stringify({ ...metadata, id: `kimi-${name}`, cwd }))
+    }
+    const previous = process.env.ATAPE_KIMI_HOME; process.env.ATAPE_KIMI_HOME = home
+    const runtime = await createKimiAdapter({ protocolVersion: "atape.adapter.v1alpha1", adapter: { id: "kimi", version: "0.5.1" },
+      project: { id: f.project.id, type: "git", path: f.project.path }, signal: new AbortController().signal })
+    try {
+      const page = Schema.decodeUnknownSync(SourceDiscoveryPage)(await runtime.sourceCapture.discover({ cursor: null,
+        limits: { rowBytes: 1048576, pageBytes: 4194304, pageRows: 100, records: 1000, threads: 20, durationMs: 10000 }, signal: new AbortController().signal }))
+      expect(page.sourceFailures).toEqual([]); expect(page.sources).toHaveLength(4)
+      for (const source of page.sources) {
+        expect(await f.resolve(source, f.project, "kimi")).toBe(source.sourceId === "kimi-foreign" ? "excluded" : source.sourceId === "kimi-unknown" ? "unknown" : "included")
+      }
+      const original = page.sources.find(source => source.sourceId === "kimi-clone")!
+      await rm(clone, { recursive: true }); await rm(f.project.path, { recursive: true })
+      expect(await f.resolve(original, f.project, "kimi")).toBe("included")
+      expect(await f.resolve({ ...original, originKey: "recreated" }, f.project, "kimi")).toBe("unknown")
+    } finally {
+      await runtime.close()
+      if (previous === undefined) delete process.env.ATAPE_KIMI_HOME; else process.env.ATAPE_KIMI_HOME = previous
+    }
+  })
   it("includes worktrees and independent clones, excludes nested foreign repositories, and pins authority", async () => {
     const f = await fixture()
     const clone = await f.repo("independent-clone")
