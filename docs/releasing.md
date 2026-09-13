@@ -67,9 +67,9 @@ node scripts/check-release-tag.mjs "$ATAPE_RELEASE_TAG"
 ```
 
 `test:release` checks the four-file, self-contained Adapter packages, builds all
-six checksummed tarballs and installs the CLI into a clean prefix. It installs
+seven checksummed tarballs and installs the CLI into a clean prefix. It installs
 a disposable integration and verifies the installed console/daemon through a PTY.
-Release Adapter checks install Codex, Claude, OpenCode, CodeBuddy and Kimi through the source Node
+Release Adapter checks install Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok through the source Node
 Host’s application Interface, then collect a controlled native Claude
 fixture through an authenticated loopback HTTP test Adapter. It replaces a
 test-only pre-release Claude package with the exact release tarball via
@@ -77,9 +77,9 @@ the original-source update Module Interface, checking unchanged checkpoints, no 
 stable Event identities and successful capture after append. The test-only package
 uses the current bundle with a distinct version; it is not historical compatibility
 evidence and never enters `release/`. Real Go persistence/read behavior remains
-covered by the CLI/Go end-to-end suite, including actual OpenCode, CodeBuddy and Kimi package replacement,
+covered by the CLI/Go end-to-end suite, including actual OpenCode, CodeBuddy, Kimi and Grok package replacement,
 independent Canonical/Raw progress, no-op recovery and background source changes.
-The exact checksummed OpenCode, CodeBuddy and Kimi artifacts also run their installed source-capability
+The exact checksummed OpenCode, CodeBuddy, Kimi and Grok artifacts also run their installed source-capability
 verification outside the checkout with controlled native data. The workflow publishes the exact release
 tarballs and attaches them plus `SHA256SUMS` to the GitHub Release.
 
@@ -101,7 +101,7 @@ gates merely by checking the index.
 
 ## First publication bootstrap
 
-npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new Kimi Adapter):
+npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new Kimi and Grok Adapters):
 
 1. Enable two-factor authentication on the npm owner account.
 2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.
@@ -148,4 +148,4 @@ Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and 
 
 ## Publication order and recovery
 
-The workflow publishes the CLI and all five Adapters sequentially, then creates the GitHub Release. If a later step fails, rerunning the same workflow is safe only when already-published npm integrity matches the locally rebuilt tarball. A mismatch stops publication and requires investigation; npm versions are immutable and must never be overwritten.
+The workflow publishes the CLI and all six Adapters sequentially, then creates the GitHub Release. If a later step fails, rerunning the same workflow is safe only when already-published npm integrity matches the locally rebuilt tarball. A mismatch stops publication and requires investigation; npm versions are immutable and must never be overwritten.
