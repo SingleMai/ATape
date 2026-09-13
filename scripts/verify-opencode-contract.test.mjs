@@ -18,3 +18,12 @@ test("CodeBuddy acceptance cannot pass using only existing provider results", ()
   assert.throws(() => verifyCodeBuddyResult([{ ...event, Action: "pass", Test: requiredTest }]), /missing or skipped/)
   assert.doesNotThrow(() => verifyCodeBuddyResult([{ ...event, Action: "pass" }]))
 })
+
+import { requiredTest as kimiTest, verifyKimiResult } from "./verify-kimi-contract.mjs"
+test("Kimi acceptance cannot pass using only existing provider results", () => {
+  const event = { Test: kimiTest, Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi" }
+  assert.throws(() => verifyKimiResult([]), /missing or skipped/)
+  assert.throws(() => verifyKimiResult([{ ...event, Action: "skip" }]), /missing or skipped/)
+  assert.throws(() => verifyKimiResult([{ ...event, Action: "pass", Test: requiredTest }]), /missing or skipped/)
+  assert.doesNotThrow(() => verifyKimiResult([{ ...event, Action: "pass" }]))
+})

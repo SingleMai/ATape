@@ -6,6 +6,7 @@ export const codexHome = (environment: Environment, home: string) => environment
 export const claudeHome = (environment: Environment, home: string) => environment.ATAPE_CLAUDE_HOME || join(home, ".claude")
 
 export const codeBuddyHome = (environment: Environment, home: string) => environment.ATAPE_CODEBUDDY_HOME || environment.CODEBUDDY_CONFIG_DIR || join(home, ".codebuddy")
+export const kimiHome = (environment: Environment, home: string) => environment.ATAPE_KIMI_HOME || environment.KIMI_CODE_HOME || join(home, ".kimi-code")
 
 /** Stable-channel location; pure resolution never opens or creates storage. */
 export const openCodeDatabasePath = (environment: Environment, home: string) => {
@@ -18,6 +19,7 @@ const locations = {
   codex: { kind: "directory", resolve: codexHome },
   claude: { kind: "directory", resolve: claudeHome },
   codebuddy: { kind: "directory", resolve: codeBuddyHome },
+  kimi: { kind: "directory", resolve: kimiHome },
   opencode: { kind: "file", resolve: openCodeDatabasePath }
 } as const
 
