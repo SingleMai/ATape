@@ -3,7 +3,7 @@
   "releaseVersion": "0.5.2",
   "authEpoch": "auth-v1",
   "status": "authorized",
-  "candidateCommit": "0fdeb3d97516746f27be26ca23f288f373ca6394",
+  "candidateCommit": "c885c08014d27ae2bd31f13a72c7e2dcfcf4d674",
   "authorizedOn": "2026-09-13",
   "authorization": "On 2026-09-13 the user answered 可以，没有问题。 to the explicit question 是否继续发布包含 Kimi 的新版 ATape？. This authorizes coordinated ATape v0.5.2 package publication and, under AGENTS.md and ADR-0048, the manual-only staging acceptance waiver for this exact candidate. Automated CI, integration tests and security gates remain mandatory. Server deployment and database migration are not authorized.",
   "scope": "manual-staging-only",
