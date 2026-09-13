@@ -1,10 +1,10 @@
 # @atape/adapter-grok
 
 ATape Adapter for Grok Build 1.0.3 local completed root conversations on macOS
-arm64: text, successful/failed file reads, foreground terminal commands, ordinary
+arm64: text, successful/failed file reads, foreground terminal commands, grep search, search_replace edits, ordinary
 resume and per-turn/model usage. Other tools, child Sessions, fork, rewind,
 compaction, interrupted turns and non-text messages remain unsupported in this
-first profile. See the [Grok guide](../../docs/adapters/grok.md) for evidence and
+bounded profile. See the [Grok guide](../../docs/adapters/grok.md) for evidence and
 limits.
 
 Build with `pnpm --filter @atape/adapter-grok build`, then install the prepared

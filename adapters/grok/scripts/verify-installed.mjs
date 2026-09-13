@@ -38,7 +38,24 @@ try {
   assert.equal(gitView.origin.cwd, "/fixture/grok-worktree")
   assert.deepEqual(gitView.target, { events: 2, usage: 1, threads: 1 })
   await gitView.close()
+  for (const [stage, id, count] of [["edit", "88789e9d-9240-47c6-8a89-0842fc706348", 11], ["empty-search", "f0d683d2-d72e-4956-9a5b-a07eeb68e6fb", 5]]) {
+    await cp(new URL(`./native-1.0.3/${stage}/`, import.meta.url), join(home, "sessions", "tools", id), { recursive: true })
+    const view = await runtime.sourceCapture.open({ sourceId: id, rawEnabled: false, limits, projection, signal })
+    const events = []
+    for (let n = 0; n < 30; n++) {
+      const page = await view.read(signal)
+      assert.ok(page.frames.every(frame => frame.raw === undefined))
+      events.push(...page.frames.flatMap(frame => frame.events))
+      if (page.done) break
+    }
+    assert.equal(events.length, count)
+    assert.equal(typeof events[3].update.rawOutput.stdout, "string")
+    assert.equal(events[3].update.status, "completed")
+    assert.equal(events[3].update.rawOutput.exit_code, stage === "edit" ? 0 : 1)
+    if (stage === "edit") assert.equal(events[9].update.rawOutput.EditsApplied.new_string, "version=after")
+    await view.close()
+  }
   const view = await runtime.sourceCapture.open({ sourceId, rawEnabled: false, limits, projection, signal })
   lifetime.abort(); await assert.rejects(view.read(new AbortController().signal))
 } finally { await runtime.close(); await rm(home, { recursive: true, force: true }) }
-process.stdout.write("Installed Grok native create/resume/commands, original CWD, stable identity, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed Grok native create/resume/commands/search/edit, original CWD, stable identity, bounded pages, Raw off/on and cancellation verified.\n")
