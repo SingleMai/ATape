@@ -83,8 +83,19 @@ const metadata = async (path: string, check: () => void) => {
   for (const name of children) {
     const child = object(agents[name]), labels = object(child.labels)
     if (!/^agent-[a-zA-Z0-9_-]+$/.test(name) || child.type !== "sub" || child.parentAgentId !== "main" ||
-      labels.parentAgentId !== "main" || child.forkedFrom != null || child.swarmItem != null || labels.swarmItem != null)
-      fail("unsupported", "Kimi requires direct foreground subagent metadata.")
+      typeof labels.parentAgentId !== "string" || !Object.hasOwn(agents, labels.parentAgentId) || child.forkedFrom != null || child.swarmItem != null || labels.swarmItem != null)
+      fail("unsupported", "Kimi requires foreground subagent metadata with a declared parent.")
+  }
+  // v0.42.0 writes the legacy parent as main; labels carry the actual caller.
+  const connected = new Set(["main"])
+  for (const name of children) {
+    const path = new Set<string>()
+    let current = name
+    while (!connected.has(current)) {
+      if (path.has(current)) fail("format", "Kimi child metadata contains a parent cycle.")
+      path.add(current); current = id(object(object(agents[current]).labels).parentAgentId)
+    }
+    for (const member of path) connected.add(member)
   }
   if (typeof row.cwd !== "string" || !isAbsolute(row.cwd)) fail("attribution", "Kimi original CWD is unavailable.")
   const createdAt = timestamp(row.createdAt)

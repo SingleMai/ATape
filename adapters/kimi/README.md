@@ -23,13 +23,13 @@ The Server must advertise `atape.publication.v1`.
 
 Supports completed main-agent turns and resume, user/assistant text, thoughts,
 tool outcomes, manual/automatic compaction, `/undo`, `/clear` as a new Session,
-whole-session forks (including nested forks), direct foreground subagents and
-same-child resume, and response usage. Undo removes
+whole-session forks (including nested forks), foreground subagents (including nested delegation) and
+same-child resume at each layer, and response usage. Undo removes
 visible turns while retaining expenditure;
 compaction preserves reading history and keeps internal summaries in Raw.
 Forks have independent Session identities and retain copied usage as captured
 history; adding parent and fork totals counts that history in each Session.
-Child links and response usage stay in their owning Thread. Background/nested
+Child links and response usage stay in their owning Thread. Background
 subagents, child histories combined with fork/compaction/undo, steering,
 interrupted/retried turns and tree storage remain
 unsupported. Legacy Python kimi-cli is intentionally excluded. Unsupported
