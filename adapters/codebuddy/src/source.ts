@@ -201,7 +201,7 @@ type ChildCall = { callId: string; prompt: string } & (
   { mode: "background"; summary: string } |
   { mode: "message"; summary: string; sentAt: number }
 )
-type ChildReference = { agent: string; label: string; calls: ChildCall[]; backgroundName?: string; backgroundDescription?: string; hasMessages?: true }
+type ChildReference = { nativeParentId: string; copied: boolean; agent: string; label: string; calls: ChildCall[]; backgroundName?: string; backgroundDescription?: string; hasMessages?: true }
 type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; background: boolean; continuing: boolean; delegatedPrompts: Map<string, string>; history: History; callChildren: Map<string, string | undefined> }
 const segment = (value: unknown) => {
   const name = id(value)
@@ -236,11 +236,15 @@ const internalNotice = (row: Row, children: Map<string, ChildReference>, names: 
 }
 
 // Only completed, structured native Agent receipts authorize child-file reads.
-const references = (history: History, root = false) => {
+const references = (history: History, root = false, fork?: { sourceId?: string; copied: boolean }) => {
+  // Ordinary fork resume restores the original native ID. Only the first
+  // fork-owned record crosses this boundary; later ID restoration cannot reset it.
+  let copied = fork?.copied ?? false
   const children = new Map<string, ChildReference>(), callChildren = new Map<string, string | undefined>(), names = new Map<string, string | undefined>()
-  const calls = new Map<string, { args: Row; name: string; sentAt: unknown; childId?: string }>(), internalMessages = new Set<string>()
+  const calls = new Map<string, { args: Row; name: string; sentAt: unknown; nativeParentId: string; copied: boolean; childId?: string }>(), internalMessages = new Set<string>()
   for (const { row } of historyRecords(history.records)) {
     const rowId = id(row.id)
+    if (fork?.sourceId && row.sessionId === fork.sourceId) copied = false
     if (root && row.type === "message" && row.role === "user" && (object(row.providerData).teammateMessage != null || Array.isArray(row.content) &&
       row.content.some(block => typeof object(block).text === "string" && /^\s*<teammate-message(?:\s|>)/.test(object(block).text as string)))) {
       internalNotice(row, children, names); internalMessages.add(rowId)
@@ -255,13 +259,13 @@ const references = (history: History, root = false) => {
         const childId = typeof args.recipient === "string" ? names.get(args.recipient) : undefined
         if (args.type !== "message" || typeof args.content !== "string" || typeof args.summary !== "string" || childId === undefined)
           fail("unsupported", "CodeBuddy follow-up message has no unique supported background recipient.")
-        calls.set(callId, { args, name: "SendMessage", sentAt: row.timestamp, childId: childId! }); continue
+        calls.set(callId, { args, name: "SendMessage", sentAt: row.timestamp, nativeParentId: segment(row.sessionId), copied, childId: childId! }); continue
       }
       if (args.name != null || args.team_name != null || args.subagent_type === "fork" ||
         args.run_in_background === true && (!root || args.resume != null))
         fail("unsupported", "CodeBuddy named, nested background, resumed background and fork subagents require a wider source profile.")
       if (typeof args.prompt !== "string") fail("format", "CodeBuddy Agent prompt is unavailable.")
-      calls.set(callId, { args, name: "Agent", sentAt: row.timestamp })
+      calls.set(callId, { args, name: "Agent", sentAt: row.timestamp, nativeParentId: segment(row.sessionId), copied })
     } else if (row.type === "function_call_result" && (row.name === "Agent" || sendsToChild)) {
       const callId = id(row.callId), call = calls.get(callId), args = call?.args
       if (!args || callChildren.has(callId)) fail("format", "CodeBuddy Agent receipt has no unique call.")
@@ -283,6 +287,7 @@ const references = (history: History, root = false) => {
         callChildren.set(callId, call!.childId!); continue
       }
       if (args!.run_in_background === true) {
+        if (fork) fail("unsupported", "CodeBuddy background children in forks require a wider source profile.")
         // 2.124.0 launches background Agents as automatic team members. A durable
         // structured spawn receipt, not human output or transient team files,
         // authorizes this one-shot child's storage ID and delegated prompt.
@@ -298,7 +303,7 @@ const references = (history: History, root = false) => {
         if (children.has(childId)) fail("unsupported", "CodeBuddy background child has multiple launch calls.")
         const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
         const label = typeof spawn.description === "string" && spawn.description && Buffer.byteLength(spawn.description) <= 200 ? spawn.description : "CodeBuddy child"
-        children.set(childId, { agent, label, backgroundName: spawn.name as string, ...(typeof spawn.description === "string" ? { backgroundDescription: spawn.description } : {}), calls: [{ mode: "background", callId, prompt: args!.prompt as string, summary: `Initial task assignment for ${spawn.name}` }] })
+        children.set(childId, { nativeParentId: call!.nativeParentId, copied: call!.copied, agent, label, backgroundName: spawn.name as string, ...(typeof spawn.description === "string" ? { backgroundDescription: spawn.description } : {}), calls: [{ mode: "background", callId, prompt: args!.prompt as string, summary: `Initial task assignment for ${spawn.name}` }] })
         names.set(spawn.name as string, names.has(spawn.name as string) ? undefined : childId)
         callChildren.set(callId, childId); continue
       }
@@ -311,9 +316,13 @@ const references = (history: History, root = false) => {
         fail("unsupported", "CodeBuddy Agent resume identity is unproven.")
       const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
       const prior = children.get(childId)
+      if (fork && !call!.copied && (args!.resume != null || prior))
+        fail("unsupported", "CodeBuddy child continuation after a fork requires a wider source profile.")
+      if (prior && (prior.nativeParentId !== call!.nativeParentId || prior.copied !== call!.copied))
+        fail("unsupported", "CodeBuddy child changed its native parent or copied boundary.")
       if (prior && prior.agent !== agent) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
       const label = typeof args!.description === "string" && args!.description && Buffer.byteLength(args!.description) <= 200 ? args!.description : "CodeBuddy child"
-      const ref = prior ?? { agent, label, calls: [] }
+      const ref = prior ?? { nativeParentId: call!.nativeParentId, copied: call!.copied, agent, label, calls: [] }
       ref.calls.push({ mode: "foreground", callId, prompt: args!.prompt as string, ...(receipt.afterId == null ? {} : { afterId: id(receipt.afterId) }), lastId: id(receipt.lastId) })
       children.set(childId, ref); callChildren.set(callId, childId)
     }
@@ -380,14 +389,9 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
   const files = (await inventory(home, signal)).filter(file => basename(file, ".jsonl") === sourceId)
   if (files.length !== 1) fail("format", "CodeBuddy source is missing or has duplicate identities.")
   const root = await snapshotFile(files[0]!, limits, signal), children: ChildSnapshot[] = []
-  const rootRefs = references(root, true), histories: History[] = [root], used = new Set<string>(), nativeIds = new Set([segment(root.records[0]!.row.sessionId)])
-  if (root.forkedFrom && rootRefs.children.size) {
-    const own = root.records.findIndex(({ row }) => row.sessionId === sourceId)
-    if (root.records.slice(own).some(({ row }) => row.type === "function_call" && rootRefs.callChildren.get(id(row.callId)) !== undefined))
-      fail("unsupported", "CodeBuddy child delegation after a fork requires a wider source profile.")
-  }
+  const rootRefs = references(root, true, root.forkedFrom ? { sourceId, copied: true } : undefined), histories: History[] = [root], used = new Set<string>(), nativeIds = new Set([segment(root.records[0]!.row.sessionId)])
   let bytes = root.bytes, records = root.records.length
-  const pending = [{ id: sourceId, nativeSessionId: segment(root.records[0]!.row.sessionId), refs: rootRefs }]
+  const pending = [{ id: sourceId, refs: rootRefs }]
   for (let at = 0; at < pending.length; at++) {
     const parent = pending[at]!
     for (const [childId, ref] of parent.refs.children) {
@@ -395,17 +399,17 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
       if (used.has(childId)) fail("unsupported", "CodeBuddy child has multiple parents or a cycle.")
       used.add(childId)
       if (used.size + 1 > limits.threads || records >= limits.records) fail("limit", "CodeBuddy family exceeds its thread or record budget.")
-      const parentDirectory = join(dirname(files[0]!), parent.nativeSessionId), childDirectory = join(parentDirectory, "subagents")
+      const parentDirectory = join(dirname(files[0]!), ref.nativeParentId), childDirectory = join(parentDirectory, "subagents")
       await checkDirectory(parentDirectory); await checkDirectory(childDirectory)
       const child = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
       bytes += child.bytes; records += child.records.length
-      const visible = root.forkedFrom ? copiedChild(child, ref) : child
-      const { nativeSessionId, delegatedPrompts } = validateChild(visible, ref), refs = references(visible)
+      const visible = ref.copied ? copiedChild(child, ref) : child
+      const { nativeSessionId, delegatedPrompts } = validateChild(visible, ref), refs = references(visible, false, root.forkedFrom ? { copied: ref.copied } : undefined)
       if (ref.backgroundName !== undefined && refs.children.size) fail("unsupported", "CodeBuddy background child delegation requires a wider source profile.")
       if (nativeIds.has(nativeSessionId)) fail("unsupported", "CodeBuddy child native Session identity is duplicated.")
       nativeIds.add(nativeSessionId)
       children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, background: ref.backgroundName !== undefined, continuing: ref.backgroundName !== undefined && ref.calls.length > 1, delegatedPrompts, history: visible, callChildren: refs.callChildren })
-      histories.push(child); pending.push({ id: childId, nativeSessionId, refs })
+      histories.push(child); pending.push({ id: childId, refs })
     }
   }
   // Every member stays unchanged across the final member's read; no file survives open.

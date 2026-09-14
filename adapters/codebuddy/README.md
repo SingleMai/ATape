@@ -27,7 +27,7 @@ Source resolution: `ATAPE_CODEBUDDY_HOME`, then `CODEBUDDY_CONFIG_DIR`, then
 completed native Agent receipts.
 
 The first implementation targets controlled CodeBuddy Code CLI 2.124.0 samples
-from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks and copied foreground child trees), ordinary resume,
+from macOS arm64. It supports linear primary CLI Sessions, native `--fork-session` (including nested forks, copied foreground child trees and new foreground children), ordinary resume,
 text/thoughts, tool calls/results (including completed ordinary multi-tool responses), manual `/compact`, engineering pre-message
 automatic compaction, completed foreground Agent families (resume and nesting),
 root-level background Agents through native automatic teams (serial SendMessage
@@ -37,7 +37,7 @@ per-Thread response usage.
 Rewind, `/branch`, pre-message LLM summaries, named teams/generic inbox turns,
 overlapping or batched background messages, broadcasts, nested background launches, fork subagents,
 manual/pre-message child compaction, emergency compaction in background children
-or forks, child delegation after a fork, copied background children, unknown sidecar fields and external
+or forks, child continuation after a fork, background children in forks, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
 when enabled and marks capture partial.

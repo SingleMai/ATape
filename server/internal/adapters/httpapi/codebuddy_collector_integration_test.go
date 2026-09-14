@@ -1510,9 +1510,168 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	expireReservations()
 	read(recoveredForkFamily.SessionID, 17)
 	read(recoveredForkFamily.SessionID, 3, forkLeafID)
+	forkNewCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy new fork children"})
+	forkNewCreate.Header.Set("Authorization", "Bearer "+credential)
+	forkNewCreate.Header.Set("Idempotency-Key", "codebuddy-fork-new-project-21240")
+	forkNewCreated := httptest.NewRecorder()
+	h.ServeHTTP(forkNewCreated, forkNewCreate)
+	if forkNewCreated.Code != http.StatusCreated {
+		t.Fatalf("create new fork Project: %d %s", forkNewCreated.Code, forkNewCreated.Body.String())
+	}
+	var forkNewProject projectDTO
+	decodeResponse(t, forkNewCreated, &forkNewProject)
+	projectID = forkNewProject.ID
+	forkNewInitial := run("fork-new-initial")
+	_, forkNewRoot := read(forkNewInitial.SessionID, 10)
+	forkNewLinks := links(forkNewRoot)
+	if len(forkNewLinks) != 2 || forkNewLinks[0].ID == forkNewLinks[1].ID {
+		t.Fatal("CodeBuddy fork creation lost copied/new child separation")
+	}
+	forkCopiedID, forkFirstID := forkNewLinks[0].ID, forkNewLinks[1].ID
+	read(forkNewInitial.SessionID, 3, forkCopiedID)
+	_, forkFirst := read(forkNewInitial.SessionID, 3, forkFirstID)
+	if forkFirst[2].Text != "ATAPE_FORK_NEW_FIRST_CHILD_21240" {
+		t.Fatal("CodeBuddy fork child under its own storage directory was lost")
+	}
+	if pending := run("fork-new-pending"); pending.Head != forkNewInitial.Head || !bytes.Equal(pending.Records, forkNewInitial.Records) {
+		t.Fatal("CodeBuddy incomplete new child replaced the fork")
+	}
+	forkNewComplete := run("fork-new-complete")
+	_, forkNewCompleteRoot := read(forkNewComplete.SessionID, 14)
+	forkNewLinks = links(forkNewCompleteRoot)
+	if len(forkNewLinks) != 3 || forkNewLinks[0].ID != forkCopiedID || forkNewLinks[1].ID != forkFirstID {
+		t.Fatal("CodeBuddy resumed fork lost stable child membership")
+	}
+	forkNewParentID := forkNewLinks[2].ID
+	_, forkNewParent := read(forkNewComplete.SessionID, 6, forkNewParentID)
+	if len(links(forkNewParent)) != 1 {
+		t.Fatal("CodeBuddy new nested parent lost its leaf")
+	}
+	forkNewLeafID := links(forkNewParent)[0].ID
+	_, forkNewLeaf := read(forkNewComplete.SessionID, 3, forkNewLeafID)
+	if forkNewLeaf[2].Text != "ATAPE_FORK_NEW_LEAF_21240" {
+		t.Fatal("CodeBuddy new leaf lost the answer after lastId reasoning")
+	}
+	if growth := run("fork-new-growth"); growth.Head != forkNewComplete.Head || growth.Observations != 0 || !bytes.Equal(growth.Records, forkNewComplete.Records) {
+		t.Fatal("CodeBuddy original child's later turn changed the fork")
+	}
+	forkNewResumed := run("fork-new-resume")
+	_, forkNewResumedRoot := read(forkNewResumed.SessionID, 16)
+	beforePrefix, _ = json.Marshal(forkNewCompleteRoot)
+	afterPrefix, _ = json.Marshal(forkNewResumedRoot[:14])
+	if forkNewResumed.SessionID != forkNewInitial.SessionID || !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(forkNewResumedRoot) != 4 {
+		t.Fatal("CodeBuddy ordinary fork resume changed prior delegation history")
+	}
+	if invalid := run("fork-new-invalid"); invalid.Head != forkNewResumed.Head || !bytes.Equal(invalid.Records, forkNewResumed.Records) {
+		t.Fatal("CodeBuddy unproven new child replaced the fork")
+	}
+	if fixed := run("fork-new-repair"); fixed.Head != forkNewResumed.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy repaired new child replayed unchanged data")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != forkNewResumed.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 12 || inputTokens != 87179 || outputTokens != 659 || cachedTokens != 53248 || threadUsage["root"] != 7 || threadUsage[forkCopiedID] != 1 || threadUsage[forkFirstID] != 1 || threadUsage[forkNewParentID] != 2 || threadUsage[forkNewLeafID] != 1 {
+		t.Fatalf("CodeBuddy new fork usage ownership: %d %d %d %d %v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	if len(search("ATAPE_FORK_NEW_ORIGINAL_LATER_21240").Results) != 0 {
+		t.Fatal("CodeBuddy fork Search exposed later original descendants")
+	}
+	setRaw(false)
+	forkNewOff := run("fork-new-edit")
+	if forkNewOff.Head == forkNewResumed.Head || len(search("CodeBuddyForkNewPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy new fork child Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	forkNewOn := run("fork-new-reenable")
+	if forkNewOn.Head != forkNewOff.Head || !bytes.Equal(forkNewOn.Records, forkNewOff.Records) {
+		t.Fatal("CodeBuddy new fork child Raw-on changed Canonical provenance")
+	}
+	if lost := run("fork-new-raw-only"); lost.Pending == 0 || lost.Head != forkNewOn.Head {
+		t.Fatal("CodeBuddy new fork child Raw response loss lost recovery")
+	}
+	forkNewRawRecovered := run("fork-new-raw-recover")
+	if forkNewRawRecovered.Pending != 0 || forkNewRawRecovered.Head != forkNewOn.Head || !bytes.Equal(forkNewRawRecovered.Records, forkNewOn.Records) {
+		t.Fatal("CodeBuddy new fork child Raw recovery failed after deleting all six sources")
+	}
+	var forkNewArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+forkNewResumed.SessionID+"/raw", ""), &forkNewArchive)
+	var forkNewRaw strings.Builder
+	for _, archived := range forkNewArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy new fork family Raw exceeded its object bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		forkNewRaw.Write(decoded)
+	}
+	for _, native := range []string{"CodeBuddyForkNewRawOnlyNeedle", "forkedFrom", "agent-203ccf33", "agent-638af8c5", "agent-70af9d40", "agent-dc98c023", "957c2462-6160-46fa-bc24-53ed99d4c5be"} {
+		if !strings.Contains(forkNewRaw.String(), native) {
+			t.Fatalf("CodeBuddy new fork family Raw lost %s", native)
+		}
+	}
+	for _, outside := range []string{"ATAPE_FORK_NEW_ORIGINAL_LATER_21240"} {
+		if strings.Contains(forkNewRaw.String(), outside) {
+			t.Fatal("CodeBuddy new fork Raw included a later original turn")
+		}
+	}
+	if len(search("CodeBuddyForkNewRawOnlyNeedle").Results) != 0 {
+		t.Fatal("CodeBuddy new fork Raw entered Search")
+	}
+	if lost := run("fork-new-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy fork family activation loss lost recovery")
+	}
+	recoveredForkNew := run("fork-new-recover")
+	if recoveredForkNew.Pending != 0 {
+		t.Fatal("CodeBuddy fork family recovery left pending work")
+	}
+	read(recoveredForkNew.SessionID, 16)
+	read(recoveredForkNew.SessionID, 3, forkCopiedID)
+	read(recoveredForkNew.SessionID, 3, forkFirstID)
+	read(recoveredForkNew.SessionID, 6, forkNewParentID)
+	_, forkNewLeafAfter := read(recoveredForkNew.SessionID, 3, forkNewLeafID)
+	if forkNewLeafAfter[2].Text != "CodeBuddyForkNewFrozenNeedle" {
+		t.Fatal("CodeBuddy fork family recovery lost frozen leaf bytes")
+	}
+	forkNewHits := search("CodeBuddyForkNewFrozenNeedle")
+	if len(forkNewHits.Results) != 1 || forkNewHits.Results[0].ThreadID != forkNewLeafID {
+		t.Fatal("CodeBuddy recovered fork leaf missing from Search")
+	}
+	var forkNewAnchored conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+recoveredForkNew.SessionID+"?thread="+url.QueryEscape(forkNewLeafID)+"&at="+url.QueryEscape(forkNewHits.Results[0].EventID)+"&limit=2", ""), &forkNewAnchored)
+	if len(forkNewAnchored.ThreadPath) != 3 {
+		t.Fatal("CodeBuddy fork leaf Search lost the three-level path")
+	}
+	expireReservations()
+	read(recoveredForkNew.SessionID, 16)
+	read(recoveredForkNew.SessionID, 3, forkNewLeafID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkFamily.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkNew.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
