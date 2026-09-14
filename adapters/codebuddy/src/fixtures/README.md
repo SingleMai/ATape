@@ -351,3 +351,47 @@ resume, mutates Raw policy/content, drops committed HTTP responses and deletes
 all five installed sources. The original root JSONL is absent throughout that
 installed contract. These mutations prove attribution and recovery, not additional
 native formats or support for delegation launched from a fork.
+
+## New foreground children from forks
+
+`native-fork-new-2.124.0/` contains seven controlled files generated on
+2026-09-14 (Asia/Singapore; 2026-09-13 UTC) with CodeBuddy Code CLI 2.124.0 on
+macOS arm64. The commands used `-p --strict-mcp-config --setting-sources ""`,
+`--model hy3 --effort low --max-turns 3 --tools Agent --allowedTools Agent`,
+`PRE_MESSAGE_COMPACT=0` and `CODEBUDDY_AUTOCOMPACT_PCT_OVERRIDE=100`.
+`atape-fork-child` permits no tools; `atape-fork-parent` permits only Agent.
+The prompts request literal markers and exactly one foreground delegation.
+Only the controlled physical CWD was normalized to
+`/fixture/codebuddy-fork-new-project`; all record IDs, timestamps and usage remain
+native. Research commands and stdout stay outside the repository.
+
+| Native command sequence | Durable rows |
+| --- | --- |
+| New original root and seed child | root 6; seed `agent-203ccf33` 3 |
+| `--resume <root> --fork-session --session-id <fork>`, create new child | fork 12; `agent-638af8c5` 3 under the fork ID |
+| Ordinary `--resume <fork>`, create parent and leaf | fork 16; `agent-70af9d40` 6 under the original root ID; leaf `agent-dc98c023` 3 |
+| Resume seed child from original root | original 11; seed 6; fork unchanged |
+| Ordinary fork resume without tools | fork 18; all children unchanged |
+
+The root is `atape-codebuddy-fork-new-root-21240`, fork is
+`atape-codebuddy-fork-new-copy-21240`, and the sidecar names the original root as
+`forkedFrom`. The leaf is stored under its parent's UUID
+`5702d032-198a-4536-a9ce-caca5b89ae8e`. The initial fork turn carries the fork ID;
+subsequent ordinary fork turns carry the restored original root ID. Installed
+`SessionMiddleware.forkSession` copies only root history, while native child
+creation uses `mainSession.id` as `parentSessionId`; the path combines that ID
+with the child's storage ID. The samples prove both directory forms.
+
+The fork retains only the seed's first three rows, excluding
+`ATAPE_FORK_NEW_ORIGINAL_LATER_21240`. It includes every row of its new children.
+Initial, nested-complete and final views contain respectively 16/29/31 Events,
+6/11/12 usage records and 3/5/5 Threads. The final normalized totals are 87,179
+input, 659 output and 53,248 cache tokens. Root/seed/first-new/parent/leaf usage
+counts are 7/1/1/2/1. Parent receipts often name reasoning; the following completed
+assistant remains visible. No child was resumed from the fork in this corpus.
+
+Runtime negative cases alter only controlled fixtures to test missing/wrong paths,
+pending responses, prompt/receipt mismatch, extra unaccounted turns, unsafe path
+segments and unsupported child continuation. Installed acceptance changes only
+CWDs and deliberate fault/Raw-policy markers, deletes the original root JSONL,
+and exercises frozen recovery after deleting all six selected source files.
