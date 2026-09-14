@@ -213,6 +213,29 @@ try {
   const nestedContinuation = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-fork-child-nested-21240", limits, projection, rawEnabled: false, signal })
   assert.deepEqual(nestedContinuation.target, { events: 39, usage: 17, threads: 4 })
   await nestedContinuation.close()
+  await cp(new URL("./native-fork-emergency-2.124.0", import.meta.url), dir, { recursive: true })
+  await rm(join(dir, "atape-codebuddy-fork-emergency-root-21240.jsonl"))
+  for (const [suffix, eventCount, contextCount] of [["copy", 24, 6], ["nested", 23, 4]]) {
+    for (const rawEnabled of [false, true]) {
+      const view = await runtime.sourceCapture.open({ sourceId: `atape-codebuddy-fork-emergency-${suffix}-21240`, limits: { ...limits, rowBytes: 131072 }, projection, rawEnabled, signal })
+      assert.deepEqual(view.target, { events: eventCount, usage: 9, threads: 2 })
+      assert.equal(view.profile, "codebuddy.cli.jsonl.family.fork.1")
+      let done = false, events = 0, contexts = 0
+      for (let count = 0; count < 30 && !done; count++) {
+        const page = await view.read(signal)
+        for (const frame of page.frames) {
+          events += frame.events.length; assert.equal(frame.raw !== undefined, rawEnabled)
+          assert.ok(!JSON.stringify(frame).includes("ATAPE_FORK_EMERGENCY_ORIGINAL_LATER_21240"))
+          if (frame.raw && JSON.parse(frame.raw.json).providerData?.isCompactInternal) {
+            contexts++; assert.equal(frame.events.length, 0); assert.equal(frame.usage.length, 0)
+          }
+        }
+        done = page.done
+      }
+      assert.equal(done, true); assert.equal(events, eventCount); assert.equal(contexts, rawEnabled ? contextCount : 0)
+      await view.close()
+    }
+  }
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()
