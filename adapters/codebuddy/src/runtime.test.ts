@@ -312,7 +312,7 @@ describe("CodeBuddy installed runtime Interface", () => {
     expect(frames.flatMap(frame => frame.usage).reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(39864)
     await resumed.close()
   })
-  it.each(["missing-child", "missing-leaf", "missing-receipt", "pending-assistant", "next-user", "prompt", "parent-chain", "foreground-after-fork"])("preserves a fork when its copied child boundary is unproven: %s", async variant => {
+  it.each(["missing-child", "missing-leaf", "missing-receipt", "pending-assistant", "next-user", "prompt", "parent-chain"])("preserves a fork when its copied child boundary is unproven: %s", async variant => {
     const f = await forkFamily()
     let reason = "unsupported"
     if (variant === "missing-child") { await rm(f.child); reason = "io" }
@@ -323,10 +323,6 @@ describe("CodeBuddy installed runtime Interface", () => {
     if (variant === "next-user") { child.splice(2, 1); await writeFile(f.leaf, serialize(child)); reason = "format" }
     if (variant === "prompt") { child[0].content[0].text = "different"; await writeFile(f.leaf, serialize(child)) }
     if (variant === "parent-chain") { child[2].parentId = "foreign"; await writeFile(f.leaf, serialize(child)) }
-    if (variant === "foreground-after-fork") {
-      const original = rows(await readFile(join(f.directory, `${f.originalId}.jsonl`), "utf8")), tail = original.slice(16)
-      tail[0].parentId = values.at(-1).id; values.push(...tail)
-    }
     await writeFile(f.file, serialize(values))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
@@ -392,6 +388,84 @@ describe("CodeBuddy installed runtime Interface", () => {
     if (variant !== "wrong-directory") await writeFile(f.first, serialize(child))
     await writeFile(f.file, serialize(root))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
+  const forkResume = async () => {
+    const f = await fixture(), originalId = "atape-codebuddy-fork-resume-root-21240", forkId = "atape-codebuddy-fork-resume-copy-21240"
+    await cp(new URL("./fixtures/native-fork-resume-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const file = join(f.directory, `${forkId}.jsonl`), copied = join(f.directory, originalId, "subagents", "agent-74d4e249.jsonl")
+    const first = join(f.directory, forkId, "subagents", "agent-5902497f.jsonl"), continuation = join(f.directory, originalId, "subagents", "agent-5902497f.jsonl")
+    return { ...f, originalId, forkId, file, copied, first, continuation, native: await readFile(file, "utf8"), request: { ...f.request, sourceId: forkId } }
+  }
+  it("continues copied and fork-created children with receipt-proven physical fragments and stable identities", async () => {
+    const f = await forkResume(), native = rows(f.native)
+    await rm(join(f.directory, `${f.originalId}.jsonl`))
+    const prior = new Map<string, unknown>()
+    for (const [count, events, usage] of [[11, 15, 6], [15, 22, 9], [19, 29, 12], [21, 31, 13]]) {
+      await writeFile(f.file, serialize(native.slice(0, count)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      expect(view.target).toEqual({ events, usage, threads: 3 })
+      expect(view.origin.cwd).toBe("/fixture/codebuddy-fork-resume-project")
+      for (const event of frames.flatMap(frame => frame.events)) {
+        if (prior.has(event.sourceEventId)) expect(event).toEqual(prior.get(event.sourceEventId))
+        prior.set(event.sourceEventId, event)
+      }
+      expect(JSON.stringify(frames)).not.toContain("ATAPE_FORK_RESUME_ORIGINAL_LATER_21240")
+      expect(JSON.stringify(frames)).not.toContain("ATAPE_FORK_RESUME_DIVERGED_21240")
+      if (count === 21) {
+        const samples = frames.flatMap(frame => frame.usage)
+        expect(samples.reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(101862)
+        expect(samples.reduce((sum, row) => sum + row.outputTokens!, 0)).toBe(629)
+        expect(samples.reduce((sum, row) => sum + (row.cacheReadTokens ?? 0), 0)).toBe(66944)
+        const childFrames = frames.filter(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId === "agent-5902497f")
+        expect(childFrames).toHaveLength(6)
+        expect(childFrames.map(frame => (frame.raw as { json: string }).json).join("\n") + "\n").toBe(await readFile(f.first, "utf8") + await readFile(f.continuation, "utf8"))
+        expect(frames.flatMap(frame => frame.events).filter(event => event.childSourceThreadId)).toHaveLength(4)
+        await view.close()
+        const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+        await rm(f.directory, { recursive: true })
+        expect(await read(off)).toEqual(frames.map(({ raw: _, ...frame }) => frame)); await off.close()
+      } else await view.close()
+    }
+  })
+  it.each(["diverged", "missing-first", "missing-tail", "pending-tail", "wrong-after", "foreign-uuid", "wrong-prompt", "fragment-meta", "revisited-parent", "physical-limit"])("preserves the fork when a continuation cannot be proved: %s", async variant => {
+    const f = await forkResume(), root = rows(f.native), tail = rows(await readFile(f.continuation, "utf8"))
+    let reason = "unsupported", request = f.request
+    if (variant !== "diverged") root.splice(21)
+    else reason = "format"
+    if (variant === "missing-first") { await rm(f.first); reason = "io" }
+    if (variant === "missing-tail") { await rm(f.continuation); reason = "io" }
+    if (variant === "pending-tail") { tail.splice(2); reason = "format" }
+    if (variant === "wrong-after") tail[0].parentId = "unproven"
+    if (variant === "foreign-uuid") for (const row of tail) row.sessionId = "foreign-child"
+    if (variant === "wrong-prompt") tail[0].content[0].text = "unproven"
+    if (variant === "fragment-meta") await writeFile(f.continuation.replace(/\.jsonl$/, ".meta.json"), '{"forkedFrom":"unproven"}')
+    if (variant === "revisited-parent") {
+      const later = structuredClone(root.slice(15, 19))
+      later[0].parentId = root.at(-1).id
+      for (const [i, row] of later.entries()) { row.id = "revisit-" + i; row.sessionId = f.forkId; if (i) row.parentId = later[i - 1].id; if (row.callId) row.callId = "revisit-call" }
+      root.push(...later)
+    }
+    if (variant === "physical-limit") { request = { ...request, limits: { ...limits, records: 36 } }; reason = "limit" }
+    if (variant !== "missing-tail") await writeFile(f.continuation, serialize(tail))
+    await writeFile(f.file, serialize(root))
+    await expect(f.runtime.sourceCapture.open(request)).rejects.toMatchObject({ reason })
+  })
+  it("continues a copied native parent and leaf with their existing Thread relationships", async () => {
+    const f = await fixture()
+    await cp(new URL("./fixtures/native-fork-resume-nested-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: "atape-codebuddy-fork-child-nested-21240" })
+    expect(view.target).toEqual({ events: 39, usage: 17, threads: 4 })
+    expect(view.origin.cwd).toBe("/fixture/codebuddy-fork-family-project")
+    const frames = await read(view), events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+    expect(view.threads.find(thread => thread.sourceThreadId === "agent-375d1c88")!.parentSourceThreadId).toBe("agent-d40e1747")
+    for (const id of ["agent-d40e1747", "agent-375d1c88"])
+      expect(events.filter(event => event.sourceThreadId === id && event.update.sessionUpdate === "user_message_chunk")).toHaveLength(2)
+    expect(events.filter(event => event.childSourceThreadId)).toHaveLength(6)
+    expect(JSON.stringify(events)).toContain("ATAPE_FORK_RESUME_NESTED_LEAF_21240")
+    expect(usage.reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(129884)
+    expect(usage.reduce((sum, row) => sum + row.outputTokens!, 0)).toBe(1052)
+    expect(usage.reduce((sum, row) => sum + (row.cacheReadTokens ?? 0), 0)).toBe(66112)
+    await view.close()
   })
   const background = async () => {
     const f = await fixture(), backgroundId = "atape-codebuddy-background-21240"

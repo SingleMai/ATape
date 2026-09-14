@@ -201,7 +201,7 @@ type ChildCall = { callId: string; prompt: string } & (
   { mode: "background"; summary: string } |
   { mode: "message"; summary: string; sentAt: number }
 )
-type ChildReference = { nativeParentId: string; copied: boolean; agent: string; label: string; calls: ChildCall[]; backgroundName?: string; backgroundDescription?: string; hasMessages?: true }
+type ChildReference = { nativeParentIds: string[]; copied: boolean; agent: string; label: string; calls: ChildCall[]; backgroundName?: string; backgroundDescription?: string; hasMessages?: true }
 type ChildSnapshot = { id: string; parentId: string; nativeSessionId: string; agent: string; label: string; background: boolean; continuing: boolean; delegatedPrompts: Map<string, string>; history: History; callChildren: Map<string, string | undefined> }
 const segment = (value: unknown) => {
   const name = id(value)
@@ -303,7 +303,7 @@ const references = (history: History, root = false, fork?: { sourceId?: string; 
         if (children.has(childId)) fail("unsupported", "CodeBuddy background child has multiple launch calls.")
         const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
         const label = typeof spawn.description === "string" && spawn.description && Buffer.byteLength(spawn.description) <= 200 ? spawn.description : "CodeBuddy child"
-        children.set(childId, { nativeParentId: call!.nativeParentId, copied: call!.copied, agent, label, backgroundName: spawn.name as string, ...(typeof spawn.description === "string" ? { backgroundDescription: spawn.description } : {}), calls: [{ mode: "background", callId, prompt: args!.prompt as string, summary: `Initial task assignment for ${spawn.name}` }] })
+        children.set(childId, { nativeParentIds: [call!.nativeParentId], copied: call!.copied, agent, label, backgroundName: spawn.name as string, ...(typeof spawn.description === "string" ? { backgroundDescription: spawn.description } : {}), calls: [{ mode: "background", callId, prompt: args!.prompt as string, summary: `Initial task assignment for ${spawn.name}` }] })
         names.set(spawn.name as string, names.has(spawn.name as string) ? undefined : childId)
         callChildren.set(callId, childId); continue
       }
@@ -316,13 +316,14 @@ const references = (history: History, root = false, fork?: { sourceId?: string; 
         fail("unsupported", "CodeBuddy Agent resume identity is unproven.")
       const agent = args!.subagent_type == null ? "general-purpose" : id(args!.subagent_type)
       const prior = children.get(childId)
-      if (fork && !call!.copied && (args!.resume != null || prior))
-        fail("unsupported", "CodeBuddy child continuation after a fork requires a wider source profile.")
-      if (prior && (prior.nativeParentId !== call!.nativeParentId || prior.copied !== call!.copied))
-        fail("unsupported", "CodeBuddy child changed its native parent or copied boundary.")
+      if (prior && prior.nativeParentIds.at(-1) !== call!.nativeParentId) {
+        if (!fork || args!.resume == null || prior.nativeParentIds.includes(call!.nativeParentId))
+          fail("unsupported", "CodeBuddy child revisited an earlier storage parent.")
+        prior.nativeParentIds.push(call!.nativeParentId)
+      }
       if (prior && prior.agent !== agent) fail("unsupported", "CodeBuddy resumed Agent changed its type.")
       const label = typeof args!.description === "string" && args!.description && Buffer.byteLength(args!.description) <= 200 ? args!.description : "CodeBuddy child"
-      const ref = prior ?? { nativeParentId: call!.nativeParentId, copied: call!.copied, agent, label, calls: [] }
+      const ref = prior ?? { nativeParentIds: [call!.nativeParentId], copied: call!.copied, agent, label, calls: [] }
       ref.calls.push({ mode: "foreground", callId, prompt: args!.prompt as string, ...(receipt.afterId == null ? {} : { afterId: id(receipt.afterId) }), lastId: id(receipt.lastId) })
       children.set(childId, ref); callChildren.set(callId, childId)
     }
@@ -399,17 +400,27 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
       if (used.has(childId)) fail("unsupported", "CodeBuddy child has multiple parents or a cycle.")
       used.add(childId)
       if (used.size + 1 > limits.threads || records >= limits.records) fail("limit", "CodeBuddy family exceeds its thread or record budget.")
-      const parentDirectory = join(dirname(files[0]!), ref.nativeParentId), childDirectory = join(parentDirectory, "subagents")
-      await checkDirectory(parentDirectory); await checkDirectory(childDirectory)
-      const child = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
-      bytes += child.bytes; records += child.records.length
+      const parts: History[] = []
+      // Resuming a fork-created child can append only its new turn in the restored
+      // root directory. Read each receipt-proven path once, in delegation order;
+      // the combined history must still pass the normal prompt/afterId chain.
+      for (const nativeParentId of ref.nativeParentIds) {
+        check()
+        const parentDirectory = join(dirname(files[0]!), nativeParentId), childDirectory = join(parentDirectory, "subagents")
+        await checkDirectory(parentDirectory); await checkDirectory(childDirectory)
+        const part = await readHistory(join(childDirectory, `${childId}.jsonl`), { ...limits, records: limits.records - records }, signal, maxSnapshotBytes - bytes)
+        if (Object.keys(part.meta).length) fail("unsupported", "CodeBuddy child metadata requires a wider source profile.")
+        bytes += part.bytes; records += part.records.length
+        parts.push(part); histories.push(part)
+      }
+      const child = { ...parts[0]!, records: parts.flatMap(part => part.records) }
       const visible = ref.copied ? copiedChild(child, ref) : child
       const { nativeSessionId, delegatedPrompts } = validateChild(visible, ref), refs = references(visible, false, root.forkedFrom ? { copied: ref.copied } : undefined)
       if (ref.backgroundName !== undefined && refs.children.size) fail("unsupported", "CodeBuddy background child delegation requires a wider source profile.")
       if (nativeIds.has(nativeSessionId)) fail("unsupported", "CodeBuddy child native Session identity is duplicated.")
       nativeIds.add(nativeSessionId)
       children.push({ id: childId, parentId: parent.id, nativeSessionId, agent: ref.agent, label: ref.label, background: ref.backgroundName !== undefined, continuing: ref.backgroundName !== undefined && ref.calls.length > 1, delegatedPrompts, history: visible, callChildren: refs.callChildren })
-      histories.push(child); pending.push({ id: childId, refs })
+      pending.push({ id: childId, refs })
     }
   }
   // Every member stays unchanged across the final member's read; no file survives open.

@@ -186,6 +186,33 @@ try {
     assert.equal(done, true); assert.equal(events, 31); assert.equal(usage, 12); assert.equal(links, 4)
     await view.close()
   }
+  await cp(new URL("./native-fork-resume-2.124.0", import.meta.url), dir, { recursive: true })
+  const continuedFork = join(dir, "atape-codebuddy-fork-resume-copy-21240.jsonl")
+  const continuedNative = await readFile(continuedFork, "utf8")
+  await writeFile(continuedFork, continuedNative.trimEnd().split("\n").slice(0, 21).join("\n") + "\n")
+  for (const rawEnabled of [false, true]) {
+    const view = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-fork-resume-copy-21240", limits, projection, rawEnabled, signal })
+    assert.deepEqual(view.target, { events: 31, usage: 13, threads: 3 })
+    let done = false, events = 0, links = 0, usage = 0
+    for (let count = 0; count < 40 && !done; count++) {
+      const page = await view.read(signal)
+      for (const frame of page.frames) {
+        assert.equal(frame.raw !== undefined, rawEnabled)
+        assert.ok(!JSON.stringify(frame).includes("ATAPE_FORK_RESUME_ORIGINAL_LATER_21240"))
+        events += frame.events.length; usage += frame.usage.length
+        links += frame.events.filter(event => event.childSourceThreadId).length
+      }
+      done = page.done
+    }
+    assert.equal(done, true); assert.equal(events, 31); assert.equal(usage, 13); assert.equal(links, 4)
+    await view.close()
+  }
+  await writeFile(continuedFork, continuedNative)
+  await assert.rejects(runtime.sourceCapture.open({ sourceId: "atape-codebuddy-fork-resume-copy-21240", limits, projection, rawEnabled: true, signal }), { reason: "format" })
+  await cp(new URL("./native-fork-resume-nested-2.124.0", import.meta.url), dir, { recursive: true })
+  const nestedContinuation = await runtime.sourceCapture.open({ sourceId: "atape-codebuddy-fork-child-nested-21240", limits, projection, rawEnabled: false, signal })
+  assert.deepEqual(nestedContinuation.target, { events: 39, usage: 17, threads: 4 })
+  await nestedContinuation.close()
   assert.equal(await readFile(file, "utf8"), native)
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort()
