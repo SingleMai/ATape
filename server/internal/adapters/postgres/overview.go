@@ -42,6 +42,13 @@ func (s *Store) Overview(ctx context.Context, principal authentication.Principal
 		defer cancel()
 		_ = tx.Rollback(cleanup)
 	}()
+	// Team sizes, time windows and model eligibility vary sharply. A generic
+	// prepared plan cannot estimate these arrays/branches from their values.
+	// Keep value-aware planning local to this read, including reused connections;
+	// commit/rollback restores the pool's policy for every other Module.
+	if _, err = tx.Exec(ctx, "SET LOCAL plan_cache_mode = force_custom_plan"); err != nil {
+		return result, err
+	}
 	next("directory")
 	queries := s.queries.WithTx(tx)
 	team, err := queries.OverviewTeam(ctx, db.OverviewTeamParams{TeamID: teamID, UserID: user})
