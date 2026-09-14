@@ -1,0 +1,23 @@
+{
+  "info": {
+    "id": "3480cfb1-f675-4b6e-80bc-b7adf55b8bee",
+    "cwd": "/fixture/grok-fork/project"
+  },
+  "session_summary": "",
+  "created_at": "2026-09-14T15:57:58.039642Z",
+  "updated_at": "2026-09-14T15:58:56.989353Z",
+  "num_messages": 15,
+  "num_chat_messages": 15,
+  "current_model_id": "grok-4.6",
+  "parent_session_id": "dc53ec99-cb4b-4f5d-9a89-72eeccd9615e",
+  "forked_at": "2026-09-14T15:57:58.039642Z",
+  "next_trace_turn": 2,
+  "chat_format_version": 1,
+  "session_kind": "fork",
+  "request_id": "eccdd001-0a5b-4c51-8261-6442e1af3153",
+  "grok_home": "/fixture/grok-home",
+  "last_active_at": "2026-09-14T15:58:56.989353Z",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off",
+  "reasoning_effort": "high"
+}

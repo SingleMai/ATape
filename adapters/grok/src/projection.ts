@@ -30,6 +30,8 @@ const occurred = (row: Row) => {
 export const project = (source: Source, request: SourceOpenRequest) => {
   const started = performance.now(), sourceId = source.origin.sourceId
   const frames: SourceCaptureFrame[] = [], prompts = new Set<string>(), tools = new Set<string>()
+  const ancestors = new Set<string>()
+  let previousOwner = "", ownTurnSeen = false
   let at = 0, events = 0, usages = 0, turns = 0, bytes = 0, partial = false, title = "Grok Build session"
   const admit = (frame: SourceCaptureFrame) => {
     if (frame.events.length > 500 || frame.usage.length > 500) fail("limit", "Grok frame exceeds its event or usage bound.")
@@ -50,10 +52,31 @@ export const project = (source: Source, request: SourceOpenRequest) => {
       fail("unsupported", "Grok turn completion is unsupported or duplicated.")
     prompts.add(prompt)
     const own = source.records.slice(at, end + 1), seen = new Set<string>(), calls = new Map<string, { done: boolean; name: string }>()
+    const firstEventId = id(object(object(own[0]!.row.params)._meta).eventId)
+    const nativeOwner = source.fork ? firstEventId.slice(0, firstEventId.lastIndexOf("-")) : sourceId
+    const firstOwnTurn = !!source.fork && !ownTurnSeen && nativeOwner === sourceId
+    if (source.fork && nativeOwner !== previousOwner) {
+      // Forks rewrite params.sessionId but retain ancestor Event IDs. Copied
+      // ownership changes only at complete turns, ending at the immediate parent.
+      if (!nativeOwner || ownTurnSeen || ancestors.has(nativeOwner) || firstOwnTurn && previousOwner !== source.fork.parentId)
+        fail("unsupported", "Grok fork contains an inconsistent copied-prefix lineage.")
+      ancestors.add(nativeOwner); previousOwner = nativeOwner
+    }
+    if (firstOwnTurn) ownTurnSeen = true
+    const checkIdentity = (row: Row, params: Row, eventId: string) => {
+      if (params.sessionId !== sourceId || !eventId.startsWith(nativeOwner + "-") || seen.has(eventId))
+        fail("unsupported", "Grok update has a foreign or duplicated identity.")
+      if (source.fork) {
+        const timestamp = Date.parse(occurred(row))
+        if (!/^\d+$/.test(eventId.slice(nativeOwner.length + 1)) ||
+          (nativeOwner === sourceId ? timestamp < source.fork.at : timestamp > source.fork.at))
+          fail("unsupported", "Grok fork record crosses its native creation boundary.")
+      }
+    }
     let user = false, assistant = false
     for (let index = 0; index < own.length; index++) {
       const { row, json } = own[index]!, params = object(row.params), update = object(params.update), meta = object(params._meta), eventId = id(meta.eventId)
-      if (params.sessionId !== sourceId || !eventId.startsWith(sourceId + "-") || seen.has(eventId)) fail("unsupported", "Grok update has a foreign or duplicated identity.")
+      checkIdentity(row, params, eventId)
       seen.add(eventId)
       if (meta.promptId != null && meta.promptId !== prompt) fail("unsupported", "Grok turn contains a foreign prompt identity.")
       const kind = update.sessionUpdate, output: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
@@ -98,11 +121,12 @@ export const project = (source: Source, request: SourceOpenRequest) => {
           // fragments cannot create separate redaction boundaries or message identities.
           while (index + 1 < own.length && object(object(own[index + 1]!.row.params).update).sessionUpdate === kind) {
             const next = own[++index]!, p = object(next.row.params), u = object(p.update), m = object(p._meta), nextId = id(m.eventId)
-            if (next.row.method !== "session/update" || kind === "user_message_chunk" && object(u._meta).promptIndex !== turns || p.sessionId !== sourceId || !nextId.startsWith(sourceId + "-") || seen.has(nextId) || m.promptId != null && m.promptId !== prompt || object(u.content).type !== "text")
+            checkIdentity(next.row, p, nextId)
+            if (next.row.method !== "session/update" || kind === "user_message_chunk" && object(u._meta).promptIndex !== turns || m.promptId != null && m.promptId !== prompt || object(u.content).type !== "text")
               fail("unsupported", "Grok message fragments have inconsistent identity or content.")
             occurred(next.row); seen.add(nextId); rawRecords.push(next.json); contentText += text(object(u.content).text)
           }
-          if (kind === "user_message_chunk" && turns === 0 && contentText && Buffer.byteLength(contentText) <= 200) title = contentText
+          if (kind === "user_message_chunk" && (source.fork ? firstOwnTurn : turns === 0) && contentText && Buffer.byteLength(contentText) <= 200) title = contentText
           emit({ sessionUpdate: kind, messageId: identity("message", sourceId, prompt, eventId), content: { type: "text", text: contentText } })
           if (kind === "agent_message_chunk") assistant = true
         } else if (kind === "tool_call" || kind === "tool_call_update") {
@@ -138,10 +162,11 @@ export const project = (source: Source, request: SourceOpenRequest) => {
     }
     turns++; at = end + 1
   }
+  if (source.fork && !ownTurnSeen) fail("format", "Grok fork has no completed fork-owned turn; retry.")
   if (source.state.turnCount !== turns || source.state.userMessageCount !== turns) fail("format", "Grok signals and completed turns are inconsistent; retry.")
   if (request.rawEnabled) admit({ recordKey: identity("metadata", sourceId), events: [], usage: [], raw: { format: "grok.metadata.v1", sourceSessionId: sourceId, summary: source.summaryJson, signals: source.signalsJson } })
   const captureStatus = partial ? "partial" as const : "healthy" as const
-  const header: SourceCaptureHeader = { profile: "grok.build.updates.linear.1", origin: source.origin,
+  const header: SourceCaptureHeader = { profile: source.fork ? "grok.build.updates.fork.1" : "grok.build.updates.linear.1", origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "grok-build" }, branch: "", status: "idle", captureStatus,
       updatedAt: occurred(source.records.at(-1)!.row), reportedEventCount: events },
     threads: [{ sourceThreadId: sourceId, label: title, summary: "", captureStatus }], target: { events, usage: usages, threads: 1 } }

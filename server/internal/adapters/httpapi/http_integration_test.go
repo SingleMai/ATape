@@ -37,10 +37,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	}
 	configureHTTPDockerHost(t)
 	// Four installed Adapter contracts run sequentially with this shared fixture.
-	// The expanded native histories can take over seven minutes before the final
-	// Search checks. Individual commands remain bounded; leave room for those final
-	// checks within Go's default ten-minute test timeout.
-	timeout := 9 * time.Minute
+	// Their successful CI run now takes about five minutes before the final Search
+	// checks. Keep those checks and runner variation inside a bounded fixture lifetime.
+	timeout := 12 * time.Minute
 	if os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE") != "" {
 		// The optional browser review owns a further bounded three-minute pause.
 		timeout += 3 * time.Minute
@@ -409,7 +408,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		assertCodeBuddyCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
 	t.Run("native Grok Collector", func(t *testing.T) {
-		assertGrokCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
+		assertGrokCollectorContract(t, handler, modules, pool)
 	})
 	t.Run("native Kimi Collector", func(t *testing.T) {
 		assertKimiCollectorContract(t, handler, modules, pool)

@@ -5,7 +5,7 @@ import { fromMarkdown } from "mdast-util-from-markdown"
 import GithubSlugger from "github-slugger"
 
 const repository = fileURLToPath(new URL("../", import.meta.url))
-const patterns = ["AGENTS.md", "README.md", "docs/**/*.md", "apps/*/README.md", "adapters/*/README.md", "packages/*/README.md"]
+const patterns = ["AGENTS.md", "README.md", "docs/**/*.md", "apps/*/README.md", "adapters/*/README.md", "packages/*/README.md", "packages/*/docs/**/*.md"]
 const walk = (node, visit) => { visit(node); for (const child of node.children ?? []) walk(child, visit) }
 const textOf = node => node.type === "html" ? "" : node.value ?? node.alt ?? (node.children ?? []).map(textOf).join("")
 

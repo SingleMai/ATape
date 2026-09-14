@@ -42,6 +42,20 @@ server-side filtering, and latency improvements for very large project directori
 belong to the next Search API increment. Project pinning/recent-visit persistence
 is also outside this increment; the current directory uses stable name ordering.
 
+## Agent identity
+
+Project conversation rows, global Search results and Session reader headers use
+the shared `@atape/ui` `AgentIdentity` component with a 24px color icon and name.
+Child readers reuse the same header. Names and assets resolve through one
+`resolveAgentIdentity` mapping; captured aliases such as `codebuddy-code` display
+as WorkBuddy without changing stored names or message authors. OpenCode, unknown
+agents and failed image loads keep a readable text fallback. Status markers,
+capturing-user avatars, branch metadata and conversation navigation remain
+independent of agent identity.
+
+See the [agent-logo guide](../packages/ui/docs/agent-logos.md) for aliases,
+rendering behavior and how to add another asset.
+
 ## Conversation Markdown
 
 Message headings use a local reading scale (1–1.25 times the message body size)

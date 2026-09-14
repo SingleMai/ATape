@@ -20,7 +20,10 @@ async function run() {
   const packages = args.includes("--all")
     ? ["./internal/adapters/postgres", "./internal/adapters/httpapi", "./internal/authentication", "./internal/authcutover", "./internal/team"]
     : ["./internal/adapters/httpapi", "-run", "^TestHTTPAuthenticationAndAuthorizationContract$/^native_OpenCode_Collector$"]
-  const child = spawn("go", ["test", ...packages, "-count=1", "-json"], {
+  // The combined installed-provider corpus and optional three-minute Web review
+  // need a process deadline longer than the parent HTTP contract. Individual
+  // source, command and recovery deadlines still bound each operation.
+  const child = spawn("go", ["test", ...packages, "-count=1", "-json", "-timeout=20m"], {
     cwd: fileURLToPath(new URL("../server", import.meta.url)),
     env: { ...process.env, ATAPE_INTEGRATION_TESTS: "1", TESTCONTAINERS_RYUK_DISABLED: "true" },
     stdio: ["ignore", "pipe", "inherit"]

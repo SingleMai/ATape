@@ -2,7 +2,9 @@
 
 ATape Adapter for Grok Build 1.0.3 local completed root conversations on macOS
 arm64: text, successful/failed file reads, foreground terminal commands, grep search, search_replace edits, ordinary
-resume and per-turn/model usage. Other tools, child Sessions, fork, rewind,
+resume, headless forks/nested forks and their continuation, and per-turn/model usage.
+Forks retain copied history under independent identities; copied usage describes
+that history, not additional model spend. Other tools, child Sessions, rewind,
 compaction, interrupted turns and non-text messages remain unsupported in this
 bounded profile. See the [Grok guide](../../docs/adapters/grok.md) for evidence and
 limits.
