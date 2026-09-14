@@ -38,6 +38,7 @@ test("keeps main reading position, multiple child tabs, nested navigation and ke
   await alpha.click()
   const panel = page.getByRole("tabpanel")
   await expect(panel.getByRole("heading", { name: "Alpha", exact: true })).toBeVisible()
+  await expect(panel.locator(".reader-user .atape-agent-identity img")).toHaveAttribute("src", "/agents/codex.svg")
   await expect(page).toHaveURL(path)
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(identity)
   await expect.poll(async () => Math.abs(await alpha.evaluate(el => el.getBoundingClientRect().top) - before)).toBeLessThanOrEqual(1)

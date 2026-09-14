@@ -21,6 +21,7 @@ Read the guides for the task at hand rather than loading every document.
 | Change the reader, navigation or Search | [Workspace and Search](workspace-search.md) |
 | Change Team usage or CLI device reporting | [Team Overview](team-overview.md), [CLI synchronization dashboard](cli-devices.md) |
 | Change shared visual primitives or localization | [UI package](../packages/ui/README.md), [localization decision](architecture/adr/0072-localization-boundary.md) |
+| Add or refine agent logos | [Agent-logo guide](../packages/ui/docs/agent-logos.md) |
 | Change HTTP behavior | [Authentication](api/authentication-http.md), [Canonical ingestion](api/canonical-ingestion.md), [Conversation reads](api/conversation.md), [Raw archive](api/raw-archive.md), [Workspace](api/workspace.md), [Project Search](api/project-search.md), [OpenAPI](api/openapi-v1.yaml) |
 | Operate an instance | [Self-hosting](operations/self-hosting.md), [backup and restore](operations/backup-and-restore.md), [OpenCode rollout](operations/opencode-rollout.md) |
 | Operate the dogfood environment | [AWS dogfood](operations/aws-dogfood.md), including automatic Web deployment |

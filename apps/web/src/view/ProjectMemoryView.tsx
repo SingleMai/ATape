@@ -1,5 +1,5 @@
 import type { ProjectMemory, SessionSummary } from "@atape/domain"
-import { Badge, Button } from "@atape/ui"
+import { AgentIdentity, Badge, Button } from "@atape/ui"
 import { useState } from "react"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
@@ -45,8 +45,8 @@ const TrailItem = ({
     <span className="conversation-status-dot" data-active={session.status === "active"} aria-hidden="true" />
     <span className="trail-copy">
       <strong>{session.title}</strong>
-      <small>
-        {session.actor.name} · {session.actor.harness}
+      <small className="agent-metadata">
+        {session.actor.name} · <AgentIdentity provider={session.actor.harness} />
         {session.branch ? ` · ${session.branch}` : ""}
       </small>
     </span>

@@ -1,2 +1,6 @@
 export { Avatar, Badge, BrandMark, Button, Eyebrow } from "./components"
 export type { AvatarProps, BadgeProps, ButtonProps } from "./components"
+export { AgentIdentity } from "./agentIdentityView"
+export type { AgentIdentityProps } from "./agentIdentityView"
+export { resolveAgentIdentity } from "./agentIdentity"
+export type { AgentIdentityInfo } from "./agentIdentity"

@@ -1,6 +1,6 @@
 import type { OverviewDetail, OverviewSelection, OverviewSession, OverviewTokens, TeamOverview } from "@atape/domain"
 import { overviewMemberDetails } from "@atape/domain"
-import { Button } from "@atape/ui"
+import { AgentIdentity, Button, resolveAgentIdentity } from "@atape/ui"
 import { useState } from "react"
 import type { useOverviewPresenter } from "../presenters/overviewPresenter"
 import { formatDate, formatNumber, t, type WebMessageKey } from "../i18n"
@@ -9,9 +9,11 @@ type Props = { readonly presenter: ReturnType<typeof useOverviewPresenter>; read
   readonly onChange: (patch: Partial<OverviewSelection>) => void; readonly onOpenSession: (session: OverviewSession) => void }
 const number = (value: number | null) => value === null ? "—" : formatNumber(value, { notation: value >= 10000 ? "compact" : "standard", maximumFractionDigits: 1 })
 const exact = (value: number | null) => value === null ? t("overview.notProvided", "Not provided") : formatNumber(value)
-const agentClass = (agent: string) => /claude/i.test(agent) ? "claude" : /codex/i.test(agent) ? "codex" : "other"
+const agentClass = (agent: string) => {
+  const { id } = resolveAgentIdentity(agent)
+  return id === "claude" || id === "codex" ? id : "other"
+}
 const Arrow = () => <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10" /></svg>
-const Tape = () => <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="5" /><circle cx="9" cy="11" r="2" /><circle cx="15" cy="11" r="2" /><path d="M8 16h8" /></svg>
 
 const tokenLabels: ReadonlyArray<readonly [WebMessageKey, keyof OverviewTokens]> = [
   ["overview.tokens.input", "input"], ["overview.tokens.output", "output"],
@@ -127,8 +129,8 @@ function UsageChart({ data, metric, onSelect }: { readonly data: TeamOverview; r
 }
 function SessionGrid({ rows, onOpen, showUsage = false }: { readonly rows: ReadonlyArray<OverviewSession>; readonly onOpen: (row: OverviewSession) => void; readonly showUsage?: boolean }) {
   if (rows.length === 0) return <p className="overview-empty">{t("overview.noConversations", "No conversations match this selection.")}</p>
-  return <div className="overview-session-grid">{rows.map(row => <article className="overview-session" key={row.id}><header><span className={`overview-agent-mark ${agentClass(row.agent)}`} title={row.agent}><Tape /></span><button type="button" onClick={() => onOpen(row)}>{row.title || t("overview.untitledConversation", "Untitled conversation")}</button></header>
-    <p className="overview-session-meta">{row.memberName} · {row.projectName} · {row.agent} <time dateTime={row.updatedAt}>{formatDate(new Date(row.updatedAt), { month: "short", day: "numeric" })}</time></p>
+  return <div className="overview-session-grid">{rows.map(row => <article className="overview-session" key={row.id}><header><AgentIdentity provider={row.agent} size={32} iconOnly /><button type="button" onClick={() => onOpen(row)}>{row.title || t("overview.untitledConversation", "Untitled conversation")}</button></header>
+    <p className="overview-session-meta">{row.memberName} · {row.projectName} · {resolveAgentIdentity(row.agent).label} <time dateTime={row.updatedAt}>{formatDate(new Date(row.updatedAt), { month: "short", day: "numeric" })}</time></p>
     <p className="overview-preview"><span aria-label={t("overview.input", "Input")}>→</span><span>{row.input || t("overview.noInputPreview", "No user input preview")}</span></p><p className="overview-preview overview-output"><span aria-label={t("overview.output", "Output")}>←</span><span>{row.output || t("overview.awaitingReply", "Awaiting a reply")}</span></p>
     {showUsage && <TokenBreakdown tokens={row.tokens} />}
   </article>)}</div>
