@@ -40,7 +40,7 @@ completed foreground Agent family described below, including root compaction.
 background launches described below; `codebuddy.cli.jsonl.family.background.turns.1`
 adds proven serial continuation and framework notifications. `codebuddy.cli.jsonl.emergency.1`
 and `codebuddy.cli.jsonl.family.emergency.1` cover the completed emergency compaction
-sequence below. `codebuddy.cli.jsonl.family.fork.1` adds copied foreground families and new foreground children launched from a fork, as described below. All are tested with native
+sequence below. `codebuddy.cli.jsonl.family.fork.1` adds copied foreground families, new children and validated foreground continuation in forks, as described below. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -133,9 +133,9 @@ records are rejected without replacing previously published history.
 
 A CLI fork copies completed Agent receipts in its root history, while child files
 remain under the original native parent Session directory. The Adapter follows
-only those copied receipts. For each child it finds the final copied `lastId`,
+the receipts visible in the fork. For each copied child it finds the latest completed `lastId`,
 includes the completed assistant at or following that boundary, and
-validates the selected prefix against all copied prompts and `afterId` receipts.
+validates the selected prefix against all visible prompts and `afterId` receipts.
 This also retains the final answer when native `lastId` names its preceding
 reasoning. Nested child receipts are read from that selected prefix, so each
 level has its own boundary.
@@ -157,7 +157,7 @@ single-child fork has two Threads, 12 Events and five usage records (39,864 inpu
 and 13 usage records (98,806 input, 577 output, 56,896 cache). These are historical
 copied counters, not newly incurred spend. Cache is already part of input.
 
-Child continuation after the fork, background children in forks, fork subagents
+Unaccounted shared-child turns, background children in forks, fork subagents
 and emergency compaction in forks remain unsupported.
 The Adapter still reads and stamp-checks bounded complete physical files before
 selecting prefixes; growth beyond the shared file/record/byte limits is diagnosed,
@@ -186,9 +186,41 @@ fork command, a new parent/leaf created after reopening the fork, later original
 seed-child growth, and ordinary fork resume. The final view has five Threads,
 31 Events and 12 usage records: 87,179 input, 659 output and 53,248 cache tokens.
 These totals include copied historical responses; cache is part of input.
-Successful `Agent resume` after the fork remains unsupported, whether the target
-was copied or newly created. Its shared storage and continuation boundaries need
-a separate native sample before support can expand.
+Completed foreground `Agent resume` is supported under the continuation constraints below.
+
+## Foreground child continuation in forks
+
+A fork can resume a copied child or a child it created, retaining the same child
+Thread. All delegated prompts, `afterId` links, completed turns and native child
+Session identity must agree. Copied parents can also resume their copied leaves;
+each level is validated against its own receipts. Usage remains attached to the
+response's original Thread and is emitted once.
+
+Native CLI resume can split a fork-created child's history across two files.
+The first invocation writes under the fork ID; a later invocation restores the
+original root ID and appends only its new turn under that directory. The Adapter
+uses the ordered storage parents established by the Agent calls, reads each exact
+path once, and validates the joined records as one history. The first continuation
+row must link through the receipt's `afterId` to the earlier completed turn.
+No directory scan, invented root or replacement Thread repairs a missing fragment.
+All physical parts count toward the shared limits and receive final stamp checks;
+all remain necessary until the complete view is frozen. Revisiting an earlier
+storage parent after switching away remains unsupported.
+
+A copied child's selected prefix extends only through the latest receipt in the
+fork. Later original-child growth stays outside its Events, usage, Raw and Search.
+If the fork then resumes past an intervening original-owned turn that has no
+matching delegation in its history, the complete target is rejected and the old
+selected head is retained. The Adapter does not silently import that extra turn
+or stitch across its missing boundary. This native divergence is a documented
+limit; reading the transcript does not mutate or repair the source files.
+
+The direct continuation corpus has three Threads, 31 Events and 13 usage records
+(101,862 input, 629 output, 66,944 cache), including both storage fragments. The
+copied parent/leaf continuation corpus has four Threads, 39 Events and 17 usage
+records (129,884 input, 1,052 output, 66,112 cache). These include copied historical
+usage; cache is part of input. Background continuation in forks and emergency
+compaction in forks remain unsupported.
 
 ## Completed foreground Agent families
 
@@ -518,6 +550,19 @@ typechecks, isolated tarball installation, documentation/architecture checks and
 the installed HTTP/PostgreSQL contract passed locally. This is not staging or
 publication evidence.
 
+The foreground-fork-continuation contract covers a copied child and a fork-created
+child whose history spans two physical paths: three Threads, 31 Events and
+13 usage records with exact counters and stable prior Event/Thread identities.
+Missing continuation bytes and a native intervening original-owned turn preserve
+the old target. Raw off/on and independent Raw/activation recovery use frozen
+bytes after all five selected sources are deleted. Search opens the recovered
+second child turn, while later original-owned content stays absent. Browser
+inspection on 2026-09-14 verified five root turns, both two-turn child histories,
+their thoughts/responses and the recovered marker. The nested native runtime and
+installed-bundle checks additionally verify copied parent/leaf continuation with
+39 Events and 17 usage records. Runtime tests total 148; Adapter/CLI typechecks,
+isolated tarball and documentation/architecture checks passed locally.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -530,7 +575,7 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after new foreground fork-child recovery (the enclosing test
+for up to three minutes after foreground fork-child continuation recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name

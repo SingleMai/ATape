@@ -1669,9 +1669,166 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	expireReservations()
 	read(recoveredForkNew.SessionID, 16)
 	read(recoveredForkNew.SessionID, 3, forkNewLeafID)
+	forkContinuationCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy fork continuation"})
+	forkContinuationCreate.Header.Set("Authorization", "Bearer "+credential)
+	forkContinuationCreate.Header.Set("Idempotency-Key", "codebuddy-fork-continuation-project-21240")
+	forkContinuationCreated := httptest.NewRecorder()
+	h.ServeHTTP(forkContinuationCreated, forkContinuationCreate)
+	if forkContinuationCreated.Code != http.StatusCreated {
+		t.Fatalf("create fork continuation Project: %d %s", forkContinuationCreated.Code, forkContinuationCreated.Body.String())
+	}
+	var forkContinuationProject projectDTO
+	decodeResponse(t, forkContinuationCreated, &forkContinuationProject)
+	projectID = forkContinuationProject.ID
+	forkContinuationInitial := run("fork-continuation-initial")
+	_, continuedRoot := read(forkContinuationInitial.SessionID, 9)
+	continuedLinks := links(continuedRoot)
+	if len(continuedLinks) != 2 || continuedLinks[0].ID == continuedLinks[1].ID {
+		t.Fatal("CodeBuddy continuation seed lost child separation")
+	}
+	continuedCopiedID, continuedNewID := continuedLinks[0].ID, continuedLinks[1].ID
+	_, copiedBefore := read(forkContinuationInitial.SessionID, 3, continuedCopiedID)
+	_, newBefore := read(forkContinuationInitial.SessionID, 3, continuedNewID)
+	forkContinuationCopied := run("fork-continuation-copied")
+	_, copiedAfter := read(forkContinuationCopied.SessionID, 6, continuedCopiedID)
+	beforePrefix, _ = json.Marshal(copiedBefore)
+	afterPrefix, _ = json.Marshal(copiedAfter[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(copiedAfter) != 2 || copiedAfter[5].Text != "ATAPE_FORK_RESUME_COPIED_21240" {
+		t.Fatal("CodeBuddy copied child continuation changed prior content")
+	}
+	if pending := run("fork-continuation-pending"); pending.Head != forkContinuationCopied.Head || !bytes.Equal(pending.Records, forkContinuationCopied.Records) {
+		t.Fatal("CodeBuddy incomplete continuation fragment replaced the fork")
+	}
+	forkContinuationComplete := run("fork-continuation-complete")
+	_, continuedCompleteRoot := read(forkContinuationComplete.SessionID, 17)
+	continuedLinks = links(continuedCompleteRoot)
+	if len(continuedLinks) != 4 || continuedLinks[0].ID != continuedLinks[2].ID || continuedLinks[1].ID != continuedLinks[3].ID {
+		t.Fatal("CodeBuddy resumed children acquired new Thread identities")
+	}
+	_, newAfter := read(forkContinuationComplete.SessionID, 6, continuedNewID)
+	beforePrefix, _ = json.Marshal(newBefore)
+	afterPrefix, _ = json.Marshal(newAfter[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(newAfter) != 2 || newAfter[5].Text != "ATAPE_FORK_RESUME_NEW_21240" {
+		t.Fatal("CodeBuddy continuation fragments did not join into one child history")
+	}
+	if growth := run("fork-continuation-growth"); growth.Head != forkContinuationComplete.Head || growth.Observations != 0 || !bytes.Equal(growth.Records, forkContinuationComplete.Records) {
+		t.Fatal("CodeBuddy original shared-child growth changed the continued fork")
+	}
+	forkContinuationResumed := run("fork-continuation-resume")
+	_, continuedResumedRoot := read(forkContinuationResumed.SessionID, 19)
+	beforePrefix, _ = json.Marshal(continuedCompleteRoot)
+	afterPrefix, _ = json.Marshal(continuedResumedRoot[:17])
+	if forkContinuationResumed.SessionID != forkContinuationInitial.SessionID || !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(continuedResumedRoot) != 5 {
+		t.Fatal("CodeBuddy ordinary fork resume changed continuation history")
+	}
+	if invalid := run("fork-continuation-invalid"); invalid.Head != forkContinuationResumed.Head || !bytes.Equal(invalid.Records, forkContinuationResumed.Records) {
+		t.Fatal("CodeBuddy shared history gap replaced the previous fork")
+	}
+	if fixed := run("fork-continuation-repair"); fixed.Head != forkContinuationResumed.Head || fixed.Observations != 0 {
+		t.Fatal("CodeBuddy restored continuation replayed unchanged data")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != forkContinuationResumed.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 13 || inputTokens != 101862 || outputTokens != 629 || cachedTokens != 66944 || threadUsage["root"] != 9 || threadUsage[continuedCopiedID] != 2 || threadUsage[continuedNewID] != 2 {
+		t.Fatalf("CodeBuddy new fork usage ownership: %d %d %d %d %v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	if len(search("ATAPE_FORK_RESUME_ORIGINAL_LATER_21240").Results) != 0 {
+		t.Fatal("CodeBuddy fork Search exposed later original descendants")
+	}
+	setRaw(false)
+	forkContinuationOff := run("fork-continuation-edit")
+	if forkContinuationOff.Head == forkContinuationResumed.Head || len(search("CodeBuddyForkContinuationPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy new fork child Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	forkContinuationOn := run("fork-continuation-reenable")
+	if forkContinuationOn.Head != forkContinuationOff.Head || !bytes.Equal(forkContinuationOn.Records, forkContinuationOff.Records) {
+		t.Fatal("CodeBuddy new fork child Raw-on changed Canonical provenance")
+	}
+	if lost := run("fork-continuation-raw-only"); lost.Pending == 0 || lost.Head != forkContinuationOn.Head {
+		t.Fatal("CodeBuddy new fork child Raw response loss lost recovery")
+	}
+	forkContinuationRawRecovered := run("fork-continuation-raw-recover")
+	if forkContinuationRawRecovered.Pending != 0 || forkContinuationRawRecovered.Head != forkContinuationOn.Head || !bytes.Equal(forkContinuationRawRecovered.Records, forkContinuationOn.Records) {
+		t.Fatal("CodeBuddy new fork child Raw recovery failed after deleting all five sources")
+	}
+	var forkContinuationArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+forkContinuationResumed.SessionID+"/raw", ""), &forkContinuationArchive)
+	var forkContinuationRaw strings.Builder
+	for _, archived := range forkContinuationArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy new fork family Raw exceeded its object bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		forkContinuationRaw.Write(decoded)
+	}
+	for _, native := range []string{"CodeBuddyForkContinuationRawOnlyNeedle", "forkedFrom", "agent-74d4e249", "agent-5902497f", "0e38447f-0ac2-4bd1-99ab-c2625164cc36", "b801e908-0a4a-4d9f-b4fb-e5ab75e298ee"} {
+		if !strings.Contains(forkContinuationRaw.String(), native) {
+			t.Fatalf("CodeBuddy new fork family Raw lost %s", native)
+		}
+	}
+	for _, outside := range []string{"ATAPE_FORK_RESUME_ORIGINAL_LATER_21240"} {
+		if strings.Contains(forkContinuationRaw.String(), outside) {
+			t.Fatal("CodeBuddy new fork Raw included a later original turn")
+		}
+	}
+	if len(search("CodeBuddyForkContinuationRawOnlyNeedle").Results) != 0 {
+		t.Fatal("CodeBuddy new fork Raw entered Search")
+	}
+	if lost := run("fork-continuation-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy fork family activation loss lost recovery")
+	}
+	recoveredForkContinuation := run("fork-continuation-recover")
+	if recoveredForkContinuation.Pending != 0 {
+		t.Fatal("CodeBuddy fork family recovery left pending work")
+	}
+	read(recoveredForkContinuation.SessionID, 19)
+	read(recoveredForkContinuation.SessionID, 6, continuedCopiedID)
+	_, forkContinuationLeafAfter := read(recoveredForkContinuation.SessionID, 6, continuedNewID)
+	if forkContinuationLeafAfter[5].Text != "CodeBuddyForkContinuationFrozenNeedle" {
+		t.Fatal("CodeBuddy fork family recovery lost frozen leaf bytes")
+	}
+	forkContinuationHits := search("CodeBuddyForkContinuationFrozenNeedle")
+	if len(forkContinuationHits.Results) != 1 || forkContinuationHits.Results[0].ThreadID != continuedNewID {
+		t.Fatal("CodeBuddy recovered fork leaf missing from Search")
+	}
+	var forkContinuationAnchored conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+recoveredForkContinuation.SessionID+"?thread="+url.QueryEscape(continuedNewID)+"&at="+url.QueryEscape(forkContinuationHits.Results[0].EventID)+"&limit=2", ""), &forkContinuationAnchored)
+	if len(forkContinuationAnchored.ThreadPath) != 2 {
+		t.Fatal("CodeBuddy fork leaf Search lost the two-level path")
+	}
+	expireReservations()
+	read(recoveredForkContinuation.SessionID, 19)
+	read(recoveredForkContinuation.SessionID, 6, continuedNewID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkNew.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkContinuation.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

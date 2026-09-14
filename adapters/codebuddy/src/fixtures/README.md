@@ -392,6 +392,57 @@ assistant remains visible. No child was resumed from the fork in this corpus.
 
 Runtime negative cases alter only controlled fixtures to test missing/wrong paths,
 pending responses, prompt/receipt mismatch, extra unaccounted turns, unsafe path
-segments and unsupported child continuation. Installed acceptance changes only
+segments and unproven child continuation. Installed acceptance changes only
 CWDs and deliberate fault/Raw-policy markers, deletes the original root JSONL,
 and exercises frozen recovery after deleting all six selected source files.
+
+## Foreground continuation inside forks
+
+`native-fork-resume-2.124.0/` contains six controlled native files generated on
+2026-09-14 with CLI 2.124.0/macOS arm64. It uses the same hy3, low effort,
+Agent-only and compaction-disabled settings as the new-fork corpus, with the
+marker-only `atape-fork-child`. Only the controlled physical CWD is normalized
+to `/fixture/codebuddy-fork-resume-project`.
+
+| Native stage | Root / child records |
+| --- | --- |
+| Original launch | original root 6; copied seed `agent-74d4e249` 3 |
+| Fork and create another child | fork 11; `agent-5902497f` 3 under fork ID |
+| Resume copied seed from fork | fork 15; copied seed 6 |
+| Resume fork-created child | fork 19; original fragment remains 3, new fragment 3 under original root ID |
+| Ordinary fork resume | fork 21; children unchanged |
+| Resume shared seed from original | original root 11; shared seed 8; fork unchanged |
+| Resume shared seed again from fork | fork 25; shared seed 10; unsupported history gap |
+
+Root/fork IDs are `atape-codebuddy-fork-resume-root-21240` and
+`atape-codebuddy-fork-resume-copy-21240`. Both fragments of `agent-5902497f`
+retain native UUID `37b348eb-d1e4-40ed-9c8d-e6fd2495bc9d`. The second fragment's
+first user links to `b9099018d41d4c78b75a2f3cc3dba375`, the assistant ending the
+first fragment and the parent receipt's `afterId`. Installed `AgentTask` restores
+an existing child's metadata using the resumed main Session ID, while native
+append persistence writes the new rows in that parent's directory.
+
+The first 21 fork rows select six seed rows and both three-row fragments:
+31 Events, 13 usage, three Threads; 101,862 input, 629 output, 66,944 cache.
+Root/copied/new child usage counts are 9/2/2. The later original seed turn stays
+outside this view. The complete 25-row fork then refers past that intervening
+turn, which lacks a parent call in the fork: it is deliberately an unsupported
+native sample, not a valid fixture with synthetic corruption.
+
+`native-fork-resume-nested-2.124.0/` contains five files from a second controlled
+probe. It restores the earlier `native-fork-family` probe's archived pre-growth
+`nested-fork` state into a fresh controlled Project, then uses the real CLI to
+resume `agent-d40e1747` from the fork and `agent-375d1c88` from that parent.
+The new prompt requests literal `ATAPE_FORK_RESUME_NESTED_*_21240` markers and no
+other tools. Initial copied CWDs retain `/fixture/codebuddy-fork-family-project`;
+the new CWD is `/fixture/codebuddy-fork-resume-nested-project`. The result has
+24 root rows, five older direct-child rows, nine parent rows and five leaf rows:
+39 Events, 17 usage, four Threads; 129,884 input, 1,052 output, 66,112 cache.
+Both copied parent and leaf now contain two delegated turns.
+
+The installed contract uses the direct sample through real CLI/HTTP/PostgreSQL,
+with original root JSONL absent, separate configured Project CWDs, pending
+fragments, native divergence, Raw policy changes and response-loss injection.
+All five selected source files are deleted before independent Raw and activation
+recovery. Negative runtime cases additionally cover missing fragments, mismatched
+prompts/UUIDs/afterId, sidecars, storage-parent revisits and aggregate file limits.
