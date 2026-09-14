@@ -174,3 +174,43 @@ multiple children and same-child resume. It does not establish background,
 nested, forked, interrupted, failed or compacted/undone child behavior. Synthetic
 mutations test incomplete files, unsafe paths, conflicting metadata, unpaired
 receipts, wrong prompts/results and aggregate resource limits.
+
+
+## Native nested foreground subagents
+
+`nested-subagents-0.42.0/` was recorded on 2026-09-14 with the same released CLI,
+pinned commit, macOS arm64, isolated home/Project/skills and local SSE provider.
+Only those three paths were substituted. Native IDs, timestamps, profile metadata,
+tool schemas, prompts, receipts and Wire order remain unchanged. No cloud model,
+account credentials or personal history were used.
+
+A user-level `nested-middle.md` declares `tools: [Agent]` and
+`subagents: [coder]`. The first headless prompt is `KimiNestedRootTask: delegate to
+nested-middle.` The native main Agent dispatches `agent-0` with profile
+`nested-middle`, which dispatches `agent-1` with profile `coder`. The leaf executes
+a real `Read` of `sample.txt` containing `KimiNestedFileMarker`, then each caller
+receives its child's native completed result and returns its own answer.
+`--continue -p 'KimiNestedRootResume: resume your middle agent and its leaf.'`
+resumes both existing agents through their immediate parents.
+
+| Native checkpoint | Main / middle / leaf Wire records | Events | Usage | Input / output |
+| --- | --- | ---: | ---: | ---: |
+| Three-level foreground delegation | 26 / 25 / 25 | 12 | 6 | 621 / 81 |
+| Resume both levels after CLI restart | 45 / 44 / 37 | 22 | 11 | 1166 / 176 |
+
+Both child metadata entries have legacy `parentAgentId: main`; the leaf's
+`labels.parentAgentId` is `agent-0`. Upstream `agentLifecycleService.ts` writes the
+legacy field as main, and `subagentMetadata.ts` resolves labels first. This is
+native nesting metadata, not an inconsistency repaired by the fixture. Initial
+acceptance uses the exact Wire prefixes above with the final family metadata;
+only its update timestamp differs from the first native snapshot.
+
+Root and middle each have eight Events and four responses (425 input, 65 output,
+80 cached input); leaf has six Events and three responses (316 input, 46 output,
+60 cached input). Cache is included in input. All responses use the controlled
+model `atape-nested-model`. Leaf reply `KimiNestedLeafResumedReply9` appears in the
+leaf and in its parent's receipt, but each model response contributes usage once.
+Tests mutate copies for cycles, missing/misassigned parents, cross-parent resume,
+incomplete leaf files, unsupported background/swarm/undo and UUID reuse across
+parents. This does not establish background, failed/interrupted or fork/context
+operations combined with nested children.

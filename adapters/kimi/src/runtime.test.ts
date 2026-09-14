@@ -15,12 +15,12 @@ const sourceId = "session_12c751bb-0285-49a2-9379-aacbf56d1bd4"
 const serialize = (rows: unknown[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const fixture = async (name = "native") => {
   const home = await mkdtemp(join(tmpdir(), "atape-kimi-")); roots.push(home)
-  const native = await readFile(new URL(name === "subagents" ? "./fixtures/subagents-0.42.0/agents/main/wire.jsonl" : `./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
-  const metadata = await readFile(new URL(name === "subagents" ? "./fixtures/subagents-0.42.0/state.json" : `./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
+  const native = await readFile(new URL(["subagents", "nested-subagents"].includes(name) ? `./fixtures/${name}-0.42.0/agents/main/wire.jsonl` : `./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
+  const metadata = await readFile(new URL(["subagents", "nested-subagents"].includes(name) ? `./fixtures/${name}-0.42.0/state.json` : `./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
   const sourceId = JSON.parse(metadata).id as string
   const directory = join(home, "sessions", "opaque", sourceId), file = join(directory, "agents", "main", "wire.jsonl"), state = join(directory, "state.json")
   await mkdir(join(directory, "agents", "main"), { recursive: true })
-  if (name === "subagents") await cp(new URL("./fixtures/subagents-0.42.0/", import.meta.url), directory, { recursive: true })
+  if (["subagents", "nested-subagents"].includes(name)) await cp(new URL(`./fixtures/${name}-0.42.0/`, import.meta.url), directory, { recursive: true })
   await writeFile(file, native); await writeFile(state, metadata)
   vi.stubEnv("ATAPE_KIMI_HOME", home)
   const lifetime = new AbortController()
@@ -75,6 +75,62 @@ describe("Kimi source-capture runtime Interface", () => {
     const frozen = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
     await rm(f.directory, { recursive: true })
     expect(await read(frozen)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+  })
+  it("captures native nested delegation and resumes each layer with stable identity, order and usage", async () => {
+    const f = await fixture("nested-subagents"), originals = new Map<string, string>()
+    for (const agent of ["main", "agent-0", "agent-1"]) originals.set(agent, await readFile(join(f.directory, "agents", agent, "wire.jsonl"), "utf8"))
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [lengths, events, usage, input] of [[[26, 25, 25], 12, 6, 621], [[45, 44, 37], 22, 11, 1166]] as const) {
+      for (const [index, agent] of ["main", "agent-0", "agent-1"].entries()) await writeFile(join(f.directory, "agents", agent, "wire.jsonl"), originals.get(agent)!.split("\n").slice(0, lengths[index]).join("\n") + "\n")
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+      expect(view.target).toEqual({ threads: 3, events, usage })
+      expect(view.threads.map(t => [t.sourceThreadId, t.parentSourceThreadId])).toEqual([[f.request.sourceId, undefined], ["agent-0", f.request.sourceId], ["agent-1", "agent-0"]])
+      const values = frames.flatMap(f => f.events), counts = frames.flatMap(f => f.usage)
+      expect(values.slice(0, previous.flatMap(f => f.events).length)).toEqual(previous.flatMap(f => f.events))
+      expect(counts.slice(0, previous.flatMap(f => f.usage).length)).toEqual(previous.flatMap(f => f.usage))
+      expect(values.filter(e => e.childSourceThreadId).map(e => [e.sourceThreadId, e.childSourceThreadId])).toEqual(Array.from({ length: usage === 6 ? 1 : 2 }, () => [[f.request.sourceId, "agent-0"], ["agent-0", "agent-1"]]).flat())
+      expect(values.map(e => e.sourceOrder)).toEqual(Array.from({ length: events }, (_, i) => i))
+      expect(new Set(values.map(e => e.sourceEventId)).size).toBe(events)
+      expect(counts.reduce((n, u) => n + u.inputTokens!, 0)).toBe(input)
+      expect(counts.filter(u => u.sourceThreadId === "agent-1").reduce((n, u) => n + u.inputTokens!, 0)).toBe(usage === 6 ? 207 : 316)
+      for (const [index, agent] of ["main", "agent-0", "agent-1"].entries()) {
+        const raw = frames.filter(f => (f.raw as { format?: string; sourceAgentId?: string }).format === "kimi.wire.v1.5" && ((f.raw as { sourceAgentId?: string }).sourceAgentId ?? "main") === agent)
+        expect(raw.map(f => (f.raw as { json: string }).json).join("\n") + "\n").toBe(originals.get(agent)!.split("\n").slice(0, lengths[index]).join("\n") + "\n")
+      }
+      previous = frames; await view.close()
+    }
+    const frozen = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    expect(await read(frozen)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+  })
+  it.each(["cycle", "self-parent", "absent-parent", "wrong-owner", "cross-parent-resume", "incomplete-leaf", "background-leaf", "swarm-leaf", "leaf-undo"])("rejects nested %s before exposing a target", async kind => {
+    const f = await fixture("nested-subagents"), meta = JSON.parse(f.metadata), middleFile = join(f.directory, "agents", "agent-0", "wire.jsonl"), leafFile = join(f.directory, "agents", "agent-1", "wire.jsonl")
+    const rows = (await readFile(middleFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
+    if (kind === "cycle") meta.agents["agent-0"].labels.parentAgentId = "agent-1"
+    if (kind === "self-parent") meta.agents["agent-1"].labels.parentAgentId = "agent-1"
+    if (kind === "absent-parent") meta.agents["agent-1"].labels.parentAgentId = "agent-missing"
+    if (kind === "wrong-owner") meta.agents["agent-1"].labels.parentAgentId = "main"
+    const calls = rows.filter(row => row.event?.type === "tool.call")
+    if (kind === "cross-parent-resume") calls[1].event.args.resume = "agent-0"
+    if (kind === "background-leaf") calls[0].event.args.run_in_background = true
+    if (kind === "swarm-leaf") calls[0].event.name = "AgentSwarm"
+    await writeFile(f.state, JSON.stringify(meta)); await writeFile(middleFile, serialize(rows))
+    if (kind === "incomplete-leaf") await rm(leafFile)
+    if (kind === "leaf-undo") await appendFile(leafFile, serialize([{ type: "context.undo", agentId: "agent-1", count: 1, time: 1789401500000 }]))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toBeDefined()
+  })
+  it("scopes delegation call UUIDs to the parent Thread", async () => {
+    const f = await fixture("nested-subagents"), middleFile = join(f.directory, "agents", "agent-0", "wire.jsonl")
+    const before = await f.runtime.sourceCapture.open(f.request), original = await read(before); await before.close()
+    const rows = (await readFile(middleFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
+    const rootId = f.rows.find(row => row.event?.type === "tool.call").event.uuid, childId = rows.find(row => row.event?.type === "tool.call").event.uuid
+    await writeFile(middleFile, serialize(rows).replaceAll(childId, rootId))
+    const after = await f.runtime.sourceCapture.open(f.request), frames = await read(after)
+    expect(after.target).toEqual(before.target)
+    expect(frames.flatMap(f => f.events).map(e => [e.sourceThreadId, e.childSourceThreadId, e.update])).toEqual(original.flatMap(f => f.events).map(e => [e.sourceThreadId, e.childSourceThreadId, e.update]))
+    const events = frames.flatMap(f => f.events)
+    expect(new Set(events.map(e => e.sourceEventId)).size).toBe(events.length)
   })
   it("scopes native child identities by Session and ignores homedir locators", async () => {
     const f = await fixture("subagents"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
