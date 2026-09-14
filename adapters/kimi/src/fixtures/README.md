@@ -214,3 +214,55 @@ Tests mutate copies for cycles, missing/misassigned parents, cross-parent resume
 incomplete leaf files, unsupported background/swarm/undo and UUID reuse across
 parents. This does not establish background, failed/interrupted or fork/context
 operations combined with nested children.
+
+
+## Native completed background subagents
+
+`background-0.42.0/` was recorded on 2026-09-15 (local time) with the same published
+Node CLI 0.42.0/release commit, macOS arm64, isolated home/Project/skills and local
+OpenAI SSE endpoint. Paths alone were replaced as above. No remote model,
+credentials or personal transcripts were involved. Native Wire files retain all
+IDs, lifecycle records, metadata, prompts, tool receipts, notifications and usage.
+Native task JSON/output files were observed during research but are excluded from
+the fixture; production collection requires only metadata and Wire.
+
+The endpoint delays child responses so the parent's first reply finishes while
+its child is still running. `KimiBackgroundRootStart` launches a coder child with
+`run_in_background: true`; the child performs a real `Read` of a controlled file
+containing `KimiBackgroundChildFileMarker`. Headless CLI waits for background work,
+receives its native completion notice and emits another parent model response.
+Three native `--continue` runs request `KimiBackgroundRootResume`,
+`KimiBackgroundRootResumeForeground` and `KimiBackgroundRootSecond`. They resume
+the original child in background, resume it in foreground, and launch a second
+independent background child with another real Read. The local endpoint was
+restarted before the foreground run while preserving response numbering; this
+changes neither CLI metadata nor any persisted Wire record.
+
+| Native checkpoint | Main / agent-0 / agent-1 Wire records | Events | Usage | Input / output |
+| --- | --- | ---: | ---: | ---: |
+| Initial background completion and notification reply | 38 / 25 / absent | 9 | 5 | 515 / 65 |
+| Background resume after CLI restart | 69 / 37 / absent | 16 | 9 | 945 / 135 |
+| Resume the same agent in foreground | 88 / 49 / absent | 22 | 12 | 1278 / 198 |
+| Complete a second independent background child | 119 / 49 / 25 | 31 | 17 | 1853 / 323 |
+
+Prefix tests remove only the final metadata's not-yet-created `agent-1` entry.
+The root has 19 Events, four human prompts and 11 responses (1199 input, 209 output,
+220 cached input). First child has eight Events/three delegated turns/four
+responses (424 / 64, 80 cached input); second child has four Events/two responses
+(230 / 50, 40 cached input). Cache is already included in total input. The model
+name is `atape-background-model`; counters are controlled test data.
+
+Each background run has its own task ID, typed start/terminal record, launch
+receipt and notification origin, even when resuming the same agent ID. Native
+notifications contain an output-file reference, not inline child text. Their
+`turn.prompt` and `context.append_message` have origin `task` and no prompt/message
+ID. Parent responses 5, 9 and 17 process those notices; they are model expenditure,
+not additional human prompts. `task.terminated.outputTail` matches the child answer
+(or its last 4096 UTF-8 bytes for larger output). No notification-referenced file
+is read by the Adapter.
+
+Synthetic mutations validate unfinished tasks, missing/duplicate/conflicting
+lifecycle records, task/agent identity, notification context and output mismatch.
+Rewritten notification paths prove that capture does not follow those paths.
+This corpus does not establish interrupted/lost task recovery, nested background
+children, mid-turn notification injection or fork/context-operation combinations.

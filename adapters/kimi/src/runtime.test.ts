@@ -15,12 +15,12 @@ const sourceId = "session_12c751bb-0285-49a2-9379-aacbf56d1bd4"
 const serialize = (rows: unknown[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const fixture = async (name = "native") => {
   const home = await mkdtemp(join(tmpdir(), "atape-kimi-")); roots.push(home)
-  const native = await readFile(new URL(["subagents", "nested-subagents"].includes(name) ? `./fixtures/${name}-0.42.0/agents/main/wire.jsonl` : `./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
-  const metadata = await readFile(new URL(["subagents", "nested-subagents"].includes(name) ? `./fixtures/${name}-0.42.0/state.json` : `./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
+  const native = await readFile(new URL(["subagents", "nested-subagents", "background"].includes(name) ? `./fixtures/${name}-0.42.0/agents/main/wire.jsonl` : `./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
+  const metadata = await readFile(new URL(["subagents", "nested-subagents", "background"].includes(name) ? `./fixtures/${name}-0.42.0/state.json` : `./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
   const sourceId = JSON.parse(metadata).id as string
   const directory = join(home, "sessions", "opaque", sourceId), file = join(directory, "agents", "main", "wire.jsonl"), state = join(directory, "state.json")
   await mkdir(join(directory, "agents", "main"), { recursive: true })
-  if (["subagents", "nested-subagents"].includes(name)) await cp(new URL(`./fixtures/${name}-0.42.0/`, import.meta.url), directory, { recursive: true })
+  if (["subagents", "nested-subagents", "background"].includes(name)) await cp(new URL(`./fixtures/${name}-0.42.0/`, import.meta.url), directory, { recursive: true })
   await writeFile(file, native); await writeFile(state, metadata)
   vi.stubEnv("ATAPE_KIMI_HOME", home)
   const lifetime = new AbortController()
@@ -131,6 +131,81 @@ describe("Kimi source-capture runtime Interface", () => {
     expect(frames.flatMap(f => f.events).map(e => [e.sourceThreadId, e.childSourceThreadId, e.update])).toEqual(original.flatMap(f => f.events).map(e => [e.sourceThreadId, e.childSourceThreadId, e.update]))
     const events = frames.flatMap(f => f.events)
     expect(new Set(events.map(e => e.sourceEventId)).size).toBe(events.length)
+  })
+  it("captures completed native background tasks, background/foreground resume and independent children", async () => {
+    const f = await fixture("background"), childFile = join(f.directory, "agents", "agent-0", "wire.jsonl")
+    const child = (await readFile(childFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [rootLines, childLines, threads, events, usage, input, rootUsage, childInput] of [[38, 25, 2, 9, 5, 515, 3, 206], [69, 37, 2, 16, 9, 945, 6, 313], [88, 49, 2, 22, 12, 1278, 8, 424], [119, 49, 3, 31, 17, 1853, 11, 424]] as const) {
+      const meta = JSON.parse(f.metadata)
+      if (threads === 2) delete meta.agents["agent-1"]
+      await writeFile(f.state, JSON.stringify(meta)); await writeFile(f.file, serialize(f.rows.slice(0, rootLines))); await writeFile(childFile, serialize(child.slice(0, childLines)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+      expect(view.target).toEqual({ threads, events, usage }); expect(view.session.captureStatus).toBe("healthy")
+      const values = frames.flatMap(f => f.events), counts = frames.flatMap(f => f.usage)
+      expect(values.slice(0, previous.flatMap(f => f.events).length)).toEqual(previous.flatMap(f => f.events))
+      expect(counts.slice(0, previous.flatMap(f => f.usage).length)).toEqual(previous.flatMap(f => f.usage))
+      expect(values.filter(e => e.childSourceThreadId).map(e => e.childSourceThreadId)).toEqual(threads === 3 ? ["agent-0", "agent-0", "agent-0", "agent-1"] : Array(usage === 5 ? 1 : usage === 9 ? 2 : 3).fill("agent-0"))
+      const rootMessages = values.filter(e => e.sourceThreadId === f.request.sourceId && e.update.sessionUpdate === "user_message_chunk")
+      expect(rootMessages).toHaveLength(usage === 5 ? 1 : usage === 9 ? 2 : usage === 12 ? 3 : 4)
+      expect(JSON.stringify(values)).not.toContain('<notification id=')
+      expect(JSON.stringify(frames)).toContain('<notification id=')
+      expect(frames).toHaveLength(rootLines + childLines + (threads === 3 ? 25 : 0) + 1)
+      expect(counts.reduce((n, u) => n + u.inputTokens!, 0)).toBe(input)
+      expect(counts.filter(u => u.sourceThreadId === f.request.sourceId)).toHaveLength(rootUsage)
+      expect(counts.filter(u => u.sourceThreadId === "agent-0").reduce((n, u) => n + u.inputTokens!, 0)).toBe(childInput)
+      previous = frames; await view.close()
+    }
+    const frozen = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    expect(await read(frozen)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+  })
+  it("allows background tool-call IDs to repeat in a later model step", async () => {
+    const f = await fixture("background")
+    await writeFile(f.file, f.native.replaceAll("controlled-call-6", "controlled-call-1"))
+    const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    expect(view.target).toEqual({ events: 31, usage: 17, threads: 3 })
+    const calls = frames.flatMap(f => f.events).filter(e => e.childSourceThreadId)
+    expect(calls.map(e => e.childSourceThreadId)).toEqual(["agent-0", "agent-0", "agent-0", "agent-1"])
+    expect(new Set(calls.map(e => "toolCallId" in e.update && e.update.toolCallId)).size).toBe(4)
+  })
+  it.each(["running", "missing-notification", "missing-context", "duplicate-notification", "wrong-task", "wrong-agent", "wrong-status", "wrong-description", "context-content", "context-origin", "late-child", "duplicate-task", "receipt-tail", "receipt-mode", "task-prompt-id", "missing-start", "missing-terminal", "terminal-status", "terminal-agent", "terminal-output", "duplicate-terminal", "foreign-output-path"])("validates background %s through the runtime Interface", async kind => {
+    const f = await fixture("background"), notifications = f.rows.filter(row => row.type === "turn.prompt" && row.origin.kind === "task"), contexts = f.rows.filter(row => row.type === "context.append_message" && row.message.origin.kind === "task")
+    if (kind === "running") f.rows.splice(28)
+    if (kind === "missing-notification") f.rows.splice(f.rows.indexOf(notifications[0]), 1)
+    if (kind === "missing-context") f.rows.splice(f.rows.indexOf(contexts[0]), 1)
+    if (kind === "duplicate-notification") f.rows.push(notifications[0])
+    if (kind === "wrong-task") notifications[0].origin.taskId = "agent-unknown0"
+    if (kind === "wrong-agent") notifications[0].input[0].text = notifications[0].input[0].text.replace('agent_id="agent-0"', 'agent_id="agent-1"')
+    if (kind === "wrong-status") notifications[0].origin.status = "lost"
+    if (kind === "wrong-description") notifications[0].input[0].text = notifications[0].input[0].text.replace("Controlled child task completed.", "Unrelated task completed.")
+    if (kind === "context-content") contexts[0].message.content[0].text = "unrelated context"
+    if (kind === "context-origin") contexts[0].message.origin.notificationId = "other"
+    if (kind === "task-prompt-id") notifications[0].promptId = "unexpected-id"
+    if (kind === "late-child") {
+      const childFile = join(f.directory, "agents", "agent-0", "wire.jsonl"), rows = (await readFile(childFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
+      rows.find(row => row.type === "turn.ended").time = notifications[0].time + 1
+      await writeFile(childFile, serialize(rows))
+    }
+    const start = f.rows.find(row => row.type === "task.started"), terminal = f.rows.find(row => row.type === "task.terminated")
+    if (kind === "missing-start") f.rows.splice(f.rows.indexOf(start), 1)
+    if (kind === "missing-terminal") f.rows.splice(f.rows.indexOf(terminal), 1)
+    if (kind === "terminal-status") terminal.info.status = "failed"
+    if (kind === "terminal-agent") terminal.info.agentId = "agent-1"
+    if (kind === "terminal-output") terminal.outputTail = "unrelated result"
+    if (kind === "duplicate-terminal") f.rows.push(terminal)
+    const receipts = f.rows.filter(row => row.event?.type === "tool.result" && String(row.event.result.output).startsWith("task_id:"))
+    if (kind === "duplicate-task") receipts[1].event.result.output = receipts[0].event.result.output
+    if (kind === "receipt-tail") receipts[0].event.result.output += "changed"
+    if (kind === "receipt-mode") f.rows.find(row => row.event?.type === "tool.call" && row.event.name === "Agent").event.args.run_in_background = false
+    if (kind === "foreign-output-path") for (const row of f.rows) {
+      if (row.type === "turn.prompt" && row.origin.kind === "task") row.input[0].text = row.input[0].text.replaceAll("/fixture/kimi-home", "/must-not-read/outside")
+      if (row.type === "context.append_message" && row.message.origin.kind === "task") row.message.content[0].text = row.message.content[0].text.replaceAll("/fixture/kimi-home", "/must-not-read/outside")
+    }
+    await writeFile(f.file, serialize(f.rows))
+    if (kind === "foreign-output-path") expect((await f.runtime.sourceCapture.open(f.request)).target).toEqual({ events: 31, usage: 17, threads: 3 })
+    else await expect(f.runtime.sourceCapture.open(f.request)).rejects.toBeDefined()
   })
   it("scopes native child identities by Session and ignores homedir locators", async () => {
     const f = await fixture("subagents"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)

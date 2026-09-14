@@ -66,14 +66,14 @@ try {
     }
     await rm(directory, { recursive: true }) // Forks also work without ancestor sources.
   }
-  for (const name of ["subagents", "nested-subagents"]) {
+  for (const name of ["subagents", "nested-subagents", "background"]) {
     const family = JSON.parse(await readFile(new URL(`./${name}-0.42.0/state.json`, import.meta.url), "utf8"))
     await cp(new URL(`./${name}-0.42.0`, import.meta.url), join(home, "sessions", "opaque", family.id), { recursive: true })
     let prior
     for (const rawEnabled of [false, true]) {
       const view = await runtime.sourceCapture.open({ sourceId: family.id, limits, projection, rawEnabled, signal }), frames = []
-      assert.equal(view.threads[2].parentSourceThreadId, name === "subagents" ? family.id : "agent-0")
-      assert.deepEqual(view.target, { events: 22, usage: 11, threads: 3 })
+      assert.equal(view.threads[2].parentSourceThreadId, name === "nested-subagents" ? "agent-0" : family.id)
+      assert.deepEqual(view.target, { events: name === "background" ? 31 : 22, usage: name === "background" ? 17 : 11, threads: 3 })
       for (let n = 0; n < 100; n++) {
         const page = await view.read(signal); frames.push(...page.frames)
         assert.ok(page.frames.length <= 2)
@@ -81,11 +81,15 @@ try {
         assert.ok(n < 99)
       }
       const events = frames.flatMap(f => f.events), usage = frames.flatMap(f => f.usage)
-      assert.equal(events.length, 22); assert.equal(usage.length, 11)
-      assert.deepEqual(events.filter(e => e.childSourceThreadId).map(e => e.childSourceThreadId), name === "subagents" ? ["agent-0", "agent-0", "agent-1"] : ["agent-0", "agent-1", "agent-0", "agent-1"])
-      assert.equal(usage.reduce((n, u) => n + u.inputTokens, 0), 1166)
-      assert.equal(usage.filter(u => u.sourceThreadId === "agent-0").reduce((n, u) => n + u.inputTokens, 0), name === "subagents" ? 311 : 425)
+      assert.equal(events.length, view.target.events); assert.equal(usage.length, view.target.usage)
+      assert.deepEqual(events.filter(e => e.childSourceThreadId).map(e => e.childSourceThreadId), name === "background" ? ["agent-0", "agent-0", "agent-0", "agent-1"] : name === "subagents" ? ["agent-0", "agent-0", "agent-1"] : ["agent-0", "agent-1", "agent-0", "agent-1"])
+      assert.equal(usage.reduce((n, u) => n + u.inputTokens, 0), name === "background" ? 1853 : 1166)
+      assert.equal(usage.filter(u => u.sourceThreadId === "agent-0").reduce((n, u) => n + u.inputTokens, 0), name === "background" ? 424 : name === "subagents" ? 311 : 425)
       assert.ok(frames.every(f => (f.raw !== undefined) === rawEnabled))
+      if (name === "background") {
+        assert.equal(events.filter(e => e.sourceThreadId === family.id && e.update.sessionUpdate === "user_message_chunk").length, 4)
+        assert.ok(!JSON.stringify(events).includes('<notification id='))
+      }
       if (prior) assert.deepEqual(events, prior)
       prior = events; await view.close()
     }
@@ -93,4 +97,4 @@ try {
   const view = await runtime.sourceCapture.open({ sourceId, limits, projection, rawEnabled: false, signal })
   lifetime.abort(); await assert.rejects(view.read(signal))
 } finally { await runtime.close(); await rm(home, { recursive: true }) }
-process.stdout.write("Installed Kimi native resume, undo, manual/auto compaction, /clear, whole-session and nested forks, foreground/nested subagents and layered resume, usage, original CWD, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed Kimi native resume, undo, manual/auto compaction, /clear, whole-session and nested forks, foreground/nested/background subagents and resume, usage, original CWD, bounded pages, Raw off/on and cancellation verified.\n")

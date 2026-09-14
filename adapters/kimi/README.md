@@ -1,7 +1,7 @@
 # @atape/adapter-kimi
 
 Kimi Code CLI Adapter for ATape. Reads local Kimi Code 0.42.0 Wire
-1.5 Sessions and completed foreground subagents through the source-capture runtime. Node.js 24 or newer is required.
+1.5 Sessions and completed foreground/background subagents through the source-capture runtime. Node.js 24 or newer is required.
 
 Build and pack from the repository root:
 
@@ -24,13 +24,15 @@ The Server must advertise `atape.publication.v1`.
 Supports completed main-agent turns and resume, user/assistant text, thoughts,
 tool outcomes, manual/automatic compaction, `/undo`, `/clear` as a new Session,
 whole-session forks (including nested forks), foreground subagents (including nested delegation) and
-same-child resume at each layer, and response usage. Undo removes
+same-child resume at each layer, completed direct background children with
+background/foreground resume, and response usage. Undo removes
 visible turns while retaining expenditure;
 compaction preserves reading history and keeps internal summaries in Raw.
 Forks have independent Session identities and retain copied usage as captured
 history; adding parent and fork totals counts that history in each Session.
-Child links and response usage stay in their owning Thread. Background
-subagents, child histories combined with fork/compaction/undo, steering,
+Child links and response usage stay in their owning Thread. Completed task notices
+remain Raw-only; resulting parent replies retain their own usage. Nested background
+subagents, running/interrupted tasks, child histories combined with fork/compaction/undo, steering,
 interrupted/retried turns and tree storage remain
 unsupported. Legacy Python kimi-cli is intentionally excluded. Unsupported
 sources retain previously captured history and produce diagnostics. Images/blobs

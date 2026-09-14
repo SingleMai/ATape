@@ -21,7 +21,7 @@ const rawOnlyTypes = new Set(["metadata", "runtime.set_binding", "profile.bind",
 /** A complete native step is the admission boundary; streamed or interrupted attempts never replace a target. */
 type Source = Awaited<ReturnType<typeof snapshot>>
 type Child = ReturnType<typeof delegation>["children"][number]
-const projectThread = (source: Source, request: SourceOpenRequest, started: number, callChildren: Map<string, string>, child?: Child, byteBudget = 64 * 1024 * 1024) => {
+const projectThread = (source: Source, request: SourceOpenRequest, started: number, callChildren: Map<string, string>, taskRows: Map<Row, string>, child?: Child, byteBudget = 64 * 1024 * 1024) => {
   const { sourceId } = source.origin, agentId = child?.id ?? "main", threadId = child?.id ?? sourceId
   const namespace = child ? identity("child", sourceId, child.id) : sourceId
   const records = child?.records ?? source.records
@@ -35,6 +35,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   const turns: number[] = [], visibleFrames: number[] = []
   let undoFloor = 0, compactedThrough = 0, contextHistory = false
   let forkMarkers = 0
+  let taskPrompt: string | undefined
   let compaction: { line: number; model?: string; alias?: string; used: boolean; applied: boolean } | undefined
   const add = (key: string, output: SourceCaptureFrame["events"], usage: SourceCaptureFrame["usage"], raw: unknown) => {
     const recordKey = identity("record", namespace, key)
@@ -68,13 +69,19 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
         usageCount++; usage.push({ sourceUsageId: identity("usage", namespace, usageId), sourceThreadId: threadId, model, occurredAt, ...tokens })
       }
     }
-    if (row.type === "turn.prompt") {
+    if (row.type === "turn.prompt" && taskRows.has(row)) {
+      if (child || active || step || compaction || taskPrompt) fail("unsupported", "Kimi background notification overlaps an active turn.")
+      taskPrompt = taskRows.get(row)!; key = `task-prompt:${taskPrompt}`; active = true
+    } else if (row.type === "turn.prompt") {
       const promptId = id(row.promptId)
       if (active || compaction || prompts.has(promptId) || (child ? object(row.origin).kind !== "system_trigger" || object(row.origin).name !== "subagent" : object(row.origin).kind !== "user")) fail("unsupported", "Kimi requires non-overlapping unique user prompts.")
       prompts.set(promptId, row); key = `prompt:${promptId}`; active = true
     } else if (row.type === "context.append_message") {
       const message = object(row.message), origin = object(message.origin)
-      if (origin.kind === "user" && !child || child && origin.kind === "system_trigger" && origin.name === "subagent") {
+      if (origin.kind === "task" && taskRows.has(row)) {
+        if (child || step || !taskPrompt || taskRows.get(row) !== taskPrompt) fail("format", "Kimi task notification has not reached context; retry.")
+        key = `task-message:${taskPrompt}`; taskPrompt = undefined
+      } else if (origin.kind === "user" && !child || child && origin.kind === "system_trigger" && origin.name === "subagent") {
         const messageId = id(message.id), prompt = prompts.get(messageId)
         if (step || compaction || !prompt || messages.has(messageId) || message.role !== "user" || list(message.toolCalls).length ||
           JSON.stringify(message.content) !== JSON.stringify(prompt.input) || JSON.stringify(message.origin) !== JSON.stringify(prompt.origin)) fail("unsupported", "Kimi user message has no unique matching prompt.")
@@ -201,15 +208,15 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
         }
       }
     } else if (row.type === "turn.ended") {
-      if (step || compaction) fail("format", "Kimi turn ended before its complete step or compaction.")
+      if (step || compaction || taskPrompt) fail("format", "Kimi turn ended before its complete step or compaction.")
       if (row.reason !== "completed") fail("unsupported", "Kimi non-completed turns require a wider source profile.")
       active = false
     } else if (String(row.type).startsWith("context.") || ["turn.steer", "turn.cancel"].includes(String(row.type))) {
       fail("unsupported", "Kimi context operation or steering requires a wider source profile.")
-    } else if (!rawOnlyTypes.has(String(row.type))) partial = true
+    } else if (!rawOnlyTypes.has(String(row.type)) && !taskRows.has(row)) partial = true
     add(key, output, usage, { format: "kimi.wire.v1.5", sourceSessionId: sourceId, ...(child ? { sourceAgentId: child.id } : {}), json })
   }
-  if (step || compaction) fail("format", "Kimi has an incomplete model step or compaction; retry after it finishes.")
+  if (step || compaction || taskPrompt) fail("format", "Kimi has an incomplete model step or compaction; retry after it finishes.")
   if (messages.size !== prompts.size || !messages.size) fail("format", "Kimi user prompt has not reached its context record; retry.")
   if (source.meta.forkedFrom != null && !forkMarkers) fail("unsupported", "Kimi fork lacks its native copied-history boundary.")
   const firstVisible = turns.length ? frames[turns[0]!]!.events : []
@@ -229,7 +236,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
 /** Completed delegated turns are interleaved at their calls; all frames stay in one atomic target. */
 export const project = (source: Source, request: SourceOpenRequest) => {
   const started = performance.now(), family = delegation(source)
-  const root = projectThread(source, request, started, family.callChildren)
+  const root = projectThread(source, request, started, family.callChildren, family.taskRows)
   if (!family.children.length) return { header: root.header, frames: root.frames }
   const children = new Map<string, ReturnType<typeof projectThread>>()
   const threads = [...root.header.threads]
@@ -237,7 +244,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
   let events = root.header.target.events, usage = root.header.target.usage, latest = root.header.session.updatedAt
   let partial = root.header.session.captureStatus === "partial", active = root.header.session.status === "active"
   for (const child of family.children) {
-    const planned = projectThread(source, { ...request, projection: { ...request.projection, events: request.projection.events - events, usage: request.projection.usage - usage } }, started, child.callChildren, child, 64 * 1024 * 1024 - projectedBytes)
+    const planned = projectThread(source, { ...request, projection: { ...request.projection, events: request.projection.events - events, usage: request.projection.usage - usage } }, started, child.callChildren, family.taskRows, child, 64 * 1024 * 1024 - projectedBytes)
     projectedBytes += planned.bytes
     children.set(child.id, planned); threads.push(...planned.header.threads)
     events += planned.header.target.events; usage += planned.header.target.usage

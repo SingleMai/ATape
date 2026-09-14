@@ -1,6 +1,6 @@
 # Kimi Code CLI Adapter
 
-The Kimi Adapter reads local Sessions and supported foreground subagents through the existing
+The Kimi Adapter reads local Sessions and supported subagents through the existing
 [source-capture runtime](package-manifest.md#bounded-source-capture-capability).
 The Host owns Project attribution, masking, revisions, frozen delivery, atomic
 publication, Raw receipts and recovery. No Server schema change is required;
@@ -37,7 +37,7 @@ native identities. Source deletion does not delete captured history.
 ## Evidence and supported profiles
 
 `kimi.code.wire.linear.1`, `kimi.code.wire.context.1` and
-`kimi.code.wire.fork.1`, plus the foreground-subagent profile
+`kimi.code.wire.fork.1`, plus the subagent profile
 `kimi.code.wire.family.1`, support Kimi Code CLI **0.42.0**, metadata v2 and
 Wire **1.5**, as verified on macOS arm64 with Node 24.18.0. The official npm CLI
 created a controlled three-turn Session, including two native `--continue` runs,
@@ -234,7 +234,7 @@ projection, but have not been produced in a separate native CLI acceptance run.
 The source byte/record/Thread budgets cover the whole family, not each file
 independently. All files and directories are rechecked before the frozen view
 escapes. Source deletion, Raw policy and lost-response recovery use the existing
-Host contract. Background execution, `Agent(fork=true)`,
+Host contract. Nested background execution, `Agent(fork=true)`,
 `AgentSwarm`, failed/interrupted child runs and compaction/undo/fork combined with
 children are not part of this profile.
 
@@ -245,6 +245,49 @@ The evidence uses the same released CLI and commit as the other fixtures; see
 and [delegated turns](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/packages/agent-core-v2/src/session/subagent/runAgentTurn.ts)
 define the validated boundaries.
 
+## Completed background subagents
+
+The family profile also supports direct `Agent(run_in_background=true)` calls,
+background resume after CLI restart, switching that same child back to foreground
+resume, and another independent background child. Publication waits for a complete
+child turn, matching native `task.started` and completed `task.terminated` records,
+the launch tool receipt, and the corresponding completion notification in parent
+context. Running, lost, failed, killed or interrupted tasks preserve the last
+complete capture and produce a diagnostic. This increment does not publish
+unfinished background work incrementally.
+
+A background task ID identifies one run, while the agent ID identifies the child
+Thread across runs. The Adapter checks both against the parent tool call, profile,
+description, metadata and delegated prompt. Terminal metadata must match its
+start; completion cannot precede the child's end. When present, the native 4 KiB
+output tail must match the final child answer. The child Wire supplies complete
+conversation content. Task JSON and output files are not opened, and paths in
+notifications are never followed.
+
+Completed notifications have native origin `task` and no user message ID. Their
+prompt/context pair is validated and retained only in Raw, alongside task lifecycle
+records and output tails. It creates no human Event. The parent's resulting model
+reply remains visible with its own response usage, so a later automated answer can
+appear under the most recent human turn. Task and turn summary counters add no
+usage. Child calls remain linked in the reader; cross-Thread interleaving is a
+derived grouping at the launch call, not a claim that background work finished
+before the parent's next response.
+
+The controlled fixture has four human prompts, two children, 31 Events and
+17 responses. Root usage is 1199 input / 209 output, first child 424 / 64, second
+child 230 / 50; total 1853 input / 323 output includes 340 cached-input tokens.
+Three completed background notifications add no human turns. Initial background,
+background resume, foreground resume and second-child checkpoints are recorded in
+[fixture provenance](../../adapters/kimi/src/fixtures/README.md).
+
+Acceptance covers direct children and notifications delivered between parent turns.
+Other background task kinds, nested background delegation, task interruption/recovery, mid-turn notification
+injection, manual detachment, `TaskOutput`/`TaskWait` lifecycle variations and
+background families combined with compaction/undo/fork remain unverified and
+outside this profile. Upstream task records and notification rendering are pinned
+to the same 0.42.0 release in
+[taskService.ts](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/packages/agent-core-v2/src/agent/task/taskService.ts).
+
 ## Unsupported scope and next increment
 
 Only the new Node-based Kimi Code CLI is in scope. Legacy Python kimi-cli is
@@ -252,12 +295,12 @@ intentionally excluded and is not a compatibility backlog. All profiles require
 metadata v2/Wire 1.5; other versions, Kimi IDE formats and other platforms remain
 unverified.
 
-Independent, background and forked child agents, `AgentSwarm`, steering,
+Independent, nested-background and forked child agents, `AgentSwarm`, steering,
 cancellation, interrupted/failed/retried steps, low-level `context.clear`, unknown
 context operations and mixed/tree storage remain unsupported. Previously
 captured content remains selected. SDK historical-turn forks remain unverified;
 the CLI whole-session copy is the validated fork operation. Families combined
-with compaction/undo/fork remain unsupported. Background child lifecycle
+with compaction/undo/fork remain unsupported. Background interruption and nested lifecycle
 and interrupted/retried turns need separate native evidence before expanding
 the supported profile.
 
@@ -319,6 +362,16 @@ source deletion; a missing leaf preserved the selected head/checkpoint. Raw-off/
 preserved Canonical provenance. Web acceptance opened middle then leaf from their
 parent calls, showing both resumed turns, the native Read result and all three
 breadcrumb levels. Child cards correctly updated their current Event counts.
+
+Background-family verification on 2026-09-15 passed 127 Adapter behavior tests,
+Adapter/CLI typechecks, independent tarball installation and the installed
+HTTP/PostgreSQL contract. Native launch/task/notification identity, background and
+foreground resume, independent children, per-Thread usage and child Search anchors
+matched the fixture. Raw-off/on preserved Canonical provenance; lost activation
+and Raw receipts recovered after source deletion. A still-running task preserved
+the prior head/checkpoint. Web acceptance showed four human turns, the subsequent
+notification-triggered parent replies, a three-turn resumed child and the
+independent second child with real Read results and parent breadcrumbs.
 
 The package is included in official Tools detection/selection, build, packing,
 release verification and artifact upload sets. Local implementation, CI, merge,

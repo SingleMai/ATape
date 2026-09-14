@@ -51,6 +51,20 @@ describe("Collector capture bootstrap", () => {
       expect(released).toBe(true)
     } finally { clearTimeout(timer); release() }
   })
+  it("waits for a coordination reader before writing identity so lock release cannot fail with SQLITE_BUSY", async () => {
+    const f = await fixture(), initial = await f.initialize()
+    const reader = new DatabaseSync(`${f.stateFile}.lock.sqlite`)
+    reader.exec("BEGIN")
+    reader.prepare("PRAGMA user_version").get()
+    let released = false
+    const release = () => { if (!released) { released = true; reader.exec("COMMIT"); reader.close() } }
+    const timer = setTimeout(release, 100)
+    try {
+      expect(await f.initialize()).toEqual(initial)
+      expect(released).toBe(true)
+      expect(await f.initialize()).toEqual(initial)
+    } finally { clearTimeout(timer); release() }
+  })
   it("preserves existing installation and legacy checkpoints while reopening immutable pending bytes", async () => {
     const f = await fixture()
     const initial = await f.run(CollectorStateStore.use(store => store.snapshot(account.instanceOrigin, account.userId, "legacy-project", "codex")))

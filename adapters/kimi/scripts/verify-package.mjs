@@ -42,7 +42,7 @@ try {
   for (const name of ["native", "context", "auto", "clear", "fork", "nested-fork"].flatMap(name => [`${name}-0.42.0.jsonl`, `${name}-0.42.0.state.json`])) {
     await copyFile(new URL(`../src/fixtures/${name}`, import.meta.url), join(root, name))
   }
-  for (const name of ["subagents", "nested-subagents"]) await cp(new URL(`../src/fixtures/${name}-0.42.0`, import.meta.url), join(root, `${name}-0.42.0`), { recursive: true })
+  for (const name of ["subagents", "nested-subagents", "background"]) await cp(new URL(`../src/fixtures/${name}-0.42.0`, import.meta.url), join(root, `${name}-0.42.0`), { recursive: true })
   const result = await run(process.execPath, [join(root, "verify-installed.mjs"), join(entryRoot, manifest.atapeAdapter.entry), manifest.version], root)
   process.stdout.write(`Verified Kimi tarball ${basename(artifact)} (${size} bytes)\n${result.stdout}`)
 } finally {
