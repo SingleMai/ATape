@@ -40,8 +40,7 @@ completed foreground Agent family described below, including root compaction.
 background launches described below; `codebuddy.cli.jsonl.family.background.turns.1`
 adds proven serial continuation and framework notifications. `codebuddy.cli.jsonl.emergency.1`
 and `codebuddy.cli.jsonl.family.emergency.1` cover the completed emergency compaction
-sequence below. `codebuddy.cli.jsonl.family.fork.1` adds the copied foreground
-family described below. All are tested with native
+sequence below. `codebuddy.cli.jsonl.family.fork.1` adds copied foreground families and new foreground children launched from a fork, as described below. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -158,12 +157,38 @@ single-child fork has two Threads, 12 Events and five usage records (39,864 inpu
 and 13 usage records (98,806 input, 577 output, 56,896 cache). These are historical
 copied counters, not newly incurred spend. Cache is already part of input.
 
-Successful child delegation from the fork, copied background
-children, fork subagents and emergency compaction in forks remain unsupported.
+Child continuation after the fork, background children in forks, fork subagents
+and emergency compaction in forks remain unsupported.
 The Adapter still reads and stamp-checks bounded complete physical files before
 selecting prefixes; growth beyond the shared file/record/byte limits is diagnosed,
 even when it lies beyond the copied boundary. A malformed physical file requires
 retry rather than an unverified partial read.
+
+## New foreground children from a fork
+
+A completed new Agent delegation after the first fork-owned user record can add
+child Threads. The native call's `sessionId` supplies its storage parent: the
+first fork invocation writes under the fork ID, while an ordinary resumed fork
+restores the original root ID and writes new children there. A nested child uses
+its immediate parent's native UUID. The Adapter reads only the exact path named
+by this call and its structured receipt; it never searches other directories for
+a matching agent ID. Directory location does not change Canonical membership or
+Project attribution: all new descendants belong to the fork's Session and Origin.
+
+Copied children retain the receipt-selected prefixes described above. New
+children require their complete histories to match their delegated prompts and
+completion receipts; a later unaccounted turn cannot be silently discarded as a
+copied prefix. The original root JSONL is unnecessary. Missing children, unfinished
+responses or mismatched prompts preserve the previous complete fork target.
+
+The CLI 2.124.0 corpus covers a copied seed child, a new child created during the
+fork command, a new parent/leaf created after reopening the fork, later original
+seed-child growth, and ordinary fork resume. The final view has five Threads,
+31 Events and 12 usage records: 87,179 input, 659 output and 53,248 cache tokens.
+These totals include copied historical responses; cache is part of input.
+Successful `Agent resume` after the fork remains unsupported, whether the target
+was copied or newly created. Its shared storage and continuation boundaries need
+a separate native sample before support can expand.
 
 ## Completed foreground Agent families
 
@@ -199,7 +224,7 @@ call, missing/truncated child, mismatched receipt or unproven extra child turn
 rejects the complete new target; all previously published family members remain.
 
 Named/team and fork subagents and manual/pre-message child compaction remain
-unsupported. Forks can retain copied foreground histories as described above. Completed foreground child
+unsupported. Forks can retain copied foreground histories and create new foreground children as described above. Completed foreground child
 emergency compaction is described below. The next section defines the narrower supported
 automatic-team background shape. Copied foreground boundaries use the native
 completion evidence above; other shapes need additional evidence before extending
@@ -479,6 +504,20 @@ Thread and the recovered leaf reply present. Adapter/CLI typechecks, 126 runtime
 tests, independent tarball installation and documentation/architecture checks
 passed locally; this is not staging or publication evidence.
 
+The new-foreground-fork contract verifies both native child directory forms and
+new nested descendants through the installed CLI: five Threads, 31 Events and
+12 usage records with exact counters and per-Thread ownership. Copied seed growth
+changes no selected content; incomplete or invalid new children preserve the old
+fork. Raw off/on and independent Raw/activation response loss recover after all
+six selected source files are deleted, with original root JSONL absent throughout.
+Search resolves the recovered new leaf under its three-level path and excludes
+the original child's later turn. Browser acceptance on 2026-09-14 verified four
+root turns, the first new child, the new parent/leaf path, their thoughts and
+responses, and the frozen leaf marker. All 137 runtime tests, Adapter/CLI
+typechecks, isolated tarball installation, documentation/architecture checks and
+the installed HTTP/PostgreSQL contract passed locally. This is not staging or
+publication evidence.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -491,7 +530,7 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after copied foreground fork-family recovery (the enclosing test
+for up to three minutes after new foreground fork-child recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name

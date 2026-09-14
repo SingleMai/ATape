@@ -330,6 +330,69 @@ describe("CodeBuddy installed runtime Interface", () => {
     await writeFile(f.file, serialize(values))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
+  const forkNew = async () => {
+    const f = await fixture(), originalId = "atape-codebuddy-fork-new-root-21240", forkId = "atape-codebuddy-fork-new-copy-21240"
+    await cp(new URL("./fixtures/native-fork-new-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const file = join(f.directory, `${forkId}.jsonl`), first = join(f.directory, forkId, "subagents", "agent-638af8c5.jsonl")
+    const copied = join(f.directory, originalId, "subagents", "agent-203ccf33.jsonl")
+    const parent = join(f.directory, originalId, "subagents", "agent-70af9d40.jsonl")
+    const leaf = join(f.directory, "5702d032-198a-4536-a9ce-caca5b89ae8e", "subagents", "agent-dc98c023.jsonl")
+    return { ...f, originalId, forkId, file, first, copied, parent, leaf, native: await readFile(file, "utf8"), request: { ...f.request, sourceId: forkId } }
+  }
+  it("captures new children from both fork creation and resumed native identities, including their descendants", async () => {
+    const f = await forkNew(), original = await f.runtime.sourceCapture.open({ ...f.request, sourceId: f.originalId })
+    const originals = (await read(original)).flatMap(frame => frame.events); await original.close()
+    await writeFile(f.file, serialize(rows(f.native).slice(0, 12)))
+    const first = await f.runtime.sourceCapture.open(f.request), firstFrames = await read(first)
+    expect(first.target).toEqual({ events: 16, usage: 6, threads: 3 }); await first.close()
+    await writeFile(f.file, serialize(rows(f.native).slice(0, 16)))
+    const resumed = await f.runtime.sourceCapture.open(f.request), resumedFrames = await read(resumed)
+    expect(resumed.target).toEqual({ events: 29, usage: 11, threads: 5 }); await resumed.close()
+    await writeFile(f.file, f.native); await rm(join(f.directory, `${f.originalId}.jsonl`))
+    const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    expect(view.profile).toBe("codebuddy.cli.jsonl.family.fork.1")
+    expect(view.target).toEqual({ events: 31, usage: 12, threads: 5 })
+    expect(view.origin.cwd).toBe("/fixture/codebuddy-fork-new-project")
+    expect(view.threads.find(thread => thread.sourceThreadId === "agent-dc98c023")!.parentSourceThreadId).toBe("agent-70af9d40")
+    const events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+    expect(events.filter(event => event.childSourceThreadId)).toHaveLength(4)
+    expect(events.every(event => !originals.some(original => original.sourceEventId === event.sourceEventId))).toBe(true)
+    for (const prefix of [firstFrames, resumedFrames]) {
+      for (const event of prefix.flatMap(frame => frame.events))
+        expect(events.find(current => current.sourceEventId === event.sourceEventId)).toEqual(event)
+    }
+    expect(usage.reduce((sum, row) => sum + row.inputTokens!, 0)).toBe(87179)
+    expect(usage.reduce((sum, row) => sum + row.outputTokens!, 0)).toBe(659)
+    expect(usage.reduce((sum, row) => sum + (row.cacheReadTokens ?? 0), 0)).toBe(53248)
+    expect(JSON.stringify(frames)).not.toContain("ATAPE_FORK_NEW_ORIGINAL_LATER_21240")
+    expect(frames.filter(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId === "agent-638af8c5")).toHaveLength(3)
+    expect(frames.filter(frame => (frame.raw as { sourceThreadId?: string }).sourceThreadId === "agent-70af9d40")).toHaveLength(6)
+    expect(events.at(-1)!.update).toMatchObject({ content: { text: "ATAPE_FORK_NEW_FINAL_21240" } })
+    await view.close()
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    expect(await read(off)).toEqual(frames.map(({ raw: _, ...frame }) => frame)); await off.close()
+  })
+  it.each(["wrong-directory", "missing-leaf", "pending-child", "prompt", "receipt", "parent-chain", "extra-turn", "resume-copied", "resume-new", "unsafe-parent"])("rejects unproven new fork delegation: %s", async variant => {
+    const f = await forkNew(), root = rows(f.native), child = rows(await readFile(f.first, "utf8"))
+    let reason = "unsupported"
+    if (variant === "wrong-directory") { await rename(f.first, join(f.directory, f.originalId, "subagents", "agent-638af8c5.jsonl")); reason = "io" }
+    if (variant === "missing-leaf") { await rm(f.leaf); reason = "io" }
+    if (variant === "pending-child") { child.splice(2); reason = "format" }
+    if (variant === "prompt") child[0].content[0].text = "unproven prompt"
+    if (variant === "receipt") { root[10].providerData.toolResult.subAgent.lastId = "missing"; reason = "format" }
+    if (variant === "parent-chain") child[2].parentId = "unproven"
+    if (variant === "extra-turn") { child.push({ ...child[0], id: "later", parentId: child.at(-1).id }); reason = "format" }
+    if (variant === "resume-copied" || variant === "resume-new") {
+      const id = variant === "resume-copied" ? "agent-203ccf33" : "agent-638af8c5"
+      root[13].arguments = JSON.stringify({ ...JSON.parse(root[13].arguments), resume: id })
+      root[14].providerData.toolResult.subAgent.sessionId = id
+    }
+    if (variant === "unsafe-parent") { root[9].sessionId = "../outside"; reason = "format" }
+    if (variant !== "wrong-directory") await writeFile(f.first, serialize(child))
+    await writeFile(f.file, serialize(root))
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
   const background = async () => {
     const f = await fixture(), backgroundId = "atape-codebuddy-background-21240"
     await cp(new URL("./fixtures/native-background-2.124.0", import.meta.url), f.directory, { recursive: true })
