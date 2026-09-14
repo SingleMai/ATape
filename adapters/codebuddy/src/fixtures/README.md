@@ -454,8 +454,8 @@ CLI 2.124.0 on macOS arm64. Every run used `-p --strict-mcp-config
 --setting-sources "" --model hy3 --effort low --max-turns 5 --output-format json`,
 parent tools/allowedTools Agent and Read, and a custom `atape-emergency` child
 with only Read. The parent called only Agent. Its controlled input file was the
-generated 300-line content used by the earlier emergency corpus; no personal
-source was read. A successful Read spilled its large output, so the captured
+generated 600-line content used by the earlier emergency corpus, read with a
+300-line limit; no personal source was read. A successful Read spilled its large output, so the captured
 placeholder remains partial and its external file is excluded from fixtures.
 
 `CODEBUDDY_PRE_MESSAGE_COMPACT=0` applied to every run. Emergency threshold
