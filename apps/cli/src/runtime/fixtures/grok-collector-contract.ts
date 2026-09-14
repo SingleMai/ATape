@@ -51,7 +51,7 @@ if (phase === "initial" || phase === "git-initial" || phase === "tools-initial")
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
-    id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "acme", teamName: "Fixture", name: "Grok", type: gitPhase ? "git" : "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
+    id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "grok-contract", teamName: "Fixture", name: "Grok", type: gitPhase ? "git" : "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }
 if (phase === "tools-initial") {
   const rows = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))

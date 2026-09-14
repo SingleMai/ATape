@@ -408,7 +408,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		assertCodeBuddyCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
 	t.Run("native Grok Collector", func(t *testing.T) {
-		assertGrokCollectorContract(t, handler, modules, pool, project.ID, project.TeamID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
+		assertGrokCollectorContract(t, handler, modules, pool)
 	})
 	t.Run("native Kimi Collector", func(t *testing.T) {
 		assertKimiCollectorContract(t, handler, modules, pool)

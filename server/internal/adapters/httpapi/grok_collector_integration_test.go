@@ -22,8 +22,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool, projectID, teamID, userID, credential string, cookie *http.Cookie, csrf string) {
+func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool) {
 	t.Helper()
+	project, grant, credential := nativeCollectorActor(t, modules, pool, "grok")
+	projectID, teamID, userID, csrf := project.ID, project.TeamID, grant.User.ID, grant.CSRFToken
+	cookie := &http.Cookie{Name: "__Secure-atape_session", Value: grant.SessionSecret}
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	handler, err := NewHandler(Config{InstanceOrigin: origin, WebOrigin: origin, APIOrigin: origin, DevelopmentAllowHTTP: true}, modules)
@@ -410,7 +413,7 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		}
 	}
 
-	createGit := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "git", "remote": "https://github.com/atape-fixtures/grok-native.git"})
+	createGit := jsonRequest(t, http.MethodPost, "/api/v1/teams/grok-contract/projects", map[string]string{"type": "git", "remote": "https://github.com/atape-fixtures/grok-native.git"})
 	addWebProof(createGit, cookie, csrf)
 	createGit.Header.Set("Idempotency-Key", "grok-worktree-project-103")
 	gitResponse := httptest.NewRecorder()
