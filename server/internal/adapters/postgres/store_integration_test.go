@@ -27,6 +27,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/workspace"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	postgrescontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -109,6 +110,142 @@ WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID, first, last)
 		if view.Sessions[0].Input != "Latest request." || view.Sessions[0].Output != "Latest response." {
 			t.Fatalf("incorrect latest preview: %+v", view.Sessions[0])
 		}
+
+		t.Run("reused connections keep native statistics off body pages", func(t *testing.T) {
+			// Normal vacuumed history should need body pages only for the bounded
+			// previews. Observe real heap I/O through the caller's Module Interface,
+			// rather than asserting an optimizer node or private query sequence.
+			// Real histories also retain non-message Events. Keep their bodies
+			// inline, as tool/thought data makes up most of the deployed heap.
+			if _, err := pool.Exec(ctx, `INSERT INTO canonical_events
+(id,session_id,thread_id,source_key,revision,projection_revision,digest,source_order,event_index,
+order_fidelity,fidelity,raw_ref,adapter_version,schema_version,observed_at,received_at,ingest_seq,
+kind,author,occurred_at,text,tool_label)
+SELECT 'thought-'||n,e.session_id,e.thread_id,'thought-'||n,1,1,e.digest,n+200000,0,
+e.order_fidelity,e.fidelity,e.raw_ref,e.adapter_version,e.schema_version,e.observed_at,e.received_at,
+n+2000000,'thought','Codex',e.occurred_at,repeat(md5(n::text),40),''
+FROM canonical_events e CROSS JOIN generate_series(1,60000) n
+WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `INSERT INTO canonical_usage
+(source_key,session_id,thread_id,revision,digest,occurred_at,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens)
+SELECT 'volume-usage-'||n,e.session_id,e.thread_id,1,e.digest,e.occurred_at,
+CASE WHEN n%2=0 THEN 'Plan A' ELSE 'Plan B' END,100,3,20,0
+FROM canonical_events e CROSS JOIN generate_series(1,6000) n
+WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID); err != nil {
+				t.Fatal(err)
+			}
+			// Exercise the replacement against retained facts, not just an empty
+			// installation. Older binaries can still use the replacement keys.
+			if _, err := pool.Exec(ctx, `DROP INDEX canonical_events_overview_idx;
+DROP INDEX canonical_usage_overview_idx;
+CREATE INDEX canonical_events_activity_idx ON canonical_events(session_id,occurred_at) WHERE kind='message';
+CREATE INDEX canonical_usage_session_time_idx ON canonical_usage(session_id,occurred_at);
+DELETE FROM atape_schema_migrations WHERE version=21;`); err != nil {
+				t.Fatal(err)
+			}
+			if err := postgresadapter.Prepare(ctx, pool); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, "VACUUM (ANALYZE) canonical_usage"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, "VACUUM (ANALYZE) canonical_events"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, "SELECT pg_stat_force_next_flush()"); err != nil {
+				t.Fatal(err)
+			}
+			config, err := pgxpool.ParseConfig(databaseURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			config.MaxConns = 1
+			config.ConnConfig.RuntimeParams["plan_cache_mode"] = "force_generic_plan"
+			reused, err := pgxpool.NewWithConfig(ctx, config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reused.Close()
+			dashboard := teamoverview.New(postgresadapter.NewStore(reused))
+			heapReads := func() int64 {
+				t.Helper()
+				if _, err := reused.Exec(ctx, "SELECT pg_stat_force_next_flush()"); err != nil {
+					t.Fatal(err)
+				}
+				var reads int64
+				if err := reused.QueryRow(ctx, "SELECT heap_blks_read + heap_blks_hit FROM pg_statio_user_tables WHERE relname='canonical_events'").Scan(&reads); err != nil {
+					t.Fatal(err)
+				}
+				return reads
+			}
+			before := heapReads()
+			// Exercise more than the first few executions on one physical connection,
+			// alternating wide, model-filtered and empty time windows.
+			for n := 0; n < 12; n++ {
+				q := query
+				if n%3 == 1 {
+					q.Model = "Plan A"
+				}
+				if n%3 == 2 {
+					q.From, q.To = "2026-09-07", "2026-09-07"
+				}
+				view, err := dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, q)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := 60000
+				if n%3 == 2 {
+					want = 0
+				}
+				wantUsage := 6000
+				if n%3 == 1 {
+					wantUsage = 3000
+				}
+				if n%3 == 2 {
+					wantUsage = 0
+				}
+				if view.Metrics.Tokens.Records != wantUsage {
+					t.Fatalf("read %d usage = %d, want %d", n, view.Metrics.Tokens.Records, wantUsage)
+				}
+				if view.Metrics.Messages != want {
+					t.Fatalf("read %d messages = %d, want %d", n, view.Metrics.Messages, want)
+				}
+			}
+			reads := heapReads() - before
+			t.Logf("12 reused Overview reads: %d native Event heap blocks", reads)
+			if reads > 1000 {
+				t.Fatalf("Overview read %d native Event heap blocks; statistics must avoid body pages", reads)
+			}
+			var committedMode string
+			if err := reused.QueryRow(ctx, "SHOW plan_cache_mode").Scan(&committedMode); err != nil || committedMode != "force_generic_plan" {
+				t.Fatalf("successful Overview leaked planner policy: %q %v", committedMode, err)
+			}
+			// An interrupted read must also return a reusable connection without
+			// leaking its transaction-local planner policy.
+			lock, err := pool.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = lock.Rollback(ctx) }()
+			if _, err = lock.Exec(ctx, "LOCK TABLE workspace_teams IN ACCESS EXCLUSIVE MODE"); err != nil {
+				t.Fatal(err)
+			}
+			deadline, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+			_, readErr := dashboard.Open(deadline, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query)
+			cancel()
+			if !errors.Is(readErr, context.DeadlineExceeded) {
+				t.Fatalf("blocked read: %v", readErr)
+			}
+			if err = lock.Rollback(ctx); err != nil {
+				t.Fatal(err)
+			}
+			var mode string
+			if err := reused.QueryRow(ctx, "SHOW plan_cache_mode").Scan(&mode); err != nil || mode != "force_generic_plan" {
+				t.Fatalf("Overview leaked planner policy to the pooled connection: %q %v", mode, err)
+			}
+		})
 		seedMessages(60001, canonical.OverviewFactLimit)
 		if _, err = dashboard.Open(ctx, canonicalcontract.WebPrincipal(), canonicalcontract.TestTeamID, query); !errors.Is(err, canonical.ErrOverviewCapacity) {
 			t.Fatalf("over-capacity read must reject partial totals: %v", err)
@@ -656,7 +793,7 @@ DELETE FROM atape_schema_migrations WHERE version = 12;`); err != nil {
 	if err := reopenedPool.QueryRow(context.Background(), "SELECT COUNT(*) FROM atape_schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if got, want := migrationCount, 20; got != want {
+	if got, want := migrationCount, 21; got != want {
 		t.Fatalf("migration count = %d, want %d", got, want)
 	}
 	large := rawUpload(created.SessionID, "raw-capacity", 1, 0, true, strings.Repeat("x", rawarchive.MaxChunkBytes))
