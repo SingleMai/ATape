@@ -446,3 +446,58 @@ fragments, native divergence, Raw policy changes and response-loss injection.
 All five selected source files are deleted before independent Raw and activation
 recovery. Negative runtime cases additionally cover missing fragments, mismatched
 prompts/UUIDs/afterId, sidecars, storage-parent revisits and aggregate file limits.
+
+## Emergency compaction in forks
+
+`native-fork-emergency-2.124.0/` was generated on 2026-09-14 UTC with the installed
+CLI 2.124.0 on macOS arm64. Every run used `-p --strict-mcp-config
+--setting-sources "" --model hy3 --effort low --max-turns 5 --output-format json`,
+parent tools/allowedTools Agent and Read, and a custom `atape-emergency` child
+with only Read. The parent called only Agent. Its controlled input file was the
+generated 600-line content used by the earlier emergency corpus, read with a
+300-line limit; no personal source was read. A successful Read spilled its large output, so the captured
+placeholder remains partial and its external file is excluded from fixtures.
+
+`CODEBUDDY_PRE_MESSAGE_COMPACT=0` applied to every run. Emergency threshold
+`CODEBUDDY_AUTOCOMPACT_PCT_OVERRIDE` was 5 during the first fork turn and the
+last resumed-fork turn, and 100 otherwise. These settings were process-scoped.
+The native `PreMessageCompact` interceptor was also inspected: it skips
+`SessionUtils.isSubAgent(session)` and team Sessions. This CLI version therefore
+cannot supply the originally considered child pre-message compaction sample.
+No synthetic compact record is presented as native evidence for that behavior.
+
+| Native stage | Root / original child / fork child records | Fork projection |
+| --- | --- | --- |
+| Original marker launch | 6 / 3 / absent | Original: 2 Threads / 8 Events / 3 usage |
+| Fork resumes child; root and child emergency compact | 14 / 3 / 8 | 2 / 19 / 7 |
+| Ordinary fork resume, no tools | 16 / 3 / 8 | 2 / 21 / 8 |
+| Another fork copies the compacted history | Nested root 19 / 3 / 8 | 2 / 23 / 9 |
+| Original root resumes its child afterward | Original root 11 / 6 / 8 | First fork unchanged: 2 / 21 / 8 |
+| Resumed first fork emergency compacts again, no tools | 21 / 6 / 8 | 2 / 24 / 9 |
+
+The seven fixtures are three root histories, two fork sidecars and two physical
+parts of `agent-405977cd` (native UUID `a1c600eb-4aab-4b46-935b-b66e0166f6e6`).
+The first three rows under the original root end at completed assistant
+`cd4871e5c66e46d7b463d796911eacd8`; the fork fragment's first user and Agent
+`afterId` receipt both reference it. Later original rows 4–6 are outside that
+boundary, including `ATAPE_FORK_EMERGENCY_ORIGINAL_LATER_21240`. Joining the complete
+physical files without this boundary would incorrectly introduce another turn.
+All physical bytes/records still count toward source limits.
+
+Root rows 9–10 and 18–19, and fork-child rows 4–5 (one-based), are exact emergency
+summary/continue pairs. Reopening the first fork restores the original root
+`sessionId` and marks the root pair `isSubAgent: true`, but its continuation still
+uses the ordinary root template. Copied nested-fork history retains four internal
+records. Internal records have no normalized usage. Final counters are 79,516
+input / 708 output / 40,960 cache for the first fork; the nested fork has 78,222 /
+657 / 31,744. Cache is included in input and copied usage describes history.
+
+Only controlled absolute paths were replaced: CWD/prompt/summary paths became
+`/fixture/codebuddy-fork-emergency-project`; the native spill path became
+`/fixture/codebuddy-home/projects/controlled-fork-emergency`. The child intent is
+shorter than 200 code units before and after normalization. All IDs, flags,
+parent/receipt links, timestamps, summary text apart from those paths, model
+responses and counters remain native. Eight live native files, including the
+external spill, were archived and byte-verified before removing only the owned
+controlled source directory. Research scripts and unnormalized archives remain
+outside implementation commits.

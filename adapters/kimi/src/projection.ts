@@ -220,7 +220,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   const header: SourceCaptureHeader = { profile: forkMarkers ? "kimi.code.wire.fork.1" : contextHistory ? "kimi.code.wire.context.1" : "kimi.code.wire.linear.1", origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "kimi-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
-    threads: [{ sourceThreadId: threadId, ...(child ? { parentSourceThreadId: sourceId } : {}), label: child?.label ?? title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }
+    threads: [{ sourceThreadId: threadId, ...(child ? { parentSourceThreadId: child.parentId === "main" ? sourceId : child.parentId } : {}), label: child?.label ?? title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "Kimi header exceeds its page budget.")
   return { header, frames, turnsForCalls, bytes }
 }
@@ -237,7 +237,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
   let events = root.header.target.events, usage = root.header.target.usage, latest = root.header.session.updatedAt
   let partial = root.header.session.captureStatus === "partial", active = root.header.session.status === "active"
   for (const child of family.children) {
-    const planned = projectThread(source, { ...request, projection: { ...request.projection, events: request.projection.events - events, usage: request.projection.usage - usage } }, started, new Map(), child, 64 * 1024 * 1024 - projectedBytes)
+    const planned = projectThread(source, { ...request, projection: { ...request.projection, events: request.projection.events - events, usage: request.projection.usage - usage } }, started, child.callChildren, child, 64 * 1024 * 1024 - projectedBytes)
     projectedBytes += planned.bytes
     children.set(child.id, planned); threads.push(...planned.header.threads)
     events += planned.header.target.events; usage += planned.header.target.usage

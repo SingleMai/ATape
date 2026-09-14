@@ -54,7 +54,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
       contextOnly = true; emergency = "response"
     } else if (provider.compactType === "emergency-auto") {
       const content = Array.isArray(row.content) && row.content.length === 1 ? object(row.content[0]) : {}
-      if (source.forkedFrom || child?.background || !previous || manualCompact || emergency ||
+      if (child?.background || !previous || manualCompact || emergency ||
         row.type !== "message" || row.role !== "user" || provider.isCompactInternal !== true || provider.isSummary !== true ||
         provider.isCompacted !== true || provider.skipRun !== false || content.type !== "input_text" ||
         !enclosed(content.text, "conversation_history_summary") || row.parentId != null || row.logicalParentId == null)

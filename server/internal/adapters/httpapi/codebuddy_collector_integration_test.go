@@ -1826,9 +1826,154 @@ func assertCodeBuddyCollectorContract(t *testing.T, h *Handler, modules Modules,
 	expireReservations()
 	read(recoveredForkContinuation.SessionID, 19)
 	read(recoveredForkContinuation.SessionID, 6, continuedNewID)
+	forkEmergencyCreate := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "folder", "name": "CodeBuddy fork emergency"})
+	forkEmergencyCreate.Header.Set("Authorization", "Bearer "+credential)
+	forkEmergencyCreate.Header.Set("Idempotency-Key", "codebuddy-fork-emergency-project-21240")
+	forkEmergencyCreated := httptest.NewRecorder()
+	h.ServeHTTP(forkEmergencyCreated, forkEmergencyCreate)
+	if forkEmergencyCreated.Code != http.StatusCreated {
+		t.Fatalf("create fork emergency Project: %d %s", forkEmergencyCreated.Code, forkEmergencyCreated.Body.String())
+	}
+	var forkEmergencyProject projectDTO
+	decodeResponse(t, forkEmergencyCreated, &forkEmergencyProject)
+	projectID = forkEmergencyProject.ID
+	forkEmergencyInitial := run("fork-emergency-initial")
+	_, emergencyForkRoot := read(forkEmergencyInitial.SessionID, 6)
+	if len(links(emergencyForkRoot)) != 1 {
+		t.Fatal("CodeBuddy emergency fork lost its copied child")
+	}
+	emergencyForkChildID := links(emergencyForkRoot)[0].ID
+	_, emergencyForkSeed := read(forkEmergencyInitial.SessionID, 3, emergencyForkChildID)
+	for _, phase := range []string{"fork-emergency-root-pending", "fork-emergency-child-pending"} {
+		if pending := run(phase); pending.Head != forkEmergencyInitial.Head || !bytes.Equal(pending.Records, forkEmergencyInitial.Records) {
+			t.Fatal("CodeBuddy incomplete fork compaction replaced the previous family")
+		}
+	}
+	forkEmergencyComplete := run("fork-emergency-complete")
+	_, emergencyForkCompleteRoot := read(forkEmergencyComplete.SessionID, 10)
+	_, emergencyForkChild := read(forkEmergencyComplete.SessionID, 9, emergencyForkChildID)
+	beforePrefix, _ = json.Marshal(emergencyForkSeed)
+	afterPrefix, _ = json.Marshal(emergencyForkChild[:3])
+	if !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(emergencyForkChild) != 2 || emergencyForkChild[8].Text != "ATAPE_FORK_EMERGENCY_CHILD_21240" {
+		t.Fatal("CodeBuddy fork compaction changed prior child history or fabricated a user turn")
+	}
+	if len(links(emergencyForkCompleteRoot)) != 2 || links(emergencyForkCompleteRoot)[1].ID != emergencyForkChildID || humanTurns(emergencyForkCompleteRoot) != 2 {
+		t.Fatal("CodeBuddy root compaction lost stable child links or added internal user turns")
+	}
+	forkEmergencyResumed := run("fork-emergency-resume")
+	_, emergencyForkResumedRoot := read(forkEmergencyResumed.SessionID, 12)
+	if growth := run("fork-emergency-growth"); growth.Head != forkEmergencyResumed.Head || growth.Observations != 0 || !bytes.Equal(growth.Records, forkEmergencyResumed.Records) {
+		t.Fatal("CodeBuddy original growth in an earlier child fragment changed the fork")
+	}
+	forkEmergencyRecompacted := run("fork-emergency-recompact")
+	_, emergencyForkRecompactedRoot := read(forkEmergencyRecompacted.SessionID, 15)
+	beforePrefix, _ = json.Marshal(emergencyForkResumedRoot)
+	afterPrefix, _ = json.Marshal(emergencyForkRecompactedRoot[:12])
+	if forkEmergencyRecompacted.SessionID != forkEmergencyInitial.SessionID || !bytes.Equal(beforePrefix, afterPrefix) || humanTurns(emergencyForkRecompactedRoot) != 4 {
+		t.Fatal("CodeBuddy emergency compaction after fork resume changed identity or prior turns")
+	}
+	if invalid := run("fork-emergency-invalid"); invalid.Head != forkEmergencyRecompacted.Head || !bytes.Equal(invalid.Records, forkEmergencyRecompacted.Records) {
+		t.Fatal("CodeBuddy unproven compact boundary replaced the fork")
+	}
+	if repaired := run("fork-emergency-repair"); repaired.Head != forkEmergencyRecompacted.Head || repaired.Observations != 0 {
+		t.Fatal("CodeBuddy repaired fork compaction replayed unchanged data")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	usageCount, inputTokens, outputTokens, cachedTokens = 0, 0, 0, 0
+	threadUsage = map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID != forkEmergencyRecompacted.SessionID {
+			continue
+		}
+		usageCount++
+		threadUsage[usage.ThreadID]++
+		if usage.InputTokens != nil {
+			inputTokens += *usage.InputTokens
+		}
+		if usage.OutputTokens != nil {
+			outputTokens += *usage.OutputTokens
+		}
+		if usage.CacheReadTokens != nil {
+			cachedTokens += *usage.CacheReadTokens
+		}
+	}
+	if usageCount != 9 || inputTokens != 79516 || outputTokens != 708 || cachedTokens != 40960 || threadUsage["root"] != 6 || threadUsage[emergencyForkChildID] != 3 {
+		t.Fatalf("CodeBuddy fork emergency usage ownership: %d %d %d %d %v", usageCount, inputTokens, outputTokens, cachedTokens, threadUsage)
+	}
+	if len(search("ATAPE_FORK_EMERGENCY_ORIGINAL_LATER_21240").Results) != 0 {
+		t.Fatal("CodeBuddy fork Search exposed a later original child turn")
+	}
+	setRaw(false)
+	forkEmergencyOff := run("fork-emergency-edit")
+	if forkEmergencyOff.Head == forkEmergencyRecompacted.Head || len(search("CodeBuddyForkEmergencyPolicyNeedle").Results) != 1 {
+		t.Fatal("CodeBuddy fork compaction Raw-off stopped Canonical")
+	}
+	setRaw(true)
+	forkEmergencyOn := run("fork-emergency-reenable")
+	if forkEmergencyOn.Head != forkEmergencyOff.Head || !bytes.Equal(forkEmergencyOn.Records, forkEmergencyOff.Records) {
+		t.Fatal("CodeBuddy fork compaction Raw-on changed provenance")
+	}
+	if lost := run("fork-emergency-raw-only"); lost.Pending == 0 || lost.Head != forkEmergencyOn.Head {
+		t.Fatal("CodeBuddy fork compact context Raw loss lost recovery")
+	}
+	forkEmergencyRawRecovered := run("fork-emergency-raw-recover")
+	if forkEmergencyRawRecovered.Pending != 0 || forkEmergencyRawRecovered.Head != forkEmergencyOn.Head || !bytes.Equal(forkEmergencyRawRecovered.Records, forkEmergencyOn.Records) {
+		t.Fatal("CodeBuddy fork compact Raw recovery failed after deleting all four files")
+	}
+	var forkEmergencyArchive rawarchive.SessionArchive
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+forkEmergencyRecompacted.SessionID+"/raw", ""), &forkEmergencyArchive)
+	var forkEmergencyRaw strings.Builder
+	for _, archived := range forkEmergencyArchive.Objects {
+		var page rawarchive.ContentPage
+		decodeResponse(t, send("GET", "/api/v1/raw-objects/"+archived.ObjectID+"/content?limit=1", ""), &page)
+		if !page.Finalized || page.Generation != 1 || page.NextCursor != "" || len(page.Chunks) != 1 {
+			t.Fatal("CodeBuddy compact fork Raw exceeded its object bound")
+		}
+		decoded, err := base64.StdEncoding.DecodeString(page.Chunks[0].ContentBase64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		forkEmergencyRaw.Write(decoded)
+	}
+	for _, native := range []string{"CodeBuddyForkEmergencyRawOnlyNeedle", "forkedFrom", "agent-405977cd", "738800cc-008b-4f9e-a6a6-5c65f9d8cc3f", "8987144d-c25b-4ad1-a76c-ae9a2e457257", "emergency-auto", "logicalParentId"} {
+		if !strings.Contains(forkEmergencyRaw.String(), native) {
+			t.Fatalf("CodeBuddy fork compact Raw lost %s", native)
+		}
+	}
+	if strings.Contains(forkEmergencyRaw.String(), "ATAPE_FORK_EMERGENCY_ORIGINAL_LATER_21240") || len(search("CodeBuddyForkEmergencyRawOnlyNeedle").Results) != 0 {
+		t.Fatal("CodeBuddy fork compact context escaped its Raw boundary")
+	}
+	if lost := run("fork-emergency-lost"); lost.Pending == 0 {
+		t.Fatal("CodeBuddy compact fork activation loss lost recovery")
+	}
+	recoveredForkEmergency := run("fork-emergency-recover")
+	if recoveredForkEmergency.Pending != 0 {
+		t.Fatal("CodeBuddy compact fork recovery left pending work")
+	}
+	read(recoveredForkEmergency.SessionID, 15)
+	_, emergencyForkRecoveredChild := read(recoveredForkEmergency.SessionID, 9, emergencyForkChildID)
+	if emergencyForkRecoveredChild[8].Text != "CodeBuddyForkEmergencyFrozenNeedle" {
+		t.Fatal("CodeBuddy compact fork recovery lost frozen child bytes")
+	}
+	forkEmergencyHits := search("CodeBuddyForkEmergencyFrozenNeedle")
+	if len(forkEmergencyHits.Results) != 1 || forkEmergencyHits.Results[0].ThreadID != emergencyForkChildID {
+		t.Fatal("CodeBuddy compact fork recovered child missing from Search")
+	}
+	var forkEmergencyAnchored conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+recoveredForkEmergency.SessionID+"?thread="+url.QueryEscape(emergencyForkChildID)+"&at="+url.QueryEscape(forkEmergencyHits.Results[0].EventID)+"&limit=2", ""), &forkEmergencyAnchored)
+	if len(forkEmergencyAnchored.ThreadPath) != 2 {
+		t.Fatal("CodeBuddy compact fork Search lost child path")
+	}
+	expireReservations()
+	read(recoveredForkEmergency.SessionID, 15)
+	read(recoveredForkEmergency.SessionID, 9, emergencyForkChildID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkContinuation.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recoveredForkEmergency.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}

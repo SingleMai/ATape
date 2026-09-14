@@ -189,11 +189,14 @@ are pinned to the same release as the native fixtures.
 
 ## Foreground subagents
 
-The family profile supports completed, direct foreground `Agent` calls from the
-main agent, same-child `resume` across native CLI restarts, and multiple direct
-children. It reads the native Session as one atomic family. Each child must have
-`type: sub`, matching `parentAgentId` and `labels.parentAgentId` set to `main`, and
-a matching completed parent tool receipt. The native `homedir` is never followed;
+The family profile supports completed foreground `Agent` calls, including nested
+delegation, same-child `resume` across native CLI restarts and multiple children.
+It reads the native Session as one atomic family. Each child must have `type: sub`,
+the native legacy `parentAgentId: main`, a declared direct parent in
+`labels.parentAgentId`, and a matching completed tool receipt in that parent.
+In 0.42.0 the legacy field stays `main` even for grandchildren; the labels field
+is authoritative, matching upstream `subagentParentAgentId`. Parent cycles and
+unreachable agents are rejected. The native `homedir` is never followed;
 only the validated agent ID locates its file under this Session's `agents` directory.
 
 A receipt alone is insufficient: every child prompt must match the corresponding
@@ -217,10 +220,21 @@ The native fixture has 22 Events and 11 responses: root 636 input / 96 output,
 first child 311 / 41, second child 219 / 39. Total input 1166 includes 220 cached
 input tokens; total output is 176. These are controlled provider counters.
 
+The nested fixture uses a custom `nested-middle` profile with `tools: [Agent]`
+and `subagents: [coder]`; built-in subagents cannot delegate by default. It verifies
+root → middle → leaf, a real leaf `Read`, then native CLI restart with root resuming
+middle and middle resuming the same leaf. Both calls retain their child links;
+leaf breadcrumbs contain all three Threads. Calls are correlated within their
+owning Thread, so reused UUIDs in different parents do not collide. The resumed
+family has 22 Events and 11 responses: root 425 input / 65 output, middle 425 / 65,
+leaf 316 / 46, totaling 1166 input / 176 output (220 cached input). Native acceptance
+covers three levels; deeper valid parent chains use the same bounded iterative
+projection, but have not been produced in a separate native CLI acceptance run.
+
 The source byte/record/Thread budgets cover the whole family, not each file
 independently. All files and directories are rechecked before the frozen view
 escapes. Source deletion, Raw policy and lost-response recovery use the existing
-Host contract. Background execution, nested delegation, `Agent(fork=true)`,
+Host contract. Background execution, `Agent(fork=true)`,
 `AgentSwarm`, failed/interrupted child runs and compaction/undo/fork combined with
 children are not part of this profile.
 
@@ -238,12 +252,12 @@ intentionally excluded and is not a compatibility backlog. All profiles require
 metadata v2/Wire 1.5; other versions, Kimi IDE formats and other platforms remain
 unverified.
 
-Independent, nested, background and forked child agents, `AgentSwarm`, steering,
+Independent, background and forked child agents, `AgentSwarm`, steering,
 cancellation, interrupted/failed/retried steps, low-level `context.clear`, unknown
 context operations and mixed/tree storage remain unsupported. Previously
 captured content remains selected. SDK historical-turn forks remain unverified;
 the CLI whole-session copy is the validated fork operation. Families combined
-with compaction/undo/fork remain unsupported. Background/nested child lifecycle
+with compaction/undo/fork remain unsupported. Background child lifecycle
 and interrupted/retried turns need separate native evidence before expanding
 the supported profile.
 
@@ -295,6 +309,16 @@ Lost activation and child Raw receipts recovered after the source family was
 deleted; a missing child preserved the previous head/checkpoint. Web acceptance
 opened both children from their parent calls, showing the resumed two-turn child,
 the independent second child, real Read results and parent breadcrumbs.
+
+Nested-family verification on 2026-09-15 passed 103 Adapter behavior tests,
+Adapter/CLI typechecks, independent tarball installation and the installed
+HTTP/PostgreSQL contract. Native three-level delegation and layered resume retained
+message identities, correct immediate parents and per-Thread usage. Search opened
+the resumed leaf Event. Lost activation and leaf Raw receipts recovered after
+source deletion; a missing leaf preserved the selected head/checkpoint. Raw-off/on
+preserved Canonical provenance. Web acceptance opened middle then leaf from their
+parent calls, showing both resumed turns, the native Read result and all three
+breadcrumb levels. Child cards correctly updated their current Event counts.
 
 The package is included in official Tools detection/selection, build, packing,
 release verification and artifact upload sets. Local implementation, CI, merge,

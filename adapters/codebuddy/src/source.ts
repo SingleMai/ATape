@@ -413,7 +413,19 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
         bytes += part.bytes; records += part.records.length
         parts.push(part); histories.push(part)
       }
-      const child = { ...parts[0]!, records: parts.flatMap(part => part.records) }
+      const child = { ...parts[0]!, records: parts.flatMap((part, index) => {
+        if (!ref.copied || index === parts.length - 1) return part.records
+        // A fork can continue a copied child in a new file. Its first user and
+        // matching receipt freeze the prior fragment at afterId; later original
+        // turns in that physical file do not become part of the fork.
+        const next = parts[index + 1]!.records[0]!.row
+        if (next.type !== "message" || next.role !== "user" || next.parentId == null ||
+          !ref.calls.some(call => call.mode === "foreground" && call.afterId === next.parentId))
+          fail("unsupported", "CodeBuddy copied child fragment has no proven continuation boundary.")
+        const end = part.records.findIndex(({ row }) => row.id === next.parentId && row.type === "message" && row.role === "assistant" && row.status === "completed")
+        if (end < 0) fail("format", "CodeBuddy copied child fragment has not reached its continuation boundary; retry.")
+        return part.records.slice(0, end + 1)
+      }) }
       const visible = ref.copied ? copiedChild(child, ref) : child
       const { nativeSessionId, delegatedPrompts } = validateChild(visible, ref), refs = references(visible, false, root.forkedFrom ? { copied: ref.copied } : undefined)
       if (ref.backgroundName !== undefined && refs.children.size) fail("unsupported", "CodeBuddy background child delegation requires a wider source profile.")

@@ -576,9 +576,102 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		t.Fatal("Kimi child Raw recovery changed or leaked into Canonical history")
 	}
 	read(family.SessionID, 6, childID)
+	setRaw(false)
+	deep := run("nested-subagents-seed")
+	_, deepRoot := read(deep.SessionID, 4)
+	if deepRoot[1].ChildThread == nil {
+		t.Fatal("Kimi nested root has no child link")
+	}
+	middleID := deepRoot[1].ChildThread.ID
+	_, middleFirst := read(deep.SessionID, 4, middleID)
+	if middleFirst[1].ChildThread == nil {
+		t.Fatal("Kimi middle has no leaf link")
+	}
+	leafID := middleFirst[1].ChildThread.ID
+	_, leafFirst := read(deep.SessionID, 4, leafID)
+	assertUsage(deep.SessionID, 6, 621, 81, 120, "atape-nested-model")
+	if run("nested-subagents-resume").Pending == 0 {
+		t.Fatal("Kimi nested activation loss was not recoverable")
+	}
+	deepRecovered := run("nested-subagents-recover")
+	_, deepRoot = read(deep.SessionID, 8)
+	_, middleResumed := read(deep.SessionID, 8, middleID)
+	_, leafResumed := read(deep.SessionID, 6, leafID)
+	if deepRecovered.Pending != 0 || deepRoot[5].ChildThread == nil || deepRoot[5].ChildThread.ID != middleID || middleResumed[5].ChildThread == nil || middleResumed[5].ChildThread.ID != leafID {
+		t.Fatal("Kimi nested resume lost its existing Thread links after source deletion")
+	}
+	// Child cards describe the current Thread, so their count grows on resume.
+	if middleFirst[1].ChildThread.EventCount != 4 || middleResumed[1].ChildThread.EventCount != 6 {
+		t.Fatal("Kimi resumed leaf card did not update its event count")
+	}
+	middleFirst[1].ChildThread.EventCount = 6
+	for i, original := range [][]conversation.Event{middleFirst, leafFirst} {
+		resumed := [][]conversation.Event{middleResumed, leafResumed}[i]
+		beforeJSON, _ = json.Marshal(original)
+		afterJSON, _ = json.Marshal(resumed[:4])
+		if !bytes.Equal(beforeJSON, afterJSON) {
+			t.Fatalf("Kimi nested resume changed retained Events at layer %d", i)
+		}
+	}
+	assertUsage(deep.SessionID, 11, 1166, 176, 220, "atape-nested-model")
+	var leafPage conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+deep.SessionID+"?thread="+url.QueryEscape(leafID)+"&limit=2", ""), &leafPage)
+	if leafPage.Thread.ParentThreadID == nil || *leafPage.Thread.ParentThreadID != middleID || len(leafPage.ThreadPath) != 3 {
+		t.Fatal("Kimi leaf reader lost its immediate parent or three-level breadcrumb")
+	}
+	matched = false
+	for _, hit := range search("KimiNestedLeafResumedReply9").Results {
+		if hit.SessionID != deep.SessionID || hit.ThreadID != leafID {
+			continue
+		}
+		var anchored conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+deep.SessionID+"?thread="+url.QueryEscape(hit.ThreadID)+"&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+		for _, event := range anchored.Events {
+			matched = matched || event.ID == hit.EventID
+		}
+	}
+	if !matched {
+		t.Fatal("Kimi nested Search did not open the leaf Event")
+	}
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadInput, threadResponses = map[string]int64{}, map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID == deep.SessionID {
+			threadResponses[usage.ThreadID]++
+			if usage.InputTokens != nil {
+				threadInput[usage.ThreadID] += *usage.InputTokens
+			}
+		}
+	}
+	if threadResponses["root"] != 4 || threadResponses[middleID] != 4 || threadResponses[leafID] != 3 || threadInput["root"] != 425 || threadInput[middleID] != 425 || threadInput[leafID] != 316 {
+		t.Fatalf("Kimi nested usage has incorrect ownership: %v %v", threadResponses, threadInput)
+	}
+	run("nested-subagents-restore")
+	setRaw(true)
+	deepOn := run("nested-subagents-raw-on")
+	if deepOn.Head != deepRecovered.Head || !bytes.Equal(deepOn.Records, deepRecovered.Records) {
+		t.Fatal("Kimi nested Raw-on changed Canonical provenance")
+	}
+	deepIncomplete := run("nested-subagents-incomplete")
+	if deepIncomplete.Head != deepOn.Head || deepIncomplete.Checkpoint != deepOn.Checkpoint {
+		t.Fatal("Kimi missing leaf replaced a complete family")
+	}
+	run("nested-subagents-restore")
+	if run("nested-subagents-raw-loss").Pending == 0 {
+		t.Fatal("Kimi leaf Raw loss was not recoverable")
+	}
+	deepRaw := run("nested-subagents-recover-raw")
+	if deepRaw.Pending != 0 || deepRaw.Head != deepOn.Head || len(search("KimiNestedRawOnly").Results) != 0 {
+		t.Fatal("Kimi leaf Raw recovery changed or leaked into Canonical history")
+	}
+	read(deep.SessionID, 6, leafID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_KIMI_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "familySessionId": family.SessionID, "childThreadId": childID, "secondChildThreadId": secondChildID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "nestedFamilySessionId": deep.SessionID, "middleThreadId": middleID, "leafThreadId": leafID, "familySessionId": family.SessionID, "childThreadId": childID, "secondChildThreadId": secondChildID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
