@@ -295,7 +295,11 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	if err := json.Unmarshal(content, &object); err != nil || !bytes.Contains(object.Records[key].Row, []byte("context.append_message")) {
 		t.Fatal("Kimi Raw did not retain its native message")
 	}
-	assertUsage := func(sessionID string, count int, input, output, cache int64) {
+	assertUsage := func(sessionID string, count int, input, output, cache int64, models ...string) {
+		expectedModel := "atape-context-model"
+		if len(models) != 0 {
+			expectedModel = models[0]
+		}
 		t.Helper()
 		snapshot, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
 			time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
@@ -308,7 +312,7 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 				continue
 			}
 			n++
-			if usage.Model != "atape-context-model" {
+			if usage.Model != expectedModel {
 				t.Fatalf("Kimi compaction attributed to model alias: %s", usage.Model)
 			}
 			if usage.InputTokens != nil {
@@ -480,9 +484,102 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	}
 	assertUsage(seed.SessionID, 7, 728, 98, 140)
 	assertUsage(fork.SessionID, 9, 947, 137, 180)
+	setRaw(false)
+	family := run("subagents-seed")
+	_, familyRoot := read(family.SessionID, 4)
+	if familyRoot[1].ChildThread == nil {
+		t.Fatal("Kimi foreground Agent call has no child link")
+	}
+	childID := familyRoot[1].ChildThread.ID
+	_, childFirst := read(family.SessionID, 4, childID)
+	assertUsage(family.SessionID, 4, 410, 50, 80, "atape-child-model")
+	if run("subagents-resume").Pending == 0 {
+		t.Fatal("Kimi child resume activation loss did not remain recoverable")
+	}
+	familyRecovered := run("subagents-recover")
+	_, resumedRoot := read(family.SessionID, 8)
+	_, resumedChild := read(family.SessionID, 6, childID)
+	if familyRecovered.Pending != 0 || resumedRoot[5].ChildThread == nil || resumedRoot[5].ChildThread.ID != childID {
+		t.Fatal("Kimi resume did not recover its original child Thread after source deletion")
+	}
+	beforeJSON, _ = json.Marshal(childFirst)
+	afterJSON, _ = json.Marshal(resumedChild[:4])
+	if !bytes.Equal(beforeJSON, afterJSON) {
+		t.Fatal("Kimi resume changed previously captured child Events")
+	}
+	assertUsage(family.SessionID, 7, 728, 98, 140, "atape-child-model")
+	run("subagents-restore")
+	completeFamily := run("subagents-final")
+	_, familyRoot = read(family.SessionID, 12)
+	if familyRoot[9].ChildThread == nil || familyRoot[9].ChildThread.ID == childID {
+		t.Fatal("Kimi second delegation reused the existing child")
+	}
+	secondChildID := familyRoot[9].ChildThread.ID
+	read(family.SessionID, 4, secondChildID)
+	var childPage conversation.Conversation
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+family.SessionID+"?thread="+url.QueryEscape(childID)+"&limit=2", ""), &childPage)
+	if childPage.Thread.ParentThreadID == nil || *childPage.Thread.ParentThreadID != "root" || len(childPage.ThreadPath) != 2 {
+		t.Fatal("Kimi child reader lost its parent breadcrumb")
+	}
+	hits := search("KimiChildResumedReply6")
+	matched := false
+	for _, hit := range hits.Results {
+		if hit.SessionID == family.SessionID && hit.ThreadID == childID {
+			matched = true
+			var anchored conversation.Conversation
+			decodeResponse(t, send("GET", "/api/v1/sessions/"+family.SessionID+"?thread="+url.QueryEscape(hit.ThreadID)+"&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+			found := false
+			for _, event := range anchored.Events {
+				found = found || event.ID == hit.EventID
+			}
+			if !found {
+				t.Fatal("Kimi Search anchor lost its child Event")
+			}
+		}
+	}
+	if !matched {
+		t.Fatal("Kimi child continuation missing from Search")
+	}
+	assertUsage(family.SessionID, 11, 1166, 176, 220, "atape-child-model")
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadInput := map[string]int64{}
+	threadResponses := map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID == family.SessionID {
+			threadResponses[usage.ThreadID]++
+			if usage.InputTokens != nil {
+				threadInput[usage.ThreadID] += *usage.InputTokens
+			}
+		}
+	}
+	if threadResponses["root"] != 6 || threadResponses[childID] != 3 || threadResponses[secondChildID] != 2 || threadInput["root"] != 636 || threadInput[childID] != 311 || threadInput[secondChildID] != 219 {
+		t.Fatalf("Kimi response usage has incorrect Thread ownership: %v %v", threadResponses, threadInput)
+	}
+	setRaw(true)
+	familyOn := run("subagents-raw-on")
+	if familyOn.Head != completeFamily.Head || !bytes.Equal(familyOn.Records, completeFamily.Records) {
+		t.Fatal("Kimi family Raw-on changed Canonical provenance")
+	}
+	familyIncomplete := run("subagents-incomplete")
+	if familyIncomplete.Head != completeFamily.Head || familyIncomplete.Checkpoint != familyOn.Checkpoint {
+		t.Fatal("Kimi missing child replaced its complete published family")
+	}
+	run("subagents-final")
+	if run("subagents-raw-loss").Pending == 0 {
+		t.Fatal("Kimi child Raw response loss was not recoverable")
+	}
+	familyRawRecovered := run("subagents-recover-raw")
+	if familyRawRecovered.Pending != 0 || familyRawRecovered.Head != completeFamily.Head || len(search("KimiChildRawOnly").Results) != 0 {
+		t.Fatal("Kimi child Raw recovery changed or leaked into Canonical history")
+	}
+	read(family.SessionID, 6, childID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_KIMI_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "familySessionId": family.SessionID, "childThreadId": childID, "secondChildThreadId": secondChildID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
