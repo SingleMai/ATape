@@ -32,12 +32,11 @@ text/thoughts, tool calls/results (including completed ordinary multi-tool respo
 automatic compaction, completed foreground Agent families (resume and nesting),
 root-level background Agents through native automatic teams (serial SendMessage
 continuation and ordinary foreground resume),
-completed emergency compaction in roots and foreground children, and normalized
+completed emergency compaction in ordinary/forked roots and foreground children, and normalized
 per-Thread response usage.
 Rewind, `/branch`, pre-message LLM summaries, named teams/generic inbox turns,
 overlapping or batched background messages, broadcasts, nested background launches, fork subagents,
-manual/pre-message child compaction, emergency compaction in background children
-or forks, unaccounted shared-child turns, revisiting an earlier child storage parent, background children in forks, unknown sidecar fields and external
+manual/pre-message child compaction, emergency compaction in background children, unaccounted shared-child turns, revisiting an earlier child storage parent, background children in forks, unknown sidecar fields and external
 blob/spill collection have no support promise. Unsupported shapes retain the
 previous published view and produce diagnostics. Unknown content stays Raw-only
 when enabled and marks capture partial.
@@ -49,6 +48,9 @@ new-spend evidence. The original parent file is not required.
 Compaction retains the original transcript. Manual commands and summaries remain
 visible; engine-generated context is Raw-only. Completed emergency summary/continue
 pairs preserve the original transcript and stay within the same delegated turn.
+Copied child fragments stop at the proven continuation boundary, excluding later
+original-owned turns. The installed 2.124.0 CLI skips pre-message compaction in
+subagents, so there is no native sample for that behavior in this version.
 Incomplete manual or emergency compaction keeps
 the previous publication. Exact flags and remaining limits are in the guide.
 

@@ -632,6 +632,79 @@ describe("CodeBuddy installed runtime Interface", () => {
     await writeFile(f.parent, serialize(f.parentRows)); await writeFile(f.child, serialize(f.childRows))
     await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
   })
+  const forkEmergency = async () => {
+    const f = await fixture(), originalId = "atape-codebuddy-fork-emergency-root-21240", forkId = "atape-codebuddy-fork-emergency-copy-21240"
+    await cp(new URL("./fixtures/native-fork-emergency-2.124.0", import.meta.url), f.directory, { recursive: true })
+    const parent = join(f.directory, forkId + ".jsonl"), seed = join(f.directory, originalId, "subagents", "agent-405977cd.jsonl")
+    const tail = join(f.directory, forkId, "subagents", "agent-405977cd.jsonl")
+    await rm(join(f.directory, originalId + ".jsonl"))
+    return { ...f, parent, seed, tail, parentRows: rows(await readFile(parent, "utf8")), seedRows: rows(await readFile(seed, "utf8")), tailRows: rows(await readFile(tail, "utf8")),
+      request: { ...f.request, sourceId: forkId, limits: { ...limits, rowBytes: 131072 } } }
+  }
+  it("captures native fork root/child emergency compaction and bounds copied fragments before later original growth", async () => {
+    const f = await forkEmergency()
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [parentCount, seedCount, events, usage] of [[8, 3, 9, 3], [14, 3, 19, 7], [16, 3, 21, 8], [16, 6, 21, 8], [21, 6, 24, 9]] as const) {
+      await writeFile(f.parent, serialize(f.parentRows.slice(0, parentCount))); await writeFile(f.seed, serialize(f.seedRows.slice(0, seedCount)))
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      expect(view.target).toEqual({ events, usage, threads: 2 }); expect(view.profile).toBe("codebuddy.cli.jsonl.family.fork.1")
+      expect(view.origin.cwd).toBe("/fixture/codebuddy-fork-emergency-project")
+      expect(frames.flatMap(frame => frame.events).slice(0, previous.flatMap(frame => frame.events).length)).toEqual(previous.flatMap(frame => frame.events))
+      previous = frames; await view.close()
+    }
+    const events = previous.flatMap(frame => frame.events), usage = previous.flatMap(frame => frame.usage)
+    expect(events.filter(event => event.childSourceThreadId).map(event => event.childSourceThreadId)).toEqual(Array(2).fill("agent-405977cd"))
+    expect(events.filter(event => event.update.sessionUpdate === "user_message_chunk")).toHaveLength(6)
+    expect(events.filter(event => event.sourceThreadId === "agent-405977cd").at(-1)!.update).toMatchObject({ content: { text: "ATAPE_FORK_EMERGENCY_CHILD_21240" } })
+    expect(usage.filter(row => row.sourceThreadId === "agent-405977cd")).toHaveLength(3)
+    expect(usage.reduce((n, row) => n + (row.inputTokens ?? 0), 0)).toBe(79516)
+    expect(usage.reduce((n, row) => n + (row.outputTokens ?? 0), 0)).toBe(708)
+    expect(usage.reduce((n, row) => n + (row.cacheReadTokens ?? 0), 0)).toBe(40960)
+    const contexts = previous.filter(frame => JSON.parse((frame.raw as { json: string }).json).providerData?.isCompactInternal)
+    expect(contexts).toHaveLength(6); expect(contexts.every(frame => !frame.events.length && !frame.usage.length)).toBe(true)
+    const raw = previous.map(frame => (frame.raw as { json: string }).json).join("\n")
+    expect(raw).toContain(f.seedRows[0].id); expect(raw).toContain(f.tailRows[0].id)
+    expect(raw).not.toContain("ATAPE_FORK_EMERGENCY_ORIGINAL_LATER_21240")
+    f.tailRows[3].content[0].text = f.tailRows[3].content[0].text.replace("</conversation_history_summary>", "ForkEmergencyRawOnlyNeedle</conversation_history_summary>")
+    await writeFile(f.tail, serialize(f.tailRows))
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.parent); await rm(f.seed); await rm(f.tail)
+    expect(await read(off)).toEqual(previous.map(({ raw: _, ...frame }) => frame)); await off.close()
+  })
+  it("copies compacted fork history into a nested fork with isolated identities and historical usage", async () => {
+    const f = await forkEmergency(), view = await f.runtime.sourceCapture.open({ ...f.request, sourceId: "atape-codebuddy-fork-emergency-nested-21240" })
+    expect(view.target).toEqual({ events: 23, usage: 9, threads: 2 })
+    const frames = await read(view), events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+    expect(events.at(-1)!.update).toMatchObject({ content: { text: "ATAPE_FORK_EMERGENCY_NESTED_21240" } })
+    expect(usage.reduce((n, row) => n + (row.inputTokens ?? 0), 0)).toBe(78222)
+    expect(usage.reduce((n, row) => n + (row.outputTokens ?? 0), 0)).toBe(657)
+    expect(usage.reduce((n, row) => n + (row.cacheReadTokens ?? 0), 0)).toBe(31744)
+    await view.close()
+    const original = await f.runtime.sourceCapture.open(f.request), other = await read(original)
+    expect(events.some(event => other.flatMap(frame => frame.events).some(row => row.sourceEventId === event.sourceEventId))).toBe(false)
+    await original.close()
+  })
+  it.each(["root-pending", "child-pending", "child-continue", "root-parent", "child-parent", "fragment-parent", "unaccounted-turn", "missing-fragment", "context-usage", "foreign-session", "physical-record-limit"])("rejects unproven fork emergency %s without a partial view", async variant => {
+    const f = await forkEmergency()
+    let reason = "unsupported"
+    if (variant === "root-pending") { f.parentRows.splice(9); reason = "format" }
+    if (variant === "child-pending") { f.tailRows.splice(4); reason = "format" }
+    if (variant === "child-continue") f.tailRows[4].content[0].text = "Unproven continuation"
+    if (variant === "root-parent") f.parentRows[8].logicalParentId = f.parentRows[5].id
+    if (variant === "child-parent") f.tailRows[3].logicalParentId = f.seedRows[2].id
+    if (variant === "fragment-parent") { f.tailRows[0].parentId = "missing-boundary" }
+    if (variant === "unaccounted-turn") {
+      f.tailRows[0].parentId = f.seedRows.at(-1).id
+      f.parentRows[12].providerData.toolResult.subAgent.afterId = f.seedRows.at(-1).id
+      reason = "format"
+    }
+    if (variant === "context-usage") f.tailRows[3].message = { usage: { input_tokens: 1 } }
+    if (variant === "foreign-session") f.tailRows[3].sessionId = "foreign-session"
+    if (variant === "physical-record-limit") { f.request.limits = { ...f.request.limits, records: f.parentRows.length + 3 + f.tailRows.length }; reason = "limit" }
+    await writeFile(f.parent, serialize(f.parentRows)); await writeFile(f.seed, serialize(f.seedRows)); await writeFile(f.tail, serialize(f.tailRows))
+    if (variant === "missing-fragment") { await rm(f.seed); reason = "io" }
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason })
+  })
   const emergencyFamily = async () => {
     const f = await fixture(), id = "atape-codebuddy-child-compact-21240"
     await cp(new URL("./fixtures/native-emergency-2.124.0", import.meta.url), f.directory, { recursive: true })
