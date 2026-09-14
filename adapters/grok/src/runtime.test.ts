@@ -14,7 +14,7 @@ const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 
 const sourceId = "01a0987a-554b-7073-934d-da914245adbf"
 const fixture = async (stage = "resumed") => {
   const home = await mkdtemp(join(tmpdir(), "atape-grok-test-")); roots.push(home)
-  const selectedId = stage === "edit" ? "88789e9d-9240-47c6-8a89-0842fc706348" : stage === "empty-search" ? "f0d683d2-d72e-4956-9a5b-a07eeb68e6fb" : sourceId
+  const selectedId = JSON.parse(await readFile(new URL(`./fixtures/native-1.0.3/${stage}/summary.json`, import.meta.url), "utf8")).info.id as string
   const directory = join(home, "sessions", "opaque-location", selectedId); await mkdir(directory, { recursive: true })
   await cp(new URL(`./fixtures/native-1.0.3/${stage}/`, import.meta.url), directory, { recursive: true })
   vi.stubEnv("ATAPE_GROK_HOME", home)
@@ -70,10 +70,78 @@ describe("Grok source-capture runtime Interface", () => {
     expect(frames.some(f => JSON.stringify(f.raw).includes("hook_execution") && f.events.length === 0)).toBe(true)
     await view.close()
   })
-  it("rejects the native copied-prefix fork", async () => {
-    const f = await fixture("fork"), summary = JSON.parse(await readFile(join(f.directory, "summary.json"), "utf8"))
-    const target = join(f.home, "sessions", "opaque-location", summary.info.id); await rename(f.directory, target)
-    await expect(f.runtime.sourceCapture.open({ ...f.request, sourceId: summary.info.id })).rejects.toMatchObject({ reason: "unsupported" })
+  it("captures the native copied-prefix fork as an independent root without its parent files", async () => {
+    const parent = await fixture(), parentView = await parent.runtime.sourceCapture.open(parent.request), parentFrames = await read(parentView)
+    await parentView.close()
+    const f = await fixture("fork"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    const events = frames.flatMap(f => f.events), usage = frames.flatMap(f => f.usage)
+    expect(view.profile).toBe("grok.build.updates.fork.1")
+    expect(view.target).toEqual({ events: 12, usage: 3, threads: 1 })
+    expect(view.threads).toEqual([expect.objectContaining({ sourceThreadId: f.request.sourceId })])
+    expect(view.threads[0]).not.toHaveProperty("parentSourceThreadId")
+    expect(view.session.title).toContain("ATAPE_GROK_FORK_PROBE")
+    expect(events.every(event => event.sourceThreadId === f.request.sourceId)).toBe(true)
+    const parentKeys = new Set(parentFrames.flatMap(f => f.events).map(e => e.sourceEventId))
+    expect(events.every(event => !parentKeys.has(event.sourceEventId))).toBe(true)
+    expect(usage.slice(0, 2).map(u => [u.inputTokens, u.outputTokens])).toEqual(parentFrames.flatMap(f => f.usage).map(u => [u.inputTokens, u.outputTokens]))
+    expect(usage.slice(0, 2).map(u => u.sourceUsageId)).not.toEqual(parentFrames.flatMap(f => f.usage).map(u => u.sourceUsageId))
+    expect(JSON.stringify(frames.map(f => f.raw))).toContain("parent_session_id")
+    await view.close()
+  })
+  it.each([["fork-created", "fork-resumed", 10, 12], ["fork-nested", "fork-nested-resumed", 14, 16]] as const)("preserves %s identity through native resume, parent growth and parent deletion", async (stage, resumed, beforeCount, afterCount) => {
+    const f = await fixture(stage), first = await f.runtime.sourceCapture.open(f.request), before = await read(first)
+    expect(first.target.events).toBe(beforeCount); await first.close()
+    const parentPath = join(f.home, "sessions", "parent", "dc53ec99-cb4b-4f5d-9a89-72eeccd9615e")
+    await cp(new URL("./fixtures/native-1.0.3/fork-parent-grown/", import.meta.url), parentPath, { recursive: true })
+    const unchanged = await f.runtime.sourceCapture.open(f.request)
+    expect(await read(unchanged)).toEqual(before); await unchanged.close()
+    await rm(parentPath, { recursive: true })
+    await cp(new URL(`./fixtures/native-1.0.3/${resumed}/`, import.meta.url), f.directory, { recursive: true })
+    const view = await f.runtime.sourceCapture.open(f.request), after = await read(view)
+    expect(view.origin).toEqual(first.origin)
+    expect(view.session.title).toEqual(first.session.title)
+    expect(view.origin.cwd).toBe("/fixture/grok-fork/project")
+    expect(view.target.events).toBe(afterCount)
+    expect(after.flatMap(f => f.events).slice(0, beforeCount)).toEqual(before.flatMap(f => f.events))
+    expect(after.flatMap(f => f.usage).slice(0, first.target.usage)).toEqual(before.flatMap(f => f.usage))
+    expect(JSON.stringify(after)).not.toContain("ATAPE_GROK_PARENT_LATER_20260914")
+    await view.close()
+    const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    const frozen = await read(off)
+    expect(frozen.every(f => f.raw === undefined)).toBe(true)
+    expect(frozen.flatMap(f => f.events)).toEqual(after.flatMap(f => f.events))
+    await off.close()
+  })
+  it.each(["missing-parent", "missing-boundary", "self-parent", "wrong-parent", "child-kind"])("rejects incomplete or unrelated fork metadata: %s", async kind => {
+    const f = await fixture("fork-created")
+    await mutate(f, "summary.json", row => {
+      if (kind === "missing-parent") delete row.parent_session_id
+      if (kind === "missing-boundary") delete row.forked_at
+      if (kind === "self-parent") row.parent_session_id = row.info.id
+      if (kind === "wrong-parent") row.parent_session_id = "other-parent"
+      if (kind === "child-kind") row.session_kind = "subagent"
+    })
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toBeDefined()
+  })
+  it.each(["mixed-owner", "foreign-session", "ancestor-after-own", "reentered-ancestor", "copied-after-fork", "own-before-fork", "prefix-only"])("rejects an inconsistent fork target: %s", async kind => {
+    const f = await fixture("fork-nested-resumed")
+    const metadata = JSON.parse(await readFile(join(f.directory, "summary.json"), "utf8"))
+    await mutate(f, "updates.jsonl", rows => {
+      const root = "dc53ec99-cb4b-4f5d-9a89-72eeccd9615e"
+      if (kind === "mixed-owner") rows[1].params._meta.eventId = f.request.sourceId + "-4"
+      if (kind === "foreign-session") rows[1].params.sessionId = root
+      if (kind === "ancestor-after-own") for (const row of rows.slice(18)) row.params._meta.eventId = root + "-" + row.params._meta.eventId.split("-").at(-1)
+      if (kind === "reentered-ancestor") for (const row of rows.slice(12, 15)) row.params._meta.eventId = root + "-" + row.params._meta.eventId.split("-").at(-1)
+      if (kind === "copied-after-fork") rows[1].params._meta.agentTimestampMs = Date.parse(metadata.forked_at) + 1000
+      if (kind === "own-before-fork") rows[15].params._meta.agentTimestampMs = Date.parse(metadata.forked_at) - 1000
+      if (kind === "prefix-only") rows.splice(15)
+    })
+    if (kind === "prefix-only") {
+      await mutate(f, "summary.json", row => row.num_messages = 15)
+      await mutate(f, "signals.json", row => { row.turnCount = 3; row.userMessageCount = 3 })
+    }
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toMatchObject({ reason: kind === "prefix-only" ? "format" : "unsupported" })
   })
   it("projects both native turns, successful/failed tools and exact turn usage without colliding restarted event IDs", async () => {
     const f = await fixture(), page = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
