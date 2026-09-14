@@ -112,6 +112,14 @@ history as one BLOB or select all pending BLOBs into memory. Keep any existing
 JSON state/installation identity through a versioned binding/migration boundary;
 this does not silently convert the existing Adapters to the new capability.
 
+Collector identity, capture bootstrap and legacy checkpoint writes share an
+exclusive transaction in the local coordination database. Acquisition waits for
+both readers and writers within the existing five-second limit, before changing
+identity files. This prevents a concurrent schema reader from blocking lock
+commit after those files have already been written. Cancellation retains the
+lock until filesystem writes settle; the binding and recovery rules remain those
+of [ADR-0067](adr/0067-collector-capture-bootstrap.md).
+
 Transactionally seal the manifest only when every promised page, metadata delta,
 reserved revision, input/output progress relation and needed delivery body is
 durable. Until then, no content part is sent. Close the source view before network

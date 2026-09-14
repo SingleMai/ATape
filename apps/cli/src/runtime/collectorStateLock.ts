@@ -39,8 +39,10 @@ const acquire = (stateFile: string) => Effect.tryPromise({
       const deadline = Date.now() + 5000
       for (;;) {
         // Connection setup can read the schema and meet another opener's
-        // exclusive lock too. Keep it inside the same bounded acquisition retry.
-        try { db.exec("PRAGMA busy_timeout=0; PRAGMA synchronous=FULL; BEGIN IMMEDIATE"); held = true; break }
+        // exclusive lock too. Acquire exclusion from readers before filesystem
+        // writes, so COMMIT cannot meet a new schema reader after they settle.
+        // Keep this wait inside the same bounded acquisition retry.
+        try { db.exec("PRAGMA busy_timeout=0; PRAGMA synchronous=FULL; BEGIN EXCLUSIVE"); held = true; break }
         catch (cause) {
           if (!busy(cause) || Date.now() >= deadline) throw cause
           await new Promise(resolve => setTimeout(resolve, 25))
