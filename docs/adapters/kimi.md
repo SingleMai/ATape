@@ -1,6 +1,6 @@
 # Kimi Code CLI Adapter
 
-The Kimi Adapter reads local main-agent Sessions through the existing
+The Kimi Adapter reads local Sessions and supported foreground subagents through the existing
 [source-capture runtime](package-manifest.md#bounded-source-capture-capability).
 The Host owns Project attribution, masking, revisions, frozen delivery, atomic
 publication, Raw receipts and recovery. No Server schema change is required;
@@ -15,7 +15,8 @@ Tools. Installation alone does not enable capture. See
 
 `ATAPE_KIMI_HOME` overrides `KIMI_CODE_HOME`, otherwise the home is `~/.kimi-code`.
 Overrides must be absolute. Discovery enumerates `sessions/*/*/state.json` without
-following symlinks; opening reads `agents/main/wire.jsonl` inside that Session.
+following symlinks; opening reads `agents/main/wire.jsonl` and declared, validated
+`agents/<agentId>/wire.jsonl` files inside that Session.
 The global `session_index.jsonl`, diagnostic logs, Kimi credentials and referenced
 blob files are not read. No native executable is required for collection.
 
@@ -36,7 +37,8 @@ native identities. Source deletion does not delete captured history.
 ## Evidence and supported profiles
 
 `kimi.code.wire.linear.1`, `kimi.code.wire.context.1` and
-`kimi.code.wire.fork.1` support Kimi Code CLI **0.42.0**, metadata v2 and
+`kimi.code.wire.fork.1`, plus the foreground-subagent profile
+`kimi.code.wire.family.1`, support Kimi Code CLI **0.42.0**, metadata v2 and
 Wire **1.5**, as verified on macOS arm64 with Node 24.18.0. The official npm CLI
 created a controlled three-turn Session, including two native `--continue` runs,
 thought/text streaming and successful/failed `Read` tools. A local deterministic
@@ -70,6 +72,8 @@ Source evidence is pinned to release commit
 | Compaction session `usage.record` | Separate usage from the matching request; identity from Session + native begin-line position | Original counters |
 | `context.undo` | Removes the last N user turns and their replies/tools after the most recent compaction; retains all expenditure | Undo and original removed records |
 | Session `forkedFrom` + native `forked` marker | Independent Session/root Thread; copied Events and usage receive the new Session identity | Parent ID and complete copied Wire |
+| Completed foreground `Agent` call/receipt and matching child metadata/Wire | Linked child Thread in the same Session; repeated `resume` calls reuse it | Exact parent receipt and each child Wire record |
+| Child `system_trigger/subagent` prompt | Delegated input in the child Thread, never a new human turn in the root | Native prompt and context record |
 | CLI `/clear` (alias `/new`) | New independent Session; old captured history remains | Separate state/Wire |
 | Unknown non-context records/content or external images | Raw-only; capture marked partial | Original line; no referenced file reads |
 
@@ -78,7 +82,9 @@ not added again to that total. Output is the normalized output counter. Missing
 components stay unknown; negative, fractional or unsafe counters are rejected.
 The fixture yields 13 Events and five usage items: 540 input, 54 output and 100
 cached-input tokens. These counters describe the controlled provider responses.
-All usage belongs to the root Thread. No costs or currency are inferred.
+Each response belongs to the Thread that produced it. Main-only histories use
+the root Thread; child counters are never attributed to the root or counted again
+from parent result summaries. No costs or currency are inferred.
 
 Native content parts are emitted after response completion. This profile further
 requires a matching completed step and all its tool outcomes before exposing a
@@ -94,9 +100,9 @@ move comparison, replay and Raw progress policy into this provider. The existing
 source-capture Interface keeps those responsibilities in the Host; this increment
 introduces no new Seam or protocol.
 
-Opening reads at most 16 MiB of metadata and Wire, with metadata independently
+Opening reads at most 16 MiB of metadata and all included Wire files, with metadata independently
 capped at 64 KiB. It validates UTF-8, complete lines, IDs and step boundaries, then
-rechecks file identity/size/modification/change stamps and source directories
+rechecks every included file’s identity/size/modification/change stamps and source directories
 before returning. Concurrent edits and incomplete records produce diagnostics;
 they do not expose a partial target. Handles close before the first projected
 page. Pages read from the bounded frozen view even if the source changes or is
@@ -181,6 +187,50 @@ original parent remains at 6 Events and 7 usage items. Upstream
 and the [CLI fork command](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/apps/kimi-code/src/cli/sub/fork.ts)
 are pinned to the same release as the native fixtures.
 
+## Foreground subagents
+
+The family profile supports completed, direct foreground `Agent` calls from the
+main agent, same-child `resume` across native CLI restarts, and multiple direct
+children. It reads the native Session as one atomic family. Each child must have
+`type: sub`, matching `parentAgentId` and `labels.parentAgentId` set to `main`, and
+a matching completed parent tool receipt. The native `homedir` is never followed;
+only the validated agent ID locates its file under this Session's `agents` directory.
+
+A receipt alone is insufficient: every child prompt must match the corresponding
+parent call, resume IDs and profile names must agree, and each completed child
+answer must match the native parent result envelope. Orphaned metadata, missing
+child files, incomplete runs, conflicting ownership and unsupported combinations
+produce diagnostics and preserve the previous complete family. A valid new
+foreground call therefore waits for its child and parent result before publication.
+
+Native `system_trigger/subagent` input appears as delegated input in the child
+Thread. Date/permission injections remain Raw-only. Child message/tool/usage
+identities include the owning Session and native agent ID; root identities retain
+their existing scheme. Child turns are ordered at their corresponding parent calls,
+including each resumed turn. The reader's existing child link, breadcrumb and
+Search anchor expose that relationship without adding a new shared protocol.
+
+Each agent's completed `step.end.usage` supplies its own response counters and
+matching `llm.request` supplies the actual model. Repeated turn usage records,
+parent tool summaries and runtime mirror totals do not create additional usage.
+The native fixture has 22 Events and 11 responses: root 636 input / 96 output,
+first child 311 / 41, second child 219 / 39. Total input 1166 includes 220 cached
+input tokens; total output is 176. These are controlled provider counters.
+
+The source byte/record/Thread budgets cover the whole family, not each file
+independently. All files and directories are rechecked before the frozen view
+escapes. Source deletion, Raw policy and lost-response recovery use the existing
+Host contract. Background execution, nested delegation, `Agent(fork=true)`,
+`AgentSwarm`, failed/interrupted child runs and compaction/undo/fork combined with
+children are not part of this profile.
+
+The evidence uses the same released CLI and commit as the other fixtures; see
+[native fixture provenance](../../adapters/kimi/src/fixtures/README.md). Upstream
+[Agent receipt formatting](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/packages/agent-core-v2/src/agent/tools/agent/agentTool.ts),
+[child metadata](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/packages/agent-core-v2/src/session/agentLifecycle/subagentMetadata.ts)
+and [delegated turns](https://github.com/MoonshotAI/kimi-code/blob/6954d2c8bf94a5c7fc29cc6ae35b15d042cc4dcb/packages/agent-core-v2/src/session/subagent/runAgentTurn.ts)
+define the validated boundaries.
+
 ## Unsupported scope and next increment
 
 Only the new Node-based Kimi Code CLI is in scope. Legacy Python kimi-cli is
@@ -188,13 +238,14 @@ intentionally excluded and is not a compatibility backlog. All profiles require
 metadata v2/Wire 1.5; other versions, Kimi IDE formats and other platforms remain
 unverified.
 
-Child/independent agents, `Agent`/`AgentSwarm` calls, steering,
+Independent, nested, background and forked child agents, `AgentSwarm`, steering,
 cancellation, interrupted/failed/retried steps, low-level `context.clear`, unknown
 context operations and mixed/tree storage remain unsupported. Previously
 captured content remains selected. SDK historical-turn forks remain unverified;
-the CLI whole-session copy is the validated fork operation. The next increment needs native child membership and
-response usage ownership, or interruption/retry evidence, before claiming those
-behaviors.
+the CLI whole-session copy is the validated fork operation. Families combined
+with compaction/undo/fork remain unsupported. Background/nested child lifecycle
+and interrupted/retried turns need separate native evidence before expanding
+the supported profile.
 
 ## Verification and delivery
 
@@ -235,6 +286,15 @@ usage totals, parent absence, fork undo activation recovery after response loss
 and source deletion, stable provenance across Raw-off/on, and reader/Search
 membership through replacement and nested fork. Local Web acceptance displayed
 four retained turns in the fork and five in its nested fork, both healthy.
+
+Foreground-family verification on 2026-09-14 passed 92 Adapter behavior tests,
+Adapter/CLI typechecks, independent tarball installation and the installed
+HTTP/PostgreSQL contract. Parent links, stable child identity across resume,
+per-Thread response totals and child Search anchors matched the native fixture.
+Lost activation and child Raw receipts recovered after the source family was
+deleted; a missing child preserved the previous head/checkpoint. Web acceptance
+opened both children from their parent calls, showing the resumed two-turn child,
+the independent second child, real Read results and parent breadcrumbs.
 
 The package is included in official Tools detection/selection, build, packing,
 release verification and artifact upload sets. Local implementation, CI, merge,

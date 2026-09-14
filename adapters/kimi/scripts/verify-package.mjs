@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
+import { copyFile, cp, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -42,6 +42,7 @@ try {
   for (const name of ["native", "context", "auto", "clear", "fork", "nested-fork"].flatMap(name => [`${name}-0.42.0.jsonl`, `${name}-0.42.0.state.json`])) {
     await copyFile(new URL(`../src/fixtures/${name}`, import.meta.url), join(root, name))
   }
+  await cp(new URL("../src/fixtures/subagents-0.42.0", import.meta.url), join(root, "subagents-0.42.0"), { recursive: true })
   const result = await run(process.execPath, [join(root, "verify-installed.mjs"), join(entryRoot, manifest.atapeAdapter.entry), manifest.version], root)
   process.stdout.write(`Verified Kimi tarball ${basename(artifact)} (${size} bytes)\n${result.stdout}`)
 } finally {

@@ -15,11 +15,12 @@ const sourceId = "session_12c751bb-0285-49a2-9379-aacbf56d1bd4"
 const serialize = (rows: unknown[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const fixture = async (name = "native") => {
   const home = await mkdtemp(join(tmpdir(), "atape-kimi-")); roots.push(home)
-  const native = await readFile(new URL(`./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
-  const metadata = await readFile(new URL(`./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
+  const native = await readFile(new URL(name === "subagents" ? "./fixtures/subagents-0.42.0/agents/main/wire.jsonl" : `./fixtures/${name}-0.42.0.jsonl`, import.meta.url), "utf8")
+  const metadata = await readFile(new URL(name === "subagents" ? "./fixtures/subagents-0.42.0/state.json" : `./fixtures/${name}-0.42.0.state.json`, import.meta.url), "utf8")
   const sourceId = JSON.parse(metadata).id as string
   const directory = join(home, "sessions", "opaque", sourceId), file = join(directory, "agents", "main", "wire.jsonl"), state = join(directory, "state.json")
   await mkdir(join(directory, "agents", "main"), { recursive: true })
+  if (name === "subagents") await cp(new URL("./fixtures/subagents-0.42.0/", import.meta.url), directory, { recursive: true })
   await writeFile(file, native); await writeFile(state, metadata)
   vi.stubEnv("ATAPE_KIMI_HOME", home)
   const lifetime = new AbortController()
@@ -41,6 +42,79 @@ const read = async (view: Awaited<ReturnType<Awaited<ReturnType<typeof createAta
   throw new Error("Fixture failed to finish")
 }
 describe("Kimi source-capture runtime Interface", () => {
+  it("captures native foreground children and resume at their parent calls without duplicate usage", async () => {
+    const f = await fixture("subagents"), childFile = join(f.directory, "agents", "agent-0", "wire.jsonl")
+    const child = (await readFile(childFile, "utf8")).trim().split("\n").map(line => JSON.parse(line))
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [rootLines, childLines, threads, events, usage, input] of [[26, 25, 2, 8, 4, 410], [45, 37, 2, 14, 7, 728], [64, 37, 3, 22, 11, 1166]] as const) {
+      const meta = JSON.parse(f.metadata)
+      if (threads === 2) delete meta.agents["agent-1"]
+      await writeFile(f.state, JSON.stringify(meta)); await writeFile(f.file, serialize(f.rows.slice(0, rootLines))); await writeFile(childFile, serialize(child.slice(0, childLines)))
+      const discovered = Schema.decodeUnknownSync(SourceDiscoveryPage)(await f.runtime.sourceCapture.discover({ cursor: null, limits, signal: signal() }))
+      expect(discovered.sources).toHaveLength(1); expect(discovered.sourceFailures).toEqual([])
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      Schema.decodeUnknownSync(SourceCaptureHeader)(view)
+      expect(view.profile).toBe("kimi.code.wire.family.1")
+      expect(view.target).toEqual({ threads, events, usage })
+      expect(view.session.captureStatus).toBe("healthy")
+      expect(view.threads.slice(1).every(thread => thread.parentSourceThreadId === f.request.sourceId)).toBe(true)
+      expect(frames).toHaveLength(rootLines + childLines + (threads === 3 ? 25 : 0) + 1)
+      expect(frames.filter(frame => (frame.raw as { sourceAgentId?: string }).sourceAgentId === "agent-0").map(frame => (frame.raw as { json: string }).json).join("\n") + "\n").toBe(serialize(child.slice(0, childLines)))
+      const values = frames.flatMap(frame => frame.events), counts = frames.flatMap(frame => frame.usage)
+      expect(values.slice(0, previous.flatMap(frame => frame.events).length)).toEqual(previous.flatMap(frame => frame.events))
+      expect(new Set(values.map(event => event.sourceEventId)).size).toBe(events)
+      expect(values.map(event => event.sourceOrder)).toEqual(Array.from({ length: events }, (_, i) => i))
+      expect(values.filter(event => event.childSourceThreadId).map(event => event.childSourceThreadId)).toEqual(threads === 3 ? ["agent-0", "agent-0", "agent-1"] : usage === 7 ? ["agent-0", "agent-0"] : ["agent-0"])
+      expect(values[2]!.sourceThreadId).toBe("agent-0")
+      expect(JSON.stringify(values)).toContain("KimiChildFileMarker")
+      expect(counts.reduce((n, u) => n + u.inputTokens!, 0)).toBe(input)
+      expect(counts.filter(u => u.sourceThreadId === "agent-0").reduce((n, u) => n + u.inputTokens!, 0)).toBe(usage === 4 ? 205 : 311)
+      expect(counts.every(u => u.model === "atape-child-model")).toBe(true)
+      previous = frames; await view.close()
+    }
+    const frozen = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false })
+    await rm(f.directory, { recursive: true })
+    expect(await read(frozen)).toEqual(previous.map(({ raw: _, ...frame }) => frame))
+  })
+  it("scopes native child identities by Session and ignores homedir locators", async () => {
+    const f = await fixture("subagents"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+    await view.close()
+    const otherId = "another-native-session", other = join(f.home, "sessions", "opaque", otherId), meta = JSON.parse(f.metadata)
+    meta.id = otherId
+    for (const agent of Object.values(meta.agents) as { homedir: string }[]) agent.homedir = "/unrelated/must-not-read"
+    await cp(f.directory, other, { recursive: true }); await writeFile(join(other, "state.json"), JSON.stringify(meta))
+    const copy = await f.runtime.sourceCapture.open({ ...f.request, sourceId: otherId }), copied = await read(copy)
+    expect(copy.origin.cwd).toBe(view.origin.cwd)
+    expect(copy.origin.originKey).not.toBe(view.origin.originKey)
+    expect(copy.target).toEqual(view.target)
+    const keys = new Set(frames.map(frame => frame.recordKey)), events = new Set(frames.flatMap(frame => frame.events).map(event => event.sourceEventId)), usage = new Set(frames.flatMap(frame => frame.usage).map(row => row.sourceUsageId))
+    expect(copied.every(frame => !keys.has(frame.recordKey))).toBe(true)
+    expect(copied.flatMap(frame => frame.events).every(event => !events.has(event.sourceEventId))).toBe(true)
+    expect(copied.flatMap(frame => frame.usage).every(row => !usage.has(row.sourceUsageId))).toBe(true)
+  })
+  it.each(["missing", "symlink", "unfinished", "foreign-agent", "prompt", "summary", "metadata-parent", "parent-conflict", "path", "orphan", "receipt", "resume", "background", "fork", "undo", "nested", "thread-limit", "record-limit", "event-limit", "usage-limit"])("rejects %s child families before exposing a target", async kind => {
+    const f = await fixture("subagents"), childFile = join(f.directory, "agents", "agent-0", "wire.jsonl")
+    const rows = (await readFile(childFile, "utf8")).trim().split("\n").map(line => JSON.parse(line)), meta = JSON.parse(f.metadata)
+    if (kind === "foreign-agent") rows[4].agentId = "main"
+    if (kind === "prompt") rows[4].input[0].text = "unrelated delegated prompt"
+    if (kind === "summary") rows[20].event.part.text = "different completion"
+    if (kind === "metadata-parent") meta.agents["agent-0"].parentAgentId = "absent"
+    if (kind === "parent-conflict") meta.agents["agent-0"].labels.parentAgentId = "agent-1"
+    if (kind === "path") { meta.agents["../outside"] = meta.agents["agent-0"]; delete meta.agents["agent-0"] }
+    if (kind === "orphan") meta.agents["agent-extra"] = meta.agents["agent-0"]
+    if (kind === "receipt") f.rows[15].event.result.output = "agent_id: agent-unknown"
+    if (kind === "resume") f.rows[33].event.args.resume = "agent-1"
+    if (kind === "background") f.rows[14].event.args.run_in_background = true
+    if (kind === "fork") meta.forkedFrom = "parent-session"
+    if (kind === "undo") f.rows.push({ type: "context.undo", agentId: "main", count: 1, time: f.rows.at(-1).time })
+    if (kind === "nested") rows[13].event.name = "Agent"
+    await writeFile(childFile, serialize(rows)); await writeFile(f.state, JSON.stringify(meta)); await writeFile(f.file, serialize(f.rows))
+    if (kind === "missing") await rm(childFile)
+    if (kind === "symlink") { await rm(childFile); await symlink(f.file, childFile) }
+    if (kind === "unfinished") await appendFile(childFile, "unfinished")
+    const request = { ...f.request, limits: { ...limits, ...(kind === "thread-limit" ? { threads: 2 } : {}), ...(kind === "record-limit" ? { records: 100 } : {}) }, projection: { ...projection, ...(kind === "event-limit" ? { events: 21 } : {}), ...(kind === "usage-limit" ? { usage: 10 } : {}) } }
+    await expect(f.runtime.sourceCapture.open(request)).rejects.toBeDefined()
+  })
   it("captures a native fork independently through copied history, resume, undo and replacement", async () => {
     const f = await fixture("fork")
     let previous: SourceCapturePage["frames"][number][] = []

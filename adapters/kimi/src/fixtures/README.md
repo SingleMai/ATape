@@ -35,7 +35,7 @@ Runtime tests derive synthetic mutations to exercise limits, malformed/incomplet
 records, source relocation/deletion, invalid relationships, Raw policy and lifetime.
 The installed HTTP contract uses these native records plus explicitly synthetic
 resume/edit and fault-injection steps. Synthetic mutations are not native behavior evidence; fork acceptance uses the
-additional native fixtures below. Child agents and interruption remain unverified.
+additional native fixtures below. Additional child evidence is described below; interruption remains unverified.
 
 
 ## Native context operations
@@ -125,3 +125,52 @@ its SDK also exposes historical turn slicing, which this corpus does not validat
 Tests use actual native prefixes above, plus explicitly synthetic invalid-marker
 and metadata mutations for diagnostics. Neither source-parent availability nor
 a previously captured parent is required. All sources contain only the main agent.
+
+
+## Native foreground subagents
+
+`subagents-0.42.0/` contains a native metadata file and three native Wire files,
+recorded on 2026-09-14 with the published Node CLI at the pinned commit above,
+on macOS arm64. The isolated home, Project and empty skills directory used a
+local OpenAI SSE endpoint and a controlled `sample.txt` containing
+`KimiChildFileMarker`. Only home/Project/skills paths were replaced with the same
+`/fixture/` paths as other fixtures. Native IDs, prompts, results, profile data,
+record order and timestamps remain intact. No personal transcripts, cloud model
+or account credentials were used.
+
+The endpoint returned a foreground `Agent` tool call in response to
+`KimiRootStart`; the child executed a real successful `Read`, then returned a
+controlled answer. A native `--continue` process received `KimiRootResume` and
+called `Agent(resume="agent-0")` with `KimiChildResume`. Another `--continue` with
+`KimiRootSecond` created `agent-1`, which performed another real `Read`. The main
+agent returned a text response after each native completed tool result. A prior
+exploratory endpoint-routing error is excluded from this corpus.
+
+| Native checkpoint | Main / agent-0 / agent-1 Wire records | Events | Usage | Input / output |
+| --- | --- | ---: | ---: | ---: |
+| Initial foreground child | 26 / 25 / absent | 8 | 4 | 410 / 50 |
+| Resume the same child after CLI restart | 45 / 37 / absent | 14 | 7 | 728 / 98 |
+| Create another child | 64 / 37 / 25 | 22 | 11 | 1166 / 176 |
+
+The initial/resume tests use those exact native Wire prefixes and omit only the
+not-yet-created `agent-1` entry from final metadata. Final metadata declares two
+`type: sub` children with both parent fields set to `main` and profile `coder`.
+The root has 12 Events and six responses (636 input, 96 output, 120 cached input).
+`agent-0` has six Events across two delegated turns and three responses (311 / 41,
+60 cached input). `agent-1` has four Events and two responses (219 / 39, 40 cached
+input). Cache is already included in input. Parent result envelopes repeat child
+answers but add no response usage.
+
+Each parent Agent result starts with `agent_id`, `actual_subagent_type`, completed
+status/reason, a summary and the native resume hint. The child's prompt has origin
+`system_trigger/subagent`; it is not a root human prompt. `subagent.spawned` and
+`subagent.completed` are observable runtime events in upstream code but do not
+appear in these persisted Wire files. Correlation uses persisted metadata,
+completed tool receipts, exact prompts and answers; it does not depend on runtime
+notifications or parse a Session ID from arbitrary assistant text.
+
+This corpus covers completed direct foreground children, real child tools,
+multiple children and same-child resume. It does not establish background,
+nested, forked, interrupted, failed or compacted/undone child behavior. Synthetic
+mutations test incomplete files, unsafe paths, conflicting metadata, unpaired
+receipts, wrong prompts/results and aggregate resource limits.

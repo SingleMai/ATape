@@ -10,10 +10,10 @@ import { makeNodeClientLayer, defaultNodeClientPaths } from "../clientLayers.ts"
 import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
-const specimen = input.phase === "nested-fork" ? "nested-fork" : input.phase.startsWith("fork-") ? "fork" : input.phase.startsWith("context-") ? "context" : input.phase === "auto" ? "auto" : input.phase === "clear" ? "clear" : "native"
+const specimen = input.phase.startsWith("subagents-") ? "subagents" : input.phase === "nested-fork" ? "nested-fork" : input.phase.startsWith("fork-") ? "fork" : input.phase.startsWith("context-") ? "context" : input.phase === "auto" ? "auto" : input.phase === "clear" ? "clear" : "native"
 const home = input.home, workspace = join(home, "workspace"), adapterId = "kimi"
-const native = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.jsonl`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
-const metadata = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.state.json`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
+const native = readFileSync(new URL((specimen === "subagents" ? "../../../../../adapters/kimi/src/fixtures/subagents-0.42.0/agents/main/wire.jsonl" : `../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.jsonl`), import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
+const metadata = readFileSync(new URL((specimen === "subagents" ? "../../../../../adapters/kimi/src/fixtures/subagents-0.42.0/state.json" : `../../../../../adapters/kimi/src/fixtures/${specimen}-0.42.0.state.json`), import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace)
 const sourceId = JSON.parse(metadata).id as string
 const sourceHome = join(home, "source"), directory = join(sourceHome, "sessions", "opaque", sourceId), file = join(directory, "agents", "main", "wire.jsonl")
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
@@ -31,6 +31,24 @@ if (["auto", "clear", "nested-fork"].includes(input.phase)) restore(native)
 if (["context-recover", "context-recover-raw", "fork-recover", "fork-delete"].includes(input.phase)) rmSync(directory, { recursive: true })
 if (input.phase === "context-raw-loss") {
   const rows = native.trim().split("\n").map(line => JSON.parse(line)); rows[49].extraRawField = "KimiCompactionRawOnly"; save(rows)
+}
+const familyLength: Record<string, number> = { "subagents-seed": 26, "subagents-resume": 45, "subagents-restore": 45, "subagents-final": 64 }
+if (familyLength[input.phase]) {
+  const length = familyLength[input.phase]!, meta = JSON.parse(metadata)
+  if (length < 64) delete meta.agents["agent-1"]
+  restore(native.split("\n").slice(0, length).join("\n") + "\n")
+  writeFileSync(join(directory, "state.json"), JSON.stringify(meta))
+  for (const child of length < 64 ? ["agent-0"] : ["agent-0", "agent-1"]) {
+    const path = join(directory, "agents", child, "wire.jsonl")
+    const rows = readFileSync(new URL(`../../../../../adapters/kimi/src/fixtures/subagents-0.42.0/agents/${child}/wire.jsonl`, import.meta.url), "utf8").replaceAll("/fixture/kimi-project", workspace).trim().split("\n")
+    mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, rows.slice(0, length === 26 ? 25 : rows.length).join("\n") + "\n")
+  }
+}
+if (["subagents-recover", "subagents-recover-raw"].includes(input.phase)) rmSync(directory, { recursive: true })
+if (input.phase === "subagents-incomplete") rmSync(join(directory, "agents", "agent-0", "wire.jsonl"))
+if (input.phase === "subagents-raw-loss") {
+  const child = join(directory, "agents", "agent-0", "wire.jsonl"), rows = readFileSync(child, "utf8").trim().split("\n").map(line => JSON.parse(line))
+  rows[13].extraRawField = "KimiChildRawOnly"; writeFileSync(child, rows.map(row => JSON.stringify(row) + "\n").join(""))
 }
 if (input.phase === "initial") {
   mkdirSync(workspace); mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 }); restore(native)
@@ -68,7 +86,7 @@ const faultFetch: typeof fetch = async (url, init) => {
   const response = await fetch(url, init), target = String(url)
   if (init?.method === "PUT" && target.includes("/publications/attempts/")) puts++
   if (target.endsWith("/ingestion/raw/chunks")) uploads++
-  if (!lost && (["lose-activation", "context-undo", "fork-undo"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "context-raw-loss"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
+  if (!lost && (["lose-activation", "context-undo", "fork-undo", "subagents-resume"].includes(input.phase) && target.endsWith("/activate") && response.status === 200 || ["raw-only", "context-raw-loss", "subagents-raw-loss"].includes(input.phase) && target.endsWith("/ingestion/raw/chunks") && response.status === 201)) {
     lost = true; await response.arrayBuffer(); throw new TypeError("Controlled committed response loss")
   }
   return response
@@ -114,15 +132,15 @@ const result = await Effect.runPromise(Effect.gen(function*() {
     for (let cycle = 0; cycle < 5; cycle++) {
       const report = yield* runCollectionCycle(); failures += report.failures.length
       for (const job of report.jobs) { observations += job.observations; diagnostics += job.sourceFailures?.length ?? 0 }
-      if (["malformed", "unsupported", "context-incomplete"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
+      if (["malformed", "unsupported", "context-incomplete", "subagents-incomplete"].includes(input.phase)) { assert.ok(diagnostics > 0); break }
       if (lost || report.jobs.every(job => !job.hasMore)) break
       assert.ok(cycle < 4)
     }
   }
   if (["raw-only", "lose-activation"].includes(input.phase)) { assert.equal(lost, true); writeFileSync(join(home, "saved.jsonl"), readFileSync(file)) }
-  if (["context-undo", "context-raw-loss", "fork-undo"].includes(input.phase)) assert.equal(lost, true)
-  if (input.phase === "context-recover-raw") assert.equal(uploads, 0)
-  if (["context-raw-on", "fork-raw-on"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
+  if (["context-undo", "context-raw-loss", "fork-undo", "subagents-resume", "subagents-raw-loss"].includes(input.phase)) assert.equal(lost, true)
+  if (["context-recover-raw", "subagents-recover-raw"].includes(input.phase)) assert.equal(uploads, 0)
+  if (["context-raw-on", "fork-raw-on", "subagents-raw-on"].includes(input.phase)) { assert.equal(puts, 0); assert.ok(uploads > 0) }
   if (["noop", "raw-off", "recover-raw"].includes(input.phase)) assert.equal(uploads, 0)
   if (input.phase === "noop") { assert.equal(observations, 0); assert.equal(puts, 0) }
   if (input.phase === "raw-on") { assert.equal(puts, 0); assert.ok(uploads > 0) }

@@ -1,5 +1,6 @@
 import { isBoundedToolValue, type AcpSessionUpdate, type SourceCaptureFrame, type SourceCaptureHeader, type SourceOpenRequest } from "@atape/domain"
 import { fail, id, identity, object, timestamp, type Row, type snapshot } from "./source.ts"
+import { delegation } from "./delegation.ts"
 
 const text = (value: unknown): string => { if (typeof value !== "string") fail("format", "Kimi content must be text."); return value as string }
 const list = (value: unknown): unknown[] => { if (!Array.isArray(value)) fail("format", "Kimi content must be an array."); return value as unknown[] }
@@ -18,11 +19,16 @@ const counts = (value: unknown) => {
 const rawOnlyTypes = new Set(["metadata", "runtime.set_binding", "profile.bind", "permission.set_mode", "plugin.session_start", "llm.tools_snapshot", "token_counting.measured", "token_counting.turn_recorded", "token_counting.truncated", "token_counting.rebased", "prompt.accepted", "prompt.completed"])
 
 /** A complete native step is the admission boundary; streamed or interrupted attempts never replace a target. */
-export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: SourceOpenRequest) => {
-  const { sourceId } = source.origin, started = performance.now()
-  const first = source.records[0]?.row
+type Source = Awaited<ReturnType<typeof snapshot>>
+type Child = ReturnType<typeof delegation>["children"][number]
+const projectThread = (source: Source, request: SourceOpenRequest, started: number, callChildren: Map<string, string>, child?: Child, byteBudget = 64 * 1024 * 1024) => {
+  const { sourceId } = source.origin, agentId = child?.id ?? "main", threadId = child?.id ?? sourceId
+  const namespace = child ? identity("child", sourceId, child.id) : sourceId
+  const records = child?.records ?? source.records
+  const first = records[0]?.row
   if (first?.type !== "metadata" || first.protocol_version !== "1.5") fail("unsupported", "Kimi requires Wire protocol 1.5.")
   timestamp(first!.created_at)
+  const turnsForCalls: SourceCaptureFrame[][] = [[]]
   const frames: SourceCaptureFrame[] = [], keys = new Set<string>(), prompts = new Map<string, Row>(), messages = new Set<string>(), steps = new Set<string>()
   let events = 0, usageCount = 0, bytes = 0, partial = false, active = false, title = "Kimi session", latest = timestamp(source.meta.createdAt)
   let step: { uuid: string; turnId: string; number: number; model?: string; calls: Map<string, { uuid: string; name: string; done: boolean }> } | undefined
@@ -31,47 +37,48 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
   let forkMarkers = 0
   let compaction: { line: number; model?: string; alias?: string; used: boolean; applied: boolean } | undefined
   const add = (key: string, output: SourceCaptureFrame["events"], usage: SourceCaptureFrame["usage"], raw: unknown) => {
-    const recordKey = identity("record", sourceId, key)
+    const recordKey = identity("record", namespace, key)
     if (keys.has(recordKey)) fail("unsupported", "Kimi record identity is duplicated.")
     keys.add(recordKey)
     const frame: SourceCaptureFrame = { recordKey, events: output, usage, ...(request.rawEnabled ? { raw } : {}) }
     const size = Buffer.byteLength(JSON.stringify(frame)); bytes += size
-    if (size + Buffer.byteLength(JSON.stringify({ frames: [], done: false })) > request.projection.pageBytes || bytes > 64 * 1024 * 1024)
+    if (size + Buffer.byteLength(JSON.stringify({ frames: [], done: false })) > request.projection.pageBytes || bytes > byteBudget)
       fail("limit", "Kimi projection exceeds its page or 64 MiB snapshot budget.")
     if (events > request.projection.events || usageCount > request.projection.usage || output.length > 500) fail("limit", "Kimi projection exceeds its Event or usage budget.")
     if (output.length) visibleFrames.push(frames.length)
-    frames.push(frame)
+    frames.push(frame); turnsForCalls.at(-1)!.push(frame)
   }
-  add("state", [], [], { format: "kimi.state.v2", sourceSessionId: sourceId, json: source.metadataJson })
-  for (const [index, { row, json }] of source.records.entries()) {
+  if (!child) add("state", [], [], { format: "kimi.state.v2", sourceSessionId: sourceId, json: source.metadataJson })
+  for (const [index, { row, json }] of records.entries()) {
     request.signal.throwIfAborted()
     if (performance.now() - started > request.limits.durationMs) fail("limit", "Kimi projection exceeded its deadline.")
-    if (row.agentId !== undefined && row.agentId !== "main") fail("unsupported", "Kimi main Wire contains another agent.")
+    if (row.agentId !== undefined && row.agentId !== agentId) fail("unsupported", "Kimi Wire contains another agent.")
     if (row.type === "metadata" && index !== 0) fail("unsupported", "Kimi Wire contains a second metadata boundary.")
     const at = row.type === "metadata" ? timestamp(row.created_at) : timestamp(row.time)
     latest = Math.max(latest, at)
     const occurredAt = new Date(at).toISOString(), output: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
     let key = `line:${index}`
-    const emit = (eventId: string, update: AcpSessionUpdate, fidelity: "native" | "partial" = "native") => {
-      output.push({ sourceEventId: identity("event", sourceId, eventId), sourceThreadId: sourceId, sourceOrder: events, eventIndex: events++,
-        orderFidelity: "derived", fidelity, occurredAt, update })
+    const emit = (eventId: string, update: AcpSessionUpdate, fidelity: "native" | "partial" = "native", childId?: string) => {
+      output.push({ sourceEventId: identity("event", namespace, eventId), sourceThreadId: threadId, sourceOrder: events, eventIndex: events++,
+        orderFidelity: "derived", fidelity, occurredAt, update, ...(childId ? { childSourceThreadId: childId } : {}) })
     }
     const emitUsage = (usageId: string, model: string, value: unknown) => {
       const tokens = counts(value)
       if (Object.keys(tokens).length) {
-        usageCount++; usage.push({ sourceUsageId: identity("usage", sourceId, usageId), sourceThreadId: sourceId, model, occurredAt, ...tokens })
+        usageCount++; usage.push({ sourceUsageId: identity("usage", namespace, usageId), sourceThreadId: threadId, model, occurredAt, ...tokens })
       }
     }
     if (row.type === "turn.prompt") {
       const promptId = id(row.promptId)
-      if (active || compaction || prompts.has(promptId) || object(row.origin).kind !== "user") fail("unsupported", "Kimi requires non-overlapping unique user prompts.")
+      if (active || compaction || prompts.has(promptId) || (child ? object(row.origin).kind !== "system_trigger" || object(row.origin).name !== "subagent" : object(row.origin).kind !== "user")) fail("unsupported", "Kimi requires non-overlapping unique user prompts.")
       prompts.set(promptId, row); key = `prompt:${promptId}`; active = true
     } else if (row.type === "context.append_message") {
       const message = object(row.message), origin = object(message.origin)
-      if (origin.kind === "user") {
+      if (origin.kind === "user" && !child || child && origin.kind === "system_trigger" && origin.name === "subagent") {
         const messageId = id(message.id), prompt = prompts.get(messageId)
         if (step || compaction || !prompt || messages.has(messageId) || message.role !== "user" || list(message.toolCalls).length ||
-          JSON.stringify(message.content) !== JSON.stringify(prompt.input)) fail("unsupported", "Kimi user message has no unique matching prompt.")
+          JSON.stringify(message.content) !== JSON.stringify(prompt.input) || JSON.stringify(message.origin) !== JSON.stringify(prompt.origin)) fail("unsupported", "Kimi user message has no unique matching prompt.")
+        if (child && messages.size) turnsForCalls.push([])
         messages.add(messageId); turns.push(frames.length); key = `message:${messageId}`
         const parts = list(message.content)
         for (const [slot, value] of parts.entries()) {
@@ -156,7 +163,7 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
           const bounded = result.output !== undefined && isBoundedToolValue(result.output)
           const native = bounded && (typeof result.output === "string" || Array.isArray(result.output) && result.output.every(part => object(part).type === "text"))
           if (!native) partial = true
-          emit(key, { sessionUpdate: "tool_call_update", toolCallId: identity("tool", sourceId, current.uuid, callId), title: call!.name,
+          emit(key, { sessionUpdate: "tool_call_update", toolCallId: identity("tool", namespace, current.uuid, callId), title: call!.name,
             status: result.isError === true ? "failed" : "completed", ...(native ? { rawOutput: result.output } : {}) }, native ? "native" : "partial")
         } else {
           if (event.turnId !== current.turnId || event.step !== current.number) fail("format", "Kimi loop event changed its step identity.")
@@ -182,13 +189,13 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
               } else partial = true
             } else if (kind === "tool.call") {
               const callId = id(event.toolCallId), name = id(event.name)
-              if (["Agent", "AgentSwarm"].includes(name)) fail("unsupported", "Kimi delegated agents require a wider source profile.")
+              if (name === "AgentSwarm" || name === "Agent" && !callChildren.has(uuid)) fail("unsupported", "Kimi delegated agents require a wider source profile.")
               if (current.calls.has(callId)) fail("format", "Kimi tool call identity is duplicated.")
               current.calls.set(callId, { uuid, name, done: false })
               const bounded = event.args !== undefined && isBoundedToolValue(event.args)
               if (!bounded) partial = true
-              emit(key, { sessionUpdate: "tool_call", toolCallId: identity("tool", sourceId, current.uuid, callId), title: name, kind: name === "Read" ? "read" : "other",
-                status: "in_progress", ...(bounded ? { rawInput: event.args } : {}) }, bounded ? "native" : "partial")
+              emit(key, { sessionUpdate: "tool_call", toolCallId: identity("tool", namespace, current.uuid, callId), title: name, kind: name === "Read" ? "read" : "other",
+                status: "in_progress", ...(bounded ? { rawInput: event.args } : {}) }, bounded ? "native" : "partial", callChildren.get(uuid))
             } else fail("unsupported", "Kimi loop event requires a wider source profile.")
           }
         }
@@ -200,7 +207,7 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
     } else if (String(row.type).startsWith("context.") || ["turn.steer", "turn.cancel"].includes(String(row.type))) {
       fail("unsupported", "Kimi context operation or steering requires a wider source profile.")
     } else if (!rawOnlyTypes.has(String(row.type))) partial = true
-    add(key, output, usage, { format: "kimi.wire.v1.5", sourceSessionId: sourceId, json })
+    add(key, output, usage, { format: "kimi.wire.v1.5", sourceSessionId: sourceId, ...(child ? { sourceAgentId: child.id } : {}), json })
   }
   if (step || compaction) fail("format", "Kimi has an incomplete model step or compaction; retry after it finishes.")
   if (messages.size !== prompts.size || !messages.size) fail("format", "Kimi user prompt has not reached its context record; retry.")
@@ -213,7 +220,51 @@ export const project = (source: Awaited<ReturnType<typeof snapshot>>, request: S
   const header: SourceCaptureHeader = { profile: forkMarkers ? "kimi.code.wire.fork.1" : contextHistory ? "kimi.code.wire.context.1" : "kimi.code.wire.linear.1", origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "kimi-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
-    threads: [{ sourceThreadId: sourceId, label: title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }
+    threads: [{ sourceThreadId: threadId, ...(child ? { parentSourceThreadId: sourceId } : {}), label: child?.label ?? title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }
   if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "Kimi header exceeds its page budget.")
+  return { header, frames, turnsForCalls, bytes }
+}
+
+
+/** Completed delegated turns are interleaved at their calls; all frames stay in one atomic target. */
+export const project = (source: Source, request: SourceOpenRequest) => {
+  const started = performance.now(), family = delegation(source)
+  const root = projectThread(source, request, started, family.callChildren)
+  if (!family.children.length) return { header: root.header, frames: root.frames }
+  const children = new Map<string, ReturnType<typeof projectThread>>()
+  const threads = [...root.header.threads]
+  let projectedBytes = root.bytes
+  let events = root.header.target.events, usage = root.header.target.usage, latest = root.header.session.updatedAt
+  let partial = root.header.session.captureStatus === "partial", active = root.header.session.status === "active"
+  for (const child of family.children) {
+    const planned = projectThread(source, { ...request, projection: { ...request.projection, events: request.projection.events - events, usage: request.projection.usage - usage } }, started, new Map(), child, 64 * 1024 * 1024 - projectedBytes)
+    projectedBytes += planned.bytes
+    children.set(child.id, planned); threads.push(...planned.header.threads)
+    events += planned.header.target.events; usage += planned.header.target.usage
+    latest = latest > planned.header.session.updatedAt ? latest : planned.header.session.updatedAt
+    partial ||= planned.header.session.captureStatus === "partial"; active ||= planned.header.session.status === "active"
+  }
+  const pending = [...root.frames].reverse(), frames: SourceCaptureFrame[] = [], cursors = new Map<string, number>()
+  let order = 0, bytes = 0
+  while (pending.length) {
+    request.signal.throwIfAborted()
+    if (performance.now() - started > request.limits.durationMs) fail("limit", "Kimi family projection exceeded its deadline.")
+    const frame = pending.pop()!, ordered = { ...frame, events: frame.events.map(event => ({ ...event, sourceOrder: order, eventIndex: order++ })) }
+    bytes += Buffer.byteLength(JSON.stringify(ordered))
+    if (bytes > 64 * 1024 * 1024 || Buffer.byteLength(JSON.stringify({ frames: [ordered], done: false })) > request.projection.pageBytes)
+      fail("limit", "Kimi family exceeds its projection byte budget.")
+    frames.push(ordered)
+    const childId = frame.events.find(event => event.childSourceThreadId)?.childSourceThreadId
+    if (childId) {
+      const at = cursors.get(childId) ?? 0, turn = children.get(childId)?.turnsForCalls[at]
+      if (!turn) fail("format", "Kimi delegation has no complete child turn.")
+      cursors.set(childId, at + 1)
+      for (let index = turn!.length - 1; index >= 0; index--) pending.push(turn![index]!)
+    }
+  }
+  const header: SourceCaptureHeader = { ...root.header, profile: "kimi.code.wire.family.1", threads,
+    session: { ...root.header.session, updatedAt: latest, reportedEventCount: events, status: active ? "active" : "idle", captureStatus: partial ? "partial" : "healthy" },
+    target: { events, usage, threads: threads.length } }
+  if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "Kimi family header exceeds its page budget.")
   return { header, frames }
 }

@@ -76,8 +76,16 @@ const metadata = async (path: string, check: () => void) => {
   if (sourceId !== basename(path)) fail("format", "Kimi Session metadata disagrees with its storage identity.")
   if (row.forkedFrom != null && id(row.forkedFrom) === sourceId) fail("format", "Kimi Session cannot be its own fork parent.")
   const agents = object(row.agents), main = object(agents.main)
-  if (Object.keys(agents).length !== 1 || main.type !== "main" || main.parentAgentId != null || main.forkedFrom != null)
+  if (main.type !== "main" || main.parentAgentId != null || object(main.labels).parentAgentId != null || main.forkedFrom != null)
     fail("unsupported", "Kimi child or independent agents require a wider source profile.")
+  const children = Object.keys(agents).filter(name => name !== "main").sort()
+  if (children.length && row.forkedFrom != null) fail("unsupported", "Kimi forks containing child agents require a wider source profile.")
+  for (const name of children) {
+    const child = object(agents[name]), labels = object(child.labels)
+    if (!/^agent-[a-zA-Z0-9_-]+$/.test(name) || child.type !== "sub" || child.parentAgentId !== "main" ||
+      labels.parentAgentId !== "main" || child.forkedFrom != null || child.swarmItem != null || labels.swarmItem != null)
+      fail("unsupported", "Kimi requires direct foreground subagent metadata.")
+  }
   if (typeof row.cwd !== "string" || !isAbsolute(row.cwd)) fail("attribution", "Kimi original CWD is unavailable.")
   const createdAt = timestamp(row.createdAt)
   const origin: GitSource = { sourceId, originKey: identity("origin", sourceId, String(createdAt)), cwd: row.cwd as string }
@@ -114,17 +122,30 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
   for (const path of directories) { check(); stamps.push(await directory(path)) }
   // New storage engines must not fall back to a stale v2 Wire file.
   try { await lstat(join(path, "trees")); fail("unsupported", "Kimi tree storage requires a wider source profile.") } catch (e) { if (!missing(e)) throw e }
-  const wire = await readFile(join(path, "agents", "main", "wire.jsonl"), 16 * 1024 * 1024 - meta.buffer.length, check)
-  if (!wire.buffer.length || wire.buffer.at(-1) !== 10) fail("format", "Kimi Wire has an incomplete final record; retry after writing finishes.")
-  const records: { row: Row; json: string }[] = []
-  for (let at = 0; at < wire.buffer.length;) {
-    check()
-    const end = wire.buffer.indexOf(10, at)
-    if (end - at + 1 > limits.rowBytes) fail("limit", "Kimi Wire record exceeds its row budget.")
-    const json = utf8(wire.buffer.subarray(at, end)); records.push({ row: parse(json), json }); at = end + 1
-    if (records.length + 1 > limits.records) fail("limit", "Kimi snapshot exceeds its record budget.")
+  const agentIds = ["main", ...Object.keys(object(meta.row.agents)).filter(name => name !== "main").sort()]
+  if (agentIds.length > limits.threads) fail("limit", "Kimi family exceeds its Thread budget.")
+  const wires: Awaited<ReturnType<typeof readFile>>[] = []
+  const histories: { id: string; records: { row: Row; json: string }[] }[] = []
+  let bytes = meta.buffer.length, count = 1
+  for (const agentId of agentIds) {
+    if (agentId !== "main") {
+      const childPath = join(path, "agents", agentId)
+      directories.push(childPath); stamps.push(await directory(childPath))
+    }
+    const wire = await readFile(join(path, "agents", agentId, "wire.jsonl"), 16 * 1024 * 1024 - bytes, check)
+    wires.push(wire); bytes += wire.buffer.length
+    if (!wire.buffer.length || wire.buffer.at(-1) !== 10) fail("format", "Kimi Wire has an incomplete final record; retry after writing finishes.")
+    const records: { row: Row; json: string }[] = []
+    for (let at = 0; at < wire.buffer.length;) {
+      check()
+      const end = wire.buffer.indexOf(10, at)
+      if (end - at + 1 > limits.rowBytes) fail("limit", "Kimi Wire record exceeds its row budget.")
+      const json = utf8(wire.buffer.subarray(at, end)); records.push({ row: parse(json), json }); at = end + 1
+      if (++count > limits.records) fail("limit", "Kimi snapshot exceeds its record budget.")
+    }
+    histories.push({ id: agentId, records })
   }
-  if (meta.stamp !== stamp(await lstat(meta.path)) || wire.stamp !== stamp(await lstat(wire.path))) fail("format", "Kimi Session changed while reading; retry.")
+  for (const file of [meta, ...wires]) if (file.stamp !== stamp(await lstat(file.path))) fail("format", "Kimi Session changed while reading; retry.")
   for (const [index, path] of directories.entries()) { check(); if (stamps[index] !== await directory(path)) fail("format", "Kimi source directories changed while reading; retry.") }
-  return { origin: meta.origin, meta: meta.row, metadataJson: meta.json, records }
+  return { origin: meta.origin, meta: meta.row, metadataJson: meta.json, records: histories[0]!.records, children: histories.slice(1) }
 }
