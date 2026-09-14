@@ -50,6 +50,7 @@ try {
   await cp(new URL("../src/fixtures/native-fork-new-2.124.0", import.meta.url), join(root, "native-fork-new-2.124.0"), { recursive: true })
   await cp(new URL("../src/fixtures/native-fork-resume-2.124.0", import.meta.url), join(root, "native-fork-resume-2.124.0"), { recursive: true })
   await cp(new URL("../src/fixtures/native-fork-resume-nested-2.124.0", import.meta.url), join(root, "native-fork-resume-nested-2.124.0"), { recursive: true })
+  await cp(new URL("../src/fixtures/native-fork-emergency-2.124.0", import.meta.url), join(root, "native-fork-emergency-2.124.0"), { recursive: true })
   const result = await run(process.execPath, [join(root, "verify-installed.mjs"), join(entryRoot, manifest.atapeAdapter.entry), manifest.version], root)
   process.stdout.write(`Verified CodeBuddy tarball ${basename(artifact)} (${size} bytes)\n${result.stdout}`)
 } finally {

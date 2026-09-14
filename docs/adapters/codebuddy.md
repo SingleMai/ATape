@@ -40,7 +40,7 @@ completed foreground Agent family described below, including root compaction.
 background launches described below; `codebuddy.cli.jsonl.family.background.turns.1`
 adds proven serial continuation and framework notifications. `codebuddy.cli.jsonl.emergency.1`
 and `codebuddy.cli.jsonl.family.emergency.1` cover the completed emergency compaction
-sequence below. `codebuddy.cli.jsonl.family.fork.1` adds copied foreground families, new children and validated foreground continuation in forks, as described below. All are tested with native
+sequence below. `codebuddy.cli.jsonl.family.fork.1` adds copied foreground families, new children, validated foreground continuation and completed emergency compaction in forks, as described below. All are tested with native
 CodeBuddy Code CLI 2.124.0 samples on macOS arm64. It is not a promise for IDE,
 VS Code extension, all CLI versions, or other platforms.
 
@@ -157,8 +157,8 @@ single-child fork has two Threads, 12 Events and five usage records (39,864 inpu
 and 13 usage records (98,806 input, 577 output, 56,896 cache). These are historical
 copied counters, not newly incurred spend. Cache is already part of input.
 
-Unaccounted shared-child turns, background children in forks, fork subagents
-and emergency compaction in forks remain unsupported.
+Unaccounted shared-child turns, background children in forks and fork subagents
+remain unsupported. Completed foreground fork emergency compaction is covered below.
 The Adapter still reads and stamp-checks bounded complete physical files before
 selecting prefixes; growth beyond the shared file/record/byte limits is diagnosed,
 even when it lies beyond the copied boundary. A malformed physical file requires
@@ -203,8 +203,12 @@ uses the ordered storage parents established by the Agent calls, reads each exac
 path once, and validates the joined records as one history. The first continuation
 row must link through the receipt's `afterId` to the earlier completed turn.
 No directory scan, invented root or replacement Thread repairs a missing fragment.
-All physical parts count toward the shared limits and receive final stamp checks;
-all remain necessary until the complete view is frozen. Revisiting an earlier
+For a copied child spanning files, the next fragment’s first user and matching
+`afterId` receipt select the preceding file through that completed response. Later
+original-owned turns appended after this boundary stay outside the fork. A missing
+boundary or an unaccounted turn before it still rejects the target. All physical
+parts count toward the shared limits and receive final stamp checks; all remain
+necessary until the complete view is frozen. Revisiting an earlier
 storage parent after switching away remains unsupported.
 
 A copied child's selected prefix extends only through the latest receipt in the
@@ -219,8 +223,8 @@ The direct continuation corpus has three Threads, 31 Events and 13 usage records
 (101,862 input, 629 output, 66,944 cache), including both storage fragments. The
 copied parent/leaf continuation corpus has four Threads, 39 Events and 17 usage
 records (129,884 input, 1,052 output, 66,112 cache). These include copied historical
-usage; cache is part of input. Background continuation in forks and emergency
-compaction in forks remain unsupported.
+usage; cache is part of input. Background continuation in forks remains unsupported. Completed emergency
+compaction in foreground forks is covered below.
 
 ## Completed foreground Agent families
 
@@ -364,9 +368,12 @@ does not invent one. Copied fork usage retains the historical meaning described
 above. Context-only changes update Raw independently; response-loss recovery uses
 the frozen journal even after source deletion.
 
-This pre-message evidence does not establish its automatic LLM-summary variant
-(`isSummary: true`), content pruning, rewind, `/clear`, `/branch`, or manual/pre-message
-compaction inside children. The next section covers the distinct emergency path.
+The installed 2.124.0 `PreMessageCompact` interceptor explicitly skips subagents
+and team Sessions. Child pre-message compaction therefore has no native sample
+for this version; the Adapter keeps rejecting such records rather than treating
+that absent native behavior as an ordinary implementation backlog. This evidence
+also does not establish the root automatic LLM-summary variant (`isSummary: true`),
+content pruning, rewind, `/clear`, `/branch`, or manual compaction inside children. The next section covers the distinct emergency path.
 
 ## Completed emergency compaction
 
@@ -376,8 +383,8 @@ It wraps the generated summary in `conversation_history_summary`. A second
 internal user record requests continuation. Both use `logicalParentId` to extend
 the complete stored transcript. The original messages and tool results remain.
 
-The Adapter admits the observed completed sequence in an ordinary root or a
-foreground Agent child. Both internal records are Raw-only. Their exact flags,
+The Adapter admits the observed completed sequence in an ordinary or forked root
+and its foreground Agent children. Both internal records are Raw-only. Their exact flags,
 wrappers, continuation text and parent chain must match; the following real
 assistant response must complete before the new view is exposed. A child
 continuation includes its current delegated prompt, truncated by the native
@@ -399,9 +406,26 @@ reads spill large output into separate files; their recorded placeholders remain
 visible and mark capture partial. The Adapter does not read those spill files.
 These are native tool outcomes, not inferred content loss caused by compaction.
 
-Emergency compaction in forks or background children, manual/pre-message child
-compaction and other pruning/rewind paths remain unsupported. Their membership
-and continuation behavior need separate evidence.
+The fork corpus additionally covers emergency compaction in the first fork turn,
+its copied foreground child, ordinary fork resume, and a second root compaction
+after native resume restores the original root ID. The root still belongs to the
+fork storage ID. Its internal continuation uses the ordinary root template;
+the child's template uses its delegated prompt. Neither creates a new human turn.
+A second fork can copy the completed root/child compacted history with independent
+Event identities and historical usage.
+
+The resumed compacted fork has two Threads, 24 Events and nine stored usage
+samples: 79,516 input, 708 output and 40,960 cached input (included in input).
+Its six internal context records remain Raw-only. The child spans the original
+and fork directories; later original growth beyond the earlier fragment's
+receipt boundary changes none of the fork's selected content. The copied nested
+fork has two Threads, 23 Events and nine usage samples: 78,222 input, 657 output
+and 31,744 cached input. The original root JSONL is not required for either view.
+
+Emergency compaction in background children, manual/pre-message child compaction
+and other pruning/rewind paths remain unsupported. Returning to an earlier child
+storage parent or continuing past an original-owned intervening turn is still
+outside the proven foreground fork profile.
 
 
 ## Consistency, bounds and recovery
@@ -563,6 +587,22 @@ installed-bundle checks additionally verify copied parent/leaf continuation with
 39 Events and 17 usage records. Runtime tests total 148; Adapter/CLI typechecks,
 isolated tarball and documentation/architecture checks passed locally.
 
+The fork-emergency contract verifies first-turn root/child compaction and another
+root compaction after ordinary fork resume through the actual installed CLI.
+The original root file is absent; the copied child spans two receipt-proven files.
+Later original growth beyond the first fragment's boundary changes no head,
+Event, usage, Raw or Search result. Pending root/child summaries and invalid
+logical parents retain the complete old family. Exact counters and per-Thread
+ownership match the native 24-Event/nine-usage target. Raw off/on and independent
+Raw/activation response loss recover after all four selected source files are
+deleted. Search anchors the recovered child under its two-level path and excludes
+Raw-only context and later original turns. Browser acceptance on 2026-09-15
+verified four root turns, two child turns, Read output, thoughts and the frozen
+child reply. All 161 runtime tests, Adapter/CLI typechecks, isolated tarball,
+documentation/architecture checks and the installed HTTP/PostgreSQL contract
+passed locally. Nested compacted-fork copying additionally passed the runtime
+and installed-bundle checks. This is not package publication or staging evidence.
+
 Package replacement may perform one Raw admission observation when the version
 length changes. The installed contract verifies no Canonical/Raw content uploads,
 unchanged head/checkpoint/Event provenance and the selected replacement version.
@@ -575,7 +615,7 @@ assert that the new package is already published or deployed.
 
 For local Web acceptance, `ATAPE_CODEBUDDY_REVIEW_FILE` can name an owner-only
 scratch JSON file when running `pnpm test:codebuddy-contract`. The test pauses
-for up to three minutes after foreground fork-child continuation recovery (the enclosing test
+for up to three minutes after fork emergency-compaction recovery (the enclosing test
 adds this review time to its normal deadline); it writes the ephemeral test
 Server origin, reader identifiers and test Web cookie there. Point the Web dev
 server proxy at that origin, use its HTTP-development cookie name
