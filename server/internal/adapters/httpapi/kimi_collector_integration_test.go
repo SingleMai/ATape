@@ -21,13 +21,12 @@ import (
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
-	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool) {
 	t.Helper()
-	project, grant, credential := kimiCollectorActor(t, modules, pool)
+	project, grant, credential := nativeCollectorActor(t, modules, pool, "kimi")
 	projectID, teamID, userID, csrf := project.ID, project.TeamID, grant.User.ID, grant.CSRFToken
 	cookie := &http.Cookie{Name: "__Secure-atape_session", Value: grant.SessionSecret}
 	server := httptest.NewUnstartedServer(nil)
@@ -700,65 +699,4 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		}
 	}
 
-}
-
-// Keep the deployment example's real 32-reservation account quota. This growing
-// native-history corpus owns an account, rather than exhausting another Adapter's
-// quota or changing production admission just to fit the combined test suite.
-func kimiCollectorActor(t *testing.T, modules Modules, pool *pgxpool.Pool) (team.Project, authentication.WebSessionGrant, string) {
-	t.Helper()
-	ctx := t.Context()
-	challenge, err := modules.Authentication.BeginFederatedLogin(ctx, authentication.BeginFederatedLoginInput{
-		Intent: authentication.SignInIntent, ProviderRegistrationID: "github", ReturnTo: "/", RequestID: "kimi-sign-in",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	authorization, err := url.Parse(challenge.AuthorizationURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grant, err := modules.Authentication.CompleteFederatedLogin(ctx, authentication.CompleteFederatedLoginInput{
-		ProviderRegistrationID: "github", State: authorization.Query().Get("state"), BrowserBinding: challenge.BrowserBinding,
-		AuthorizationServerIssuer: "https://identity.example/oauth", AuthorizationCode: "kimi-collector-user", RequestID: "kimi-sign-in-complete",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	web, err := modules.Authentication.AuthenticateWeb(ctx, grant.SessionSecret)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := modules.Teams.CreateTeam(ctx, team.CreateTeamInput{
-		Principal: web.Principal, Slug: "kimi-contract", DisplayName: "Kimi contract", OperationKey: strings.Repeat("K", 22), RequestID: "kimi-team",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err := modules.Teams.CreateProject(ctx, team.CreateProjectInput{
-		Principal: web.Principal, TeamSlug: created.Team.Slug, Spec: team.ProjectSpec{Type: team.FolderProject, Name: "Kimi native history"},
-		OperationKey: strings.Repeat("P", 22), RequestID: "kimi-project",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	device, err := modules.Authentication.CreateCLIDeviceAuthorization(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	view, err := modules.Authentication.ResolveCLIDeviceAuthorization(ctx, web.Principal, device.UserCode, "kimi-cli-resolve")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := modules.Authentication.DecideCLIDeviceAuthorization(ctx, web.Principal, view.ID, authentication.ApproveCLI, "kimi-cli-approve"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE auth_cli_device_authorizations SET next_poll_at=clock_timestamp()-interval '1 second' WHERE id=$1`, device.ID); err != nil {
-		t.Fatal(err)
-	}
-	credential, err := modules.Authentication.PollCLIDeviceAuthorization(ctx, device.DeviceCode, "kimi-cli-poll")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return project, grant, credential.CredentialSecret
 }

@@ -26,9 +26,9 @@ includes reasoning output. The final totals are 82,054 input, 1,169 output and
 68,096 cached-input tokens. Persisted input already includes cached input.
 
 `fork` is a native `--resume <id> --fork-session` of the two-turn conversation
-with one additional marker reply. It is a negative fixture: native parent/fork
-metadata must prevent accidental publication as a new ordinary root. It does not
-establish supported fork semantics.
+with one additional marker reply. It now verifies the explicit fork profile:
+copied successful/failed tools retain their history, while the fork has independent
+Event/tool/usage identities. It is not an ordinary linear-root fixture.
 
 `worktree` is a new native one-turn conversation created inside an actual Git
 worktree of a temporary committed repository with the fixture remote
@@ -64,3 +64,38 @@ committed as tool evidence. A synthetic HTTP marker is appended only to grep's
 encoded stdout to verify masking before Reader exposure with Raw disabled. The
 shared Search Interface searches conversation text and tool labels, not tool
 input/output payloads; tests retain that distinction.
+
+## Native fork continuation corpus
+
+The `fork-*` corpus was generated on 2026-09-14 UTC (2026-09-15 Asia/Singapore
+when implementation checks completed) using the same official 1.0.3 binary on
+macOS arm64. New temporary `project` and `foreign` directories contained distinct
+controlled marker files. No personal history was imported. Commands used
+`--no-memory --no-subagents --disable-web-search --no-plan --tools read_file
+--output-format json`, explicit UUIDs for new roots/forks and bounded `--max-turns`.
+Only temporary path prefixes and Grok home were replaced with `/fixture/...`;
+native IDs, timestamps, token counters and record order are retained.
+
+| Fixture | Native action | Records / Events / usage rows |
+| --- | --- | --- |
+| `fork-parent` | New root reads marker.txt and replies | 6 / 5 / 1 |
+| `fork-created` | Resume root with `--fork-session --session-id`, then read/reply | 12 / 10 / 2 |
+| `fork-resumed` | Resume the new fork in a separate process | 15 / 12 / 3 |
+| `fork-nested` | Fork the resumed fork with another explicit UUID | 18 / 14 / 4 |
+| `fork-nested-resumed` | Resume the nested fork in a separate process | 21 / 16 / 5 |
+| `fork-parent-grown` | Continue the original parent after both forks | 9 / 7 / 2 |
+
+Every invocation after the first requested `foreign` as CWD. Grok retained
+`project` in native metadata, source location and actual file reads. Every resume
+kept the earlier JSON records byte-equivalent after parsing. Each fork copied its
+parent's entire prefix, rewriting only `params.sessionId` and outer `timestamp`;
+native Event/prompt IDs and `agentTimestampMs` remained unchanged. The nested
+prefix therefore contains Event IDs from both earlier Sessions. Parent growth
+did not update either fork file. The fixtures contain persisted usage for
+`grok-4.5` and `grok-4.6`; this is not a model-selection compatibility claim.
+
+Runtime tests intentionally corrupt metadata, owner transitions, event times and
+completeness. Installed HTTP tests relocate the metadata paths and add synthetic
+masking/Search markers, malformed lineage and committed-response loss. Those
+mutations are fault injection, not native edit/rewind evidence. Personal-environment
+and browser acceptance of this extension are deferred at the user's request.

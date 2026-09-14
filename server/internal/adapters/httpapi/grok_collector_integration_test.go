@@ -22,8 +22,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool, projectID, teamID, userID, credential string, cookie *http.Cookie, csrf string) {
+func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool *pgxpool.Pool) {
 	t.Helper()
+	project, grant, credential := nativeCollectorActor(t, modules, pool, "grok")
+	projectID, teamID, userID, csrf := project.ID, project.TeamID, grant.User.ID, grant.CSRFToken
+	cookie := &http.Cookie{Name: "__Secure-atape_session", Value: grant.SessionSecret}
 	server := httptest.NewUnstartedServer(nil)
 	origin := "http://" + server.Listener.Addr().String()
 	handler, err := NewHandler(Config{InstanceOrigin: origin, WebOrigin: origin, APIOrigin: origin, DevelopmentAllowHTTP: true}, modules)
@@ -281,6 +284,106 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		t.Fatal("Grok search/edit Raw enablement changed Canonical provenance")
 	}
 
+	for _, fork := range []struct {
+		prefix, marker                          string
+		initialEvents, resumedEvents, usageRows int
+		input, output, cache                    int64
+	}{
+		{"fork", "ATAPE_GROK_FORK_BRANCH_20260914", 10, 12, 3, 31366, 806, 19072},
+		{"nested", "ATAPE_GROK_NESTED_FORK_20260914", 14, 16, 5, 44309, 835, 25664},
+	} {
+		t.Run(fork.prefix, func(t *testing.T) {
+			capture := func(phase string) snapshot { t.Helper(); return run(fork.prefix + "-" + phase) }
+			setRaw(true)
+			initial := capture("initial")
+			_, original := read(initial.SessionID, fork.initialEvents)
+			if initial.Observations != 1 || initial.Pending != 0 || len(search(fork.marker).Results) == 0 {
+				t.Fatal("Grok fork original attribution, copied history or Search failed")
+			}
+			for _, phase := range []string{"noop", "upgrade"} {
+				next := capture(phase)
+				if next.Head != initial.Head || next.Checkpoint != initial.Checkpoint || !bytes.Equal(next.Records, initial.Records) {
+					t.Fatalf("Grok fork %s changed stable progress or provenance", phase)
+				}
+			}
+			resumed := capture("edit")
+			_, events := read(resumed.SessionID, fork.resumedEvents)
+			for i, event := range original {
+				if events[i].ID != event.ID || events[i].OccurredAt != event.OccurredAt {
+					t.Fatal("Grok fork resume changed copied Event identity or native time")
+				}
+			}
+			encoded, _ := json.Marshal(events)
+			if resumed.Head == initial.Head || bytes.Contains(encoded, []byte("SENSITIVE_TEST_TOKEN")) || bytes.Contains(encoded, []byte("ATAPE_GROK_PARENT_LATER_20260914")) {
+				t.Fatal("Grok fork resume mixed secrets or later parent history")
+			}
+			usage, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+				time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			count := 0
+			var input, output, cache int64
+			for _, row := range usage.Usage {
+				if row.SessionID != resumed.SessionID {
+					continue
+				}
+				count++
+				if row.InputTokens != nil {
+					input += *row.InputTokens
+				}
+				if row.OutputTokens != nil {
+					output += *row.OutputTokens
+				}
+				if row.CacheReadTokens != nil {
+					cache += *row.CacheReadTokens
+				}
+			}
+			if count != fork.usageRows || input != fork.input || output != fork.output || cache != fork.cache {
+				t.Fatalf("Grok fork history usage mismatch: count=%d input=%d output=%d cache=%d", count, input, output, cache)
+			}
+			setRaw(false)
+			off := capture("raw-off")
+			if off.Head == resumed.Head {
+				t.Fatal("Grok fork Raw-off stopped Canonical")
+			}
+			setRaw(true)
+			on := capture("raw-on")
+			if on.Head != off.Head || !bytes.Equal(on.Records, off.Records) {
+				t.Fatal("Grok fork Raw re-enable changed provenance")
+			}
+			lost := capture("lose-activation")
+			if lost.Pending == 0 {
+				t.Fatal("Grok fork lost activation discarded recovery")
+			}
+			recovered := capture("recover-activation")
+			_, finalEvents := read(recovered.SessionID, fork.resumedEvents)
+			if recovered.Pending != 0 || finalEvents[len(finalEvents)-1].Text != "GrokFinalNeedle" {
+				t.Fatal("Grok fork frozen activation did not recover after source deletion")
+			}
+			capture("restore")
+			rawLost := capture("raw-only")
+			if rawLost.Pending == 0 {
+				t.Fatal("Grok fork lost Raw receipt discarded recovery")
+			}
+			rawRecovered := capture("recover-raw")
+			if rawRecovered.Head != recovered.Head || rawRecovered.Pending != 0 {
+				t.Fatal("Grok fork Raw recovery changed Canonical")
+			}
+			capture("restore")
+			invalid := capture("unsupported")
+			if invalid.Head != recovered.Head {
+				t.Fatal("Grok inconsistent fork lineage replaced captured history")
+			}
+			if repaired := capture("repair"); repaired.Head != recovered.Head {
+				t.Fatal("Grok fork repair changed unchanged history")
+			}
+			if len(search("GrokRawOnlyNeedle").Results) != 0 {
+				t.Fatal("Grok fork Search included Raw-only content")
+			}
+		})
+	}
+
 	if review := os.Getenv("ATAPE_GROK_REVIEW_FILE"); review != "" {
 		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": recovered.SessionID, "toolsSessionId": toolCapture.SessionID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
@@ -310,7 +413,7 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		}
 	}
 
-	createGit := jsonRequest(t, http.MethodPost, "/api/v1/teams/acme/projects", map[string]string{"type": "git", "remote": "https://github.com/atape-fixtures/grok-native.git"})
+	createGit := jsonRequest(t, http.MethodPost, "/api/v1/teams/grok-contract/projects", map[string]string{"type": "git", "remote": "https://github.com/atape-fixtures/grok-native.git"})
 	addWebProof(createGit, cookie, csrf)
 	createGit.Header.Set("Idempotency-Key", "grok-worktree-project-103")
 	gitResponse := httptest.NewRecorder()

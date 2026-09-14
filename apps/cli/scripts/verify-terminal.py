@@ -145,7 +145,7 @@ try:
         # Path controls run with an explicitly saved, inert fixture integration.
         fixture(adapter, "enabled")
         terminal = Terminal()
-        terminal.wait("Your Projects")
+        terminal.wait("n Add")
         terminal.send("n")
         terminals.append(terminal)
         terminal.wait("Project directory")
@@ -154,7 +154,9 @@ try:
         assert "Search: 项sp".encode() in terminal.output, "typing did not start project-name search"
         assert "项目 space".encode() in terminal.output, "fuzzy project result was not shown"
         terminal.send("\x1b")
-        terminal.wait("Your Projects")
+        # The project title stays visible behind the modal. Wait for the active
+        # home controls before sending a key that must not reach the closing picker.
+        terminal.wait("n Add")
         terminal.send("n")
         terminal.wait("Use current directory")
         terminal.send("\x15" + str(root) + "/项")
@@ -175,7 +177,7 @@ try:
         assert b"Finding your Project" not in terminal.output, "paste submitted the form"
         if ending == "escape":
             terminal.send("\x1b")
-            terminal.wait("Your Projects")
+            terminal.wait("n Add")
             terminal.finish("\x1b")
         elif ending == "sigterm":
             terminal.process.send_signal(signal.SIGTERM)
@@ -247,7 +249,7 @@ try:
     entry.write_text(entry.read_text() + "\n// package replacement before console startup\n")
     terminal = Terminal(("--no-browser",))
     terminals.append(terminal)
-    terminal.wait("Your Projects")
+    terminal.wait("n Add")
     refreshed_process = json.loads(process_file.read_text())
     assert refreshed_process["pid"] != previous_process["pid"], "opening updated ATape retained the old Host"
     for field in ("intervalMs", "concurrency"):
@@ -256,7 +258,7 @@ try:
     terminal.wait("Add project")
     terminal.wait("Project directory")
     terminal.send("\x1b")
-    terminal.wait("Your Projects")
+    terminal.wait("n Add")
     terminal.send("/")
     terminal.send("q-no-such-project")
     terminal.wait("No matching projects")

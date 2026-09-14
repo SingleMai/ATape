@@ -29,6 +29,18 @@ const missing = (e: unknown) => object(e).code === "ENOENT"
 const directory = async (path: string) => { const s = await lstat(path); if (!s.isDirectory() || s.isSymbolicLink()) fail("format", "Grok source directories must not be symlinks."); return stamp(s) }
 const maxEntries = 10_000, maxBytes = 16 * 1024 * 1024
 
+const forkInfo = (summary: Row) => {
+  if (summary.session_kind === "fork") {
+    const parentId = id(summary.parent_session_id), at = time(summary.forked_at)
+    if (parentId === object(summary.info).id || Date.parse(at) < Date.parse(time(summary.created_at)))
+      fail("unsupported", "Grok fork metadata has an invalid parent or creation boundary.")
+    return { parentId, at: Date.parse(at) }
+  }
+  if (summary.parent_session_id != null || summary.forked_at != null || summary.session_kind != null && summary.session_kind !== "primary")
+    fail("unsupported", "Grok child Sessions and unknown parent metadata require a wider native profile.")
+  return undefined
+}
+
 /** Names only locate Sessions. Metadata establishes their native identity and Origin. */
 const inventory = async (home: string, signal: AbortSignal) => {
   if (!isAbsolute(home)) fail("format", "Grok home must be absolute.")
@@ -67,8 +79,7 @@ const origin = (summary: Row, path: string): GitSource => {
   const info = object(summary.info), sourceId = id(info.id)
   if (sourceId !== basename(path)) fail("format", "Grok directory and native Session identity disagree.")
   if (typeof info.cwd !== "string" || !isAbsolute(info.cwd) || Buffer.byteLength(info.cwd) > 4096 || info.cwd.includes("\0")) fail("attribution", "Grok original CWD is unavailable.")
-  if (summary.parent_session_id != null || summary.forked_at != null || summary.session_kind != null && summary.session_kind !== "primary")
-    fail("unsupported", "Grok forks and child Sessions require a wider native profile.")
+  forkInfo(summary)
   if (summary.chat_format_version !== 1) fail("unsupported", "Grok chat format is unsupported.")
   time(summary.created_at)
   return { sourceId, originKey: identity("origin", sourceId, summary.created_at as string), cwd: info.cwd as string }
@@ -119,5 +130,5 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
     records.push({ row: parse(json), json })
   }
   if (metadata.num_messages !== records.length || !records.length) fail("format", "Grok summary and update stream are incomplete or inconsistent; retry.")
-  return { origin: evidence, metadata, state, records, summaryJson: summary.json, signalsJson: signals.json }
+  return { origin: evidence, fork: forkInfo(metadata), metadata, state, records, summaryJson: summary.json, signalsJson: signals.json }
 }

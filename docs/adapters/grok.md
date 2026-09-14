@@ -1,6 +1,6 @@
 # Grok Build Adapter
 
-The Grok Adapter reads completed local root conversations through the existing
+The Grok Adapter reads completed local root and fork conversations through the existing
 [source-capture runtime](package-manifest.md#bounded-source-capture-capability).
 The Host owns Project attribution, redaction, revisions, frozen delivery, atomic
 publication and independent Raw recovery. It requires a Server advertising
@@ -34,11 +34,13 @@ reassign a Session or substitute for original CWD.
 
 ## Supported native profile
 
-The evidence-bound profile is `grok.build.updates.linear.1`, tested with **Grok
+The evidence-bound profiles are `grok.build.updates.linear.1` and
+`grok.build.updates.fork.1`, tested with **Grok
 Build 1.0.3 (1a29d5bc12d4)** on **macOS arm64**. It supports completed root text
 conversations, ordinary headless resume, successful/failed `read_file` calls,
 foreground `run_terminal_command` calls, `grep` searches (including no matches),
-`search_replace` edits and persisted per-turn/model token usage.
+`search_replace` edits, headless forks/nested forks and their continuation,
+and persisted per-turn/model token usage.
 This is not a general claim for every Grok tool, version, TUI behavior, ACP client
 or platform. Native `agent_thought_chunk` text uses the same projection; the
 controlled native corpus contains reasoning counters but no persisted thoughts.
@@ -81,6 +83,43 @@ turn total. It does not turn cost ticks into money or cumulative CLI telemetry
 into per-response usage. Missing optional cache counters remain unknown; missing
 per-model usage marks the capture partial. Usage belongs to the root Thread.
 
+## Native headless forks
+
+`--resume <id> --fork-session` creates an independent Session with a copied
+completed prefix. `summary.json` must declare `session_kind: "fork"`, a distinct
+`parent_session_id` and a valid `forked_at` creation boundary. The native fork's
+own `info.id`, `created_at` and original `info.cwd` establish its identity and
+Project attribution. Controlled cross-directory fork and resume requests retained
+the original CWD and storage location. The requested CWD does not reassign history.
+
+Grok rewrites copied `params.sessionId` to the fork ID and the outer record
+`timestamp` to the copy time. It retains original Event IDs, prompt IDs and
+`agentTimestampMs`. The Adapter uses the retained native event time, namespaces
+Event/message/tool/usage identities by the fork's Session ID, and titles the fork
+from its first own prompt. Parent/fork metadata and copied provider fields remain
+in Raw; the fork is a peer root, not a fabricated child Thread.
+
+Each complete turn has one Event-ID owner. A copied prefix may contain successive
+ancestor owners for a nested fork, ending with the immediate parent. An ancestor
+cannot reappear after ownership moves forward. Copied events must predate the
+fork boundary; subsequent turns must belong to the fork and occur at or after
+that boundary. At least one completed fork-owned turn is required. Foreign Session
+IDs, mixed owners, inconsistent metadata or a prefix-only/incomplete fork reject
+the new target and retain its previously selected history.
+
+Parents do not need to remain on disk: capture uses only the fork's frozen files.
+Later parent growth cannot add Events, usage or Raw to an existing fork. Ordinary
+fork and nested-fork resume preserve their completed prefixes, Origin, Event
+identities and provenance. Copied usage belongs to the captured history and is
+not evidence of additional spend; it must not be summed across forks as new
+provider charges. The continued nested fixture has five turn/model usage rows:
+44,309 input, 835 output and 25,664 cached-input tokens, with cache included in input.
+
+Native evidence covers headless forks of completed linear conversations using
+the supported tools, nested forks and ordinary continuation on Grok Build 1.0.3
+macOS arm64. TUI/worktree forks, `--restore-code`, compacted/rewound histories,
+child families and forks of interrupted turns are outside this evidence.
+
 ## Bounds, unsupported behavior and recovery
 
 A snapshot admits at most 16 MiB across its three files; each metadata file is at
@@ -93,8 +132,8 @@ entries. This is a bounded full rescan, not an unbounded-history indexing promis
 
 Incomplete turns, invalid JSON, concurrent changes and mismatched counts cannot
 replace the selected target. Source deletion preserves captured history. Parent
-metadata (`parent_session_id`, `forked_at`, non-primary `session_kind`) rejects
-forks and child Sessions; the native copied-prefix fork is a negative fixture.
+metadata must satisfy the fork profile above; other non-primary Session kinds
+and unknown parent relationships reject child Sessions.
 Rewind, compaction, regeneration and edit/retry signals are unsupported. Unknown
 updates, other tools, background commands, truncated/spilled command output and
 non-text messages also reject the new target with a diagnostic. A rejected new
@@ -154,8 +193,19 @@ contracts also passed. The official catalog, build/release set and CI contract i
 local verification, merging, npm publication and Server deployment are separate
 states; this guide does not assert publication or deployment. The next increment
 needs native evidence for additional tools, failed edits and interrupted/cancelled
-turns, then fork/rewind/compaction and child membership before extending those
+turns, then rewind/compaction and child membership before extending those
 claims. Search/edit acceptance additionally verifies decoded byte-output masking
 with Raw off, unchanged polling and Raw re-enable without changing provenance.
 Two additional native samples cover a successful grep/read/edit turn and a
 no-match grep turn; they do not widen the tested version or platform.
+
+The fork increment passed 46 runtime behavior tests, standalone installed-package
+verification and the installed CLI/HTTP/PostgreSQL contract on 2026-09-15.
+Direct and nested fork cases cover original directory attribution, copied native
+times, stable identities through continuation and package replacement, exact
+historical usage, Reader/Search, masking, Raw off/on, unsupported-lineage
+retention and activation/Raw response-loss recovery after deleting the source.
+Native parent-growth fixtures verify that later parent history does not enter
+the fork. The user's personal-environment and browser acceptance are deferred
+until the planned capability extensions are ready; these automated checks do
+not claim that acceptance, package publication or Server deployment occurred.
