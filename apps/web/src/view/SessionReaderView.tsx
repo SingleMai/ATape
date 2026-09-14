@@ -4,7 +4,7 @@ import {
   type Conversation,
   type NarrativeExchange
 } from "@atape/domain"
-import { Avatar, Button } from "@atape/ui"
+import { AgentIdentity, Avatar, Button } from "@atape/ui"
 import { createContext, useContext, useEffect, useId, useMemo } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import { useMarkdownPlugins } from "../presenters/markdownPresenter"
@@ -359,7 +359,7 @@ export const SessionReaderView = ({
             <h1 id={titleId}>{embedded ? conversation.thread.label : conversation.session.title}</h1>
             <p className="reader-user">
               <Avatar name={conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} src={conversation.session.capturedBy?.avatarUrl} size="small" />
-              <span>{conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} · {conversation.session.actor.harness}
+              <span className="agent-metadata">{conversation.session.capturedBy?.displayName ?? conversation.session.actor.name} · <AgentIdentity provider={conversation.session.actor.harness} />
               {conversation.session.branch ? ` · ${conversation.session.branch}` : ""}</span>
             </p>
           </div>

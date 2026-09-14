@@ -1,6 +1,6 @@
 import type { WorkspaceSearchResult } from "@atape/application"
 import type { Workspace } from "@atape/domain"
-import { Button } from "@atape/ui"
+import { AgentIdentity, Button } from "@atape/ui"
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { SearchOverlayContext, type SearchSeed } from "../presenters/searchOverlayContext"
@@ -404,8 +404,8 @@ const SearchResults = ({
             <p>
               <SearchExcerpt text={result.text} query={query} />
             </p>
-            <small>
-              {result.author} · {result.harness}
+            <small className="agent-metadata">
+              {result.author} · <AgentIdentity provider={result.harness} />
               {result.toolLabel ? ` · ${result.toolLabel}` : ""}
             </small>
           </button>

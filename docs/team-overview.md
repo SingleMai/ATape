@@ -84,6 +84,14 @@ attachment declarations; show an explicit waiting state when there is no reply.
 No AI summary generation is included. Keep identity metadata compact and preserve
 body readability. Full reading remains in the Session reader.
 
+Conversation cards use the shared `@atape/ui` `AgentIdentity` component at 32px
+in the title row and `resolveAgentIdentity` for the metadata label. The same
+mapping supplies Project rows, Search and reader headers, including aliases such
+as `codebuddy-code` → WorkBuddy. Missing artwork and failed loads fall back to the
+agent name. The chart's category classification also uses this resolver, while
+chart colors, filter values and statistical groupings remain unchanged. See the
+[agent-logo guide](../packages/ui/docs/agent-logos.md) for the presentation contract.
+
 The Session reader header shows the capturing user’s display name and avatar from
 `session.capturedBy` (`id`, `displayName`, `avatarUrl`), followed by the Agent and
 branch. This profile belongs to the capturing account, including when another

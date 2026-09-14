@@ -13,7 +13,7 @@ import "@atape/ui/styles.css"
 Then consume primitives from the package Interface:
 
 ```tsx
-import { Avatar, Badge, BrandMark, Button, Eyebrow } from "@atape/ui"
+import { AgentIdentity, Avatar, Badge, BrandMark, Button, Eyebrow } from "@atape/ui"
 ```
 
 ## Themes
@@ -37,6 +37,12 @@ src/styles/themes/
   cozy-island.css
   cozy-island/
     brand-mark.svg
+    agents/
+      codex.svg
+      claude-code.svg
+      workbuddy.svg
+      grok.svg
+      kimi-code.svg
 ```
 
 To replace the logo, edit `src/styles/themes/cozy-island/brand-mark.svg`. Keep its background and openings transparent and crop its `viewBox` to the artwork. The theme selects the asset with `--atape-brand-mark-image`, its width-to-height ratio with `--atape-brand-mark-aspect-ratio`, and its color with `--atape-color-brand`. Update the ratio when the replacement artwork has different proportions. Relative asset URLs are resolved by the application bundler.
@@ -47,7 +53,38 @@ The Web HTML entry also uses this SVG as its favicon. Its default `color` suppli
 
 `BrandMark` renders the SVG as a monochrome CSS mask. Views only set its displayed width and placement; the theme owns the artwork and color. The mark is decorative, so its containing link must provide the brand name through visible text or an accessible label. Multicolor artwork would need a different rendering implementation.
 
-The next visual increment is provider-specific conversation icons, using the approved cartridge direction after small-size review. Those icons should keep provider identity separate from the universal site mark.
+### Agent logos
+
+Approved A3 (Soft Glow) agent logos live in
+[`src/styles/themes/cozy-island/agents/`](src/styles/themes/cozy-island/agents/):
+[Codex](src/styles/themes/cozy-island/agents/codex.svg),
+[Claude Code](src/styles/themes/cozy-island/agents/claude-code.svg),
+[WorkBuddy](src/styles/themes/cozy-island/agents/workbuddy.svg),
+[Grok](src/styles/themes/cozy-island/agents/grok.svg) and
+[Kimi Code](src/styles/themes/cozy-island/agents/kimi-code.svg).
+
+The [agent-logo guide](docs/agent-logos.md) owns the fixed geometry, color values,
+soft-glow treatment, center-symbol sizing, asset naming, rendering contract and
+new-agent workflow. Follow that guide when adding or modifying an agent logo.
+The universal site mark remains provider-neutral.
+
+The Web build serves these color images at `/agents/<name>.svg`. WorkBuddy is
+the requested visual identity for the existing `codebuddy` provider.
+
+Use `AgentIdentity` for image-and-name rendering and `resolveAgentIdentity`
+when only display metadata is needed. Both share the single alias/asset mapping
+in [`src/agentIdentity.ts`](src/agentIdentity.ts); do not repeat provider-name
+checks or construct asset paths in individual views.
+
+```tsx
+<AgentIdentity provider={session.actor.harness} />
+<AgentIdentity provider={row.agent} size={32} iconOnly />
+```
+
+The default size is 24px. `iconOnly` retains the accessible agent name; missing
+artwork and failed image loads fall back to text. Unknown names are preserved,
+and empty values display an em dash. The optional `className` is for placement.
+These are pure presentation operations with no capture or installation policy.
 
 ## Boundary
 

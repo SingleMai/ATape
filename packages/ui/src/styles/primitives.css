@@ -8,6 +8,26 @@
   mask: var(--atape-brand-mark-image) center / contain no-repeat;
 }
 
+.atape-agent-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--atape-space-1);
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+.atape-agent-identity > img {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.atape-agent-identity > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .atape-button {
   min-height: 44px;
   padding: 9px 16px;
