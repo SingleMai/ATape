@@ -700,7 +700,3 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	}
 
 }
-
-// Keep the deployment example's real 32-reservation account quota. This growing
-// native-history corpus owns an account, rather than exhausting another Adapter's
-// quota or changing production admission just to fit the combined test suite.
