@@ -670,9 +670,108 @@ func assertKimiCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 		t.Fatal("Kimi leaf Raw recovery changed or leaked into Canonical history")
 	}
 	read(deep.SessionID, 6, leafID)
+	setRaw(false)
+	background := run("background-seed")
+	_, backgroundRoot := read(background.SessionID, 5)
+	if backgroundRoot[1].ChildThread == nil {
+		t.Fatal("Kimi background launch has no child link")
+	}
+	backgroundChildID := backgroundRoot[1].ChildThread.ID
+	_, backgroundFirst := read(background.SessionID, 4, backgroundChildID)
+	assertUsage(background.SessionID, 5, 515, 65, 100, "atape-background-model")
+	if run("background-resume").Pending == 0 {
+		t.Fatal("Kimi background resume activation loss was not recoverable")
+	}
+	backgroundRecovered := run("background-recover")
+	_, backgroundRoot = read(background.SessionID, 10)
+	_, backgroundResumed := read(background.SessionID, 6, backgroundChildID)
+	if backgroundRecovered.Pending != 0 || backgroundRoot[6].ChildThread == nil || backgroundRoot[6].ChildThread.ID != backgroundChildID {
+		t.Fatal("Kimi background resume changed the child identity")
+	}
+	beforeJSON, _ = json.Marshal(backgroundFirst)
+	afterJSON, _ = json.Marshal(backgroundResumed[:4])
+	if !bytes.Equal(beforeJSON, afterJSON) {
+		t.Fatal("Kimi background resume changed retained child Events")
+	}
+	assertUsage(background.SessionID, 9, 945, 135, 180, "atape-background-model")
+	run("background-restore")
+	run("background-foreground")
+	_, backgroundRoot = read(background.SessionID, 14)
+	read(background.SessionID, 8, backgroundChildID)
+	if backgroundRoot[11].ChildThread == nil || backgroundRoot[11].ChildThread.ID != backgroundChildID {
+		t.Fatal("Kimi foreground resume split a background child")
+	}
+	assertUsage(background.SessionID, 12, 1278, 198, 240, "atape-background-model")
+	backgroundFinal := run("background-final")
+	_, backgroundRoot = read(background.SessionID, 19)
+	if backgroundRoot[15].ChildThread == nil || backgroundRoot[15].ChildThread.ID == backgroundChildID {
+		t.Fatal("Kimi independent background launch reused another child")
+	}
+	backgroundSecondID := backgroundRoot[15].ChildThread.ID
+	read(background.SessionID, 4, backgroundSecondID)
+	encoded, _ = json.Marshal(backgroundRoot)
+	humans := 0
+	for _, event := range backgroundRoot {
+		if event.Author == "User" {
+			humans++
+		}
+	}
+	if humans != 4 || bytes.Contains(encoded, []byte("<notification id=")) || !bytes.Contains(encoded, []byte("KimiBackgroundNotifiedReply17")) {
+		t.Fatal("Kimi task notification became a human turn or lost its resulting reply")
+	}
+	matched = false
+	for _, hit := range search("KimiBackgroundChildResumedReply7").Results {
+		if hit.SessionID != background.SessionID || hit.ThreadID != backgroundChildID {
+			continue
+		}
+		var anchored conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+background.SessionID+"?thread="+url.QueryEscape(hit.ThreadID)+"&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+		for _, event := range anchored.Events {
+			matched = matched || event.ID == hit.EventID
+		}
+	}
+	if !matched {
+		t.Fatal("Kimi background Search lost the child Event")
+	}
+	assertUsage(background.SessionID, 17, 1853, 323, 340, "atape-background-model")
+	usageSnapshot, err = store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
+		time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadInput, threadResponses = map[string]int64{}, map[string]int{}
+	for _, usage := range usageSnapshot.Usage {
+		if usage.SessionID == background.SessionID {
+			threadResponses[usage.ThreadID]++
+			if usage.InputTokens != nil {
+				threadInput[usage.ThreadID] += *usage.InputTokens
+			}
+		}
+	}
+	if threadResponses["root"] != 11 || threadResponses[backgroundChildID] != 4 || threadResponses[backgroundSecondID] != 2 || threadInput["root"] != 1199 || threadInput[backgroundChildID] != 424 || threadInput[backgroundSecondID] != 230 {
+		t.Fatalf("Kimi background usage has incorrect ownership: %v %v", threadResponses, threadInput)
+	}
+	setRaw(true)
+	backgroundOn := run("background-raw-on")
+	if backgroundOn.Head != backgroundFinal.Head || !bytes.Equal(backgroundOn.Records, backgroundFinal.Records) {
+		t.Fatal("Kimi background Raw-on changed Canonical provenance")
+	}
+	backgroundRunning := run("background-running")
+	if backgroundRunning.Head != backgroundOn.Head || backgroundRunning.Checkpoint != backgroundOn.Checkpoint {
+		t.Fatal("Kimi running background task replaced a complete capture")
+	}
+	run("background-final")
+	if run("background-raw-loss").Pending == 0 {
+		t.Fatal("Kimi background Raw response loss was not recoverable")
+	}
+	backgroundRaw := run("background-recover-raw")
+	if backgroundRaw.Pending != 0 || backgroundRaw.Head != backgroundOn.Head || len(search("KimiBackgroundRawOnly").Results) != 0 {
+		t.Fatal("Kimi background Raw recovery changed or leaked into Canonical history")
+	}
+	read(background.SessionID, 8, backgroundChildID)
 	// Optional local acceptance: keep the real server alive while inspecting its Web reader.
 	if review := os.Getenv("ATAPE_KIMI_REVIEW_FILE"); review != "" {
-		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "nestedFamilySessionId": deep.SessionID, "middleThreadId": middleID, "leafThreadId": leafID, "familySessionId": family.SessionID, "childThreadId": childID, "secondChildThreadId": secondChildID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
+		payload, err := json.Marshal(map[string]any{"origin": origin, "projectId": projectID, "teamId": teamID, "sessionId": seed.SessionID, "autoSessionId": auto.SessionID, "clearSessionId": clear.SessionID, "forkSessionId": fork.SessionID, "nestedForkSessionId": nested.SessionID, "backgroundSessionId": background.SessionID, "backgroundChildThreadId": backgroundChildID, "backgroundSecondThreadId": backgroundSecondID, "nestedFamilySessionId": deep.SessionID, "middleThreadId": middleID, "leafThreadId": leafID, "familySessionId": family.SessionID, "childThreadId": childID, "secondChildThreadId": secondChildID, "cookieName": cookie.Name, "cookieValue": cookie.Value})
 		if err != nil {
 			t.Fatal(err)
 		}
