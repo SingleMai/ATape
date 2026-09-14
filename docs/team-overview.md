@@ -414,6 +414,49 @@ throughput claim.
 Production concurrent-load, WAL/write-amplification and sustained reclamation
 acceptance remain outstanding.
 
+### Native fact access and planning
+
+The 2026-09-14 recurrence showed that complete publication coverage is not
+sufficient: the affected Team's statistics still read about 62,000 native
+message facts from an Event heap containing about 358,000 records. The failed
+request spent 10.5 seconds in Events and 1.46 seconds in Usage before exhausting
+the 12-second budget. Small warm HTTP samples from the previous rollout did
+not establish cold-read acceptance.
+
+Migration `000021_overview_native_covering_indexes.sql` replaces the two narrow
+native activity indexes with covering indexes for the existing Event and Usage
+queries. Event text, tool payloads, Raw data and Search remain outside these
+indexes. The replacement retains the original keys/predicate, so older binaries
+can continue reading and writing; it does not change statistics or require a
+second copy of native facts. Index construction runs in the ordinary migration
+transaction and can block concurrent writes during the build. Apply it through
+the normal backed-up Server rollout; do not remove the indexes as an application
+rollback step. Wider indexes add storage and write work.
+
+The PostgreSQL Adapter also uses `SET LOCAL plan_cache_mode=force_custom_plan`
+inside the Overview read transaction. Session arrays, period ranges and model
+eligibility vary greatly, while a generic prepared plan can estimate only a few
+rows for a large Team. Planning uses current parameter values, and commit or
+rollback restores the connection's prior policy. This does not alter pool-wide
+or database-wide settings, force a particular index, or change the Module budget.
+Small relations can still be cheaper to scan directly.
+
+Covering indexes allow index-only reads when normal PostgreSQL vacuum/visibility
+maintenance makes retained rows all-visible. Recently changed pages can still
+require heap fetches. Operators should inspect both plans and heap access rather
+than treating a short warm response as evidence that cold I/O is bounded.
+
+The PostgreSQL regression migrates retained native data, then exercises the
+public Overview Interface on one reused connection configured to prefer generic
+plans. Its fixture contains 60,002 message Events, 60,000 non-message Events and
+6,000 Usage records. Twelve broad, model-filtered and empty-period reads verified
+metrics and used 16 native Event heap blocks in the local sample, for bounded
+previews. The test also verifies cancellation and restoration of the connection
+policy after success and failure. Existing contracts continue to cover nullable
+Tokens, child ownership, publication fallback/coverage, deletion and replay.
+This is a deterministic local I/O regression, not a production latency SLO or
+concurrent-load acceptance.
+
 ### Subsequent scaling work
 
 The next independently verifiable increment moves aggregation and Session page
