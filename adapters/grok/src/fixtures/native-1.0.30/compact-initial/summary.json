@@ -1,0 +1,23 @@
+{
+  "info": {
+    "id": "f1e31225-e22f-431b-88bc-73e270e6d45c",
+    "cwd": "/fixture/grok-compact/project"
+  },
+  "agent_id": "ag1.3b5a7205ecdc47d6b19539c5bc621ace",
+  "attempt_id": "at1.33ebd4d46791498999e201f1d2f4f801",
+  "session_summary": "",
+  "created_at": "2026-09-14T16:29:12.071516Z",
+  "updated_at": "2026-09-14T16:29:21.304679Z",
+  "num_messages": 3,
+  "num_chat_messages": 6,
+  "current_model_id": "grok-4.6",
+  "next_trace_turn": 1,
+  "chat_format_version": 1,
+  "session_kind": "headless",
+  "request_id": "8fc821e2-c90b-4c09-9bcd-5cdedc3e0331",
+  "grok_home": "/fixture/grok-home",
+  "last_active_at": "2026-09-14T16:29:21.304679Z",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off",
+  "reasoning_effort": "high"
+}

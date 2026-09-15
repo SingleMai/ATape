@@ -1,0 +1,24 @@
+{
+  "info": {
+    "id": "f1e31225-e22f-431b-88bc-73e270e6d45c",
+    "cwd": "/fixture/grok-compact/project"
+  },
+  "agent_id": "ag1.3b5a7205ecdc47d6b19539c5bc621ace",
+  "attempt_id": "at1.c2a90df77185441280e65414161db240",
+  "session_summary": "Reply exactly ATAPE_GROK_PINNED_CONTEXT_1_20260915. Do not use tools.",
+  "created_at": "2026-09-14T16:29:12.071516Z",
+  "updated_at": "2026-09-15T15:02:54.956144Z",
+  "num_messages": 44,
+  "num_chat_messages": 26,
+  "current_model_id": "grok-4.6",
+  "next_trace_turn": 10,
+  "chat_format_version": 1,
+  "session_kind": "headless",
+  "request_id": "a4460bba-5820-4265-910d-7815d61478c5",
+  "grok_home": "/fixture/grok-home",
+  "last_active_at": "2026-09-15T15:02:54.956144Z",
+  "generated_title": "Reply exactly ATAPE_GROK_PINNED_CONTEXT_1_20260915. Do not use tools.",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off",
+  "reasoning_effort": "high"
+}

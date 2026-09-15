@@ -12,11 +12,11 @@ const signal = () => new AbortController().signal
 const limits = { rowBytes: 65536, pageBytes: 262144, pageRows: 1, records: 1000, threads: 20, durationMs: 10000 }
 const projection = { events: 1000, usage: 1000, pageItems: 2, pageBytes: 262144 }
 const sourceId = "01a0987a-554b-7073-934d-da914245adbf"
-const fixture = async (stage = "resumed") => {
+const fixture = async (stage = "resumed", version = "1.0.3") => {
   const home = await mkdtemp(join(tmpdir(), "atape-grok-test-")); roots.push(home)
-  const selectedId = JSON.parse(await readFile(new URL(`./fixtures/native-1.0.3/${stage}/summary.json`, import.meta.url), "utf8")).info.id as string
+  const selectedId = JSON.parse(await readFile(new URL(`./fixtures/native-${version}/${stage}/summary.json`, import.meta.url), "utf8")).info.id as string
   const directory = join(home, "sessions", "opaque-location", selectedId); await mkdir(directory, { recursive: true })
-  await cp(new URL(`./fixtures/native-1.0.3/${stage}/`, import.meta.url), directory, { recursive: true })
+  await cp(new URL(`./fixtures/native-${version}/${stage}/`, import.meta.url), directory, { recursive: true })
   vi.stubEnv("ATAPE_GROK_HOME", home)
   const lifetime = new AbortController(), runtime = await createAtapeAdapter({ protocolVersion: "atape.adapter.v1alpha1", adapter: { id: "grok", version: "0.5.1" }, project: { id: "project", type: "directory", path: "/unrelated/locator" }, signal: lifetime.signal })
   runtimes.push(runtime)
@@ -40,6 +40,79 @@ const mutate = async (f: Awaited<ReturnType<typeof fixture>>, file: string, edit
 }
 
 describe("Grok source-capture runtime Interface", () => {
+  it.each([["initial", "resumed", 5, 7], ["fork", "fork-resumed", 9, 11], ["nested", "nested-resumed", 13, 15]] as const)("captures 1.0.30 %s and continuation with stable history and standalone controls", async (stage, resumed, initialCount, count) => {
+    const f = await fixture(stage, "1.0.30"), first = await f.runtime.sourceCapture.open(f.request), initial = await read(first)
+    expect(first.target.events).toBe(initialCount); await first.close()
+    await cp(new URL(`./fixtures/native-1.0.30/${resumed}/`, import.meta.url), f.directory, { recursive: true })
+    const view = await f.runtime.sourceCapture.open(f.request), after = await read(view)
+    expect(view.origin).toEqual(first.origin); expect(view.origin.cwd).toBe("/fixture/grok-1030/project")
+    expect(view.target.events).toBe(count); expect(view.session.captureStatus).toBe("healthy")
+    expect(after.slice(0, initial.length - 1)).toEqual(initial.slice(0, -1))
+    const background = after.filter(f => JSON.stringify(f.raw).includes("background_tasks"))
+    expect(background.length).toBeGreaterThan(0); expect(background.every(f => f.events.length === 0 && f.usage.length === 0)).toBe(true)
+    await view.close()
+    await cp(new URL("./fixtures/native-1.0.30/parent-grown/", import.meta.url), join(f.home, "sessions", "later-parent", "5a9ae393-eebe-4c06-be9b-52e13d37b081"), { recursive: true })
+    if (stage !== "initial") {
+      const unchanged = await f.runtime.sourceCapture.open(f.request)
+      expect(await read(unchanged)).toEqual(after); await unchanged.close()
+    }
+  })
+  it("preserves native manual compaction, failed commands and both continuations without inventing usage", async () => {
+    const f = await fixture("compact-initial", "1.0.30")
+    let previous: SourceCapturePage["frames"][number][] = []
+    for (const [stage, events, usages, status] of [
+      ["compact-initial", 2, 1, "healthy"], ["compact-noop", 3, 1, "healthy"], ["compact-context", 13, 6, "healthy"],
+      ["compact-failed", 14, 6, "partial"], ["compact-failed-resumed", 16, 7, "partial"],
+      ["compact-before-success", 18, 8, "partial"], ["compact-success", 19, 8, "partial"], ["compact-success-resumed", 21, 9, "partial"]
+    ] as const) {
+      await cp(new URL(`./fixtures/native-1.0.30/${stage}/`, import.meta.url), f.directory, { recursive: true })
+      const view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
+      expect(view.target).toEqual({ events, usage: usages, threads: 1 }); expect(view.session.captureStatus).toBe(status)
+      expect(frames.slice(0, previous.length)).toEqual(previous)
+      expect(frames.filter(f => (f.raw as any)?.format === "grok.updates.v1").flatMap(f => (f.raw as any).records).join("\n") + "\n").toBe(await readFile(join(f.directory, "updates.jsonl"), "utf8"))
+      expect(frames.filter(f => JSON.stringify(f.raw).includes("auto_compact_completed")).every(f => f.events.length === 0 && f.usage.length === 0)).toBe(true)
+      previous = frames.slice(0, -1); await view.close()
+      const off = await f.runtime.sourceCapture.open({ ...f.request, rawEnabled: false }), canonical = await read(off)
+      expect(canonical.every(f => f.raw === undefined)).toBe(true)
+      expect(canonical.flatMap(f => f.events)).toEqual(frames.flatMap(f => f.events)); await off.close()
+    }
+  })
+  it("keeps a trailing native background notification stable when its next command arrives", async () => {
+    const f = await fixture("compact-noop", "1.0.30")
+    await mutate(f, "updates.jsonl", rows => rows.splice(4))
+    await mutate(f, "summary.json", row => row.num_messages = 4)
+    await mutate(f, "signals.json", row => { row.turnCount = 1; row.userMessageCount = 1; row.compactionCount = 0 })
+    const view = await f.runtime.sourceCapture.open(f.request), before = await read(view); await view.close()
+    await cp(new URL("./fixtures/native-1.0.30/compact-noop/", import.meta.url), f.directory, { recursive: true })
+    const next = await f.runtime.sourceCapture.open(f.request), after = await read(next)
+    expect(after.slice(0, before.length - 1)).toEqual(before.slice(0, -1)); await next.close()
+  })
+  it.each(["tasks", "owner", "background-prompt", "failed-time", "retry-kind", "retry-attempt", "host-command", "checkpoint-index", "checkpoint-time", "checkpoint-path", "checkpoint-reused", "missing-completion", "usage", "count"])("rejects unsupported 1.0.30 control state: %s", async kind => {
+    const f = await fixture("compact-success-resumed", "1.0.30")
+    await mutate(f, "updates.jsonl", rows => {
+      const first = (name: string) => rows.find((r: any) => r.params.update.sessionUpdate === name)
+      const update = (name: string) => first(name).params.update
+      if (kind === "tasks") update("background_tasks").tasks = [{ id: "active" }]
+      if (kind === "owner") first("background_tasks").params._meta.eventId = "foreign-1"
+      if (kind === "background-prompt") first("background_tasks").params._meta.promptId = "foreign"
+      if (kind === "failed-time") rows.find((r: any) => r.params.update.stop_reason === "error").params._meta.agentTimestampMs = 0
+      if (kind === "retry-kind") update("retry_state").error_type = "unknown"
+      if (kind === "retry-attempt") update("retry_state").attempt = 0
+      const command = rows.find((r: any) => r.params.update._meta?.hostTurn)
+      if (kind === "host-command") command.params.update.content.text = "/rewind"
+      if (kind === "checkpoint-index") update("compaction_checkpoint").prompt_index_at_compaction++
+      if (kind === "checkpoint-time") update("compaction_checkpoint").created_at = "2020-01-01T00:00:00Z"
+      if (kind === "checkpoint-path") update("compaction_checkpoint").checkpoint_file = "../../external"
+      if (kind === "checkpoint-reused") {
+        const last = rows.findLast((r: any) => r.params.update.sessionUpdate === "compaction_checkpoint").params.update
+        last.checkpoint_id = update("compaction_checkpoint").checkpoint_id; last.checkpoint_file = update("compaction_checkpoint").checkpoint_file
+      }
+      if (kind === "missing-completion") update("auto_compact_completed").sessionUpdate = "unknown"
+      if (kind === "usage") rows[rows.indexOf(command) + 1].params.update.usage = { inputTokens: 100 }
+    })
+    if (kind === "count") await mutate(f, "signals.json", row => row.compactionCount++)
+    await expect(f.runtime.sourceCapture.open(f.request)).rejects.toBeDefined()
+  })
   it("captures native grep and search_replace with readable results and edit details", async () => {
     const f = await fixture("edit"), view = await f.runtime.sourceCapture.open(f.request), frames = await read(view)
     const events = frames.flatMap(f => f.events)

@@ -40,6 +40,7 @@ try {
   // bundle and Node builtins; workspace module resolution cannot rescue it.
   await copyFile(new URL("./verify-installed.mjs", import.meta.url), join(root, "verify-installed.mjs"))
   await cp(new URL("../src/fixtures/native-1.0.3", import.meta.url), join(root, "native-1.0.3"), { recursive: true })
+  await cp(new URL("../src/fixtures/native-1.0.30", import.meta.url), join(root, "native-1.0.30"), { recursive: true })
   const result = await run(process.execPath, [join(root, "verify-installed.mjs"), join(entryRoot, manifest.atapeAdapter.entry), manifest.version], root)
   process.stdout.write(`Verified Grok tarball ${basename(artifact)} (${size} bytes)\n${result.stdout}`)
 } finally {

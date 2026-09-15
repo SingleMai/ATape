@@ -1,5 +1,6 @@
 import { isBoundedToolValue, type AcpSessionUpdate, type SourceCaptureFrame, type SourceCaptureHeader, type SourceOpenRequest } from "@atape/domain"
 import { fail, id, identity, object, time, type Row, type snapshot } from "./source.ts"
+import { compactionTurn, emptyBackground, retryTelemetry, updateOf } from "./controls.ts"
 
 type Source = Awaited<ReturnType<typeof snapshot>>
 const text = (v: unknown) => { if (typeof v !== "string") fail("format", "Grok text is invalid."); return v as string }
@@ -31,8 +32,10 @@ export const project = (source: Source, request: SourceOpenRequest) => {
   const started = performance.now(), sourceId = source.origin.sourceId
   const frames: SourceCaptureFrame[] = [], prompts = new Set<string>(), tools = new Set<string>()
   const ancestors = new Set<string>()
+  const controlOwners = new Set<string>()
+  const checkpoints = new Set<string>()
   let previousOwner = "", ownTurnSeen = false
-  let at = 0, events = 0, usages = 0, turns = 0, bytes = 0, partial = false, title = "Grok Build session"
+  let at = 0, events = 0, usages = 0, turns = 0, modelTurns = 0, compactions = 0, bytes = 0, partial = false, title = "Grok Build session"
   const admit = (frame: SourceCaptureFrame) => {
     if (frame.events.length > 500 || frame.usage.length > 500) fail("limit", "Grok frame exceeds its event or usage bound.")
     const size = Buffer.byteLength(JSON.stringify(frame)); bytes += size
@@ -44,14 +47,36 @@ export const project = (source: Source, request: SourceOpenRequest) => {
   while (at < source.records.length) {
     request.signal.throwIfAborted()
     if (performance.now() - started > request.limits.durationMs) fail("limit", "Grok projection exceeded its deadline.")
+    if (updateOf(source.records[at]!.row).sessionUpdate === "background_tasks") {
+      const { row, json } = source.records[at]!, params = object(row.params), eventId = id(object(params._meta).eventId)
+      emptyBackground(row)
+      const owner = eventId.slice(0, eventId.lastIndexOf("-")), timestamp = Date.parse(occurred(row))
+      if (params.sessionId !== sourceId || object(params._meta).promptId != null || !/^\d+$/.test(eventId.slice(owner.length + 1)) || !owner ||
+        (source.fork ? owner === sourceId ? timestamp < source.fork.at : timestamp > source.fork.at : owner !== sourceId))
+        fail("unsupported", "Grok background telemetry has a foreign identity or creation boundary.")
+      controlOwners.add(owner)
+      // Native process restarts repeat Event IDs. A standalone control has no
+      // prompt; persisted position keeps its identity stable when a turn follows.
+      admit({ recordKey: identity("control", sourceId, String(at), eventId), events: [], usage: [],
+        ...(request.rawEnabled ? { raw: { format: "grok.updates.v1", sourceSessionId: sourceId, records: [json] } } : {}) })
+      at++; continue
+    }
     let end = at
     while (end < source.records.length && object(object(source.records[end]!.row.params).update).sessionUpdate !== "turn_completed") end++
     if (end === source.records.length) fail("format", "Grok turn has not completed; retry.")
     const terminal = source.records[end]!, completed = object(object(terminal.row.params).update), prompt = id(completed.prompt_id)
-    if (terminal.row.method !== "_x.ai/session/update" || completed.stop_reason !== "end_turn" || prompts.has(prompt))
+    const own = source.records.slice(at, end + 1), hostTurn = compactionTurn(own.map(record => record.row), modelTurns)
+    if (hostTurn && (source.fork || source.metadata.session_kind !== "headless"))
+      fail("unsupported", "Grok compaction is supported only for the sampled headless root profile.")
+    if (hostTurn === "completed") {
+      const checkpoint = id(updateOf(own[0]!.row).checkpoint_id)
+      if (checkpoints.has(checkpoint)) fail("unsupported", "Grok compaction checkpoint identity is duplicated.")
+      checkpoints.add(checkpoint)
+    }
+    if (terminal.row.method !== "_x.ai/session/update" || completed.stop_reason !== "end_turn" && hostTurn !== "failed" || prompts.has(prompt))
       fail("unsupported", "Grok turn completion is unsupported or duplicated.")
     prompts.add(prompt)
-    const own = source.records.slice(at, end + 1), seen = new Set<string>(), calls = new Map<string, { done: boolean; name: string }>()
+    const seen = new Set<string>(), calls = new Map<string, { done: boolean; name: string }>()
     const firstEventId = id(object(object(own[0]!.row.params)._meta).eventId)
     const nativeOwner = source.fork ? firstEventId.slice(0, firstEventId.lastIndexOf("-")) : sourceId
     const firstOwnTurn = !!source.fork && !ownTurnSeen && nativeOwner === sourceId
@@ -77,6 +102,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
     for (let index = 0; index < own.length; index++) {
       const { row, json } = own[index]!, params = object(row.params), update = object(params.update), meta = object(params._meta), eventId = id(meta.eventId)
       checkIdentity(row, params, eventId)
+      occurred(row)
       seen.add(eventId)
       if (meta.promptId != null && meta.promptId !== prompt) fail("unsupported", "Grok turn contains a foreign prompt identity.")
       const kind = update.sessionUpdate, output: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
@@ -85,7 +111,14 @@ export const project = (source: Source, request: SourceOpenRequest) => {
           orderFidelity: "derived", fidelity, occurredAt: occurred(row), update: value })
       }
       const rawRecords = [json]
-      if (kind === "turn_completed") {
+      if (hostTurn && kind === "turn_completed") {
+        if (!user) fail("format", "Grok host completion lacks its command.")
+        // Context size is not billable usage. The native host terminal supplies
+        // no model usage and no assistant reply; neither is synthesized here.
+        partial ||= hostTurn === "failed"
+      } else if (hostTurn && (kind === "compaction_checkpoint" || kind === "auto_compact_completed")) {
+        // The complete sequence was validated before projecting any record.
+      } else if (kind === "turn_completed") {
         if (!user || !assistant || [...calls.values()].some(call => !call.done)) fail("format", "Grok completed turn lacks its complete conversation or tool results.")
         const native = object(completed.usage), models = object(native.modelUsage)
         if (!Object.keys(models).length) partial = true
@@ -107,11 +140,13 @@ export const project = (source: Source, request: SourceOpenRequest) => {
           fail("unsupported", "Grok per-model usage does not match its turn totals.")
       } else if (kind === "hook_execution" && row.method === "_x.ai/session/update") {
         // Native hook telemetry is preserved only in Raw.
+      } else if (kind === "retry_state" && user && !hostTurn) {
+        retryTelemetry(row)
       } else {
         if (row.method !== "session/update") fail("unsupported", "Grok update method is unsupported.")
         if (kind === "user_message_chunk" || kind === "agent_message_chunk" || kind === "agent_thought_chunk") {
           if (kind === "user_message_chunk") {
-            if (index !== 0 || user || object(update._meta).promptIndex !== turns) fail("unsupported", "Grok user prompt has an unsupported turn position.")
+            if (user || (hostTurn ? object(update._meta).hostTurn !== true : index !== 0 || object(update._meta).promptIndex !== modelTurns)) fail("unsupported", "Grok user prompt has an unsupported turn position.")
             user = true
           } else if (!user) fail("format", "Grok assistant update has no user turn.")
           const content = object(update.content)
@@ -122,7 +157,7 @@ export const project = (source: Source, request: SourceOpenRequest) => {
           while (index + 1 < own.length && object(object(own[index + 1]!.row.params).update).sessionUpdate === kind) {
             const next = own[++index]!, p = object(next.row.params), u = object(p.update), m = object(p._meta), nextId = id(m.eventId)
             checkIdentity(next.row, p, nextId)
-            if (next.row.method !== "session/update" || kind === "user_message_chunk" && object(u._meta).promptIndex !== turns || m.promptId != null && m.promptId !== prompt || object(u.content).type !== "text")
+            if (next.row.method !== "session/update" || kind === "user_message_chunk" && object(u._meta).promptIndex !== modelTurns || m.promptId != null && m.promptId !== prompt || object(u.content).type !== "text")
               fail("unsupported", "Grok message fragments have inconsistent identity or content.")
             occurred(next.row); seen.add(nextId); rawRecords.push(next.json); contentText += text(object(u.content).text)
           }
@@ -160,9 +195,13 @@ export const project = (source: Source, request: SourceOpenRequest) => {
       admit({ recordKey: identity("record", sourceId, prompt, eventId), events: output, usage,
         ...(request.rawEnabled ? { raw: { format: "grok.updates.v1", sourceSessionId: sourceId, promptId: prompt, records: rawRecords } } : {}) })
     }
-    turns++; at = end + 1
+    turns++; if (hostTurn) compactions++; else modelTurns++
+    at = end + 1
   }
   if (source.fork && !ownTurnSeen) fail("format", "Grok fork has no completed fork-owned turn; retry.")
+  if (!modelTurns) fail("format", "Grok source has no completed model turn; retry.")
+  if ([...controlOwners].some(owner => owner !== sourceId && !ancestors.has(owner))) fail("unsupported", "Grok background telemetry has no corresponding native ancestor.")
+  if (source.state.compactionCount !== compactions) fail("unsupported", "Grok compaction attempts lack their complete supported host turns.")
   if (source.state.turnCount !== turns || source.state.userMessageCount !== turns) fail("format", "Grok signals and completed turns are inconsistent; retry.")
   if (request.rawEnabled) admit({ recordKey: identity("metadata", sourceId), events: [], usage: [], raw: { format: "grok.metadata.v1", sourceSessionId: sourceId, summary: source.summaryJson, signals: source.signalsJson } })
   const captureStatus = partial ? "partial" as const : "healthy" as const

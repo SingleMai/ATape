@@ -291,6 +291,9 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 	}{
 		{"fork", "ATAPE_GROK_FORK_BRANCH_20260914", 10, 12, 3, 31366, 806, 19072},
 		{"nested", "ATAPE_GROK_NESTED_FORK_20260914", 14, 16, 5, 44309, 835, 25664},
+		{"modern-fork", "ATAPE_GROK_1030_FORK", 9, 11, 4, 32324, 406, 13312},
+		{"modern-nested", "ATAPE_GROK_1030_NESTED", 13, 15, 6, 46056, 441, 14656},
+		{"compact", "ATAPE_GROK_PINNED_CONTEXT_4_20260915", 13, 21, 9, 102493, 8161, 38016},
 	} {
 		t.Run(fork.prefix, func(t *testing.T) {
 			capture := func(phase string) snapshot { t.Helper(); return run(fork.prefix + "-" + phase) }
@@ -313,12 +316,25 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 					t.Fatal("Grok fork resume changed copied Event identity or native time")
 				}
 			}
+			if fork.prefix == "compact" {
+				var page conversation.Conversation
+				decodeResponse(t, send("GET", "/api/v1/sessions/"+resumed.SessionID+"?limit=2", ""), &page)
+				commands := 0
+				for _, event := range events {
+					if strings.HasPrefix(event.Text, "/compact ") {
+						commands++
+					}
+				}
+				if page.Session.CaptureStatus != "partial" || page.Thread.CaptureStatus != "partial" || commands != 3 {
+					t.Fatal("Grok compaction lost host commands or failed-command partial status")
+				}
+			}
 			encoded, _ := json.Marshal(events)
 			if resumed.Head == initial.Head || bytes.Contains(encoded, []byte("SENSITIVE_TEST_TOKEN")) || bytes.Contains(encoded, []byte("ATAPE_GROK_PARENT_LATER_20260914")) {
 				t.Fatal("Grok fork resume mixed secrets or later parent history")
 			}
 			usage, err := store.Overview(t.Context(), authentication.Principal{UserID: userID, Method: authentication.WebAuthentication}, teamID,
-				time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+				time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -341,6 +357,11 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 			}
 			if count != fork.usageRows || input != fork.input || output != fork.output || cache != fork.cache {
 				t.Fatalf("Grok fork history usage mismatch: count=%d input=%d output=%d cache=%d", count, input, output, cache)
+			}
+			// The established fork profile exercises all frozen-delivery faults.
+			// Modern forks share that Interface; this increment adds native compatibility.
+			if strings.HasPrefix(fork.prefix, "modern-") {
+				return
 			}
 			setRaw(false)
 			off := capture("raw-off")
