@@ -11,10 +11,16 @@ import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 import { defaultSourceCollectionLimits } from "@atape/application"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as { phase: string; origin: string; credential: string; userId: string; home: string; tarball: string; cliTarball: string; projectId: string; teamId: string }
-const nestedPhase = input.phase.startsWith("nested-"), forkPhase = nestedPhase || input.phase.startsWith("fork-")
-const phase = nestedPhase ? input.phase.slice(7) : forkPhase ? input.phase.slice(5) : input.phase
+const modernPhase = input.phase.startsWith("modern-"), casePhase = modernPhase ? input.phase.slice(7) : input.phase
+const compactPhase = casePhase.startsWith("compact-"), nestedPhase = casePhase.startsWith("nested-"), forkPhase = nestedPhase || casePhase.startsWith("fork-")
+const phase = compactPhase ? casePhase.slice(8) : nestedPhase ? casePhase.slice(7) : forkPhase ? casePhase.slice(5) : casePhase
 const gitPhase = phase.startsWith("git-"), toolsPhase = phase.startsWith("tools-")
-const sourceId = nestedPhase ? "1edcf769-dc72-4253-8513-f266e62317b3" : forkPhase ? "3480cfb1-f675-4b6e-80bc-b7adf55b8bee" : gitPhase ? "01a0988a-e389-73f0-a5d6-fcd91c1f822b" : toolsPhase ? "88789e9d-9240-47c6-8a89-0842fc706348" : "01a0987a-554b-7073-934d-da914245adbf", home = nestedPhase ? join(input.home, "nested-case") : forkPhase ? join(input.home, "fork-case") : gitPhase ? join(input.home, "git-case") : toolsPhase ? join(input.home, "tools-case") : input.home, workspace = join(home, "workspace")
+const sourceId = compactPhase ? "f1e31225-e22f-431b-88bc-73e270e6d45c" : nestedPhase ? (modernPhase ? "bad9620c-089d-472f-af1f-f36f5dc65d31" : "1edcf769-dc72-4253-8513-f266e62317b3") : forkPhase ? (modernPhase ? "f8938b1c-c9ac-498c-8920-b870682353c4" : "3480cfb1-f675-4b6e-80bc-b7adf55b8bee") : gitPhase ? "01a0988a-e389-73f0-a5d6-fcd91c1f822b" : toolsPhase ? "88789e9d-9240-47c6-8a89-0842fc706348" : "01a0987a-554b-7073-934d-da914245adbf"
+const caseName = compactPhase ? "compact" : nestedPhase ? "nested" : forkPhase ? "fork" : gitPhase ? "git" : toolsPhase ? "tools" : undefined
+const home = caseName ? join(input.home, `${modernPhase ? "modern-" : ""}${caseName}-case`) : input.home, workspace = join(home, "workspace")
+const initialStage = compactPhase ? "compact-context" : nestedPhase ? (modernPhase ? "nested" : "fork-nested") : forkPhase ? (modernPhase ? "fork" : "fork-created") : toolsPhase ? "edit" : "resumed"
+const resumedStage = compactPhase ? "compact-success-resumed" : nestedPhase ? (modernPhase ? "nested-resumed" : "fork-nested-resumed") : forkPhase ? "fork-resumed" : "shell"
+const nativeVersion = modernPhase || compactPhase ? "1.0.30" : "1.0.3"
 const worktree = join(home, "worktree")
 const sourceHome = join(home, "source"), directory = join(sourceHome, "sessions", "opaque", sourceId), file = join(directory, "updates.jsonl")
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(home, "client") }), installed = join(home, "installed")
@@ -27,8 +33,8 @@ const at = "2026-09-13T00:00:00Z", adapterId = "grok"
 const writeNative = (stage: string, dest = directory, id = sourceId, cwd = workspace) => {
   mkdirSync(dest, { recursive: true })
   for (const name of ["summary.json", "signals.json", "updates.jsonl"]) {
-    const native = readFileSync(new URL(`../../../../../adapters/grok/src/fixtures/native-1.0.3/${stage}/${name}`, import.meta.url), "utf8")
-    writeFileSync(join(dest, name), native.replaceAll("/fixture/grok-fork/project", cwd).replaceAll("/fixture/grok-project", cwd).replaceAll("/fixture/grok-worktree", cwd).replaceAll("/fixture/grok-edit", cwd).replaceAll(sourceId, id))
+    const native = readFileSync(new URL(`../../../../../adapters/grok/src/fixtures/native-${nativeVersion}/${stage}/${name}`, import.meta.url), "utf8")
+    writeFileSync(join(dest, name), native.replaceAll("/fixture/grok-1030/project", cwd).replaceAll("/fixture/grok-compact/project", cwd).replaceAll("/fixture/grok-fork/project", cwd).replaceAll("/fixture/grok-project", cwd).replaceAll("/fixture/grok-worktree", cwd).replaceAll("/fixture/grok-edit", cwd).replaceAll(sourceId, id))
   }
 }
 if (phase === "initial" || phase === "git-initial" || phase === "tools-initial") {
@@ -44,9 +50,9 @@ if (phase === "initial" || phase === "git-initial" || phase === "tools-initial")
     git(cwd, "init"); git(cwd, "remote", "add", "origin", "https://github.com/atape-fixtures/other.git")
     writeNative("worktree", join(sourceHome, "sessions", "foreign", foreign), foreign, cwd)
   } else {
-    writeNative(nestedPhase ? "fork-nested" : forkPhase ? "fork-created" : toolsPhase ? "edit" : "resumed")
+    writeNative(initialStage)
     const foreign = "01a0987a-554b-7073-934d-da914245adbe", cwd = join(home, "foreign-project"); mkdirSync(cwd)
-    writeNative(nestedPhase ? "fork-nested" : forkPhase ? "fork-created" : toolsPhase ? "edit" : "resumed", join(sourceHome, "sessions", "foreign", foreign), foreign, cwd)
+    writeNative(initialStage, join(sourceHome, "sessions", "foreign", foreign), foreign, cwd)
   }
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
@@ -65,11 +71,11 @@ if (phase === "git-relocated") {
   rows.find(row => row.params.update.sessionUpdate === "agent_message_chunk").params.update.content.text = "GrokGitMovedNeedle"
   writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
 }
-if (phase === "edit") writeNative(nestedPhase ? "fork-nested-resumed" : forkPhase ? "fork-resumed" : "shell")
+if (phase === "edit") writeNative(resumedStage)
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(phase)) {
   const rows = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
   const last = rows.findLast(row => row.params.update.sessionUpdate === "agent_message_chunk")
-  if (phase === "edit") rows[nestedPhase ? 18 : 12].params.update.content.text += " GrokResumeNeedle SENSITIVE_TEST_TOKEN"
+  if (phase === "edit") rows.findLast(row => row.params.update.sessionUpdate === "user_message_chunk").params.update.content.text += " GrokResumeNeedle SENSITIVE_TEST_TOKEN"
   if (phase === "raw-off") last.params.update.content.text = "GrokPolicyNeedle"
   if (phase === "lose-activation") last.params.update.content.text = "GrokFinalNeedle"
   if (phase === "raw-only") last.extraRawField = "GrokRawOnlyNeedle"
@@ -77,11 +83,12 @@ if (["edit", "raw-off", "lose-activation", "raw-only"].includes(phase)) {
 }
 if (["recover-activation", "recover-raw"].includes(phase)) rmSync(directory, { recursive: true })
 if (["restore", "repair"].includes(phase)) {
-  writeNative(nestedPhase ? "fork-nested-resumed" : forkPhase ? "fork-resumed" : "shell"); writeFileSync(file, readFileSync(join(home, "saved.jsonl")))
+  writeNative(resumedStage); writeFileSync(file, readFileSync(join(home, "saved.jsonl")))
 }
 if (phase === "unsupported") {
   const rows = readFileSync(file, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
-  rows[1].params._meta.eventId = sourceId + "-4"
+  if (compactPhase) rows.find(row => row.params.update.sessionUpdate === "compaction_checkpoint").params.update.prompt_index_at_compaction = 999
+  else rows[1].params._meta.eventId = sourceId + "-4"
   writeFileSync(file, rows.map(row => JSON.stringify(row) + "\n").join(""))
 }
 if (phase === "malformed") writeFileSync(file, readFileSync(file, "utf8") + "unfinished")

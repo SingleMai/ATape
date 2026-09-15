@@ -1,0 +1,26 @@
+{
+  "info": {
+    "id": "f8938b1c-c9ac-498c-8920-b870682353c4",
+    "cwd": "/fixture/grok-1030/project"
+  },
+  "agent_id": "ag1.d583743239da48c7abceb5a0dfd82339",
+  "attempt_id": "at1.93525a50497489e918570efa3a84aba",
+  "session_summary": "Read marker.txt, then reply ATAPE_GROK_1030_FORK.",
+  "created_at": "2026-09-15T15:01:05.413717Z",
+  "updated_at": "2026-09-15T15:01:15.519793Z",
+  "num_messages": 15,
+  "num_chat_messages": 13,
+  "current_model_id": "grok-4.6",
+  "parent_session_id": "5a9ae393-eebe-4c06-be9b-52e13d37b081",
+  "forked_at": "2026-09-15T15:01:05.413717Z",
+  "next_trace_turn": 1,
+  "chat_format_version": 1,
+  "session_kind": "headless",
+  "request_id": "116132b3-e7bc-40aa-b9a5-e68512b64fd2",
+  "grok_home": "/fixture/grok-home",
+  "last_active_at": "2026-09-15T15:01:15.519793Z",
+  "generated_title": "Read marker.txt, then reply ATAPE_GROK_1030_FORK.",
+  "agent_name": "grok-build-plan",
+  "sandbox_profile": "off",
+  "reasoning_effort": "high"
+}

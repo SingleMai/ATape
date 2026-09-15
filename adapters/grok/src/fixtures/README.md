@@ -99,3 +99,76 @@ completeness. Installed HTTP tests relocate the metadata paths and add synthetic
 masking/Search markers, malformed lineage and committed-response loss. Those
 mutations are fault injection, not native edit/rewind evidence. Personal-environment
 and browser acceptance of this extension are deferred at the user's request.
+
+## Pinned 1.0.30 compatibility and manual compaction
+
+`native-1.0.30` was generated on 2026-09-14–15 UTC with the explicitly pinned
+macOS arm64 binary `grok 1.0.30 (04b7ffed98c6)`. Every command used that binary,
+including ACP `agent --no-leader stdio` for host `/compact` commands. Only three
+native source files from dedicated temporary Sessions are included. Temporary
+path prefixes and Grok home became `/fixture/grok-1030`, `/fixture/grok-compact`
+and `/fixture/grok-home`; native IDs, timestamps, counters and order are retained.
+No checkpoint contents, model-input histories or personal conversations were read
+or imported.
+
+Fresh roots/forks use explicit UUIDs, `--no-memory --no-subagents
+--disable-web-search --no-plan --max-turns 3 --tools read_file --output-format json`.
+Fork creation adds `--resume <parent> --fork-session`; ordinary continuation uses
+`--resume <own-id>`. Cross-directory requests retain the original project CWD.
+The first root reads its controlled marker file. Forks reuse copied read/context
+rather than making new tool calls. In 1.0.30, roots and forks both declare
+`session_kind: "headless"`; parent ID and `forked_at` distinguish the forks.
+
+| Fixture | Records / Events / usage rows |
+| --- | --- |
+| `initial` | 6 / 5 / 1 |
+| `resumed` | 10 / 7 / 2 |
+| `fork` | 15 / 9 / 3 |
+| `fork-resumed` | 19 / 11 / 4 |
+| `nested` | 24 / 13 / 5 |
+| `nested-resumed` | 28 / 15 / 6 |
+| `parent-grown` | 15 / 9 / 3 |
+
+All resume prefixes remain unchanged after JSON parsing. Fork copies rewrite
+Session ID and outer time while retaining Event IDs and native event time, as in
+1.0.3. Growing the original root afterward left all three files of both forks
+byte-identical. Standalone empty `background_tasks` records appear at process
+boundaries, with restarting Event IDs and no prompt identity. Native rate-limit
+retry records precede eventual completed turns; no nonempty background tasks
+were observed.
+
+The compaction root begins with a marker turn, then a no-op host command. Five
+normal turns include 300 synthetic ledger lines. A second compact fails with
+`degenerate summary (36 chars for ~14852 input tokens)`; native error details are
+retained. A normal resume succeeds afterward. Another normal turn requests a
+fictional engineering handover covering twelve topics and at least 700 words.
+The third compact requests a detailed handover retaining all topics and markers;
+it succeeds. A final normal resume emits the successful-compaction marker.
+
+| Fixture | Records / Events / usage rows | Native result |
+| --- | --- | --- |
+| `compact-initial` | 3 / 2 / 1 | Initial marker |
+| `compact-noop` | 8 / 3 / 1 | Completed compact, 1,245 → 1,245 context tokens |
+| `compact-context` | 33 / 13 / 6 | Five additional normal turns |
+| `compact-failed` | 36 / 14 / 6 | Error terminal, no checkpoint |
+| `compact-failed-resumed` | 40 / 16 / 7 | Normal continuation after failure |
+| `compact-before-success` | 44 / 18 / 8 | Detailed handover |
+| `compact-success` | 49 / 19 / 8 | Completed compact, 15,956 → 6,500 context tokens |
+| `compact-success-resumed` | 53 / 21 / 9 | Normal continuation after success |
+
+The successful checkpoint has schema version 1 and model-turn index 8. Native
+`compactionCount` reaches 3, counting the failed attempt. Host user messages have
+`hostTurn: true` without `promptIndex`; normal prompt indices exclude them.
+Checkpoint/completion controls are persisted before the host command, although
+the command's native time is earlier. Earlier conversation records remain intact.
+The final usage totals are 102,493 input / 8,161 output / 38,016 cached input;
+compression creates no usage. The retained failed command makes subsequent
+captures partial, with error details available only in Raw.
+
+Runtime mutations deliberately test invalid counters, host/control sequences,
+checkpoint identity/index/locator/time, active background tasks and unsupported
+retry kinds. A synthetic prefix ending at an empty background notification tests
+stable Raw identity when its next native command arrives. Installed HTTP tests
+relocate paths and inject masking markers, unsupported checkpoints and committed
+response loss; these are not native rewind or edit evidence. User acceptance in
+the personal environment and Web browser remains deferred.

@@ -36,10 +36,11 @@ reassign a Session or substitute for original CWD.
 
 The evidence-bound profiles are `grok.build.updates.linear.1` and
 `grok.build.updates.fork.1`, tested with **Grok
-Build 1.0.3 (1a29d5bc12d4)** on **macOS arm64**. It supports completed root text
+Build 1.0.3 (1a29d5bc12d4)** and **1.0.30 (04b7ffed98c6)** on **macOS arm64**. It supports completed root text
 conversations, ordinary headless resume, successful/failed `read_file` calls,
 foreground `run_terminal_command` calls, `grep` searches (including no matches),
 `search_replace` edits, headless forks/nested forks and their continuation,
+retained-history manual `/compact` on 1.0.30 headless roots and subsequent continuation,
 and persisted per-turn/model token usage.
 This is not a general claim for every Grok tool, version, TUI behavior, ACP client
 or platform. Native `agent_thought_chunk` text uses the same projection; the
@@ -63,13 +64,15 @@ rewind and compaction features and does not prove this Adapter supports them.
 | `search_replace` input/result | Edit kind, old/new strings, applied edit context and native status in bounded tool details | Original diff content, locations and provider metadata |
 | Foreground command output | Textual `output_for_prompt`; referenced terminal files are not opened | Original inline output and spill locator |
 | `_x.ai/session/update: turn_completed` | One usage item per native prompt/model; no fabricated message | Complete native usage including unknown counters/cost fields |
+| Empty `background_tasks` and completed-turn rate-limit `retry_state` | No conversation Event or extra usage | Native control telemetry |
+| Manual `/compact` host command | Actual user command; failed commands mark capture partial | Original command, checkpoint/completion controls and error terminal |
 | `hook_execution` | No conversation Event | Native hook telemetry |
 | `summary.json`, `signals.json` | Consistency and supported-profile checks | Complete observed metadata when enabled |
 
 `eventId` restarts when a new Grok process resumes the same Session. Identities
 therefore include native Session ID, the completed turn's `prompt_id`, and its
 Event ID. The initial user record lacks `promptId`; its complete enclosing turn
-provides that namespace. A turn must start with the expected `promptIndex`, have
+provides that namespace. A model turn must start with the expected `promptIndex`, have
 one user content unit, matching prompt references, unique Event IDs within that
 turn, closed tools, an assistant response and `end_turn` completion. Native resume
 preserved all earlier records exactly. Host-assigned revisions can represent a
@@ -86,8 +89,8 @@ per-model usage marks the capture partial. Usage belongs to the root Thread.
 ## Native headless forks
 
 `--resume <id> --fork-session` creates an independent Session with a copied
-completed prefix. `summary.json` must declare `session_kind: "fork"`, a distinct
-`parent_session_id` and a valid `forked_at` creation boundary. The native fork's
+completed prefix. `summary.json` must declare `session_kind: "fork"` (1.0.3) or `"headless"`
+(1.0.30), a distinct `parent_session_id` and a valid `forked_at` creation boundary. The native fork's
 own `info.id`, `created_at` and original `info.cwd` establish its identity and
 Project attribution. Controlled cross-directory fork and resume requests retained
 the original CWD and storage location. The requested CWD does not reassign history.
@@ -116,9 +119,44 @@ provider charges. The continued nested fixture has five turn/model usage rows:
 44,309 input, 835 output and 25,664 cached-input tokens, with cache included in input.
 
 Native evidence covers headless forks of completed linear conversations using
-the supported tools, nested forks and ordinary continuation on Grok Build 1.0.3
-macOS arm64. TUI/worktree forks, `--restore-code`, compacted/rewound histories,
+the supported tools, nested forks and ordinary continuation on both sampled
+versions on macOS arm64. The 1.0.30 fork sample reuses copied file-read context;
+it does not establish a new fork-owned tool invocation. TUI/worktree forks, `--restore-code`, compacted/rewound histories,
 child families and forks of interrupted turns are outside this evidence.
+
+## Manual compaction on 1.0.30
+
+Controlled headless root histories cover a completed no-op `/compact`, failed
+compaction, successful compression and normal continuation after both outcomes.
+The successful compression reduced native context tokens from 15,956 to 6,500.
+All earlier `updates.jsonl` records remained intact. The Adapter never opens
+`compaction_checkpoints/...`, model-input histories or a generated summary file.
+
+A successful command persists a schema-1 `compaction_checkpoint`, then
+`auto_compact_completed`, the actual `hostTurn` user command and an `end_turn`
+terminal. Checkpoint identity, relative locator, model-turn index, counters and
+native command times must agree. A sampled failure instead has a host command
+and error terminal with `agent_result`, without checkpoint/completion records.
+The Adapter retains the actual command as a user Event; it creates no assistant
+reply. Checkpoint, compression counters and terminal details remain Raw only.
+Failed commands mark Session and Thread capture partial because Canonical has
+no host-command error-result representation. This remains partial when later
+history still contains that failure; it does not imply the later model turn failed.
+
+Host commands have no model usage and do not advance the native model
+`promptIndex`. They do increment `signals.turnCount`, `userMessageCount` and
+`compactionCount`, including failed attempts. Projection validates both sequences.
+The final sample has 21 Events and nine model-usage rows totaling 102,493 input,
+8,161 output and 38,016 cached-input tokens; all three compaction commands add
+zero usage. Existing Event/usage identities and provenance survive continuation.
+
+1.0.30 also persists standalone empty `background_tasks` notifications between
+process invocations. These have no prompt ID and may repeat Event IDs, so Raw
+record identity includes persisted position without changing earlier provenance.
+Completed model turns may include sampled rate-limit retry telemetry. Neither
+control creates a message or usage row. Nonempty tasks, other retry types,
+automatic compaction without this host-command sequence, truncated histories,
+compacted forks and interrupted compaction remain unsupported.
 
 ## Bounds, unsupported behavior and recovery
 
@@ -134,7 +172,8 @@ Incomplete turns, invalid JSON, concurrent changes and mismatched counts cannot
 replace the selected target. Source deletion preserves captured history. Parent
 metadata must satisfy the fork profile above; other non-primary Session kinds
 and unknown parent relationships reject child Sessions.
-Rewind, compaction, regeneration and edit/retry signals are unsupported. Unknown
+Rewind, regeneration and edit/retry signals are unsupported. Compaction must
+match the retained-history manual profile above. Unknown
 updates, other tools, background commands, truncated/spilled command output and
 non-text messages also reject the new target with a diagnostic. A rejected new
 turn retains the previously captured conversation; it does not fabricate success
@@ -193,7 +232,7 @@ contracts also passed. The official catalog, build/release set and CI contract i
 local verification, merging, npm publication and Server deployment are separate
 states; this guide does not assert publication or deployment. The next increment
 needs native evidence for additional tools, failed edits and interrupted/cancelled
-turns, then rewind/compaction and child membership before extending those
+turns, then rewind, wider compaction profiles and child membership before extending those
 claims. Search/edit acceptance additionally verifies decoded byte-output masking
 with Raw off, unchanged polling and Raw re-enable without changing provenance.
 Two additional native samples cover a successful grep/read/edit turn and a
@@ -209,3 +248,15 @@ Native parent-growth fixtures verify that later parent history does not enter
 the fork. The user's personal-environment and browser acceptance are deferred
 until the planned capability extensions are ready; these automated checks do
 not claim that acceptance, package publication or Server deployment occurred.
+
+The 1.0.30 increment adds native root/fork/nested-fork continuation and manual
+compaction evidence sampled on 2026-09-14–15 UTC. Local verification passed
+65 runtime behavior tests, Grok/CLI typechecks, standalone installed-package
+verification, the installed CLI/HTTP/PostgreSQL contract, and docs/architecture
+checks on 2026-09-15. It retains the existing profile
+IDs because previously supported records keep identical Canonical and Raw mapping.
+The installed contract adds modern fork continuation and a compaction history
+through Reader/Search, exact usage, partial status, masking, package replacement,
+Raw policy and frozen-delivery recovery. Personal-environment and browser
+acceptance remain deferred; this increment does not publish a package or deploy
+a Server.

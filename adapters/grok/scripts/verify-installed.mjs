@@ -83,7 +83,41 @@ try {
       }
     }
   }
+  for (const stages of [
+    [["initial", 5, 1], ["resumed", 7, 2]],
+    [["fork", 9, 3], ["fork-resumed", 11, 4]],
+    [["nested", 13, 5], ["nested-resumed", 15, 6]],
+    [["compact-initial", 2, 1], ["compact-noop", 3, 1], ["compact-context", 13, 6], ["compact-failed", 14, 6],
+      ["compact-failed-resumed", 16, 7], ["compact-before-success", 18, 8], ["compact-success", 19, 8], ["compact-success-resumed", 21, 9]],
+  ]) {
+    let previous = [], previousUsage = [], previousFrames = []
+    for (const [stage, eventCount, usageCount] of stages) {
+      const fixture = new URL(`./native-1.0.30/${stage}/`, import.meta.url)
+      const id = JSON.parse(await readFile(new URL("summary.json", fixture), "utf8")).info.id
+      await cp(fixture, join(home, "sessions", "modern", id), { recursive: true })
+      for (const rawEnabled of [false, true]) {
+        const view = await runtime.sourceCapture.open({ sourceId: id, rawEnabled, limits, projection, signal })
+        const frames = []; let done = false
+        for (let n = 0; n < 100 && !done; n++) {
+          const page = await view.read(signal)
+          assert.ok(page.frames.length <= 2); assert.ok(Buffer.byteLength(JSON.stringify(page)) <= projection.pageBytes)
+          frames.push(...page.frames); done = page.done
+        }
+        assert.equal(done, true)
+        const events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)
+        assert.equal(events.length, eventCount); assert.equal(usage.length, usageCount)
+        assert.deepEqual(events.slice(0, previous.length), previous)
+        assert.deepEqual(usage.slice(0, previousUsage.length), previousUsage)
+        assert.equal(frames.some(frame => frame.raw !== undefined), rawEnabled)
+        if (rawEnabled) {
+          assert.deepEqual(frames.slice(0, previousFrames.length), previousFrames)
+          previous = events; previousUsage = usage; previousFrames = frames.filter(frame => frame.raw?.format !== "grok.metadata.v1")
+        }
+        await view.close()
+      }
+    }
+  }
   const view = await runtime.sourceCapture.open({ sourceId, rawEnabled: false, limits, projection, signal })
   lifetime.abort(); await assert.rejects(view.read(new AbortController().signal))
 } finally { await runtime.close(); await rm(home, { recursive: true, force: true }) }
-process.stdout.write("Installed Grok native create/resume/commands/search/edit/forks/nested forks, original CWD, stable identity, bounded pages, Raw off/on and cancellation verified.\n")
+process.stdout.write("Installed Grok native create/resume/commands/search/edit/forks/nested forks, 1.0.30 manual compaction and continuation, original CWD, stable identity, bounded pages, Raw off/on and cancellation verified.\n")

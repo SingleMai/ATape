@@ -30,13 +30,13 @@ const directory = async (path: string) => { const s = await lstat(path); if (!s.
 const maxEntries = 10_000, maxBytes = 16 * 1024 * 1024
 
 const forkInfo = (summary: Row) => {
-  if (summary.session_kind === "fork") {
+  if (summary.session_kind === "fork" || summary.session_kind === "headless" && (summary.parent_session_id != null || summary.forked_at != null)) {
     const parentId = id(summary.parent_session_id), at = time(summary.forked_at)
     if (parentId === object(summary.info).id || Date.parse(at) < Date.parse(time(summary.created_at)))
       fail("unsupported", "Grok fork metadata has an invalid parent or creation boundary.")
     return { parentId, at: Date.parse(at) }
   }
-  if (summary.parent_session_id != null || summary.forked_at != null || summary.session_kind != null && summary.session_kind !== "primary")
+  if (summary.parent_session_id != null || summary.forked_at != null || summary.session_kind != null && !["primary", "headless"].includes(String(summary.session_kind)))
     fail("unsupported", "Grok child Sessions and unknown parent metadata require a wider native profile.")
   return undefined
 }
@@ -119,8 +119,10 @@ export const snapshot = async (home: string, sourceId: string, limits: SourceCap
   for (const member of [summary, signals, updates]) if (member.stamp !== stamp(await lstat(member.path))) fail("format", "Grok source changed during capture; retry.")
   for (const [index, d] of dirs.entries()) if (dirStamps[index] !== await directory(d)) fail("format", "Grok source directory changed during capture; retry.")
   const metadata = parse(summary.json), state = parse(signals.json), evidence = origin(metadata, path)
-  if (state.hasReverted !== false || state.compactionCount !== 0 || state.regenerationCount !== 0 || state.editAndRetryCount !== 0)
-    fail("unsupported", "Grok rewind, compaction and regeneration require a wider native profile.")
+  if (state.hasReverted !== false || state.regenerationCount !== 0 || state.editAndRetryCount !== 0)
+    fail("unsupported", "Grok rewind and regeneration require a wider native profile.")
+  if (typeof state.compactionCount !== "number" || !Number.isSafeInteger(state.compactionCount) || state.compactionCount < 0)
+    fail("unsupported", "Grok compaction count is unavailable.")
   if (!updates.json.endsWith("\n")) fail("format", "Grok update stream is incomplete; retry.")
   const records: { row: Row; json: string }[] = []
   for (const json of updates.json.slice(0, -1).split("\n")) {
