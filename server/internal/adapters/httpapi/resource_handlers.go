@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
@@ -122,10 +124,12 @@ func (h *Handler) projectSearch(response http.ResponseWriter, request *http.Requ
 		}
 		limit = parsed
 	}
+	started := time.Now()
 	page, err := h.searcher.Search(
 		request.Context(), principalFromContext(request.Context()), request.PathValue("projectId"),
 		request.URL.Query().Get("q"), request.URL.Query().Get("cursor"), limit,
 	)
+	slog.InfoContext(request.Context(), "Search completed", "request_id", requestIDFromContext(request.Context()), "duration_ms", time.Since(started).Milliseconds(), "ok", err == nil)
 	if err != nil {
 		writeError(response, request, err)
 		return

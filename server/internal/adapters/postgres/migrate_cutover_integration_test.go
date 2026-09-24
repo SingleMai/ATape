@@ -45,6 +45,24 @@ func TestV011FixtureMigrationIsMappedAndPreservesIdentity(t *testing.T) {
 	defer pool.Close()
 	applyMigrationsThrough(t, pool, 4)
 	seedV011Fixture(t, pool)
+	// Pre-upgrade Search rows carry no kind. Derive it from Canonical rather
+	// than trusting searchable metadata, and preserve the original message body.
+	if _, err := pool.Exec(ctx, `
+ INSERT INTO canonical_threads(session_id,id,source_key,revision,digest,label,summary,capture_status)
+ VALUES('legacy-session','root','legacy-thread',1,repeat('c',64),'Root','','complete');
+ INSERT INTO canonical_events(id,session_id,thread_id,source_key,revision,projection_revision,digest,
+ source_order,event_index,order_fidelity,fidelity,raw_ref,adapter_version,schema_version,
+ observed_at,received_at,ingest_seq,kind,author,occurred_at,text,tool_label)
+ SELECT id,'legacy-session','root',id,1,1,repeat('d',64),seq,0,'native','native','','0.1.1','1',
+ clock_timestamp(),clock_timestamp(),seq,kind,'Agent',clock_timestamp(),body,''
+ FROM (VALUES('legacy-event',1,'message','legacy text #707 中文'),('legacy-tool',2,'tool_result','tool-only-secret')) v(id,seq,kind,body);
+ UPDATE project_search_documents SET text='legacy text #707 中文',search_text='Legacy Session legacy text #707 中文';
+ INSERT INTO project_search_documents(event_id,project_id,session_id,session_title,thread_id,thread_path_ids,thread_path_labels,author,harness,occurred_at,text,tool_label,ingest_seq,observed_at,search_text)
+ SELECT 'legacy-tool',project_id,session_id,session_title,thread_id,thread_path_ids,thread_path_labels,author,harness,occurred_at,'tool-only-secret','tool-only-label',2,observed_at,'tool-only-secret'
+ FROM project_search_documents WHERE event_id='legacy-event';
+ `); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := Prepare(ctx, pool); err != nil {
 		t.Fatalf("upgrade v0.1.1 fixture: %v", err)
@@ -59,7 +77,7 @@ SELECT
 `).Scan(&migrationCount, &phase, &installation); err != nil {
 		t.Fatalf("read migration status: %v", err)
 	}
-	if migrationCount != 21 || phase != "prepared" || installation != "mapped" {
+	if migrationCount != 22 || phase != "prepared" || installation != "mapped" {
 		t.Fatalf("upgraded ledger: migrations=%d phase=%s installation=%s", migrationCount, phase, installation)
 	}
 
@@ -87,6 +105,20 @@ FROM canonical_sessions WHERE id = 'legacy-session'
 		t.Fatalf("migrated Session = source=%q digest=%q lineage=%q captured=%v", sourceKey, digest, lineage, capturedBy)
 	}
 
+	var bodyKind, bodyText, toolKind, toolText, toolLabel string
+	var indexed bool
+	if err := pool.QueryRow(ctx, `SELECT event_kind,text,body_grams @> ARRAY['#70','707','中文'] FROM project_search_documents WHERE event_id='legacy-event'`).Scan(&bodyKind, &bodyText, &indexed); err != nil {
+		t.Fatal(err)
+	}
+	if bodyKind != "message" || bodyText != "legacy text #707 中文" || !indexed {
+		t.Fatalf("message migration: %s %s %v", bodyKind, bodyText, indexed)
+	}
+	if err := pool.QueryRow(ctx, `SELECT event_kind,text,tool_label FROM project_search_documents WHERE event_id='legacy-tool'`).Scan(&toolKind, &toolText, &toolLabel); err != nil {
+		t.Fatal(err)
+	}
+	if toolKind != "tool_result" || toolText != "" || toolLabel != "" {
+		t.Fatal("tool content survived index migration")
+	}
 	var rawObjects, searchDocuments int
 	if err := pool.QueryRow(ctx, `
 SELECT (SELECT COUNT(*) FROM raw_objects WHERE id = 'legacy-raw'),

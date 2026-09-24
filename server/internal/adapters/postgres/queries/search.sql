@@ -20,7 +20,7 @@ RETURNING changes.id;
 WITH RECURSIVE requested AS (
     SELECT changes.id AS change_id, events.id AS event_id,
            events.session_id, events.thread_id, events.author,
-           events.occurred_at, events.text, events.tool_label,
+           events.occurred_at, events.text, events.tool_label, events.kind,
            events.ingest_seq, events.observed_at,
            sessions.project_id, sessions.title AS session_title,
            sessions.actor_harness AS harness
@@ -53,7 +53,7 @@ WITH RECURSIVE requested AS (
 SELECT requested.change_id, requested.project_id, requested.session_id,
        requested.session_title, requested.thread_id,
        paths.thread_path_ids, paths.thread_path_labels,
-       requested.event_id, requested.author, requested.harness,
+       requested.event_id, requested.author, requested.harness, requested.kind,
        requested.occurred_at, requested.text, requested.tool_label,
        requested.ingest_seq, requested.observed_at
 FROM requested
@@ -72,19 +72,15 @@ WHERE id = ANY(sqlc.arg(change_ids)::bigint[])
 INSERT INTO project_search_documents (
     event_id, project_id, session_id, session_title, thread_id,
     thread_path_ids, thread_path_labels, author, harness, occurred_at,
-    text, tool_label, ingest_seq, observed_at, publication_head, publication_descriptor, search_text
+    text, tool_label, ingest_seq, observed_at, publication_head, publication_descriptor, event_kind, search_text
 ) SELECT
     sqlc.arg(event_id), sqlc.arg(project_id), sqlc.arg(session_id),
     sqlc.arg(session_title), sqlc.arg(thread_id), sqlc.arg(thread_path_ids),
     sqlc.arg(thread_path_labels), sqlc.arg(author), sqlc.arg(harness),
-    sqlc.arg(occurred_at), sqlc.arg(text), sqlc.arg(tool_label),
+    sqlc.arg(occurred_at), CASE WHEN sqlc.arg(event_kind)::text='message' THEN sqlc.arg(text)::text ELSE '' END, '',
     sqlc.arg(ingest_seq), sqlc.arg(observed_at), sqlc.arg(publication_head), sqlc.arg(publication_descriptor),
-    lower(
-        sqlc.arg(session_title)::text || ' ' ||
-        array_to_string(sqlc.arg(thread_path_labels)::text[], ' ') || ' ' ||
-        sqlc.arg(author)::text || ' ' || sqlc.arg(harness)::text || ' ' ||
-        sqlc.arg(text)::text || ' ' || sqlc.arg(tool_label)::text
-    )
+    sqlc.arg(event_kind),
+    CASE WHEN sqlc.arg(event_kind)::text='message' THEN lower(sqlc.arg(text)::text) ELSE '' END
 WHERE (sqlc.arg(publication_head)::text='' AND NOT EXISTS(
  SELECT 1 FROM canonical_publication_sources WHERE session_id=sqlc.arg(session_id)))
  OR EXISTS(SELECT 1 FROM canonical_publication_sources s
@@ -109,6 +105,7 @@ SET project_id = EXCLUDED.project_id,
     publication_head = EXCLUDED.publication_head,
     publication_descriptor = EXCLUDED.publication_descriptor,
     indexed_at = clock_timestamp(),
+    event_kind = EXCLUDED.event_kind,
     search_text = EXCLUDED.search_text
 WHERE project_search_documents.ingest_seq <= EXCLUDED.ingest_seq;
 
@@ -151,40 +148,31 @@ WHERE s.project_id=ANY(sqlc.arg(project_ids)::text[])
 GROUP BY s.project_id
 ON CONFLICT(project_id) DO UPDATE SET indexed_through=GREATEST(project_search_checkpoints.indexed_through,EXCLUDED.indexed_through);
 
+-- name: ConfigureSearchQuery :exec
+SELECT set_config('jit','off',true), set_config('plan_cache_mode','force_custom_plan',true);
+
 -- name: SearchDocuments :many
 WITH terms AS (
-    SELECT lower(sqlc.arg(term)::text) AS literal,
-           websearch_to_tsquery('simple'::regconfig, sqlc.arg(term)::text) AS parsed
-), matches AS (
-    SELECT documents.event_id, documents.project_id, documents.session_id,
-           documents.session_title, documents.thread_id,
-           documents.thread_path_ids, documents.thread_path_labels,
-           documents.author, documents.harness, documents.occurred_at,
-           documents.text, documents.tool_label, documents.ingest_seq,
-           documents.observed_at,
-           (strpos(documents.search_text, terms.literal) > 0) AS literal_match,
-           ts_rank_cd(documents.search_vector, terms.parsed) AS text_rank
-    FROM project_search_documents documents
-    JOIN canonical_sessions sessions
-      ON sessions.id = documents.session_id AND sessions.record_state = 'active'
-    CROSS JOIN terms
-    WHERE documents.project_id = sqlc.arg(project_id)
-      AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=documents.session_id)
-       OR EXISTS(SELECT 1 FROM canonical_publication_sources s
-         JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
-         WHERE s.session_id=documents.session_id AND m.record_id=documents.event_id AND m.search_descriptor=documents.publication_descriptor))
-      AND (
-          strpos(documents.search_text, terms.literal) > 0
-          OR documents.search_vector @@ terms.parsed
-      )
-), ranked AS (
-    SELECT matches.*, count(*) OVER ()::bigint AS total_count
-    FROM matches
+ SELECT lower(sqlc.arg(term)::text) AS literal,
+ search_body_grams(lower(sqlc.arg(term)::text), least(3,length(lower(sqlc.arg(term)::text))),3) AS grams
+), selected AS MATERIALIZED (
+ SELECT d.event_id, d.occurred_at
+ FROM project_search_documents d CROSS JOIN terms
+ WHERE d.project_id=sqlc.arg(project_id) AND d.event_kind='message'
+ AND d.body_grams @> terms.grams AND strpos(d.search_text,terms.literal)>0
+ AND (NOT sqlc.arg(has_after)::boolean OR
+      (d.occurred_at,d.event_id)<(sqlc.arg(after_time)::timestamptz,sqlc.arg(after_id)::text))
+ AND EXISTS(SELECT 1 FROM canonical_sessions s WHERE s.id=d.session_id AND s.record_state='active')
+ AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id)
+  OR EXISTS(SELECT 1 FROM canonical_publication_sources s
+   JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
+   WHERE s.session_id=d.session_id AND m.record_id=d.event_id AND m.search_descriptor=d.publication_descriptor))
+ ORDER BY d.occurred_at DESC,d.event_id DESC
+ LIMIT sqlc.arg(result_limit)
 )
-SELECT event_id, project_id, session_id, session_title, thread_id,
-       thread_path_ids, thread_path_labels, author, harness, occurred_at,
-       text, tool_label, ingest_seq, observed_at, total_count
-FROM ranked
-ORDER BY literal_match DESC, text_rank DESC, occurred_at DESC, event_id
-LIMIT sqlc.arg(result_limit)
-OFFSET sqlc.arg(result_offset);
+SELECT d.event_id,d.project_id,d.session_id,d.session_title,d.thread_id,
+ d.thread_path_ids,d.thread_path_labels,d.author,d.harness,d.occurred_at,
+ substring(d.text FROM greatest(1,strpos(d.search_text,terms.literal)-120) FOR 640)::text AS text,
+ d.ingest_seq,d.observed_at
+FROM selected JOIN project_search_documents d USING(event_id) CROSS JOIN terms
+ORDER BY selected.occurred_at DESC,selected.event_id DESC;

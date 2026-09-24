@@ -431,6 +431,7 @@ func (s *MemoryStore) eventProjection(eventID string) (EventProjection, bool) {
 		path[left], path[right] = path[right], path[left]
 	}
 	return EventProjection{
+		Kind:      event.Kind,
 		ProjectID: session.ProjectID, SessionID: session.ID, SessionTitle: session.Title,
 		ThreadID: event.ThreadID, ThreadPath: path, EventID: event.ID,
 		Author: event.Author, Harness: session.Actor.Harness, OccurredAt: event.OccurredAt,

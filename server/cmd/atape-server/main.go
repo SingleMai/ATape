@@ -555,6 +555,15 @@ func ownServerLifetime(
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := runMigrateCommand(ctx, os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "Migration failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "overview-facts" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()

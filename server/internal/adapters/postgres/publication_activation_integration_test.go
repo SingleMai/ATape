@@ -261,6 +261,62 @@ pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('
 			}
 		}
 	})
+	t.Run("publication indexes messages but excludes tool and thought bodies", func(t *testing.T) {
+		b := batch("search-kinds")
+		b.Events[0].Text = "publication-message-needle"
+		b.Events[1].Kind = "tool_result"
+		b.Events[1].Text = "publication-tool-needle"
+		a := stage(store, b, "", true)
+		activate(a)
+		index()
+		if len(search("publication-message-needle").Documents) != 1 || len(search("publication-tool-needle").Documents) != 0 {
+			t.Fatal("publication Search scope")
+		}
+		b.BatchID = "search-kind-change"
+		b.Session.Revision++
+		b.Events[0].Revision++
+		b.Events[0].Kind = "thought"
+		b.Events[0].Text = "publication-thought-needle"
+		next := stage(store, b, a.ID, true)
+		activate(next)
+		index()
+		if len(search("publication-message-needle").Documents) != 0 || len(search("publication-thought-needle").Documents) != 0 || search("publication-thought-needle").IndexedThrough.IsZero() {
+			t.Fatal("excluded publication content or incomplete checkpoint")
+		}
+	})
+	t.Run("migration classifies reused documents after their original head was reclaimed", func(t *testing.T) {
+		b := batch("search-migration")
+		b.Events[0].Text = "migration-selected-message"
+		b.Events[1].Kind = "tool_result"
+		b.Events[1].Text = "migration-selected-tool"
+		old := stage(store, b, "", true)
+		activate(old)
+		index()
+		current := stage(store, b, old.ID, true)
+		activate(current)
+		// Recreate the pre-22 Search schema with actual published data. The current
+		// head reuses the descriptor, but its document still names the old head.
+		if _, e := pool.Exec(ctx, `DELETE FROM canonical_publication_parts WHERE attempt_id=$1::uuid`, old.ID); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := pool.Exec(ctx, `
+ ALTER TABLE project_search_documents DROP COLUMN body_grams CASCADE;
+ ALTER TABLE project_search_documents DROP COLUMN event_kind CASCADE;
+ DROP FUNCTION search_body_grams(text,integer,integer);
+ ALTER TABLE project_search_documents ADD COLUMN search_vector tsvector GENERATED ALWAYS AS(to_tsvector('simple'::regconfig,search_text)) STORED;
+ CREATE INDEX project_search_documents_vector_idx ON project_search_documents USING GIN(search_vector);
+ DELETE FROM atape_schema_migrations WHERE version=22;
+ `); e != nil {
+			t.Fatal(e)
+		}
+		if e := postgresadapter.Prepare(ctx, pool); e != nil {
+			t.Fatal(e)
+		}
+		if len(search("migration-selected-message").Documents) != 1 || len(search("migration-selected-tool").Documents) != 0 || search("migration-selected-message").IndexedThrough.IsZero() {
+			t.Fatal("migration lost reusable selected message or checkpoint")
+		}
+		index()
+	})
 	t.Run("complete head selection replaces reads counts and Search without replaying an older receipt", func(t *testing.T) {
 		b := batch("replacement")
 		b.Events[0].Text = "retained-needle"
@@ -271,7 +327,7 @@ pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('
 		}
 		first := activate(a)
 		index()
-		if search("withdrawn-needle").Total != 1 {
+		if len(search("withdrawn-needle").Documents) != 1 {
 			t.Fatal("first head not indexed")
 		}
 		page, found, e := reader.ConversationPage(ctx, web, a.SessionID, "root", canonical.ConversationPageRequest{Limit: 1})
@@ -283,7 +339,7 @@ pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('
 			t.Fatalf("tail: %+v %v", tail, e)
 		}
 		unchanged := activate(stage(store, b, first.Head, true))
-		if search("retained-needle").Total != 1 {
+		if len(search("retained-needle").Documents) != 1 {
 			t.Fatal("unchanged descriptor lost reusable Search eligibility")
 		}
 		b.Session.Title = "Replacement title"
@@ -295,7 +351,7 @@ pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('
 			t.Fatalf("staging changed selected view: %+v %v", before, e)
 		}
 		second := activate(next)
-		if search("withdrawn-needle").Total != 0 || search("retained-needle").Total != 0 {
+		if len(search("withdrawn-needle").Documents) != 0 || len(search("retained-needle").Documents) != 0 {
 			t.Fatal("stale membership or changed descriptor remained searchable")
 		}
 		_, _, e = reader.ConversationPage(ctx, web, a.SessionID, "root", canonical.ConversationPageRequest{Head: page.Head, AfterEventID: page.NextEventID, Limit: 1})
@@ -352,7 +408,7 @@ pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('
 			t.Fatalf("cleanup lost proof: %+v %v", replayed, e)
 		}
 		index()
-		if search("retained-needle").Total != 1 {
+		if len(search("retained-needle").Documents) != 1 {
 			t.Fatal("new head not searchable after indexing")
 		}
 	})
@@ -383,7 +439,7 @@ pg_total_relation_size('overview_publication_messages')+pg_total_relation_size('
 		if e = reader.AckProjectionChanges(ctx, "slow-worker", ids); e != nil {
 			t.Fatal(e)
 		}
-		if search("stale-worker-text").Total != 0 || search("new-worker-text").Total != 1 {
+		if len(search("stale-worker-text").Documents) != 0 || len(search("new-worker-text").Documents) != 1 {
 			t.Fatal("late worker changed selected Search eligibility")
 		}
 	})

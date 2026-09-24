@@ -145,3 +145,22 @@ explicit goal is to destroy retained PostgreSQL and Raw data.
 Before upgrading or rotating data-bearing infrastructure, follow
 [Backup and restore](backup-and-restore.md). A v0.1.1 database additionally
 requires the [authenticated cutover runbook](auth-cutover.md).
+
+For a data-bearing migration such as the message-body Search index, take the paired
+backup, stop Web/Server writers, and use the candidate Server image to run
+`atape-server migrate --timeout 15m` before starting it normally. In Compose, with
+the candidate image and the same complete configuration/overrides selected:
+
+```sh
+docker compose stop web server
+docker compose run --rm --no-deps server migrate --timeout 15m
+docker compose up -d --no-deps --wait server web
+```
+
+The migration command reads `ATAPE_DATABASE_URL` or its secret-file setting, opens
+no HTTP listener, and applies pending embedded migrations in one locked transaction.
+It defaults to 15 minutes and accepts a deadline from 1 second to 1 hour. Cancellation
+or failure rolls back the transaction; fix the cause before retrying. Normal startup
+still verifies the schema under its short startup deadline, so do not rely on it to
+build large indexes. A failed migration is not permission to restart an old binary
+against a successfully upgraded schema; follow the paired restore boundary.
