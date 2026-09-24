@@ -348,7 +348,7 @@
   "search.searchConversations": "搜索对话",
   "search.searching": "正在搜索对话…",
   "search.searchingWithin": "搜索范围",
-  "search.startBody": "在 {count} 个项目中搜索消息、决策和工具活动。",
+  "search.startBody": "在 {count} 个项目中搜索用户与 Agent 的消息正文。",
   "search.startTitle": "在你的对话中查找。",
   "search.submit": "搜索",
   "search.team": "团队",
