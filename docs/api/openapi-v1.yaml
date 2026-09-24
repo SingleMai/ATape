@@ -1977,8 +1977,8 @@ components:
         author: {type: string}
         harness: {type: string}
         occurredAt: {type: string}
-        text: {type: string}
-        toolLabel: {type: string}
+        text: {type: string, description: "Match-centered message-body excerpt, at most 640 Unicode characters."}
+        toolLabel: {type: string, description: "Legacy optional field; message-body Search does not populate it."}
     SearchPage:
       type: object
       additionalProperties: false

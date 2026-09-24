@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
@@ -48,6 +49,10 @@ func (i *Index) UpsertProjectionDocuments(ctx context.Context, documents []canon
 		if exists && current.IngestSeq > document.IngestSeq {
 			continue
 		}
+		if document.Kind != "message" {
+			document.Text = ""
+			document.ToolLabel = ""
+		}
 		document.ThreadPath = append([]canonical.ProjectionThread(nil), document.ThreadPath...)
 		i.documents[document.EventID] = document
 		if document.ObservedAt.After(i.checkpoints[document.ProjectID]) {
@@ -77,10 +82,15 @@ func (i *Index) SearchProjectionDocuments(
 	term := strings.ToLower(query.Term)
 	candidates := make([]canonical.EventProjection, 0)
 	for _, document := range i.documents {
-		if document.ProjectID != query.ProjectID || !strings.Contains(searchable(document), term) {
+		if document.ProjectID != query.ProjectID || document.Kind != "message" || !strings.Contains(strings.ToLower(document.Text), term) {
+			continue
+		}
+		if query.After != nil && (document.OccurredAt.After(query.After.Time) || (document.OccurredAt.Equal(query.After.Time) && document.EventID >= query.After.EventID)) {
 			continue
 		}
 		document.ThreadPath = append([]canonical.ProjectionThread(nil), document.ThreadPath...)
+		document.Text = excerpt(document.Text, query.Term)
+		document.ToolLabel = ""
 		candidates = append(candidates, document)
 	}
 	indexedThrough := i.checkpoints[query.ProjectID]
@@ -101,28 +111,25 @@ func (i *Index) SearchProjectionDocuments(
 		if !documents[left].OccurredAt.Equal(documents[right].OccurredAt) {
 			return documents[left].OccurredAt.After(documents[right].OccurredAt)
 		}
-		return documents[left].EventID < documents[right].EventID
+		return documents[left].EventID > documents[right].EventID
 	})
-	total := len(documents)
-	start := min(query.Offset, total)
-	end := min(start+query.Limit, total)
 	return projectsearch.IndexPage{
-		Documents:      documents[start:end],
-		Total:          total,
+		Documents:      documents[:min(query.Limit, len(documents))],
+		HasMore:        len(documents) > query.Limit,
 		IndexedThrough: indexedThrough,
 	}, nil
 }
 
-func searchable(document canonical.EventProjection) string {
-	parts := []string{
-		document.SessionTitle,
-		document.Author,
-		document.Harness,
-		document.Text,
-		document.ToolLabel,
+// Match the PostgreSQL Adapter's bounded, match-centered response.
+// The complete body remains available through the Conversation Interface.
+func excerpt(body, term string) string {
+	lower := strings.ToLower(body)
+	index := strings.Index(lower, strings.ToLower(term))
+	start := 0
+	if index >= 0 {
+		start = max(0, utf8.RuneCountInString(lower[:index])-120)
 	}
-	for _, thread := range document.ThreadPath {
-		parts = append(parts, thread.Label)
-	}
-	return strings.ToLower(strings.Join(parts, " "))
+	text := []rune(body)
+	start = min(start, len(text))
+	return string(text[start:min(len(text), start+640)])
 }

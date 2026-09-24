@@ -4,9 +4,10 @@ package projectsearch
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -23,13 +24,18 @@ const (
 type IndexQuery struct {
 	ProjectID string
 	Term      string
-	Offset    int
+	After     *Position
 	Limit     int
+}
+
+type Position struct {
+	Time    time.Time `json:"t"`
+	EventID string    `json:"e"`
 }
 
 type IndexPage struct {
 	Documents      []canonical.EventProjection
-	Total          int
+	HasMore        bool
 	IndexedThrough time.Time
 }
 
@@ -102,7 +108,7 @@ func (s *Searcher) Search(
 	if limit < 1 || limit > maxLimit {
 		return Page{}, &InvalidQueryError{Field: "limit", Reason: "must be between 1 and 50"}
 	}
-	offset, err := decodeCursor(cursor)
+	after, err := decodeCursor(cursor, projectID, term)
 	if err != nil {
 		return Page{}, &InvalidQueryError{Field: "cursor", Reason: "is not valid"}
 	}
@@ -110,7 +116,7 @@ func (s *Searcher) Search(
 	indexed, err := s.index.SearchProjectionDocuments(ctx, principal, IndexQuery{
 		ProjectID: projectID,
 		Term:      term,
-		Offset:    offset,
+		After:     after,
 		Limit:     limit,
 	})
 	if err != nil {
@@ -137,27 +143,46 @@ func (s *Searcher) Search(
 			Text:       document.Text, ToolLabel: document.ToolLabel,
 		})
 	}
-	if next := offset + len(indexed.Documents); next < indexed.Total {
-		page.NextCursor = encodeCursor(next)
+	if indexed.HasMore && len(indexed.Documents) > 0 {
+		last := indexed.Documents[len(indexed.Documents)-1]
+		page.NextCursor = encodeCursor(Position{Time: last.OccurredAt, EventID: last.EventID}, projectID, term)
 	}
 	return page, nil
 }
 
-func encodeCursor(offset int) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset)))
+type pageCursor struct {
+	Version  int      `json:"v"`
+	Scope    string   `json:"s"`
+	Position Position `json:"p"`
 }
 
-func decodeCursor(cursor string) (int, error) {
+func cursorScope(projectID, term string) string {
+	sum := sha256.Sum256([]byte(projectID + "\x00" + term))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func encodeCursor(position Position, projectID, term string) string {
+	body, _ := json.Marshal(pageCursor{Version: 1, Scope: cursorScope(projectID, term), Position: position})
+	return base64.RawURLEncoding.EncodeToString(body)
+}
+
+func decodeCursor(cursor, projectID, term string) (*Position, error) {
 	if cursor == "" {
-		return 0, nil
+		return nil, nil
 	}
-	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if len(cursor) > 1024 {
+		return nil, fmt.Errorf("cursor too large")
+	}
+	body, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	offset, err := strconv.Atoi(string(decoded))
-	if err != nil || offset < 0 {
-		return 0, fmt.Errorf("invalid offset")
+	var decoded pageCursor
+	if err = json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
 	}
-	return offset, nil
+	if decoded.Version != 1 || decoded.Scope != cursorScope(projectID, term) || decoded.Position.Time.IsZero() || decoded.Position.EventID == "" || len(decoded.Position.EventID) > 200 {
+		return nil, fmt.Errorf("cursor does not match query")
+	}
+	return &decoded.Position, nil
 }

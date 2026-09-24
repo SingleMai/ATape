@@ -111,6 +111,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0083](0083-filtered-overview-and-session-pages.md) | Filtered Overview facts and independent Session pages |
 | [0084](0084-overview-compact-options-and-diagnostics.md) | Compact Overview options and operation diagnostics |
 | [0085](0085-overview-indexed-facts-and-aggregation.md) | Indexed Overview facts before database aggregation |
+| [0086](0086-message-body-search.md) | Indexed message-body Search |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

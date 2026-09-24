@@ -2,7 +2,9 @@ package projectsearch_test
 
 import (
 	"context"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/memorysearch"
 	"github.com/SingleMai/ATape/server/internal/authentication"
@@ -83,5 +85,38 @@ func TestSearcherValidatesAndPaginatesBehindOpaqueCursor(t *testing.T) {
 	}
 	if _, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", "retry", "not-a-cursor", 20); err == nil {
 		t.Fatal("invalid cursor was accepted")
+	}
+}
+
+func TestBodyOnlySearchAndProjectionReplacement(t *testing.T) {
+	store := canonical.NewDemoStore()
+	index := memorysearch.New(store)
+	base := canonical.EventProjection{Kind: "message", ProjectID: "payments-api", SessionID: "checkout", EventID: "body", ThreadID: "root", SessionTitle: "metadata-only", Author: "metadata-only", Harness: "Codex", Text: strings.Repeat("prefix ", 1000) + "修复 #707 😀", ToolLabel: "label-only", OccurredAt: time.Now(), ObservedAt: time.Now(), IngestSeq: 1}
+	if err := index.UpsertProjectionDocuments(t.Context(), []canonical.EventProjection{base}); err != nil {
+		t.Fatal(err)
+	}
+	searcher := projectsearch.NewSearcher(index)
+	for term, count := range map[string]int{"#707": 1, "#": 1, "修": 1, "😀": 1, "metadata-only": 0, "label-only": 0} {
+		page, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", term, "", 20)
+		if err != nil || len(page.Results) != count {
+			t.Fatalf("%q: %+v %v", term, page, err)
+		}
+		if count > 0 && (!strings.Contains(page.Results[0].Text, term) || len([]rune(page.Results[0].Text)) > 640) {
+			t.Fatal("unbounded or missing match excerpt")
+		}
+	}
+	base.Kind = "tool_result"
+	base.IngestSeq = 2
+	if err := index.UpsertProjectionDocuments(t.Context(), []canonical.EventProjection{base}); err != nil {
+		t.Fatal(err)
+	}
+	base.Kind = "message"
+	base.IngestSeq = 1
+	if err := index.UpsertProjectionDocuments(t.Context(), []canonical.EventProjection{base}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := searcher.Search(t.Context(), searchPrincipal(), "payments-api", "#707", "", 20)
+	if err != nil || len(page.Results) != 0 {
+		t.Fatalf("stale worker resurrected a message: %+v %v", page, err)
 	}
 }

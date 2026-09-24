@@ -63,6 +63,7 @@ func (s *Store) LeaseProjectionChanges(
 		changes = append(changes, canonical.ProjectionChange{
 			ID: row.ChangeID,
 			Document: canonical.EventProjection{
+				Kind:      row.Kind,
 				ProjectID: row.ProjectID, SessionID: row.SessionID,
 				SessionTitle: row.SessionTitle, ThreadID: row.ThreadID,
 				ThreadPath: path, EventID: row.EventID, Author: row.Author,
@@ -92,6 +93,7 @@ func (s *Store) LeaseProjectionChanges(
 		}
 		event := fixed.Events[item.EntryIndex]
 		changes = append(changes, canonical.ProjectionChange{ID: item.ID, Document: canonical.EventProjection{
+			Kind:            event.Kind,
 			PublicationHead: domainUUID(item.AttemptID), PublicationDescriptor: item.SearchDescriptor,
 			ProjectID: fixed.ProjectID, SessionID: fixed.Session.ID, SessionTitle: fixed.Session.Title,
 			ThreadID: event.ThreadID, ThreadPath: publicationThreadPaths(fixed.Threads)[event.ThreadID],
@@ -153,7 +155,7 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 			ThreadID: document.ThreadID, ThreadPathIds: pathIDs,
 			ThreadPathLabels: pathLabels, Author: document.Author,
 			Harness: document.Harness, OccurredAt: document.OccurredAt,
-			Text: document.Text, ToolLabel: document.ToolLabel,
+			Text: document.Text, EventKind: document.Kind,
 			IngestSeq: int64(document.IngestSeq), ObservedAt: document.ObservedAt,
 		})
 		if err != nil {
@@ -191,7 +193,9 @@ func (s *Store) SearchProjectionDocuments(
 	ctx context.Context,
 	principal authentication.Principal,
 	query projectsearch.IndexQuery,
-) (projectsearch.IndexPage, error) {
+) (page projectsearch.IndexPage, resultErr error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return projectsearch.IndexPage{}, persist("begin Search query", err)
@@ -203,17 +207,27 @@ func (s *Store) SearchProjectionDocuments(
 	); err != nil {
 		return projectsearch.IndexPage{}, err
 	}
+	if err := queries.ConfigureSearchQuery(ctx); err != nil {
+		return projectsearch.IndexPage{}, persist("configure Search query", err)
+	}
+	after := projectsearch.Position{}
+	if query.After != nil {
+		after = *query.After
+	}
 	rows, err := queries.SearchDocuments(ctx, db.SearchDocumentsParams{
-		ProjectID:    query.ProjectID,
-		Term:         query.Term,
-		ResultOffset: int32(query.Offset),
-		ResultLimit:  int32(query.Limit),
+		ProjectID: query.ProjectID,
+		Term:      query.Term,
+		HasAfter:  query.After != nil, AfterTime: after.Time, AfterID: after.EventID,
+		ResultLimit: int32(query.Limit + 1),
 	})
 	if err != nil {
 		return projectsearch.IndexPage{}, persist("query Search documents", err)
 	}
 	documents := make([]canonical.EventProjection, 0, len(rows))
-	total := 0
+	hasMore := len(rows) > query.Limit
+	if hasMore {
+		rows = rows[:query.Limit]
+	}
 	for _, row := range rows {
 		path := make([]canonical.ProjectionThread, 0, len(row.ThreadPathIds))
 		for index, id := range row.ThreadPathIds {
@@ -226,17 +240,16 @@ func (s *Store) SearchProjectionDocuments(
 			SessionTitle: row.SessionTitle, ThreadID: row.ThreadID,
 			ThreadPath: path, EventID: row.EventID, Author: row.Author,
 			Harness: row.Harness, OccurredAt: row.OccurredAt, Text: row.Text,
-			ToolLabel: row.ToolLabel, IngestSeq: uint64(row.IngestSeq),
+			Kind: "message", IngestSeq: uint64(row.IngestSeq),
 			ObservedAt: row.ObservedAt,
 		})
-		total = int(row.TotalCount)
 	}
 	checkpoint, err := queries.GetSearchCheckpoint(ctx, query.ProjectID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return projectsearch.IndexPage{}, persist("read Search checkpoint", err)
 	}
-	page := projectsearch.IndexPage{
-		Documents: documents, Total: total, IndexedThrough: checkpoint,
+	page = projectsearch.IndexPage{
+		Documents: documents, HasMore: hasMore, IndexedThrough: checkpoint,
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return projectsearch.IndexPage{}, persist("commit Search query", err)

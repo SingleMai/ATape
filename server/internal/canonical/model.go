@@ -211,6 +211,7 @@ type ProjectionThread struct {
 // EventProjection is the current Canonical document made available to derived
 // read models. Search owns how this document is indexed and queried.
 type EventProjection struct {
+	Kind                  string
 	PublicationHead       string
 	PublicationDescriptor string
 	ProjectID             string

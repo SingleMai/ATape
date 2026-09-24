@@ -36,6 +36,14 @@ instead of silently showing an incomplete search. The browser UI test Adapter
 covers multiple projects, independent cursors, exact-message navigation, dialog
 focus/state retention, legacy URLs, and responsive layouts.
 
+Search matches user and agent message bodies, including child Threads. Tool
+execution, tool output, reasoning and navigation metadata do not produce hits.
+Queries are literal and case-insensitive, including Chinese, code fragments,
+punctuation and single characters. Results are newest first within each Project.
+The server returns a bounded excerpt around the match; opening it loads the full
+message. Versioned keyset cursors replace offset/count queries. Old open Search
+pages must restart at page one after a Server upgrade.
+
 Keyword, Team, and Project are the supported filters. There are no member, Agent,
 or date filters in the existing backend contract. Cross-project global relevance,
 server-side filtering, and latency improvements for very large project directories
@@ -130,3 +138,53 @@ Tab state and panel proportions are ephemeral and do not survive a reload.
 Reordering, durable tab restoration, and a prompt index within each child panel
 are possible follow-up work. Canonical conversation and Raw source data remain
 behind their existing separate Interfaces.
+
+## Search implementation and verification
+
+[ADR-0086](architecture/adr/0086-message-body-search.md) compares code-search and
+conversation-search designs and records the selected PostgreSQL character index.
+Search keeps non-message identity/version rows without body text so asynchronous
+stale workers cannot resurrect excluded content. Message bodies are fully indexed;
+response excerpts do not restrict recall. The query lifetime is two seconds, and
+HTTP diagnostics include request ID, duration and outcome without query text.
+
+Run `ATAPE_INTEGRATION_TESTS=1 go test ./internal/adapters/postgres -run TestMessageBodySearch -v`
+from `server/` for the behavior contract. Add `ATAPE_SEARCH_SCALE=1` to build a
+400,000-Event fixture (80,000 message bodies) and test first/second pages at four
+concurrent searches with a p95 <=1-second target per query class. The fixture covers
+common/rare/absent text, single-character Chinese, symbols, emoji, code paths and
+literal verification. Test results are capacity evidence for that corpus and host,
+not a guarantee for arbitrary hardware, index backlog or Project directory size.
+
+Migration 22 rewrites the derived Search table and builds its message indexes in
+the migration transaction. Schedule a Server migration window, ensure enough free
+disk for table/index rewrite and WAL, and take a paired backup first. Old Server
+binaries require the previous database schema; restoring only the binary is not a
+rollback. Verify exact-message results, exclusion of tool-only terms, pending
+projection progress and request latency after rollout. This code change alone does
+not deploy the Server or run the production migration.
+
+### Capacity evidence (2026-09-24, local)
+
+The live read-only inventory contained 62,349 legacy message Events averaging
+440 bytes, within 360,636 legacy Events; the Search table held 363,910 documents.
+The local synthetic test used 400,000 projection rows, 80,000 message bodies around
+500 characters, plus a long body and correctness fixtures. PostgreSQL 17 ran in an
+ARM64 Docker VM with a 2-CPU/2-GiB container limit. Go 1.25.14 invoked the authorized
+Searcher Interface over TCP. This measures Server/DB operation latency, not the
+public edge, browser debounce, cold disk cache, or depleted EC2 CPU credits.
+
+At four concurrent workers, each query/page class had 40 samples. All classes
+passed p95 <=1 second: the highest p95 was 294 ms for the common English term;
+Chinese single/common terms were 199–209 ms; `#707` was 25–29 ms; rare paths,
+emoji and absent terms were 5–18 ms. A deliberately absent phrase composed entirely
+of common grams took 242 ms p95 and returned no false matches. Fifty sequential
+pages (1,000 messages) had p95 87 ms with no duplicate anchors. The fixture's table
+and indexes occupied 315 MiB; bulk fixture construction plus vacuum took 53 seconds.
+That construction measurement is not production migration time or projector
+throughput. Performance regression tests remain opt-in because shared CI hardware
+cannot establish the deployment latency budget.
+
+The next rollout gate is a backed-up Server migration followed by public HTTP and
+browser validation on the deployed corpus. Until that gate is exercised, the local
+measurements do not establish production response time.

@@ -22,6 +22,8 @@ sql:
       - "internal/adapters/postgres/migrations/000018_publication_raw_authority.sql"
       - "internal/adapters/postgres/migrations/000019_raw_manifest_pagination.sql"
       - "internal/adapters/postgres/migrations/000020_overview_publication_facts.sql"
+      - "internal/adapters/postgres/migrations/000021_overview_native_covering_indexes.sql"
+      - "internal/adapters/postgres/migrations/000022_message_body_search.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
