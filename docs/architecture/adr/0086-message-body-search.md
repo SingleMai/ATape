@@ -62,6 +62,8 @@ This is an evidenced capacity target, not an unbounded guarantee for every corpu
 or hardware. Record measured hardware, corpus and tail latency in the owning guide.
 
 Server rollout requires a migration window and sufficient index-building disk.
+The candidate exposes `atape-server migrate --timeout 15m` for an explicit,
+cancellable migration before serving traffic, outside the short Fx startup deadline.
 Old Server binaries must not run against the new Search schema. A paired backup
 and the previous Server/database version are the rollback boundary. Package
 publication is unnecessary. Production migration/deployment is a separate action.

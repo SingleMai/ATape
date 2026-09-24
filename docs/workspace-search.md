@@ -160,7 +160,10 @@ Migration 22 rewrites the derived Search table and builds its message indexes in
 the migration transaction. Schedule a Server migration window, ensure enough free
 disk for table/index rewrite and WAL, and take a paired backup first. Old Server
 binaries require the previous database schema; restoring only the binary is not a
-rollback. Verify exact-message results, exclusion of tool-only terms, pending
+rollback. Run the candidate's explicit `atape-server migrate --timeout 15m` command
+with writers stopped, as described in [self-hosting operations](operations/self-hosting.md#routine-operations),
+before normal startup; a large index build can exceed the ordinary startup deadline.
+Verify exact-message results, exclusion of tool-only terms, pending
 projection progress and request latency after rollout. This code change alone does
 not deploy the Server or run the production migration.
 
