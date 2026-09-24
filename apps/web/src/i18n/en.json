@@ -348,7 +348,7 @@
   "search.searchConversations": "Search conversations",
   "search.searching": "Searching conversations…",
   "search.searchingWithin": "Searching within",
-  "search.startBody": "Search messages, decisions, and tool activity across {count} projects.",
+  "search.startBody": "Search user and agent message bodies across {count} projects.",
   "search.startTitle": "Find it across your conversations.",
   "search.submit": "Search",
   "search.team": "Team",

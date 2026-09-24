@@ -188,6 +188,47 @@ That construction measurement is not production migration time or projector
 throughput. Performance regression tests remain opt-in because shared CI hardware
 cannot establish the deployment latency budget.
 
-The next rollout gate is a backed-up Server migration followed by public HTTP and
-browser validation on the deployed corpus. Until that gate is exercised, the local
-measurements do not establish production response time.
+### Deployed verification (2026-09-24)
+
+[PR #186](https://github.com/SingleMai/ATape/pull/186) passed CI and all Security
+jobs and merged as `82b28717efe4554b1c34af7f3318a96d05942ab8`. The deployed ARM64
+Server was built from checked PR head `158a5f1f104d38450f0655cd6f8203902c2580d0`,
+whose tree is identical to the merge. Server version, Authentication epoch and
+minimum CLI version remain `0.5.2`, `auth-v1`, and `0.5.2`; no package was published.
+
+After the user authorized deployment, the operator stopped writers, made a paired
+PostgreSQL/Raw backup with digests, and ran the explicit migration command from
+schema 21 to 22. Migration took 6 minutes 8 seconds; the maintenance window was
+06:59:40–07:06:48 UTC (7 minutes 8 seconds). Server/Web readiness passed. An encrypted
+EBS snapshot containing the immutable paired backup completed; the previous image
+and backup remain available for paired rollback. Future rollouts should budget
+for this measured migration duration rather than the local fixture build time.
+
+At migration completion, the read model contained 363,408 rows, including 62,538
+message bodies. Every non-message row had empty text, search text and grams.
+Authenticated browser requests through the public Cloudflare edge exercised two
+Projects, eleven query classes, ten repetitions and four concurrent requests:
+220 requests returned successfully with literal matches and excerpts <=640
+characters; the deliberately absent term returned no results. `#707` also returned
+no message-body matches in this corpus and was a valid empty-result check.
+
+| Measurement | p50 | p95 | Maximum |
+| --- | --- | --- | --- |
+| Public HTTP, including response JSON consumption (220 requests) | 275 ms | 786 ms | 1,418 ms |
+| Corresponding Server Searcher log durations (220 requests) | 64 ms | 442 ms | 1,052 ms |
+| Public `#707` requests (20 requests) | 137 ms | 302 ms | 377 ms |
+| Public single Chinese character `的` (20 requests) | 539 ms | 940 ms | 1,245 ms |
+
+Other probes covered `#`, `正文`, `e`, `function`, `/api/`, `_`, `%`, emoji and absent
+text. The UI displayed 40 highlighted `#` results across both Projects in 1.45
+seconds from input, including debounce and rendering; the second page displayed
+40 different results in 860 ms. Opening a result focused the exact Event anchor
+and its full body contained the query. These measurements establish
+second-scale retrieval on this deployed corpus, not an unlimited hardware/load SLA.
+
+Two initial post-switch browser probes were aborted at their 6-second client
+deadline before this 220-request run; Server logs recorded one 31-ms success and
+one request cancellation. Their complete transport/authentication timing was not
+captured, so their cause is not established. They did not recur in the subsequent
+run and are not included in its latency percentiles. Retain this distinction when
+comparing steady-state search with first requests after a deployment.

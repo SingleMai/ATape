@@ -329,7 +329,7 @@ const SearchResults = ({
     return (
       <div className="search-start">
         <h3>{t("search.startTitle", "Find it across your conversations.")}</h3>
-        <p>{t("search.startBody", "Search messages, decisions, and tool activity across {count} projects.", { count: projects.length })}</p>
+        <p>{t("search.startBody", "Search user and agent message bodies across {count} projects.", { count: projects.length })}</p>
         {recent.length > 0 && (
           <div className="recent-searches">
             <span>{t("search.recentSearches", "Recent searches")}</span>
