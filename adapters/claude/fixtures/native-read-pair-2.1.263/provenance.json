@@ -1,0 +1,1127 @@
+{
+  "kind": "controlled-native-exact-two-Read-source-evidence",
+  "status": "Controlled source evidence. The owning feature guide and caller checks record implementation, verification, integration and remaining scope.",
+  "capturedDate": "2026-10-08",
+  "claudeVersion": "2.1.263",
+  "fixtureCwd": "/fixture/native-parallel-read/workspace",
+  "fixtureConfig": "/fixture/native-parallel-read/config",
+  "nativeBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "newNativeInvocationsForPreparation": 0,
+  "realModelInvocationsForPreparation": 0,
+  "transformation": "Only literal UTF-8 isolated workspace/config aliases and encoded-directory substitutions. Native JSONL is never reserialized. Derived evidence JSON is explicitly selected and serialized.",
+  "cases": [
+    {
+      "id": "tool-only",
+      "sourceResearchDirectory": "/tmp/atape-claude-parallel-native.bGHpKD",
+      "nativeCallLayout": [
+        "Read@0",
+        "Read@1"
+      ],
+      "homeIsolationEvidence": "Recorded harness explicitly creates fresh isolated HOME/config/workspace, shared by the two fresh processes.",
+      "sourceWasAlreadyPathSanitized": false,
+      "sourcePathStatusEvidence": "Source still contains original temporary CWD and Read file paths; saved source hash matches independent evidence. Original research identifies these as unmodified native output.",
+      "pathSubstitutions": [
+        {
+          "from": "/private/tmp/atape-claude-parallel-native.bGHpKD/workspace",
+          "to": "/fixture/native-parallel-read/workspace"
+        },
+        {
+          "from": "/tmp/atape-claude-parallel-native.bGHpKD/workspace",
+          "to": "/fixture/native-parallel-read/workspace"
+        },
+        {
+          "from": "/private/tmp/atape-claude-parallel-native.bGHpKD/config",
+          "to": "/fixture/native-parallel-read/config"
+        },
+        {
+          "from": "/tmp/atape-claude-parallel-native.bGHpKD/config",
+          "to": "/fixture/native-parallel-read/config"
+        },
+        {
+          "from": "-private-tmp-atape-claude-parallel-native-bGHpKD-workspace",
+          "to": "-fixture-native-parallel-read-workspace"
+        }
+      ],
+      "nativeSnapshots": [
+        {
+          "phase": "tools",
+          "file": "tool-only/tools.jsonl",
+          "kind": "actual native invocation snapshot, unchanged except declared literal paths",
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/tools.jsonl",
+          "original": {
+            "bytes": 7240,
+            "sha256": "f8aeebbda4c49a1fb1af83399782edf52449075094ce4813292b90def830a28c"
+          },
+          "sanitized": {
+            "bytes": 7044,
+            "sha256": "a4fbd368574d8b0ea161f5ccef221b7b0d8bdda741f097a99766e21a77c9688d"
+          },
+          "strictPreviousOriginalBytePrefix": null,
+          "strictPreviousSanitizedBytePrefix": null,
+          "pathOnlyDecodedEquality": true,
+          "pathReplacementOccurrences": {
+            "/private/tmp/atape-claude-parallel-native.bGHpKD/workspace": 8,
+            "/tmp/atape-claude-parallel-native.bGHpKD/workspace": 12,
+            "/private/tmp/atape-claude-parallel-native.bGHpKD/config": 0,
+            "/tmp/atape-claude-parallel-native.bGHpKD/config": 0,
+            "-private-tmp-atape-claude-parallel-native-bGHpKD-workspace": 0
+          },
+          "expected": {
+            "recordCount": 12,
+            "uniqueCanonicalEventCount": 6,
+            "eventSourceUuids": [
+              "646b0d8a-15fa-4c51-9df6-3893046a9114",
+              "61cef762-a986-4179-8865-62a78580574c",
+              "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+              "baad5505-f848-4aa3-aaa6-994e408f027c",
+              "fff8d57e-2b91-43c1-90e3-a852b8f88fa5",
+              "9bfb615b-9172-4a71-880a-e59719028374"
+            ],
+            "distinctUsageCount": 2,
+            "latestUsageByApiId": {
+              "msg_atape_parallel_mock_1": {
+                "sourceUsageId": "msg_atape_parallel_mock_1",
+                "sourceUuid": "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+                "latestObservationLine": 7,
+                "latestObservationEndBytes": 3642,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 31,
+                "outputTokens": 7,
+                "latestOriginalObservationEndBytes": 3740
+              },
+              "msg_atape_parallel_mock_2": {
+                "sourceUsageId": "msg_atape_parallel_mock_2",
+                "sourceUuid": "9bfb615b-9172-4a71-880a-e59719028374",
+                "latestObservationLine": 11,
+                "latestObservationEndBytes": 6824,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 41,
+                "outputTokens": 11,
+                "latestOriginalObservationEndBytes": 7020
+              }
+            },
+            "inputTokens": 72,
+            "outputTokens": 18
+          }
+        },
+        {
+          "phase": "resume",
+          "file": "tool-only/resume.jsonl",
+          "kind": "actual native invocation snapshot, unchanged except declared literal paths",
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/resume.jsonl",
+          "original": {
+            "bytes": 10142,
+            "sha256": "0ecafca7df6d88f7446d6ac76351fdeee03e3f0a8e13d42ab003925eef0c9366"
+          },
+          "sanitized": {
+            "bytes": 9889,
+            "sha256": "6defecee85730646176a86ed6cc83e7c109d6152dcb984379b902aa9d478e96a"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "pathOnlyDecodedEquality": true,
+          "pathReplacementOccurrences": {
+            "/private/tmp/atape-claude-parallel-native.bGHpKD/workspace": 11,
+            "/tmp/atape-claude-parallel-native.bGHpKD/workspace": 15,
+            "/private/tmp/atape-claude-parallel-native.bGHpKD/config": 0,
+            "/tmp/atape-claude-parallel-native.bGHpKD/config": 0,
+            "-private-tmp-atape-claude-parallel-native-bGHpKD-workspace": 0
+          },
+          "expected": {
+            "recordCount": 19,
+            "uniqueCanonicalEventCount": 8,
+            "eventSourceUuids": [
+              "646b0d8a-15fa-4c51-9df6-3893046a9114",
+              "61cef762-a986-4179-8865-62a78580574c",
+              "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+              "baad5505-f848-4aa3-aaa6-994e408f027c",
+              "fff8d57e-2b91-43c1-90e3-a852b8f88fa5",
+              "9bfb615b-9172-4a71-880a-e59719028374",
+              "22fe2e48-fc40-4433-82ca-44e72aba820a",
+              "0fe55c6e-ece0-42ac-83bb-32c057befb28"
+            ],
+            "distinctUsageCount": 3,
+            "latestUsageByApiId": {
+              "msg_atape_parallel_mock_1": {
+                "sourceUsageId": "msg_atape_parallel_mock_1",
+                "sourceUuid": "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+                "latestObservationLine": 7,
+                "latestObservationEndBytes": 3642,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 31,
+                "outputTokens": 7,
+                "latestOriginalObservationEndBytes": 3740
+              },
+              "msg_atape_parallel_mock_2": {
+                "sourceUsageId": "msg_atape_parallel_mock_2",
+                "sourceUuid": "9bfb615b-9172-4a71-880a-e59719028374",
+                "latestObservationLine": 11,
+                "latestObservationEndBytes": 6824,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 41,
+                "outputTokens": 11,
+                "latestOriginalObservationEndBytes": 7020
+              },
+              "msg_atape_parallel_mock_3": {
+                "sourceUsageId": "msg_atape_parallel_mock_3",
+                "sourceUuid": "0fe55c6e-ece0-42ac-83bb-32c057befb28",
+                "latestObservationLine": 17,
+                "latestObservationEndBytes": 9562,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 29,
+                "outputTokens": 13,
+                "latestOriginalObservationEndBytes": 9815
+              }
+            },
+            "inputTokens": 101,
+            "outputTokens": 31
+          }
+        }
+      ],
+      "derivedTestCuts": [
+        {
+          "label": "tool-only-through-line-6",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "tool-only/tools.jsonl",
+          "prefixThroughLine": 6,
+          "original": {
+            "bytes": 2619,
+            "sha256": "e0f75f5645995c3b1dd977b1353cecfe7d2175f74220f2964d7ab423220da35e"
+          },
+          "sanitized": {
+            "bytes": 2551,
+            "sha256": "71569aa9cbf6f8de80c062bc557382f80e529132a36ca52445d69eab6ceaad1f"
+          },
+          "expected": {
+            "recordCount": 6,
+            "uniqueCanonicalEventCount": 2,
+            "distinctUsageCount": 1,
+            "inputTokens": 31,
+            "outputTokens": 7,
+            "pendingCanonicalSessions": 0
+          }
+        },
+        {
+          "label": "tool-only-through-line-7",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "tool-only/tools.jsonl",
+          "prefixThroughLine": 7,
+          "original": {
+            "bytes": 3740,
+            "sha256": "fb0fa3a07dac8c1263a584df66256784c9d635d54d284e741a2f2aa09637ab89"
+          },
+          "sanitized": {
+            "bytes": 3642,
+            "sha256": "d237672852f076d18d3f642102df6b69c8e763151b24efc20aff9c4b19943e89"
+          },
+          "expected": {
+            "recordCount": 7,
+            "uniqueCanonicalEventCount": 3,
+            "distinctUsageCount": 1,
+            "inputTokens": 31,
+            "outputTokens": 7,
+            "pendingCanonicalSessions": 0
+          }
+        },
+        {
+          "label": "tool-only-through-line-8",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "tool-only/tools.jsonl",
+          "prefixThroughLine": 8,
+          "original": {
+            "bytes": 4593,
+            "sha256": "30aafc48b5b1dfc011fd0b8301e3070f26447bd1816c8c78579fa7ab96b11a4c"
+          },
+          "sanitized": {
+            "bytes": 4465,
+            "sha256": "961cca340e4268a9518ceac61bbd2767e99e4567c5ae2e0a46855860dd761198"
+          },
+          "expected": {
+            "recordCount": 8,
+            "uniqueCanonicalEventCount": 4,
+            "distinctUsageCount": 1,
+            "inputTokens": 31,
+            "outputTokens": 7,
+            "pendingCanonicalSessions": 1
+          }
+        },
+        {
+          "label": "tool-only-through-line-9",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "tool-only/tools.jsonl",
+          "prefixThroughLine": 9,
+          "original": {
+            "bytes": 5450,
+            "sha256": "da182ca686d49fd2ba87f5deb565a22c00a7d02190ca6cd7e92529573b254c3a"
+          },
+          "sanitized": {
+            "bytes": 5292,
+            "sha256": "d84205ed1e816a949df549e6ad80c4cb2c1157683de9b0bc7e32158829ac849b"
+          },
+          "expected": {
+            "recordCount": 9,
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 1,
+            "inputTokens": 31,
+            "outputTokens": 7,
+            "pendingCanonicalSessions": 0
+          }
+        }
+      ],
+      "batch": {
+        "sameResponseApiId": "msg_atape_parallel_mock_1",
+        "model": "claude-sonnet-4-6",
+        "layoutLines": [
+          6,
+          7
+        ],
+        "calls": [
+          {
+            "line": 6,
+            "uuid": "61cef762-a986-4179-8865-62a78580574c",
+            "parentUuid": "20503911-8c7d-4123-98b8-890357bab5a0",
+            "apiBlockIndex": 0,
+            "physicalBlockSlot": 0,
+            "toolBlock": {
+              "type": "tool_use",
+              "id": "call_parallel_read_a",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-parallel-read/workspace/a.txt"
+              }
+            }
+          },
+          {
+            "line": 7,
+            "uuid": "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+            "parentUuid": "61cef762-a986-4179-8865-62a78580574c",
+            "apiBlockIndex": 1,
+            "physicalBlockSlot": 0,
+            "toolBlock": {
+              "type": "tool_use",
+              "id": "call_parallel_read_b",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-parallel-read/workspace/b.txt"
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "line": 8,
+            "uuid": "baad5505-f848-4aa3-aaa6-994e408f027c",
+            "parentUuid": "61cef762-a986-4179-8865-62a78580574c",
+            "sourceToolAssistantUUID": "61cef762-a986-4179-8865-62a78580574c",
+            "previousPhysicalUuid": "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+            "parentDiffersFromPreviousPhysicalUuid": true,
+            "physicalBlockSlot": 0,
+            "toolResultBlock": {
+              "tool_use_id": "call_parallel_read_a",
+              "type": "tool_result",
+              "content": "1\tATAPE_PARALLEL_READ_A: amber lynx 204.\n2\t"
+            },
+            "isErrorPresence": {
+              "present": false
+            },
+            "flagPresence": {},
+            "knownFlagsAbsent": [
+              "isMeta",
+              "agentId",
+              "isCompactSummary",
+              "isVisibleInTranscriptOnly",
+              "logicalParentUuid"
+            ]
+          },
+          {
+            "line": 9,
+            "uuid": "fff8d57e-2b91-43c1-90e3-a852b8f88fa5",
+            "parentUuid": "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+            "sourceToolAssistantUUID": "c92efbb9-7e51-40ad-8a34-870be1f0548c",
+            "previousPhysicalUuid": "baad5505-f848-4aa3-aaa6-994e408f027c",
+            "parentDiffersFromPreviousPhysicalUuid": true,
+            "physicalBlockSlot": 0,
+            "toolResultBlock": {
+              "tool_use_id": "call_parallel_read_b",
+              "type": "tool_result",
+              "content": "1\tATAPE_PARALLEL_READ_B: violet crane 619.\n2\t"
+            },
+            "isErrorPresence": {
+              "present": false
+            },
+            "flagPresence": {},
+            "knownFlagsAbsent": [
+              "isMeta",
+              "agentId",
+              "isCompactSummary",
+              "isVisibleInTranscriptOnly",
+              "logicalParentUuid"
+            ]
+          }
+        ],
+        "nextStrictLinearRecordLine": 10,
+        "sourceResultOrder": [
+          "call_parallel_read_a",
+          "call_parallel_read_b"
+        ],
+        "noInterveningRecords": true,
+        "apiBlockIndicesAreNotPhysicalEventSlots": true
+      },
+      "diskEvidence": [
+        {
+          "file": "a.txt",
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/workspace/a.txt",
+          "fixturePath": "/fixture/native-parallel-read/workspace/a.txt",
+          "bytes": 39,
+          "sha256": "6b1b8a4b3f3e2daf3c679179bc1fb530cd5993277ddc63c9abd512bb76cff9ef",
+          "contentUtf8": "ATAPE_PARALLEL_READ_A: amber lynx 204.\n",
+          "nativeReceiptContentEqualsDiskBytes": true
+        },
+        {
+          "file": "b.txt",
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/workspace/b.txt",
+          "fixturePath": "/fixture/native-parallel-read/workspace/b.txt",
+          "bytes": 41,
+          "sha256": "2e0407d1d33db4924b9c2ae2c67b61e421381d0ea79ae096137c79211f690cdd",
+          "contentUtf8": "ATAPE_PARALLEL_READ_B: violet crane 619.\n",
+          "nativeReceiptContentEqualsDiskBytes": true
+        }
+      ],
+      "controls": {
+        "restricted": true,
+        "safeMode": true,
+        "tools": [
+          "Read"
+        ],
+        "allowedTools": [
+          "Read"
+        ],
+        "permissionMode": "manual",
+        "permissionPrompts": "none",
+        "mcp": {
+          "mcpServers": {}
+        },
+        "noChrome": true,
+        "DISABLE_AUTO_COMPACT": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+        "DISABLE_AUTOUPDATER": "1",
+        "transport": "127.0.0.1 deterministic Anthropic Messages SSE",
+        "authentication": "Fake authentication omitted from candidate material",
+        "realModel": false
+      },
+      "sessionId": "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3",
+      "nativeBinarySha256Before": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+      "nativeBinarySha256After": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+      "sourceEvidenceFiles": [
+        {
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/provenance.json",
+          "bytes": 544,
+          "sha256": "a87838db951d8f42578d30c661be0e17bc32ed0d69f945f8d728f94f56cf8fbb"
+        },
+        {
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/PROOF.txt",
+          "bytes": 10442,
+          "sha256": "11a007abb4bb24bfc91452b918f1ff8ef01537cfb66b145ab832a9f40b4d3a67"
+        },
+        {
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/evidence.json",
+          "bytes": 16620,
+          "sha256": "fb27def03a70a8aba58736b9aaf0d5c0926bbbfd85883464ee54e53b29cf78c3"
+        },
+        {
+          "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/probe.mjs",
+          "bytes": 6659,
+          "sha256": "1d01acf661c18f0d54b44464ee4d04aaeafb4635fa35a69a05b6c14b6b95207c"
+        }
+      ],
+      "nativeInvocations": [
+        {
+          "phase": "tools",
+          "nativeResultFile": {
+            "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/tools-result.json",
+            "bytes": 2794,
+            "sha256": "98967376a0b120ff0a7f178fdf6948e0d72e4bf57713808799d647e9237c5727"
+          },
+          "exitCode": 0,
+          "stderr": "",
+          "signal": null,
+          "controls": {
+            "freshHOME": true,
+            "freshCLAUDE_CONFIG_DIR": true,
+            "loopback": true,
+            "DISABLE_AUTO_COMPACT": "1",
+            "tools": "Read only"
+          },
+          "sessionMode": "--session-id",
+          "sessionIdArgument": "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3",
+          "prompt": "ATAPE_PARALLEL_REQUEST: Read a.txt and b.txt once using the supplied Read tools."
+        },
+        {
+          "phase": "resume",
+          "nativeResultFile": {
+            "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/resume-result.json",
+            "bytes": 2808,
+            "sha256": "28ad55a6ed2cf882ff981702a83975d1e49a30de66b7f2de8a43dc5020693422"
+          },
+          "exitCode": 0,
+          "stderr": "",
+          "signal": null,
+          "controls": {
+            "freshHOME": true,
+            "freshCLAUDE_CONFIG_DIR": true,
+            "loopback": true,
+            "DISABLE_AUTO_COMPACT": "1",
+            "tools": "Read only"
+          },
+          "sessionMode": "--resume",
+          "sessionIdArgument": "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3",
+          "prompt": "ATAPE_PARALLEL_RESUME_REQUEST: Confirm both synthetic reads remain complete without invoking more tools."
+        }
+      ],
+      "sampledBatchIdentity": {
+        "version": "2.1.263",
+        "isSidechain": false,
+        "sessionId": "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3",
+        "cwd": "/fixture/native-parallel-read/workspace",
+        "absentFlags": [
+          "isMeta",
+          "agentId",
+          "isCompactSummary",
+          "isVisibleInTranscriptOnly",
+          "logicalParentUuid"
+        ]
+      }
+    },
+    {
+      "id": "text-plan",
+      "sourceResearchDirectory": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual",
+      "nativeCallLayout": [
+        "text@0",
+        "Read@1",
+        "Read@2"
+      ],
+      "homeIsolationEvidence": "Saved harness inherits HOME from its parent; original HOME value was not recorded. Independent fresh config/workspace and synthetic-only source are evidenced; fresh HOME is not asserted.",
+      "sourceWasAlreadyPathSanitized": false,
+      "sourcePathStatusEvidence": "Source still contains original temporary CWD and Read file paths; saved source hash matches independent evidence. Original research identifies these as unmodified native output.",
+      "pathSubstitutions": [
+        {
+          "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace",
+          "to": "/fixture/native-parallel-read/workspace"
+        },
+        {
+          "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace",
+          "to": "/fixture/native-parallel-read/workspace"
+        },
+        {
+          "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual/config",
+          "to": "/fixture/native-parallel-read/config"
+        },
+        {
+          "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/config",
+          "to": "/fixture/native-parallel-read/config"
+        },
+        {
+          "from": "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-workspace",
+          "to": "-fixture-native-parallel-read-workspace"
+        }
+      ],
+      "nativeSnapshots": [
+        {
+          "phase": "warmup",
+          "file": "text-plan/warmup.jsonl",
+          "kind": "actual native invocation snapshot, unchanged except declared literal paths",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/warmup.jsonl",
+          "original": {
+            "bytes": 5406,
+            "sha256": "ac39f8454b5f65ea8fae35ddba3edfa657ef28dbc1a12c3a21035276f57797c2"
+          },
+          "sanitized": {
+            "bytes": 5244,
+            "sha256": "83fe4d933d26110c610715c95cc5278f87f0f72c7f5f658ff1e5252c73e3611b"
+          },
+          "strictPreviousOriginalBytePrefix": null,
+          "strictPreviousSanitizedBytePrefix": null,
+          "pathOnlyDecodedEquality": true,
+          "pathReplacementOccurrences": {
+            "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace": 6,
+            "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace": 6,
+            "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual/config": 0,
+            "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/config": 0,
+            "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-workspace": 0
+          },
+          "expected": {
+            "recordCount": 14,
+            "uniqueCanonicalEventCount": 4,
+            "eventSourceUuids": [
+              "6fd8dab5-bafe-4c8b-bea9-740b8ce3c462",
+              "df78873e-2bcd-48f6-b2c0-52ce0dec78c0",
+              "b4a6c4f1-5786-41bd-80f0-8b135dba816f",
+              "9fb5dfe7-bebf-48d9-8fc4-41ae29a4f886"
+            ],
+            "distinctUsageCount": 2,
+            "latestUsageByApiId": {
+              "msg_atape_manual_mock_1": {
+                "sourceUsageId": "msg_atape_manual_mock_1",
+                "sourceUuid": "df78873e-2bcd-48f6-b2c0-52ce0dec78c0",
+                "latestObservationLine": 6,
+                "latestObservationEndBytes": 2410,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 23,
+                "outputTokens": 11,
+                "latestOriginalObservationEndBytes": 2491
+              },
+              "msg_atape_manual_mock_2": {
+                "sourceUsageId": "msg_atape_manual_mock_2",
+                "sourceUuid": "9fb5dfe7-bebf-48d9-8fc4-41ae29a4f886",
+                "latestObservationLine": 12,
+                "latestObservationEndBytes": 4970,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 29,
+                "outputTokens": 13,
+                "latestOriginalObservationEndBytes": 5132
+              }
+            },
+            "inputTokens": 52,
+            "outputTokens": 24
+          }
+        },
+        {
+          "phase": "toolturn",
+          "file": "text-plan/toolturn.jsonl",
+          "kind": "actual native invocation snapshot, unchanged except declared literal paths",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/toolturn.jsonl",
+          "original": {
+            "bytes": 14734,
+            "sha256": "c471e790566c3c843edfe3211794175019252c86688f5497ee321e4be50cdfe3"
+          },
+          "sanitized": {
+            "bytes": 14226,
+            "sha256": "ecf0d95ce543c58feae610d4baa5866ab4e252562f076060e76cb034d940898e"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "pathOnlyDecodedEquality": true,
+          "pathReplacementOccurrences": {
+            "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace": 16,
+            "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace": 20,
+            "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual/config": 0,
+            "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/config": 0,
+            "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-workspace": 0
+          },
+          "expected": {
+            "recordCount": 27,
+            "uniqueCanonicalEventCount": 12,
+            "eventSourceUuids": [
+              "6fd8dab5-bafe-4c8b-bea9-740b8ce3c462",
+              "df78873e-2bcd-48f6-b2c0-52ce0dec78c0",
+              "b4a6c4f1-5786-41bd-80f0-8b135dba816f",
+              "9fb5dfe7-bebf-48d9-8fc4-41ae29a4f886",
+              "978c1e06-1036-4b46-ab9b-948166d9b138",
+              "3857fe22-80c4-4c23-b4bf-b3779fcf9237",
+              "7e457f6a-8716-481d-b748-df93cab0f5ea",
+              "5093fd1a-3c8c-4792-98bf-35efd1a5b369",
+              "331afc3a-c931-4492-ae75-557905c77296",
+              "0d659f12-5154-454e-bf81-d5e586e017c1",
+              "c4e7bab7-b349-4191-9564-aed75163fbdc",
+              "b4844406-052e-4b8d-9c17-ecbe3858eb37"
+            ],
+            "distinctUsageCount": 4,
+            "latestUsageByApiId": {
+              "msg_atape_manual_mock_1": {
+                "sourceUsageId": "msg_atape_manual_mock_1",
+                "sourceUuid": "df78873e-2bcd-48f6-b2c0-52ce0dec78c0",
+                "latestObservationLine": 6,
+                "latestObservationEndBytes": 2410,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 23,
+                "outputTokens": 11,
+                "latestOriginalObservationEndBytes": 2491
+              },
+              "msg_atape_manual_mock_2": {
+                "sourceUsageId": "msg_atape_manual_mock_2",
+                "sourceUuid": "9fb5dfe7-bebf-48d9-8fc4-41ae29a4f886",
+                "latestObservationLine": 12,
+                "latestObservationEndBytes": 4970,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 29,
+                "outputTokens": 13,
+                "latestOriginalObservationEndBytes": 5132
+              },
+              "msg_atape_manual_mock_3": {
+                "sourceUsageId": "msg_atape_manual_mock_3",
+                "sourceUuid": "5093fd1a-3c8c-4792-98bf-35efd1a5b369",
+                "latestObservationLine": 21,
+                "latestObservationEndBytes": 9854,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 37,
+                "outputTokens": 17,
+                "latestOriginalObservationEndBytes": 10189
+              },
+              "msg_atape_manual_mock_4": {
+                "sourceUsageId": "msg_atape_manual_mock_4",
+                "sourceUuid": "b4844406-052e-4b8d-9c17-ecbe3858eb37",
+                "latestObservationLine": 26,
+                "latestObservationEndBytes": 14013,
+                "model": "claude-sonnet-4-6",
+                "inputTokens": 41,
+                "outputTokens": 23,
+                "latestOriginalObservationEndBytes": 14521
+              }
+            },
+            "inputTokens": 130,
+            "outputTokens": 64
+          }
+        }
+      ],
+      "derivedTestCuts": [
+        {
+          "label": "text-plan-through-line-19",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "text-plan/toolturn.jsonl",
+          "prefixThroughLine": 19,
+          "original": {
+            "bytes": 7921,
+            "sha256": "e754f814885d6314bc86d43f10bd2ca24882fded869b6378df75824f76f32ed1"
+          },
+          "sanitized": {
+            "bytes": 7678,
+            "sha256": "fc7bc199e9f9c91f0742839e33dc91be438ab7c6f3f94b547af8ad4c6fe3cea4"
+          },
+          "expected": {
+            "recordCount": 19,
+            "uniqueCanonicalEventCount": 6,
+            "distinctUsageCount": 3,
+            "inputTokens": 89,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          }
+        },
+        {
+          "label": "text-plan-through-line-20",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "text-plan/toolturn.jsonl",
+          "prefixThroughLine": 20,
+          "original": {
+            "bytes": 9055,
+            "sha256": "dff8f5cd2e0ce66d4c094a45d1546c8766ca9ced22485e87b1cf419b91d6fa19"
+          },
+          "sanitized": {
+            "bytes": 8766,
+            "sha256": "9edabb9045d9e07ec8d05f605a70e7dbf306228ecc78fd6de38bdaafcca3fd63"
+          },
+          "expected": {
+            "recordCount": 20,
+            "uniqueCanonicalEventCount": 7,
+            "distinctUsageCount": 3,
+            "inputTokens": 89,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          }
+        },
+        {
+          "label": "text-plan-through-line-21",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "text-plan/toolturn.jsonl",
+          "prefixThroughLine": 21,
+          "original": {
+            "bytes": 10189,
+            "sha256": "65d0ceb83c7d2a37b4f4e87cb4c4d6b60a8f848a74b2f8edfcddc2c1cc05cafb"
+          },
+          "sanitized": {
+            "bytes": 9854,
+            "sha256": "34fe0907402159c5324a000cac149853ed24d774484cc17243575e3bee2d083c"
+          },
+          "expected": {
+            "recordCount": 21,
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 89,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          }
+        },
+        {
+          "label": "text-plan-through-line-22",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "text-plan/toolturn.jsonl",
+          "prefixThroughLine": 22,
+          "original": {
+            "bytes": 11052,
+            "sha256": "318e1ee931ed52ff033ca6b9c544bd7056bc02f9301026000109444a4d0c5017"
+          },
+          "sanitized": {
+            "bytes": 10671,
+            "sha256": "cbbb144381b9cbbc2757f408a8a2639f36f721a58fb81ec826e9dfbd349cd0fb"
+          },
+          "expected": {
+            "recordCount": 22,
+            "uniqueCanonicalEventCount": 9,
+            "distinctUsageCount": 3,
+            "inputTokens": 89,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          }
+        },
+        {
+          "label": "text-plan-through-line-23",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "text-plan/toolturn.jsonl",
+          "prefixThroughLine": 23,
+          "original": {
+            "bytes": 11919,
+            "sha256": "b79a43608175d4979a6e1b843b1e2bb101b0525f5eb681b4231d8514d92f1586"
+          },
+          "sanitized": {
+            "bytes": 11492,
+            "sha256": "17a64c465dff28d7f43424c34488472edac53b3e69b1b3a8093ce8c452860ad0"
+          },
+          "expected": {
+            "recordCount": 23,
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 89,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          }
+        },
+        {
+          "label": "text-plan-through-line-25",
+          "kind": "derived complete-LF append/pagination cut; not a new native invocation snapshot",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "text-plan/toolturn.jsonl",
+          "prefixThroughLine": 25,
+          "original": {
+            "bytes": 13466,
+            "sha256": "9200d39a5167a30ee4d79d9a845e674206376c73dfd2ff199e44c462da0f8785"
+          },
+          "sanitized": {
+            "bytes": 12985,
+            "sha256": "858f4f3d7d0046b901dfd513c7e970df8b2f0ec3b5d069c7afb21d5d0214a533"
+          },
+          "expected": {
+            "recordCount": 25,
+            "uniqueCanonicalEventCount": 11,
+            "distinctUsageCount": 4,
+            "inputTokens": 130,
+            "outputTokens": 64,
+            "pendingCanonicalSessions": 0
+          }
+        }
+      ],
+      "batch": {
+        "sameResponseApiId": "msg_atape_manual_mock_3",
+        "model": "claude-sonnet-4-6",
+        "layoutLines": [
+          19,
+          20,
+          21
+        ],
+        "calls": [
+          {
+            "line": 20,
+            "uuid": "7e457f6a-8716-481d-b748-df93cab0f5ea",
+            "parentUuid": "3857fe22-80c4-4c23-b4bf-b3779fcf9237",
+            "apiBlockIndex": 1,
+            "physicalBlockSlot": 0,
+            "toolBlock": {
+              "type": "tool_use",
+              "id": "call_manual_read_a",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-parallel-read/workspace/a.txt"
+              }
+            }
+          },
+          {
+            "line": 21,
+            "uuid": "5093fd1a-3c8c-4792-98bf-35efd1a5b369",
+            "parentUuid": "7e457f6a-8716-481d-b748-df93cab0f5ea",
+            "apiBlockIndex": 2,
+            "physicalBlockSlot": 0,
+            "toolBlock": {
+              "type": "tool_use",
+              "id": "call_manual_read_b",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-parallel-read/workspace/b.txt"
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "line": 22,
+            "uuid": "331afc3a-c931-4492-ae75-557905c77296",
+            "parentUuid": "7e457f6a-8716-481d-b748-df93cab0f5ea",
+            "sourceToolAssistantUUID": "7e457f6a-8716-481d-b748-df93cab0f5ea",
+            "previousPhysicalUuid": "5093fd1a-3c8c-4792-98bf-35efd1a5b369",
+            "parentDiffersFromPreviousPhysicalUuid": true,
+            "physicalBlockSlot": 0,
+            "toolResultBlock": {
+              "tool_use_id": "call_manual_read_a",
+              "type": "tool_result",
+              "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+            },
+            "isErrorPresence": {
+              "present": false
+            },
+            "flagPresence": {},
+            "knownFlagsAbsent": [
+              "isMeta",
+              "agentId",
+              "isCompactSummary",
+              "isVisibleInTranscriptOnly",
+              "logicalParentUuid"
+            ]
+          },
+          {
+            "line": 23,
+            "uuid": "0d659f12-5154-454e-bf81-d5e586e017c1",
+            "parentUuid": "5093fd1a-3c8c-4792-98bf-35efd1a5b369",
+            "sourceToolAssistantUUID": "5093fd1a-3c8c-4792-98bf-35efd1a5b369",
+            "previousPhysicalUuid": "331afc3a-c931-4492-ae75-557905c77296",
+            "parentDiffersFromPreviousPhysicalUuid": true,
+            "physicalBlockSlot": 0,
+            "toolResultBlock": {
+              "tool_use_id": "call_manual_read_b",
+              "type": "tool_result",
+              "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\t"
+            },
+            "isErrorPresence": {
+              "present": false
+            },
+            "flagPresence": {},
+            "knownFlagsAbsent": [
+              "isMeta",
+              "agentId",
+              "isCompactSummary",
+              "isVisibleInTranscriptOnly",
+              "logicalParentUuid"
+            ]
+          }
+        ],
+        "nextStrictLinearRecordLine": 24,
+        "sourceResultOrder": [
+          "call_manual_read_a",
+          "call_manual_read_b"
+        ],
+        "noInterveningRecords": true,
+        "apiBlockIndicesAreNotPhysicalEventSlots": true
+      },
+      "diskEvidence": [
+        {
+          "file": "a.txt",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace/a.txt",
+          "fixturePath": "/fixture/native-parallel-read/workspace/a.txt",
+          "bytes": 37,
+          "sha256": "5ab6e262b0790dbfb7fd9db1263b1dc5f8c31dfdc71b773a38c5100aee4bf867",
+          "contentUtf8": "ATAPE_NATIVE_READ_A: amber lynx 204.\n",
+          "nativeReceiptContentEqualsDiskBytes": true
+        },
+        {
+          "file": "b.txt",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/workspace/b.txt",
+          "fixturePath": "/fixture/native-parallel-read/workspace/b.txt",
+          "bytes": 39,
+          "sha256": "a3d9266fd7943abadbd8cbc26d39b790acd0721d6238e4d1709d528cb56503e0",
+          "contentUtf8": "ATAPE_NATIVE_READ_B: violet crane 619.\n",
+          "nativeReceiptContentEqualsDiskBytes": true
+        }
+      ],
+      "controls": {
+        "restricted": true,
+        "safeMode": true,
+        "tools": [
+          "Read"
+        ],
+        "allowedTools": [
+          "Read"
+        ],
+        "permissionMode": "manual",
+        "permissionPrompts": "none",
+        "mcp": {
+          "mcpServers": {}
+        },
+        "noChrome": true,
+        "DISABLE_AUTO_COMPACT": "1",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+        "DISABLE_AUTOUPDATER": "1",
+        "transport": "127.0.0.1 deterministic Anthropic Messages SSE",
+        "authentication": "Fake authentication omitted from candidate material",
+        "realModel": false
+      },
+      "sessionId": "cf19053f-9c3c-49b7-8fce-461ae05d8294",
+      "nativeBinarySha256Before": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+      "nativeBinarySha256After": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+      "binaryHashEvidence": "Result/provenance files record the hash; RESEARCH.txt explicitly records matching before/after executable SHA. No executable was invoked for preparation.",
+      "sourceEvidenceFiles": [
+        {
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/provenance.json",
+          "bytes": 246,
+          "sha256": "66bf0b4ba8645f98c25ff93002623d1cc484b25a555d80f3cc83c0261eaa7715"
+        },
+        {
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/RESEARCH.txt",
+          "bytes": 8930,
+          "sha256": "ebc808314bc9b7ee378ee557bb42e367013b466ed0829a244e34b2307199c94a"
+        },
+        {
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/research.json",
+          "bytes": 37484,
+          "sha256": "bd5c9a46a652ad1108ad99dcf9d26d20fb7ae367c014736fe29a22e930abdf17"
+        },
+        {
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/probe.mjs",
+          "bytes": 9981,
+          "sha256": "3031f0fdd575d858e20c804d971ac1622e4a0187c5de331fb8806d52fa12b4da"
+        }
+      ],
+      "corroboratingExtract": {
+        "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/previous-manual-batch.json",
+        "bytes": 6640,
+        "sha256": "9518f966bb657f258ddfc2bafe837b539065ac0e381ec216edbd5c0ac8e67007"
+      },
+      "harnessSnapshotLimit": "The saved reusable harness text for the plan differs from persisted model text (\"Read the synthetic files\" versus \"Read the two synthetic files\"). It was edited for later cases; snapshot bytes/results/requests remain the authority for this invocation. Do not present this saved harness as an immutable exact reproduction of the recorded response.",
+      "nativeInvocations": [
+        {
+          "phase": "warmup",
+          "nativeResultFile": {
+            "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/warmup-result.json",
+            "bytes": 2618,
+            "sha256": "0fcced4ee8422ef98dc2fbac42c06ac17801b0b25c2d1378fcbf271f568ebba7"
+          },
+          "exitCode": 0,
+          "stderr": "",
+          "signal": null,
+          "controls": {
+            "DISABLE_AUTO_COMPACT": "1"
+          },
+          "commonArgumentOverrides": {
+            "systemPrompt": "Controlled synthetic source persistence fixture. Follow deterministic tool requests."
+          },
+          "sessionMode": "--resume",
+          "sessionIdArgument": "cf19053f-9c3c-49b7-8fce-461ae05d8294",
+          "prompt": "ATAPE_MANUAL_WARMUP: Confirm the synthetic context."
+        },
+        {
+          "phase": "toolturn",
+          "nativeResultFile": {
+            "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual/toolturn-result.json",
+            "bytes": 2646,
+            "sha256": "395c02df2f29805b5e895809586f2a1f7b8c8c49629c9d1f385eb84dbe0f4232"
+          },
+          "exitCode": 0,
+          "stderr": "",
+          "signal": null,
+          "controls": {
+            "DISABLE_AUTO_COMPACT": "1"
+          },
+          "commonArgumentOverrides": {
+            "systemPrompt": "Controlled synthetic source persistence fixture. Follow deterministic tool requests."
+          },
+          "sessionMode": "--resume",
+          "sessionIdArgument": "cf19053f-9c3c-49b7-8fce-461ae05d8294",
+          "prompt": "ATAPE_MANUAL_TOOLS: Read a.txt and b.txt once, then give two text blocks."
+        }
+      ],
+      "sampledBatchIdentity": {
+        "version": "2.1.263",
+        "isSidechain": false,
+        "sessionId": "cf19053f-9c3c-49b7-8fce-461ae05d8294",
+        "cwd": "/fixture/native-parallel-read/workspace",
+        "absentFlags": [
+          "isMeta",
+          "agentId",
+          "isCompactSummary",
+          "isVisibleInTranscriptOnly",
+          "logicalParentUuid"
+        ]
+      }
+    }
+  ],
+  "sourceRequests": [
+    {
+      "case": "tool-only",
+      "originalRequestCapture": {
+        "sourceFile": "/tmp/atape-claude-parallel-native.bGHpKD/requests.json",
+        "bytes": 19592,
+        "sha256": "7fc93fbb12d7fb14441929738f1dc6b3da4f6de1f947598e98c4f732ddd38885"
+      },
+      "selectedRequestIndices": [
+        1,
+        2,
+        4
+      ],
+      "completeSdkRequestsIncludedInCandidate": false
+    },
+    {
+      "case": "text-plan",
+      "originalRequestCapture": {
+        "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/requests.json",
+        "bytes": 116220,
+        "sha256": "a719853f0e749f7483271e466db2e32bccf036d25fbc3de027219a97988c1833"
+      },
+      "selectedRequestIndices": [
+        5,
+        6
+      ],
+      "completeSdkRequestsIncludedInCandidate": false
+    }
+  ],
+  "excludedScope": [
+    "More than two calls",
+    "Reversed or interleaved result order",
+    "Failed/async results",
+    "Non-Read tools",
+    "Child/Agent/Task execution",
+    "Arbitrary old-call parent exceptions",
+    "Auto six/eight-record copies",
+    "Compaction during a pending batch",
+    "Fork/rewind",
+    "General parallel wall-clock execution guarantees",
+    "Atomic source snapshots"
+  ],
+  "usageLimit": "Only persisted assistant API IDs count, using the latest physical revision. Split records repeat one API usage identity. Mock counters and CLI list-price cost estimates are not billing. Neither selected tool snapshot contains compaction, so it has no summarization call or missing summary usage; later compact snapshots are deliberately excluded.",
+  "selectedSourceRequests": {
+    "file": "source-requests.json",
+    "bytes": 17079,
+    "sha256": "c7632ed63109ef30b03354327e87febe5d510b76009ab6fe6bf9bba03be79dfa",
+    "derivation": "Explicit JSON subset; exact selected block metadata retained except declared path substitutions. SDK context/schema omitted."
+  },
+  "commonNativeArguments": [
+    "--restricted",
+    "--safe-mode",
+    "--tools",
+    "Read",
+    "--allowedTools",
+    "Read",
+    "--permission-mode",
+    "manual",
+    "--permission-prompts",
+    "none",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--no-chrome",
+    "--model",
+    "claude-sonnet-4-6",
+    "--effort",
+    "low",
+    "--system-prompt",
+    "Controlled synthetic persistence fixture. Follow deterministic read requests.",
+    "--print",
+    "--output-format",
+    "json"
+  ]
+}

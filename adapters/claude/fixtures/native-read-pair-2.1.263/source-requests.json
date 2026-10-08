@@ -1,0 +1,515 @@
+{
+  "kind": "derived-selected-tool-model-message-evidence",
+  "scope": "Relevant model text/tool blocks and original request/message/block indices only; no SDK system prompt or tool schema.",
+  "cases": [
+    {
+      "case": "tool-only",
+      "requests": [
+        {
+          "sourceRequestIndex": 1,
+          "phase": "tools",
+          "url": "/v1/messages?beta=true",
+          "responseKind": "two-tool-only-blocks",
+          "recordedResponseApiId": "msg_atape_parallel_mock_1",
+          "messages": [
+            {
+              "sourceMessageIndex": 0,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 2,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_PARALLEL_REQUEST: Read a.txt and b.txt once using the supplied Read tools.",
+                    "cache_control": {
+                      "type": "ephemeral"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "toolResultProof": {
+            "bothResultsOnceInOneUserContentArray": false,
+            "results": []
+          }
+        },
+        {
+          "sourceRequestIndex": 2,
+          "phase": "tools",
+          "url": "/v1/messages?beta=true",
+          "responseKind": "final",
+          "recordedResponseApiId": "msg_atape_parallel_mock_2",
+          "messages": [
+            {
+              "sourceMessageIndex": 0,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 2,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_PARALLEL_REQUEST: Read a.txt and b.txt once using the supplied Read tools."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 1,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "tool_use",
+                    "id": "call_parallel_read_a",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "/fixture/native-parallel-read/workspace/a.txt"
+                    }
+                  }
+                },
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "tool_use",
+                    "id": "call_parallel_read_b",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "/fixture/native-parallel-read/workspace/b.txt"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 2,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "tool_use_id": "call_parallel_read_a",
+                    "type": "tool_result",
+                    "content": "1\tATAPE_PARALLEL_READ_A: amber lynx 204.\n2\t"
+                  }
+                },
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "tool_use_id": "call_parallel_read_b",
+                    "type": "tool_result",
+                    "content": "1\tATAPE_PARALLEL_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999962 tokens left</total_tokens>\n</system-reminder>",
+                    "cache_control": {
+                      "type": "ephemeral"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "toolResultProof": {
+            "bothResultsOnceInOneUserContentArray": true,
+            "results": [
+              {
+                "toolId": "call_parallel_read_a",
+                "sourceMessageIndex": 2,
+                "sourceBlockIndex": 0,
+                "sourceResultTextExact": true,
+                "sourceResultTextAfterTrimIsPrefix": true,
+                "actualDiskMarkerPresent": true,
+                "extraContextSuffix": "\t",
+                "cacheControl": null
+              },
+              {
+                "toolId": "call_parallel_read_b",
+                "sourceMessageIndex": 2,
+                "sourceBlockIndex": 1,
+                "sourceResultTextExact": false,
+                "sourceResultTextAfterTrimIsPrefix": true,
+                "actualDiskMarkerPresent": true,
+                "extraContextSuffix": "\n\n<system-reminder>\n<total_tokens>14999962 tokens left</total_tokens>\n</system-reminder>",
+                "cacheControl": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "sourceRequestIndex": 4,
+          "phase": "resume",
+          "url": "/v1/messages?beta=true",
+          "responseKind": "resume",
+          "recordedResponseApiId": "msg_atape_parallel_mock_3",
+          "messages": [
+            {
+              "sourceMessageIndex": 0,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 2,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_PARALLEL_REQUEST: Read a.txt and b.txt once using the supplied Read tools."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 1,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "tool_use",
+                    "id": "call_parallel_read_a",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "/fixture/native-parallel-read/workspace/a.txt"
+                    }
+                  }
+                },
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "tool_use",
+                    "id": "call_parallel_read_b",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "/fixture/native-parallel-read/workspace/b.txt"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 2,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "tool_use_id": "call_parallel_read_a",
+                    "type": "tool_result",
+                    "content": "1\tATAPE_PARALLEL_READ_A: amber lynx 204.\n2\t"
+                  }
+                },
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "tool_use_id": "call_parallel_read_b",
+                    "type": "tool_result",
+                    "content": "1\tATAPE_PARALLEL_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999962 tokens left</total_tokens>\n</system-reminder>"
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 3,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_PARALLEL_FINAL: actual Read returned amber lynx 204 and violet crane 619."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 4,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_PARALLEL_RESUME_REQUEST: Confirm both synthetic reads remain complete without invoking more tools.",
+                    "cache_control": {
+                      "type": "ephemeral"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "toolResultProof": {
+            "bothResultsOnceInOneUserContentArray": true,
+            "results": [
+              {
+                "toolId": "call_parallel_read_a",
+                "sourceMessageIndex": 2,
+                "sourceBlockIndex": 0,
+                "sourceResultTextExact": true,
+                "sourceResultTextAfterTrimIsPrefix": true,
+                "actualDiskMarkerPresent": true,
+                "extraContextSuffix": "\t",
+                "cacheControl": null
+              },
+              {
+                "toolId": "call_parallel_read_b",
+                "sourceMessageIndex": 2,
+                "sourceBlockIndex": 1,
+                "sourceResultTextExact": false,
+                "sourceResultTextAfterTrimIsPrefix": true,
+                "actualDiskMarkerPresent": true,
+                "extraContextSuffix": "\n\n<system-reminder>\n<total_tokens>14999962 tokens left</total_tokens>\n</system-reminder>",
+                "cacheControl": null
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "case": "text-plan",
+      "requests": [
+        {
+          "sourceRequestIndex": 5,
+          "phase": "toolturn",
+          "url": "/v1/messages?beta=true",
+          "responseKind": "toolcalls",
+          "recordedResponseApiId": null,
+          "messages": [
+            {
+              "sourceMessageIndex": 0,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 2,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_SEED: Remember cobalt heron 482."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 1,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_SEED: cobalt heron 482."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 2,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_WARMUP: Confirm the synthetic context."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 3,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_WARMUP: cobalt heron 482."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 4,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_TOOLS: Read a.txt and b.txt once, then give two text blocks.",
+                    "cache_control": {
+                      "type": "ephemeral"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "toolResultProof": {
+            "bothResultsOnceInOneUserContentArray": false,
+            "results": []
+          }
+        },
+        {
+          "sourceRequestIndex": 6,
+          "phase": "toolturn",
+          "url": "/v1/messages?beta=true",
+          "responseKind": "tool-final",
+          "recordedResponseApiId": null,
+          "messages": [
+            {
+              "sourceMessageIndex": 0,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 2,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_SEED: Remember cobalt heron 482."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 1,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_SEED: cobalt heron 482."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 2,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_WARMUP: Confirm the synthetic context."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 3,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_WARMUP: cobalt heron 482."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 4,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_TOOLS: Read a.txt and b.txt once, then give two text blocks."
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 5,
+              "role": "assistant",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "type": "text",
+                    "text": "ATAPE_MANUAL_TOOL_PLAN: Read the two synthetic files."
+                  }
+                },
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "type": "tool_use",
+                    "id": "call_manual_read_a",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "/fixture/native-parallel-read/workspace/a.txt"
+                    }
+                  }
+                },
+                {
+                  "sourceBlockIndex": 2,
+                  "block": {
+                    "type": "tool_use",
+                    "id": "call_manual_read_b",
+                    "name": "Read",
+                    "input": {
+                      "file_path": "/fixture/native-parallel-read/workspace/b.txt"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "sourceMessageIndex": 6,
+              "role": "user",
+              "blocks": [
+                {
+                  "sourceBlockIndex": 0,
+                  "block": {
+                    "tool_use_id": "call_manual_read_a",
+                    "type": "tool_result",
+                    "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+                  }
+                },
+                {
+                  "sourceBlockIndex": 1,
+                  "block": {
+                    "tool_use_id": "call_manual_read_b",
+                    "type": "tool_result",
+                    "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>",
+                    "cache_control": {
+                      "type": "ephemeral"
+                    }
+                  }
+                }
+              ]
+            }
+          ],
+          "toolResultProof": {
+            "bothResultsOnceInOneUserContentArray": true,
+            "results": [
+              {
+                "toolId": "call_manual_read_a",
+                "sourceMessageIndex": 6,
+                "sourceBlockIndex": 0,
+                "sourceResultTextExact": true,
+                "sourceResultTextAfterTrimIsPrefix": true,
+                "actualDiskMarkerPresent": true,
+                "extraContextSuffix": "\t",
+                "cacheControl": null
+              },
+              {
+                "toolId": "call_manual_read_b",
+                "sourceMessageIndex": 6,
+                "sourceBlockIndex": 1,
+                "sourceResultTextExact": false,
+                "sourceResultTextAfterTrimIsPrefix": true,
+                "actualDiskMarkerPresent": true,
+                "extraContextSuffix": "\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>",
+                "cacheControl": {
+                  "type": "ephemeral"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
