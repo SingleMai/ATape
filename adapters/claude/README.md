@@ -132,6 +132,19 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   The existing pending-answer checkpoint requires the real first text answer;
   later text blocks/resumes use ordinary chaining and latest API usage. Only
   one first-slug round per native tool layout was sampled.
+- Native manual root Read file reinjection on Claude Code 2.1.263: the selected
+  text-plan/two-Read turn ends in two final text records, and manual compact
+  preserves only that final pair. After summary/command/stdout controls, file B
+  then file A exactly reproduce the entire corresponding successful receipt
+  objects; original input, receipt path and filename match literally. Current
+  source-prefix proof binds the adjacent original turn and every control to the
+  selected root. Both files commit together Raw-only and keep compaction in
+  resume, allowing compact EOF before the next process. Its internal Meta Continue
+  and adjacent zero-token synthetic bridge form a second Raw-only group, proved
+  against the already committed pair. Neither first slot can ACK alone; the
+  file branch cannot skip or duplicate Meta. Old no-file direct stdout bridges
+  remain supported through actual-leaf proof. Real subsequent turns retain the
+  existing root, Event/usage/Raw identities and projection-4 cursor schema.
 
 ## Explicit limits
 
@@ -181,8 +194,24 @@ eight/ten-record group has a 640 KiB total cap (eight records imply at most
 512 KiB). The whole group must fit fresh requested source capacity; remaining
 space exhaustion defers it. Ordinary 16 MiB Read admission does not imply its
 larger result fits this replay witness policy. Existing-slug/repeated tool rounds,
-no-plan layouts, other/more/error/async results and file reinjection need further
-profiles. Text replay retains its separate 256 KiB policies and repeated scope.
+no-plan layouts and other/more/error/async results need further profiles. Text
+replay retains its separate 256 KiB policies and repeated scope.
+Manual Read reinjection selects only one first-slug text-plan/exact-two-successful
+Read turn, its final text pair and reverse-order two-file chain. Each selected
+original/control/file/bridge frame fits 64 KiB including LF, and each file-pair or
+Meta/bridge group fits 128 KiB. The current-prefix pass retains ten bounded
+original frames and five control frames; oversized unrelated earlier records
+fall out of the ring. Both groups must fit fresh source capacity even with Raw
+off; remaining-space exhaustion defers them whole. An unknown first partial
+line keeps ordinary 16 MiB scanning; recognized admission and subsequent slots
+use the smaller profile cap. No-file manual profiles retain ordinary limits.
+Single/no-plan/other/error/async tools, more files, changed/repeated reinjection,
+children and broader manual/automatic composition remain unsupported. The Adapter
+uses complete stored receipt equality, including unknown values; it never opens
+referenced files or normalizes literal paths to supply evidence.
+Active compaction checkpoints require zero partial Event progress. A damaged
+nonzero Event skip is rejected at EOF, partial input and blank lines; compaction
+control records cannot supply a legitimate pending Event.
 All current-prefix proofs cost O(committed prefix) I/O/hash with bounded memory.
 Discovery scans at most 10,000 directory entries. Metadata-only cursors are
 compressed above 16,000 bytes, with a 1 MiB wire / 16 MiB expanded bound. Capacity
@@ -211,6 +240,11 @@ Global discovery/cursor capacity, corrupt checkpoints and Host/transport failure
 still fail the job. The single-file override stays fail-fast except that unknown
 Git attribution is reported as partial coverage. Update the Host and
 Adapter together to retain the new optional diagnostic fields.
+
+An unsupported appended record can stop parsing before Raw backfill of an older
+eligible prefix. Previously delivered receipts remain valid; supporting the new
+shape or restoring its exact captured prefix allows collection to resume.
+Enabling Raw does not bypass an unsupported tail.
 
 The legacy Host's source-mutation/concurrent-writer and lost-checkpoint
 recovery limitations still apply. Use a single Collector and preserve its state.
@@ -272,6 +306,12 @@ synthetic content and actual native source persistence:
   ten snapshots in two independent Sessions with six/eight exact first-slug
   copies and later real answers/resumes. Single executes only Read a.txt;
   inherited HOME was not recorded in either case.
+- [Manual Read file reinjection](fixtures/native-manual-read-reinjection-2.1.263/README.md):
+  six native snapshots with two actual successful Reads, retained final text pair,
+  reverse-order file reinjection, internal Meta/synthetic bridge and two real
+  continuations. Entire reinjected content objects equal the original receipts.
+  Config/workspace were isolated; inherited HOME was not recorded. Derived cuts
+  are append boundaries, not additional native captures.
 
 Mock usage counters establish projection/deduplication, not billing. Compaction
 responses have no assistant JSONL usage, so their actual usage remains unavailable.

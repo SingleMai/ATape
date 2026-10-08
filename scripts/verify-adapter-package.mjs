@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
+import { createHash } from "node:crypto"
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -92,6 +93,7 @@ try {
     await verifyClaudeAutomaticTextReplay(adapter, context, request.limits)
     await verifyClaudeReadPair(adapter, context, request.limits)
     await verifyClaudeAutomaticReadReplay(adapter, context, request.limits)
+    await verifyClaudeManualReadReinjection(adapter, context, request.limits)
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -732,6 +734,231 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
         assert.ok(!events.some(event => event.sourceEventId.startsWith(`${uuid}:`)))
       }
     }
+  } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
+}
+
+async function verifyClaudeManualReadReinjection(adapter, context, limits) {
+  const fixtureDirectory = join(packageRoot, "fixtures", "native-manual-read-reinjection-2.1.263")
+  const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
+  const { sessionId, fixtureCwd } = provenance
+  const selectedHome = join(temporaryRoot, "manual-read-reinjection")
+  const directory = join(selectedHome, "projects", "fixture"), sourceFile = join(directory, `${sessionId}.jsonl`)
+  await mkdir(directory, { recursive: true })
+  process.env.ATAPE_CLAUDE_HOME = selectedHome
+  const relocate = source => source.replaceAll(JSON.stringify(fixtureCwd).slice(1, -1),
+    JSON.stringify(projectDirectory).slice(1, -1))
+  const prefix = (source, line) => source.split("\n").slice(0, line).join("\n") + "\n"
+  const digest = source => createHash("sha256").update(source).digest("hex")
+  const pagedLimits = { ...limits, eventsPerObservation: 1 }
+  let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
+  let testedCuts = 0, testedPartials = 0, receiptRecoveries = 0
+  const rawProgress = new Map(), events = [], usage = new Map()
+  const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
+  const appendSource = async source => {
+    assert.ok(source.startsWith(previousSource), "Manual reinjection must retain the entire native prefix")
+    if (!previousSource) await writeFile(sourceFile, source)
+    else await appendFile(sourceFile, source.slice(previousSource.length))
+    previousSource = source
+  }
+  const assertTotals = (expected, committedSource) => {
+    assert.equal(events.length, expected.uniqueRealEventCount)
+    assert.equal(usage.size, expected.distinctPersistedRealApiUsageCount)
+    assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), expected.inputTokens)
+    assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), expected.outputTokens)
+    assert.deepEqual(events.map(event => event.sourceEventId),
+      provenance.logicalRealEventSourceIdsAtFinalSnapshot.slice(0, expected.uniqueRealEventCount))
+    const committedLines = committedSource.split("\n").length - 1
+    const expectedUsage = Object.entries(provenance.persistedRealApiUsageAtFinalSnapshot)
+      .filter(([, value]) => value.line <= committedLines)
+    assert.deepEqual([...usage.keys()].sort(), expectedUsage.map(([id]) => id).sort())
+    for (const [apiId, value] of expectedUsage) {
+      const sample = usage.get(apiId)
+      assert.equal(sample.model, value.model)
+      assert.equal(sample.inputTokens, value.inputTokens)
+      assert.equal(sample.outputTokens, value.outputTokens)
+      assert.equal(sample.revision, Buffer.byteLength(prefix(committedSource, value.line)),
+        "Internal files/Meta/bridge must not change a real API's latest source revision")
+    }
+  }
+  const recoverAdvancedRawReceipts = async (page, source, groupLines) => {
+    assert.ok(page.observations.every(observation => observation.events.length === 0 && observation.usage.length === 0))
+    const offered = page.observations.flatMap(observation => observation.rawSegments)
+    assert.ok(offered.length > 0, "A proved group must offer eligible source bytes before parser ACK")
+    assert.equal(offered[0].sourceOffset, Buffer.byteLength(rawContent))
+    const eligibleEnd = offered.at(-1).sourceOffset + Buffer.byteLength(offered.at(-1).content)
+    let offeredOffset = offered[0].sourceOffset
+    for (const raw of offered) {
+      assert.equal(raw.sourceOffset, offeredOffset)
+      assert.equal(raw.content, Buffer.from(source).subarray(offeredOffset,
+        offeredOffset + Buffer.byteLength(raw.content)).toString("utf8"))
+      offeredOffset += Buffer.byteLength(raw.content)
+    }
+    for (const line of groupLines) {
+      const start = Buffer.byteLength(prefix(source, line - 1))
+      const offset = start + 32
+      assert.ok(offset > Buffer.byteLength(rawContent) && offset < eligibleEnd)
+      const receipt = { sourceSessionId: sessionId, sourceObjectId, sourceGeneration,
+        sourceOffset: offset, finalized: false }
+      let recoveredCursor = cursor, recoveredContent = Buffer.from(source).subarray(0, offset).toString("utf8")
+      let recoveredReceipt = receipt, finished = false
+      for (let index = 0; index < limits.pagesPerCycle; index++) {
+        // Raw uploads can be durable before the Host commits the returned parser checkpoint.
+        const request = () => collectInstalled(adapter, context, recoveredCursor, [recoveredReceipt], pagedLimits)
+        const recovered = await request()
+        assert.deepEqual(await request(), recovered, "Old parser plus advanced Raw receipt must retry exactly after reopening")
+        assert.equal(recovered.sourceFailures, undefined)
+        for (const observation of recovered.observations) {
+          assert.deepEqual(observation.events, [])
+          assert.deepEqual(observation.usage, [])
+          for (const raw of observation.rawSegments) {
+            assert.equal(raw.sourceObjectId, sourceObjectId)
+            assert.equal(raw.sourceGeneration, sourceGeneration)
+            assert.equal(raw.sourceOffset, Buffer.byteLength(recoveredContent))
+            recoveredContent += raw.content
+            recoveredReceipt = { ...receipt, sourceOffset: Buffer.byteLength(recoveredContent), finalized: raw.final }
+          }
+        }
+        recoveredCursor = recovered.nextCursor
+        if (!recovered.hasMore) { finished = true; break }
+      }
+      assert.ok(finished, "Advanced group receipt recovery must finish within its page budget")
+      assert.equal(recoveredContent, source)
+      const idle = await collectInstalled(adapter, context, recoveredCursor, [recoveredReceipt], pagedLimits)
+      assert.deepEqual(idle.observations, [])
+      assert.equal(idle.nextCursor, recoveredCursor)
+      assert.equal(idle.hasMore, false)
+      assert.equal(idle.sourceFailures, undefined)
+      assert.equal(idle.progress.pendingCanonicalSessions, 0)
+      assert.equal(idle.progress.pendingRawBytes, 0)
+      receiptRecoveries++
+    }
+  }
+  const drain = async (expected, source, committedSource, pending, incompleteGroup = false, recoveryLines) => {
+    const beforeCursor = cursor, beforeEvents = [...events], beforeUsage = [...usage]
+    let finished = false
+    for (let index = 0; index < limits.pagesPerCycle; index++) {
+      const page = await collect()
+      assert.deepEqual(await collect(), page, "Manual reinjection retry must be identical in a new installed runtime")
+      assert.equal(page.sourceFailures, undefined)
+      assert.equal(typeof page.nextCursor, "string")
+      if (incompleteGroup) assert.deepEqual(page.observations, [], "An incomplete file/Meta group cannot acknowledge unproved bytes")
+      if (recoveryLines && index === 0) await recoverAdvancedRawReceipts(page, source, recoveryLines)
+      for (const observation of page.observations) {
+        assert.equal(observation.session.sourceSessionId, sessionId)
+        assert.deepEqual(observation.threads.map(thread => thread.sourceThreadId), ["root"])
+        assert.ok(observation.events.length <= 1)
+        assert.ok(Buffer.byteLength(JSON.stringify({ ...observation, rawSegments: [] })) <= limits.canonicalBytesPerObservation)
+        for (const event of observation.events) {
+          assert.equal(event.sourceThreadId, "root")
+          assert.ok(!events.some(previous => previous.sourceEventId === event.sourceEventId), "Internal context cannot replay acknowledged Events")
+          events.push(event)
+        }
+        for (const sample of observation.usage) {
+          assert.equal(sample.sourceThreadId, "root")
+          assert.notEqual(sample.model, "<synthetic>")
+          const previous = usage.get(sample.sourceUsageId)
+          assert.ok(!previous || sample.revision > previous.revision)
+          usage.set(sample.sourceUsageId, sample)
+        }
+        for (const raw of observation.rawSegments) {
+          sourceObjectId ??= raw.sourceObjectId
+          sourceGeneration ??= raw.sourceGeneration
+          assert.equal(raw.sourceObjectId, sourceObjectId)
+          assert.equal(raw.sourceGeneration, sourceGeneration)
+          assert.equal(raw.sourceOffset, Buffer.byteLength(rawContent))
+          rawContent += raw.content
+          rawProgress.set(raw.sourceObjectId, { sourceSessionId: sessionId, sourceObjectId: raw.sourceObjectId,
+            sourceGeneration: raw.sourceGeneration, sourceOffset: Buffer.byteLength(rawContent), finalized: raw.final })
+        }
+      }
+      cursor = page.nextCursor
+      if (!page.hasMore) { finished = true; break }
+    }
+    assert.ok(finished, "Installed manual reinjection did not finish within its page budget")
+    assert.deepEqual(events.slice(0, beforeEvents.length), beforeEvents)
+    if (incompleteGroup) {
+      assert.equal(cursor, beforeCursor)
+      assert.deepEqual([...usage], beforeUsage)
+    }
+    assertTotals(expected, committedSource)
+    assert.equal(rawContent, committedSource)
+    assert.ok(events.every(event => event.rawRef.sourceObjectId === sourceObjectId))
+    const idle = await collect()
+    assert.deepEqual(await collect(), idle)
+    assert.deepEqual(idle.observations, [])
+    assert.equal(idle.nextCursor, cursor)
+    assert.equal(idle.hasMore, false)
+    assert.equal(idle.sourceFailures, undefined)
+    assert.equal(idle.progress.pendingCanonicalSessions, pending)
+    assert.equal(idle.progress.pendingRawBytes, Buffer.byteLength(source) - Buffer.byteLength(committedSource))
+  }
+  const partialSlot = async (source, line, expected, committedLine) => {
+    const record = source.split("\n")[line - 1]
+    const partial = prefix(source, line - 1) + record.slice(0, Math.floor(record.length / 2))
+    await appendSource(partial)
+    await drain(expected, partial, prefix(source, committedLine), 1, true)
+    testedPartials++
+  }
+  try {
+    for (const snapshot of provenance.nativeSnapshots) {
+      const recorded = await readFile(join(fixtureDirectory, snapshot.file), "utf8")
+      assert.equal(Buffer.byteLength(recorded), snapshot.bytes)
+      assert.equal(digest(recorded), snapshot.sha256)
+      const source = relocate(recorded)
+      for (const cut of provenance.derivedCuts.filter(cut => cut.sourcePhase === snapshot.phase)) {
+        const recordedCut = prefix(recorded, cut.throughLine)
+        assert.equal(Buffer.byteLength(recordedCut), cut.bytes)
+        assert.equal(digest(recordedCut), cut.sha256)
+        if (cut.label === "fileB" || cut.label === "fileA") {
+          await partialSlot(source, cut.throughLine, cut.expectedLogicalData, 36)
+        }
+        if (cut.label === "meta-continue") {
+          // UUID-less native queues are committed before the next atomic group.
+          const queues = prefix(source, 41)
+          await appendSource(queues)
+          await drain(cut.expectedLogicalData, queues, queues, 0)
+          await partialSlot(source, 42, cut.expectedLogicalData, 41)
+        }
+        if (cut.label === "synthetic-bridge") await partialSlot(source, 43, cut.expectedLogicalData, 41)
+        const cutSource = prefix(source, cut.throughLine)
+        const incomplete = cut.label === "fileB" || cut.label === "meta-continue"
+        const committed = prefix(source, cut.label === "fileB" ? 36 : cut.label === "meta-continue" ? 41 : cut.throughLine)
+        const pending = ["B", "S", "caveat", "command", "fileB", "meta-continue"].includes(cut.label) ? 1 : 0
+        await appendSource(cutSource)
+        await drain(cut.expectedLogicalData, cutSource, committed, pending, incomplete,
+          cut.label === "fileA" ? [37, 38] : cut.label === "synthetic-bridge" ? [42, 43] : undefined)
+        testedCuts++
+      }
+      await appendSource(source)
+      await drain(snapshot.expectedLogicalData, source, source, 0)
+    }
+    const finalRecords = previousSource.trimEnd().split("\n").map(line => JSON.parse(line))
+    for (const relation of provenance.fileReinjection) {
+      const callRecord = finalRecords.find(record => record.uuid === relation.earlierOwnCallUuid)
+      const resultRecord = finalRecords.find(record => record.uuid === relation.earlierResultUuid)
+      const call = events.find(event => event.sourceEventId === `${callRecord.uuid}:0`)
+      const result = events.find(event => event.sourceEventId === `${resultRecord.uuid}:0`)
+      assert.equal(call.update.sessionUpdate, "tool_call")
+      assert.equal(call.update.toolCallId, callRecord.message.content[0].id)
+      assert.deepEqual(call.update.rawInput, callRecord.message.content[0].input)
+      assert.equal(result.update.sessionUpdate, "tool_call_update")
+      assert.equal(result.update.toolCallId, call.update.toolCallId)
+      assert.equal(result.update.status, "completed")
+      assert.equal(result.update.rawOutput, resultRecord.message.content[0].content)
+      assert.ok(!events.some(event => event.sourceEventId.startsWith(`${relation.uuid}:`)))
+    }
+    for (const marker of ["ATAPE_MANUAL_SUMMARY", "<command-name>/compact", "Continue from where you left off.", "No response requested."]) {
+      assert.ok(rawContent.includes(marker))
+      assert.ok(!JSON.stringify([events, [...usage.values()]]).includes(marker), `${marker} must remain internal Raw context`)
+    }
+    assert.ok(!usage.has("msg_atape_manual_mock_5"))
+    assert.ok(!usage.has(provenance.firstResumeBridge.syntheticMessageId))
+    assert.equal(testedCuts, 13)
+    assert.equal(testedPartials, 4)
+    assert.equal(receiptRecoveries, 4)
+    assert.equal(events.length, 16)
+    assert.equal(usage.size, 6)
+    process.stdout.write("Verified native manual Read reinjection: 6 snapshots, 13 cuts, 4 partial slots, 4 advanced Raw receipts; 16 Events, 6 API usage IDs, 188/90 tokens\n")
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 

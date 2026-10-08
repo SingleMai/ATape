@@ -837,6 +837,133 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		last := fixtureCase.stages[len(fixtureCase.stages)-1]
 		readRetained = append(readRetained, readRetention{fixtureCase.sessionID, fixtureCase.sourceID, last.events, last.count, last.input, last.output, archive, contents})
 	}
+	// Continue the existing native text-plan Read Session through manual compact
+	// and file reinjection. Partial first slots remain unacknowledged; each
+	// complete group and every later real turn crosses a fresh installed daemon.
+	manualReadFiles := map[string]string{pairPlanID + ".jsonl": filepath.Join(sourceDirectory, pairPlanID+".jsonl")}
+	manualReadPrevious := read(pairPlanSession, "root", 12)
+	manualReadArchive := assertSourceRaw(pairPlanSession, manualReadFiles)
+	var manualReadLatest snapshot
+	for _, stage := range []struct {
+		phase                              string
+		events, count, added, pending, raw int
+		input, output                      int64
+		eligibleLine                       int
+		idle                               bool
+	}{
+		{"boundary", 12, 4, 0, 1, 1, 130, 64, 0, false},
+		{"summary", 12, 4, 0, 1, 1, 130, 64, 0, false},
+		{"caveat", 12, 4, 0, 1, 1, 130, 64, 0, false},
+		{"command", 12, 4, 0, 1, 1, 130, 64, 0, false},
+		{"stdout", 12, 4, 0, 0, 1, 130, 64, 0, true},
+		{"file-first", 12, 4, 0, 1, 0, 130, 64, 36, true},
+		{"files", 12, 4, 0, 0, 1, 130, 64, 0, true},
+		{"bookkeeping", 12, 4, 0, 0, 1, 130, 64, 0, false},
+		{"meta", 12, 4, 0, 1, 0, 130, 64, 41, true},
+		{"bridge", 12, 4, 0, 0, 1, 130, 64, 0, true},
+		{"user", 13, 4, 1, 0, 1, 130, 64, 0, false},
+		{"continue", 14, 5, 1, 0, 1, 159, 77, 0, false},
+		{"secondcontinue", 16, 6, 2, 0, 1, 188, 90, 0, true},
+	} {
+		phase := "manual-read-" + stage.phase
+		capture := run(phase)
+		source, err := os.ReadFile(manualReadFiles[pairPlanID+".jsonl"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		eligible := source
+		if stage.eligibleLine > 0 {
+			end := 0
+			for line := 0; line < stage.eligibleLine; line++ {
+				newline := bytes.IndexByte(source[end:], '\n')
+				if newline < 0 {
+					t.Fatal("Claude manual Read expected complete prefix is missing")
+				}
+				end += newline + 1
+			}
+			eligible = source[:end]
+		}
+		pendingRaw := int64(len(source) - len(eligible))
+		assertProgress := func(current snapshot) {
+			t.Helper()
+			if current.InstallationID != initial.InstallationID || len(current.SourceFailures) != 0 || current.Progress == nil ||
+				current.Progress.PendingCanonicalSessions != stage.pending || current.Progress.PendingRawBytes != pendingRaw {
+				t.Fatalf("Claude manual Read %s lost progress: %+v want pending=%d Raw=%d", phase, current.Progress, stage.pending, pendingRaw)
+			}
+		}
+		assertProgress(capture)
+		if capture.CanonicalEvents != stage.added || capture.RawChunks != stage.raw {
+			t.Fatalf("Claude manual Read %s events=%d want=%d Raw=%d want=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks, stage.raw)
+		}
+		if stage.raw == 0 && (capture.Cursor != manualReadLatest.Cursor || capture.Observations != 0 || capture.CanonicalBatches != 0 || !bytes.Equal(capture.RawObjects, manualReadLatest.RawObjects)) {
+			t.Fatalf("Claude manual Read %s acknowledged an incomplete atomic group", phase)
+		}
+		current := read(pairPlanSession, "root", stage.events)
+		oldJSON, _ := json.Marshal(manualReadPrevious.Events)
+		prefixJSON, _ := json.Marshal(current.Events[:len(manualReadPrevious.Events)])
+		if !bytes.Equal(oldJSON, prefixJSON) {
+			t.Fatalf("Claude manual Read %s replayed or changed old Reader Events", phase)
+		}
+		usage(pairPlanSession, stage.count, stage.input, stage.output)
+		archive, contents := readRaw(pairPlanSession)
+		if len(archive.Objects) != 1 || len(manualReadArchive.Objects) != 1 || archive.Objects[0].ObjectID != manualReadArchive.Objects[0].ObjectID ||
+			contents[pairPlanID+".jsonl"] != string(eligible) {
+			t.Fatalf("Claude manual Read %s changed Raw identity or acknowledged unproved bytes", phase)
+		}
+		for _, control := range []string{"ATAPE_MANUAL_SUMMARY:", "Continue from where you left off.", "No response requested.", "local-command", "command-name"} {
+			for _, event := range current.Events {
+				if strings.Contains(event.Text, control) {
+					t.Fatalf("Claude manual Read %s emitted internal context as a conversation Event", phase)
+				}
+			}
+			if len(search(control).Results) != 0 {
+				t.Fatalf("Claude manual Read %s indexed internal context: %s", phase, control)
+			}
+		}
+		if stage.idle {
+			idle := run(phase + "-idle")
+			assertProgress(idle)
+			if idle.Cursor != capture.Cursor || idle.Observations != 0 || idle.CanonicalEvents != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 || !bytes.Equal(idle.RawObjects, capture.RawObjects) {
+				t.Fatalf("Claude manual Read %s idle restart changed checkpoint or Raw receipts", phase)
+			}
+			usage(pairPlanSession, stage.count, stage.input, stage.output)
+		}
+		manualReadPrevious, manualReadLatest = current, capture
+	}
+	for _, expected := range []struct {
+		term  string
+		count int
+	}{{"ATAPE_MANUAL_TOOLS:", 1}, {"ATAPE_MANUAL_TOOL_PLAN:", 1}, {"ATAPE_MANUAL_TOOL_FINAL_A:", 1}, {"ATAPE_MANUAL_TOOL_FINAL_B:", 1},
+		{"ATAPE_MANUAL_CONTINUE:", 2}, {"ATAPE_MANUAL_SECOND_CONTINUE:", 1}, {"ATAPE_MANUAL_SECONDCONTINUE:", 1}} {
+		hits := search(expected.term)
+		if len(hits.Results) != expected.count {
+			t.Fatalf("Claude manual Read duplicated reinjected context or lost real text: %s %+v", expected.term, hits.Results)
+		}
+		for _, hit := range hits.Results {
+			var anchored conversation.Conversation
+			decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+pairPlanSession+"?thread=root&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+			found := false
+			for _, event := range anchored.Events {
+				found = found || event.ID == hit.EventID && strings.Contains(event.Text, expected.term)
+			}
+			if hit.SessionID != pairPlanSession || hit.ThreadID != "root" || anchored.Session.ID != pairPlanSession || anchored.Thread.ID != "root" || !found {
+				t.Fatal("Claude manual Read Search anchor lost its exact real Event")
+			}
+		}
+	}
+	for _, term := range []string{"call_manual_read_", "ATAPE_NATIVE_READ_A:", "ATAPE_NATIVE_READ_B:"} {
+		if len(search(term).Results) != 0 {
+			t.Fatal("Claude manual file reinjection exposed tool values in Search")
+		}
+	}
+	// The same source already had a retention entry before compact. Replace its
+	// measured final state so deletion verifies the newly captured continuation.
+	for i := range readRetained {
+		if readRetained[i].sourceID == pairPlanID {
+			archive, contents := readRaw(pairPlanSession)
+			readRetained[i] = readRetention{pairPlanSession, pairPlanID, 16, 6, 188, 90, archive, contents}
+		}
+	}
 	compact := run("compact")
 	if compact.CanonicalEvents != 0 || compact.RawChunks != 1 {
 		t.Fatal("Claude compact controls created conversation Events or lost Raw")
