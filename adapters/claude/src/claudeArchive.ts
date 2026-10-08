@@ -306,6 +306,17 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       - Buffer.byteLength(JSON.stringify(familyThreads(family)))
     let canonicalLimit = payloadLimit(delegated?.children ?? [...children.values()])
     let calls = new Map(state.calls.map(([id, name, uuid]) => [id, { name, uuid }]))
+    let adoptedPair = false
+    const reversePending = state.readPair && (state.readPair.secondCallUuid === state.seen.at(-3) ||
+      currentReadCalls([...seen].slice(0, -1), calls) && await plannedReadHint(handle, at, true, request.signal))
+    if (reversePending)
+      await reverseReadPair(handle, at, hash.copy().digest("hex"), root, [...seen], calls, request.signal, state.readPair)
+    else if (!delegated && !state.readPair && !state.compaction && !state.autoText &&
+      currentReadCalls([...seen].slice(0, -1), calls) && await plannedReadHint(handle, at, true, request.signal)) {
+      if (state.eventSkip !== 0) fail("cursor", "Claude reverse Read checkpoint contains uncommitted Event progress.")
+      state = { ...state, readPair: await reverseReadPair(handle, at, hash.copy().digest("hex"), root, [...seen], calls, request.signal) }
+      adoptedPair = true
+    }
     if (state.autoText && state.lastUuid !== state.autoText.summaryUuid)
       await repeatedReadWitness(handle, at, hash.copy().digest("hex"), root, [...seen], calls, "file", request.signal, state.autoText)
     const generation = digest(Buffer.from(JSON.stringify(delegated ? [sessionId, origin, root.uuid, delegated.child.agentId] : [sessionId, origin, root.uuid])))
@@ -314,8 +325,11 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     const usage = new Map<string, AdapterUsage>()
     const rawProgress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId && p.sourceGeneration === generation)
     const acknowledged = rawProgress?.sourceOffset ?? 0
-    let rawBytes = 0, eventBytes = 0, partial = false, hasMore = false, approvedFileAnswer = false
-    for await (const line of readRecords(handle, at, before.size, request.signal)) {
+    let rawBytes = 0, eventBytes = 0, partial = false, hasMore = adoptedPair && at < before.size, approvedFileAnswer = false
+    // A previous producer may have ACKed the linear first reverse result. Its
+    // adoption publishes only pending metadata, then validates the next result
+    // on a separate page, including when that next record is already present.
+    for await (const line of readRecords(handle, at, adoptedPair ? at : before.size, request.signal)) {
       if (line.content.length + rawBytes > Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation)) {
         if (rawBytes === 0 && events.length === 0) fail("limit", "A Claude JSONL record exceeds the requested Raw page limit.")
         hasMore = true; break
@@ -375,6 +389,14 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       let nextReadPair: ReadPair | undefined
       if (state.readPair) {
         verifyReadReceipt(record, root, state.readPair.secondCallUuid, state.readPair.secondToolId, state.readPair.secondFilePath, state.readPair.promptId)
+      } else if (!delegated && !state.compaction && !state.autoText && record.type === "user" && record.parentUuid === state.lastUuid &&
+        firstBlock?.type === "tool_result" && currentReadCalls([...seen], calls) && await plannedReadHint(handle, at, false, request.signal)) {
+        if (state.eventSkip !== 0) fail("cursor", "Claude reverse Read checkpoint contains uncommitted Event progress.")
+        const pair = await readPairCalls(handle, at, hash.copy().digest("hex"), root, [...seen], calls, request.signal)
+        verifyReadReceipt(record, root, pair[1].uuid, pair[1].toolId, pair[1].filePath)
+        if (line.content.length > MaxWitnessRecordBytes) fail("limit", "A Claude first reverse Read receipt exceeds 64 KiB.")
+        nextReadPair = await reverseReadPair(handle, line.end, hash.copy().update(line.content).digest("hex"), root,
+          [...seen, record.uuid as string], calls, request.signal)
       } else if (record.type === "user" && record.parentUuid !== state.lastUuid && firstBlock?.type === "tool_result") {
         if (delegated || state.compaction || state.autoText) fail("unsupported", "Claude Read pair requires an unblocked root Thread.")
         if (state.eventSkip !== 0) fail("cursor", "Claude Read pair checkpoint contains uncommitted Event progress.")
@@ -512,7 +534,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     }
     if (state.autoText && state.lastUuid !== state.autoText.summaryUuid && state.eventSkip !== 0 && !approvedFileAnswer)
       fail("cursor", "Claude automatic file checkpoint has no complete pending answer.")
-    if (events.length === 0 && rawBytes === 0 && (request.rawCaptureEnabled === false || acknowledged >= at)) return empty(request.cursor)
+    if (!adoptedPair && events.length === 0 && rawBytes === 0 && (request.rawCaptureEnabled === false || acknowledged >= at)) return empty(request.cursor)
     const capturedRaw = request.rawCaptureEnabled === false || acknowledged >= at ? undefined
       : await readRawPrefix(handle, acknowledged, at, Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation), request.signal)
     hasMore ||= capturedRaw !== undefined && acknowledged + Buffer.byteLength(capturedRaw) < at
@@ -718,6 +740,8 @@ async function committedTail(handle: Awaited<ReturnType<typeof open>>, committed
 }
 
 type ReadCall = { readonly uuid: string; readonly toolId: string; readonly filePath: string }
+const currentReadCalls = (seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>) =>
+  seen.length >= 3 && seen.slice(-2).every(uuid => [...calls.values()].some(call => call.uuid === uuid && call.name === "Read"))
 const readPath = (value: unknown): value is string => typeof value === "string" && value.length > 0 && !value.includes("\0") && Buffer.byteLength(value) <= 64 * 1024
 const readRoot = (record: RecordValue, root: RecordValue) => autoRoot(record, root) && record.isMeta === undefined &&
   record.isCompactSummary === undefined && record.isVisibleInTranscriptOnly === undefined && record.logicalParentUuid === undefined &&
@@ -766,13 +790,19 @@ async function readPairCalls(handle: Awaited<ReturnType<typeof open>>, committed
     catch { return fail("unsupported", "Claude Read pair has an unsupported physical call record.") }
   }
   const c1 = recordAt(0), c0 = recordAt(1)
+  return verifyReadPairCalls(c0, c1, c0.apiBlockIndex === 1 && c1.apiBlockIndex === 2 ? recordAt(2) : undefined, root, seen, calls)
+}
+
+function verifyReadPairCalls(c0: RecordValue, c1: RecordValue, plan: RecordValue | undefined, root: RecordValue,
+  seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>): readonly [ReadCall, ReadCall] {
   const m0 = readResponse(c0, root), m1 = readResponse(c1, root)
   const first = readCall(c0, m0, calls), second = readCall(c1, m1, calls)
   if (first.uuid === second.uuid || first.toolId === second.toolId || seen.at(-2) !== first.uuid || seen.at(-1) !== second.uuid ||
     c1.parentUuid !== c0.uuid || m0.id !== m1.id || m0.model !== m1.model)
     fail("unsupported", "Claude Read pair has no adjacent same-response calls.")
   if (c0.apiBlockIndex === 1 && c1.apiBlockIndex === 2) {
-    const plan = recordAt(2), message = readResponse(plan, root), blocks = message.content
+    if (!plan) fail("unsupported", "Claude Read pair has no preceding text plan.")
+    const message = readResponse(plan, root), blocks = message.content
     const block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
     if (seen.at(-3) !== plan.uuid || c0.parentUuid !== plan.uuid || plan.apiBlockIndex !== 0 || message.id !== m0.id || message.model !== m0.model ||
       block?.type !== "text" || typeof block.text !== "string" || !block.text.length)
@@ -781,6 +811,74 @@ async function readPairCalls(handle: Awaited<ReturnType<typeof open>>, committed
     fail("unsupported", "Claude Read pair has unsupported API block indices.")
   }
   return [first, second]
+}
+
+/** A bounded shape hint only selects the new planned reverse profile. It cannot
+ * authorize receipt parents, and does not turn ordinary single, mixed or
+ * tool-only linear results into a pending pair. Fully selected bad evidence
+ * fails the authenticated proof rather than falling back to linear capture. */
+async function plannedReadHint(handle: Awaited<ReturnType<typeof open>>, committed: number, receipt: boolean, signal: AbortSignal): Promise<boolean> {
+  const bytes = Buffer.alloc(Math.min(committed, MaxProofTailBytes)), offset = committed - bytes.length
+  for (let at = 0; at < bytes.length;) {
+    signal.throwIfAborted()
+    const read = await handle.read(bytes, at, bytes.length - at, offset + at)
+    if (!read.bytesRead) fail("changed", "Claude Read classification prefix changed.")
+    at += read.bytesRead
+  }
+  const ends = [0]
+  for (let at = bytes.indexOf(10); at !== -1; at = bytes.indexOf(10, at + 1)) ends.push(at + 1)
+  const count = receipt ? 4 : 3
+  if (ends.length < count + 1 || ends.at(-1) !== bytes.length) return false
+  let firstComplete = offset === 0
+  if (!firstComplete && ends.length === count + 1) {
+    const preceding = Buffer.alloc(1), read = await handle.read(preceding, 0, 1, offset - 1)
+    firstComplete = read.bytesRead === 1 && preceding[0] === 10
+  }
+  const frames: RecordValue[] = []
+  for (let index = ends.length - count - 1; index < ends.length - 1; index++) {
+    // A clipped first frame cannot classify another production profile.
+    if (index === 0 && !firstComplete) return false
+    try { frames.push(decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(ends[index]!, ends[index + 1]!))))) }
+    catch { return false }
+  }
+  const [p, c0, c1, r] = frames as [RecordValue, RecordValue, RecordValue, RecordValue | undefined]
+  const block = (record: RecordValue) => {
+    const contents = object(record.message)?.content
+    return Array.isArray(contents) && contents.length === 1 ? object(contents[0]) : undefined
+  }
+  // Exact tool-only indices retain their older ordinary first-result behavior.
+  // Once a plan-shaped candidate is selected, invalid indices/API/identity are
+  // failures of the authoritative proof, rather than a linear fallback.
+  return !(c0.apiBlockIndex === 0 && c1.apiBlockIndex === 1) && block(p)?.type === "text" &&
+    block(c0)?.type === "tool_use" && block(c0)?.name === "Read" && block(c1)?.type === "tool_use" && block(c1)?.name === "Read" &&
+    (!receipt || r?.type === "user" && r.parentUuid === c1.uuid && block(r)?.type === "tool_result")
+}
+
+/** The first reverse receipt is part of the authenticated local batch, including
+ * on old producers' no-stage ACKs and pending EOF polls. Its proposed ACK is
+ * checked with the same four-frame policy before any Event/bytes are committed. */
+async function reverseReadPair(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string, root: RecordValue,
+  seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>, signal: AbortSignal, expected?: ReadPair): Promise<ReadPair> {
+  const { tail, ends, tailStart } = await committedTail(handle, committed, expectedDigest, 4, signal)
+  const frames: RecordValue[] = []
+  for (let index = ends.length - 5; index < ends.length - 1; index++) {
+    const start = ends[index], end = ends[index + 1]
+    if (start === undefined || end === undefined || start < tailStart || end - start > MaxWitnessRecordBytes)
+      fail("limit", "Claude reverse Read exceeds its four-frame proof capacity.")
+    try { frames.push(decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(tail.subarray(start - tailStart, end - tailStart))))) }
+    catch { fail("unsupported", "Claude reverse Read has an unsupported committed record.") }
+  }
+  const [plan, c0, c1, first] = frames as [RecordValue, RecordValue, RecordValue, RecordValue]
+  if (expected && (expected.firstResultUuid !== first.uuid || expected.secondCallUuid !== c0.uuid || first.parentUuid !== c1.uuid))
+    fail("cursor", "Claude reverse Read checkpoint differs from its committed result order.")
+  if (c0.apiBlockIndex !== 1 || c1.apiBlockIndex !== 2 || seen.at(-1) !== first.uuid || seen.at(-4) !== plan.uuid)
+    fail("unsupported", "Claude reverse Read has no current planned call/result suffix.")
+  const pair = verifyReadPairCalls(c0, c1, plan, root, seen.slice(0, -1), calls)
+  verifyReadReceipt(first, root, pair[1].uuid, pair[1].toolId, pair[1].filePath)
+  const stage: ReadPair = { v: 1, firstResultUuid: first.uuid as string, secondCallUuid: pair[0].uuid,
+    secondToolId: pair[0].toolId, secondFilePath: pair[0].filePath, promptId: first.promptId as string }
+  if (expected && !equalJson(stage, expected)) fail("cursor", "Claude reverse Read checkpoint differs from its committed source.")
+  return stage
 }
 
 /** Tool originals are a complete current turn, rather than a global known-call
@@ -826,14 +924,21 @@ function verifyAutoReadTurn(originals: ReadonlyArray<RecordValue>, root: RecordV
   const plan = readResponse(p, root), blocks = plan.content, block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
   if (p.apiBlockIndex !== 0 || p.parentUuid !== g.uuid || block?.type !== "text" || typeof block.text !== "string" || !block.text.length)
     fail("unsupported", "Claude Read replay has no supported text plan.")
-  const reads = originals.length === 6 ? 1 : 2, ids = new Set<string>()
+  const reads = originals.length === 6 ? 1 : 2, ids = new Set<string>(), selectedCalls: ReadCall[] = []
   for (let index = 0; index < reads; index++) {
     const record = originals[3 + index]!, message = readResponse(record, root), call = readCall(record, message, calls)
     if (record.apiBlockIndex !== index + 1 || record.parentUuid !== originals[2 + index]!.uuid ||
       message.id !== plan.id || message.model !== plan.model || ids.has(call.toolId))
       fail("unsupported", "Claude Read replay has no supported same-response calls.")
     ids.add(call.toolId)
-    verifyReadReceipt(originals[3 + reads + index]!, root, call.uuid, call.toolId, call.filePath, u.promptId as string)
+    selectedCalls.push(call)
+  }
+  const receipts = originals.slice(3 + reads, 3 + 2 * reads)
+  const ordered = receipts[0]!.parentUuid === selectedCalls[0]!.uuid
+  const receiptCalls = ordered ? selectedCalls : [...selectedCalls].reverse()
+  for (let index = 0; index < reads; index++) {
+    const call = receiptCalls[index]!
+    verifyReadReceipt(receipts[index]!, root, call.uuid, call.toolId, call.filePath, u.promptId as string)
   }
   reminder(originals.at(-1)!, originals.at(-2)!.uuid)
 }
@@ -1491,12 +1596,13 @@ function decodeCursor(value: string | null): Cursor | undefined {
       new Set(c.stream!.calls.map(call => call[0])).size !== c.stream!.calls.length || !autoSummaryTail && !autoFileTail)) throw new Error()
     const pair = c.stream?.readPair
     if (pair) {
-      const firstCallUuid = c.stream!.seen.at(-3), first = c.stream!.calls.filter(call => call[2] === firstCallUuid)
+      const c0 = c.stream!.seen.at(-3), c1 = c.stream!.seen.at(-2)
+      const firstCallUuid = pair.secondCallUuid === c0 ? c1 : c0, first = c.stream!.calls.filter(call => call[2] === firstCallUuid)
       const second = c.stream!.calls.filter(call => call[2] === pair.secondCallUuid)
       if (stage || auto || c.projectionRevision !== 4 || c.usageVersion !== 1 || !c.observedAt || timestamp(c.observedAt) !== c.observedAt ||
         c.stream!.eventSkip !== 0 || ![pair.firstResultUuid, pair.secondCallUuid, pair.secondToolId, pair.promptId, firstCallUuid].every(autoId) ||
         !readPath(pair.secondFilePath) || c.stream!.lastUuid !== pair.firstResultUuid || c.stream!.seen.at(-1) !== pair.firstResultUuid ||
-        c.stream!.seen.at(-2) !== pair.secondCallUuid || new Set([firstCallUuid, pair.secondCallUuid, pair.firstResultUuid]).size !== 3 ||
+        pair.secondCallUuid !== c0 && pair.secondCallUuid !== c1 || new Set([c0, c1, pair.firstResultUuid]).size !== 3 ||
         new Set(c.stream!.calls.map(call => call[0])).size !== c.stream!.calls.length ||
         first.length !== 1 || !autoId(first[0]![0]) || first[0]![1] !== "Read" || first[0]![0] === pair.secondToolId || second.length !== 1 ||
         second[0]![0] !== pair.secondToolId || second[0]![1] !== "Read") throw new Error()

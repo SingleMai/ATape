@@ -127,3 +127,5 @@ already accepts. Package publication and Server deployment remain separate.
 
 [ADR-0091](0091-claude-read-turn-automatic-replay.md) separately composes fully
 committed Read pairs with a sampled first-slug automatic replay group.
+[ADR-0095](0095-claude-reversed-read-pair-results.md) later selects planned
+reverse completion and adoption of an already acknowledged first result.

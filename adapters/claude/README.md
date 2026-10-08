@@ -113,6 +113,7 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   copied users and internal summaries do not become extra Reader/Search turns.
 - Native Claude Code 2.1.263 root responses with exactly two successful Read
   calls in the sampled order: `Read@0, Read@1`, or `text@0, Read@1, Read@2`.
+  The planned pair also supports successful results in reverse call order.
   The following results each name their own call in parent, tool ID and
   `sourceToolAssistantUUID`, with matching literal file metadata and shared
   prompt identity. Current-prefix byte proof establishes the call/API layout;
@@ -191,8 +192,14 @@ file path is nonempty, NUL-free and at most 64 KiB of UTF-8. These are Adapter
 policy limits. Receipts keep ordinary 16 MiB parsing and per-record source/Event
 budgets, without requiring both to fit together. Proof costs O(committed prefix)
 I/O/hash; large tool results retain the existing bounded-detail/Raw policy.
-Reversed, failed, async, interleaved, child or other-tool batches are outside
+Tool-only reverse, failed, async, interleaved, child or other-tool batches are outside
 the profile. No atomic snapshot or general old-call parent permission is supplied.
+Planned reverse recovery selects P/C0/C1/R1 in the existing 256 KiB proof tail,
+with 64 KiB including LF per selected frame, including the first R1 receipt.
+Its prospective prefix must fit before ACK. The remaining R0 keeps ordinary
+16 MiB parsing. A proved old R1 ACK without pending state receives one
+metadata-only adoption, then waits for its remaining call; old Events/usage/Raw
+identity are unchanged. Ordered receipt and larger manual limits are unchanged.
 Read-turn automatic proof retains at most eight adjacent originals in a separate
 512 KiB byte tail. Originals/copies/controls each fit 64 KiB including LF; the
 eight/ten-record group has a 640 KiB total cap (eight records imply at most
@@ -330,6 +337,10 @@ synthetic content and actual native source persistence:
   and automatic rounds, full existing-slug copies and one prior receipt reinjected
   after the second summary. The first public ACK precedes the second invocation;
   failed bootstrap and reverse-order two-Read attempts are disclosed separately.
+- [Planned reverse Read pair](fixtures/native-reversed-read-pair-2.1.263/README.md):
+  native B/A completion, its first-slug automatic replay and an ordinary resume
+  after a complete public ACK, with actual older acknowledged B-result recovery;
+  repeated dual rounds remain unproved.
 - [Manual Read file reinjection](fixtures/native-manual-read-reinjection-2.1.263/README.md):
   six native snapshots with two actual successful Reads, retained final text pair,
   reverse-order file reinjection, internal Meta/synthetic bridge and two real

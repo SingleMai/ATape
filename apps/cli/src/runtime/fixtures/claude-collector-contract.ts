@@ -26,6 +26,7 @@ const pairToolId = "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3", pairPlanId = "cf19053
 const autoReadSingleId = "611cd738-0d92-41ce-b1e3-64ba1a10a70a", autoReadDualId = "bb9cf168-c9d3-4fea-9428-bd7fc8460755"
 const largeManualReadId = "b179ae84-44d8-4f32-adee-7f176edf363c"
 const repeatedAutoReadId = "f2479149-41f5-4f6c-a3e2-7d46eca6ff30"
+const reversedReadPairId = "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a"
 const rootFile = join(sourceDirectory, `${familyId}.jsonl`)
 const childFile = join(sourceDirectory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compactFile = join(sourceDirectory, `${compactId}.jsonl`)
@@ -35,6 +36,7 @@ const pairToolFile = join(sourceDirectory, `${pairToolId}.jsonl`), pairPlanFile 
 const autoReadSingleFile = join(sourceDirectory, `${autoReadSingleId}.jsonl`), autoReadDualFile = join(sourceDirectory, `${autoReadDualId}.jsonl`)
 const largeManualReadFile = join(sourceDirectory, `${largeManualReadId}.jsonl`)
 const repeatedAutoReadFile = join(sourceDirectory, `${repeatedAutoReadId}.jsonl`)
+const reversedReadPairFile = join(sourceDirectory, `${reversedReadPairId}.jsonl`)
 const compactFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-compact-2.1.263/", import.meta.url)
 const tailFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/", import.meta.url)
 const autoFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/", import.meta.url)
@@ -43,6 +45,7 @@ const pairFixture = new URL("../../../../../adapters/claude/fixtures/native-read
 const autoReadFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-read-replay-2.1.263/", import.meta.url)
 const manualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-read-reinjection-2.1.263/", import.meta.url)
 const repeatedAutoReadFixture = new URL("../../../../../adapters/claude/fixtures/native-repeated-auto-read-2.1.263/", import.meta.url)
+const reversedReadPairFixture = new URL("../../../../../adapters/claude/fixtures/native-reversed-read-pair-2.1.263/", import.meta.url)
 const largeManualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-large-read-reinjection-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
@@ -60,6 +63,8 @@ const largeManualReadSnapshot = (phase: string) => readFileSync(new URL(`${phase
   .replaceAll("/fixture/native-manual-large-read-reinjection/workspace", workspace)
 const repeatedAutoReadSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, repeatedAutoReadFixture), "utf8")
   .replaceAll("/fixture/native-repeated-auto-read/workspace", workspace)
+const reversedReadPairSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, reversedReadPairFixture), "utf8")
+  .replaceAll("/fixture/native-reversed-read-pair/workspace", workspace)
 const autoReadCases = (JSON.parse(readFileSync(new URL("provenance.json", autoReadFixture), "utf8")) as {
   cases: ReadonlyArray<{ id: string; profile: string; lines: { plan: number; calls: ReadonlyArray<number>; results: ReadonlyArray<number>; A: number; S: number; F0: number } }>
 }).cases
@@ -106,6 +111,7 @@ if (input.phase === "initial") {
   writeFileSync(autoReadDualFile, autoReadSnapshot("auto/warmup.jsonl"))
   writeFileSync(largeManualReadFile, largeManualReadSnapshot("seed"))
   writeFileSync(repeatedAutoReadFile, repeatedAutoReadSnapshot("seed"))
+  writeFileSync(reversedReadPairFile, reversedReadPairSnapshot("seed"))
   const foreign = join(input.home, "foreign-project"); mkdirSync(foreign)
   writeFileSync(join(sourceDirectory, "foreign.jsonl"), root.replaceAll(familyId, "foreign-claude-session").replaceAll(workspace, foreign))
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
@@ -173,6 +179,16 @@ if (repeatedAutoReadStage) {
   const next = cuts[slot] === undefined ? source : completeLinePrefix(source, cuts[slot])
   assert.ok(next.startsWith(readFileSync(repeatedAutoReadFile, "utf8")), "Repeated automatic Read changed its native prefix")
   writeFileSync(repeatedAutoReadFile, next)
+}
+const reversedReadPairStage = /^reversed-read-pair-(warmup|plan|call-a|call-b|result-b|result-a|originals|summary|final-a|final|ordinary-resume)$/.exec(input.phase)
+if (reversedReadPairStage) {
+  const slot = reversedReadPairStage[1]!
+  const source = reversedReadPairSnapshot(slot === "warmup" || slot === "ordinary-resume" ? slot : "r1")
+  const cuts: Record<string, number> = { plan: 22, "call-a": 23, "call-b": 24,
+    "result-b": 25, "result-a": 26, originals: 27, summary: 37, "final-a": 38 }
+  const next = cuts[slot] === undefined ? source : completeLinePrefix(source, cuts[slot])
+  assert.ok(next.startsWith(readFileSync(reversedReadPairFile, "utf8")), "Reversed Read pair changed its native prefix")
+  writeFileSync(reversedReadPairFile, next)
 }
 // This native manual source continues the existing text-plan Read-pair Session.
 // Its toolturn prefix is identical after the declared workspace substitution;
@@ -254,7 +270,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   const cursor = state.checkpoint.cursor
   const decoded = JSON.parse(cursor.startsWith("z3:")
     ? inflateRawSync(Buffer.from(cursor.slice(3), "base64url"), { maxOutputLength: 16 * 1024 * 1024 }).toString("utf8") : cursor)
-  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId, pairToolId, pairPlanId, autoReadSingleId, autoReadDualId, largeManualReadId, repeatedAutoReadId].sort(),
+  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId, pairToolId, pairPlanId, autoReadSingleId, autoReadDualId, largeManualReadId, repeatedAutoReadId, reversedReadPairId].sort(),
     "Foreign source was captured or a known checkpoint was reset")
   return { installationId: state.installationId, cursor: state.checkpoint.cursor, rawObjects: state.checkpoint.rawObjects,
     observations: job.observations ?? 0, canonicalEvents: job.canonicalEvents ?? 0, canonicalBatches: job.canonicalBatches ?? 0,

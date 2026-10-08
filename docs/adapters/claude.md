@@ -95,10 +95,15 @@ all members share one real assistant API ID/model/role and `tool_use` stop reaso
 The second call is parented by the first, and the optional text plan must be the immediately
 preceding record with a direct parent edge to the first call.
 
-The following two successful results arrive in call order. Each native user
+The two successful results arrive in call order in the original corpora.
+[ADR-0095](../architecture/adr/0095-claude-reversed-read-pair-results.md) also
+selects the planned `text@0, Read@1, Read@2` layout completing R1 before R0.
+Each native user
 record has one `tool_result`; its parent and `sourceToolAssistantUUID` both name
-its own call, and its tool ID matches that call. These parents differ from the
-preceding physical record. The result must have the sampled text/file metadata
+its own call, and its tool ID matches that call. In reverse order the first R1
+follows C1 linearly; the remaining C0 result's parent differs from the preceding
+physical record. Ordered result parents also differ from their preceding
+physical records. The result must have the sampled text/file metadata
 and a literal file path equal to the Read input. Both results share a prompt ID.
 File line counters are positive safe integers and the returned range fits
 `totalLines`; zero-line or malformed metadata is outside this profile.
@@ -121,6 +126,15 @@ clears the state only when its full record commits, then ordinary chaining
 continues through the final answer and resumed conversation. EOF after the calls
 alone does not invent a pending result.
 
+For reverse completion, the first R1 requires proof of the proposed committed
+P/C0/C1/R1 prefix before ACK. Existing private remaining-call fields bind the
+next result to C0; reverse pending state is re-proved on restart, including EOF.
+An actual older R1 cursor without pending state is adopted after the same source
+proof through one metadata-only observation. Its byte/hash checkpoint, Events,
+usage and Raw identity stay unchanged. It emits no second R1 result; later idle
+polls remain empty, and a wrong next record preserves the adopted ACK. No new
+cursor field or projection revision is needed.
+
 Each receipt keeps ordinary per-record budgets; the two receipts need not fit in
 one page. Raw receipts can advance independently through admitted bytes while
 the Host retains an older parser cursor, and retries prove the same calls again.
@@ -131,7 +145,8 @@ Large result values follow the existing bounded tool-details policy; results do
 not become user messages or fabricated text fragments. Their exact Event anchors
 remain available in Reader; Search covers actual conversation text.
 
-This profile does not admit more calls, reversed/interleaved/error/async results,
+This profile does not admit more calls, tool-only reverse completion,
+interleaved/error/async results,
 other tools, child batches or tool-bearing compaction. It does not grant general
 parent exceptions to historical calls or globally change the older linear profile.
 
@@ -300,10 +315,12 @@ child compaction and Active Path replacement are outside this automatic profile.
 [ADR-0091](../architecture/adr/0091-claude-read-turn-automatic-replay.md) selects
 two additional native Claude Code 2.1.263 root layouts. A single successful Read
 has current original records [U,G,P,C,R,A]; the exact-two Read has
-[U,G,P,C0,C1,R0,R1,A]. U is an external user, G its token reminder, P a single
+[U,G,P,C0,C1,R0,R1,A], or the planned reverse-result variant
+[U,G,P,C0,C1,R1,R0,A] selected by ADR-0095. U is an external user, G its token reminder, P a single
 text plan at API index 0, C/C0/C1 the same response's Read calls at indices 1 or
 1/2, R/R0/R1 their successful own-call results, and A a final token reminder.
-All six/eight records are physically adjacent and fully committed. Each result
+All six/eight records are physically adjacent and fully committed. The pair
+uses each current call exactly once and preserves actual result order. Each result
 matches its literal call path, tool ID, parent/source assistant UUID and U's
 prompt. Both reminders have their exact native parent edges. A pending Read-pair
 result cannot authorize replay before it completes.
@@ -350,7 +367,8 @@ Unsupported complete files/answers retain the caller's input ACK. No cursor
 field, round counter or public Interface changes are needed.
 
 The older single/two-Read corpora each establish one first-slug round and two
-ordinary resumes. Repeated two-Read, reversed results, further rounds/multiple
+ordinary resumes. The new planned reverse corpus establishes its first-slug
+round and one ordinary resume after a complete public ACK. Repeated two-Read, further rounds/multiple
 reinjected files, same-path changes, tool-only layouts without P,
 other/more/error/async/interleaved calls, children and Active Path replacement
 remain outside these profiles. Manual file reinjection keeps its separate
@@ -375,8 +393,13 @@ existing concurrent-writer limitations still apply; no atomic snapshot is suppli
 Read-pair proof admits at most three physical witness records, each at most
 64 KiB including LF, from a 256 KiB retained byte tail. The saved literal file
 path is nonempty, NUL-free and at most 64 KiB of UTF-8. These are Adapter profile
-and cursor policies, not native format limits. Result records retain ordinary
-16 MiB parsing and requested source-page admission. Proof costs O(committed
+and cursor policies, not native format limits. Ordered results retain ordinary
+16 MiB parsing and requested source-page admission. Planned reverse recovery
+selects four P/C0/C1/R1 LF frames within that same 256 KiB tail; each selected
+frame, including its first R1 receipt, fits 64 KiB. Its prospective prefix must
+remain resumable before ACK, and the remaining R0 retains ordinary 16 MiB
+parsing. These bounds do not broaden the ordered or larger manual profiles.
+Proof costs O(committed
 prefix) I/O/hash with bounded retained memory; it does not add snapshot semantics.
 Read-turn automatic proof has separate limits: at most eight physical original
 records from a 512 KiB retained byte tail, at most 64 KiB including LF per
@@ -859,6 +882,65 @@ and 741 tests passed; exact final-head PostgreSQL/E2E acceptance remains a requi
 PR CI gate with its separate run evidence. No publication or manual Server
 deployment is claimed by these local checks.
 
+The planned reverse-result increment adds
+[four native snapshots](../../adapters/claude/fixtures/native-reversed-read-pair-2.1.263/README.md)
+from the separate Claude Code 2.1.263 dual Session. Its first two successful
+Read results arrive B/A, each naming its own call. The first automatic group
+copies all eight original records and retains their actual result sequence.
+One later ordinary native process ran only after the unchanged first round
+received a complete public Adapter ACK. That gate used an offline initial
+candidate; the ledger identifies its source and bundle separately from final
+acceptance. Final source totals are fourteen Events, five persisted API IDs
+and 190122/77 controlled counters. No second dual round ran, and the absent
+summary API usage remains unaccounted for.
+
+All 812 Claude Adapter tests passed on the final Implementation, including
+71 new public Interface cases. They verify fresh reverse capture, complete
+copy equality, physical result order, pending EOF/partial results, conflicting
+next records, exact retries, damaged remaining-call state, Raw off/backfill and
+independently advanced Raw. Proposed first-result ACKs must fit four selected
+LF frames in the existing 256 KiB tail, each at most 64 KiB including LF.
+The exact four-by-64-KiB boundary succeeds even after unrelated prehistory;
+recognized reverse cursors disguised as ordered pending state reject at EOF.
+The remaining result keeps ordinary large-receipt behavior, and ordered and
+larger manual profiles remain covered by the previous tests. These checks
+establish source/cursor consistency, not authentication against coordinated
+cursor forgery.
+
+Independent acceptance resumed twelve saved inputs produced through the actual
+previous-main public factory at `41f9c708f9e973a4b2276b073751b27b67bc7d7e`:
+eleven reverse inputs, including two genuine Event-only checkpoints and repeated
+blocked states, plus an actual ordered pending-result representative. All
+reverse inputs complete the fourteen/five/190122/77 source without replaying old
+Events; the ordered representative retains its twelve/four/130/64 totals.
+Twenty independent fault and boundary checks passed, including a genuine old
+ACK on a derived exact four-by-64-KiB prefix. An old B-only EOF ACK receives one
+metadata-only adoption with stable bytes/hash, Events, usage and Raw identity;
+even a complete wrong next record waits for a separate collection page before
+rejecting. Partial A, advanced Raw, malformed pending state, changed source,
+own-call/receipt contradictions and repaired retries preserve acknowledged
+progress. Cancellation acceptance uses an already-aborted signal followed by
+normal exact retries; it does not establish in-flight atomicity. This uses the
+previous Git Implementation, not an historical published binary.
+
+The final installed Claude bundle passed all prior package scenarios plus four
+native snapshots, 23 derived LF cuts, eleven partial slots, twelve independently
+advanced Raw receipts and fourteen capacity cases. Claude and CLI typechecks,
+all four Collector/Server E2E tests and architecture guards passed on the same
+production source. The authenticated HTTP/Docker PostgreSQL contract passed
+151 independently restarted installed managed-daemon runs: the prior 136 plus
+eleven reverse-source phases and four idle polls. Initial capture includes
+eleven Sessions and twelve Raw objects. Both completed own-call result anchors
+retain B/A order; original Reader Event prefixes, ordinary message Search
+anchors, internal/tool exclusions, latest API usage, contiguous exact Raw,
+Raw policy/backfill and deletion retention passed. The required non-skipped
+Claude contract guard passed. Final source SHA-256 is
+`01485f5a8e490102cacfe924b2f48fde8c165bb34bcb6373a7e80cc937f152ca`;
+the installed bundle SHA-256 is
+`67a56a3089a4e1936ff34eeb044d3b31167d347b6f4083876957f952a44b2576`.
+These are local implementation and integration checks; exact final-head PR
+gates, publication and manual Server deployment have separate evidence.
+
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
 Provider-specific browser staging and upgrades from historical published binaries
@@ -872,8 +954,8 @@ Tool-result batches outside the exact two-Read layouts, automatic compaction
 outside the exact text and Read-turn replay groups, and manual file reinjection
 outside the selected two-file control chain need additional native profiles;
 none enables them through generic duplicate or parent relaxation.
-The next completeness increment is to authenticate the newly captured reversed
-two-Read result layout, then acquire later-round evidence before admitting its
-repeated automatic compaction. Further rounds with multiple prior files, larger
+The next completeness increment is to acquire later-round dual-Read evidence
+after a complete first-round public ACK before admitting repeated automatic
+compaction. Further rounds with multiple prior files, larger
 automatic receipts, single/no-plan manual layouts and Active Path adoption remain
 separate work.

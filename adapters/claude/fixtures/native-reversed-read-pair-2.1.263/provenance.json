@@ -1,0 +1,2479 @@
+{
+  "kind": "controlled-native-Claude-exact-two-reversed-successful-Read-and-first-automatic-replay-source-evidence",
+  "status": "Controlled source evidence. Implementation and acceptance belong to the Claude guide; this corpus establishes no publication or deployment.",
+  "claudeVersion": "2.1.263",
+  "recordedBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "fixtureCwd": "/fixture/native-reversed-read-pair/workspace",
+  "fixtureConfig": "/fixture/native-reversed-read-pair/config",
+  "fixtureHome": "/fixture/native-reversed-read-pair/home",
+  "transformation": "Only literal isolated workspace/config/HOME/encoded-directory substitutions. Native JSONL snapshots are never parsed and reserialized; UUIDs, API IDs, indices, timestamps, metadata and unknown fields are preserved.",
+  "selectedSourceRequests": {
+    "file": "selected-source-requests.json",
+    "bytes": 27233,
+    "sha256": "03567c4549df7c500b8bbaf92ef7c3da6a41a5e065784c29e858664a002cac83"
+  },
+  "sourceAuthority": {
+    "formalHarness": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/capture.mjs",
+      "bytes": 19300,
+      "sha256": "bec0fa4872fa71ce6af78cebcae461cbb89249d056d73e155a28dc3aa1639e24"
+    },
+    "controlsBefore": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/controls-before.json",
+      "bytes": 3746,
+      "sha256": "248af7f7d2f29e063f4cc4a99e8946f4e25ff6d525364a26954e599009381790"
+    },
+    "captureResult": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/capture-result.json",
+      "bytes": 5507,
+      "sha256": "b4b43bc2f697d6ca7520327ee4dc6bc240edc2279de326bcd8f196d19a58f12b"
+    },
+    "requests": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/requests.json",
+      "bytes": 46375,
+      "sha256": "955c41bde67ed301cab05a20fba83540b36e48a7fd0340394aa3911ca4adf918"
+    },
+    "versionResult": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/version-result.json",
+      "bytes": 89,
+      "sha256": "3d84b912b0cd6e4f65c9f386f3d142446301f2995cd7827762f40752447ce80d"
+    },
+    "actualVersionResult": {
+      "exit": 0,
+      "signal": null,
+      "stdout": "2.1.263 (Claude Code)\n",
+      "stderr": ""
+    },
+    "ordinaryResumeHarness": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/resume-reversed-ordinary.mjs",
+      "bytes": 13172,
+      "sha256": "5d4d43fede634d9c83f96168672131b7115c733232900a2b41bcdd72e13dd611"
+    },
+    "ordinaryResumeRequests": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence/requests.json",
+      "bytes": 9826,
+      "sha256": "d27f818723d654511bd72da2c6b4a72bda5512117f9dd5925ba0f7451948c9f6"
+    },
+    "ordinaryPreparationStop": {
+      "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence/preparation-guard-stop.json",
+      "bytes": 725,
+      "sha256": "214cf82dfc436f614e081b1b3c9c38565a9b8562d14a57d80ad3d54e43f883e7"
+    },
+    "rawWireEvidence": [
+      {
+        "index": 1,
+        "phase": "seed",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "HEAD",
+        "url": "/api/hello",
+        "request": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": 404
+      },
+      {
+        "index": 2,
+        "phase": "seed",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "POST",
+        "url": "/v1/messages?beta=true",
+        "request": {
+          "bytes": 4064,
+          "sha256": "3a147ef2c01b7b1bbd2b261398b2ef5b2a3369b2527b3ddaf0c968f8bf2ae7c1"
+        },
+        "responseSSE": {
+          "bytes": 872,
+          "sha256": "62cec18d6f1a4926dbd7f225202e97f03cbfada796c9f0366101e109cf1b9065",
+          "messageId": "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+          "completeMessageStop": true
+        },
+        "fakeAuthenticationVerified": true
+      },
+      {
+        "index": 3,
+        "phase": "warmup",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "HEAD",
+        "url": "/api/hello",
+        "request": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": 404
+      },
+      {
+        "index": 4,
+        "phase": "warmup",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "POST",
+        "url": "/v1/messages?beta=true",
+        "request": {
+          "bytes": 4395,
+          "sha256": "c1b8c454c7356b86fa6a4d2d1da6ce18f10cd7734cf06a0d96c52d84a02a3dac"
+        },
+        "responseSSE": {
+          "bytes": 876,
+          "sha256": "48a520b75794e290b00c00014b7dd09731db4dd91bae4607589b85183aea1f78",
+          "messageId": "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+          "completeMessageStop": true
+        },
+        "fakeAuthenticationVerified": true
+      },
+      {
+        "index": 5,
+        "phase": "r1",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "HEAD",
+        "url": "/api/hello",
+        "request": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": 404
+      },
+      {
+        "index": 6,
+        "phase": "r1",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "POST",
+        "url": "/v1/messages?beta=true",
+        "request": {
+          "bytes": 4763,
+          "sha256": "2d6986862bcfe3c64f68558cd7a000b4c1dfcc78cb773b48d4f09512dbe7de15"
+        },
+        "responseSSE": {
+          "bytes": 1820,
+          "sha256": "a89b6b5fdff53b2009143454f16a83de1319a7ad8488b6ebf8e4e519d47076f6",
+          "messageId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "completeMessageStop": true
+        },
+        "fakeAuthenticationVerified": true
+      },
+      {
+        "index": 7,
+        "phase": "r1",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "POST",
+        "url": "/v1/messages?beta=true",
+        "request": {
+          "bytes": 11269,
+          "sha256": "ad7f07ab16aa616c0fb3e6e4861d2ab2ef329037b28926f7f47aef9ded74f920"
+        },
+        "responseSSE": {
+          "bytes": 983,
+          "sha256": "f5638839e24d8f01558ded9db2d4314a04fd5cd16a8ad679a378c48afdd44d8e",
+          "messageId": "msg_atape_repeat_82f63bfe_dual_r1_summary_4",
+          "completeMessageStop": true
+        },
+        "fakeAuthenticationVerified": true
+      },
+      {
+        "index": 8,
+        "phase": "r1",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+        "method": "POST",
+        "url": "/v1/messages?beta=true",
+        "request": {
+          "bytes": 5657,
+          "sha256": "42d8745c09c33e3189dc3a7a3905b4852b179fa7ac586f68c6c34ffa5b759303"
+        },
+        "responseSSE": {
+          "bytes": 1234,
+          "sha256": "f7a5334bde27e2af85388085f0111b6e1ee92ae5c19fddc481d94641fe5f855a",
+          "messageId": "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+          "completeMessageStop": true
+        },
+        "fakeAuthenticationVerified": true
+      },
+      {
+        "index": 1,
+        "phase": "ordinary-resume",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence",
+        "method": "HEAD",
+        "url": "/api/hello",
+        "request": {
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": 404
+      },
+      {
+        "index": 2,
+        "phase": "ordinary-resume",
+        "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence",
+        "method": "POST",
+        "url": "/v1/messages?beta=true",
+        "request": {
+          "bytes": 6127,
+          "sha256": "2f059e1dbf9185ed72770b0a7eeba0e7e98d88a9c0fe2f180678ae8c98b7a36e"
+        },
+        "responseSSE": {
+          "bytes": 908,
+          "sha256": "2109bdda3333544059fe5144b2560ad6aae186673a3124a2051d6df5bb2c3458",
+          "messageId": "msg_atape_reversed_read_82f63bfe_dual_ordinary_6",
+          "completeMessageStop": true
+        },
+        "fakeAuthenticationVerified": true
+      }
+    ],
+    "sourcePathsAreRecordedOriginsNotReproductionDependencies": true
+  },
+  "cases": [
+    {
+      "id": "reversed_plan_pair",
+      "profile": "reversed-plan-pair",
+      "sessionId": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+      "sourceResearchDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+      "pathSubstitutions": [
+        {
+          "from": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "to": "/fixture/native-reversed-read-pair/workspace"
+        },
+        {
+          "from": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "to": "/fixture/native-reversed-read-pair/workspace"
+        },
+        {
+          "from": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/config",
+          "to": "/fixture/native-reversed-read-pair/config"
+        },
+        {
+          "from": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/config",
+          "to": "/fixture/native-reversed-read-pair/config"
+        },
+        {
+          "from": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/home",
+          "to": "/fixture/native-reversed-read-pair/home"
+        },
+        {
+          "from": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/home",
+          "to": "/fixture/native-reversed-read-pair/home"
+        },
+        {
+          "from": "-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace",
+          "to": "-fixture-native-reversed-read-pair-workspace"
+        }
+      ],
+      "nativeSnapshots": [
+        {
+          "phase": "seed",
+          "file": "seed.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 7,
+          "original": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/seed.jsonl",
+            "bytes": 2746,
+            "sha256": "45dcc6f5868bc76f69a7e9591fa9bf8d4ea8076fab4d4dc4475ce5bbf769c2cf"
+          },
+          "sanitized": {
+            "bytes": 2674,
+            "sha256": "f1a105243829b6f74e956df6bf5b09ba3116b83559d584f2b8bb25f9ae7b5c4f"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 2,
+            "distinctUsageCount": 1,
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1"
+            ]
+          }
+        },
+        {
+          "phase": "warmup",
+          "file": "warmup.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 14,
+          "original": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/warmup.jsonl",
+            "bytes": 5536,
+            "sha256": "c1ddfb159e80212889e431182ac3dd947d50685f02156ba639ad38888563bdf6"
+          },
+          "sanitized": {
+            "bytes": 5392,
+            "sha256": "ed8662f7d00df98c70f626fafbfd666bbee0627f973371e7301ae77799ab3f82"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 4,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2"
+            ]
+          }
+        },
+        {
+          "phase": "r1",
+          "file": "r1.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 40,
+          "original": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/r1.jsonl",
+            "bytes": 25679,
+            "sha256": "76c1c7bc6815efb1092d2df49cf8de5db7554958a0daa8d91ff8a27cb81dc1a5"
+          },
+          "sanitized": {
+            "bytes": 24887,
+            "sha256": "c62356f9270b16bc9fcdac0f6c53a3a5bec70ce21e9ae45fa88c8691423efd45"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 12,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5"
+            ]
+          }
+        },
+        {
+          "phase": "ordinary-resume",
+          "file": "ordinary-resume.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 46,
+          "original": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-resume.jsonl",
+            "bytes": 28697,
+            "sha256": "26bba82b2f7b1dc099b006544714a88532017b146252c7929af10d1b95456b9f"
+          },
+          "sanitized": {
+            "bytes": 27833,
+            "sha256": "be44a2de0b129c4cff383f02920842d9fed78d41f20175e1ab53760455b89c80"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 14,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "msg_atape_reversed_read_82f63bfe_dual_ordinary_6"
+            ]
+          }
+        }
+      ],
+      "rounds": [
+        {
+          "round": 1,
+          "lines": {
+            "user": 20,
+            "G": 21,
+            "plan": 22,
+            "calls": [
+              23,
+              24
+            ],
+            "results": [
+              25,
+              26
+            ],
+            "A": 27,
+            "copyStart": 28,
+            "copyEnd": 35,
+            "B": 36,
+            "S": 37,
+            "F0": 38,
+            "F1": 39
+          },
+          "resultCompletionOrder": [
+            "call1",
+            "call0"
+          ],
+          "retainedOriginalUuids": [
+            "466ab239-9359-414c-a61e-be6d955ae983",
+            "f8320f39-791d-441d-a181-61104b8e6ed5",
+            "d92403f4-55f8-4743-a986-3260845222b9",
+            "04391e85-ce37-4e9e-b831-9b6788960fff",
+            "913553cc-dfa9-4247-9afb-70797222490b",
+            "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+          ],
+          "replayedWholeTurnUuids": [
+            "244ea704-b43d-4f92-aed5-e5f964a12463",
+            "04293366-a6f8-4b82-8b20-ed4bb2db6e7f",
+            "466ab239-9359-414c-a61e-be6d955ae983",
+            "f8320f39-791d-441d-a181-61104b8e6ed5",
+            "d92403f4-55f8-4743-a986-3260845222b9",
+            "04391e85-ce37-4e9e-b831-9b6788960fff",
+            "913553cc-dfa9-4247-9afb-70797222490b",
+            "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+          ],
+          "slug": {
+            "value": "cryptic-gliding-brook",
+            "originalState": "absent",
+            "copyChange": "first-added-only"
+          },
+          "copyPositions": [
+            {
+              "uuid": "244ea704-b43d-4f92-aed5-e5f964a12463",
+              "originalLine": 20,
+              "copyLine": 28,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "287174c0e9aa743058a0d2a98c9bd03cdfef04ddceb909e85328b5181db316a8",
+              "copySha256": "176cab5942e60acb74a6de0e83fe60af6ab376e4d4109a9c21447ab68d464ad6"
+            },
+            {
+              "uuid": "04293366-a6f8-4b82-8b20-ed4bb2db6e7f",
+              "originalLine": 21,
+              "copyLine": 29,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "8a698531ace50a4e1456047d5a64272202e86cc107b443394ab874545bbd515b",
+              "copySha256": "4231d4f18c6306b3813baaec052acff5d2a99e7f13eec348297a06820991d632"
+            },
+            {
+              "uuid": "466ab239-9359-414c-a61e-be6d955ae983",
+              "originalLine": 22,
+              "copyLine": 30,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "a4339d0c2427944f671f1fd245a55d23ccb223fbaa694a5318bcc61a94653d2b",
+              "copySha256": "e492df3674ad030a40eafef519968d8a0ca953bc8486ec719dd08ac85c1d854c"
+            },
+            {
+              "uuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+              "originalLine": 23,
+              "copyLine": 31,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "9b31bf295592f715d581594defc1dc1d3bc519c98edf029e3bb79d8db9802c88",
+              "copySha256": "96c16565aa2c0d53412fc7870121526aeb2dbed83a5be2faa4777c4a7ef1d063"
+            },
+            {
+              "uuid": "d92403f4-55f8-4743-a986-3260845222b9",
+              "originalLine": 24,
+              "copyLine": 32,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "1b0f97150921ae83b68aca7c8ac82559665ca9170871dacda7f3ec2b0d55f56a",
+              "copySha256": "b731d9cb782c14c1609f81dbda94fdc7ab28721f3e70e988dd87d287cc60afaf"
+            },
+            {
+              "uuid": "04391e85-ce37-4e9e-b831-9b6788960fff",
+              "originalLine": 25,
+              "copyLine": 33,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "84c57f8b0fc9da6d01f0f98a22ff84a8b90f2759c61b0fc038dbb1808546b6c4",
+              "copySha256": "85c177d9acfd72a97134c3d77db82de84b456be11c02bdea2fa859b97808960c"
+            },
+            {
+              "uuid": "913553cc-dfa9-4247-9afb-70797222490b",
+              "originalLine": 26,
+              "copyLine": 34,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "fd424cc85e15afb94c6d5aa81d406d6ef9008e9a415cc35616dbf9e0e3ac4378",
+              "copySha256": "55819482d32d9df0f8bb137f7ffd35ff8dc6e2f823bd1c40e3b5261bc5394aa2"
+            },
+            {
+              "uuid": "53e6d261-ac09-4d34-8bad-e8797f7d86e6",
+              "originalLine": 27,
+              "copyLine": 35,
+              "wholeDecodedObjectEqual": false,
+              "wholeSerializedLineBytesEqual": false,
+              "copyWithoutAddedSlugEqualsWholeOriginal": true,
+              "removedAddedSlugIsExactSerializedOriginal": true,
+              "originalSha256": "281ccd9ca843c0da5b85167def88d02971df0e244fda8a7b0f0839cc80e66fb3",
+              "copySha256": "eb407884babd31f46c754f40c9129027373c1b4a1d80e8a2702fdfb3ed0eda65"
+            }
+          ],
+          "boundary": {
+            "line": 36,
+            "uuid": "2a2fe3ea-7fba-45a5-bf07-9952728c19df",
+            "parentUuid": null,
+            "logicalParentUuid": "53e6d261-ac09-4d34-8bad-e8797f7d86e6",
+            "compactMetadata": {
+              "trigger": "auto",
+              "preTokens": 190113,
+              "postTokens": 339,
+              "cumulativeDroppedTokens": 189774,
+              "durationMs": 5,
+              "preservedSegment": {
+                "headUuid": "466ab239-9359-414c-a61e-be6d955ae983",
+                "anchorUuid": "b8ef2671-0cd5-4a4c-95cb-838ad56d4e1a",
+                "tailUuid": "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+              },
+              "preservedMessages": {
+                "anchorUuid": "b8ef2671-0cd5-4a4c-95cb-838ad56d4e1a",
+                "uuids": [
+                  "466ab239-9359-414c-a61e-be6d955ae983",
+                  "f8320f39-791d-441d-a181-61104b8e6ed5",
+                  "d92403f4-55f8-4743-a986-3260845222b9",
+                  "04391e85-ce37-4e9e-b831-9b6788960fff",
+                  "913553cc-dfa9-4247-9afb-70797222490b",
+                  "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+                ],
+                "allUuids": [
+                  "466ab239-9359-414c-a61e-be6d955ae983",
+                  "f8320f39-791d-441d-a181-61104b8e6ed5",
+                  "d92403f4-55f8-4743-a986-3260845222b9",
+                  "04391e85-ce37-4e9e-b831-9b6788960fff",
+                  "913553cc-dfa9-4247-9afb-70797222490b",
+                  "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+                ]
+              }
+            }
+          },
+          "summary": {
+            "line": 37,
+            "uuid": "b8ef2671-0cd5-4a4c-95cb-838ad56d4e1a",
+            "parentUuid": "2a2fe3ea-7fba-45a5-bf07-9952728c19df",
+            "isCompactSummary": true,
+            "isVisibleInTranscriptOnly": true,
+            "knownMarker": "ATAPE_REPEAT_DUAL_R1_SUMMARY:"
+          },
+          "physicalUuidGraph": [
+            {
+              "line": 20,
+              "uuid": "244ea704-b43d-4f92-aed5-e5f964a12463",
+              "parentUuid": "cd39e6e9-bd5e-4aae-b11a-ffde307fc65a",
+              "type": "user",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": "2224f558-402d-4e1e-bd64-f47533e45be7",
+              "slug": null
+            },
+            {
+              "line": 21,
+              "uuid": "04293366-a6f8-4b82-8b20-ed4bb2db6e7f",
+              "parentUuid": "244ea704-b43d-4f92-aed5-e5f964a12463",
+              "type": "attachment",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": null,
+              "slug": null
+            },
+            {
+              "line": 22,
+              "uuid": "466ab239-9359-414c-a61e-be6d955ae983",
+              "parentUuid": "04293366-a6f8-4b82-8b20-ed4bb2db6e7f",
+              "type": "assistant",
+              "apiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "apiBlockIndex": 0,
+              "promptId": null,
+              "slug": null
+            },
+            {
+              "line": 23,
+              "uuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+              "parentUuid": "466ab239-9359-414c-a61e-be6d955ae983",
+              "type": "assistant",
+              "apiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "apiBlockIndex": 1,
+              "promptId": null,
+              "slug": null
+            },
+            {
+              "line": 24,
+              "uuid": "d92403f4-55f8-4743-a986-3260845222b9",
+              "parentUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+              "type": "assistant",
+              "apiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "apiBlockIndex": 2,
+              "promptId": null,
+              "slug": null
+            },
+            {
+              "line": 25,
+              "uuid": "04391e85-ce37-4e9e-b831-9b6788960fff",
+              "parentUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+              "type": "user",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": "2224f558-402d-4e1e-bd64-f47533e45be7",
+              "slug": null
+            },
+            {
+              "line": 26,
+              "uuid": "913553cc-dfa9-4247-9afb-70797222490b",
+              "parentUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+              "type": "user",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": "2224f558-402d-4e1e-bd64-f47533e45be7",
+              "slug": null
+            },
+            {
+              "line": 27,
+              "uuid": "53e6d261-ac09-4d34-8bad-e8797f7d86e6",
+              "parentUuid": "913553cc-dfa9-4247-9afb-70797222490b",
+              "type": "attachment",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": null,
+              "slug": null
+            },
+            {
+              "line": 36,
+              "uuid": "2a2fe3ea-7fba-45a5-bf07-9952728c19df",
+              "parentUuid": null,
+              "type": "system",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": null,
+              "slug": "cryptic-gliding-brook"
+            },
+            {
+              "line": 37,
+              "uuid": "b8ef2671-0cd5-4a4c-95cb-838ad56d4e1a",
+              "parentUuid": "2a2fe3ea-7fba-45a5-bf07-9952728c19df",
+              "type": "user",
+              "apiId": null,
+              "apiBlockIndex": null,
+              "promptId": "2224f558-402d-4e1e-bd64-f47533e45be7",
+              "slug": "cryptic-gliding-brook"
+            },
+            {
+              "line": 38,
+              "uuid": "f3055b4b-8bd7-4f9c-8d4c-0e4782d70ac5",
+              "parentUuid": "b8ef2671-0cd5-4a4c-95cb-838ad56d4e1a",
+              "type": "assistant",
+              "apiId": "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "apiBlockIndex": 0,
+              "promptId": null,
+              "slug": "cryptic-gliding-brook"
+            },
+            {
+              "line": 39,
+              "uuid": "af144a26-9b5d-44b4-b6e1-72e18d93179f",
+              "parentUuid": "f3055b4b-8bd7-4f9c-8d4c-0e4782d70ac5",
+              "type": "assistant",
+              "apiId": "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "apiBlockIndex": 1,
+              "promptId": null,
+              "slug": "cryptic-gliding-brook"
+            }
+          ]
+        }
+      ],
+      "derivedTestCutExpectationScope": "Logical counts derive from source unique UUIDs/latest original API observations. Pending/frontier select the proposed narrow caller contract, not unperformed acceptance. All cuts are prefixes of r1.jsonl and are not extra native snapshots.",
+      "derivedTestCuts": [
+        {
+          "label": "r1-U",
+          "round": 1,
+          "slot": "U",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 20,
+          "original": {
+            "bytes": 6943,
+            "sha256": "bd69ecff29213b300bcf862fd5371fa243a3751a203d3ec535cce9170fddb7fc"
+          },
+          "sanitized": {
+            "bytes": 6775,
+            "sha256": "5a1cb78f43f840216444f8b1c257c781c51f9a34c991a3061ccbd8ce26c58a82"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 20,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-G",
+          "round": 1,
+          "slot": "G",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 21,
+          "original": {
+            "bytes": 7439,
+            "sha256": "d4509545319fd8859fc9720497156f8fc77b33c36568e03abc389adbd5be4df3"
+          },
+          "sanitized": {
+            "bytes": 7247,
+            "sha256": "db6a016cd6210bbc2e4a9cc0cf4ca5c6fbad1682b48a278e9bc9cc656de74829"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 21,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-plan",
+          "round": 1,
+          "slot": "plan",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 22,
+          "original": {
+            "bytes": 8532,
+            "sha256": "c033a3c288cb7e34b61eca6336d38c8a35a988aeb13994006685414ec3a6a1ce"
+          },
+          "sanitized": {
+            "bytes": 8316,
+            "sha256": "79266bc4c6061c942a5a8baf6694c21e1d53c02f4cd64f5bac7f434e44769126"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 6,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 22,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-call0",
+          "round": 1,
+          "slot": "call0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 23,
+          "original": {
+            "bytes": 9709,
+            "sha256": "3eb84d54572496af5a0e6d497b271c04ff6e66405bc09256140292b85bb3a420"
+          },
+          "sanitized": {
+            "bytes": 9453,
+            "sha256": "8564d2e55027fc60a0abdb6784a6efcc05d5a5c688f38cd021bf284752dad58a"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 7,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 23,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-call1",
+          "round": 1,
+          "slot": "call1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 24,
+          "original": {
+            "bytes": 10886,
+            "sha256": "793e0235e2bfeae059834743721b58837962127bf4aea136a47835bea3656821"
+          },
+          "sanitized": {
+            "bytes": 10590,
+            "sha256": "b89abf2fc49a389a330f48597310fa822b5a0d0ed44a3553147b4e76b1cd3132"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 24,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-resultB",
+          "round": 1,
+          "slot": "resultB",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 25,
+          "original": {
+            "bytes": 11804,
+            "sha256": "4ba2391dc27d709c9fcfbb7dabc96ad28e50f65348eeb36040bd1c0564a14c4f"
+          },
+          "sanitized": {
+            "bytes": 11468,
+            "sha256": "e8c8c9e69d30473219ba9d53fd51de5ed92234c32ba8d95081e2a6012f39e534"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 9,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-resultA",
+          "round": 1,
+          "slot": "resultA",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 26,
+          "original": {
+            "bytes": 12718,
+            "sha256": "0a5481a46e18b0fefdc900ee5e36e9e12376cf061bf57806cc31650cd63411d2"
+          },
+          "sanitized": {
+            "bytes": 12342,
+            "sha256": "b2aebf3a4d405a1cb4f5ed3e061abaecd74b705a85e4bac523360ccd12423b51"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 26,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-originals",
+          "round": 1,
+          "slot": "originals",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 27,
+          "original": {
+            "bytes": 13214,
+            "sha256": "c264e510db685896f986aa2a3afbac5cf58f666687043f7b2d59a1e917ed616e"
+          },
+          "sanitized": {
+            "bytes": 12814,
+            "sha256": "de2b9134bbedf70633ac3e54be08aec8e4a29b56ad59c7fb5a5ce43f073350b9"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-copy0",
+          "round": 1,
+          "slot": "copy0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 28,
+          "original": {
+            "bytes": 13863,
+            "sha256": "2bf7e366d11884bb92c51f4f98c061c99b37fc3851d5bef379e108dd7737c11b"
+          },
+          "sanitized": {
+            "bytes": 13439,
+            "sha256": "f46465e0b8bdc1d400ff3ede028de40ac3fe9896fb4206b681117c6657f4d86e"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy1",
+          "round": 1,
+          "slot": "copy1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 29,
+          "original": {
+            "bytes": 14390,
+            "sha256": "08a3590f88cd72af087ff01d6e10879f5a7400ed97c013079c785b7a3899d0a4"
+          },
+          "sanitized": {
+            "bytes": 13942,
+            "sha256": "aeefaeb357815b561628c432b2a0943fff6015d56a6a11f4f66412850adab497"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy2",
+          "round": 1,
+          "slot": "copy2",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 30,
+          "original": {
+            "bytes": 15514,
+            "sha256": "2d3dfdee2c91789ed65aea8766552309100848876b05eb41cbf6c6857367ef87"
+          },
+          "sanitized": {
+            "bytes": 15042,
+            "sha256": "c930cf8985a585199a20c53657a591f525f40674282a816d896ef00ef2a9f931"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy3",
+          "round": 1,
+          "slot": "copy3",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 31,
+          "original": {
+            "bytes": 16722,
+            "sha256": "5e6bc4d653e099c6e92dcc34488b1031acc876de0263671ea11685a23c05237f"
+          },
+          "sanitized": {
+            "bytes": 16210,
+            "sha256": "457e5a58aa76f3e51f4d649a3db99378c979479bc6bc6e82b40a53ad7eb838c1"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy4",
+          "round": 1,
+          "slot": "copy4",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 32,
+          "original": {
+            "bytes": 17930,
+            "sha256": "1eb49640aec548fdbe0f85f8af1bf0bee577d890316ae9e8c3d98049129b2c6b"
+          },
+          "sanitized": {
+            "bytes": 17378,
+            "sha256": "2ac8142486a7f70f1eac865f3e6c072492beed776de8cc299a9114e2fed882a3"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy5",
+          "round": 1,
+          "slot": "copy5",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 33,
+          "original": {
+            "bytes": 18879,
+            "sha256": "fd65b6b94c653f79fa83f6251e765809abeff2cc43bd2f7f65a7a457cf531541"
+          },
+          "sanitized": {
+            "bytes": 18287,
+            "sha256": "3645abd4aa64ef81e471aaffc3fb778b72ecee60fc13d0a265e1e5d850efdd13"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy6",
+          "round": 1,
+          "slot": "copy6",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 34,
+          "original": {
+            "bytes": 19824,
+            "sha256": "9d9929eca880c5498ce9e8f89f48e5d4a153da2e52470ef1da82871a26ce5844"
+          },
+          "sanitized": {
+            "bytes": 19192,
+            "sha256": "8214501e581e7a7b1ba0b5f741a48939f33906560682b2a24c6549a971e206c1"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-copy7",
+          "round": 1,
+          "slot": "copy7",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 35,
+          "original": {
+            "bytes": 20351,
+            "sha256": "38ff7df856c3933d3543b5d4f9a61a40096e816c30ac41538b53a3a3fc0b2eba"
+          },
+          "sanitized": {
+            "bytes": 19695,
+            "sha256": "9d17d337b18ccbf7cc18504e72e2911cdb6474e121897815e7675907101b325f"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-B",
+          "round": 1,
+          "slot": "B",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 36,
+          "original": {
+            "bytes": 21732,
+            "sha256": "745323d7a795ce0f4bfe8c9c1b1ffd723565af606ec2ade693517a84851f4d2a"
+          },
+          "sanitized": {
+            "bytes": 21052,
+            "sha256": "3f723fed8be96442f8d898304e31400499051afab9491d2d4a3b983750d86c3e"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r1-S",
+          "round": 1,
+          "slot": "S",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 37,
+          "original": {
+            "bytes": 23217,
+            "sha256": "683bb963fcace5b45103c1dc214dd4fdd5e8410939c73f2b39ad08cb08cca286"
+          },
+          "sanitized": {
+            "bytes": 22473,
+            "sha256": "11b41fb8905f0f22ddf795b8331752c16107a52e7ec0b9fc2e19fe2cc4c88ef0"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3"
+            ],
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 37,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-F0",
+          "round": 1,
+          "slot": "F0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 38,
+          "original": {
+            "bytes": 24329,
+            "sha256": "1399666e226b7413a9615fcd6a96f6538a7ee35267414d3b986eaedc5e2c0e14"
+          },
+          "sanitized": {
+            "bytes": 23561,
+            "sha256": "a2d340c70b81d23e35f85761aa3f137e647a04ae579fe88fc5acfe425da924d0"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 11,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 38,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1-F1",
+          "round": 1,
+          "slot": "F1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r1.jsonl",
+          "prefixThroughLine": 39,
+          "original": {
+            "bytes": 25443,
+            "sha256": "9538e6975afef40146d14fe105d09245ba09546bc2e13b10d598ba82c8af959d"
+          },
+          "sanitized": {
+            "bytes": 24651,
+            "sha256": "e222dec2a8339d8121dc1b354ed8ff3d9b7f919dfdbe0991fb73497a82e19be0"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 12,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 39,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "ordinary-U",
+          "slot": "U",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "ordinary-resume.jsonl",
+          "prefixThroughLine": 43,
+          "original": {
+            "bytes": 26769,
+            "sha256": "4dbbc4eb9cc8e0ea0328af43c8b49750f1a7f3c50cf60a45662cb5815b10cc50"
+          },
+          "sanitized": {
+            "bytes": 25953,
+            "sha256": "c18bb2c11ca58b7762782239e5ab8caa06de9e71c4fc009b24cc6f0b51ecab86"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 13,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 43,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "ordinary-G",
+          "slot": "G",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "ordinary-resume.jsonl",
+          "prefixThroughLine": 44,
+          "original": {
+            "bytes": 27296,
+            "sha256": "8a3fa5fe756871c18322ab1392ce9b8d90a3fb9e8d4742a955ade120771811f2"
+          },
+          "sanitized": {
+            "bytes": 26456,
+            "sha256": "3a2dd40c46869fe547e8d0d58f6fa25bb42c4dff372fd1ba70535dede5d9a55b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 13,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 44,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "ordinary-answer",
+          "slot": "answer",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "ordinary-resume.jsonl",
+          "prefixThroughLine": 45,
+          "original": {
+            "bytes": 28434,
+            "sha256": "9a40c2ebb1181b17c92cd30fd981b5e2df9b6fefc8b430aca8db0eafebde857a"
+          },
+          "sanitized": {
+            "bytes": 27570,
+            "sha256": "e47c5df292fb1809746bd703f28563bf9bed5613ed0ad6f509fb5e062d303559"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 14,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "msg_atape_reversed_read_82f63bfe_dual_ordinary_6"
+            ],
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 45,
+          "incompleteAtomicReplayGroup": false
+        }
+      ],
+      "nativeInvocations": [
+        {
+          "phase": "seed",
+          "invocationRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/seed-invocation.json",
+            "bytes": 1670,
+            "sha256": "c12cffbb704df032a434d50a15cff7a3be29d23a6d3006723820ab7307fd10a1"
+          },
+          "resultRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/seed-result.json",
+            "bytes": 4581,
+            "sha256": "b00c11e0697a88239dd896c52b74b6c5666644ca7bf21a3275ac61ab2231d1cc"
+          },
+          "argv": [
+            "--restricted",
+            "--safe-mode",
+            "--tools",
+            "Read",
+            "--allowedTools",
+            "Read",
+            "--permission-mode",
+            "manual",
+            "--permission-prompts",
+            "none",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "{\"mcpServers\":{}}",
+            "--no-chrome",
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+            "--print",
+            "--output-format",
+            "json",
+            "--session-id",
+            "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "ATAPE_REPEAT_82f63bfe_dual_SEED: Remember cobalt heron 482."
+          ],
+          "actualEnv": {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": "/fixture/native-reversed-read-pair/home",
+            "LANG": "en_US.UTF-8",
+            "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "CLAUDE_CONFIG_DIR": "/fixture/native-reversed-read-pair/config",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:60857",
+            "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20"
+          },
+          "startedAt": "2026-10-08T15:33:19.192Z",
+          "finishedAt": "2026-10-08T15:33:19.491Z",
+          "exit": 0,
+          "signal": null,
+          "binaryBeforeSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "binaryAfterSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "stdoutBytes": 1551,
+          "stdoutSha256": "1fb4954ecf4efa0d8f8c7ebfd195431dc81738b00ed7883daf467adec4efad9a",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdoutTopLevelUsage": {
+            "input_tokens": 23,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 11,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 23,
+              "outputTokens": 11,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 0.000234,
+              "contextWindow": 200000,
+              "maxOutputTokens": 32000,
+              "thinkingTokens": 0,
+              "canonicalModel": "claude-sonnet-4-6",
+              "provider": "firstParty",
+              "costBasis": "list"
+            }
+          },
+          "stdoutCostIsListEstimateNotProviderBilling": true,
+          "beforeConfigInventory": [],
+          "afterConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 2746,
+              "sha256": "45dcc6f5868bc76f69a7e9591fa9bf8d4ea8076fab4d4dc4475ce5bbf769c2cf"
+            }
+          ]
+        },
+        {
+          "phase": "warmup",
+          "invocationRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/warmup-invocation.json",
+            "bytes": 2245,
+            "sha256": "aaeaaa1cd7da0a1fbb1afb7799d28101c2ede3b28fd4a7f38d110b2bc29a4c44"
+          },
+          "resultRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/warmup-result.json",
+            "bytes": 5160,
+            "sha256": "c0affd89046970fa58242063da61eda342beebac509bb777f9b320373e62917d"
+          },
+          "argv": [
+            "--restricted",
+            "--safe-mode",
+            "--tools",
+            "Read",
+            "--allowedTools",
+            "Read",
+            "--permission-mode",
+            "manual",
+            "--permission-prompts",
+            "none",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "{\"mcpServers\":{}}",
+            "--no-chrome",
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+            "--print",
+            "--output-format",
+            "json",
+            "--resume",
+            "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "ATAPE_REPEAT_82f63bfe_dual_WARMUP: Confirm synthetic context."
+          ],
+          "actualEnv": {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": "/fixture/native-reversed-read-pair/home",
+            "LANG": "en_US.UTF-8",
+            "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "CLAUDE_CONFIG_DIR": "/fixture/native-reversed-read-pair/config",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:60857",
+            "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20"
+          },
+          "startedAt": "2026-10-08T15:33:19.570Z",
+          "finishedAt": "2026-10-08T15:33:19.819Z",
+          "exit": 0,
+          "signal": null,
+          "binaryBeforeSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "binaryAfterSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "stdoutBytes": 1553,
+          "stdoutSha256": "66bc2e443dd1c9aca64be3ac3ea45703005067bed7c790287e136012160b8ccc",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdoutTopLevelUsage": {
+            "input_tokens": 29,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 13,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 0.000282,
+              "contextWindow": 200000,
+              "maxOutputTokens": 32000,
+              "thinkingTokens": 0,
+              "canonicalModel": "claude-sonnet-4-6",
+              "provider": "firstParty",
+              "costBasis": "list"
+            }
+          },
+          "stdoutCostIsListEstimateNotProviderBilling": true,
+          "beforeConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 2746,
+              "sha256": "45dcc6f5868bc76f69a7e9591fa9bf8d4ea8076fab4d4dc4475ce5bbf769c2cf"
+            }
+          ],
+          "afterConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 5536,
+              "sha256": "c1ddfb159e80212889e431182ac3dd947d50685f02156ba639ad38888563bdf6"
+            }
+          ]
+        },
+        {
+          "phase": "r1",
+          "invocationRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/r1-invocation.json",
+            "bytes": 2280,
+            "sha256": "39ec25cbf352387bb41c96ecedb69df4a5047d5b12279e4c60eb071e3a742e9d"
+          },
+          "resultRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/r1-result.json",
+            "bytes": 5225,
+            "sha256": "3615a8b91dcb9686227902308cfade882f77991d5a34cc06340f97c4081958a6"
+          },
+          "argv": [
+            "--restricted",
+            "--safe-mode",
+            "--tools",
+            "Read",
+            "--allowedTools",
+            "Read",
+            "--permission-mode",
+            "manual",
+            "--permission-prompts",
+            "none",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "{\"mcpServers\":{}}",
+            "--no-chrome",
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+            "--print",
+            "--output-format",
+            "json",
+            "--resume",
+            "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "ATAPE_REPEAT_82f63bfe_dual_R1_TOOLS: Read r1-a.txt and r1-b.txt once, then give two text blocks."
+          ],
+          "actualEnv": {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": "/fixture/native-reversed-read-pair/home",
+            "LANG": "en_US.UTF-8",
+            "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "CLAUDE_CONFIG_DIR": "/fixture/native-reversed-read-pair/config",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:60857",
+            "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20"
+          },
+          "startedAt": "2026-10-08T15:33:19.898Z",
+          "finishedAt": "2026-10-08T15:33:20.151Z",
+          "exit": 0,
+          "signal": null,
+          "binaryBeforeSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "binaryAfterSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "stdoutBytes": 1585,
+          "stdoutSha256": "e20dfb8fb33d601ad203444ea7ad149dba2e98f1601a090dab35136ba59d2fde",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdoutTopLevelUsage": {
+            "input_tokens": 190041,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 40,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 190092,
+              "outputTokens": 59,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 0.5711610000000001,
+              "contextWindow": 200000,
+              "maxOutputTokens": 32000,
+              "thinkingTokens": 0,
+              "canonicalModel": "claude-sonnet-4-6",
+              "provider": "firstParty",
+              "costBasis": "list"
+            }
+          },
+          "stdoutCostIsListEstimateNotProviderBilling": true,
+          "beforeConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 5536,
+              "sha256": "c1ddfb159e80212889e431182ac3dd947d50685f02156ba639ad38888563bdf6"
+            }
+          ],
+          "afterConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 25679,
+              "sha256": "76c1c7bc6815efb1092d2df49cf8de5db7554958a0daa8d91ff8a27cb81dc1a5"
+            }
+          ]
+        },
+        {
+          "phase": "ordinary-resume",
+          "invocationRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence/ordinary-resume-invocation.json",
+            "bytes": 3215,
+            "sha256": "86bb7f5c527532d57e285c986b6d23631a7aa6bc4d0982fa930daf239dd4fa68"
+          },
+          "resultRecord": {
+            "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence/ordinary-resume-result.json",
+            "bytes": 6309,
+            "sha256": "f43dd4a4903d7fcde4902b115a0eb81dba2674e0640a53895f26450a0233928e"
+          },
+          "argv": [
+            "--restricted",
+            "--safe-mode",
+            "--tools",
+            "Read",
+            "--allowedTools",
+            "Read",
+            "--permission-mode",
+            "manual",
+            "--permission-prompts",
+            "none",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "{\"mcpServers\":{}}",
+            "--no-chrome",
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+            "--print",
+            "--output-format",
+            "json",
+            "--resume",
+            "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "ATAPE_REVERSED_READ_82f63bfe_dual_ORDINARY: Confirm amber lynx204 and violet crane619 after the completed first tool round."
+          ],
+          "actualEnv": {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": "/fixture/native-reversed-read-pair/home",
+            "LANG": "en_US.UTF-8",
+            "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "CLAUDE_CONFIG_DIR": "/fixture/native-reversed-read-pair/config",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:63902",
+            "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20"
+          },
+          "startedAt": "2026-10-08T16:58:49.725Z",
+          "finishedAt": "2026-10-08T16:58:50.045Z",
+          "exit": 0,
+          "signal": null,
+          "binaryBeforeSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "binaryAfterSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "stdoutBytes": 1579,
+          "stdoutSha256": "fa68f920523e86fe826e06f4c42e7ecc5a722a4f36a3cae37c710734ecb505ef",
+          "stderrBytes": 0,
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stdoutTopLevelUsage": {
+            "input_tokens": 29,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 13,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "webSearchRequests": 0,
+              "costUSD": 0.000282,
+              "contextWindow": 200000,
+              "maxOutputTokens": 32000,
+              "thinkingTokens": 0,
+              "canonicalModel": "claude-sonnet-4-6",
+              "provider": "firstParty",
+              "costBasis": "list"
+            }
+          },
+          "stdoutCostIsListEstimateNotProviderBilling": true,
+          "beforeConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 25679,
+              "sha256": "76c1c7bc6815efb1092d2df49cf8de5db7554958a0daa8d91ff8a27cb81dc1a5"
+            }
+          ],
+          "afterConfigInventory": [
+            {
+              "file": ".claude.json",
+              "bytes": 423,
+              "sha256": "55e6c9da165b9b5f7224b067deac4128c932861ee1dbcccd3cda9a968a28c530"
+            },
+            {
+              "file": "backups/.claude.json.backup.1791473599351",
+              "bytes": 84,
+              "sha256": "079d64600a54aed8c72eb3e4e749dc09a291330dc21f237d8117d6c66c5159dd"
+            },
+            {
+              "file": "projects/-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl",
+              "bytes": 28697,
+              "sha256": "26bba82b2f7b1dc099b006544714a88532017b146252c7929af10d1b95456b9f"
+            }
+          ]
+        }
+      ],
+      "captureControls": {
+        "actualEnv": {
+          "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+          "HOME": "/fixture/native-reversed-read-pair/home",
+          "LANG": "en_US.UTF-8",
+          "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+          "CLAUDE_CONFIG_DIR": "/fixture/native-reversed-read-pair/config",
+          "ANTHROPIC_BASE_URL": "http://127.0.0.1:60857",
+          "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+          "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+          "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+          "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+          "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+          "DISABLE_AUTOUPDATER": "1",
+          "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20"
+        },
+        "actualCwd": "/fixture/native-reversed-read-pair/workspace",
+        "realCwd": "/fixture/native-reversed-read-pair/workspace",
+        "initialHomeInventory": [],
+        "initialConfigInventory": [],
+        "binaryBeforeSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+        "binaryAfterSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+        "budget": {
+          "termMs": 45000,
+          "killMs": 50000,
+          "caseMs": 360000,
+          "modelRequests": 12,
+          "phaseRequests": 5,
+          "requestBytes": 8388608
+        },
+        "modelRequestCount": 6,
+        "countTokensRequestCount": 0,
+        "bootstrapRequests": [
+          {
+            "index": 1,
+            "phase": "seed",
+            "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "method": "HEAD",
+            "url": "/api/hello",
+            "request": {
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "status": 404
+          },
+          {
+            "index": 3,
+            "phase": "warmup",
+            "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "method": "HEAD",
+            "url": "/api/hello",
+            "request": {
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "status": 404
+          },
+          {
+            "index": 5,
+            "phase": "r1",
+            "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "method": "HEAD",
+            "url": "/api/hello",
+            "request": {
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "status": 404
+          },
+          {
+            "index": 1,
+            "phase": "ordinary-resume",
+            "authorityDirectory": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence",
+            "method": "HEAD",
+            "url": "/api/hello",
+            "request": {
+              "bytes": 0,
+              "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "status": 404
+          }
+        ],
+        "onlyConfiguredModelEndpoint": "127.0.0.1 loopback",
+        "fakeProviderCredential": true,
+        "realProviderCredentialsConfigured": false,
+        "osEgressFirewallApplied": false,
+        "latestUserRouting": "Exact latest direct external phase prompt, explicit current round state, fresh round-specific IDs, current last-user native summary instruction; historical substring matches do not authorize a round.",
+        "artificialToolCallInputTokens": 190000,
+        "thresholdPct": "20",
+        "freshProcessEachPhaseSharedIsolatedHomeConfigWorkspace": true,
+        "allFourInvocationsExitZero": true,
+        "initialCaptureStoppedAfterOldAdapterFirstRoundAckFailure": true,
+        "round2NotInvoked": true,
+        "laterOrdinaryResume": {
+          "nativeProcessCount": 1,
+          "budget": {
+            "termMs": 45000,
+            "killMs": 50000,
+            "caseMs": 90000,
+            "modelResponses": 1,
+            "requestBytes": 8388608
+          },
+          "modelRequests": 1,
+          "countTokensRequests": 0,
+          "strictR1Prefix": true,
+          "appendedLines": 6,
+          "newBoundaryCount": 0,
+          "newToolCalls": 0
+        }
+      },
+      "diskEvidence": [
+        {
+          "file": "r1-a.txt",
+          "sourceFile": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace/r1-a.txt",
+          "fixturePath": "/fixture/native-reversed-read-pair/workspace/r1-a.txt",
+          "bytes": 54,
+          "sha256": "af6b6f7fef06592fabdb5d0e9432ff4be8f8297dc7eb81b266922db44c83e5ca",
+          "contentUtf8": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n",
+          "actualReadExecuted": true
+        },
+        {
+          "file": "r1-b.txt",
+          "sourceFile": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace/r1-b.txt",
+          "fixturePath": "/fixture/native-reversed-read-pair/workspace/r1-b.txt",
+          "bytes": 56,
+          "sha256": "9d4d8d32b8369fad8ed44cb6f2983266afd9292cc1feb1f0b2b37be868adb07d",
+          "contentUtf8": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n",
+          "actualReadExecuted": true
+        }
+      ],
+      "callReceiptEvidence": [
+        {
+          "round": 1,
+          "callLine": 23,
+          "callUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "callApiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "apiBlockIndex": 1,
+          "call": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_dual_r1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-reversed-read-pair/workspace/r1-a.txt"
+            }
+          },
+          "resultLine": 26,
+          "resultUuid": "913553cc-dfa9-4247-9afb-70797222490b",
+          "resultParentUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "sourceToolAssistantUUID": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "sourceResultBlock": {
+            "tool_use_id": "call_82f63bfe_dual_r1_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-reversed-read-pair/workspace/r1-a.txt",
+              "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true,
+          "rootIdentity": {
+            "sessionId": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "cwd": "/fixture/native-reversed-read-pair/workspace",
+            "version": "2.1.263",
+            "isSidechain": false
+          },
+          "flagPresence": {}
+        },
+        {
+          "round": 1,
+          "callLine": 24,
+          "callUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "callApiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "apiBlockIndex": 2,
+          "call": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_dual_r1_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-reversed-read-pair/workspace/r1-b.txt"
+            }
+          },
+          "resultLine": 25,
+          "resultUuid": "04391e85-ce37-4e9e-b831-9b6788960fff",
+          "resultParentUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "sourceToolAssistantUUID": "d92403f4-55f8-4743-a986-3260845222b9",
+          "sourceResultBlock": {
+            "tool_use_id": "call_82f63bfe_dual_r1_read_b",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-reversed-read-pair/workspace/r1-b.txt",
+              "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true,
+          "rootIdentity": {
+            "sessionId": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "cwd": "/fixture/native-reversed-read-pair/workspace",
+            "version": "2.1.263",
+            "isSidechain": false
+          },
+          "flagPresence": {}
+        }
+      ],
+      "requestProof": [
+        {
+          "originalRequestIndex": 2,
+          "phase": "seed",
+          "response": "seed",
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 4,
+          "phase": "warmup",
+          "response": "warmup",
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 6,
+          "phase": "r1",
+          "response": "toolcalls",
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 7,
+          "phase": "r1",
+          "response": "summary",
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 8,
+          "phase": "r1",
+          "response": "tool-final",
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "summaryLine": 37,
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "toolUseId": "call_82f63bfe_dual_r1_read_b",
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "sourceResultLine": 25,
+              "rawSourceResultExactTextEqual": true,
+              "submittedStartsWithRawResultTrimmed": true
+            },
+            {
+              "toolUseId": "call_82f63bfe_dual_r1_read_a",
+              "messageIndex": 2,
+              "blockIndex": 1,
+              "sourceResultLine": 26,
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true
+            }
+          ]
+        },
+        {
+          "originalRequestIndex": 2,
+          "phase": "ordinary-resume",
+          "response": "ordinary-resume",
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "summaryLine": 37,
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "toolUseId": "call_82f63bfe_dual_r1_read_b",
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "sourceResultLine": 25,
+              "rawSourceResultExactTextEqual": true,
+              "submittedStartsWithRawResultTrimmed": true
+            },
+            {
+              "toolUseId": "call_82f63bfe_dual_r1_read_a",
+              "messageIndex": 2,
+              "blockIndex": 1,
+              "sourceResultLine": 26,
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true
+            }
+          ]
+        }
+      ],
+      "eventSourceIds": [
+        "1b27d710-e8b4-4e47-a5fd-0261c7868fef:0",
+        "e606c861-234f-4c6e-b6c6-ae697ba9d9c6:0",
+        "f97395db-753b-4351-bd6a-a2e6aed2897a:0",
+        "cd39e6e9-bd5e-4aae-b11a-ffde307fc65a:0",
+        "244ea704-b43d-4f92-aed5-e5f964a12463:0",
+        "466ab239-9359-414c-a61e-be6d955ae983:0",
+        "f8320f39-791d-441d-a181-61104b8e6ed5:0",
+        "d92403f4-55f8-4743-a986-3260845222b9:0",
+        "04391e85-ce37-4e9e-b831-9b6788960fff:0",
+        "913553cc-dfa9-4247-9afb-70797222490b:0",
+        "f3055b4b-8bd7-4f9c-8d4c-0e4782d70ac5:0",
+        "af144a26-9b5d-44b4-b6e1-72e18d93179f:0",
+        "86cf6c02-6e99-40e8-9a67-f4e58e4f7af3:0",
+        "2b3bbb57-8b11-4400-ab49-6cceb077da41:0"
+      ],
+      "latestUsageByApiId": {
+        "msg_atape_repeat_82f63bfe_dual_r0_seed_1": {
+          "sourceUsageId": "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+          "sourceUuid": "e606c861-234f-4c6e-b6c6-ae697ba9d9c6",
+          "latestObservationLine": 6,
+          "latestObservationEndBytes": 2475,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 23,
+          "outputTokens": 11,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        },
+        "msg_atape_repeat_82f63bfe_dual_r0_warmup_2": {
+          "sourceUsageId": "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+          "sourceUuid": "cd39e6e9-bd5e-4aae-b11a-ffde307fc65a",
+          "latestObservationLine": 12,
+          "latestObservationEndBytes": 5108,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        },
+        "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3": {
+          "sourceUsageId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "sourceUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "latestObservationLine": 24,
+          "latestObservationEndBytes": 10590,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 190000,
+          "outputTokens": 17,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        },
+        "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5": {
+          "sourceUsageId": "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+          "sourceUuid": "af144a26-9b5d-44b4-b6e1-72e18d93179f",
+          "latestObservationLine": 39,
+          "latestObservationEndBytes": 24651,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 41,
+          "outputTokens": 23,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        },
+        "msg_atape_reversed_read_82f63bfe_dual_ordinary_6": {
+          "sourceUsageId": "msg_atape_reversed_read_82f63bfe_dual_ordinary_6",
+          "sourceUuid": "2b3bbb57-8b11-4400-ab49-6cceb077da41",
+          "latestObservationLine": 45,
+          "latestObservationEndBytes": 27570,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0
+        }
+      },
+      "summarizationUsageLimit": {
+        "missingSummaryApiIds": [
+          "msg_atape_repeat_82f63bfe_dual_r1_summary_4"
+        ],
+        "summaryRequestsObserved": 1,
+        "summaryAssistantJsonlRecordsPresent": 0,
+        "mockSummaryResponseCounters": {
+          "input_tokens": 51,
+          "output_tokens": 19
+        },
+        "stdoutModelUsageMinusTopLevelUsage": {
+          "inputTokens": 51,
+          "outputTokens": 19
+        },
+        "authority": "Raw request/SSE and stdout modelUsage/top-level difference; no summary assistant usage is persisted in JSONL. Neither compactMetadata nor CLI list-cost estimates supply a captured usage observation.",
+        "knownSummaryMarkers": [
+          "ATAPE_REPEAT_DUAL_R1_SUMMARY:"
+        ]
+      },
+      "oldPublicAck": {
+        "record": {
+          "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/r1-public-ack.json",
+          "bytes": 57789,
+          "sha256": "51a45e0a5505661efaf7fdd0032fe98dc7e48f678a42a511c24db03c5ee39f47"
+        },
+        "artifact": {
+          "sourceSha256": "11198b2700a849910f74ad2cedf903d8341bd39ff14ab17439d22cd3ae047d40",
+          "bundleSha256": "93e52ded0f9e0480ee248462fa3f917224800aa3fb381d2784e1bb396b5a734e",
+          "entry": "/Users/liying/mine/ATape/adapters/claude/dist/index.js"
+        },
+        "publicInterface": "createAtapeAdapter(...).collect(...) then close; one Event per page; fresh runtime; exact same-input retry",
+        "limits": {
+          "observations": 10,
+          "threadsPerObservation": 100,
+          "eventsPerObservation": 1,
+          "canonicalBytesPerObservation": 3145728,
+          "rawSegmentsPerObservation": 16,
+          "rawSegmentBytes": 16777216,
+          "rawBytesPerObservation": 16777216,
+          "pagesPerCycle": 20
+        },
+        "parserPrefix": {
+          "bytes": 11804,
+          "sha256": "4ba2391dc27d709c9fcfbb7dabc96ad28e50f65348eeb36040bd1c0564a14c4f",
+          "physicalOrder": 25,
+          "lastUuid": "04391e85-ce37-4e9e-b831-9b6788960fff"
+        },
+        "rawReceipts": [
+          {
+            "sourceSessionId": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "sourceObjectId": "claude-rollout-7bb1012e3a89a1bd9903b9a4a11ff713320f1ced22018ada63de78c797793769",
+            "sourceGeneration": "7bb1012e3a89a1bd9903b9a4a11ff713320f1ced22018ada63de78c797793769",
+            "sourceOffset": 11804,
+            "finalized": false
+          }
+        ],
+        "totals": {
+          "events": 9,
+          "uniqueEventIds": 9,
+          "realUsageIds": 3,
+          "inputTokens": 190052,
+          "outputTokens": 41,
+          "rawBytes": 11804,
+          "rawSha256": "4ba2391dc27d709c9fcfbb7dabc96ad28e50f65348eeb36040bd1c0564a14c4f",
+          "rawMatchesWholeSnapshot": false
+        },
+        "opaqueCursorBytes": 1396,
+        "opaqueCursorSha256": "88385ce655b3f4a67bbf69e7c006217044bf4b47244314b991e2cc0a10d33b94",
+        "failure": {
+          "reason": "unsupported",
+          "message": "ClaudeArchiveError: Claude Read has no supported assistant response.",
+          "preservedInputCursorSha256": "88385ce655b3f4a67bbf69e7c006217044bf4b47244314b991e2cc0a10d33b94"
+        }
+      },
+      "newPublicAckBeforeOrdinaryResume": {
+        "record": {
+          "file": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/ordinary-evidence/r1-new-public-ack.json",
+          "bytes": 96251,
+          "sha256": "2d116808bb9a2e1fce1aa914659bfa3eda9c466d4011ffa15f16eef9a31e16d4"
+        },
+        "artifact": {
+          "sourceSha256": "0bd12099a4bbebc9e444dc5a08d50c46477c710a938217ae036bdc37fbdc8ffc",
+          "bundleSha256": "0446dfa2de187df0db8b0d6b30f8a6499898ff1b764826af9985c33c221d8657",
+          "sourceHashAuthority": {
+            "file": "/tmp/atape-reversed-read-old-opaque.RvLMddSC/initial-artifact.json",
+            "sha256": "ad50dc3e79fe11b8c8acaba1ce30e3f3c87c07e0125fcdba209085c9e9fbbd3c"
+          },
+          "currentWorkingSourceSha256": "01485f5a8e490102cacfe924b2f48fde8c165bb34bcb6373a7e80cc937f152ca"
+        },
+        "publicInterface": "createAtapeAdapter.collect; one Event per page; fresh runtime; exact same-input retry",
+        "totals": {
+          "events": 12,
+          "uniqueEventIds": 12,
+          "realUsageIds": 4,
+          "inputTokens": 190093,
+          "outputTokens": 64,
+          "rawBytes": 25679,
+          "rawSha256": "76c1c7bc6815efb1092d2df49cf8de5db7554958a0daa8d91ff8a27cb81dc1a5",
+          "rawMatchesWholeSnapshot": true
+        },
+        "lastProgress": {
+          "sourceFiles": 1,
+          "pendingRawBytes": 0,
+          "pendingCanonicalSessions": 0,
+          "phase": "idle"
+        },
+        "rawReceipts": [
+          {
+            "sourceSessionId": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "sourceObjectId": "claude-rollout-7bb1012e3a89a1bd9903b9a4a11ff713320f1ced22018ada63de78c797793769",
+            "sourceGeneration": "7bb1012e3a89a1bd9903b9a4a11ff713320f1ced22018ada63de78c797793769",
+            "sourceOffset": 25679,
+            "finalized": false
+          }
+        ],
+        "opaqueCursorBytes": 1631,
+        "opaqueCursorSha256": "c0dd9a803c7cf88622ecb23625ffe8a13cb2c1a3c27e57379312419fceda5735",
+        "authority": "Initial candidate0bd/0446 completely ACKed original40LF before the separately authorized one ordinary native process. Later production fixes were not retrospectively used as this gate."
+      },
+      "ordinaryResume": {
+        "lines": {
+          "user": 43,
+          "G": 44,
+          "answer": 45,
+          "lastPrompt": 46
+        },
+        "parentBeforeUser": "af144a26-9b5d-44b4-b6e1-72e18d93179f",
+        "userUuid": "86cf6c02-6e99-40e8-9a67-f4e58e4f7af3",
+        "reminderUuid": "7645fcbb-8e51-497d-aff4-e05cccd149ff",
+        "answerUuid": "2b3bbb57-8b11-4400-ab49-6cceb077da41",
+        "answerApiId": "msg_atape_reversed_read_82f63bfe_dual_ordinary_6",
+        "sameExistingSlug": true,
+        "sourceSummaryAndBothResultsLoaded": true
+      },
+      "finalPhysicalLineCount": 46,
+      "finalUuidRecordCount": 29,
+      "finalDistinctUuidCount": 21,
+      "finalLogicalExpected": {
+        "uniqueCanonicalEventCount": 14,
+        "distinctUsageCount": 5,
+        "inputTokens": 190122,
+        "outputTokens": 77,
+        "usageSourceIds": [
+          "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+          "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+          "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+          "msg_atape_reversed_read_82f63bfe_dual_ordinary_6"
+        ]
+      },
+      "evidenceLimitations": [
+        "Only text plan@0 plus two successful Read calls@1/2 with reverse B/A result completion is captured here; no tool-only reversed layout, mixed tools, error, async, child or more-call evidence.",
+        "Only a first automatic boundary is captured. The later ordinary resume ran only after a new public full-R1 ACK; it is not a second dual automatic round.",
+        "Mock tool-call input_tokens=190000 and threshold=20 are controlled triggers, not real provider billing or a natural trigger threshold.",
+        "The configured endpoint is fake-key loopback and fresh HOME/config/workspace were empty. No OS egress firewall was applied; this does not establish absence of every possible background connection.",
+        "Selected requests omit SDK system/tool schema and unrelated reminders. Full wire and original authority remain only in the recorded temporary capture directory.",
+        "The summary request did not include current Read calls/results; the first post-summary final request did include both results in B/A order plus the exact persisted summary. This is a model-context fact, not an admission rule."
+      ]
+    }
+  ]
+}
