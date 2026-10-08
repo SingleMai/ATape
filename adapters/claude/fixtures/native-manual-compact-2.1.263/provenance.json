@@ -1,0 +1,70 @@
+{
+  "executionVersion": "2.1.263",
+  "binarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "capturedAt": "2026-10-08T08:18:50.845Z",
+  "sessionId": "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d",
+  "fixtureCwd": "/fixture/native-manual-compact",
+  "files": [
+    {
+      "path": "before.jsonl",
+      "originalBytes": 5502,
+      "originalSha256": "3675769e2b0ebb7fb66d42f2680e1807451ff5fbe1ae3ac4c11414b03b5a3a98",
+      "sanitizedBytes": 5340,
+      "sanitizedSha256": "02c878f3158d3b8306bf3a15c312f97ab45fde20fe7fd62275881dfacad30620",
+      "records": 14
+    },
+    {
+      "path": "compacted.jsonl",
+      "originalBytes": 10666,
+      "originalSha256": "11f52afa07650e3a11933a82f06e9f543fc152213aaa46078e9e5fd7f7e8fa6d",
+      "sanitizedBytes": 10331,
+      "sanitizedSha256": "a749ef8b5640fa82f1b88c5efee050c9543dc1d92304ceeb128e701c4366cdb5",
+      "records": 24
+    },
+    {
+      "path": "continued.jsonl",
+      "originalBytes": 14584,
+      "originalSha256": "9cd191247516bf53236c2803d6254c5aebd8503b45de2830f4f670cd868794fc",
+      "sanitizedBytes": 14141,
+      "sanitizedSha256": "9923a54b529e199cdb1e82927077efc2ab1db07251c7fd003be936a59b11562d",
+      "records": 31
+    }
+  ],
+  "transport": "Deterministic localhost Anthropic Messages SSE mock; no real model invocation",
+  "requestCounts": {
+    "seedMessages": 1,
+    "secondTurnMessages": 1,
+    "manualCompactMessages": 1,
+    "continuedMessages": 1
+  },
+  "mockCountTokensResponse": 42,
+  "countTokensRequests": 0,
+  "trigger": "manual",
+  "beforeLeafUuid": "8db917d1-678c-44e4-8fad-a9688cc8d705",
+  "compactBoundaryUuid": "62151b65-5248-4aea-a077-fe4781d59c90",
+  "summaryUuid": "15436462-8cd8-40ad-8ba6-089f68de42f0",
+  "afterCompactLeafUuid": "7a45c978-46c6-41d7-8f46-fa3becd61995",
+  "resumeSyntheticAssistantUuid": "521ab014-5ed0-4f46-bc56-eb12fc42c62d",
+  "continuedUserUuid": "8f8fd7be-2f69-43f5-8b82-05402f42cc77",
+  "continuedLeafUuid": "afd3678f-ff79-4bad-9c5b-702b125f379f",
+  "byteAppendOnlyBetweenSnapshots": true,
+  "sourceUuidReplayAfterCompaction": false,
+  "sanitization": [
+    {
+      "from": "/private/tmp/atape-claude-compact-native.DYtkQZ/workspace",
+      "to": "/fixture/native-manual-compact"
+    },
+    {
+      "from": "/tmp/atape-claude-compact-native.DYtkQZ/workspace",
+      "to": "/fixture/native-manual-compact"
+    },
+    {
+      "from": "/tmp/atape-claude-compact-native.DYtkQZ/config",
+      "to": "/fixture/native-manual-compact-home"
+    },
+    {
+      "from": "-private-tmp-atape-claude-compact-native-DYtkQZ-workspace",
+      "to": "-fixture-native-manual-compact"
+    }
+  ]
+}

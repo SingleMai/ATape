@@ -19,6 +19,12 @@ for (const version of authorizedVersions) test(`v${version} manual waiver is ver
   }
   try {
     await git(["init"])
+    // These disposable repositories need commits, not inherited automatic
+    // maintenance that can keep writing .git/objects/pack during cleanup.
+    for (const [key, value] of [["gc.auto", "0"], ["gc.autoDetach", "false"],
+      ["maintenance.auto", "false"], ["maintenance.autoDetach", "false"]]) {
+      await git(["config", "--local", key, value])
+    }
     await writeFile(join(root, "code.txt"), "candidate")
     await commit("candidate")
     const waiver = {
@@ -55,7 +61,7 @@ for (const version of authorizedVersions) test(`v${version} manual waiver is ver
     await writeFile(join(root, "code.txt"), "unapproved changes")
     await commit("change code")
     await assert.rejects(verifyManualReleaseWaiver(root, waiver, release, checks), /Code changed/)
-  } finally { await rm(root, { recursive: true, force: true }) }
+  } finally { await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) }
 })
 
 test("waiver paths reject non-version input", () => {

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 import { expect, it } from "vitest"
-import { RawTransportChunkBytes, type TeamOverview } from "@atape/domain"
+import { RawTransportChunkBytes, type Conversation, type SearchPage, type TeamOverview } from "@atape/domain"
 
 const repositoryRoot = resolve(import.meta.dirname, "../../..")
 const cliEntry = join(repositoryRoot, "apps/cli/src/main.ts")
@@ -216,6 +216,203 @@ it("discovers and incrementally collects native Claude sessions into existing co
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
     expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail).toHaveLength(3)
     expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+  } finally {
+    await stopServer(server)
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+}, endToEndTimeoutMs)
+
+it("retains native Claude history across additive manual compaction and captures only real continued messages and usage", async () => {
+  const fixture = await createFixture()
+  let server: ChildProcess | undefined
+  try {
+    const sourceSessionId = "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d"
+    const nativeDirectory = join(claudeAdapter, "fixtures/native-manual-compact-2.1.263")
+    const snapshot = async (name: string) => (await readFile(join(nativeDirectory, `${name}.jsonl`), "utf8"))
+      .replaceAll("/fixture/native-manual-compact", fixture.projectDirectory)
+    const [before, compacted, continued] = await Promise.all([snapshot("before"), snapshot("compacted"), snapshot("continued")])
+    const directory = join(fixture.claudeHome, "projects", "compact-storage-name")
+    const claudeFile = join(directory, `${sourceSessionId}.jsonl`)
+    await mkdir(directory, { recursive: true })
+    await writeFile(claudeFile, before)
+    const port = await availablePort(), serverUrl = `http://127.0.0.1:${port}`
+    await configureClient(fixture, serverUrl, "claude")
+    server = startServer(port)
+    await waitUntilHealthy(serverUrl, server)
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
+    expect(memory.trail).toHaveLength(1)
+    const sessionId = memory.trail[0]!.id
+    const conversationPath = `/api/v1/sessions/${sessionId}?thread=root`
+    const archivePath = `/api/v1/sessions/${sessionId}/raw`
+    const overviewPath = "/api/v1/teams/acme-engineering/overview?from=2026-10-08&to=2026-10-08&project=support-notes"
+    const original = await getJSON<Conversation>(serverUrl, conversationPath)
+    expect(original.events.filter(event => event.kind === "message").map(event => event.text)).toEqual([
+      "ATAPE_NATIVE_COMPACT_SEED: Remember synthetic context cobalt heron 482.",
+      "ATAPE_BEFORE_COMPACT: cobalt heron 482 should survive summary.",
+      "ATAPE_NATIVE_COMPACT_SECOND: Also remember cedar fox 731.",
+      "ATAPE_BEFORE_COMPACT_SECOND: cedar fox 731 adds the second turn."
+    ])
+    const originalAnswer = required(original.events.find(event => event.text.startsWith("ATAPE_BEFORE_COMPACT:")), "pre-compaction answer")
+    await waitForSearchAnchor(serverUrl, "ATAPE_BEFORE_COMPACT:", sessionId, "root", originalAnswer.id)
+    const originalOverview = await getJSON<TeamOverview>(serverUrl, overviewPath)
+    expect(originalOverview.metrics).toMatchObject({ sessions: 1, messages: 2,
+      tokens: { input: 52, output: 24, cacheRead: 0, cacheWrite: 0, total: 76, records: 2, sessions: 1 } })
+    const originalArchive = await getJSON<RawArchive>(serverUrl, archivePath)
+    expect(originalArchive.objects).toHaveLength(1)
+    expect((await readRaw(serverUrl, originalArchive)).text).toBe(before)
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+
+    expect(compacted.startsWith(before)).toBe(true)
+    await appendFile(claudeFile, compacted.slice(before.length))
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    const afterCompact = await getJSON<Conversation>(serverUrl, conversationPath)
+    expect(afterCompact.session.id).toBe(sessionId)
+    expect(afterCompact.events.filter(event => event.kind === "message")).toEqual(original.events.filter(event => event.kind === "message"))
+    expect(afterCompact.events.filter(event => original.events.some(old => old.id === event.id))).toEqual(original.events)
+    expect(JSON.stringify(afterCompact.events)).not.toContain("ATAPE_COMPACT_SUMMARY")
+    expect(JSON.stringify(afterCompact.events)).not.toContain("<command-name>")
+    expect(JSON.stringify(afterCompact.events)).not.toContain("<local-command-")
+    expect((await getJSON<TeamOverview>(serverUrl, overviewPath)).metrics).toEqual(originalOverview.metrics)
+    await waitForSearchAnchor(serverUrl, "ATAPE_BEFORE_COMPACT:", sessionId, "root", originalAnswer.id)
+    const compactArchive = await getJSON<RawArchive>(serverUrl, archivePath)
+    expect(compactArchive.objects.map(object => [object.objectId, object.currentGeneration]))
+      .toEqual(originalArchive.objects.map(object => [object.objectId, object.currentGeneration]))
+    expect(compactArchive.objects[0]!.currentSizeBytes).toBeGreaterThan(originalArchive.objects[0]!.currentSizeBytes)
+    expect((await readRaw(serverUrl, compactArchive)).text).toBe(compacted)
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+
+    expect(continued.startsWith(compacted)).toBe(true)
+    await appendFile(claudeFile, continued.slice(compacted.length))
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    const afterContinue = await getJSON<Conversation>(serverUrl, conversationPath)
+    expect(afterContinue.session.id).toBe(sessionId)
+    expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail.map(session => session.id)).toEqual([sessionId])
+    expect(afterContinue.events.filter(event => afterCompact.events.some(old => old.id === event.id))).toEqual(afterCompact.events)
+    const newMessages = afterContinue.events.filter(event => event.kind === "message" && !original.events.some(old => old.id === event.id))
+    expect(newMessages.map(event => event.text)).toEqual([
+      "ATAPE_NATIVE_COMPACT_CONTINUE: Recall the synthetic context after compaction.",
+      "ATAPE_AFTER_COMPACT: cobalt heron 482 retained from controlled summary."
+    ])
+    expect(JSON.stringify(afterContinue.events)).not.toContain("ATAPE_COMPACT_SUMMARY")
+    expect(JSON.stringify(afterContinue.events)).not.toContain("No response requested.")
+    expect(JSON.stringify(afterContinue.events)).not.toContain("<command-name>")
+    for (const event of newMessages) await waitForSearchAnchor(serverUrl, event.text, sessionId, "root", event.id)
+    for (const query of ["ATAPE_COMPACT_SUMMARY", "No response requested.", "<command-name>", "<local-command-stdout>"]) {
+      expect((await getJSON<SearchPage>(serverUrl, `/api/v1/projects/support-notes/search?q=${encodeURIComponent(query)}`)).results).toEqual([])
+    }
+    const continuedOverview = await getJSON<TeamOverview>(serverUrl, overviewPath)
+    // The compact request's metadata and native <synthetic> zero-usage response
+    // are not assistant response Usage facts.
+    expect(continuedOverview.metrics).toMatchObject({ sessions: 1, messages: 3,
+      tokens: { input: 81, output: 37, cacheRead: 0, cacheWrite: 0, total: 118, records: 3, sessions: 1 } })
+    expect(continuedOverview.models.map(model => model.name)).toEqual(["claude-sonnet-4-6"])
+    const continuedArchive = await getJSON<RawArchive>(serverUrl, archivePath)
+    expect(continuedArchive.objects.map(object => [object.objectId, object.currentGeneration]))
+      .toEqual(originalArchive.objects.map(object => [object.objectId, object.currentGeneration]))
+    expect(continuedArchive.objects[0]!.currentSizeBytes).toBeGreaterThan(compactArchive.objects[0]!.currentSizeBytes)
+    const raw = await readRaw(serverUrl, continuedArchive)
+    expect(raw.text).toBe(continued)
+    expect(raw.text).toContain("ATAPE_COMPACT_SUMMARY")
+    expect(raw.text).toContain("No response requested.")
+    expect(raw.text).toContain("<command-name>/compact</command-name>")
+    expect(raw.text).toContain('"compactMetadata"')
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+    expect((await getJSON<Conversation>(serverUrl, conversationPath)).events).toEqual(afterContinue.events)
+    expect((await getJSON<TeamOverview>(serverUrl, overviewPath)).metrics).toEqual(continuedOverview.metrics)
+    expect((await getJSON<RawArchive>(serverUrl, archivePath)).objects).toEqual(continuedArchive.objects)
+  } finally {
+    await stopServer(server)
+    await rm(fixture.root, { recursive: true, force: true })
+  }
+}, endToEndTimeoutMs)
+
+it("collects a native Claude foreground child through the CLI into linked conversation, Search, usage and independent Raw objects", async () => {
+  const fixture = await createFixture()
+  let server: ChildProcess | undefined
+  try {
+    const sourceSessionId = "d33bd4a6-a5ce-47d3-b4d3-91e62386940f"
+    const agentId = "a5b93406db8c7fefd"
+    const nativeDirectory = join(claudeAdapter, "fixtures/native-foreground-child-2.1.263")
+    const directory = join(fixture.claudeHome, "projects", "foreground-storage-name")
+    const childDirectory = join(directory, sourceSessionId, "subagents")
+    const rootFile = join(directory, `${sourceSessionId}.jsonl`)
+    const childFile = join(childDirectory, `agent-${agentId}.jsonl`)
+    await mkdir(childDirectory, { recursive: true })
+    const relocate = (source: string) => source.replaceAll("/fixture/native-foreground-child", fixture.projectDirectory)
+    await Promise.all([
+      readFile(join(nativeDirectory, `${sourceSessionId}.jsonl`), "utf8").then(source => writeFile(rootFile, relocate(source))),
+      readFile(join(nativeDirectory, sourceSessionId, "subagents", `agent-${agentId}.jsonl`), "utf8").then(source => writeFile(childFile, relocate(source)))
+    ])
+
+    const port = await availablePort(), serverUrl = `http://127.0.0.1:${port}`
+    await configureClient(fixture, serverUrl, "claude")
+    server = startServer(port)
+    await waitUntilHealthy(serverUrl, server)
+    const collected = onlyJob(await collect(fixture, serverUrl))
+    expect(collected.observations).toBeGreaterThan(0)
+    expect(collected.rawChunks).toBe(2)
+
+    const memory = await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")
+    expect(memory.trail).toHaveLength(1)
+    expect(memory.trail[0]).toMatchObject({ childThreadCount: 1 })
+    const sessionId = memory.trail[0]!.id
+    const root = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=root`)
+    expect(root.events.map(event => event.text)).toContain("ATAPE_ROOT_FINAL: delegated read reviewed.")
+    const delegation = required(root.events.find(event => event.childThread !== undefined), "Claude delegation")
+    expect(delegation).toMatchObject({ kind: "spawn", tool: { sessionUpdate: "tool_call_update", title: "Agent", status: "completed" } })
+    const childRef = required(delegation.childThread, "Claude child Thread")
+    const child = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=${encodeURIComponent(childRef.id)}`)
+    expect(child.session.id).toBe(root.session.id)
+    expect(child.thread).toMatchObject({ id: childRef.id, parentThreadId: "root" })
+    expect(child.threadPath.map(thread => thread.id)).toEqual(["root", childRef.id])
+    expect(child.events.map(event => event.text)).toContain("ATAPE_CHILD_FINAL: cobalt heron 482 read once.")
+    expect(child.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "tool_result", tool: expect.objectContaining({ title: "Read", status: "completed" }) })
+    ]))
+    expect(JSON.stringify(child.events)).toContain("ATAPE_CHILD_READ_CONTENT: cobalt heron 482.")
+
+    const childAnswer = required(child.events.find(event => event.text === "ATAPE_CHILD_FINAL: cobalt heron 482 read once."), "Claude child answer")
+    const search = await waitForSearchAnchor(serverUrl, "ATAPE_CHILD_FINAL", sessionId, child.thread.id, childAnswer.id)
+    expect(search.threadPath.map(thread => thread.id)).toEqual(["root", childRef.id])
+    const anchored = await getJSON<Conversation>(serverUrl,
+      `/api/v1/sessions/${search.sessionId}?thread=${encodeURIComponent(search.threadId)}&limit=100&at=${encodeURIComponent(search.eventId)}`)
+    expect(anchored.events.some(event => event.id === childAnswer.id && event.text === childAnswer.text)).toBe(true)
+
+    const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Singapore", year: "numeric", month: "2-digit", day: "2-digit" })
+      .format(new Date(childAnswer.occurredAt))
+    const overviewPath = `/api/v1/teams/acme-engineering/overview?from=${date}&to=${date}&project=support-notes`
+    const overview = await getJSON<TeamOverview>(serverUrl, overviewPath)
+    // Four native assistant response IDs own usage. The parent tool-result's
+    // child summary repeats usage and must not create a fifth usage record.
+    expect(overview.metrics).toMatchObject({ sessions: 1, messages: 1,
+      tokens: { input: 68, output: 36, cacheRead: 0, cacheWrite: 0, total: 104, records: 4, sessions: 1 } })
+
+    const archive = await getJSON<RawArchive>(serverUrl, `/api/v1/sessions/${sessionId}/raw`)
+    expect(archive.objects).toHaveLength(2)
+    expect(new Set(archive.objects.map(object => object.objectId)).size).toBe(2)
+    const contents = await Promise.all(archive.objects.map(object => readRaw(serverUrl, { objects: [object] })))
+    const rawRecords = contents.map(raw => raw.text.trimEnd().split("\n").map(line => JSON.parse(line) as Record<string, unknown>))
+    expect(rawRecords.filter(records => records.some(record => record.isSidechain === true))).toHaveLength(1)
+    expect(rawRecords.some(records => records.some(record =>
+      (record.toolUseResult as { agentId?: string } | undefined)?.agentId === agentId))).toBe(true)
+    expect(rawRecords.some(records => records.some(record => record.isSidechain === true) && JSON.stringify(records).includes("CHILD_FINAL"))).toBe(true)
+    const rawOnlyHash = "1b5d136504233964"
+    expect(contents.some(raw => raw.text.includes(rawOnlyHash))).toBe(true)
+    expect(JSON.stringify([root, child])).not.toContain(rawOnlyHash)
+    expect((await getJSON<SearchPage>(serverUrl, `/api/v1/projects/support-notes/search?q=${rawOnlyHash}`)).results).toEqual([])
+
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+    const replayed = await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=${encodeURIComponent(childRef.id)}`)
+    expect(replayed.events).toEqual(child.events)
+    expect((await getJSON<TeamOverview>(serverUrl, overviewPath)).metrics).toEqual(overview.metrics)
+    expect((await getJSON<RawArchive>(serverUrl, `/api/v1/sessions/${sessionId}/raw`)).objects).toEqual(archive.objects)
+
+    await rm(directory, { recursive: true, force: true })
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 0, rawChunks: 0 })
+    expect((await getJSON<Conversation>(serverUrl, `/api/v1/sessions/${sessionId}?thread=${encodeURIComponent(childRef.id)}`)).events).toEqual(child.events)
+    expect((await getJSON<TeamOverview>(serverUrl, overviewPath)).metrics).toEqual(overview.metrics)
+    expect((await getJSON<RawArchive>(serverUrl, `/api/v1/sessions/${sessionId}/raw`)).objects).toEqual(archive.objects)
   } finally {
     await stopServer(server)
     await rm(fixture.root, { recursive: true, force: true })
@@ -504,6 +701,17 @@ const waitForSearch = async (serverUrl: string) => {
   throw new Error(`Search did not project the two E2E Events in time: ${JSON.stringify(last)}`)
 }
 
+const waitForSearchAnchor = async (serverUrl: string, query: string, sessionId: string, threadId: string, eventId: string) => {
+  let last: SearchPage | undefined
+  for (let attempt = 0; attempt < 100; attempt++) {
+    last = await getJSON<SearchPage>(serverUrl, `/api/v1/projects/support-notes/search?q=${encodeURIComponent(query)}`)
+    const result = last.results.find(result => result.sessionId === sessionId && result.threadId === threadId && result.eventId === eventId)
+    if (result) return result
+    await delay(100)
+  }
+  throw new Error(`Search did not project the Canonical Event anchor in time: ${JSON.stringify(last)}`)
+}
+
 const readRaw = async (serverUrl: string, archive: RawArchive) => {
   let chunkCount = 0
   let largestChunk = 0
@@ -616,18 +824,6 @@ type SessionSummary = {
   readonly status: string
   readonly childThreadCount: number
 }
-
-type Conversation = {
-  readonly session: { readonly status: string }
-  readonly events: ReadonlyArray<{
-    readonly id: string
-    readonly text: string
-    readonly tool?: { readonly toolCallId: string; readonly rawInput?: unknown; readonly rawOutput?: unknown }
-    readonly childThread?: { readonly id: string }
-  }>
-}
-
-type SearchPage = { readonly results: ReadonlyArray<{ readonly text: string }> }
 
 type RawArchive = {
   readonly objects: ReadonlyArray<{

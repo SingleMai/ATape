@@ -112,6 +112,8 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0084](0084-overview-compact-options-and-diagnostics.md) | Compact Overview options and operation diagnostics |
 | [0085](0085-overview-indexed-facts-and-aggregation.md) | Indexed Overview facts before database aggregation |
 | [0086](0086-message-body-search.md) | Indexed message-body Search |
+| [0087](0087-claude-foreground-subagents.md) | Claude foreground subagents on legacy capture |
+| [0088](0088-claude-manual-compaction-on-legacy-capture.md) | Claude manual compaction on legacy capture |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

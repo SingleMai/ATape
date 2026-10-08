@@ -36,7 +36,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		t.Skip("set ATAPE_INTEGRATION_TESTS=1 to run HTTP PostgreSQL integration tests")
 	}
 	configureHTTPDockerHost(t)
-	// Four installed Adapter contracts run sequentially with this shared fixture.
+	// Five installed Adapter contracts run sequentially with this shared fixture.
 	// Their successful CI run now takes about five minutes before the final Search
 	// checks. Keep those checks and runner variation inside a bounded fixture lifetime.
 	timeout := 12 * time.Minute
@@ -412,6 +412,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	})
 	t.Run("native Kimi Collector", func(t *testing.T) {
 		assertKimiCollectorContract(t, handler, modules, pool)
+	})
+	t.Run("native Claude Collector", func(t *testing.T) {
+		assertClaudeCollectorContract(t, handler, modules, pool)
 	})
 	t.Run("native OpenCode Collector", func(t *testing.T) {
 		assertOpenCodeCollectorContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)

@@ -26,7 +26,8 @@ LABEL org.opencontainers.image.title="ATape Server" \
       dev.atape.auth-epoch="${ATAPE_RELEASE_EPOCH}" \
       dev.atape.minimum-cli-version="${ATAPE_MINIMUM_CLI_VERSION}"
 
-RUN apk add --no-cache ca-certificates \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates \
     && addgroup -S atape \
     && adduser -S -G atape -h /var/lib/atape atape \
     && mkdir -p /var/lib/atape/raw \
