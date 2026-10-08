@@ -130,8 +130,11 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   unknown fields; each copy adds only the first common slug. All copies plus
   new boundary/summary commit together Raw-only, adding no Events or usage.
   The existing pending-answer checkpoint requires the real first text answer;
-  later text blocks/resumes use ordinary chaining and latest API usage. Only
-  one first-slug round per native tool layout was sampled.
+  later text blocks/resumes use ordinary chaining and latest API usage. Two
+  consecutive single-Read rounds additionally preserve the same existing slug
+  and prove one prior-file reinjection after the second summary. Its complete
+  stored receipt equals the first Read; file ACK keeps the answer pending and
+  full index-0 answer commit clears it. The two-Read profile remains first-slug.
 - Native manual root Read file reinjection on Claude Code 2.1.263: the selected
   text-plan/two-Read turn ends in two final text records, and manual compact
   preserves only that final pair. After summary/command/stdout controls, file B
@@ -195,9 +198,16 @@ Read-turn automatic proof retains at most eight adjacent originals in a separate
 eight/ten-record group has a 640 KiB total cap (eight records imply at most
 512 KiB). The whole group must fit fresh requested source capacity; remaining
 space exhaustion defers it. Ordinary 16 MiB Read admission does not imply its
-larger result fits this replay witness policy. Existing-slug/repeated tool rounds,
-no-plan layouts and other/more/error/async results need further profiles. Text
-replay retains its separate 256 KiB policies and repeated scope.
+larger result fits this replay witness policy. The two-round single-Read profile
+adds a historical witness of at most 64 physical LF frames within 4 MiB; selected
+frames and its one prior-file frame each fit 64 KiB. It requires distinct literal
+paths and full first-receipt equality, retaining the pending answer through file
+ACK and re-proving it before the real answer. Before ACK, the second replay group
+and file must each retain the complete witness within the proposed committed
+prefix's window. Existing-slug two-Read, further
+rounds/multiple files, same-path changes, no-plan layouts and other/more/error/async
+results need further profiles. Text replay retains its separate 256 KiB policies
+and repeated scope.
 Manual Read reinjection selects only one first-slug text-plan/exact-two-successful
 Read turn, its final text pair and reverse-order two-file chain. Each selected
 original receipt R0/R1 fits 2 MiB and each selected file frame fits 1 MiB; their
@@ -315,6 +325,11 @@ synthetic content and actual native source persistence:
   ten snapshots in two independent Sessions with six/eight exact first-slug
   copies and later real answers/resumes. Single executes only Read a.txt;
   inherited HOME was not recorded in either case.
+- [Repeated single-Read automatic replay](fixtures/native-repeated-auto-read-2.1.263/README.md):
+  five snapshots from fresh isolated HOME/config/workspace, two real single Reads
+  and automatic rounds, full existing-slug copies and one prior receipt reinjected
+  after the second summary. The first public ACK precedes the second invocation;
+  failed bootstrap and reverse-order two-Read attempts are disclosed separately.
 - [Manual Read file reinjection](fixtures/native-manual-read-reinjection-2.1.263/README.md):
   six native snapshots with two actual successful Reads, retained final text pair,
   reverse-order file reinjection, internal Meta/synthetic bridge and two real

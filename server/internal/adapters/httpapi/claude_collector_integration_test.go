@@ -258,6 +258,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	const autoReadSingleID = "611cd738-0d92-41ce-b1e3-64ba1a10a70a"
 	const autoReadDualID = "bb9cf168-c9d3-4fea-9428-bd7fc8460755"
 	const largeManualReadID = "b179ae84-44d8-4f32-adee-7f176edf363c"
+	const repeatedAutoReadID = "f2479149-41f5-4f6c-a3e2-7d46eca6ff30"
 	const agentID = "a5b93406db8c7fefd"
 	sourceDirectory := filepath.Join(home, "source", "projects", "opaque-native-project")
 	assertSourceRaw := func(sessionID string, expectedFiles map[string]string) rawarchive.SessionArchive {
@@ -280,18 +281,18 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	setRaw(true)
 	defer setRaw(false)
 	initial := run("initial")
-	if initial.CanonicalEvents != 37 || initial.RawChunks != 10 {
+	if initial.CanonicalEvents != 39 || initial.RawChunks != 11 {
 		t.Fatalf("Claude initial installed capture: %+v", initial)
 	}
 	var memory conversation.ProjectMemory
 	decodeResponse(t, send(http.MethodGet, "/api/v1/projects/"+project.ID+"/memory", ""), &memory)
-	if len(memory.Trail) != 9 {
+	if len(memory.Trail) != 10 {
 		t.Fatal("Claude included a foreign source or split its foreground family")
 	}
 	familySession, compactSession, tailSession, autoSession := "", "", "", ""
 	pairToolSession, pairPlanSession := "", ""
 	autoReadSingleSession, autoReadDualSession := "", ""
-	largeManualReadSession := ""
+	largeManualReadSession, repeatedAutoReadSession := "", ""
 	for _, session := range memory.Trail {
 		if strings.HasPrefix(session.Title, "ATAPE_NATIVE_FOREGROUND_ROOT") {
 			familySession = session.ID
@@ -317,11 +318,14 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		if strings.HasPrefix(session.Title, "ATAPE_AUTO_SEED:") {
 			autoReadDualSession = session.ID
 		}
+		if strings.HasPrefix(session.Title, "ATAPE_REPEAT_82f63bfe_single_SEED:") {
+			repeatedAutoReadSession = session.ID
+		}
 		if strings.HasPrefix(session.Title, "ATAPE_MANUAL_LARGE_SEED:") {
 			largeManualReadSession = session.ID
 		}
 	}
-	if familySession == "" || compactSession == "" || tailSession == "" || autoSession == "" || pairToolSession == "" || pairPlanSession == "" || autoReadSingleSession == "" || autoReadDualSession == "" || largeManualReadSession == "" {
+	if familySession == "" || compactSession == "" || tailSession == "" || autoSession == "" || pairToolSession == "" || pairPlanSession == "" || autoReadSingleSession == "" || autoReadDualSession == "" || largeManualReadSession == "" || repeatedAutoReadSession == "" {
 		t.Fatal("Claude lost native Session identities")
 	}
 	root := read(familySession, "root", 4)
@@ -842,6 +846,114 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		last := fixtureCase.stages[len(fixtureCase.stages)-1]
 		readRetained = append(readRetained, readRetention{fixtureCase.sessionID, fixtureCase.sourceID, last.events, last.count, last.input, last.output, archive, contents})
 	}
+	// Two consecutive native single-Read rounds retain the same slug. The
+	// second answer remains pending across a proved prior-file Raw-only ACK.
+	repeatedFiles := map[string]string{repeatedAutoReadID + ".jsonl": filepath.Join(sourceDirectory, repeatedAutoReadID+".jsonl")}
+	repeatedPrevious := read(repeatedAutoReadSession, "root", 2)
+	usage(repeatedAutoReadSession, 1, 23, 11)
+	repeatedArchive := assertSourceRaw(repeatedAutoReadSession, repeatedFiles)
+	for _, stage := range []struct {
+		phase                         string
+		events, count, added, pending int
+		input, output                 int64
+		idle                          bool
+	}{
+		{"warmup", 4, 2, 2, 0, 52, 24, false},
+		{"r1-plan", 6, 3, 2, 0, 190052, 41, false}, {"r1-call", 7, 3, 1, 0, 190052, 41, false},
+		{"r1-result", 8, 3, 1, 0, 190052, 41, false}, {"r1-originals", 8, 3, 0, 0, 190052, 41, false},
+		{"r1-summary", 8, 3, 0, 1, 190052, 41, true}, {"r1-final-a", 9, 4, 1, 0, 190093, 64, false},
+		{"r1-final", 10, 4, 1, 0, 190093, 64, true},
+		{"r2-plan", 12, 5, 2, 0, 380093, 81, false}, {"r2-call", 13, 5, 1, 0, 380093, 81, false},
+		{"r2-result", 14, 5, 1, 0, 380093, 81, false}, {"r2-originals", 14, 5, 0, 0, 380093, 81, false},
+		{"r2-summary", 14, 5, 0, 1, 380093, 81, true}, {"r2-file", 14, 5, 0, 1, 380093, 81, true},
+		{"r2-final-a", 15, 6, 1, 0, 380134, 104, false}, {"r2-final", 16, 6, 1, 0, 380134, 104, true},
+		{"ordinary-resume", 18, 7, 2, 0, 380163, 117, true},
+	} {
+		phase := "repeated-auto-read-" + stage.phase
+		capture := run(phase)
+		assertAutoProgress(phase, capture, stage.pending)
+		if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+			t.Fatalf("Claude repeated automatic Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
+		}
+		current := read(repeatedAutoReadSession, "root", stage.events)
+		oldJSON, _ := json.Marshal(repeatedPrevious.Events)
+		prefixJSON, _ := json.Marshal(current.Events[:len(repeatedPrevious.Events)])
+		if !bytes.Equal(oldJSON, prefixJSON) {
+			t.Fatal("Claude repeated automatic Read changed acknowledged Reader Events")
+		}
+		usage(repeatedAutoReadSession, stage.count, stage.input, stage.output)
+		archive := assertSourceRaw(repeatedAutoReadSession, repeatedFiles)
+		if len(archive.Objects) != 1 || len(repeatedArchive.Objects) != 1 || archive.Objects[0].ObjectID != repeatedArchive.Objects[0].ObjectID {
+			t.Fatal("Claude repeated automatic Read replaced its Raw source identity")
+		}
+		if stage.idle {
+			idle := run(phase + "-idle")
+			assertAutoProgress(phase+"-idle", idle, stage.pending)
+			if idle.Cursor != capture.Cursor || idle.Observations != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 || !bytes.Equal(idle.RawObjects, capture.RawObjects) {
+				t.Fatal("Claude repeated automatic Read idle advanced cursor or Raw receipts")
+			}
+			usage(repeatedAutoReadSession, stage.count, stage.input, stage.output)
+		}
+		repeatedPrevious = current
+	}
+	for round := 1; round <= 2; round++ {
+		callID := fmt.Sprintf("call_82f63bfe_single_r%d_read_a", round)
+		calls, results := 0, 0
+		for _, event := range repeatedPrevious.Events {
+			if event.Tool == nil || event.Tool.ToolCallID != callID {
+				continue
+			}
+			if event.Tool.SessionUpdate == "tool_call" {
+				calls++
+				var input map[string]string
+				if json.Unmarshal(event.Tool.RawInput, &input) != nil || input["file_path"] != filepath.Join(home, "workspace", fmt.Sprintf("r%d-a.txt", round)) {
+					t.Fatal("Claude repeated automatic Read changed the literal call path")
+				}
+			} else if event.Tool.SessionUpdate == "tool_call_update" {
+				results++
+				var output string
+				marker := fmt.Sprintf("ATAPE_REPEAT_DISK_82f63bfe_single_R%d_A:", round)
+				if event.Kind != "tool_result" || event.Tool.Status == nil || *event.Tool.Status != "completed" || json.Unmarshal(event.Tool.RawOutput, &output) != nil || !strings.Contains(output, marker) {
+					t.Fatal("Claude repeated automatic Read lost the actual disk receipt")
+				}
+				var anchored conversation.Conversation
+				decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+repeatedAutoReadSession+"?thread=root&at="+url.QueryEscape(event.ID)+"&limit=2", ""), &anchored)
+				found := false
+				for _, item := range anchored.Events {
+					found = found || item.ID == event.ID && item.Kind == "tool_result" && item.Tool != nil && item.Tool.ToolCallID == callID
+				}
+				if anchored.Session.ID != repeatedAutoReadSession || anchored.Thread.ID != "root" || !found {
+					t.Fatal("Claude repeated Read result anchor crossed its own call")
+				}
+			}
+		}
+		if calls != 1 || results != 1 {
+			t.Fatal("Claude repeated automatic replay duplicated a call or result")
+		}
+	}
+	for _, term := range []string{"ATAPE_REPEAT_SINGLE_R1_PLAN:", "ATAPE_REPEAT_SINGLE_R2_PLAN:", "ATAPE_REPEAT_SINGLE_R1_FINAL_A:", "ATAPE_REPEAT_SINGLE_R1_FINAL_B:", "ATAPE_REPEAT_SINGLE_R2_FINAL_A:", "ATAPE_REPEAT_SINGLE_R2_FINAL_B:", "ATAPE_REPEAT_SINGLE_ORDINARY-RESUME:"} {
+		hits := search(term)
+		if len(hits.Results) != 1 {
+			t.Fatalf("Claude repeated Read Search lost or duplicated %s", term)
+		}
+		hit := hits.Results[0]
+		var anchored conversation.Conversation
+		decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+repeatedAutoReadSession+"?thread=root&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+		found := false
+		for _, event := range anchored.Events {
+			found = found || event.ID == hit.EventID && strings.Contains(event.Text, term)
+		}
+		if hit.SessionID != repeatedAutoReadSession || hit.ThreadID != "root" || anchored.Session.ID != repeatedAutoReadSession || anchored.Thread.ID != "root" || !found {
+			t.Fatal("Claude repeated Read Search anchor crossed identity")
+		}
+	}
+	for _, internal := range []string{"ATAPE_REPEAT_SINGLE_R1_SUMMARY:", "ATAPE_REPEAT_SINGLE_R2_SUMMARY:", "ATAPE_REPEAT_DISK_82f63bfe_single_", "call_82f63bfe_single_"} {
+		if len(search(internal).Results) != 0 {
+			t.Fatalf("Claude repeated Read file/control reached Search: %s", internal)
+		}
+	}
+	repeatedFinalArchive, repeatedRaw := readRaw(repeatedAutoReadSession)
+	readRetained = append(readRetained, readRetention{repeatedAutoReadSession, repeatedAutoReadID, 18, 7, 380163, 117, repeatedFinalArchive, repeatedRaw})
 	// Exercise the same public Reader/Raw/usage Interfaces for small and large
 	// native file groups across independently restarted installed daemons.
 	type manualReadStage struct {

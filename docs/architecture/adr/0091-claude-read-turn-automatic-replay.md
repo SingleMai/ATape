@@ -7,6 +7,9 @@
 
 [ADR-0092](0092-claude-manual-read-file-reinjection.md) later selects a separate
 manual Read2 file-reinjection profile; it does not broaden this automatic replay.
+[ADR-0094](0094-claude-repeated-single-read-auto-file.md) later selects existing-slug
+single-Read replay with one proved prior-file reinjection; it retains this
+decision's exact-two first-slug bounds.
 
 Controlled native Claude Code 2.1.263 sources establish one automatic round in
 each of two independent root Sessions. A single Read copies U/G/P/C/R/A; an

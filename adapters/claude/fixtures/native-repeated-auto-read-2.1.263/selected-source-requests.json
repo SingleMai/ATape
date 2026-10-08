@@ -1,0 +1,1190 @@
+{
+  "kind": "selected controlled native model request and mock SSE response evidence",
+  "selection": "Only relevant exact conversation blocks, tool calls/results, summaries, direct prompts and small response blocks. Full SDK system/tool schemas and unrelated reminder bodies are omitted; raw source request/SSE byte hashes remain authoritative. Selected evidence is parsed/serialized separately; native snapshot bytes are only literal path substitutions.",
+  "case": "repeated_single",
+  "sessionId": "f2479149-41f5-4f6c-a3e2-7d46eca6ff30",
+  "requests": [
+    {
+      "originalRequestIndex": 2,
+      "phase": "seed",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 4066,
+      "rawRequestSha256": "3606a9d442ab802b54d2926a45cb1a76e43337cb378d71b38325edc748c4b3aa",
+      "responseSSEBytes": 876,
+      "responseSSESha256": "2581c38afed5a94c7501f16d25c4c1bc00d1984ad4582d81ee819041959e2b7b",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "seed",
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "cd78cbfba8c0162ebf0487a2b538b83356674098c0ac107f4c6cdefa15fd7dd4",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_SEED: Remember cobalt heron 482.",
+          "lastUserResultIds": [],
+          "historyToolIds": [],
+          "historyResultIds": []
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 2,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_SEED: Remember cobalt heron 482.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r0_seed_1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_SEED: cobalt heron 482."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 23,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 11
+        },
+        "sseBytes": 876,
+        "sseSha256": "2581c38afed5a94c7501f16d25c4c1bc00d1984ad4582d81ee819041959e2b7b"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 4,
+      "phase": "warmup",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 4401,
+      "rawRequestSha256": "49c51137eb3833d39495de1c9d06871683eedcc4d84aef9861b113b0a995a2f6",
+      "responseSSEBytes": 880,
+      "responseSSESha256": "f834feeca1475dce55cc8e503b26678507cd9f10b2ff2f25fa56f73363125694",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "warmup",
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "547f8503d8bea73cbb7e400e7802ba369342c721012dc7256e133d6c653ca21a",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_WARMUP: Confirm synthetic context.",
+          "lastUserResultIds": [],
+          "historyToolIds": [],
+          "historyResultIds": []
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 2,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_SEED: Remember cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_SEED: cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_WARMUP: Confirm synthetic context.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r0_warmup_2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_WARMUP: cobalt heron 482."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 29,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 13
+        },
+        "sseBytes": 880,
+        "sseSha256": "f834feeca1475dce55cc8e503b26678507cd9f10b2ff2f25fa56f73363125694"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 6,
+      "phase": "r1",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 4760,
+      "rawRequestSha256": "566774b658204160e539d817bab496ca27142a35016f5caa47cdd523321f858d",
+      "responseSSEBytes": 1365,
+      "responseSSESha256": "58c1cb8e636b7b50c318763a2dcdda0cfeb16b6acb23330a9c3cf97c8985a81c",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "toolcalls",
+        "round": 1,
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "68f5c19590ea2e5f2ee51274f0312e7637e5bd46400dbea63414459c9cada3df",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_R1_TOOLS: Read r1-a.txt once, then give two text blocks.",
+          "lastUserResultIds": [],
+          "historyToolIds": [],
+          "historyResultIds": [],
+          "round": 1,
+          "beforeState": "new"
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 2,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_SEED: Remember cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_SEED: cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_WARMUP: Confirm synthetic context."
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_WARMUP: cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_R1_TOOLS: Read r1-a.txt once, then give two text blocks.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r1_toolcalls_3",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_PLAN: Read the fresh round files."
+          },
+          {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r1-a.txt"
+            }
+          }
+        ],
+        "stop": "tool_use",
+        "usage": {
+          "input_tokens": 190000,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 17
+        },
+        "sseBytes": 1365,
+        "sseSha256": "58c1cb8e636b7b50c318763a2dcdda0cfeb16b6acb23330a9c3cf97c8985a81c"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 7,
+      "phase": "r1",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 11266,
+      "rawRequestSha256": "c2666d4c537518773fb46b07b20548ae0b515c14aefc8e47e15916ef0e8a41ea",
+      "responseSSEBytes": 987,
+      "responseSSESha256": "8ce2a582e058798e7d5740f74ee4b3f53b16f9f83d9a1c3290477d0a95fa0841",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "summary",
+        "round": 1,
+        "decision": {
+          "summaryInstructionMatched": true,
+          "lastDirectUserTextSha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_R1_TOOLS: Read r1-a.txt once, then give two text blocks.",
+          "lastUserResultIds": [],
+          "historyToolIds": [],
+          "historyResultIds": [],
+          "round": 1,
+          "beforeState": "calls-sent"
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 2,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_SEED: Remember cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_SEED: cobalt heron 482."
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_WARMUP: Confirm synthetic context."
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_WARMUP: cobalt heron 482.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_R1_TOOLS: Read r1-a.txt once, then give two text blocks.\n"
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 2,
+          "type": "text",
+          "bytes": 6369,
+          "sha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+          "summaryInstruction": true
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r1_summary_4",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 51,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 19
+        },
+        "sseBytes": 987,
+        "sseSha256": "8ce2a582e058798e7d5740f74ee4b3f53b16f9f83d9a1c3290477d0a95fa0841"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 8,
+      "phase": "r1",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 5365,
+      "rawRequestSha256": "91cc6be45e0f84a18fd434534c20ba7916b536b394910756b597f82782047681",
+      "responseSSEBytes": 1249,
+      "responseSSESha256": "975a5618e0d23503b788c27ad0a1fc25ad7c162bf4226718cc42c3ba25cbbafb",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "tool-final",
+        "round": 1,
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "lastUserResultIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "historyToolIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "round": 1,
+          "beforeState": "summary-sent"
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_SINGLE_R1_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-auto-read/config/projects/-fixture-native-repeated-auto-read-workspace/f2479149-41f5-4f6c-a3e2-7d46eca6ff30.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_PLAN: Read the fresh round files."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r1-a.txt"
+            }
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "role": "user",
+          "block": {
+            "tool_use_id": "call_82f63bfe_single_r1_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_single_R1_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r1_tool_final_5",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_FINAL_A: amber lynx 204."
+          },
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_FINAL_B: Only file A was requested."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 41,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 23
+        },
+        "sseBytes": 1249,
+        "sseSha256": "975a5618e0d23503b788c27ad0a1fc25ad7c162bf4226718cc42c3ba25cbbafb"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 10,
+      "phase": "r2",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 5810,
+      "rawRequestSha256": "2ccdfaafb91117bc5ed22be01ff48e2c5ad768503da33f26ec147c50c2eab252",
+      "responseSSEBytes": 1365,
+      "responseSSESha256": "ef2fb8cde98f88e7a3ea955efcc867b7d1ae81c8260f781a1f9dfdc7a1ca0e8a",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "toolcalls",
+        "round": 2,
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "a4f5a6caa9a405e70872b6958756cc89195fc0e2bfbc7f814b884f387e98b255",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_R2_TOOLS: Read r2-a.txt once, then give two text blocks.",
+          "lastUserResultIds": [],
+          "historyToolIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "round": 2,
+          "beforeState": "new"
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_SINGLE_R1_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-auto-read/config/projects/-fixture-native-repeated-auto-read-workspace/f2479149-41f5-4f6c-a3e2-7d46eca6ff30.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_PLAN: Read the fresh round files."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r1-a.txt"
+            }
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "role": "user",
+          "block": {
+            "tool_use_id": "call_82f63bfe_single_r1_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_single_R1_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_FINAL_A: amber lynx 204."
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_FINAL_B: Only file A was requested."
+          }
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_R2_TOOLS: Read r2-a.txt once, then give two text blocks.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r2_toolcalls_6",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_PLAN: Read the fresh round files."
+          },
+          {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r2_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r2-a.txt"
+            }
+          }
+        ],
+        "stop": "tool_use",
+        "usage": {
+          "input_tokens": 190000,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 17
+        },
+        "sseBytes": 1365,
+        "sseSha256": "ef2fb8cde98f88e7a3ea955efcc867b7d1ae81c8260f781a1f9dfdc7a1ca0e8a"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 11,
+      "phase": "r2",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 12316,
+      "rawRequestSha256": "82f2bc27cf09cc7f647ebe6e26ca7af9c2f12c7c2ce0f4daf5736c98b74f3f18",
+      "responseSSEBytes": 987,
+      "responseSSESha256": "790e92d903f31dfd53c64531c228a212f08c13e20349fb8d3607753068df4842",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "summary",
+        "round": 2,
+        "decision": {
+          "summaryInstructionMatched": true,
+          "lastDirectUserTextSha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_R2_TOOLS: Read r2-a.txt once, then give two text blocks.",
+          "lastUserResultIds": [],
+          "historyToolIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_single_r1_read_a"
+          ],
+          "round": 2,
+          "beforeState": "calls-sent"
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_SINGLE_R1_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-auto-read/config/projects/-fixture-native-repeated-auto-read-workspace/f2479149-41f5-4f6c-a3e2-7d46eca6ff30.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_PLAN: Read the fresh round files."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r1-a.txt"
+            }
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "role": "user",
+          "block": {
+            "tool_use_id": "call_82f63bfe_single_r1_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_single_R1_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_FINAL_A: amber lynx 204."
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R1_FINAL_B: Only file A was requested.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_R2_TOOLS: Read r2-a.txt once, then give two text blocks.\n"
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 2,
+          "type": "text",
+          "bytes": 6369,
+          "sha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+          "summaryInstruction": true
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r2_summary_7",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 51,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 19
+        },
+        "sseBytes": 987,
+        "sseSha256": "790e92d903f31dfd53c64531c228a212f08c13e20349fb8d3607753068df4842"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 12,
+      "phase": "r2",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 5686,
+      "rawRequestSha256": "b9ea3df8f9687e31c0cf2c033da291aeca3889bbef29fb835d5e6f7f1be15ad4",
+      "responseSSEBytes": 1249,
+      "responseSSESha256": "2146c4a1d575f7a180e4f9505c84ecd787a6ff6e5ab39028a42e9f95173276cd",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "tool-final",
+        "round": 2,
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "lastUserResultIds": [
+            "call_82f63bfe_single_r2_read_a"
+          ],
+          "historyToolIds": [
+            "call_82f63bfe_single_r2_read_a"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_single_r2_read_a"
+          ],
+          "round": 2,
+          "beforeState": "summary-sent"
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_SINGLE_R2_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-auto-read/config/projects/-fixture-native-repeated-auto-read-workspace/f2479149-41f5-4f6c-a3e2-7d46eca6ff30.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_PLAN: Read the fresh round files."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r2_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r2-a.txt"
+            }
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "role": "user",
+          "block": {
+            "tool_use_id": "call_82f63bfe_single_r2_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_single_R2_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810047 tokens left</total_tokens>\n</system-reminder>\n\n<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-repeated-auto-read/workspace/r1-a.txt\"}\n</system-reminder>\n\n<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_REPEAT_DISK_82f63bfe_single_R1_A: amber lynx 204.\n2\t\n</system-reminder>",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r2_tool_final_8",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_FINAL_A: amber lynx 204."
+          },
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_FINAL_B: Only file A was requested."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 41,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 23
+        },
+        "sseBytes": 1249,
+        "sseSha256": "2146c4a1d575f7a180e4f9505c84ecd787a6ff6e5ab39028a42e9f95173276cd"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    },
+    {
+      "originalRequestIndex": 14,
+      "phase": "ordinary-resume",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawRequestBytes": 6133,
+      "rawRequestSha256": "f3f7fab9407daf2c4ea86c92301092eff9ffe8d9307dc00096d1bc3b3ab8d8dc",
+      "responseSSEBytes": 898,
+      "responseSSESha256": "310d550dd2fd64a89a9895b2100399ab7a470c4ae39c288ad2b4e84c462da142",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "ordinary-resume",
+        "decision": {
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "4debadca1b3de9a4f33f4885edc61b13e51d97acf4ced7408bb108081a9a84a8",
+          "latestExactExternalPrompt": "ATAPE_REPEAT_82f63bfe_single_ORDINARY: Confirm the context after the second tool round.",
+          "lastUserResultIds": [],
+          "historyToolIds": [
+            "call_82f63bfe_single_r2_read_a"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_single_r2_read_a"
+          ]
+        }
+      },
+      "selectedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_SINGLE_R2_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-auto-read/config/projects/-fixture-native-repeated-auto-read-workspace/f2479149-41f5-4f6c-a3e2-7d46eca6ff30.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_PLAN: Read the fresh round files."
+          }
+        },
+        {
+          "messageIndex": 1,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_single_r2_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-auto-read/workspace/r2-a.txt"
+            }
+          }
+        },
+        {
+          "messageIndex": 2,
+          "blockIndex": 0,
+          "role": "user",
+          "block": {
+            "tool_use_id": "call_82f63bfe_single_r2_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_single_R2_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810047 tokens left</total_tokens>\n</system-reminder>\n\n<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-repeated-auto-read/workspace/r1-a.txt\"}\n</system-reminder>\n\n<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_REPEAT_DISK_82f63bfe_single_R1_A: amber lynx 204.\n2\t\n</system-reminder>"
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 0,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_FINAL_A: amber lynx 204."
+          }
+        },
+        {
+          "messageIndex": 3,
+          "blockIndex": 1,
+          "role": "assistant",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_R2_FINAL_B: Only file A was requested."
+          }
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 1,
+          "role": "user",
+          "block": {
+            "type": "text",
+            "text": "ATAPE_REPEAT_82f63bfe_single_ORDINARY: Confirm the context after the second tool round.",
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        }
+      ],
+      "omittedMessageBlocks": [
+        {
+          "messageIndex": 0,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 306,
+          "sha256": "e08292db3d5b56ddfa25b957db3f4c03598ecbca65857704a8cae5d1a1e2e8e5",
+          "summaryInstruction": false
+        },
+        {
+          "messageIndex": 4,
+          "blockIndex": 0,
+          "type": "text",
+          "bytes": 87,
+          "sha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca",
+          "summaryInstruction": false
+        }
+      ],
+      "response": {
+        "id": "msg_atape_repeat_82f63bfe_single_r0_ordinary_resume_9",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEAT_SINGLE_ORDINARY-RESUME: cobalt heron 482."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 29,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 13
+        },
+        "sseBytes": 898,
+        "sseSha256": "310d550dd2fd64a89a9895b2100399ab7a470c4ae39c288ad2b4e84c462da142"
+      },
+      "omittedTopLevelFields": [
+        "model",
+        "system",
+        "tools",
+        "metadata",
+        "max_tokens",
+        "thinking",
+        "context_management",
+        "output_config",
+        "stream"
+      ]
+    }
+  ]
+}
