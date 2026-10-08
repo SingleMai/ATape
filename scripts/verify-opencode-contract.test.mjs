@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { requiredTest, verifyOpenCodeResult } from "./verify-opencode-contract.mjs"
+import { requiredTest, verifyOpenCodeResult, verifyAllProviderResults } from "./verify-opencode-contract.mjs"
 
 test("OpenCode acceptance requires the actual named subtest to pass", () => {
   const event = { Test: requiredTest, Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi" }
@@ -35,4 +35,15 @@ test("Kimi acceptance cannot pass using only existing provider results", () => {
   assert.throws(() => verifyKimiResult([{ ...event, Action: "skip" }]), /missing or skipped/)
   assert.throws(() => verifyKimiResult([{ ...event, Action: "pass", Test: requiredTest }]), /missing or skipped/)
   assert.doesNotThrow(() => verifyKimiResult([{ ...event, Action: "pass" }]))
+})
+
+import { requiredTest as claudeTest } from "./verify-claude-contract.mjs"
+test("combined acceptance requires Claude even when every source-capture provider passed", () => {
+  const events = [requiredTest, codeBuddyTest, kimiTest, grokTest].map(Test => ({
+    Test, Action: "pass", Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi"
+  }))
+  assert.throws(() => verifyAllProviderResults(events), /Claude.*missing or skipped/)
+  const claude = { Test: claudeTest, Action: "pass", Package: events[0].Package }
+  assert.throws(() => verifyAllProviderResults([...events, { ...claude, Action: "skip" }]), /Claude.*missing or skipped/)
+  assert.doesNotThrow(() => verifyAllProviderResults([...events, claude]))
 })

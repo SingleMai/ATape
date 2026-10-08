@@ -1,0 +1,41 @@
+{
+  "executionVersion": "2.1.263",
+  "binarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "sessionId": "d33bd4a6-a5ce-47d3-b4d3-91e62386940f",
+  "agentId": "a5b93406db8c7fefd",
+  "files": [
+    {
+      "path": "d33bd4a6-a5ce-47d3-b4d3-91e62386940f.jsonl",
+      "originalBytes": 8433,
+      "originalSha256": "8c16e8eb9ea17471f339d35f6242d393ad7d9d0de50755c7c7d4f4db7a8c70d8",
+      "sanitizedBytes": 8272,
+      "sanitizedSha256": "ebbaf47b9495b909f41008a1e7a1ff20866a03d4889cd17a20cfc3de8b35db44"
+    },
+    {
+      "path": "d33bd4a6-a5ce-47d3-b4d3-91e62386940f/subagents/agent-a5b93406db8c7fefd.jsonl",
+      "originalBytes": 6177,
+      "originalSha256": "5b33ea920c31e62d3f760d78627adf89de658853a904ed9cce5c0ff7c0afb745",
+      "sanitizedBytes": 6024,
+      "sanitizedSha256": "ca7f1dd7bfa05ce480397ea15caa50ef0a4560ee8c8edce0aafb315659d824be"
+    },
+    {
+      "path": "d33bd4a6-a5ce-47d3-b4d3-91e62386940f/subagents/agent-a5b93406db8c7fefd.meta.json",
+      "originalBytes": 128,
+      "originalSha256": "92cf6491860c5dd00bb4fccd6a8e7dd0cbfd44f6e8940150d1dae685961d21dc",
+      "sanitizedBytes": 128,
+      "sanitizedSha256": "92cf6491860c5dd00bb4fccd6a8e7dd0cbfd44f6e8940150d1dae685961d21dc"
+    }
+  ],
+  "requestCounts": {
+    "rootMessages": 2,
+    "childMessages": 2
+  },
+  "transport": "Deterministic localhost Anthropic Messages SSE mock; no real model invocation",
+  "subagentStats": {
+    "spawned": 1,
+    "startedInBackground": 0,
+    "maxDepth": 1,
+    "completed": 1
+  },
+  "fixtureCwd": "/fixture/native-foreground-child"
+}

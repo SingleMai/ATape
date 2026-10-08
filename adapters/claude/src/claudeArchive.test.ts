@@ -324,7 +324,7 @@ it("reprojects an old checkpoint once without changing source/session revisions 
   const upgraded = await collect(request(JSON.stringify(old)))
   expect(upgraded.observations[0]?.session).toEqual(first.observations[0]?.session)
   expect(upgraded.observations[0]?.events.map(e => e.sourceEventId)).toEqual(first.observations[0]?.events.map(e => e.sourceEventId))
-  expect(upgraded.observations[0]?.events.every(e => e.projectionRevision === 3)).toBe(true)
+  expect(upgraded.observations[0]?.events.every(e => e.projectionRevision === 4)).toBe(true)
   expect((await collect(request(upgraded.nextCursor))).observations).toEqual([])
 })
 

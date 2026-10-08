@@ -3,11 +3,11 @@ import { Effect, Schema } from "effect"
 import { GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
 import { createHash, type Hash } from "node:crypto"
 import { constants } from "node:fs"
-import { open, readdir, realpath, stat } from "node:fs/promises"
+import { lstat, open, readdir, realpath, stat } from "node:fs/promises"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { homedir } from "node:os"
 import { claudeHome } from "@atape/adapter-catalog/node"
-import { isAbsolute, join, relative, sep } from "node:path"
+import { dirname, isAbsolute, join, relative, sep } from "node:path"
 
 const MaxRecordBytes = 16 * 1024 * 1024
 const MaxDiscoveryEntries = 10_000
@@ -16,7 +16,13 @@ const MaxCursorBytes = 1024 * 1024
 const MaxDecodedCursorBytes = 16 * 1024 * 1024
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
-const CursorSchema = Schema.Struct({
+const CompactionSchema = Schema.Struct({
+  v: Schema.Literal(1), boundaryUuid: Schema.String, summaryUuid: Schema.String,
+  phase: Schema.Literals(["summary", "caveat", "command", "stdout", "resume"]),
+  promptId: Schema.optionalKey(Schema.String)
+})
+type Compaction = typeof CompactionSchema.Type
+const StreamCursorSchema = Schema.Struct({
   v: Schema.Literal(1), sessionId: Schema.String, bytes: Schema.Number,
   digest: Schema.String, origin: Schema.String,
   projectionRevision: Schema.optionalKey(Schema.Number),
@@ -26,8 +32,20 @@ const CursorSchema = Schema.Struct({
   stream: Schema.optionalKey(Schema.Struct({
     lastUuid: Schema.NullOr(Schema.String), seen: Schema.Array(Schema.String),
     calls: Schema.Array(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
-    order: Schema.Number, eventSkip: Schema.Number, title: Schema.String
+    order: Schema.Number, eventSkip: Schema.Number, title: Schema.String,
+    compaction: Schema.optionalKey(CompactionSchema)
   }))
+})
+const ChildSchema = Schema.Struct({
+  agentId: Schema.String, toolCallId: Schema.String, toolUuid: Schema.String,
+  checkpoint: Schema.optionalKey(StreamCursorSchema)
+})
+type Child = typeof ChildSchema.Type
+const CursorSchema = Schema.Struct({ ...StreamCursorSchema.fields,
+  children: Schema.optionalKey(Schema.Array(ChildSchema)),
+  childAfter: Schema.optionalKey(Schema.String),
+  familyRevision: Schema.optionalKey(Schema.Number),
+  familyObservedAt: Schema.optionalKey(Schema.String)
 })
 type Cursor = typeof CursorSchema.Type
 const DiscoveryCursorSchema = Schema.Struct({
@@ -90,23 +108,33 @@ export const collectClaudePage = (archive: Archive, request: AdapterCollectReque
     const page = await collect(archive, request)
     const state = decodeDiscoveryCursor(page.nextCursor)
     const inventory = archive.inventory ?? []
-    const acknowledged = new Map(request.rawProgress.filter(item => item.sourceObjectId.startsWith("claude-rollout-")).map(item => [item.sourceSessionId, item.sourceOffset]))
+    const acknowledged = new Map(request.rawProgress.map(item => [item.sourceObjectId, item.sourceOffset]))
     for (const observation of page.observations) for (const raw of observation.rawSegments)
-      acknowledged.set(observation.session.sourceSessionId, raw.sourceOffset + Buffer.byteLength(raw.content))
+      acknowledged.set(raw.sourceObjectId, raw.sourceOffset + Buffer.byteLength(raw.content))
+    const streams = inventory.flatMap(candidate => {
+      const checkpoint = state.sessions.find(item => item.checkpoint.sessionId === candidate.sessionId)?.checkpoint
+      return [{ ...candidate, checkpoint, agentId: undefined as string | undefined }, ...(checkpoint?.children ?? []).map(child => ({
+        file: childFile(candidate.file, candidate.sessionId, child.agentId), sessionId: candidate.sessionId, checkpoint: child.checkpoint, agentId: child.agentId
+      }))]
+    })
     let pendingRawBytes = 0, pendingCanonicalSessions = 0
-    for (let start = 0; start < inventory.length; start += 8) {
-      const sizes = await Promise.all(inventory.slice(start, start + 8).map(async candidate => {
+    for (let start = 0; start < streams.length; start += 8) {
+      const sizes = await Promise.all(streams.slice(start, start + 8).map(async candidate => {
         try { return { candidate, size: (await stat(candidate.file)).size } }
         catch { return { candidate, size: undefined } }
       }))
       for (const { candidate, size } of sizes) {
         if (size === undefined) continue
-        if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(candidate.sessionId) ?? 0))
-        const checkpoint = state.sessions.find(item => item.checkpoint.sessionId === candidate.sessionId)?.checkpoint
-        if (!checkpoint?.stream || checkpoint.usageVersion !== 1 || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0) pendingCanonicalSessions++
+        const checkpoint = candidate.checkpoint, first = checkpoint?.stream?.seen[0]
+        const generation = checkpoint && first ? digest(Buffer.from(JSON.stringify(candidate.agentId
+          ? [candidate.sessionId, checkpoint.origin, first, candidate.agentId] : [candidate.sessionId, checkpoint.origin, first]))) : undefined
+        const sourceObjectId = `${candidate.agentId ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
+        if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(sourceObjectId) ?? 0))
+        if (!checkpoint?.stream || checkpoint.usageVersion !== 1 || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0 ||
+          checkpoint.stream.compaction && checkpoint.stream.compaction.phase !== "resume") pendingCanonicalSessions++
       }
     }
-    return { ...page, progress: { sourceFiles: inventory.length, pendingRawBytes, pendingCanonicalSessions,
+    return { ...page, progress: { sourceFiles: streams.length, pendingRawBytes, pendingCanonicalSessions,
       phase: !page.hasMore ? "idle" as const : page.observations.some(o => o.events.length) ? "canonical" as const : "raw" as const } }
   },
   catch: cause => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "io", message: "Could not read the selected Claude session." })
@@ -133,7 +161,7 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
       ?? (archive.file && state.sessions.length === 1 && state.sessions[0]!.file === "" ? state.sessions[0] : undefined)
     let page: AdapterCollectionPage
     try {
-      page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous.checkpoint) : null })
+      page = await collectFamily(archive, candidate, previous?.checkpoint, request, diagnostics)
     } catch (cause) {
       if (archive.file && !(cause instanceof ClaudeArchiveError && cause.reason === "attribution")) throw cause // Other explicit-source errors stay fail-fast.
       diagnostics.capture(candidate.file, cause, request.signal)
@@ -153,7 +181,64 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
   return diagnostics.attach(empty(request.cursor))
 }
 
-async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest): Promise<AdapterCollectionPage> {
+const childThreadId = (agentId: string) => `claude-agent:${agentId}`
+const childFile = (file: string, sessionId: string, agentId: string) => {
+  if (!/^[A-Za-z0-9_-]{1,500}$/.test(sessionId)) fail("unsupported", "Claude family identity is not a safe source path component.")
+  return join(dirname(file), sessionId, "subagents", `agent-${agentId}.jsonl`)
+}
+const familyThreads = (children: ReadonlyArray<Child>) => [
+  { sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" as const },
+  ...children.map(child => ({ sourceThreadId: childThreadId(child.agentId), parentSourceThreadId: "root", revision: 1,
+    label: `Agent ${child.agentId}`, summary: "", captureStatus: "partial" as const }))
+]
+
+async function collectFamily(archive: Archive, candidate: Candidate, previous: Cursor | undefined, request: AdapterCollectRequest,
+  diagnostics: SourceDiagnostics): Promise<AdapterCollectionPage> {
+  const page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous) : null })
+  const publish = (page: AdapterCollectionPage, checkpoint: Cursor): AdapterCollectionPage => {
+    const observation = page.observations[0]!
+    const children = checkpoint.children ?? []
+    const revision = children.length ? Math.max(previous?.familyRevision ?? (previous ? previous.bytes * 2 + 3 : 0), observation.session.revision) + 1
+      : observation.session.revision
+    if (!Number.isSafeInteger(revision)) fail("limit", "Claude family revision exceeds its safe capacity.")
+    if (children.length + 1 > request.limits.threadsPerObservation) fail("limit", "Claude family exceeds the requested Thread limit.")
+    const updatedAt = [previous?.familyObservedAt, checkpoint.observedAt, observation.session.updatedAt].filter((at): at is string => at !== undefined).sort().at(-1)!
+    const next = { ...checkpoint, ...(children.length ? { familyRevision: revision, familyObservedAt: updatedAt } : {}) }
+    const captured = { ...observation, observationId: `claude-${digest(Buffer.from(JSON.stringify([observation.observationId, next])))}`,
+      session: { ...observation.session, revision, updatedAt, title: checkpoint.stream?.title || observation.session.title }, threads: familyThreads(children) }
+    if (Buffer.byteLength(JSON.stringify({ ...captured, rawSegments: [] })) > request.limits.canonicalBytesPerObservation)
+      fail("limit", "Claude family metadata exceeds the requested Canonical page limit.")
+    return { ...page, nextCursor: JSON.stringify(next), hasMore: page.hasMore || children.some(child => !child.checkpoint),
+      observations: [captured] }
+  }
+  if (page.observations.length) return publish(page, decodeCursor(page.nextCursor)!)
+  if (!previous?.children?.length) return page
+  const root = await readHeader(candidate.file, request.signal)
+  if (!root) fail("changed", "The captured Claude root disappeared.")
+  const children = previous.children, pivot = children.findIndex(child => child.agentId === previous.childAfter)
+  for (const child of [...children.slice(pivot + 1), ...children.slice(0, pivot + 1)]) {
+    const file = childFile(candidate.file, candidate.sessionId, child.agentId)
+    try {
+      for (const directory of [dirname(dirname(file)), dirname(file)]) {
+        const details = await lstat(directory)
+        if (!details.isDirectory() || details.isSymbolicLink()) fail("unsupported", "Claude subagent directories must not be symlinks.")
+      }
+      const selected = await collectSession(archive, file, { ...request, cursor: child.checkpoint ? JSON.stringify(child.checkpoint) : null },
+        { child, root, children })
+      if (!selected.observations.length) continue
+      const checkpoint = decodeCursor(selected.nextCursor)!
+      return publish({ ...selected, hasMore: selected.hasMore || children.length > 1 }, { ...previous, childAfter: child.agentId,
+        children: children.map(value => value === child ? { ...value, checkpoint } : value) })
+    } catch (cause) {
+      if (child.checkpoint && object(cause)?.code === "ENOENT") continue // Deleting captured sources does not delete history.
+      diagnostics.capture(file, cause, request.signal)
+    }
+  }
+  return page
+}
+
+async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest,
+  delegated?: { readonly child: Child; readonly root: RecordValue; readonly children: ReadonlyArray<Child> }): Promise<AdapterCollectionPage> {
   const cursor = decodeCursor(request.cursor)
   const root = await readHeader(file, request.signal)
   if (!root || root.type !== "user" || root.parentUuid !== null || root.isMeta === true || typeof root.cwd !== "string" || typeof root.sessionId !== "string") {
@@ -161,8 +246,11 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     fail("unsupported", "Claude session has no supported original user root and CWD.")
   }
   const sessionId = root.sessionId as string, origin = root.cwd as string
+  if (delegated && (root.isSidechain !== true || root.agentId !== delegated.child.agentId || sessionId !== delegated.root.sessionId || origin !== delegated.root.cwd)) {
+    fail("unsupported", "Claude subagent identity or original CWD does not match its proven parent.")
+  }
   if (cursor && (cursor.sessionId !== sessionId || cursor.origin !== origin)) fail("changed", "Claude session identity or original CWD changed.")
-  if (!await belongsToProject(archive, root, request.signal)) return empty(request.cursor)
+  if (!delegated && !await belongsToProject(archive, root, request.signal)) return empty(request.cursor)
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
   try {
     const before = await handle.stat()
@@ -184,14 +272,20 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (hash.copy().digest("hex") !== cursor.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
       }
     }
-    const resume = cursor?.projectionRevision === 3 && cursor.usageVersion === 1 && cursor.observedAt ? cursor.stream : undefined
+    const resume = cursor?.projectionRevision === 4 && cursor.usageVersion === 1 && cursor.observedAt ? cursor.stream : undefined
     let at = resume ? cursor!.bytes : 0
     if (!resume) hash = createHash("sha256")
     let state: NonNullable<Cursor["stream"]> = resume ?? { lastUuid: null, seen: [], calls: [], order: 0, eventSkip: 0, title: rootTitle(root) }
     const seen = new Set(state.seen)
+    const children = new Map((cursor?.children ?? []).map(child => [child.agentId, child]))
+    // Family headers are repeated on root and child pages. Reserve their actual
+    // encoded size as well as the Session and array-envelope headroom.
+    const payloadLimit = (family: ReadonlyArray<Child>) => request.limits.canonicalBytesPerObservation - 8192
+      - Buffer.byteLength(JSON.stringify(familyThreads(family)))
+    let canonicalLimit = payloadLimit(delegated?.children ?? [...children.values()])
     let calls = new Map(state.calls.map(([id, name, uuid]) => [id, { name, uuid }]))
-    const sourceObjectId = `claude-rollout-${digest(Buffer.from(JSON.stringify([sessionId, origin, root.uuid])))}`
-    const generation = digest(Buffer.from(JSON.stringify([sessionId, origin, root.uuid])))
+    const generation = digest(Buffer.from(JSON.stringify(delegated ? [sessionId, origin, root.uuid, delegated.child.agentId] : [sessionId, origin, root.uuid])))
+    const sourceObjectId = `${delegated ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
     const events: AdapterEvent[] = []
     const usage = new Map<string, AdapterUsage>()
     const rawProgress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId && p.sourceGeneration === generation)
@@ -210,26 +304,58 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
       catch { fail("format", "Claude source contains a malformed complete JSONL record.") }
       if (record.sessionId !== undefined && record.sessionId !== sessionId) fail("unsupported", "Mixed Claude session identities are not supported.")
-      if (record.isSidechain === true || record.type === "system" && (record.subtype === "compact_boundary" || record.compactMetadata !== undefined)) fail("unsupported", "Claude subagent or compaction history requires a later Adapter capability.")
-      if (typeof record.uuid === "string" && (seen.has(record.uuid) || record.parentUuid !== state.lastUuid)) fail("unsupported", "Claude history is not a single unambiguous append-only chain.")
+      const conversation = record.type === "user" || record.type === "assistant"
+      const identified = record.uuid !== undefined || conversation
+      const wrongThread = delegated ? identified && (record.isSidechain !== true || record.agentId !== delegated.child.agentId)
+        : record.isSidechain === true || identified && (record.isSidechain !== undefined && record.isSidechain !== false || record.agentId !== undefined)
+      if (wrongThread)
+        fail("unsupported", "Claude record does not belong to its selected Thread.")
+      const transition = compactionTransition(record, state.lastUuid, state.compaction, delegated !== undefined)
+      // Events and usage share the same admitted conversation identity. Native
+      // UUID-less bookkeeping stays Raw-only; it cannot stand in for a turn.
+      if (conversation && (typeof record.uuid !== "string" || !record.uuid.trim() || record.uuid.length > 500 || record.uuid.includes("\0")))
+        fail("unsupported", "Claude conversation record has no valid UUID.")
+      if (transition.boundary && transition.next && seen.has(transition.next.summaryUuid))
+        fail("unsupported", "Claude manual compaction summary identity already belongs to captured history.")
+      if (typeof record.uuid === "string" && (seen.has(record.uuid) || record.parentUuid !== state.lastUuid && !transition.boundary))
+        fail("unsupported", "Claude history is not a single unambiguous append-only chain.")
       const nextCalls = new Map(calls)
-      const projected = projectRecord(record, state.order, line.end, sourceObjectId, nextCalls)
+      const projected = transition.rawOnly ? { events: [] as AdapterEvent[], partial: true }
+        : projectRecord(record, state.order, line.end, sourceObjectId, nextCalls)
+      const child = bindChild(record, nextCalls, delegated !== undefined)
+      if (child) {
+        childFile(file, sessionId, child.agentId) // Validate before publishing the relation.
+        const pinned = children.get(child.agentId)
+        if (pinned && (pinned.toolCallId !== child.toolCallId || pinned.toolUuid !== child.toolUuid) ||
+          [...children.values()].some(value => value.toolCallId === child.toolCallId && value.agentId !== child.agentId))
+          fail("unsupported", "Claude subagent has conflicting parent evidence.")
+        // The native foreground receipt is one tool-result Event. Commit its
+        // relation only with that complete record's captured prefix, never when
+        // a full page defers the receipt to the next request.
+        if (projected.events.length !== 1) fail("unsupported", "Claude subagent receipt requires a single native tool result.")
+        projected.events = projected.events.map(event => "toolCallId" in event.update && event.update.toolCallId === child.toolCallId
+          ? { ...event, childSourceThreadId: childThreadId(child.agentId) } : event)
+      }
+      if (delegated) projected.events = projected.events.map(event => ({ ...event, sourceThreadId: childThreadId(delegated.child.agentId) }))
+      // A new receipt needs room for its proposed header before any Event is
+      // admitted. A deferred record must leave the pinned family unchanged.
+      const recordLimit = child && !children.has(child.agentId) ? payloadLimit([...children.values(), child]) : canonicalLimit
       partial ||= projected.partial
       let skip = state.eventSkip
       if (skip > projected.events.length) fail("cursor", "Claude record checkpoint exceeds its event count.")
       while (skip < projected.events.length) {
         const event = projected.events[skip]!
         const size = Buffer.byteLength(JSON.stringify(event))
-        // Reserve bounded Session/Thread metadata headroom in each observation.
-        if (size > request.limits.canonicalBytesPerObservation - 8192) fail("limit", "A Claude event exceeds the Canonical observation limit.")
-        if (events.length === request.limits.eventsPerObservation || eventBytes + size > request.limits.canonicalBytesPerObservation - 8192) break
+        if (size > recordLimit) fail("limit", "A Claude event exceeds the Canonical observation limit.")
+        if (events.length === request.limits.eventsPerObservation || eventBytes + size > recordLimit) break
         events.push(event); eventBytes += size; skip++
       }
       if (skip < projected.events.length) { state = { ...state, eventSkip: skip }; hasMore = true; break }
-      const sample = projectUsage(record, line.end)
+      const originalSample = transition.rawOnly ? undefined : projectUsage(record, line.end)
+      const sample = originalSample && delegated ? { ...originalSample, sourceThreadId: childThreadId(delegated.child.agentId) } : originalSample
       if (sample) {
         const bytes = Buffer.byteLength(JSON.stringify(sample))
-        if (usage.size >= request.limits.eventsPerObservation || eventBytes + bytes > request.limits.canonicalBytesPerObservation - 8192) {
+        if (usage.size >= request.limits.eventsPerObservation || eventBytes + bytes > recordLimit) {
           state = { ...state, eventSkip: skip }; hasMore = true; break
         }
         usage.set(sample.sourceUsageId, sample); eventBytes += bytes
@@ -239,8 +365,11 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (first && "content" in first.update && first.update.content.type === "text") state = { ...state, title: first.update.content.text.replace(/\s+/g, " ").trim().slice(0, 80) }
       }
       if (typeof record.uuid === "string") seen.add(record.uuid)
+      if (child && !children.has(child.agentId)) { children.set(child.agentId, child); canonicalLimit = recordLimit }
       calls = nextCalls
-      state = { ...state, lastUuid: typeof record.uuid === "string" ? record.uuid : state.lastUuid, order: state.order + 1, eventSkip: 0 }
+      const { compaction: _previousCompaction, ...committed } = state
+      state = { ...committed, ...(transition.next ? { compaction: transition.next } : {}),
+        lastUuid: typeof record.uuid === "string" ? record.uuid : state.lastUuid, order: state.order + 1, eventSkip: 0 }
       hash.update(line.content); rawBytes += line.content.length; at = line.end
       if (events.length === request.limits.eventsPerObservation) { hasMore = at < before.size; break }
     }
@@ -253,20 +382,107 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     const prefixDigest = hash.copy().digest("hex")
     archive.hashCache = { file, stamp, bytes: at, digest: prefixDigest, hash: hash.copy() }
     const observedAt = events.at(-1)?.occurredAt ?? cursor?.observedAt ?? timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
-    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: 3, usageVersion: 1, observedAt,
+    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: 4, usageVersion: 1, observedAt,
       publication: (cursor?.publication ?? 0) + 1,
+      ...(!delegated && children.size ? { children: [...children.values()], ...(cursor?.childAfter ? { childAfter: cursor.childAfter } : {}) } : {}),
       stream: { ...state, seen: [...seen], calls: [...calls].map(([id, call]) => [id, call.name, call.uuid]) } }
     const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 3
     return { protocolVersion: request.protocolVersion, nextCursor: JSON.stringify(next), hasMore,
       observations: [{ observationId: `claude-${digest(Buffer.from(JSON.stringify([next, events.map(e => e.sourceEventId)])))}`, observedAt,
         session: { sourceSessionId: sessionId, revision, title: state.title || "Untitled Claude conversation", summary: "Claude Code conversation", insight: "",
-          actor: { name: "User", harness: "Claude Code" }, branch: string(root.gitBranch) ?? "", status: "active", captureStatus: "partial", updatedAt: observedAt, reportedEventCount: 0 },
+          actor: { name: "User", harness: "Claude Code" }, branch: string((delegated?.root ?? root).gitBranch) ?? "", status: "active", captureStatus: "partial", updatedAt: observedAt, reportedEventCount: 0 },
         threads: [{ sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" }], events,
         usage: [...usage.values()],
         rawSegments: capturedRaw !== undefined ? [{ sourceObjectId, sourceGeneration: generation, sourceOffset: acknowledged,
-          sourceName: `${sessionId}.jsonl`, mediaType: "application/x-ndjson", content: capturedRaw, final: false }] : []
+          sourceName: delegated ? `agent-${delegated.child.agentId}.jsonl` : `${sessionId}.jsonl`, mediaType: "application/x-ndjson", content: capturedRaw, final: false }] : []
       }] }
   } finally { await handle.close() }
+}
+
+/** Only the sampled append-only manual command changes the physical parent
+ * chain. Its bounded state commits with each complete record's prefix; none of
+ * these native control records becomes a fabricated conversation message. */
+function compactionTransition(record: RecordValue, lastUuid: string | null, stage: Compaction | undefined, delegated: boolean):
+  { readonly boundary?: boolean; readonly rawOnly?: boolean; readonly next?: Compaction } {
+  const marked = record.subtype === "compact_boundary" || record.compactMetadata !== undefined
+  const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 500 && !value.includes("\0")
+  if (marked) {
+    const metadata = object(record.compactMetadata), segment = object(metadata?.preservedSegment), messages = object(metadata?.preservedMessages)
+    const anchor = segment?.anchorUuid
+    const singleton = (value: unknown) => Array.isArray(value) && value.length === 1 && value[0] === lastUuid
+    if (delegated || stage || record.version !== "2.1.263" || record.type !== "system" || record.subtype !== "compact_boundary" ||
+      record.isSidechain !== false || record.isMeta !== false || record.parentUuid !== null || !lastUuid || record.logicalParentUuid !== lastUuid ||
+      !validId(record.uuid) || metadata?.trigger !== "manual" || segment?.headUuid !== lastUuid || segment.tailUuid !== lastUuid ||
+      !validId(anchor) || anchor === record.uuid || messages?.anchorUuid !== anchor || !singleton(messages.uuids) || !singleton(messages.allUuids))
+      fail("unsupported", "Claude manual compaction has no supported append-only root evidence.")
+    return { boundary: true, rawOnly: true, next: { v: 1, boundaryUuid: record.uuid, summaryUuid: anchor, phase: "summary" } }
+  }
+  if (record.logicalParentUuid != null) fail("unsupported", "Claude logical parent requires supported compaction evidence.")
+  if (!stage) {
+    if (record.isCompactSummary === true || record.isVisibleInTranscriptOnly === true)
+      fail("unsupported", "Claude summary has no admitted manual compaction boundary.")
+    return {}
+  }
+  if (typeof record.uuid !== "string") {
+    if (!["queue-operation", "last-prompt", "file-history-snapshot"].includes(string(record.type) ?? "") ||
+      record.message !== undefined || record.isCompactSummary !== undefined || record.isVisibleInTranscriptOnly !== undefined ||
+      record.logicalParentUuid != null || record.parentUuid != null || record.type === "last-prompt" && record.leafUuid !== lastUuid)
+      fail("unsupported", "Claude manual compaction bookkeeping contains unsupported conversation data.")
+    return { next: stage, rawOnly: true } // Native bookkeeping cannot create Events or usage or advance the control chain.
+  }
+  const message = object(record.message), content = message?.content
+  if (record.version !== "2.1.263" || record.isSidechain !== false)
+    fail("unsupported", "Claude manual compaction control identity changed.")
+  if (stage.phase !== "summary" && (record.isCompactSummary === true || record.isVisibleInTranscriptOnly === true))
+    fail("unsupported", "Claude manual compaction summary appears outside its admitted slot.")
+  if (stage.phase === "resume") {
+    const usage = object(message?.usage), blocks = message?.content
+    if (record.type !== "assistant" || message?.role !== "assistant" || message.model !== "<synthetic>" ||
+      message.stop_reason !== "stop_sequence" || !Array.isArray(blocks) || blocks.length !== 1 ||
+      object(blocks[0])?.type !== "text" || object(blocks[0])?.text !== "No response requested." ||
+      !usage || ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"].some(key => usage[key] !== 0))
+      fail("unsupported", "Claude manual compaction resume has no supported synthetic bridge.")
+    return { rawOnly: true }
+  }
+  if (record.type !== "user" || message?.role !== "user" || typeof content !== "string" ||
+    stage.phase !== "summary" && record.promptId !== stage.promptId)
+    fail("unsupported", "Claude manual compaction control sequence changed.")
+  switch (stage.phase) {
+    case "summary":
+      if (record.uuid !== stage.summaryUuid || record.parentUuid !== stage.boundaryUuid || record.isMeta === true ||
+        record.isCompactSummary !== true || record.isVisibleInTranscriptOnly !== true || !validId(record.promptId) || !content.trim())
+        fail("unsupported", "Claude manual compaction summary does not match its boundary.")
+      return { rawOnly: true, next: { ...stage, phase: "caveat", promptId: record.promptId } }
+    case "caveat":
+      if (record.isMeta !== true || !/^<local-command-caveat>[\s\S]*<\/local-command-caveat>$/.test(content)) break
+      return { rawOnly: true, next: { ...stage, phase: "command" } }
+    case "command":
+      if (record.isMeta === true || !/^<command-name>\/compact<\/command-name>\n\s*<command-message>compact<\/command-message>\n\s*<command-args>[\s\S]*<\/command-args>$/.test(content)) break
+      return { rawOnly: true, next: { ...stage, phase: "stdout" } }
+    case "stdout":
+      if (record.isMeta === true || content !== "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>") break
+      return { rawOnly: true, next: { ...stage, phase: "resume" } }
+  }
+  return fail("unsupported", "Claude manual compaction control sequence changed.")
+}
+
+function bindChild(record: RecordValue, calls: Map<string, { name: string; uuid: string }>, delegated: boolean): Child | undefined {
+  const content = object(record.message)?.content
+  if (delegated && Array.isArray(content) && content.some(value => {
+    const block = object(value)
+    return block?.type === "tool_use" && ["Agent", "Task"].includes(string(block.name) ?? "")
+  })) fail("unsupported", "Nested Claude subagents require a wider native profile.")
+  const result = object(record.toolUseResult), agentId = string(result?.agentId)
+  if (!agentId) return undefined
+  if (!Array.isArray(content)) fail("unsupported", "Claude subagent result has no proven tool call.")
+  const links = content.map(object).filter(block => block?.type === "tool_result" && typeof block.tool_use_id === "string" &&
+    ["Agent", "Task"].includes(calls.get(block.tool_use_id)?.name ?? ""))
+  if (links.length !== 1) fail("unsupported", "Claude subagent result has no unique parent tool call.")
+  const block = links[0]!, toolCallId = block.tool_use_id as string, call = calls.get(toolCallId)!
+  if (delegated || result?.status !== "completed" || result.isAsync === true || block.is_error === true || record.sourceToolAssistantUUID !== call.uuid)
+    fail("unsupported", "Claude subagent requires a completed foreground result with explicit parent evidence.")
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(agentId)) fail("format", "Claude subagent identity is invalid.")
+  return { agentId, toolCallId, toolUuid: call.uuid }
 }
 
 function projectUsage(record: RecordValue, revision: number): AdapterUsage | undefined {
@@ -376,7 +592,7 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
       const chunks = message?.content.type === "text" ? splitText(message.content.text) : [undefined]
       for (const [part, text] of chunks.entries()) events.push({
         sourceEventId: `${record.uuid}:${slot}${chunks.length > 1 ? `:${part}` : ""}`, sourceThreadId: "root",
-        revision, projectionRevision: 3, sourceOrder: order, eventIndex: slot * 128 + part,
+        revision, projectionRevision: 4, sourceOrder: order, eventIndex: slot * 128 + part,
         orderFidelity: "native", fidelity, occurredAt,
         rawRef: { _tag: "object", sourceObjectId, fragment: `record=${record.uuid}&block=${slot}` },
         update: message && text !== undefined ? { ...message, messageId: `${record.uuid}:${slot}`, content: { type: "text", text } } : update
@@ -428,12 +644,32 @@ function decodeCursor(value: string | null): Cursor | undefined {
     if (Buffer.byteLength(value) > MaxDecodedCursorBytes) throw new Error()
     const c = Schema.decodeUnknownSync(CursorSchema)(JSON.parse(value))
     if (!c.sessionId || !isAbsolute(c.origin) || !Number.isSafeInteger(c.bytes) || c.bytes < 0 || !/^[a-f0-9]{64}$/.test(c.digest)) throw new Error()
-    if (c.projectionRevision !== undefined && ![2, 3].includes(c.projectionRevision)) throw new Error()
+    if (c.projectionRevision !== undefined && ![2, 3, 4].includes(c.projectionRevision)) throw new Error()
+    if (c.familyRevision !== undefined && (!Number.isSafeInteger(c.familyRevision) || c.familyRevision < 1)) throw new Error()
+    if (c.familyObservedAt !== undefined && timestamp(c.familyObservedAt) !== c.familyObservedAt) throw new Error()
+    if (c.children) {
+      const agents = new Set<string>(), tools = new Set<string>()
+      for (const child of c.children) {
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(child.agentId) || !child.toolCallId || child.toolCallId.length > 4096 ||
+          !child.toolUuid || child.toolUuid.length > 4096 || agents.has(child.agentId) || tools.has(child.toolCallId)) throw new Error()
+        agents.add(child.agentId); tools.add(child.toolCallId)
+        if (child.checkpoint) {
+          const checkpoint = decodeCursor(JSON.stringify(child.checkpoint))!
+          if (checkpoint.sessionId !== c.sessionId || checkpoint.origin !== c.origin) throw new Error()
+        }
+      }
+      if (c.childAfter !== undefined && !agents.has(c.childAfter)) throw new Error()
+    } else if (c.childAfter !== undefined) throw new Error()
     if (c.stream && (!Number.isSafeInteger(c.stream.order) || c.stream.order < c.stream.seen.length ||
       !Number.isSafeInteger(c.stream.eventSkip) || c.stream.eventSkip < 0 ||
       new Set(c.stream.seen).size !== c.stream.seen.length ||
       c.stream.lastUuid !== null && !c.stream.seen.includes(c.stream.lastUuid) ||
       c.stream.title.length > 500 || c.stream.calls.some(call => call.some(value => value.length > 4096)))) throw new Error()
+    const stage = c.stream?.compaction
+    if (stage && (!stage.boundaryUuid || stage.boundaryUuid.length > 500 || !stage.summaryUuid || stage.summaryUuid.length > 500 ||
+      stage.boundaryUuid === stage.summaryUuid || !c.stream!.seen.includes(stage.boundaryUuid) ||
+      (stage.phase === "summary" ? c.stream!.lastUuid !== stage.boundaryUuid || c.stream!.seen.includes(stage.summaryUuid)
+        : !stage.promptId || stage.promptId.length > 500 || !c.stream!.seen.includes(stage.summaryUuid)))) throw new Error()
     return c
   } catch { return fail("cursor", "Claude checkpoint is invalid; it was not reset.") }
 }

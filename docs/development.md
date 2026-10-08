@@ -42,7 +42,7 @@ regression when appropriate.
 | Web behavior | `pnpm --filter @atape/web typecheck`, `pnpm --filter @atape/web test`, and affected `test:browser` scenarios |
 | CLI commands or terminal behavior | `pnpm --filter @atape/cli typecheck`, `pnpm --filter @atape/cli test`, `pnpm test:cli-package` for the installed executable |
 | Adapter projection or package/runtime contract | Affected Adapter `typecheck` and `test`; `pnpm test:adapter-package` for installed artifacts |
-| Collector / Server delivery | `pnpm test:e2e` for Codex/Claude; `pnpm test:opencode-contract`, `pnpm test:codebuddy-contract`, `pnpm test:kimi-contract` and `pnpm test:grok-contract` for installed source-capture Adapters over authenticated HTTP/PostgreSQL |
+| Collector / Server delivery | `pnpm test:e2e` for Codex/Claude; `pnpm test:claude-contract`, `pnpm test:opencode-contract`, `pnpm test:codebuddy-contract`, `pnpm test:kimi-contract` and `pnpm test:grok-contract` for installed Adapters over authenticated HTTP/PostgreSQL |
 | Go Module | From `server/`, `go test ./internal/<module>/...`; use `pnpm test:go:integration` for persistence and authenticated boundaries, and race/fuzz checks when affected |
 | SQL migration or query | `pnpm generate:sqlc`, inspect generated changes, and run affected PostgreSQL integration checks |
 | Compose or backup/restore | `pnpm test:self-hosting:config`; `pnpm test:self-hosting:restore` for paired recovery in isolated containers/volumes |
@@ -51,7 +51,7 @@ regression when appropriate.
 `pnpm check` runs documentation and architecture checks, workspace typechecks and tests,
 Web browser tests, Codex/Claude E2E and Go unit suites. It does not include every
 release or PostgreSQL check. `pnpm test:go:integration` also runs installed
-OpenCode, CodeBuddy, Kimi and Grok contracts; its name is narrower than its coverage.
+Claude, OpenCode, CodeBuddy, Kimi and Grok contracts; its name is narrower than its coverage.
 
 `pnpm check:docs` parses Markdown links and headings, checks local file/anchor
 targets, concrete pnpm script names and documentation/ADR index coverage. It

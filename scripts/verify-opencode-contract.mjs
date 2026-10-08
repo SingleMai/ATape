@@ -1,6 +1,7 @@
 import { requiredTest as grokRequiredTest, verifyGrokResult } from "./verify-grok-contract.mjs"
 import { requiredTest as kimiRequiredTest, verifyKimiResult } from "./verify-kimi-contract.mjs"
 import { requiredTest as codeBuddyRequiredTest, verifyCodeBuddyResult } from "./verify-codebuddy-contract.mjs"
+import { requiredTest as claudeRequiredTest, verifyClaudeResult } from "./verify-claude-contract.mjs"
 import { spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
@@ -12,6 +13,14 @@ export function verifyOpenCodeResult(events) {
     event.Package === "github.com/SingleMai/ATape/server/internal/adapters/httpapi")) {
     throw new Error(`Required OpenCode contract did not pass (missing or skipped): ${requiredTest}`)
   }
+}
+
+export function verifyAllProviderResults(events) {
+  verifyOpenCodeResult(events)
+  verifyClaudeResult(events)
+  verifyCodeBuddyResult(events)
+  verifyKimiResult(events)
+  verifyGrokResult(events)
 }
 
 async function run() {
@@ -35,7 +44,7 @@ async function run() {
     try {
       const event = JSON.parse(line)
       if (event.Output) process.stdout.write(event.Output)
-      if (event.Test === requiredTest || event.Test === codeBuddyRequiredTest || event.Test === kimiRequiredTest || event.Test === grokRequiredTest) events.push(event)
+      if ([requiredTest, claudeRequiredTest, codeBuddyRequiredTest, kimiRequiredTest, grokRequiredTest].includes(event.Test)) events.push(event)
     } catch { malformed = true; process.stderr.write(`${line}\n`) }
   })
   const interrupt = () => child.kill("SIGINT")
@@ -44,10 +53,10 @@ async function run() {
   try {
     const code = await new Promise((done, reject) => { child.once("error", reject); child.once("close", done) })
     if (code !== 0 || malformed) throw new Error(`Go Adapter contracts failed (exit ${code}).`)
-    verifyOpenCodeResult(events)
-    if (args.includes("--all")) { verifyCodeBuddyResult(events); verifyKimiResult(events); verifyGrokResult(events) }
+    if (args.includes("--all")) verifyAllProviderResults(events)
+    else verifyOpenCodeResult(events)
     console.log(args.includes("--all")
-      ? "Required OpenCode, CodeBuddy, Kimi and Grok/PostgreSQL/installed-daemon contracts passed."
+      ? "Required Claude, OpenCode, CodeBuddy, Kimi and Grok/PostgreSQL/installed-daemon contracts passed."
       : "Required OpenCode/PostgreSQL/installed-daemon contract passed.")
   } finally {
     lines.close()
