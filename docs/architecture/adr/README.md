@@ -116,6 +116,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0088](0088-claude-manual-compaction-on-legacy-capture.md) | Claude manual compaction on legacy capture |
 | [0089](0089-claude-automatic-text-replay-on-legacy-capture.md) | Claude automatic text replay on legacy capture |
 | [0090](0090-claude-read-pair-result-parents.md) | Claude exact-two Read result parents |
+| [0091](0091-claude-read-turn-automatic-replay.md) | Claude Read-turn automatic replay on legacy capture |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

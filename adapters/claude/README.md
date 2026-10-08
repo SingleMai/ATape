@@ -122,11 +122,21 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   result commit restores ordinary chaining through final/resumed answers.
   Existing projection-4 progress and Event/Raw keys remain stable, and repeated
   assistant usage updates one API identity at its latest revision.
+- Native root automatic Read-turn compaction on Claude Code 2.1.263: exact
+  [user U, reminder G, text plan P, Read C, result R, reminder A], or its
+  successful ordered two-Read variant with C0/C1/R0/R1. The source copies all
+  six/eight records, while retained metadata names only P through A. Current
+  committed-prefix proof checks every original and complete copy, including
+  unknown fields; each copy adds only the first common slug. All copies plus
+  new boundary/summary commit together Raw-only, adding no Events or usage.
+  The existing pending-answer checkpoint requires the real first text answer;
+  later text blocks/resumes use ordinary chaining and latest API usage. Only
+  one first-slug round per native tool layout was sampled.
 
 ## Explicit limits
 
 No tool-parent batches beyond the exact ordered successful two-Read layouts,
-automatic compaction beyond the exact text replay group, cross-file continuation,
+automatic compaction beyond the exact text/Read-turn replay groups, cross-file continuation,
 manual tails outside the singleton or exact two-record text shapes, arbitrary
 copied UUID replay, child compaction,
 branching/rewind, background or nested subagents,
@@ -165,6 +175,15 @@ budgets, without requiring both to fit together. Proof costs O(committed prefix)
 I/O/hash; large tool results retain the existing bounded-detail/Raw policy.
 Reversed, failed, async, interleaved, child or other-tool batches are outside
 the profile. No atomic snapshot or general old-call parent permission is supplied.
+Read-turn automatic proof retains at most eight adjacent originals in a separate
+512 KiB byte tail. Originals/copies/controls each fit 64 KiB including LF; the
+eight/ten-record group has a 640 KiB total cap (eight records imply at most
+512 KiB). The whole group must fit fresh requested source capacity; remaining
+space exhaustion defers it. Ordinary 16 MiB Read admission does not imply its
+larger result fits this replay witness policy. Existing-slug/repeated tool rounds,
+no-plan layouts, other/more/error/async results and file reinjection need further
+profiles. Text replay retains its separate 256 KiB policies and repeated scope.
+All current-prefix proofs cost O(committed prefix) I/O/hash with bounded memory.
 Discovery scans at most 10,000 directory entries. Metadata-only cursors are
 compressed above 16,000 bytes, with a 1 MiB wire / 16 MiB expanded bound. Capacity
 errors retain committed progress. Only sources with readable identity
@@ -249,6 +268,10 @@ synthetic content and actual native source persistence:
 - [Two Read results](fixtures/native-read-pair-2.1.263/README.md): two independent
   response layouts, actual synthetic-file Read operations and own-call parents.
   The older text-plan case does not establish a fresh HOME.
+- [Read-turn automatic replay](fixtures/native-auto-read-replay-2.1.263/README.md):
+  ten snapshots in two independent Sessions with six/eight exact first-slug
+  copies and later real answers/resumes. Single executes only Read a.txt;
+  inherited HOME was not recorded in either case.
 
 Mock usage counters establish projection/deduplication, not billing. Compaction
 responses have no assistant JSONL usage, so their actual usage remains unavailable.

@@ -124,3 +124,6 @@ does not admit more calls, reverse/interleaved/error/async results, other tools,
 child batches, auto tool replay, forks/rewind or Active Path replacement. It does
 not globally reject every new result that the older ordinary linear profile
 already accepts. Package publication and Server deployment remain separate.
+
+[ADR-0091](0091-claude-read-turn-automatic-replay.md) separately composes fully
+committed Read pairs with a sampled first-slug automatic replay group.
