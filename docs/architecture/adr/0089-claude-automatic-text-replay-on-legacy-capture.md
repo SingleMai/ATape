@@ -163,3 +163,7 @@ This decision does not admit tools inside the retained segment, copied assistant
 records, arbitrary replay, child compaction, cross-file history, forks/rewind or
 Active Path replacement. Composition with wider manual/auto shapes and other
 Claude versions needs source evidence. Publication and deployment remain separate.
+
+[ADR-0091](0091-claude-read-turn-automatic-replay.md) separately selects two
+first-slug native Read-turn replay shapes; it preserves this text profile's
+repeated-round scope and resource policies.

@@ -1,0 +1,986 @@
+[
+  {
+    "case": "auto_single",
+    "requestCapture": "requests-auto_single-manual_text.json",
+    "originalRequestIndex": 5,
+    "phase": "toolturn",
+    "response": "toolcalls",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactTextLoadedAt": [],
+    "toolResults": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_WARMUP: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOLS: Read a.txt once, then give two text blocks.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto_single",
+    "requestCapture": "requests-auto_single-manual_text.json",
+    "originalRequestIndex": 6,
+    "phase": "toolturn",
+    "response": "summary",
+    "summaryRequest": true,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactTextLoadedAt": [],
+    "toolResults": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_WARMUP: cobalt heron 482.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOLS: Read a.txt once, then give two text blocks.\n"
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto_single",
+    "requestCapture": "requests-auto_single-manual_text.json",
+    "originalRequestIndex": 7,
+    "phase": "toolturn",
+    "response": "tool-final",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 3,
+    "sourceSummaryExactTextLoadedAt": [
+      {
+        "messageIndex": 0,
+        "blockIndex": 1,
+        "exactTextEqualsSourceSummary": true
+      }
+    ],
+    "toolResults": [
+      {
+        "messageIndex": 2,
+        "blockIndex": 0,
+        "toolUseId": "call_auto_single_read_a",
+        "rawSourceResultExactTextEqual": false,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_single_read_a",
+          "type": "tool_result",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_SINGLE_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-tool-replay/config/projects/-fixture-native-auto-tool-replay-workspace/611cd738-0d92-41ce-b1e3-64ba1a10a70a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_PLAN: Read the synthetic files."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_single_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_auto_single_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto_single",
+    "requestCapture": "requests-auto_single-manual_text.json",
+    "originalRequestIndex": 9,
+    "phase": "continue",
+    "response": "continue",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactTextLoadedAt": [
+      {
+        "messageIndex": 0,
+        "blockIndex": 1,
+        "exactTextEqualsSourceSummary": true
+      }
+    ],
+    "toolResults": [
+      {
+        "messageIndex": 2,
+        "blockIndex": 0,
+        "toolUseId": "call_auto_single_read_a",
+        "rawSourceResultExactTextEqual": false,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_single_read_a",
+          "type": "tool_result"
+        }
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_SINGLE_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-tool-replay/config/projects/-fixture-native-auto-tool-replay-workspace/611cd738-0d92-41ce-b1e3-64ba1a10a70a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_PLAN: Read the synthetic files."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_single_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_auto_single_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_FINAL_A: amber lynx 204."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_FINAL_B: violet crane 619."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_CONTINUE: Resume the synthetic task after compaction.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto_single",
+    "requestCapture": "requests-auto_single-manual_text.json",
+    "originalRequestIndex": 11,
+    "phase": "secondcontinue",
+    "response": "secondcontinue",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 7,
+    "sourceSummaryExactTextLoadedAt": [
+      {
+        "messageIndex": 0,
+        "blockIndex": 1,
+        "exactTextEqualsSourceSummary": true
+      }
+    ],
+    "toolResults": [
+      {
+        "messageIndex": 2,
+        "blockIndex": 0,
+        "toolUseId": "call_auto_single_read_a",
+        "rawSourceResultExactTextEqual": false,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_single_read_a",
+          "type": "tool_result"
+        }
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_SINGLE_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-tool-replay/config/projects/-fixture-native-auto-tool-replay-workspace/611cd738-0d92-41ce-b1e3-64ba1a10a70a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_PLAN: Read the synthetic files."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_single_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_auto_single_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_FINAL_A: amber lynx 204."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_TOOL_FINAL_B: violet crane 619."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_CONTINUE: Resume the synthetic task after compaction."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_CONTINUE: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 6,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SINGLE_SECOND_CONTINUE: Confirm stable resume again.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto",
+    "requestCapture": "requests.json",
+    "originalRequestIndex": 18,
+    "phase": "toolturn",
+    "response": "toolcalls",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactTextLoadedAt": [],
+    "toolResults": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_WARMUP: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOLS: Read a.txt and b.txt once, then give two text blocks.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto",
+    "requestCapture": "requests.json",
+    "originalRequestIndex": 19,
+    "phase": "toolturn",
+    "response": "summary",
+    "summaryRequest": true,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactTextLoadedAt": [],
+    "toolResults": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_WARMUP: cobalt heron 482.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOLS: Read a.txt and b.txt once, then give two text blocks.\n"
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto",
+    "requestCapture": "requests.json",
+    "originalRequestIndex": 20,
+    "phase": "toolturn",
+    "response": "tool-final",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 3,
+    "sourceSummaryExactTextLoadedAt": [
+      {
+        "messageIndex": 0,
+        "blockIndex": 1,
+        "exactTextEqualsSourceSummary": true
+      }
+    ],
+    "toolResults": [
+      {
+        "messageIndex": 2,
+        "blockIndex": 0,
+        "toolUseId": "call_auto_read_a",
+        "rawSourceResultExactTextEqual": true,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_read_a",
+          "type": "tool_result"
+        }
+      },
+      {
+        "messageIndex": 2,
+        "blockIndex": 1,
+        "toolUseId": "call_auto_read_b",
+        "rawSourceResultExactTextEqual": false,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_read_b",
+          "type": "tool_result",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-tool-replay/config/projects/-fixture-native-auto-tool-replay-workspace/bb9cf168-c9d3-4fea-9428-bd7fc8460755.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_PLAN: Read the two synthetic files."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 2,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_read_b",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/b.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_auto_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "tool_use_id": "call_auto_read_b",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto",
+    "requestCapture": "requests.json",
+    "originalRequestIndex": 22,
+    "phase": "continue",
+    "response": "continue",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactTextLoadedAt": [
+      {
+        "messageIndex": 0,
+        "blockIndex": 1,
+        "exactTextEqualsSourceSummary": true
+      }
+    ],
+    "toolResults": [
+      {
+        "messageIndex": 2,
+        "blockIndex": 0,
+        "toolUseId": "call_auto_read_a",
+        "rawSourceResultExactTextEqual": true,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_read_a",
+          "type": "tool_result"
+        }
+      },
+      {
+        "messageIndex": 2,
+        "blockIndex": 1,
+        "toolUseId": "call_auto_read_b",
+        "rawSourceResultExactTextEqual": false,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_read_b",
+          "type": "tool_result"
+        }
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-tool-replay/config/projects/-fixture-native-auto-tool-replay-workspace/bb9cf168-c9d3-4fea-9428-bd7fc8460755.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_PLAN: Read the two synthetic files."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 2,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_read_b",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/b.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_auto_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "tool_use_id": "call_auto_read_b",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_FINAL_A: amber lynx 204."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_FINAL_B: violet crane 619."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_CONTINUE: Resume the synthetic task after compaction.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  },
+  {
+    "case": "auto",
+    "requestCapture": "requests.json",
+    "originalRequestIndex": 24,
+    "phase": "secondcontinue",
+    "response": "secondcontinue",
+    "summaryRequest": false,
+    "requestUrl": "/v1/messages?beta=true",
+    "messageCount": 7,
+    "sourceSummaryExactTextLoadedAt": [
+      {
+        "messageIndex": 0,
+        "blockIndex": 1,
+        "exactTextEqualsSourceSummary": true
+      }
+    ],
+    "toolResults": [
+      {
+        "messageIndex": 2,
+        "blockIndex": 0,
+        "toolUseId": "call_auto_read_a",
+        "rawSourceResultExactTextEqual": true,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_read_a",
+          "type": "tool_result"
+        }
+      },
+      {
+        "messageIndex": 2,
+        "blockIndex": 1,
+        "toolUseId": "call_auto_read_b",
+        "rawSourceResultExactTextEqual": false,
+        "submittedStartsWithRawResultTrimmed": true,
+        "submittedIncludesActualDiskMarker": true,
+        "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+        "blockMetadata": {
+          "tool_use_id": "call_auto_read_b",
+          "type": "tool_result"
+        }
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-tool-replay/config/projects/-fixture-native-auto-tool-replay-workspace/bb9cf168-c9d3-4fea-9428-bd7fc8460755.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_PLAN: Read the two synthetic files."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 1,
+        "role": "assistant",
+        "blockIndex": 2,
+        "block": {
+          "type": "tool_use",
+          "id": "call_auto_read_b",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-auto-tool-replay/workspace/b.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_auto_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+        }
+      },
+      {
+        "messageIndex": 2,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "tool_use_id": "call_auto_read_b",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_FINAL_A: amber lynx 204."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "role": "assistant",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_TOOL_FINAL_B: violet crane 619."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_CONTINUE: Resume the synthetic task after compaction."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "role": "assistant",
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_CONTINUE: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 6,
+        "role": "user",
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_AUTO_SECOND_CONTINUE: Confirm stable resume again.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSchemaIncluded": false
+  }
+]

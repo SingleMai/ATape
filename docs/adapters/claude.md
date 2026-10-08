@@ -46,7 +46,7 @@ Conversation records require a valid UUID and matching Thread identity before
 projecting either Events or usage. UUID-less native bookkeeping remains Raw-only;
 it cannot create a turn or an assistant usage record.
 
-Wider tool batches and auto-compaction, cross-file continuation, child compaction, branching/rewind,
+Tool batches and compaction beyond the sampled profiles, cross-file continuation, child compaction, branching/rewind,
 background or nested subagents and spill collection remain outside the supported
 profiles. Unknown content and nonempty thinking remain Raw when captured;
 tool-bearing projections retain partial fidelity. The retained controlled native
@@ -234,6 +234,44 @@ answers append; summary-call usage is absent from this JSONL, as in the manual
 profile. Ordinary tool batches, copied assistants, wider retained layouts,
 child compaction and Active Path replacement are outside this automatic profile.
 
+## Automatic root Read-turn compaction
+
+[ADR-0091](../architecture/adr/0091-claude-read-turn-automatic-replay.md) selects
+two additional native Claude Code 2.1.263 root layouts. A single successful Read
+has current original records [U,G,P,C,R,A]; the exact-two Read has
+[U,G,P,C0,C1,R0,R1,A]. U is an external user, G its token reminder, P a single
+text plan at API index 0, C/C0/C1 the same response's Read calls at indices 1 or
+1/2, R/R0/R1 their successful own-call results, and A a final token reminder.
+All six/eight records are physically adjacent and fully committed. Each result
+matches its literal call path, tool ID, parent/source assistant UUID and U's
+prompt. Both reminders have their exact native parent edges. A pending Read-pair
+result cannot authorize replay before it completes.
+
+The source copies all six/eight records, then appends B/S. Its retained metadata
+names only the four/six records from P through A: U/G are copied but excluded
+from those arrays. Segment endpoints are P/A, logical parent is A, and both
+anchors name the new summary S. Every original omits slug; each copy adds only
+the same first slug and must otherwise equal the complete decoded original,
+including unknown values, API usage, tool input/output and parent edges.
+An authenticated tail of the exact current committed prefix proves this graph;
+global seen/call membership merely helps select the profile.
+
+The six/eight copies plus B/S commit as one eight/ten-record Raw-only group.
+Incomplete groups wait before the first copy, conflicting complete records fail,
+and requested source capacity must fit the whole group. Copies do not emit
+Events or usage revisions. The existing private `autoText` state then requires
+the first real text answer at index 0, parent S and admitted slug. Full commit
+clears it; the native second text record follows ordinary chaining and updates
+the same API usage identity. Missing answers stay pending without busy retries.
+Old projection-4 checkpoints and independent Raw receipts retain their existing
+recovery, Event identities and complete physical source bytes.
+
+Each sampled tool case has one first-slug automatic round followed by two
+ordinary resumes. Existing-slug tool replay, repeated tool rounds, tool-only
+layouts without P, other/more/error/async/interleaved calls, children, manual
+tool compaction, file reinjection and Active Path replacement remain outside
+this profile. The separate text profile retains its proved repeated-slug scope.
+
 ## Bounds and Raw policy
 
 The [package README](../../adapters/claude/README.md#explicit-limits) owns detailed
@@ -256,6 +294,16 @@ path is nonempty, NUL-free and at most 64 KiB of UTF-8. These are Adapter profil
 and cursor policies, not native format limits. Result records retain ordinary
 16 MiB parsing and requested source-page admission. Proof costs O(committed
 prefix) I/O/hash with bounded retained memory; it does not add snapshot semantics.
+Read-turn automatic proof has separate limits: at most eight physical original
+records from a 512 KiB retained byte tail, at most 64 KiB including LF per
+original/copy/control record, and a 640 KiB group. The single layout's eight
+group records additionally imply at most 512 KiB. These are Adapter policies;
+ordinary Read receipts can fit the 16 MiB parser yet exceed this smaller replay
+witness limit. Large irrelevant earlier history and real answers keep ordinary
+fragmentation rules. The existing text proof's 256 KiB policies are unchanged.
+Both groups must fit the fresh requested source-page capacity even with Raw off;
+remaining-space exhaustion defers the whole group. Proof still costs
+O(committed prefix) I/O/hash and does not create an atomic filesystem snapshot.
 A real usage item that exceeds a fresh page's reserved Canonical capacity fails
 with a source limit. Insufficient remaining space defers it to the next page;
 it does not leave an impossible item waiting indefinitely. Retrying with enough
@@ -453,7 +501,9 @@ and retried identical unacknowledged input. R0 EOF remained one pending Canonica
 Session; full R1 commit returned to zero. Own-call updates, latest API usage and
 complete contiguous Raw bytes retained one object/generation per Session.
 
-For the two-Read increment, Claude typecheck and all 328 Adapter tests passed,
+The two-Read increment was integrated through
+[PR #191](https://github.com/SingleMai/ATape/pull/191) after final-commit CI and all
+Security gates passed. Claude typecheck and all 328 Adapter tests passed,
 including 98 new public Interface cases. They cover both native layouts,
 same-page and restarted proof, partial receipts, pending EOF, genuine C1
 Event-only/usage-pending recovery, fresh/remaining source and Canonical budgets,
@@ -476,6 +526,66 @@ Message-body Search resolves native user/plan/final/resume anchors exactly once
 and excludes tool summaries, IDs and full values. The required non-skipped Claude
 contract guard passed.
 
+The [Read-turn automatic fixture](../../adapters/claude/fixtures/native-auto-read-replay-2.1.263/README.md)
+retains ten actual native snapshots in two independent Sessions: seed, warmup,
+one automatic tool round and two ordinary resumes per case. All snapshots are
+strict byte-prefix extensions under declared literal path substitution. Removing
+only the newly added slug makes all six/eight copied lines byte-identical to
+their originals. Metadata selects P through A, separately from copied U/G.
+The single case executes only Read a.txt despite mock final prose mentioning
+b.txt; the dual case executes both. Both record isolated config/workspace and
+inherited, unrecorded HOME. Selected actual model requests load the exact summary
+and each executed result once; the last result's request formatting is transformed.
+
+Logical expectations end at fourteen/sixteen Events respectively, six persisted
+API IDs each and 190151/90 mock counters. The summary response has no assistant
+JSONL usage; its controlled 51/19 stdout difference is excluded. First answer
+and second text block share one API usage identity. Derived LF cuts are test
+append boundaries, not additional native invocations.
+
+For the Read-turn automatic increment, Claude typecheck and all 483 Adapter
+tests passed, including 155 new public Interface cases. They cover both native
+layouts, fresh same-page proof, every incomplete group slot, exact retries and
+runtime restarts, copy/control/current-original faults, genuine plan and F0
+Event-only/usage-pending recovery, F0 fragmentation, independent Raw receipts,
+Raw off/backfill, large irrelevant history and oversized required witnesses.
+Deep 4000-level unknown values and object key reordering preserve complete
+decoded equality; changed leaves, array ordering and negative zero are rejected.
+Exact 640 KiB groups with 64 KiB LF-inclusive frames pass; an equally sized
+incomplete final frame fails with a source limit. Old text-profile tests retain
+their independent 256 KiB bounds. CLI typecheck, documentation and architecture
+guards passed; all four Collector/Server E2E tests passed.
+
+The final installed Claude `verify:package` passed all ten native snapshots
+and 36 derived LF cuts, with one-Event pages, recreated runtimes and identical
+unacknowledged retries. Unproved copies/B retain the original parser/Raw offset,
+with pending Raw equal to unread physical bytes. Complete S captures the group
+once and stays pending; full F0 clears it, F1 updates the same latest API usage.
+Copied APIs keep their original source revision. Own-call updates, old Event
+prefixes, one Raw object/generation and all physical source bytes passed.
+
+Independent public Interface verification generated four actual opaque
+checkpoints with the previous merged Implementation at
+`60110ff0f7594240596f83bf53801e933daf9313`: single at C/A and dual at C1/A.
+This Implementation preserved the seven/eight/eight/ten acknowledged Events,
+then completed fourteen/sixteen unique Events respectively with six usage IDs
+each. Raw receipt-only recovery kept the older A parser cursor and re-proved
+the group without gaps. The 108 independent upgrade/fault/resource checks
+passed. These are prior Git Implementation upgrades, not historical published
+binary acceptance.
+
+The extended authenticated HTTP/Docker PostgreSQL contract passed 73 independently
+restarted managed-daemon runs, retaining all prior 49 and adding 24 Read-turn
+automatic boundaries/idle polls. Original plans, calls and each result commit
+separately; the final reminder and proved group add zero Events. S leaves one
+pending Canonical Session; its idle restart sends nothing. F0 clears pending,
+F0/F1 upsert one API usage identity, and both real resumes append two Events.
+Old Reader prefixes, exact own-call result anchors, message-body Search anchors
+and exclusion of copied/tool/internal controls passed. Each Session retains one
+Raw object/generation with complete gap-free bytes, including all copies/B/S.
+Prior redaction, policy recovery, unsupported-source repair and deletion checks
+remain covered. The required non-skipped Claude contract guard passed.
+
 Controlled counters establish projection and deduplication, not provider billing.
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
@@ -487,5 +597,5 @@ deployment is claimed.
 Full Active Path support additionally needs an explicit legacy-to-publication
 migration; switching the Adapter manifest or deleting checkpoints is not one.
 Tool-result batches outside the exact two-Read layouts and automatic compaction
-outside the exact text replay group need additional native profiles; neither
-profile enables them through generic duplicate or parent relaxation.
+outside the exact text and Read-turn replay groups need additional native
+profiles; none enables them through generic duplicate or parent relaxation.

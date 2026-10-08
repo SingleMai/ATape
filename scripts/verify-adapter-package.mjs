@@ -91,6 +91,7 @@ try {
     await verifyClaudeManualTextTail(adapter, context, request.limits)
     await verifyClaudeAutomaticTextReplay(adapter, context, request.limits)
     await verifyClaudeReadPair(adapter, context, request.limits)
+    await verifyClaudeAutomaticReadReplay(adapter, context, request.limits)
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -608,6 +609,127 @@ async function verifyClaudeReadPair(adapter, context, limits) {
         assert.equal(event.update.toolCallId, result.toolResultBlock.tool_use_id)
         assert.equal(event.update.status, "completed")
         assert.equal(event.update.rawOutput, result.toolResultBlock.content)
+      }
+    }
+  } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
+}
+
+async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
+  const fixtureDirectory = join(packageRoot, "fixtures", "native-auto-read-replay-2.1.263")
+  const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
+  const relocate = source => source.replaceAll(JSON.stringify(provenance.fixtureCwd).slice(1, -1),
+    JSON.stringify(projectDirectory).slice(1, -1))
+  const prefix = (source, line) => source.split("\n").slice(0, line).join("\n") + "\n"
+  const pagedLimits = { ...limits, eventsPerObservation: 1 }
+  try {
+    for (const fixtureCase of provenance.cases) {
+      const selectedHome = join(temporaryRoot, `automatic-read-${fixtureCase.profile}`)
+      const directory = join(selectedHome, "projects", "fixture")
+      await mkdir(directory, { recursive: true })
+      process.env.ATAPE_CLAUDE_HOME = selectedHome
+      const sourceFile = join(directory, `${fixtureCase.sessionId}.jsonl`)
+      let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
+      const rawProgress = new Map(), events = [], usage = new Map()
+      const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
+      const appendSource = async source => {
+        assert.ok(source.startsWith(previousSource), "Automatic Read replay must retain its native source prefix")
+        if (!previousSource) await writeFile(sourceFile, source)
+        else await appendFile(sourceFile, source.slice(previousSource.length))
+        previousSource = source
+      }
+      const drain = async (expected, source, committedSource, pending, incompleteGroup = false) => {
+        const previousCursor = cursor, previousEvents = [...events], previousUsage = [...usage]
+        let finished = false
+        for (let index = 0; index < limits.pagesPerCycle; index++) {
+          const page = await collect()
+          assert.deepEqual(await collect(), page, "Automatic Read replay retry must be identical in a new installed runtime")
+          assert.equal(page.sourceFailures, undefined)
+          assert.equal(typeof page.nextCursor, "string")
+          if (incompleteGroup) assert.deepEqual(page.observations, [], "Unproved copies/B must not advance Canonical or Raw")
+          for (const observation of page.observations) {
+            assert.equal(observation.session.sourceSessionId, fixtureCase.sessionId)
+            assert.deepEqual(observation.threads.map(thread => thread.sourceThreadId), ["root"])
+            assert.ok(observation.events.length <= 1)
+            assert.ok(Buffer.byteLength(JSON.stringify({ ...observation, rawSegments: [] })) <= limits.canonicalBytesPerObservation)
+            for (const event of observation.events) {
+              assert.equal(event.sourceThreadId, "root")
+              assert.ok(!events.some(previous => previous.sourceEventId === event.sourceEventId), "Copied UUIDs must not replay Events")
+              events.push(event)
+            }
+            for (const sample of observation.usage) {
+              assert.equal(sample.sourceThreadId, "root")
+              const previous = usage.get(sample.sourceUsageId)
+              assert.ok(!previous || sample.revision > previous.revision)
+              usage.set(sample.sourceUsageId, sample)
+            }
+            for (const raw of observation.rawSegments) {
+              sourceObjectId ??= raw.sourceObjectId
+              sourceGeneration ??= raw.sourceGeneration
+              assert.equal(raw.sourceObjectId, sourceObjectId)
+              assert.equal(raw.sourceGeneration, sourceGeneration)
+              assert.equal(raw.sourceOffset, Buffer.byteLength(rawContent))
+              rawContent += raw.content
+              rawProgress.set(raw.sourceObjectId, { sourceSessionId: fixtureCase.sessionId, sourceObjectId: raw.sourceObjectId,
+                sourceGeneration: raw.sourceGeneration, sourceOffset: Buffer.byteLength(rawContent), finalized: raw.final })
+            }
+          }
+          cursor = page.nextCursor
+          if (!page.hasMore) { finished = true; break }
+        }
+        assert.ok(finished, "Installed automatic Read replay did not finish within its page budget")
+        assert.deepEqual(events.slice(0, previousEvents.length), previousEvents)
+        if (incompleteGroup) {
+          assert.equal(cursor, previousCursor)
+          assert.deepEqual([...usage], previousUsage)
+        }
+        assert.equal(events.length, expected.uniqueCanonicalEventCount)
+        assert.equal(usage.size, expected.distinctUsageCount)
+        assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), expected.inputTokens)
+        assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), expected.outputTokens)
+        assert.deepEqual(events.map(event => event.sourceEventId), fixtureCase.eventSourceIds.slice(0, expected.uniqueCanonicalEventCount))
+        if (expected.usageSourceIds) for (const apiId of expected.usageSourceIds) {
+          const value = fixtureCase.latestUsageByApiId[apiId]
+          const sample = usage.get(apiId)
+          assert.equal(sample.model, value.model)
+          assert.equal(sample.inputTokens, value.inputTokens)
+          assert.equal(sample.outputTokens, value.outputTokens)
+          assert.equal(sample.revision, Buffer.byteLength(prefix(source, value.latestObservationLine)), "Raw-only copied usage must not advance its source revision")
+        }
+        assert.equal(rawContent, committedSource)
+        assert.ok(events.every(event => event.rawRef.sourceObjectId === sourceObjectId))
+        const idle = await collect()
+        assert.deepEqual(await collect(), idle)
+        assert.deepEqual(idle.observations, [])
+        assert.equal(idle.nextCursor, cursor)
+        assert.equal(idle.hasMore, false)
+        assert.equal(idle.sourceFailures, undefined)
+        assert.equal(idle.progress.pendingCanonicalSessions, pending)
+        assert.equal(idle.progress.pendingRawBytes, Buffer.byteLength(source) - Buffer.byteLength(committedSource))
+      }
+      for (const snapshot of fixtureCase.nativeSnapshots) {
+        const source = relocate(await readFile(join(fixtureDirectory, snapshot.file), "utf8"))
+        for (const cut of fixtureCase.derivedTestCuts.filter(cut => cut.nativeParentSnapshot === snapshot.file)) {
+          const cutSource = prefix(source, cut.prefixThroughLine)
+          await appendSource(cutSource)
+          await drain(cut.expected, cutSource, prefix(source, cut.parserAndRawCommitThroughLine),
+            cut.expected.pendingCanonicalSessions, cut.incompleteAtomicReplayGroup)
+        }
+        await appendSource(source)
+        await drain(snapshot.expected, source, source, 0)
+      }
+      for (const receipt of fixtureCase.callReceiptEvidence) {
+        const call = events.find(event => event.sourceEventId === `${receipt.callUuid}:0`)
+        const result = events.find(event => event.sourceEventId === `${receipt.resultUuid}:0`)
+        assert.equal(call.update.sessionUpdate, "tool_call")
+        assert.equal(call.update.toolCallId, receipt.call.id)
+        assert.deepEqual(call.update.rawInput, JSON.parse(relocate(JSON.stringify(receipt.call.input))))
+        assert.equal(result.update.sessionUpdate, "tool_call_update")
+        assert.equal(result.update.toolCallId, receipt.call.id)
+        assert.equal(result.update.status, "completed")
+        assert.equal(result.update.rawOutput, receipt.sourceResultBlock.content)
+      }
+      for (const uuid of [fixtureCase.boundary.uuid, fixtureCase.summary.uuid]) {
+        assert.ok(!events.some(event => event.sourceEventId.startsWith(`${uuid}:`)))
       }
     }
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }

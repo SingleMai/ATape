@@ -17,6 +17,8 @@ const MaxDecodedCursorBytes = 16 * 1024 * 1024
 const MaxWitnessRecordBytes = 64 * 1024
 const MaxAutoGroupBytes = 256 * 1024
 const MaxProofTailBytes = 256 * 1024
+const MaxReadReplayTailBytes = 512 * 1024
+const MaxReadReplayGroupBytes = 640 * 1024
 const MaxAutoTailRecords = 16
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
@@ -344,7 +346,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (delegated || state.compaction || state.autoText || state.readPair)
           fail("unsupported", "Claude automatic replay requires an unblocked root Thread.")
         if (state.eventSkip !== 0) fail("cursor", "Claude replay checkpoint contains uncommitted Event progress.")
-        const group = await readAutoTextGroup(handle, line, record, at, before.size, hash.copy().digest("hex"), root, [...seen], request.signal)
+        const group = await readAutoGroup(handle, line, record, at, before.size, hash.copy().digest("hex"), root, [...seen], calls, request.signal)
         if (!group) break // An incomplete witness has no immediate continuation page or acknowledged copy bytes.
         const bytes = group.contents.reduce((total, content) => total + content.length, 0)
         const limit = Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation)
@@ -352,7 +354,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (rawBytes + bytes > limit) { hasMore = true; break }
         for (const content of group.contents) hash.update(content)
         seen.add(group.stage.boundaryUuid); seen.add(group.stage.summaryUuid)
-        state = { ...state, autoText: group.stage, lastUuid: group.stage.summaryUuid, order: state.order + 4, eventSkip: 0 }
+        state = { ...state, autoText: group.stage, lastUuid: group.stage.summaryUuid, order: state.order + group.contents.length, eventSkip: 0 }
         rawBytes += bytes; at = group.end; hasMore = at < before.size
         break // The answer starts a fresh page; lookahead never consumes prefetched ordinary records.
       }
@@ -613,7 +615,7 @@ async function autoTextOriginals(handle: Awaited<ReturnType<typeof open>>, commi
 /** Both native profiles authenticate their retained LF frames from the same
  * current-prefix bytes; no separately read tail borrows a prior hash proof. */
 async function committedTail(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
-  records: number, signal: AbortSignal): Promise<{ tail: Buffer; ends: number[]; tailStart: number }> {
+  records: number, signal: AbortSignal, retainedBytes = MaxProofTailBytes): Promise<{ tail: Buffer; ends: number[]; tailStart: number }> {
   const proofHash = createHash("sha256"), block = Buffer.alloc(64 * 1024)
   const ends = [0]
   let tail = Buffer.alloc(0), bytes = 0
@@ -627,7 +629,7 @@ async function committedTail(handle: Awaited<ReturnType<typeof open>>, committed
       ends.push(bytes + at + 1)
       if (ends.length > records + 1) ends.shift()
     }
-    tail = Buffer.from(Buffer.concat([tail, content]).subarray(-MaxProofTailBytes))
+    tail = Buffer.from(Buffer.concat([tail, content]).subarray(-retainedBytes))
     bytes += read.bytesRead
   }
   if (bytes !== committed || proofHash.digest("hex") !== expectedDigest || ends.at(-1) !== committed)
@@ -640,6 +642,23 @@ const readPath = (value: unknown): value is string => typeof value === "string" 
 const readRoot = (record: RecordValue, root: RecordValue) => autoRoot(record, root) && record.isMeta === undefined &&
   record.isCompactSummary === undefined && record.isVisibleInTranscriptOnly === undefined && record.logicalParentUuid === undefined &&
   record.compactMetadata === undefined && record.subtype === undefined
+
+function readResponse(record: RecordValue, root: RecordValue): RecordValue {
+  const message = object(record.message), model = string(message?.model)
+  if (!readRoot(record, root) || record.type !== "assistant" || message?.role !== "assistant" || !autoId(message.id) ||
+    !model?.trim() || model.length > 200 || model === "<synthetic>" || message.stop_reason !== "tool_use")
+    fail("unsupported", "Claude Read has no supported assistant response.")
+  return message
+}
+
+function readCall(record: RecordValue, message: RecordValue, calls: ReadonlyMap<string, { name: string; uuid: string }>): ReadCall {
+  const blocks = message.content, block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
+  const path = object(block?.input)?.file_path
+  if (block?.type !== "tool_use" || block.name !== "Read" || !autoId(block.id) || !readPath(path) ||
+    calls.get(block.id)?.name !== "Read" || calls.get(block.id)?.uuid !== record.uuid)
+    fail("unsupported", "Claude Read differs from its committed call metadata.")
+  return { uuid: record.uuid as string, toolId: block.id, filePath: path }
+}
 
 function verifyReadReceipt(record: RecordValue, root: RecordValue, callUuid: string, toolId: string, filePath: string, promptId?: string): void {
   const message = object(record.message), blocks = message?.content
@@ -667,28 +686,13 @@ async function readPairCalls(handle: Awaited<ReturnType<typeof open>>, committed
     catch { return fail("unsupported", "Claude Read pair has an unsupported physical call record.") }
   }
   const c1 = recordAt(0), c0 = recordAt(1)
-  const response = (record: RecordValue) => {
-    const message = object(record.message), model = string(message?.model)
-    if (!readRoot(record, root) || record.type !== "assistant" || message?.role !== "assistant" || !autoId(message.id) ||
-      !model?.trim() || model.length > 200 || model === "<synthetic>" || message.stop_reason !== "tool_use")
-      fail("unsupported", "Claude Read pair has no supported assistant response.")
-    return message
-  }
-  const m0 = response(c0), m1 = response(c1)
-  const call = (record: RecordValue, message: RecordValue): ReadCall => {
-    const blocks = message.content, block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
-    const path = object(block?.input)?.file_path
-    if (block?.type !== "tool_use" || block.name !== "Read" || !autoId(block.id) || !readPath(path) ||
-      calls.get(block.id)?.name !== "Read" || calls.get(block.id)?.uuid !== record.uuid)
-      fail("unsupported", "Claude Read pair differs from its committed call metadata.")
-    return { uuid: record.uuid as string, toolId: block.id, filePath: path }
-  }
-  const first = call(c0, m0), second = call(c1, m1)
+  const m0 = readResponse(c0, root), m1 = readResponse(c1, root)
+  const first = readCall(c0, m0, calls), second = readCall(c1, m1, calls)
   if (first.uuid === second.uuid || first.toolId === second.toolId || seen.at(-2) !== first.uuid || seen.at(-1) !== second.uuid ||
     c1.parentUuid !== c0.uuid || m0.id !== m1.id || m0.model !== m1.model)
     fail("unsupported", "Claude Read pair has no adjacent same-response calls.")
   if (c0.apiBlockIndex === 1 && c1.apiBlockIndex === 2) {
-    const plan = recordAt(2), message = response(plan), blocks = message.content
+    const plan = recordAt(2), message = readResponse(plan, root), blocks = message.content
     const block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
     if (seen.at(-3) !== plan.uuid || c0.parentUuid !== plan.uuid || plan.apiBlockIndex !== 0 || message.id !== m0.id || message.model !== m0.model ||
       block?.type !== "text" || typeof block.text !== "string" || !block.text.length)
@@ -699,39 +703,92 @@ async function readPairCalls(handle: Awaited<ReturnType<typeof open>>, committed
   return [first, second]
 }
 
-async function readAutoTextGroup(handle: Awaited<ReturnType<typeof open>>, first: { content: Buffer; end: number }, copy: RecordValue,
-  committed: number, sampledEnd: number, expectedDigest: string, root: RecordValue, seen: ReadonlyArray<string>, signal: AbortSignal):
+/** Tool originals are a complete current turn, rather than a global known-call
+ * lookup. Read2 must have committed both own-call receipts before its final
+ * reminder can enter this authenticated physical suffix. */
+async function autoReadOriginals(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, seen: ReadonlyArray<string>, count: 6 | 8, calls: ReadonlyMap<string, { name: string; uuid: string }>, signal: AbortSignal): Promise<ReadonlyArray<RecordValue>> {
+  if (seen.length <= count) fail("unsupported", "Claude Read replay has no complete current turn.")
+  if (seen[0] !== root.uuid) fail("changed", "Claude original identity changed during replay validation.")
+  const { tail, ends, tailStart } = await committedTail(handle, committed, expectedDigest, count, signal, MaxReadReplayTailBytes)
+  const originals: RecordValue[] = [], expected = seen.slice(-count)
+  for (let index = 0; index < count; index++) {
+    const end = ends[ends.length - count + index], start = ends[ends.length - count - 1 + index]
+    if (start === undefined || end === undefined || start < tailStart || end - start > MaxWitnessRecordBytes)
+      fail("limit", "Claude Read replay originals exceed the bounded tail proof.")
+    let record: RecordValue
+    try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(tail.subarray(start - tailStart, end - tailStart)))) }
+    catch { fail("unsupported", "Claude Read replay has an unsupported physical original record.") }
+    if (record.uuid !== expected[index] || !readRoot(record, root))
+      fail("unsupported", "Claude Read replay has no adjacent current root turn.")
+    originals.push(record)
+  }
+  const [u, g, p] = originals as [RecordValue, RecordValue, RecordValue], user = object(u.message)
+  if (u.type !== "user" || u.userType !== "external" || user?.role !== "user" || typeof user.content !== "string" || !user.content.length ||
+    !autoId(u.promptId) || u.parentUuid !== seen.at(-count - 1))
+    fail("unsupported", "Claude Read replay has no supported original user.")
+  const reminder = (record: RecordValue, parent: unknown) => {
+    const attachment = object(record.attachment)
+    if (record.type !== "attachment" || record.message !== undefined || record.parentUuid !== parent ||
+      attachment?.type !== "total_tokens_reminder" || typeof attachment.text !== "string" || !attachment.text.length)
+      fail("unsupported", "Claude Read replay has no supported token reminder.")
+  }
+  reminder(g, u.uuid)
+  const plan = readResponse(p, root), blocks = plan.content, block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
+  if (p.apiBlockIndex !== 0 || p.parentUuid !== g.uuid || block?.type !== "text" || typeof block.text !== "string" || !block.text.length)
+    fail("unsupported", "Claude Read replay has no supported text plan.")
+  const reads = count === 6 ? 1 : 2, ids = new Set<string>()
+  for (let index = 0; index < reads; index++) {
+    const record = originals[3 + index]!, message = readResponse(record, root), call = readCall(record, message, calls)
+    if (record.apiBlockIndex !== index + 1 || record.parentUuid !== originals[2 + index]!.uuid ||
+      message.id !== plan.id || message.model !== plan.model || ids.has(call.toolId))
+      fail("unsupported", "Claude Read replay has no supported same-response calls.")
+    ids.add(call.toolId)
+    verifyReadReceipt(originals[3 + reads + index]!, root, call.uuid, call.toolId, call.filePath, u.promptId as string)
+  }
+  reminder(originals[count - 1]!, originals[count - 2]!.uuid)
+  return originals
+}
+
+async function readAutoGroup(handle: Awaited<ReturnType<typeof open>>, first: { content: Buffer; end: number }, copy: RecordValue,
+  committed: number, sampledEnd: number, expectedDigest: string, root: RecordValue, seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>, signal: AbortSignal):
   Promise<{ readonly contents: ReadonlyArray<Buffer>; readonly end: number; readonly stage: AutoText } | undefined> {
   // The unknown first line was read by the ordinary 16 MiB parser. Enforce the
   // smaller profile admission limit only now that a complete duplicate is known.
   if (first.content.length > MaxWitnessRecordBytes) fail("limit", "A Claude automatic replay record exceeds 64 KiB.")
-  const originals = await autoTextOriginals(handle, committed, expectedDigest, root, seen, signal)
-  const [a, u, g] = originals, ids = originals.map(record => record.uuid), slug = copy.slug
+  // Tail identity only selects a profile. A failed selected tool proof never
+  // falls back to text or general duplicate suppression.
+  const toolCount = copy.uuid === seen.at(-6) ? 6 : copy.uuid === seen.at(-8) ? 8 : undefined
+  const originals = toolCount ? await autoReadOriginals(handle, committed, expectedDigest, root, seen, toolCount, calls, signal)
+    : await autoTextOriginals(handle, committed, expectedDigest, root, seen, signal)
+  const copies = toolCount ? originals : originals.slice(1), retained = toolCount ? originals.slice(2) : originals
+  const u = toolCount ? originals[0]! : originals[1]!, head = retained[0]!, tail = retained.at(-1)!
+  const ids = retained.map(record => record.uuid), slug = copy.slug, groupLimit = toolCount ? MaxReadReplayGroupBytes : MaxAutoGroupBytes
   const absent = originals.every(record => !Object.hasOwn(record, "slug"))
-  if (!autoId(slug) || !Object.hasOwn(copy, "slug") || !absent && !originals.every(record => record.slug === slug))
+  if (!autoId(slug) || !Object.hasOwn(copy, "slug") || toolCount && !absent || !absent && !originals.every(record => record.slug === slug))
     fail("unsupported", "Claude automatic replay has conflicting slug evidence.")
   const verifyCopy = (value: RecordValue, original: RecordValue) => {
     const { slug: _newSlug, ...withoutSlug } = value
     if (!autoRoot(value, root) || value.slug !== slug || !(absent ? equalJson(withoutSlug, original) : equalJson(value, original)))
       fail("unsupported", "Claude automatic replay differs from its complete original record.")
   }
-  verifyCopy(copy, u)
+  verifyCopy(copy, copies[0]!)
   const contents = [first.content], known = new Set(seen)
   let stage: AutoText | undefined
   const equalIds = (value: unknown) => Array.isArray(value) && value.length === ids.length && value.every((id, index) => id === ids[index])
-  for await (const line of readRecords(handle, first.end, Math.min(sampledEnd, committed + MaxAutoGroupBytes), signal, MaxWitnessRecordBytes)) {
+  for await (const line of readRecords(handle, first.end, Math.min(sampledEnd, committed + groupLimit), signal, MaxWitnessRecordBytes)) {
     if (!line.content.toString("utf8").trim()) fail("unsupported", "Claude automatic replay group is not physically adjacent.")
     let record: RecordValue
     try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
     catch { fail("format", "Claude automatic replay contains a malformed complete record.") }
-    if (contents.length === 1) verifyCopy(record, g)
-    else if (contents.length === 2) {
+    if (contents.length < copies.length) verifyCopy(record, copies[contents.length]!)
+    else if (contents.length === copies.length) {
       const metadata = object(record.compactMetadata), segment = object(metadata?.preservedSegment), messages = object(metadata?.preservedMessages)
       const anchor = segment?.anchorUuid
       if (!autoRoot(record, root) || record.type !== "system" || record.subtype !== "compact_boundary" || record.isMeta !== undefined ||
         record.isCompactSummary !== undefined || record.isVisibleInTranscriptOnly !== undefined ||
-        record.message !== undefined || record.parentUuid !== null || record.logicalParentUuid !== g.uuid || record.slug !== slug ||
-        metadata?.trigger !== "auto" || segment?.headUuid !== a.uuid || segment?.tailUuid !== g.uuid || !autoId(anchor) ||
+        record.message !== undefined || record.parentUuid !== null || record.logicalParentUuid !== tail.uuid || record.slug !== slug ||
+        metadata?.trigger !== "auto" || segment?.headUuid !== head.uuid || segment?.tailUuid !== tail.uuid || !autoId(anchor) ||
         anchor === record.uuid || messages?.anchorUuid !== anchor || !equalIds(messages?.uuids) || !equalIds(messages?.allUuids) ||
         known.has(record.uuid as string) || known.has(anchor))
         fail("unsupported", "Claude automatic replay boundary has no current-tail witness.")
@@ -749,8 +806,8 @@ async function readAutoTextGroup(handle: Awaited<ReturnType<typeof open>>, first
     }
     contents.push(line.content)
   }
-  if (sampledEnd - committed >= MaxAutoGroupBytes)
-    fail("limit", "A Claude automatic replay group exceeds 256 KiB.")
+  if (sampledEnd - committed >= groupLimit)
+    fail("limit", "A Claude automatic replay group exceeds its bounded source capacity.")
   return undefined
 }
 

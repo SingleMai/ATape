@@ -255,6 +255,8 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	const autoID = "43526b2f-6f23-4f37-9627-c75f50bfb9b9"
 	const pairToolID = "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3"
 	const pairPlanID = "cf19053f-9c3c-49b7-8fce-461ae05d8294"
+	const autoReadSingleID = "611cd738-0d92-41ce-b1e3-64ba1a10a70a"
+	const autoReadDualID = "bb9cf168-c9d3-4fea-9428-bd7fc8460755"
 	const agentID = "a5b93406db8c7fefd"
 	sourceDirectory := filepath.Join(home, "source", "projects", "opaque-native-project")
 	assertSourceRaw := func(sessionID string, expectedFiles map[string]string) rawarchive.SessionArchive {
@@ -277,16 +279,17 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	setRaw(true)
 	defer setRaw(false)
 	initial := run("initial")
-	if initial.CanonicalEvents != 27 || initial.RawChunks != 7 {
+	if initial.CanonicalEvents != 35 || initial.RawChunks != 9 {
 		t.Fatalf("Claude initial installed capture: %+v", initial)
 	}
 	var memory conversation.ProjectMemory
 	decodeResponse(t, send(http.MethodGet, "/api/v1/projects/"+project.ID+"/memory", ""), &memory)
-	if len(memory.Trail) != 6 {
+	if len(memory.Trail) != 8 {
 		t.Fatal("Claude included a foreign source or split its foreground family")
 	}
 	familySession, compactSession, tailSession, autoSession := "", "", "", ""
 	pairToolSession, pairPlanSession := "", ""
+	autoReadSingleSession, autoReadDualSession := "", ""
 	for _, session := range memory.Trail {
 		if strings.HasPrefix(session.Title, "ATAPE_NATIVE_FOREGROUND_ROOT") {
 			familySession = session.ID
@@ -306,8 +309,14 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		if strings.HasPrefix(session.Title, "ATAPE_MANUAL_SEED:") {
 			pairPlanSession = session.ID
 		}
+		if strings.HasPrefix(session.Title, "ATAPE_AUTO_SINGLE_SEED:") {
+			autoReadSingleSession = session.ID
+		}
+		if strings.HasPrefix(session.Title, "ATAPE_AUTO_SEED:") {
+			autoReadDualSession = session.ID
+		}
 	}
-	if familySession == "" || compactSession == "" || tailSession == "" || autoSession == "" || pairToolSession == "" || pairPlanSession == "" {
+	if familySession == "" || compactSession == "" || tailSession == "" || autoSession == "" || pairToolSession == "" || pairPlanSession == "" || autoReadSingleSession == "" || autoReadDualSession == "" {
 		t.Fatal("Claude lost native Session identities")
 	}
 	root := read(familySession, "root", 4)
@@ -552,14 +561,14 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	// Retain the previous 32 source stages and add independently restarted
 	// call/result boundaries for both native exact-two Read response layouts.
-	type pairRetention struct {
+	type readRetention struct {
 		sessionID, sourceID string
 		events, count       int
 		input, output       int64
 		archive             rawarchive.SessionArchive
 		contents            map[string]string
 	}
-	var pairRetained []pairRetention
+	var readRetained []readRetention
 	for _, fixtureCase := range []struct {
 		prefix, sessionID, sourceID, callPrefix, markerPrefix string
 		initialEvents, initialUsage                           int
@@ -704,7 +713,129 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		}
 		archive, contents := readRaw(fixtureCase.sessionID)
 		last := fixtureCase.stages[len(fixtureCase.stages)-1]
-		pairRetained = append(pairRetained, pairRetention{fixtureCase.sessionID, fixtureCase.sourceID, last.events, last.count, last.input, last.output, archive, contents})
+		readRetained = append(readRetained, readRetention{fixtureCase.sessionID, fixtureCase.sourceID, last.events, last.count, last.input, last.output, archive, contents})
+	}
+	// Add 24 independently restarted native Read-turn automatic phases to the
+	// previous 49 runs. Copied assistant/result records must not revise history
+	// or usage; the two final text blocks update one actual API usage identity.
+	type replayStage struct {
+		phase                         string
+		events, count, added, pending int
+		input, output                 int64
+	}
+	for _, fixtureCase := range []struct {
+		prefix, sessionID, sourceID, callPrefix, textPrefix string
+		suffixes                                            []string
+		stages                                              []replayStage
+	}{
+		{"auto-read-single-", autoReadSingleSession, autoReadSingleID, "call_auto_single_read_", "ATAPE_AUTO_SINGLE_", []string{"a"}, []replayStage{
+			{"plan", 6, 3, 2, 0, 190052, 41}, {"call0", 7, 3, 1, 0, 190052, 41}, {"r0", 8, 3, 1, 0, 190052, 41},
+			{"originals", 8, 3, 0, 0, 190052, 41}, {"summary", 8, 3, 0, 1, 190052, 41},
+			{"final-a", 9, 4, 1, 0, 190093, 64}, {"final", 10, 4, 1, 0, 190093, 64},
+			{"continue", 12, 5, 2, 0, 190122, 77}, {"secondcontinue", 14, 6, 2, 0, 190151, 90},
+		}},
+		{"auto-read-dual-", autoReadDualSession, autoReadDualID, "call_auto_read_", "ATAPE_AUTO_", []string{"a", "b"}, []replayStage{
+			{"plan", 6, 3, 2, 0, 190052, 41}, {"call0", 7, 3, 1, 0, 190052, 41}, {"call1", 8, 3, 1, 0, 190052, 41},
+			{"r0", 9, 3, 1, 1, 190052, 41}, {"r1", 10, 3, 1, 0, 190052, 41},
+			{"originals", 10, 3, 0, 0, 190052, 41}, {"summary", 10, 3, 0, 1, 190052, 41},
+			{"final-a", 11, 4, 1, 0, 190093, 64}, {"final", 12, 4, 1, 0, 190093, 64},
+			{"continue", 14, 5, 2, 0, 190122, 77}, {"secondcontinue", 16, 6, 2, 0, 190151, 90},
+		}},
+	} {
+		files := map[string]string{fixtureCase.sourceID + ".jsonl": filepath.Join(sourceDirectory, fixtureCase.sourceID+".jsonl")}
+		previous := read(fixtureCase.sessionID, "root", 4)
+		usage(fixtureCase.sessionID, 2, 52, 24)
+		initialArchive := assertSourceRaw(fixtureCase.sessionID, files)
+		for _, stage := range fixtureCase.stages {
+			phase := fixtureCase.prefix + stage.phase
+			capture := run(phase)
+			assertAutoProgress(phase, capture, stage.pending)
+			if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+				t.Fatalf("Claude automatic Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
+			}
+			current := read(fixtureCase.sessionID, "root", stage.events)
+			oldJSON, _ := json.Marshal(previous.Events)
+			prefixJSON, _ := json.Marshal(current.Events[:len(previous.Events)])
+			if !bytes.Equal(oldJSON, prefixJSON) {
+				t.Fatalf("Claude automatic Read %s replayed or changed old Reader Events", phase)
+			}
+			usage(fixtureCase.sessionID, stage.count, stage.input, stage.output)
+			archive := assertSourceRaw(fixtureCase.sessionID, files)
+			if len(archive.Objects) != 1 || len(initialArchive.Objects) != 1 || archive.Objects[0].ObjectID != initialArchive.Objects[0].ObjectID {
+				t.Fatalf("Claude automatic Read %s replaced its Raw object", phase)
+			}
+			if stage.phase == "summary" || stage.phase == "secondcontinue" {
+				idle := run(phase + "-idle")
+				assertAutoProgress(phase+"-idle", idle, stage.pending)
+				if idle.Cursor != capture.Cursor || idle.Observations != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 || !bytes.Equal(idle.RawObjects, capture.RawObjects) {
+					t.Fatalf("Claude automatic Read %s idle restart advanced cursor or Raw", phase)
+				}
+				usage(fixtureCase.sessionID, stage.count, stage.input, stage.output)
+			}
+			previous = current
+		}
+		for _, suffix := range fixtureCase.suffixes {
+			callID, calls, updates := fixtureCase.callPrefix+suffix, 0, 0
+			for _, event := range previous.Events {
+				if event.Tool == nil || event.Tool.ToolCallID != callID {
+					continue
+				}
+				if event.Tool.SessionUpdate == "tool_call" {
+					calls++
+					var input map[string]string
+					if json.Unmarshal(event.Tool.RawInput, &input) != nil || input["file_path"] != filepath.Join(home, "workspace", suffix+".txt") {
+						t.Fatal("Claude automatic Read lost exact native input")
+					}
+				} else if event.Tool.SessionUpdate == "tool_call_update" {
+					updates++
+					var output string
+					if event.Kind != "tool_result" || event.Tool.Status == nil || *event.Tool.Status != "completed" || json.Unmarshal(event.Tool.RawOutput, &output) != nil || !strings.Contains(output, "ATAPE_NATIVE_READ_"+strings.ToUpper(suffix)+":") {
+						t.Fatal("Claude automatic Read changed actual native result")
+					}
+					var anchored conversation.Conversation
+					decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+fixtureCase.sessionID+"?thread=root&at="+url.QueryEscape(event.ID)+"&limit=2", ""), &anchored)
+					found := false
+					for _, item := range anchored.Events {
+						found = found || item.ID == event.ID && item.Tool != nil && item.Tool.ToolCallID == callID && item.Kind == "tool_result"
+					}
+					if anchored.Session.ID != fixtureCase.sessionID || anchored.Thread.ID != "root" || !found {
+						t.Fatal("Claude automatic Read result anchor lost its own call")
+					}
+				}
+			}
+			if calls != 1 || updates != 1 {
+				t.Fatal("Claude automatic replay duplicated a Read call or result")
+			}
+		}
+		for _, expected := range []struct {
+			suffix string
+			count  int
+		}{{"TOOLS:", 1}, {"TOOL_PLAN:", 1}, {"TOOL_FINAL_A:", 1}, {"TOOL_FINAL_B:", 1}, {"CONTINUE:", 2}, {"SECOND_CONTINUE:", 1}, {"SECONDCONTINUE:", 1}} {
+			term := fixtureCase.textPrefix + expected.suffix
+			hits := search(term)
+			if len(hits.Results) != expected.count {
+				t.Fatalf("Claude automatic Read Search duplicated copies or lost text: %s %+v", term, hits.Results)
+			}
+			for _, hit := range hits.Results {
+				var anchored conversation.Conversation
+				decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+fixtureCase.sessionID+"?thread=root&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+				found := false
+				for _, event := range anchored.Events {
+					found = found || event.ID == hit.EventID && strings.Contains(event.Text, term)
+				}
+				if hit.SessionID != fixtureCase.sessionID || hit.ThreadID != "root" || anchored.Session.ID != fixtureCase.sessionID || anchored.Thread.ID != "root" || !found {
+					t.Fatal("Claude automatic Read Search anchor crossed identity")
+				}
+			}
+		}
+		for _, control := range []string{fixtureCase.callPrefix, "ATAPE_NATIVE_READ_A:", "ATAPE_NATIVE_READ_B:", fixtureCase.textPrefix + "SUMMARY:", "15000000 tokens left"} {
+			if len(search(control).Results) != 0 {
+				t.Fatalf("Claude automatic Read internal/tool value reached Search: %s", control)
+			}
+		}
+		archive, contents := readRaw(fixtureCase.sessionID)
+		last := fixtureCase.stages[len(fixtureCase.stages)-1]
+		readRetained = append(readRetained, readRetention{fixtureCase.sessionID, fixtureCase.sourceID, last.events, last.count, last.input, last.output, archive, contents})
 	}
 	compact := run("compact")
 	if compact.CanonicalEvents != 0 || compact.RawChunks != 1 {
@@ -805,14 +936,14 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude source deletion changed automatic replay captured Raw")
 	}
 	usage(autoSession, 5, 760023, 63)
-	for _, retained := range pairRetained {
+	for _, retained := range readRetained {
 		read(retained.sessionID, "root", retained.events)
 		usage(retained.sessionID, retained.count, retained.input, retained.output)
 		archive, contents := readRaw(retained.sessionID)
 		previousJSON, _ := json.Marshal(retained.archive)
 		currentJSON, _ := json.Marshal(archive)
 		if !bytes.Equal(previousJSON, currentJSON) || retained.contents[retained.sourceID+".jsonl"] != contents[retained.sourceID+".jsonl"] {
-			t.Fatal("Claude source deletion changed Read-pair captured Raw")
+			t.Fatal("Claude source deletion changed captured Read Raw")
 		}
 	}
 }

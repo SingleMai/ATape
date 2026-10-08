@@ -1,0 +1,2752 @@
+{
+  "kind": "controlled-native-Claude-Read-turn-automatic-replay-source-evidence",
+  "status": "Controlled source evidence. The owning Claude guide records implementation, actual acceptance and remaining scope. No publication/deployment is established by this corpus.",
+  "claudeVersion": "2.1.263",
+  "recordedBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "fixtureCwd": "/fixture/native-auto-tool-replay/workspace",
+  "fixtureConfig": "/fixture/native-auto-tool-replay/config",
+  "transformation": "Only ordered literal isolated workspace/config/encoded directory substitutions; native JSONL never parsed and reserialized for snapshots",
+  "sourceEvidenceFiles": [
+    {
+      "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/RESEARCH.txt",
+      "bytes": 8930,
+      "sha256": "ebc808314bc9b7ee378ee557bb42e367013b466ed0829a244e34b2307199c94a"
+    },
+    {
+      "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/research.json",
+      "bytes": 37484,
+      "sha256": "bd5c9a46a652ad1108ad99dcf9d26d20fb7ae367c014736fe29a22e930abdf17"
+    },
+    {
+      "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/probe.mjs",
+      "bytes": 9981,
+      "sha256": "3031f0fdd575d858e20c804d971ac1622e4a0187c5de331fb8806d52fa12b4da"
+    },
+    {
+      "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/provenance.json",
+      "bytes": 246,
+      "sha256": "66bf0b4ba8645f98c25ff93002623d1cc484b25a555d80f3cc83c0261eaa7715"
+    },
+    {
+      "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/provenance-auto_single-manual_text.json",
+      "bytes": 258,
+      "sha256": "ddbee1db7a120d03acf4d8e7116680ad385d4068080010c38e3bc9843c74551b"
+    }
+  ],
+  "sourceRequests": [
+    {
+      "case": "auto_single",
+      "capture": {
+        "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/requests-auto_single-manual_text.json",
+        "bytes": 104004,
+        "sha256": "deb5471c0ee3a7de51acda3152db26ed77c261c2a74837861952de36753e98b1"
+      }
+    },
+    {
+      "case": "auto",
+      "capture": {
+        "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/requests.json",
+        "bytes": 116220,
+        "sha256": "a719853f0e749f7483271e466db2e32bccf036d25fbc3de027219a97988c1833"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "auto_single",
+      "profile": "single",
+      "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+      "sourceResearchDirectory": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single",
+      "pathSubstitutions": [
+        {
+          "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/workspace",
+          "to": "/fixture/native-auto-tool-replay/workspace"
+        },
+        {
+          "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/workspace",
+          "to": "/fixture/native-auto-tool-replay/workspace"
+        },
+        {
+          "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/config",
+          "to": "/fixture/native-auto-tool-replay/config"
+        },
+        {
+          "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/config",
+          "to": "/fixture/native-auto-tool-replay/config"
+        },
+        {
+          "from": "-private-tmp-atape-claude-auto-tail-native-aPAWtV-auto-single-workspace",
+          "to": "-fixture-native-auto-tool-replay-workspace"
+        }
+      ],
+      "lines": {
+        "user": 20,
+        "G": 21,
+        "plan": 22,
+        "calls": [
+          23
+        ],
+        "results": [
+          24
+        ],
+        "A": 25,
+        "copyStart": 26,
+        "copyEnd": 31,
+        "B": 32,
+        "S": 33,
+        "F0": 34,
+        "F1": 35
+      },
+      "nativeSnapshots": [
+        {
+          "phase": "seed",
+          "file": "auto_single/seed.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 7,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/seed.jsonl",
+            "bytes": 2716,
+            "sha256": "7ae5d908cf27eab151f1311992ac5374f421f2eb7f12a9bcf089421a6ad1aac1"
+          },
+          "sanitized": {
+            "bytes": 2629,
+            "sha256": "a2af0d47d53d47eab586b89128177b935b30b2564f536efc04b3065c57c8bb10"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 2,
+            "distinctUsageCount": 1,
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "usageSourceIds": [
+              "msg_atape_auto_single_mock_1"
+            ]
+          }
+        },
+        {
+          "phase": "warmup",
+          "file": "auto_single/warmup.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 14,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/warmup.jsonl",
+            "bytes": 5486,
+            "sha256": "576841021706024cc73c44cace259ad784ef0512041bae94907a6197bbb2b7d9"
+          },
+          "sanitized": {
+            "bytes": 5312,
+            "sha256": "2a66debb59a676dee710ac8b37eb0d86e61c7e8e8448590053af7752fa45c21d"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 4,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "usageSourceIds": [
+              "msg_atape_auto_single_mock_1",
+              "msg_atape_auto_single_mock_2"
+            ]
+          }
+        },
+        {
+          "phase": "toolturn",
+          "file": "auto_single/toolturn.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 36,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/toolturn.jsonl",
+            "bytes": 20941,
+            "sha256": "0fdb223cd87e4724c68b675728a501c684e793ffa334f42fb8da379388cfa3be"
+          },
+          "sanitized": {
+            "bytes": 20169,
+            "sha256": "7c5e4f23e27a2fc1ba653430129d2d0ffe75b45665f4b0eaf6f7d9a6c4eeced7"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_auto_single_mock_1",
+              "msg_atape_auto_single_mock_2",
+              "msg_atape_auto_single_mock_3",
+              "msg_atape_auto_single_mock_5"
+            ]
+          }
+        },
+        {
+          "phase": "continue",
+          "file": "auto_single/continue.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 42,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/continue.jsonl",
+            "bytes": 23768,
+            "sha256": "a0d63bcf99ff01885502c80bed9adefd1b7b110264b4fa64047da6a7f432b28a"
+          },
+          "sanitized": {
+            "bytes": 22909,
+            "sha256": "44c0b06ae6adfb26776f4a260f1e0f2d8e36cde7ca5d5979483d95b50fa39e05"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 12,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "usageSourceIds": [
+              "msg_atape_auto_single_mock_1",
+              "msg_atape_auto_single_mock_2",
+              "msg_atape_auto_single_mock_3",
+              "msg_atape_auto_single_mock_5",
+              "msg_atape_auto_single_mock_6"
+            ]
+          }
+        },
+        {
+          "phase": "secondcontinue",
+          "file": "auto_single/secondcontinue.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 48,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/secondcontinue.jsonl",
+            "bytes": 26577,
+            "sha256": "3b8cd9b01a6cfb311545b47833290819d9d42dcec1ab4023469a9e7075c472a3"
+          },
+          "sanitized": {
+            "bytes": 25631,
+            "sha256": "bc278e8e22ac7b2226fcbbe2cdbd0eac39445225e5aab4c57d6d9ad1b435f52a"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 14,
+            "distinctUsageCount": 6,
+            "inputTokens": 190151,
+            "outputTokens": 90,
+            "usageSourceIds": [
+              "msg_atape_auto_single_mock_1",
+              "msg_atape_auto_single_mock_2",
+              "msg_atape_auto_single_mock_3",
+              "msg_atape_auto_single_mock_5",
+              "msg_atape_auto_single_mock_6",
+              "msg_atape_auto_single_mock_7"
+            ]
+          }
+        }
+      ],
+      "derivedTestCuts": [
+        {
+          "label": "U",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 20,
+          "original": {
+            "bytes": 6812,
+            "sha256": "80bfd74d686d8e6a7054c7c962cf406ba696f9b96a876fa7f26b43cdc55ae75a"
+          },
+          "sanitized": {
+            "bytes": 6609,
+            "sha256": "03bb6d90d633177f6775723eb9f55e834f95c13e491d9a40f6941f8a905cb19f"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 20,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "G",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 21,
+          "original": {
+            "bytes": 7311,
+            "sha256": "cd707bb6983696ba3c20ba975a9514e7d40401bdcc4709600b16e2152d8df1d5"
+          },
+          "sanitized": {
+            "bytes": 7079,
+            "sha256": "b6ef0c87b40add4952076634b940bc16e9cddd89d0e12053133ef2d695e77320"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 21,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "plan",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 22,
+          "original": {
+            "bytes": 8390,
+            "sha256": "6102c748031d6823eb28cf2eae5bd480f69a745cb223d0bf3b3a9f311feafa6d"
+          },
+          "sanitized": {
+            "bytes": 8129,
+            "sha256": "86fe1e7f1df3bdc3151727a5556b8469e3026c7ef61be7882a8c57adc978f1fe"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 6,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 22,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "call0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 23,
+          "original": {
+            "bytes": 9548,
+            "sha256": "18ca200973713212ea85d128bb8905ee41f001158e2002318b8fe188d6245adc"
+          },
+          "sanitized": {
+            "bytes": 9237,
+            "sha256": "57cd7d06725530b2fee9ffdf0b214904e2e1bd3fbf44d7f286b834c0eda9da43"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 7,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 23,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 24,
+          "original": {
+            "bytes": 10426,
+            "sha256": "ed27017b8b023dac582372780dabccbe42914811f74c9caea56151f54543da8d"
+          },
+          "sanitized": {
+            "bytes": 10065,
+            "sha256": "6fd24b6d15dcc10c42a4980b54e07a840ef2283f412dd1cdd3889cb5bf0777e8"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 24,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "originals",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 25,
+          "original": {
+            "bytes": 10925,
+            "sha256": "cd2e7183062b3d28e88dfbff9bd505ee0b702e34073a46aac84619c521e77312"
+          },
+          "sanitized": {
+            "bytes": 10535,
+            "sha256": "77071913abe6ac355d78f412522eaf8d42f7e37a3bd984baf97486113a368f15"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "copy0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 26,
+          "original": {
+            "bytes": 11549,
+            "sha256": "fd6e51f0c37cc60024cff3c75ddd4f798184f1eb408a4156786236c9508e04ea"
+          },
+          "sanitized": {
+            "bytes": 11130,
+            "sha256": "23d5bd4ff6ae2b25be433512a6195a8c08593fe2c60145db0ea8d1f916ac4349"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 27,
+          "original": {
+            "bytes": 12079,
+            "sha256": "9d4abb778f1638f36fd2af8263fbf12d7b60ca83d0b8a3fa430723f7140a0018"
+          },
+          "sanitized": {
+            "bytes": 11631,
+            "sha256": "0f30de137a16f6ba3bd150230cc6d084ca688fc1ffb6eee6548bfe8072a95375"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy2",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 28,
+          "original": {
+            "bytes": 13189,
+            "sha256": "f38ea09cc328a3e923989ac36f8e2157ef2ca30ee066de09e2ba3730bccc32d8"
+          },
+          "sanitized": {
+            "bytes": 12712,
+            "sha256": "22070912290d00ab795d17b53b98410e56e2269b7c2b5312068bdbf3f6f194aa"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy3",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 29,
+          "original": {
+            "bytes": 14378,
+            "sha256": "76dc7ca47976fc6cf67ce2f3198f3bc7037ba54fbac72266f909c81d0998e9b0"
+          },
+          "sanitized": {
+            "bytes": 13851,
+            "sha256": "be585709df2ed7b4285fba701eda9174f46cd937b1fea5ff58af322d80c9c183"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy4",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 30,
+          "original": {
+            "bytes": 15287,
+            "sha256": "f90b6c4ccab16522ab0240ca867c16e6dd59585bdf0f17303edb4b0d55227f93"
+          },
+          "sanitized": {
+            "bytes": 14710,
+            "sha256": "ad707ae8aeb23241c2e547a40f14e15c9268a6bdada0d6701cafd2e3fe2ab7c6"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy5",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 31,
+          "original": {
+            "bytes": 15817,
+            "sha256": "5e11d609d20b8e76921b6d689e3480c0177dd34c9a04b6c34f763f04fc2de87c"
+          },
+          "sanitized": {
+            "bytes": 15211,
+            "sha256": "b1087531e3d09c78567b6bfbe34f6fd4f08707e5022031b0e4ff358b50f5ba4b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "B",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 32,
+          "original": {
+            "bytes": 17046,
+            "sha256": "5054d86b7bf613a51411bdf69842183b7187820b72ade926f21c01c203641f1c"
+          },
+          "sanitized": {
+            "bytes": 16411,
+            "sha256": "31f8e397f0a110f30870e244302b66a01762c16450d5f9bc2ea150fd7402e058"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "S",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 33,
+          "original": {
+            "bytes": 18533,
+            "sha256": "dc1c3f8cc5e0e5ba0fcaaf31f70281d8a056db74e08141d4dca115a665d3dd95"
+          },
+          "sanitized": {
+            "bytes": 17819,
+            "sha256": "13f136538b8739f6a298835649fe03076cd203ef7facd06a6f1c52db5b564261"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 33,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "F0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 34,
+          "original": {
+            "bytes": 19632,
+            "sha256": "34783f73c0405a1b4cfbd2dbf822d32947d8af5491c442896fea1dc67e386282"
+          },
+          "sanitized": {
+            "bytes": 18889,
+            "sha256": "d6b5a5dc9624ccaad195d13bf8a1bc5d6ffa2534cefa2504ef0988d84ae2b140"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 9,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 34,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "F1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto_single/toolturn.jsonl",
+          "prefixThroughLine": 35,
+          "original": {
+            "bytes": 20733,
+            "sha256": "8d4d96ee6470eb8e9f9214f048e3326c01e94dff210dfa83c5f2e0cdeafaeb65"
+          },
+          "sanitized": {
+            "bytes": 19961,
+            "sha256": "fff412b8b0eb388d6db7ec575f1f9b640ff0416d9ba1ddef6477b1a3bc7352e3"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 35,
+          "incompleteAtomicReplayGroup": false
+        }
+      ],
+      "retainedOriginalUuids": [
+        "a46fa652-3acc-4f25-8e53-5aedaed61d41",
+        "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+        "2573dfb2-a502-4c0b-8145-e9b76345b6d7",
+        "35448878-bb31-4eab-8a05-55f1aee9a66e"
+      ],
+      "replayedWholeTurnUuids": [
+        "9bdc659d-fd67-4122-856b-d5471e9488be",
+        "4e4262d0-3be3-41c0-a4e9-955d38771c54",
+        "a46fa652-3acc-4f25-8e53-5aedaed61d41",
+        "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+        "2573dfb2-a502-4c0b-8145-e9b76345b6d7",
+        "35448878-bb31-4eab-8a05-55f1aee9a66e"
+      ],
+      "copyPositions": [
+        {
+          "uuid": "9bdc659d-fd67-4122-856b-d5471e9488be",
+          "originalLine": 20,
+          "copyLine": 26,
+          "slug": "elegant-riding-quiche",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "4e4262d0-3be3-41c0-a4e9-955d38771c54",
+          "originalLine": 21,
+          "copyLine": 27,
+          "slug": "elegant-riding-quiche",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "a46fa652-3acc-4f25-8e53-5aedaed61d41",
+          "originalLine": 22,
+          "copyLine": 28,
+          "slug": "elegant-riding-quiche",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+          "originalLine": 23,
+          "copyLine": 29,
+          "slug": "elegant-riding-quiche",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "2573dfb2-a502-4c0b-8145-e9b76345b6d7",
+          "originalLine": 24,
+          "copyLine": 30,
+          "slug": "elegant-riding-quiche",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "35448878-bb31-4eab-8a05-55f1aee9a66e",
+          "originalLine": 25,
+          "copyLine": 31,
+          "slug": "elegant-riding-quiche",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        }
+      ],
+      "boundary": {
+        "uuid": "99f5b515-fe9b-40d0-88d6-e369fe14f92d",
+        "line": 32,
+        "parentUuid": null,
+        "logicalParentUuid": "35448878-bb31-4eab-8a05-55f1aee9a66e",
+        "compactMetadata": {
+          "trigger": "auto",
+          "preTokens": 190071,
+          "postTokens": 296,
+          "cumulativeDroppedTokens": 189775,
+          "durationMs": 11,
+          "preservedSegment": {
+            "headUuid": "a46fa652-3acc-4f25-8e53-5aedaed61d41",
+            "anchorUuid": "31c06da1-7b47-4ac2-a891-e6f4316a4307",
+            "tailUuid": "35448878-bb31-4eab-8a05-55f1aee9a66e"
+          },
+          "preservedMessages": {
+            "anchorUuid": "31c06da1-7b47-4ac2-a891-e6f4316a4307",
+            "uuids": [
+              "a46fa652-3acc-4f25-8e53-5aedaed61d41",
+              "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+              "2573dfb2-a502-4c0b-8145-e9b76345b6d7",
+              "35448878-bb31-4eab-8a05-55f1aee9a66e"
+            ],
+            "allUuids": [
+              "a46fa652-3acc-4f25-8e53-5aedaed61d41",
+              "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+              "2573dfb2-a502-4c0b-8145-e9b76345b6d7",
+              "35448878-bb31-4eab-8a05-55f1aee9a66e"
+            ]
+          }
+        }
+      },
+      "summary": {
+        "uuid": "31c06da1-7b47-4ac2-a891-e6f4316a4307",
+        "line": 33,
+        "parentUuid": "99f5b515-fe9b-40d0-88d6-e369fe14f92d",
+        "isCompactSummary": true,
+        "isVisibleInTranscriptOnly": true,
+        "knownMarker": "ATAPE_AUTO_SINGLE_SUMMARY:"
+      },
+      "nativeInvocations": [
+        {
+          "phase": "seed",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/seed-result.json",
+            "bytes": 2675,
+            "sha256": "25182ce9d6ce1de644d7f03176c7b5f1e3cb520d959581cc9b9f94be701d4bca"
+          },
+          "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "4eb81cbed77b56b86ee0ea3969d629f2ab89e420afde931e39fbbd862dc48902",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--session-id",
+          "sessionIdArgument": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "prompt": "ATAPE_AUTO_SINGLE_SEED: Remember cobalt heron 482.",
+          "stdoutUsage": {
+            "input_tokens": 23,
+            "output_tokens": 11
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 23,
+              "outputTokens": 11,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000234,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "warmup",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/warmup-result.json",
+            "bytes": 2679,
+            "sha256": "63f9eec582b04f46895d4c837e28d6a9402f82dc3c3c51b20906628a33a12755"
+          },
+          "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "7f909401bcaa8924cb5cf0ce4be62e5e6954fe48586ba3a13059007fd5205eb3",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "prompt": "ATAPE_AUTO_SINGLE_WARMUP: Confirm the synthetic context.",
+          "stdoutUsage": {
+            "input_tokens": 29,
+            "output_tokens": 13
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000282,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "toolturn",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/toolturn-result.json",
+            "bytes": 2725,
+            "sha256": "9ba3d2c541eee1c486083949de1e3fad99e71e4d4788955cbc13ba519e82975c"
+          },
+          "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "2caff70df3c1734b83d4426ba541e032b7557502e5ef198133186acdc02b6593",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "prompt": "ATAPE_AUTO_SINGLE_TOOLS: Read a.txt once, then give two text blocks.",
+          "stdoutUsage": {
+            "input_tokens": 190041,
+            "output_tokens": 40
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 190092,
+              "outputTokens": 59,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.5711610000000001,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "continue",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/continue-result.json",
+            "bytes": 2696,
+            "sha256": "776155534553c9ca1445a93387ef076eb0d8155a2be335100c8e9543a14d5e08"
+          },
+          "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "4a81cad7653bf9eb5f2cb49f978cbbe34c4b913f620f98b6a00fc457386aa935",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "prompt": "ATAPE_AUTO_SINGLE_CONTINUE: Resume the synthetic task after compaction.",
+          "stdoutUsage": {
+            "input_tokens": 29,
+            "output_tokens": 13
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000282,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "secondcontinue",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/secondcontinue-result.json",
+            "bytes": 2695,
+            "sha256": "89e52a7248c2410a7066fa084a18e42817f2c747f8e77c353130fe1fc2ca203b"
+          },
+          "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "d7d84be6afda23d7bd04f50aa7aa54c8379f8b52c68408d76e1e08d7f6b5ebe4",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+          "prompt": "ATAPE_AUTO_SINGLE_SECOND_CONTINUE: Confirm stable resume again.",
+          "stdoutUsage": {
+            "input_tokens": 29,
+            "output_tokens": 13
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000282,
+              "costBasis": "list"
+            }
+          }
+        }
+      ],
+      "homeAndHarnessLimits": {
+        "freshConfigAndWorkspaceClaimedByRecordedHarness": true,
+        "freshHomeEstablished": false,
+        "homeValueRecorded": false,
+        "savedHarnessHomeExpression": "HOME:process.env.HOME",
+        "recordedControlsThresholdPct": "20",
+        "artificialToolCallInputTokens": 190000,
+        "countTokensRequests": 0,
+        "savedHarnessImmutableExactReproductionEstablished": false,
+        "planTextMatchesSavedHarness": true,
+        "savedHarnessPlanText": "Read the synthetic files.",
+        "nativePlanText": "ATAPE_AUTO_SINGLE_TOOL_PLAN: Read the synthetic files.",
+        "onlyActualReadFiles": [
+          "a.txt"
+        ],
+        "mockClaimsForUnexecutedBFile": true,
+        "allFiveInvocationsExitZero": true,
+        "oneAutomaticBoundaryOnlyInTheseSnapshots": true,
+        "laterResumeDoesNotEstablishLaterSlugCopyEquality": true
+      },
+      "summarizationUsageLimit": {
+        "summaryRequestObserved": true,
+        "summaryAssistantJsonlRecordPresent": false,
+        "modelUsageMinusTopLevelUsage": {
+          "inputTokens": 51,
+          "outputTokens": 19
+        },
+        "mockSummaryResponseCounters": {
+          "input_tokens": 51,
+          "output_tokens": 19
+        },
+        "authority": "captured summary request + saved mock response controls + stdout modelUsage/top-level difference; no JSONL summary assistant observation and no inferred bill"
+      },
+      "diskEvidence": [
+        {
+          "bytes": 37,
+          "sha256": "5ab6e262b0790dbfb7fd9db1263b1dc5f8c31dfdc71b773a38c5100aee4bf867",
+          "contentUtf8": "ATAPE_NATIVE_READ_A: amber lynx 204.\n",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/workspace/a.txt",
+          "file": "a.txt",
+          "fixturePath": "/fixture/native-auto-tool-replay/workspace/a.txt",
+          "actualReadExecuted": true
+        },
+        {
+          "bytes": 39,
+          "sha256": "a3d9266fd7943abadbd8cbc26d39b790acd0721d6238e4d1709d528cb56503e0",
+          "contentUtf8": "ATAPE_NATIVE_READ_B: violet crane 619.\n",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto_single/workspace/b.txt",
+          "file": "b.txt",
+          "fixturePath": "/fixture/native-auto-tool-replay/workspace/b.txt",
+          "actualReadExecuted": false
+        }
+      ],
+      "callReceiptEvidence": [
+        {
+          "callLine": 23,
+          "callUuid": "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+          "callApiId": "msg_atape_auto_single_mock_3",
+          "apiBlockIndex": 1,
+          "call": {
+            "type": "tool_use",
+            "id": "call_auto_single_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+            }
+          },
+          "resultLine": 24,
+          "resultUuid": "2573dfb2-a502-4c0b-8145-e9b76345b6d7",
+          "resultParentUuid": "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+          "sourceToolAssistantUUID": "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+          "previousPhysicalUuid": "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+          "isErrorPresent": false,
+          "sourceResultBlock": {
+            "tool_use_id": "call_auto_single_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-auto-tool-replay/workspace/a.txt",
+              "content": "ATAPE_NATIVE_READ_A: amber lynx 204.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true,
+          "rootIdentity": {
+            "sessionId": "611cd738-0d92-41ce-b1e3-64ba1a10a70a",
+            "cwd": "/fixture/native-auto-tool-replay/workspace",
+            "version": "2.1.263",
+            "isSidechain": false
+          },
+          "flagPresence": {}
+        }
+      ],
+      "requestProof": [
+        {
+          "originalRequestIndex": 5,
+          "phase": "toolturn",
+          "response": "toolcalls",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 5,
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 6,
+          "phase": "toolturn",
+          "response": "summary",
+          "summaryRequest": true,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 5,
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 7,
+          "phase": "toolturn",
+          "response": "tool-final",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 3,
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "toolUseId": "call_auto_single_read_a",
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_single_read_a",
+                "type": "tool_result",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "originalRequestIndex": 9,
+          "phase": "continue",
+          "response": "continue",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 5,
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "toolUseId": "call_auto_single_read_a",
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_single_read_a",
+                "type": "tool_result"
+              }
+            }
+          ]
+        },
+        {
+          "originalRequestIndex": 11,
+          "phase": "secondcontinue",
+          "response": "secondcontinue",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 7,
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "toolUseId": "call_auto_single_read_a",
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_single_read_a",
+                "type": "tool_result"
+              }
+            }
+          ]
+        }
+      ],
+      "resumeAppendGraph": {
+        "continue": [
+          {
+            "line": 39,
+            "uuid": "0b340ba1-c4f0-435a-a011-627cb35b7945",
+            "type": "user",
+            "parentUuid": "8d0695c2-1807-4914-bcba-b36c4c69ffb7",
+            "logicalParentUuid": null,
+            "slug": "elegant-riding-quiche",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 40,
+            "uuid": "24c57b03-5a03-41ab-8d1f-972be0f4c635",
+            "type": "attachment",
+            "parentUuid": "0b340ba1-c4f0-435a-a011-627cb35b7945",
+            "logicalParentUuid": null,
+            "slug": "elegant-riding-quiche",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 41,
+            "uuid": "e728bb6f-f0b1-4b48-adf7-55116c129fea",
+            "type": "assistant",
+            "parentUuid": "24c57b03-5a03-41ab-8d1f-972be0f4c635",
+            "logicalParentUuid": null,
+            "slug": "elegant-riding-quiche",
+            "apiId": "msg_atape_auto_single_mock_6",
+            "apiBlockIndex": 0,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          }
+        ],
+        "secondcontinue": [
+          {
+            "line": 45,
+            "uuid": "8b56e022-530d-4a55-96ba-edf664fd3373",
+            "type": "user",
+            "parentUuid": "e728bb6f-f0b1-4b48-adf7-55116c129fea",
+            "logicalParentUuid": null,
+            "slug": "elegant-riding-quiche",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 46,
+            "uuid": "ac627961-3942-488a-a2fd-095a52901bea",
+            "type": "attachment",
+            "parentUuid": "8b56e022-530d-4a55-96ba-edf664fd3373",
+            "logicalParentUuid": null,
+            "slug": "elegant-riding-quiche",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 47,
+            "uuid": "c470522a-2342-4501-8af3-07cf4c2c1f66",
+            "type": "assistant",
+            "parentUuid": "ac627961-3942-488a-a2fd-095a52901bea",
+            "logicalParentUuid": null,
+            "slug": "elegant-riding-quiche",
+            "apiId": "msg_atape_auto_single_mock_7",
+            "apiBlockIndex": 0,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          }
+        ]
+      },
+      "eventSourceIds": [
+        "a47ef6a7-04c4-4b02-96e9-868489061322:0",
+        "5e4fb825-a939-41e0-9485-15dd7595f63a:0",
+        "62f27e71-8981-443b-a334-6ea1c8736b50:0",
+        "292dc985-ffd0-4fad-94f8-e7e78b12f4d8:0",
+        "9bdc659d-fd67-4122-856b-d5471e9488be:0",
+        "a46fa652-3acc-4f25-8e53-5aedaed61d41:0",
+        "53d8f123-5588-4235-8c8c-c97a2556ab2c:0",
+        "2573dfb2-a502-4c0b-8145-e9b76345b6d7:0",
+        "8aaacb31-5eaf-4aac-b95a-a0ccfed64651:0",
+        "8d0695c2-1807-4914-bcba-b36c4c69ffb7:0",
+        "0b340ba1-c4f0-435a-a011-627cb35b7945:0",
+        "e728bb6f-f0b1-4b48-adf7-55116c129fea:0",
+        "8b56e022-530d-4a55-96ba-edf664fd3373:0",
+        "c470522a-2342-4501-8af3-07cf4c2c1f66:0"
+      ],
+      "latestUsageByApiId": {
+        "msg_atape_auto_single_mock_1": {
+          "sourceUsageId": "msg_atape_auto_single_mock_1",
+          "sourceUuid": "5e4fb825-a939-41e0-9485-15dd7595f63a",
+          "latestObservationLine": 6,
+          "latestObservationEndBytes": 2439,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 23,
+          "outputTokens": 11
+        },
+        "msg_atape_auto_single_mock_2": {
+          "sourceUsageId": "msg_atape_auto_single_mock_2",
+          "sourceUuid": "292dc985-ffd0-4fad-94f8-e7e78b12f4d8",
+          "latestObservationLine": 12,
+          "latestObservationEndBytes": 5033,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13
+        },
+        "msg_atape_auto_single_mock_3": {
+          "sourceUsageId": "msg_atape_auto_single_mock_3",
+          "sourceUuid": "53d8f123-5588-4235-8c8c-c97a2556ab2c",
+          "latestObservationLine": 23,
+          "latestObservationEndBytes": 9237,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 190000,
+          "outputTokens": 17
+        },
+        "msg_atape_auto_single_mock_5": {
+          "sourceUsageId": "msg_atape_auto_single_mock_5",
+          "sourceUuid": "8d0695c2-1807-4914-bcba-b36c4c69ffb7",
+          "latestObservationLine": 35,
+          "latestObservationEndBytes": 19961,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 41,
+          "outputTokens": 23
+        },
+        "msg_atape_auto_single_mock_6": {
+          "sourceUsageId": "msg_atape_auto_single_mock_6",
+          "sourceUuid": "e728bb6f-f0b1-4b48-adf7-55116c129fea",
+          "latestObservationLine": 41,
+          "latestObservationEndBytes": 22698,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13
+        },
+        "msg_atape_auto_single_mock_7": {
+          "sourceUsageId": "msg_atape_auto_single_mock_7",
+          "sourceUuid": "c470522a-2342-4501-8af3-07cf4c2c1f66",
+          "latestObservationLine": 47,
+          "latestObservationEndBytes": 25428,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13
+        }
+      }
+    },
+    {
+      "id": "auto",
+      "profile": "dual",
+      "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+      "sourceResearchDirectory": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto",
+      "pathSubstitutions": [
+        {
+          "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/auto/workspace",
+          "to": "/fixture/native-auto-tool-replay/workspace"
+        },
+        {
+          "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/workspace",
+          "to": "/fixture/native-auto-tool-replay/workspace"
+        },
+        {
+          "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/auto/config",
+          "to": "/fixture/native-auto-tool-replay/config"
+        },
+        {
+          "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/config",
+          "to": "/fixture/native-auto-tool-replay/config"
+        },
+        {
+          "from": "-private-tmp-atape-claude-auto-tail-native-aPAWtV-auto-workspace",
+          "to": "-fixture-native-auto-tool-replay-workspace"
+        }
+      ],
+      "lines": {
+        "user": 20,
+        "G": 21,
+        "plan": 22,
+        "calls": [
+          23,
+          24
+        ],
+        "results": [
+          25,
+          26
+        ],
+        "A": 27,
+        "copyStart": 28,
+        "copyEnd": 35,
+        "B": 36,
+        "S": 37,
+        "F0": 38,
+        "F1": 39
+      },
+      "nativeSnapshots": [
+        {
+          "phase": "seed",
+          "file": "auto/seed.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 7,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/seed.jsonl",
+            "bytes": 2660,
+            "sha256": "78646786e0a036e9598046e77064427c16dcd9971dc5c13d5e28b35e51559945"
+          },
+          "sanitized": {
+            "bytes": 2594,
+            "sha256": "20015b59c9230c5833e25296fb7875dbaf5cb69e19eaba9fcbf2497fa9d66314"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 2,
+            "distinctUsageCount": 1,
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "usageSourceIds": [
+              "msg_atape_auto_mock_8"
+            ]
+          }
+        },
+        {
+          "phase": "warmup",
+          "file": "auto/warmup.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 14,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/warmup.jsonl",
+            "bytes": 5374,
+            "sha256": "a18591f0cede0c23b81ca2e05997f96bfa03181434b71527ea67e813ec4ce24a"
+          },
+          "sanitized": {
+            "bytes": 5242,
+            "sha256": "db40ac7971c79376187d98df759510590ca831836939ca12938b729a7a2ae2fb"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 4,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "usageSourceIds": [
+              "msg_atape_auto_mock_8",
+              "msg_atape_auto_mock_9"
+            ]
+          }
+        },
+        {
+          "phase": "toolturn",
+          "file": "auto/toolturn.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 40,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/toolturn.jsonl",
+            "bytes": 24800,
+            "sha256": "d4e643761ada42624fcf5ade0dcfcf9a62f09fcce2c6cdbb8be7d226f211b13a"
+          },
+          "sanitized": {
+            "bytes": 24080,
+            "sha256": "16c15f01fdb2d61078a84be31bfe3b208ac0cc2b89e1cd3d5c23ff4949eb0362"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 12,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "usageSourceIds": [
+              "msg_atape_auto_mock_8",
+              "msg_atape_auto_mock_9",
+              "msg_atape_auto_mock_10",
+              "msg_atape_auto_mock_12"
+            ]
+          }
+        },
+        {
+          "phase": "continue",
+          "file": "auto/continue.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 46,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/continue.jsonl",
+            "bytes": 27572,
+            "sha256": "23af90fb55e856f51a060f238644c7adac4a8154119bff615221530756dbf317"
+          },
+          "sanitized": {
+            "bytes": 26786,
+            "sha256": "b88639256f878ae0d4c8ea2f15b386b8da50e221689607723f402e3054a5a5b8"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 14,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "usageSourceIds": [
+              "msg_atape_auto_mock_8",
+              "msg_atape_auto_mock_9",
+              "msg_atape_auto_mock_10",
+              "msg_atape_auto_mock_12",
+              "msg_atape_auto_mock_13"
+            ]
+          }
+        },
+        {
+          "phase": "secondcontinue",
+          "file": "auto/secondcontinue.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 52,
+          "original": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/secondcontinue.jsonl",
+            "bytes": 30326,
+            "sha256": "5d098e22f0e273b8e58a944778cd26b61e87cfd7ab8f744a727b7672e4373db9"
+          },
+          "sanitized": {
+            "bytes": 29474,
+            "sha256": "9e837dc7b0ec3d7185c024ceec4c3d9d0919da9ec1a395d5e036ca89feb2d519"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 16,
+            "distinctUsageCount": 6,
+            "inputTokens": 190151,
+            "outputTokens": 90,
+            "usageSourceIds": [
+              "msg_atape_auto_mock_8",
+              "msg_atape_auto_mock_9",
+              "msg_atape_auto_mock_10",
+              "msg_atape_auto_mock_12",
+              "msg_atape_auto_mock_13",
+              "msg_atape_auto_mock_14"
+            ]
+          }
+        }
+      ],
+      "derivedTestCuts": [
+        {
+          "label": "U",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 20,
+          "original": {
+            "bytes": 6702,
+            "sha256": "e4bf9316799347b13e04f48d52612024960b72266f873f059e393ecfca11ca30"
+          },
+          "sanitized": {
+            "bytes": 6548,
+            "sha256": "c1a6a858d200991b92f071cff6695100c85770ff28a2bf154d57363ec648b122"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 20,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "G",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 21,
+          "original": {
+            "bytes": 7194,
+            "sha256": "31aab0203006c6381148d2588ece39655f8f56dc2935c574030fa508396a2348"
+          },
+          "sanitized": {
+            "bytes": 7018,
+            "sha256": "552b307863996890f4742171ed87e3ed542ed0f57428b2d6bced7f09fd3541f0"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 5,
+            "distinctUsageCount": 2,
+            "inputTokens": 52,
+            "outputTokens": 24,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 21,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "plan",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 22,
+          "original": {
+            "bytes": 8257,
+            "sha256": "4d3d9dae72c143c07dc00ff8b302670b71952b97c6a60605893903a9dc72b7f1"
+          },
+          "sanitized": {
+            "bytes": 8059,
+            "sha256": "98760620952a2edf62e52738c1668353a7ca822231b80d9d938bdf16017105c3"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 6,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 22,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "call0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 23,
+          "original": {
+            "bytes": 9388,
+            "sha256": "b054f11edda2999e790a1c611f0dab5a4d4adadca26b60119507e0218696186a"
+          },
+          "sanitized": {
+            "bytes": 9154,
+            "sha256": "702de8ea2df514ab675601374d0ade67c1ffdb3962e1efd73f27426c06183208"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 7,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 23,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "call1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 24,
+          "original": {
+            "bytes": 10519,
+            "sha256": "8ead74d3248eafd1cfe17750ebabc924d162003f2793296b3bf59fec1bce0348"
+          },
+          "sanitized": {
+            "bytes": 10249,
+            "sha256": "4d113089636555841fe907bff18d3f7abdd0d4d1d34134df24264c14231708ec"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 8,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 24,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 25,
+          "original": {
+            "bytes": 11376,
+            "sha256": "f78dd24376cd64713ec2e17857122ce538687304184cf2e4e74fc3103e9e1e4f"
+          },
+          "sanitized": {
+            "bytes": 11070,
+            "sha256": "d4de8bfe4db3d9df80f4c91b54619d0a38abcf94c33f0b54c0bf9761f9ed16c3"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 9,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 25,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 26,
+          "original": {
+            "bytes": 12237,
+            "sha256": "4294050666ff97061f8c7edea9dad70e482c3741a4b1f7895f4cc2ec09a9b534"
+          },
+          "sanitized": {
+            "bytes": 11895,
+            "sha256": "4764d1628ddeb3d4c27c9ebfffcae38ddfd0f4e55c5302738cefc27a5b2cac6e"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 26,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "originals",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 27,
+          "original": {
+            "bytes": 12729,
+            "sha256": "1d44dcf4ba720a9c1d80a599e13199a76f54e437fa6091beefb881a09ab5c276"
+          },
+          "sanitized": {
+            "bytes": 12365,
+            "sha256": "fe54f037d66471e579da017489fed22de2aef1721c070e0e0e0a8ba9f82b38f4"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "copy0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 28,
+          "original": {
+            "bytes": 13349,
+            "sha256": "6537159eefa450f8d9fd8587cf77a76eb28fe05873c0d7378e40531d2f800dcb"
+          },
+          "sanitized": {
+            "bytes": 12963,
+            "sha256": "5ec422aed41610e6c606483b6a30d204c5deb6268b22feee726b239ebc461922"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 29,
+          "original": {
+            "bytes": 13872,
+            "sha256": "fa3aed40f88c6dfece29bef1fd7342b889ae369544e108f0e6337fd0a0c01eba"
+          },
+          "sanitized": {
+            "bytes": 13464,
+            "sha256": "4670ec4dd5aed6dfbcda786bf3ede262346290db646ecad8f49a64c381e820a8"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy2",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 30,
+          "original": {
+            "bytes": 14966,
+            "sha256": "c8910dc0cffc5c2d3eacf928ac90f475bc939a443269383402b53855bd55d8a0"
+          },
+          "sanitized": {
+            "bytes": 14536,
+            "sha256": "5f090960ee505f54cd135ebb138da90ab3a827fb926f6771506d2fd851827f5b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy3",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 31,
+          "original": {
+            "bytes": 16128,
+            "sha256": "8da395e4445451ac9cae97ff1a15799ecb02714fdece4486a1ddd53e031cb737"
+          },
+          "sanitized": {
+            "bytes": 15662,
+            "sha256": "87d5ecfe01d7c1a1825f227a0adac8d07e820f7461cfbe0c4c0292e7f9004c6c"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy4",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 32,
+          "original": {
+            "bytes": 17290,
+            "sha256": "0ef59d603c5bcd89a8848d5a8537b6a23bf1e221484b3ad50f989c97cac6011a"
+          },
+          "sanitized": {
+            "bytes": 16788,
+            "sha256": "f003e5a63b0a3fa8044b691cf51f2c2eb9e9afb734f60ad8927f53dc1586f0ac"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy5",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 33,
+          "original": {
+            "bytes": 18178,
+            "sha256": "63962cfd7775f612c76a9fa48cb42dda2e15cd3ff74f0b402d4d46bf40787c14"
+          },
+          "sanitized": {
+            "bytes": 17640,
+            "sha256": "a95214a41a17beea8f6448e867372e0f7c89a5d0e97a97feed2857b52c1307f0"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy6",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 34,
+          "original": {
+            "bytes": 19070,
+            "sha256": "ca72dd87d6ac6b335aedc36700a204ce4420bf8405e75f144a27528d0bcf046b"
+          },
+          "sanitized": {
+            "bytes": 18496,
+            "sha256": "ca854eb6194c5c82f4cda9b4b3b0a80e780b345021062d7706447b48093b4ab0"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "copy7",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 35,
+          "original": {
+            "bytes": 19593,
+            "sha256": "a09bec42af246087ccbeb6f1f37aecec5c31c16f6090835da130ace6777b0e92"
+          },
+          "sanitized": {
+            "bytes": 18997,
+            "sha256": "f8db43e12b810af3b95be9054cf614761724f6e05f917faedc09c1f2a1a36200"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "B",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 36,
+          "original": {
+            "bytes": 20970,
+            "sha256": "27bc3d2ae2d12f3ff53dd409504230f47e4f2e751571f284731081b7833de567"
+          },
+          "sanitized": {
+            "bytes": 20352,
+            "sha256": "5a2f138960d92435f3dc4f40eded44229f8f65f942c0f91062b690133e008c0a"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 27,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "S",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 37,
+          "original": {
+            "bytes": 22429,
+            "sha256": "feb893ff993ca7dec0010924530a4591340b2c859b76df3a6b4d5080b618bd6f"
+          },
+          "sanitized": {
+            "bytes": 21753,
+            "sha256": "fe6f69eefd63647cc633cce1db46b746b08e95da82a29ddacfc58bfa078722e2"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 10,
+            "distinctUsageCount": 3,
+            "inputTokens": 190052,
+            "outputTokens": 41,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 37,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "F0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 38,
+          "original": {
+            "bytes": 23508,
+            "sha256": "608506d05e2642202fbdd6cc3d4bb2f300648a1956cb4217f29e6296f80bb80e"
+          },
+          "sanitized": {
+            "bytes": 22810,
+            "sha256": "2f768afedf8b9f6cc6eead1ed71731f003d0e79172445027d0383812f3910e8c"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 11,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 38,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "F1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "auto/toolturn.jsonl",
+          "prefixThroughLine": 39,
+          "original": {
+            "bytes": 24589,
+            "sha256": "620511c5524bd7181542780d04b11585719655dcca1f9a2d1d178a9599e37c91"
+          },
+          "sanitized": {
+            "bytes": 23869,
+            "sha256": "0f47514e1e4f8ccb719076099b15d8353b41256137da6676e599ce5c37373058"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 12,
+            "distinctUsageCount": 4,
+            "inputTokens": 190093,
+            "outputTokens": 64,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 39,
+          "incompleteAtomicReplayGroup": false
+        }
+      ],
+      "retainedOriginalUuids": [
+        "064bad7a-10cf-4e46-b8b4-9ecc55a0e753",
+        "4ff28460-a949-4b98-99ed-ee29c5e54696",
+        "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+        "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+        "fc47dfa8-1d95-45b5-9ac2-fe93579ab302",
+        "98fb7373-bea6-4ba4-81cf-867fc7df04dd"
+      ],
+      "replayedWholeTurnUuids": [
+        "de8327ea-b045-4a0e-aec6-4b52cd8fdefe",
+        "824aaeff-2d52-4092-9941-f3b6b6d73b62",
+        "064bad7a-10cf-4e46-b8b4-9ecc55a0e753",
+        "4ff28460-a949-4b98-99ed-ee29c5e54696",
+        "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+        "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+        "fc47dfa8-1d95-45b5-9ac2-fe93579ab302",
+        "98fb7373-bea6-4ba4-81cf-867fc7df04dd"
+      ],
+      "copyPositions": [
+        {
+          "uuid": "de8327ea-b045-4a0e-aec6-4b52cd8fdefe",
+          "originalLine": 20,
+          "copyLine": 28,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "824aaeff-2d52-4092-9941-f3b6b6d73b62",
+          "originalLine": 21,
+          "copyLine": 29,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "064bad7a-10cf-4e46-b8b4-9ecc55a0e753",
+          "originalLine": 22,
+          "copyLine": 30,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "4ff28460-a949-4b98-99ed-ee29c5e54696",
+          "originalLine": 23,
+          "copyLine": 31,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+          "originalLine": 24,
+          "copyLine": 32,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+          "originalLine": 25,
+          "copyLine": 33,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "fc47dfa8-1d95-45b5-9ac2-fe93579ab302",
+          "originalLine": 26,
+          "copyLine": 34,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        },
+        {
+          "uuid": "98fb7373-bea6-4ba4-81cf-867fc7df04dd",
+          "originalLine": 27,
+          "copyLine": 35,
+          "slug": "async-nibbling-bengio",
+          "removedAddedSlugIsExactSerializedOriginal": true
+        }
+      ],
+      "boundary": {
+        "uuid": "1bdd310b-b0e7-434c-8a65-ec84e316467d",
+        "line": 36,
+        "parentUuid": null,
+        "logicalParentUuid": "98fb7373-bea6-4ba4-81cf-867fc7df04dd",
+        "compactMetadata": {
+          "trigger": "auto",
+          "preTokens": 190102,
+          "postTokens": 321,
+          "cumulativeDroppedTokens": 189781,
+          "durationMs": 5,
+          "preservedSegment": {
+            "headUuid": "064bad7a-10cf-4e46-b8b4-9ecc55a0e753",
+            "anchorUuid": "dcaff83a-544c-4b1b-af24-ad3be481d1a8",
+            "tailUuid": "98fb7373-bea6-4ba4-81cf-867fc7df04dd"
+          },
+          "preservedMessages": {
+            "anchorUuid": "dcaff83a-544c-4b1b-af24-ad3be481d1a8",
+            "uuids": [
+              "064bad7a-10cf-4e46-b8b4-9ecc55a0e753",
+              "4ff28460-a949-4b98-99ed-ee29c5e54696",
+              "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+              "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+              "fc47dfa8-1d95-45b5-9ac2-fe93579ab302",
+              "98fb7373-bea6-4ba4-81cf-867fc7df04dd"
+            ],
+            "allUuids": [
+              "064bad7a-10cf-4e46-b8b4-9ecc55a0e753",
+              "4ff28460-a949-4b98-99ed-ee29c5e54696",
+              "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+              "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+              "fc47dfa8-1d95-45b5-9ac2-fe93579ab302",
+              "98fb7373-bea6-4ba4-81cf-867fc7df04dd"
+            ]
+          }
+        }
+      },
+      "summary": {
+        "uuid": "dcaff83a-544c-4b1b-af24-ad3be481d1a8",
+        "line": 37,
+        "parentUuid": "1bdd310b-b0e7-434c-8a65-ec84e316467d",
+        "isCompactSummary": true,
+        "isVisibleInTranscriptOnly": true,
+        "knownMarker": "ATAPE_AUTO_SUMMARY:"
+      },
+      "nativeInvocations": [
+        {
+          "phase": "seed",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/seed-result.json",
+            "bytes": 2661,
+            "sha256": "37ca4f401df46b9602effb1017db1523a76bbf251970f7ea652067104bdee02f"
+          },
+          "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "963a986559f71c06641f2aede4c3aabed8bac918e0f7e827644fb1a053f0e45b",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--session-id",
+          "sessionIdArgument": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "prompt": "ATAPE_AUTO_SEED: Remember cobalt heron 482.",
+          "stdoutUsage": {
+            "input_tokens": 23,
+            "output_tokens": 11
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 23,
+              "outputTokens": 11,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000234,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "warmup",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/warmup-result.json",
+            "bytes": 2665,
+            "sha256": "0d108aa2551a26ac03a6e0a9eb983e65fadaa49c1ea9da109cd641072a975244"
+          },
+          "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "042c225b4d108d869f13eb1d3b2145aa2e9cf2cccee2609117ea81dc1c08c64a",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "prompt": "ATAPE_AUTO_WARMUP: Confirm the synthetic context.",
+          "stdoutUsage": {
+            "input_tokens": 29,
+            "output_tokens": 13
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000282,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "toolturn",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/toolturn-result.json",
+            "bytes": 2721,
+            "sha256": "9fa042354ebbe1b6265a33dc27d60b1686926cc2906fc8623c7e20c7968c8231"
+          },
+          "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "4c71d1518172c957f0c6f3976758568ffa0104d1c93953dfe309ef1005c30403",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "prompt": "ATAPE_AUTO_TOOLS: Read a.txt and b.txt once, then give two text blocks.",
+          "stdoutUsage": {
+            "input_tokens": 190041,
+            "output_tokens": 40
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 190092,
+              "outputTokens": 59,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.5711610000000001,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "continue",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/continue-result.json",
+            "bytes": 2682,
+            "sha256": "c49b9ae1271ee4af1e614cb3a467b9d342547e48768bc3b800a75bfa70b1694d"
+          },
+          "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "f3e0e2d9dc41fa431d38646bfefd7291380a2cc402515600ce67b1aabe11c9b3",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "prompt": "ATAPE_AUTO_CONTINUE: Resume the synthetic task after compaction.",
+          "stdoutUsage": {
+            "input_tokens": 29,
+            "output_tokens": 13
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000282,
+              "costBasis": "list"
+            }
+          }
+        },
+        {
+          "phase": "secondcontinue",
+          "result": {
+            "file": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/secondcontinue-result.json",
+            "bytes": 2680,
+            "sha256": "ed63d318049697110c0362a01c4e2285b93e3b15cc36959b6579d89da95a5421"
+          },
+          "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "recordedBinaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "controls": {
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "toolCallMockInputTokens": 190000
+          },
+          "exit": 0,
+          "signal": null,
+          "stderr": "",
+          "stdoutSha256": "bb02eaed8866041bb0ae0563bdf2516bb8fc03dd64f3b1b2b5c460d9f5314ed0",
+          "stdoutCostIsListEstimateNotBilling": true,
+          "sessionMode": "--resume",
+          "sessionIdArgument": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+          "prompt": "ATAPE_AUTO_SECOND_CONTINUE: Confirm stable resume again.",
+          "stdoutUsage": {
+            "input_tokens": 29,
+            "output_tokens": 13
+          },
+          "stdoutModelUsage": {
+            "claude-sonnet-4-6": {
+              "inputTokens": 29,
+              "outputTokens": 13,
+              "cacheReadInputTokens": 0,
+              "cacheCreationInputTokens": 0,
+              "costUSD": 0.000282,
+              "costBasis": "list"
+            }
+          }
+        }
+      ],
+      "homeAndHarnessLimits": {
+        "freshConfigAndWorkspaceClaimedByRecordedHarness": true,
+        "freshHomeEstablished": false,
+        "homeValueRecorded": false,
+        "savedHarnessHomeExpression": "HOME:process.env.HOME",
+        "recordedControlsThresholdPct": "20",
+        "artificialToolCallInputTokens": 190000,
+        "countTokensRequests": 0,
+        "savedHarnessImmutableExactReproductionEstablished": false,
+        "planTextMatchesSavedHarness": false,
+        "savedHarnessPlanText": "Read the synthetic files.",
+        "nativePlanText": "ATAPE_AUTO_TOOL_PLAN: Read the two synthetic files.",
+        "onlyActualReadFiles": [
+          "a.txt",
+          "b.txt"
+        ],
+        "mockClaimsForUnexecutedBFile": false,
+        "allFiveInvocationsExitZero": true,
+        "oneAutomaticBoundaryOnlyInTheseSnapshots": true,
+        "laterResumeDoesNotEstablishLaterSlugCopyEquality": true
+      },
+      "summarizationUsageLimit": {
+        "summaryRequestObserved": true,
+        "summaryAssistantJsonlRecordPresent": false,
+        "modelUsageMinusTopLevelUsage": {
+          "inputTokens": 51,
+          "outputTokens": 19
+        },
+        "mockSummaryResponseCounters": {
+          "input_tokens": 51,
+          "output_tokens": 19
+        },
+        "authority": "captured summary request + saved mock response controls + stdout modelUsage/top-level difference; no JSONL summary assistant observation and no inferred bill"
+      },
+      "diskEvidence": [
+        {
+          "bytes": 37,
+          "sha256": "5ab6e262b0790dbfb7fd9db1263b1dc5f8c31dfdc71b773a38c5100aee4bf867",
+          "contentUtf8": "ATAPE_NATIVE_READ_A: amber lynx 204.\n",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/workspace/a.txt",
+          "file": "a.txt",
+          "fixturePath": "/fixture/native-auto-tool-replay/workspace/a.txt",
+          "actualReadExecuted": true
+        },
+        {
+          "bytes": 39,
+          "sha256": "a3d9266fd7943abadbd8cbc26d39b790acd0721d6238e4d1709d528cb56503e0",
+          "contentUtf8": "ATAPE_NATIVE_READ_B: violet crane 619.\n",
+          "sourceFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/auto/workspace/b.txt",
+          "file": "b.txt",
+          "fixturePath": "/fixture/native-auto-tool-replay/workspace/b.txt",
+          "actualReadExecuted": true
+        }
+      ],
+      "callReceiptEvidence": [
+        {
+          "callLine": 23,
+          "callUuid": "4ff28460-a949-4b98-99ed-ee29c5e54696",
+          "callApiId": "msg_atape_auto_mock_10",
+          "apiBlockIndex": 1,
+          "call": {
+            "type": "tool_use",
+            "id": "call_auto_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-auto-tool-replay/workspace/a.txt"
+            }
+          },
+          "resultLine": 25,
+          "resultUuid": "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+          "resultParentUuid": "4ff28460-a949-4b98-99ed-ee29c5e54696",
+          "sourceToolAssistantUUID": "4ff28460-a949-4b98-99ed-ee29c5e54696",
+          "previousPhysicalUuid": "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+          "isErrorPresent": false,
+          "sourceResultBlock": {
+            "tool_use_id": "call_auto_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-auto-tool-replay/workspace/a.txt",
+              "content": "ATAPE_NATIVE_READ_A: amber lynx 204.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true,
+          "rootIdentity": {
+            "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+            "cwd": "/fixture/native-auto-tool-replay/workspace",
+            "version": "2.1.263",
+            "isSidechain": false
+          },
+          "flagPresence": {}
+        },
+        {
+          "callLine": 24,
+          "callUuid": "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+          "callApiId": "msg_atape_auto_mock_10",
+          "apiBlockIndex": 2,
+          "call": {
+            "type": "tool_use",
+            "id": "call_auto_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-auto-tool-replay/workspace/b.txt"
+            }
+          },
+          "resultLine": 26,
+          "resultUuid": "fc47dfa8-1d95-45b5-9ac2-fe93579ab302",
+          "resultParentUuid": "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+          "sourceToolAssistantUUID": "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+          "previousPhysicalUuid": "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038",
+          "isErrorPresent": false,
+          "sourceResultBlock": {
+            "tool_use_id": "call_auto_read_b",
+            "type": "tool_result",
+            "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-auto-tool-replay/workspace/b.txt",
+              "content": "ATAPE_NATIVE_READ_B: violet crane 619.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true,
+          "rootIdentity": {
+            "sessionId": "bb9cf168-c9d3-4fea-9428-bd7fc8460755",
+            "cwd": "/fixture/native-auto-tool-replay/workspace",
+            "version": "2.1.263",
+            "isSidechain": false
+          },
+          "flagPresence": {}
+        }
+      ],
+      "requestProof": [
+        {
+          "originalRequestIndex": 18,
+          "phase": "toolturn",
+          "response": "toolcalls",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 5,
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 19,
+          "phase": "toolturn",
+          "response": "summary",
+          "summaryRequest": true,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 5,
+          "sourceSummaryExactTextLoadedAt": [],
+          "toolResults": []
+        },
+        {
+          "originalRequestIndex": 20,
+          "phase": "toolturn",
+          "response": "tool-final",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 3,
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "toolUseId": "call_auto_read_a",
+              "rawSourceResultExactTextEqual": true,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_read_a",
+                "type": "tool_result"
+              }
+            },
+            {
+              "messageIndex": 2,
+              "blockIndex": 1,
+              "toolUseId": "call_auto_read_b",
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_read_b",
+                "type": "tool_result",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "originalRequestIndex": 22,
+          "phase": "continue",
+          "response": "continue",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 5,
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "toolUseId": "call_auto_read_a",
+              "rawSourceResultExactTextEqual": true,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_read_a",
+                "type": "tool_result"
+              }
+            },
+            {
+              "messageIndex": 2,
+              "blockIndex": 1,
+              "toolUseId": "call_auto_read_b",
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_read_b",
+                "type": "tool_result"
+              }
+            }
+          ]
+        },
+        {
+          "originalRequestIndex": 24,
+          "phase": "secondcontinue",
+          "response": "secondcontinue",
+          "summaryRequest": false,
+          "requestUrl": "/v1/messages?beta=true",
+          "messageCount": 7,
+          "sourceSummaryExactTextLoadedAt": [
+            {
+              "messageIndex": 0,
+              "blockIndex": 1,
+              "exactTextEqualsSourceSummary": true
+            }
+          ],
+          "toolResults": [
+            {
+              "messageIndex": 2,
+              "blockIndex": 0,
+              "toolUseId": "call_auto_read_a",
+              "rawSourceResultExactTextEqual": true,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_read_a",
+                "type": "tool_result"
+              }
+            },
+            {
+              "messageIndex": 2,
+              "blockIndex": 1,
+              "toolUseId": "call_auto_read_b",
+              "rawSourceResultExactTextEqual": false,
+              "submittedStartsWithRawResultTrimmed": true,
+              "submittedIncludesActualDiskMarker": true,
+              "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>",
+              "blockMetadata": {
+                "tool_use_id": "call_auto_read_b",
+                "type": "tool_result"
+              }
+            }
+          ]
+        }
+      ],
+      "resumeAppendGraph": {
+        "continue": [
+          {
+            "line": 43,
+            "uuid": "0e63acd7-1c4a-452e-890d-40c00334a48f",
+            "type": "user",
+            "parentUuid": "2f335539-1abd-4718-8548-6ea6fa9b184c",
+            "logicalParentUuid": null,
+            "slug": "async-nibbling-bengio",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 44,
+            "uuid": "b45a46e3-32b6-4dd8-a4b2-3402667467bb",
+            "type": "attachment",
+            "parentUuid": "0e63acd7-1c4a-452e-890d-40c00334a48f",
+            "logicalParentUuid": null,
+            "slug": "async-nibbling-bengio",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 45,
+            "uuid": "8991ef2e-e20d-4359-ac02-e2e9f21cdedd",
+            "type": "assistant",
+            "parentUuid": "b45a46e3-32b6-4dd8-a4b2-3402667467bb",
+            "logicalParentUuid": null,
+            "slug": "async-nibbling-bengio",
+            "apiId": "msg_atape_auto_mock_13",
+            "apiBlockIndex": 0,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          }
+        ],
+        "secondcontinue": [
+          {
+            "line": 49,
+            "uuid": "6849c694-32bf-4c25-a28e-6ef7045ea9b0",
+            "type": "user",
+            "parentUuid": "8991ef2e-e20d-4359-ac02-e2e9f21cdedd",
+            "logicalParentUuid": null,
+            "slug": "async-nibbling-bengio",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 50,
+            "uuid": "9e8839ab-2712-4297-8c15-cde8cb497610",
+            "type": "attachment",
+            "parentUuid": "6849c694-32bf-4c25-a28e-6ef7045ea9b0",
+            "logicalParentUuid": null,
+            "slug": "async-nibbling-bengio",
+            "apiId": null,
+            "apiBlockIndex": null,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          },
+          {
+            "line": 51,
+            "uuid": "64ab3519-4ba1-492a-9977-6e097bf7f88d",
+            "type": "assistant",
+            "parentUuid": "9e8839ab-2712-4297-8c15-cde8cb497610",
+            "logicalParentUuid": null,
+            "slug": "async-nibbling-bengio",
+            "apiId": "msg_atape_auto_mock_14",
+            "apiBlockIndex": 0,
+            "isMetaPresent": false,
+            "isMeta": null,
+            "summaryFlags": {}
+          }
+        ]
+      },
+      "eventSourceIds": [
+        "1faf5992-76d7-4a3c-be90-c0a93d1e493c:0",
+        "22cebc52-b8bb-422d-8d46-ff3be4152fa8:0",
+        "7ce3cc52-d0b4-4b82-aca4-146e58382a18:0",
+        "23101f76-9fbc-4d62-81f3-89e30e177f98:0",
+        "de8327ea-b045-4a0e-aec6-4b52cd8fdefe:0",
+        "064bad7a-10cf-4e46-b8b4-9ecc55a0e753:0",
+        "4ff28460-a949-4b98-99ed-ee29c5e54696:0",
+        "1d73ed33-3379-4350-9a32-7ba42c3c7e6e:0",
+        "8ac57ac8-a3ba-4edc-9a1b-e6c7274c1038:0",
+        "fc47dfa8-1d95-45b5-9ac2-fe93579ab302:0",
+        "812a8c91-9d93-42e7-a93d-bc303d374e4a:0",
+        "2f335539-1abd-4718-8548-6ea6fa9b184c:0",
+        "0e63acd7-1c4a-452e-890d-40c00334a48f:0",
+        "8991ef2e-e20d-4359-ac02-e2e9f21cdedd:0",
+        "6849c694-32bf-4c25-a28e-6ef7045ea9b0:0",
+        "64ab3519-4ba1-492a-9977-6e097bf7f88d:0"
+      ],
+      "latestUsageByApiId": {
+        "msg_atape_auto_mock_8": {
+          "sourceUsageId": "msg_atape_auto_mock_8",
+          "sourceUuid": "22cebc52-b8bb-422d-8d46-ff3be4152fa8",
+          "latestObservationLine": 6,
+          "latestObservationEndBytes": 2411,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 23,
+          "outputTokens": 11
+        },
+        "msg_atape_auto_mock_9": {
+          "sourceUsageId": "msg_atape_auto_mock_9",
+          "sourceUuid": "23101f76-9fbc-4d62-81f3-89e30e177f98",
+          "latestObservationLine": 12,
+          "latestObservationEndBytes": 4970,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13
+        },
+        "msg_atape_auto_mock_10": {
+          "sourceUsageId": "msg_atape_auto_mock_10",
+          "sourceUuid": "1d73ed33-3379-4350-9a32-7ba42c3c7e6e",
+          "latestObservationLine": 24,
+          "latestObservationEndBytes": 10249,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 190000,
+          "outputTokens": 17
+        },
+        "msg_atape_auto_mock_12": {
+          "sourceUsageId": "msg_atape_auto_mock_12",
+          "sourceUuid": "2f335539-1abd-4718-8548-6ea6fa9b184c",
+          "latestObservationLine": 39,
+          "latestObservationEndBytes": 23869,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 41,
+          "outputTokens": 23
+        },
+        "msg_atape_auto_mock_13": {
+          "sourceUsageId": "msg_atape_auto_mock_13",
+          "sourceUuid": "8991ef2e-e20d-4359-ac02-e2e9f21cdedd",
+          "latestObservationLine": 45,
+          "latestObservationEndBytes": 26582,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13
+        },
+        "msg_atape_auto_mock_14": {
+          "sourceUsageId": "msg_atape_auto_mock_14",
+          "sourceUuid": "64ab3519-4ba1-492a-9977-6e097bf7f88d",
+          "latestObservationLine": 51,
+          "latestObservationEndBytes": 29278,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13
+        }
+      }
+    }
+  ],
+  "selectedSourceRequests": {
+    "file": "source-requests.json",
+    "originalDerivedSubsetSha256": "d1d3aa7f9cfc66f6b1dedde11497d91f84d6e76962605d97c1dc4b84a7f3ebf3",
+    "sanitizedBytes": 31887,
+    "sanitizedSha256": "709828599d8ea31c20b0a687593173f72e5e0057ee1347f14a39e4a2b8c7538e",
+    "kind": "Derived relevant actual model-message subset with declared path aliases; full SDK context/tool schemas omitted."
+  },
+  "commonNativeArguments": [
+    "--restricted",
+    "--safe-mode",
+    "--tools",
+    "Read",
+    "--allowedTools",
+    "Read",
+    "--permission-mode",
+    "manual",
+    "--permission-prompts",
+    "none",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--no-chrome",
+    "--model",
+    "claude-sonnet-4-6",
+    "--effort",
+    "low",
+    "--system-prompt",
+    "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+    "--print",
+    "--output-format",
+    "json"
+  ],
+  "nativeArgvReconstruction": "For each invocation concatenate commonNativeArguments + [sessionMode, sessionIdArgument, prompt]; actual original result file hashes remain the authority.",
+  "expectationNormalization": "Each case owns final original Event identities and latest normal usage facts once. Snapshot Event identities are their prefix by count; usageSourceIds selects the snapshot API subset. Derived cuts retain counts/pending/frontier/hash only; full native bytes preserve all content/metadata."
+}
