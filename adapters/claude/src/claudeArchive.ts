@@ -19,6 +19,7 @@ const MaxAutoGroupBytes = 256 * 1024
 const MaxProofTailBytes = 256 * 1024
 const MaxReadReplayTailBytes = 512 * 1024
 const MaxReadReplayGroupBytes = 640 * 1024
+const MaxManualReadGroupBytes = 128 * 1024
 const MaxAutoTailRecords = 16
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
@@ -357,6 +358,34 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         state = { ...state, autoText: group.stage, lastUuid: group.stage.summaryUuid, order: state.order + group.contents.length, eventSkip: 0 }
         rawBytes += bytes; at = group.end; hasMore = at < before.size
         break // The answer starts a fresh page; lookahead never consumes prefetched ordinary records.
+      }
+      if (state.compaction?.phase === "resume" && (object(record.attachment)?.type === "file" || record.isMeta === true)) {
+        if (delegated || state.autoText || state.readPair) fail("unsupported", "Claude manual Read reinjection requires an unblocked root Thread.")
+        if (state.eventSkip !== 0) fail("cursor", "Claude manual Read checkpoint contains uncommitted Event progress.")
+        const group = await readManualGroup(handle, line, record, at, before.size, hash.copy().digest("hex"), root, state.compaction, [...seen], calls, request.signal)
+        if (!group) break
+        const bytes = group.contents.reduce((total, content) => total + content.length, 0)
+        const limit = Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation)
+        if (bytes > limit) fail("limit", "A Claude manual Read group exceeds the requested Raw page limit.")
+        if (rawBytes + bytes > limit) { hasMore = true; break }
+        for (const content of group.contents) hash.update(content)
+        for (const uuid of group.uuids) seen.add(uuid)
+        const { compaction: _completedCompaction, ...committed } = state
+        state = { ...committed, ...(group.keepStage ? { compaction: state.compaction } : {}),
+          lastUuid: group.uuids[1], order: state.order + 2, eventSkip: 0 }
+        rawBytes += bytes; at = group.end; hasMore = at < before.size
+        break
+      }
+      if (state.compaction?.phase === "resume" && record.type === "assistant") {
+        await verifyManualBridgeLeaf(handle, at, hash.copy().digest("hex"), root, state.lastUuid, state.compaction.promptId, request.signal)
+      }
+      if (state.compaction?.phase === "resume" && record.uuid === undefined) {
+        const leaf = await manualPrefixLeaf(handle, at, hash.copy().digest("hex"), root, request.signal)
+        if (object(leaf?.attachment)?.type === "file") {
+          await manualReadWitness(handle, at, hash.copy().digest("hex"), root, state.compaction, [...seen], calls, true, request.signal)
+          if (!manualBookkeeping(record, root, state.lastUuid))
+            fail("unsupported", "Claude manual Read bookkeeping identity or graph changed.")
+        }
       }
       const transition = compactionTransition(record, state.lastUuid, state.compaction, delegated !== undefined)
       if (transition.textTail) {
@@ -851,6 +880,196 @@ async function verifyPreservedTextTail(handle: Awaited<ReturnType<typeof open>>,
     fail("unsupported", "Claude manual compaction has no supported same-response text tail.")
 }
 
+/** Hash and recover semantics from the same committed bytes. Candidate rings
+ * can discard oversized unrelated records without borrowing a separate read. */
+async function scanManualPrefix(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, signal: AbortSignal, visit: (record: RecordValue | undefined, physical: number, bytes: number) => void): Promise<void> {
+  const hash = createHash("sha256")
+  let at = 0, physical = 0, first = false, original = false
+  for await (const line of readRecords(handle, 0, committed, signal)) {
+    hash.update(line.content); at = line.end; physical++
+    let record: RecordValue | undefined
+    if (line.content.toString("utf8").trim()) {
+      try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+      catch { fail("format", "Claude committed prefix contains a malformed JSONL record.") }
+      if (!first && record.uuid !== undefined) {
+        first = true
+        original = record.uuid === root.uuid && record.type === "user" && record.parentUuid === null &&
+          record.sessionId === root.sessionId && record.cwd === root.cwd && record.isMeta !== true
+      }
+    }
+    visit(record, physical, line.content.length)
+  }
+  if (at !== committed || hash.digest("hex") !== expectedDigest)
+    fail("changed", "The committed Claude prefix changed during manual Read validation.")
+  if (!original) fail("changed", "Claude original identity changed during manual Read validation.")
+}
+
+async function manualPrefixLeaf(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, signal: AbortSignal): Promise<RecordValue | undefined> {
+  let leaf: RecordValue | undefined
+  await scanManualPrefix(handle, committed, expectedDigest, root, signal, record => {
+    if (record?.uuid !== undefined) leaf = record
+  })
+  return leaf
+}
+
+async function verifyManualBridgeLeaf(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, lastUuid: string | null, promptId: string | undefined, signal: AbortSignal): Promise<void> {
+  const leaf = await manualPrefixLeaf(handle, committed, expectedDigest, root, signal)
+  // Old no-file profiles retain ordinary record limits, including large final
+  // text/unknown values; only their actual last UUID must be the stdout slot.
+  const message = object(leaf?.message)
+  if (leaf?.uuid !== lastUuid || leaf?.type !== "user" || leaf.isMeta === true || leaf.promptId !== promptId ||
+    message?.role !== "user" || message.content !== "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>")
+    fail("unsupported", "Claude manual compaction bridge requires its admitted stdout leaf.")
+}
+
+const manualIdentity = (record: RecordValue, root: RecordValue) => autoRoot(record, root) && record.userType === "external" &&
+  record.agentId === undefined && record.sourceToolAssistantUUID === undefined && record.toolUseResult === undefined && record.attachment === undefined
+const manualBookkeeping = (record: RecordValue | undefined, root: RecordValue, leaf: unknown) => record !== undefined &&
+  ["queue-operation", "last-prompt", "mode", "atis-latch"].includes(string(record.type) ?? "") &&
+  record.sessionId === root.sessionId && record.uuid === undefined && record.message === undefined && record.parentUuid === undefined &&
+  record.logicalParentUuid === undefined && record.compactMetadata === undefined && record.isCompactSummary === undefined &&
+  record.isVisibleInTranscriptOnly === undefined && record.agentId === undefined && record.sourceToolAssistantUUID === undefined &&
+  record.toolUseResult === undefined && record.isSidechain === undefined && record.isMeta === undefined &&
+  record.cwd === undefined && record.version === undefined &&
+  record.subtype === undefined && record.isApiErrorMessage === undefined && record.attachment === undefined &&
+  (record.type !== "last-prompt" || record.leafUuid === leaf)
+
+type ManualFrame = { readonly uuid: unknown; readonly physical: number; readonly record: RecordValue | undefined }
+async function manualReadWitness(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, stage: Compaction, seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>,
+  filesCommitted: boolean, signal: AbortSignal): Promise<{ readonly receipts: readonly [RecordValue, RecordValue]; readonly paths: readonly [string, string]; readonly slug: string }> {
+  const ring: ManualFrame[] = [], controls: ManualFrame[] = []
+  let originals: ManualFrame[] | undefined, prior: unknown = null, gap = true, originalGap = false, repeatedBoundary = false, excess = false
+  await scanManualPrefix(handle, committed, expectedDigest, root, signal, (record, physical, bytes) => {
+    if (record?.uuid === undefined) { gap &&= manualBookkeeping(record, root, prior); return }
+    const frame = { uuid: record.uuid, physical, record: bytes <= MaxWitnessRecordBytes ? record : undefined }
+    if (record.uuid === stage.boundaryUuid) {
+      if (originals) repeatedBoundary = true
+      else { originals = [...ring]; originalGap = gap }
+    }
+    if (originals) {
+      if (controls.length < 7) controls.push(frame)
+      else excess = true
+    } else {
+      ring.push(frame); if (ring.length > 10) ring.shift()
+    }
+    prior = record.uuid; gap = true
+  })
+  const count = filesCommitted ? 7 : 5, boundaryIndex = seen.indexOf(stage.boundaryUuid)
+  if (!originals || originals.length !== 10 || controls.length !== count || repeatedBoundary || excess || !originalGap || !gap || boundaryIndex <= 10 ||
+    originals.some((frame, index) => frame.uuid !== seen[boundaryIndex - 10 + index] || index > 0 && frame.physical !== originals![index - 1]!.physical + 1) ||
+    controls.some((frame, index) => frame.uuid !== seen[boundaryIndex + index] || index > 0 && frame.physical !== controls[index - 1]!.physical + 1) ||
+    seen.length !== boundaryIndex + count)
+    fail("unsupported", "Claude manual Read has no current adjacent original/control witness.")
+  if ([...originals, ...controls].some(frame => !frame.record)) fail("limit", "Claude manual Read witness exceeds 64 KiB.")
+  const original = originals.map(frame => frame.record!), sequence = controls.map(frame => frame.record!)
+  if (original.some(record => !readRoot(record, root) || record.userType !== "external" || record.slug !== undefined || record.isApiErrorMessage !== undefined))
+    fail("unsupported", "Claude manual Read original identity or markers changed.")
+  const [u, g, p, c0, c1, r0, r1, reminder, a0, a1] = original as [RecordValue, RecordValue, RecordValue, RecordValue, RecordValue, RecordValue, RecordValue, RecordValue, RecordValue, RecordValue]
+  const user = object(u.message), token = (record: RecordValue, parent: unknown) => record.type === "attachment" && record.message === undefined &&
+    record.parentUuid === parent && object(record.attachment)?.type === "total_tokens_reminder" &&
+    typeof object(record.attachment)?.text === "string" && (object(record.attachment)!.text as string).length > 0
+  if (u.type !== "user" || user?.role !== "user" || typeof user.content !== "string" || !user.content.length || !autoId(u.promptId) ||
+    u.parentUuid !== seen[boundaryIndex - 11] || !token(g, u.uuid) || !token(reminder, r1.uuid))
+    fail("unsupported", "Claude manual Read has no supported user/reminder turn.")
+  const plan = readResponse(p, root), content = plan.content, text = Array.isArray(content) && content.length === 1 ? object(content[0]) : undefined
+  if (p.parentUuid !== g.uuid || p.apiBlockIndex !== 0 || text?.type !== "text" || typeof text.text !== "string" || !text.text.length)
+    fail("unsupported", "Claude manual Read has no supported text plan.")
+  const firstMessage = readResponse(c0, root), secondMessage = readResponse(c1, root)
+  const first = readCall(c0, firstMessage, calls), second = readCall(c1, secondMessage, calls)
+  if (c0.parentUuid !== p.uuid || c1.parentUuid !== c0.uuid || c0.apiBlockIndex !== 1 || c1.apiBlockIndex !== 2 ||
+    firstMessage.id !== plan.id || secondMessage.id !== plan.id || firstMessage.model !== plan.model || secondMessage.model !== plan.model ||
+    first.toolId === second.toolId || first.filePath === second.filePath)
+    fail("unsupported", "Claude manual Read has no supported same-response distinct calls.")
+  verifyReadReceipt(r0, root, first.uuid, first.toolId, first.filePath, u.promptId)
+  verifyReadReceipt(r1, root, second.uuid, second.toolId, second.filePath, u.promptId)
+  const m0 = object(a0.message), m1 = object(a1.message)
+  const finalText = (message: RecordValue | undefined) => message?.role === "assistant" && autoId(message.id) && typeof message.model === "string" &&
+    message.model.trim().length > 0 && message.model.length <= 200 && message.model !== "<synthetic>" && message.stop_reason === "end_turn" &&
+    Array.isArray(message.content) && message.content.length === 1 && object(message.content[0])?.type === "text" &&
+    typeof object(message.content[0])?.text === "string" && (object(message.content[0])!.text as string).length > 0
+  if (a0.type !== "assistant" || a1.type !== "assistant" || !finalText(m0) || !finalText(m1) ||
+    a0.parentUuid !== reminder.uuid || a1.parentUuid !== a0.uuid || a0.apiBlockIndex !== 0 || a1.apiBlockIndex !== 1 ||
+    m0!.id === plan.id || m0!.id !== m1!.id || m0!.model !== m1!.model)
+    fail("unsupported", "Claude manual Read has no supported final text pair.")
+  const slug = sequence[0]!.slug
+  if (!autoId(slug)) fail("unsupported", "Claude manual Read has no compact slug.")
+  let active: Compaction | undefined, leaf: string | null = a1.uuid as string
+  for (const [index, record] of sequence.slice(0, 5).entries()) {
+    if (!manualIdentity(record, root) || record.slug !== slug || record.isApiErrorMessage !== undefined ||
+      record.parentUuid !== leaf && index !== 0 || record.isMeta !== (index === 0 ? false : index === 2 ? true : undefined) ||
+      record.isCompactSummary !== (index === 1 ? true : undefined) || record.isVisibleInTranscriptOnly !== (index === 1 ? true : undefined) ||
+      index !== 0 && (record.subtype !== undefined || record.compactMetadata !== undefined || record.logicalParentUuid !== undefined) ||
+      index === 0 && record.message !== undefined)
+      fail("unsupported", "Claude manual Read control identity or markers changed.")
+    const transition = compactionTransition(record, leaf, active, false)
+    if (index === 0 && (!transition.textTail || transition.textTail[0] !== a0.uuid || transition.textTail[1] !== a1.uuid))
+      fail("unsupported", "Claude manual Read retained endpoints changed.")
+    active = transition.next; leaf = record.uuid as string
+  }
+  if (!active || active.phase !== "resume" || active.boundaryUuid !== stage.boundaryUuid || active.summaryUuid !== stage.summaryUuid || active.promptId !== stage.promptId)
+    fail("unsupported", "Claude manual Read checkpoint does not match its current controls.")
+  const witness = { receipts: [object(r1.toolUseResult)!, object(r0.toolUseResult)!] as const, paths: [second.filePath, first.filePath] as const, slug }
+  if (filesCommitted) {
+    verifyManualFile(sequence[5]!, root, witness, 0, leaf, seen.slice(0, boundaryIndex + 5))
+    verifyManualFile(sequence[6]!, root, witness, 1, sequence[5]!.uuid, seen.slice(0, boundaryIndex + 6))
+  }
+  return witness
+}
+
+function verifyManualFile(record: RecordValue, root: RecordValue,
+  witness: { readonly receipts: readonly [RecordValue, RecordValue]; readonly paths: readonly [string, string]; readonly slug: string },
+  index: 0 | 1, parent: unknown, known: ReadonlyArray<string>): void {
+  const attachment = object(record.attachment)
+  if (!readRoot(record, root) || record.type !== "attachment" || record.userType !== "external" || record.message !== undefined ||
+    record.promptId !== undefined || record.sourceToolAssistantUUID !== undefined || record.toolUseResult !== undefined || record.isApiErrorMessage !== undefined ||
+    record.parentUuid !== parent || record.slug !== witness.slug || known.includes(record.uuid as string) || attachment?.type !== "file" ||
+    attachment.filename !== witness.paths[index] || !readPath(attachment.displayPath) || attachment.isAsync !== undefined ||
+    attachment.status !== undefined || attachment.agentId !== undefined || !equalJson(attachment.content, witness.receipts[index]))
+    fail("unsupported", "Claude manual Read file differs from its complete successful receipt.")
+}
+
+async function readManualGroup(handle: Awaited<ReturnType<typeof open>>, first: { content: Buffer; end: number }, record: RecordValue,
+  committed: number, sampledEnd: number, expectedDigest: string, root: RecordValue, stage: Compaction,
+  seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>, signal: AbortSignal):
+  Promise<{ readonly contents: readonly [Buffer, Buffer]; readonly end: number; readonly uuids: readonly [string, string]; readonly keepStage: boolean } | undefined> {
+  if (first.content.length > MaxWitnessRecordBytes) fail("limit", "A Claude manual Read record exceeds 64 KiB.")
+  const files = object(record.attachment)?.type === "file"
+  const witness = await manualReadWitness(handle, committed, expectedDigest, root, stage, seen, calls, !files, signal)
+  if (files) verifyManualFile(record, root, witness, 0, seen.at(-1), seen)
+  else {
+    const message = object(record.message), blocks = message?.content
+    if (!manualIdentity(record, root) || record.type !== "user" || record.isMeta !== true || record.isCompactSummary !== undefined ||
+      record.isVisibleInTranscriptOnly !== undefined || record.compactMetadata !== undefined || record.logicalParentUuid !== undefined || record.subtype !== undefined ||
+      record.isApiErrorMessage !== undefined || record.slug !== witness.slug || record.parentUuid !== seen.at(-1) || seen.includes(record.uuid as string) ||
+      !autoId(record.promptId) || record.promptId === stage.promptId || message?.role !== "user" || !Array.isArray(blocks) || blocks.length !== 1 ||
+      object(blocks[0])?.type !== "text" || object(blocks[0])?.text !== "Continue from where you left off.")
+      fail("unsupported", "Claude manual Read has no supported internal Continue control.")
+  }
+  for await (const line of readRecords(handle, first.end, Math.min(sampledEnd, committed + MaxManualReadGroupBytes), signal, MaxWitnessRecordBytes)) {
+    if (!line.content.toString("utf8").trim()) fail("unsupported", "Claude manual Read group is not physically adjacent.")
+    let next: RecordValue
+    try { next = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+    catch { return fail("format", "Claude manual Read group contains a malformed complete record.") }
+    if (files) verifyManualFile(next, root, witness, 1, record.uuid, [...seen, record.uuid as string])
+    else {
+      const message = object(next.message)
+      if (!manualIdentity(next, root) || next.isMeta !== undefined || next.isCompactSummary !== undefined || next.isVisibleInTranscriptOnly !== undefined ||
+        next.compactMetadata !== undefined || next.logicalParentUuid !== undefined || next.subtype !== undefined || next.promptId !== undefined ||
+        next.slug !== witness.slug || next.parentUuid !== record.uuid || next.uuid === record.uuid || seen.includes(next.uuid as string) ||
+        next.apiBlockIndex !== undefined || next.isApiErrorMessage !== false || !autoId(message?.id) || message?.stop_sequence !== "")
+        fail("unsupported", "Claude manual Read synthetic bridge identity changed.")
+      compactionTransition(next, record.uuid as string, stage, false)
+    }
+    return { contents: [first.content, line.content], end: line.end, uuids: [record.uuid as string, next.uuid as string], keepStage: files }
+  }
+  if (sampledEnd - committed >= MaxManualReadGroupBytes) fail("limit", "A Claude manual Read group exceeds its bounded source capacity.")
+  return undefined
+}
+
 function bindChild(record: RecordValue, calls: Map<string, { name: string; uuid: string }>, delegated: boolean): Child | undefined {
   const content = object(record.message)?.content
   if (delegated && Array.isArray(content) && content.some(value => {
@@ -1052,7 +1271,7 @@ function decodeCursor(value: string | null): Cursor | undefined {
       c.stream.lastUuid !== null && !c.stream.seen.includes(c.stream.lastUuid) ||
       c.stream.title.length > 500 || c.stream.calls.some(call => call.some(value => value.length > 4096)))) throw new Error()
     const stage = c.stream?.compaction
-    if (stage && (!stage.boundaryUuid || stage.boundaryUuid.length > 500 || !stage.summaryUuid || stage.summaryUuid.length > 500 ||
+    if (stage && (c.stream!.eventSkip !== 0 || !stage.boundaryUuid || stage.boundaryUuid.length > 500 || !stage.summaryUuid || stage.summaryUuid.length > 500 ||
       stage.boundaryUuid === stage.summaryUuid || !c.stream!.seen.includes(stage.boundaryUuid) ||
       (stage.phase === "summary" ? c.stream!.lastUuid !== stage.boundaryUuid || c.stream!.seen.includes(stage.summaryUuid)
         : !stage.promptId || stage.promptId.length > 500 || !c.stream!.seen.includes(stage.summaryUuid)))) throw new Error()

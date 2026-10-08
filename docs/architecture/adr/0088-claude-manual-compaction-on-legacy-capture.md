@@ -124,6 +124,10 @@ synthetic bridge's zero counters do not create a usage item.
 
 ## Verification and remaining scope
 
+[ADR-0092](0092-claude-manual-read-file-reinjection.md) adds a separate selected
+manual Read2 file-reinjection and Meta/synthetic recovery profile. Its two atomic
+groups do not enable arbitrary file attachments or broaden retained text tails.
+
 [ADR-0089](0089-claude-automatic-text-replay-on-legacy-capture.md) adds a separate
 fixture-proved automatic text replay decision. It does not broaden this manual
 profile's retained tail shapes or control sequence.

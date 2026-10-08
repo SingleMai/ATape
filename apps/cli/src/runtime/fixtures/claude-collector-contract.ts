@@ -36,6 +36,7 @@ const autoFixture = new URL("../../../../../adapters/claude/fixtures/native-auto
 const familyFixture = new URL("../../../../../adapters/claude/fixtures/native-foreground-child-2.1.263/", import.meta.url)
 const pairFixture = new URL("../../../../../adapters/claude/fixtures/native-read-pair-2.1.263/", import.meta.url)
 const autoReadFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-read-replay-2.1.263/", import.meta.url)
+const manualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-read-reinjection-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
 const tailSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, tailFixture), "utf8")
@@ -46,6 +47,8 @@ const pairSnapshot = (file: string) => readFileSync(new URL(file, pairFixture), 
   .replaceAll("/fixture/native-parallel-read/workspace", workspace)
 const autoReadSnapshot = (file: string) => readFileSync(new URL(file, autoReadFixture), "utf8")
   .replaceAll("/fixture/native-auto-tool-replay/workspace", workspace)
+const manualReadSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, manualReadFixture), "utf8")
+  .replaceAll("/fixture/native-manual-read-reinjection/workspace", workspace)
 const autoReadCases = (JSON.parse(readFileSync(new URL("provenance.json", autoReadFixture), "utf8")) as {
   cases: ReadonlyArray<{ id: string; profile: string; lines: { plan: number; calls: ReadonlyArray<number>; results: ReadonlyArray<number>; A: number; S: number; F0: number } }>
 }).cases
@@ -141,6 +144,19 @@ if (autoReadStage) {
   const next = line === undefined ? source : completeLinePrefix(source, line)
   assert.ok(next.startsWith(readFileSync(file, "utf8")), "Automatic Read phase changed the native prefix")
   writeFileSync(file, next)
+}
+// This native manual source continues the existing text-plan Read-pair Session.
+// Its toolturn prefix is identical after the declared workspace substitution;
+// do not create a second source with the same Session identity.
+const manualReadStage = /^manual-read-(boundary|summary|caveat|command|stdout|file-first|files|bookkeeping|meta|bridge|user|continue|secondcontinue)$/.exec(input.phase)
+if (manualReadStage) {
+  const slot = manualReadStage[1]!
+  const source = manualReadSnapshot(slot === "secondcontinue" ? slot : slot === "meta" || slot === "bridge" || slot === "user" || slot === "continue" || slot === "bookkeeping" ? "continue" : "compact")
+  const lines: Record<string, number> = { boundary: 32, summary: 33, caveat: 34, command: 35, stdout: 36,
+    "file-first": 37, files: 38, bookkeeping: 41, meta: 42, bridge: 43, user: 44 }
+  const next = lines[slot] === undefined ? source : completeLinePrefix(source, lines[slot])
+  assert.ok(next.startsWith(readFileSync(pairPlanFile, "utf8")), "Manual Read phase changed the existing native prefix")
+  writeFileSync(pairPlanFile, next)
 }
 if (input.phase === "raw-off") {
   const source = readFileSync(compactFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))

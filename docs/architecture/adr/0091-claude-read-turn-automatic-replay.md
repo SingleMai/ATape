@@ -5,6 +5,9 @@
 
 ## Context
 
+[ADR-0092](0092-claude-manual-read-file-reinjection.md) later selects a separate
+manual Read2 file-reinjection profile; it does not broaden this automatic replay.
+
 Controlled native Claude Code 2.1.263 sources establish one automatic round in
 each of two independent root Sessions. A single Read copies U/G/P/C/R/A; an
 exact-two Read copies U/G/P/C0/C1/R0/R1/A. G and A are token-reminder attachments.

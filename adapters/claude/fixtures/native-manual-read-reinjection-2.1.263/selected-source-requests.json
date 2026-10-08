@@ -1,0 +1,841 @@
+[
+  {
+    "originalRequestIndex": 5,
+    "phase": "toolturn",
+    "response": "toolcalls",
+    "summary": false,
+    "url": "/v1/messages?beta=true",
+    "messageCount": 5,
+    "sourceSummaryExactLoadedAt": [],
+    "fileDataBlocks": [],
+    "readInputBlocks": [],
+    "controlBlockLocations": [],
+    "toolResultBlocks": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_WARMUP: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOLS: Read a.txt and b.txt once, then give two text blocks.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSystemAndToolSchemaIncluded": false
+  },
+  {
+    "originalRequestIndex": 6,
+    "phase": "toolturn",
+    "response": "tool-final",
+    "summary": false,
+    "url": "/v1/messages?beta=true",
+    "messageCount": 7,
+    "sourceSummaryExactLoadedAt": [],
+    "fileDataBlocks": [],
+    "readInputBlocks": [],
+    "controlBlockLocations": [],
+    "toolResultBlocks": [
+      {
+        "location": [
+          6,
+          0
+        ],
+        "toolUseId": "call_manual_read_a",
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+      },
+      {
+        "location": [
+          6,
+          1
+        ],
+        "toolUseId": "call_manual_read_b",
+        "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>"
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_WARMUP: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOLS: Read a.txt and b.txt once, then give two text blocks."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOL_PLAN: Read the two synthetic files."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_manual_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-manual-read-reinjection/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "tool_use",
+          "id": "call_manual_read_b",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-manual-read-reinjection/workspace/b.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 6,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_manual_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+        }
+      },
+      {
+        "messageIndex": 6,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "tool_use_id": "call_manual_read_b",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSystemAndToolSchemaIncluded": false
+  },
+  {
+    "originalRequestIndex": 8,
+    "phase": "compact",
+    "response": "summary",
+    "summary": true,
+    "url": "/v1/messages?beta=true",
+    "messageCount": 7,
+    "sourceSummaryExactLoadedAt": [],
+    "fileDataBlocks": [],
+    "readInputBlocks": [],
+    "controlBlockLocations": [],
+    "toolResultBlocks": [
+      {
+        "location": [
+          6,
+          0
+        ],
+        "toolUseId": "call_manual_read_a",
+        "submittedContent": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+      },
+      {
+        "location": [
+          6,
+          1
+        ],
+        "toolUseId": "call_manual_read_b",
+        "submittedContent": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>"
+      }
+    ],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SEED: Remember cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SEED: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_WARMUP: Confirm the synthetic context."
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_WARMUP: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOLS: Read a.txt and b.txt once, then give two text blocks."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOL_PLAN: Read the two synthetic files."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "tool_use",
+          "id": "call_manual_read_a",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-manual-read-reinjection/workspace/a.txt"
+          }
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "tool_use",
+          "id": "call_manual_read_b",
+          "name": "Read",
+          "input": {
+            "file_path": "/fixture/native-manual-read-reinjection/workspace/b.txt"
+          },
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      },
+      {
+        "messageIndex": 6,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "tool_use_id": "call_manual_read_a",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t"
+        }
+      },
+      {
+        "messageIndex": 6,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "tool_use_id": "call_manual_read_b",
+          "type": "tool_result",
+          "content": "1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>"
+        }
+      }
+    ],
+    "completeSdkSystemAndToolSchemaIncluded": false
+  },
+  {
+    "originalRequestIndex": 10,
+    "phase": "continue",
+    "response": "continue",
+    "summary": false,
+    "url": "/v1/messages?beta=true",
+    "messageCount": 6,
+    "sourceSummaryExactLoadedAt": [
+      [
+        0,
+        1
+      ]
+    ],
+    "fileDataBlocks": [
+      {
+        "location": [
+          3,
+          0
+        ],
+        "hasA": false,
+        "hasB": true,
+        "exactSubmittedText": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\t\n</system-reminder>"
+      },
+      {
+        "location": [
+          3,
+          2
+        ],
+        "hasA": true,
+        "hasB": false,
+        "exactSubmittedText": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t\n</system-reminder>\n"
+      }
+    ],
+    "readInputBlocks": [
+      {
+        "location": [
+          2,
+          0
+        ],
+        "exactSubmittedText": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/b.txt\"}\n</system-reminder>"
+      },
+      {
+        "location": [
+          3,
+          1
+        ],
+        "exactSubmittedText": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/a.txt\"}\n</system-reminder>"
+      }
+    ],
+    "controlBlockLocations": [
+      {
+        "location": [
+          3,
+          3
+        ],
+        "role": "user",
+        "text": "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>\n"
+      },
+      {
+        "location": [
+          3,
+          4
+        ],
+        "role": "user",
+        "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args>Preserve synthetic read context and continue from the tool final.</command-args>\n"
+      },
+      {
+        "location": [
+          3,
+          5
+        ],
+        "role": "user",
+        "text": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\n"
+      },
+      {
+        "location": [
+          3,
+          6
+        ],
+        "role": "user",
+        "text": "Continue from where you left off."
+      },
+      {
+        "location": [
+          4,
+          0
+        ],
+        "role": "assistant",
+        "text": "No response requested."
+      }
+    ],
+    "toolResultBlocks": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_MANUAL_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-manual-read-reinjection/config/projects/-fixture-native-manual-read-reinjection-workspace/cf19053f-9c3c-49b7-8fce-461ae05d8294.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOL_FINAL_A: amber lynx 204."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOL_FINAL_B: violet crane 619."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "messageRole": "user",
+        "sourceContentWasString": true,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/b.txt\"}\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\t\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/a.txt\"}\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t\n</system-reminder>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 3,
+        "block": {
+          "type": "text",
+          "text": "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 4,
+        "block": {
+          "type": "text",
+          "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args>Preserve synthetic read context and continue from the tool final.</command-args>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 5,
+        "block": {
+          "type": "text",
+          "text": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 6,
+        "block": {
+          "type": "text",
+          "text": "Continue from where you left off."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "No response requested."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_CONTINUE: Resume the synthetic task after compaction.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSystemAndToolSchemaIncluded": false
+  },
+  {
+    "originalRequestIndex": 12,
+    "phase": "secondcontinue",
+    "response": "secondcontinue",
+    "summary": false,
+    "url": "/v1/messages?beta=true",
+    "messageCount": 8,
+    "sourceSummaryExactLoadedAt": [
+      [
+        0,
+        1
+      ]
+    ],
+    "fileDataBlocks": [
+      {
+        "location": [
+          3,
+          0
+        ],
+        "hasA": false,
+        "hasB": true,
+        "exactSubmittedText": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\t\n</system-reminder>"
+      },
+      {
+        "location": [
+          3,
+          2
+        ],
+        "hasA": true,
+        "hasB": false,
+        "exactSubmittedText": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t\n</system-reminder>\n"
+      }
+    ],
+    "readInputBlocks": [
+      {
+        "location": [
+          2,
+          0
+        ],
+        "exactSubmittedText": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/b.txt\"}\n</system-reminder>"
+      },
+      {
+        "location": [
+          3,
+          1
+        ],
+        "exactSubmittedText": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/a.txt\"}\n</system-reminder>"
+      }
+    ],
+    "controlBlockLocations": [
+      {
+        "location": [
+          3,
+          3
+        ],
+        "role": "user",
+        "text": "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>\n"
+      },
+      {
+        "location": [
+          3,
+          4
+        ],
+        "role": "user",
+        "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args>Preserve synthetic read context and continue from the tool final.</command-args>\n"
+      },
+      {
+        "location": [
+          3,
+          5
+        ],
+        "role": "user",
+        "text": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\n"
+      },
+      {
+        "location": [
+          3,
+          6
+        ],
+        "role": "user",
+        "text": "Continue from where you left off."
+      },
+      {
+        "location": [
+          4,
+          0
+        ],
+        "role": "assistant",
+        "text": "No response requested."
+      }
+    ],
+    "toolResultBlocks": [],
+    "selectedRelevantBlocks": [
+      {
+        "messageIndex": 0,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_MANUAL_SUMMARY: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-manual-read-reinjection/config/projects/-fixture-native-manual-read-reinjection-workspace/cf19053f-9c3c-49b7-8fce-461ae05d8294.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOL_FINAL_A: amber lynx 204."
+        }
+      },
+      {
+        "messageIndex": 1,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_TOOL_FINAL_B: violet crane 619."
+        }
+      },
+      {
+        "messageIndex": 2,
+        "messageRole": "user",
+        "sourceContentWasString": true,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/b.txt\"}\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_B: violet crane 619.\n2\t\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-read-reinjection/workspace/a.txt\"}\n</system-reminder>"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 2,
+        "block": {
+          "type": "text",
+          "text": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_NATIVE_READ_A: amber lynx 204.\n2\t\n</system-reminder>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 3,
+        "block": {
+          "type": "text",
+          "text": "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 4,
+        "block": {
+          "type": "text",
+          "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args>Preserve synthetic read context and continue from the tool final.</command-args>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 5,
+        "block": {
+          "type": "text",
+          "text": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\n"
+        }
+      },
+      {
+        "messageIndex": 3,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 6,
+        "block": {
+          "type": "text",
+          "text": "Continue from where you left off."
+        }
+      },
+      {
+        "messageIndex": 4,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "No response requested."
+        }
+      },
+      {
+        "messageIndex": 5,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_CONTINUE: Resume the synthetic task after compaction."
+        }
+      },
+      {
+        "messageIndex": 6,
+        "messageRole": "assistant",
+        "sourceContentWasString": false,
+        "blockIndex": 0,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_CONTINUE: cobalt heron 482."
+        }
+      },
+      {
+        "messageIndex": 7,
+        "messageRole": "user",
+        "sourceContentWasString": false,
+        "blockIndex": 1,
+        "block": {
+          "type": "text",
+          "text": "ATAPE_MANUAL_SECOND_CONTINUE: Confirm stable resume again.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      }
+    ],
+    "completeSdkSystemAndToolSchemaIncluded": false
+  }
+]
