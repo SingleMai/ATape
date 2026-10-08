@@ -47,7 +47,7 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   subsequent collections. Moving a file does not create a new Session; missing
   files retain their checkpoints and captured history. Existing single-file v1
   checkpoints are carried forward without resetting their committed prefixes.
-- A root with append-only local history, the narrow manual compaction profile
+- A root with append-only local history, the narrow manual and automatic compaction profiles
   below and proved ordinary foreground
   child streams, all with valid UTF-8 JSONL. A correlated successful `Agent` or
   `Task` result's `toolUseResult.agentId` selects the child at
@@ -96,11 +96,25 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   or Search. An unfinished stage waits for the remaining source append; a
   conflicting edge or marker is unsupported. The existing projection revision
   4 and root/child identities remain unchanged.
+- Native automatic root text compaction on Claude Code 2.1.263 with exact retained
+  [assistant A, user U, token-reminder attachment G], direct A → U → G parents
+  and adjacent U/G. Source copies U/G, then appends fresh boundary B and summary
+  S selecting this current tail and U's prompt. Copies preserve all decoded
+  values: they only add a shared slug to originals without one, or preserve the
+  existing common slug unchanged. Same-byte prefix proof authenticates the
+  bounded original tail; arbitrary repeated UUIDs remain unsupported. All four
+  control records commit together and stay Raw-only. An optional private
+  checkpoint requires the next real text answer parented by S, retaining it
+  through fragmentation/deferred usage until the full record commits. Each later
+  round needs new current-tail proof and unseen B/S. Existing chronological
+  Events, usage identities, Raw receipts and projection-4 checkpoints remain;
+  copied users and internal summaries do not become extra Reader/Search turns.
 
 ## Explicit limits
 
-No automatic compaction, cross-file continuation, tails outside the singleton
-or exact two-record text shapes, copied UUID replay, child compaction,
+No automatic compaction beyond the exact text replay group, cross-file continuation,
+manual tails outside the singleton or exact two-record text shapes, arbitrary
+copied UUID replay, child compaction,
 branching/rewind, background or nested subagents,
 interrupted child runs, child forks or spill collection in this increment.
 Foreground parentage is fixed before publication; there is no implicit reparenting
@@ -118,6 +132,14 @@ integrity, while parsing and publication resume at the saved record position.
 Each newly encountered two-record manual boundary adds one streaming proof pass
 over the committed prefix with bounded memory; the source is not an atomic
 snapshot against concurrent rewrites.
+Automatic text proof caps each retained/control record at 64 KiB, its group and
+retained tail at 256 KiB each, and decoded tail at 16 physical records. These are
+profile admission policies. A first copy is classified by normal complete-line
+parsing before its 64 KiB admission check; an unclassified first partial line
+still uses the ordinary 16 MiB scanner. Later control slots use bounded lookahead;
+the real answer keeps ordinary record/fragment limits. Each encountered complete
+candidate can require an O(committed prefix) proof pass even while later slots
+are unfinished. Retained proof memory is bounded, not total verification I/O.
 A usage item that cannot fit a fresh page's reserved Canonical capacity reports
 a source limit; remaining-space exhaustion defers it normally. Increasing the
 capacity resumes pending usage/Raw without replaying an acknowledged Event.
@@ -155,7 +177,7 @@ No new SQLite journal or provider-specific page is installed. Bounded shared too
 details ship under ADR-0030; full ACP content, generation tokens and atomic
 publication remain deferred.
 
-Manual compaction is additive, not complete Active Path replacement. Its
+Supported compaction is additive, not complete Active Path replacement. Its
 boundary, summary and controls are captured only when Raw is enabled; no
 ordinary user/assistant Event is fabricated for them. Filtering applies only
 inside the admitted native state machine, and ordinary records outside it retain
@@ -217,8 +239,17 @@ ID. Two continuations finished at 11 Events, five usage IDs and 151/73 tokens.
 The [current Claude guide](../../docs/adapters/claude.md#verification-and-remaining-work)
 owns the detailed acceptance evidence and limits. See
 [ADR-0087](../../docs/architecture/adr/0087-claude-foreground-subagents.md) and
-[ADR-0088](../../docs/architecture/adr/0088-claude-manual-compaction-on-legacy-capture.md) for the
-selected scope. This records no package publication or
+[ADR-0088](../../docs/architecture/adr/0088-claude-manual-compaction-on-legacy-capture.md) for
+foreground and manual scope.
+The [automatic text replay fixture](fixtures/native-auto-text-replay-rounds-2.1.263/README.md)
+adds five native snapshots with three automatic rounds and exact copied U/G
+records. Claude typecheck and 230 Adapter tests passed, including 94 new public
+cases. Local installed package and real authenticated PostgreSQL/managed-daemon
+checks passed, retaining ten unique Events, five recorded API usage IDs and
+760023/63 controlled counters. Copies and summaries remain Raw-only, pending
+answers survive restarts and complete source bytes retain one Raw object.
+[ADR-0089](../../docs/architecture/adr/0089-claude-automatic-text-replay-on-legacy-capture.md)
+selects this separate automatic profile. This records no package publication or
 deployment.
 
 For a local development build, install `./adapters/claude` through Integration maintenance before choosing tools.

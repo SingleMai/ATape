@@ -30,7 +30,7 @@ evidence produce an attribution diagnostic. Both CLI and Adapter require
 
 Root and admitted foreground child streams use append-only UTF-8 JSONL. Ordinary
 records form a strict linear chain; the root also admits the narrow native manual
-compaction profile below:
+and automatic compaction profiles below:
 
 - User/assistant text and bounded tool calls/results, including escaped Input/Output
   details in the common reader. Tool summaries feed Search; full tool values do not.
@@ -45,7 +45,7 @@ Conversation records require a valid UUID and matching Thread identity before
 projecting either Events or usage. UUID-less native bookkeeping remains Raw-only;
 it cannot create a turn or an assistant usage record.
 
-Auto-compaction, cross-file continuation, child compaction, branching/rewind,
+Wider auto-compaction, cross-file continuation, child compaction, branching/rewind,
 background or nested subagents and spill collection remain outside the supported
 profiles. Unknown content and nonempty thinking remain Raw when captured;
 tool-bearing projections retain partial fidelity. The retained controlled native
@@ -141,8 +141,48 @@ assistant response record in JSONL, so its actual model usage cannot be recovere
 `compactMetadata` token counts are context bookkeeping and are not converted to
 assistant usage. Only real recorded assistant responses contribute usage; the
 synthetic bridge's zero counters do not create a usage item. The profile does not
-enable automatic compaction, tails outside these two shapes, copied UUID replay,
-cross-file continuation, child compaction, rewind or forks.
+enable tails outside these two manual shapes or the separate automatic profile
+below, cross-file continuation, child compaction, rewind or forks.
+
+## Automatic root text compaction
+
+[ADR-0089](../architecture/adr/0089-claude-automatic-text-replay-on-legacy-capture.md)
+selects a separate append-only Claude Code 2.1.263 text profile. Each round retains
+the current [A,U,G]: one real single-text assistant response A at API block index
+0, ordinary user U and its token-reminder attachment G, with direct A → U → G
+parents and physically adjacent U/G. The source then copies U/G and appends a new
+automatic boundary B and internal summary S. Both preserved UUID arrays and
+segment endpoints must name exactly that current tail; logical parent is G and
+both anchors select S. S is parented by B and retains U's prompt identity.
+
+The copies must preserve every decoded original value, including unknown fields.
+The first sampled round adds only a common slug when A/U/G all lack one; later
+rounds preserve the same existing slug exactly. Mixed slug presence, changing an
+existing slug, altered copies, stale tails or reused B/S identities are
+unsupported. A bounded tail reconstructed from the same bytes as the current
+prefix hash proves originals, including records committed earlier on the page.
+Seen UUID membership alone cannot authorize a copied record.
+The first committed UUID record must also match the attributed original root
+identity, including CWD; changing it between attribution and collection fails.
+
+Copies U/G and new B/S commit as one four-record Raw-only group. An incomplete
+group waits before its first copy without advancing eligible source progress;
+an invalid complete slot produces a source failure. The group must fit a fresh
+source-page budget; insufficient remaining capacity defers the whole group.
+Once committed, the page ends and an optional private `autoText` checkpoint
+requires the next real single-text assistant answer, parented by S with the
+admitted slug. It remains pending through text fragments and deferred usage,
+and clears only when the full answer record commits. Missing answers can wait;
+another group or conflicting control cannot replace the required answer.
+
+Every later round proves a fresh current tail and new B/S. Three native rounds
+were sampled; no round counter or forced replay is needed. Supported old cursors,
+projection revision 4, pre-compaction conversation and Session/Thread/Event/Raw
+identities remain stable. Each original U appears once in Reader/Search. Copies,
+boundaries and summaries add no Events or usage. Only actual recorded assistant
+answers append; summary-call usage is absent from this JSONL, as in the manual
+profile. Ordinary tool batches, copied assistants, wider retained layouts,
+child compaction and Active Path replacement are outside this automatic profile.
 
 ## Bounds and Raw policy
 
@@ -151,6 +191,15 @@ source/cursor ceilings: 16 MiB records, 256 KiB text fragments, bounded discover
 and compressed metadata cursors. Large total archives stream across pages;
 changed files still require hashing previously captured bytes to verify prefixes.
 Smaller Host budgets may reject a record or fragment that cannot fit.
+Automatic text proof admits at most 64 KiB per witness/control record, a 256 KiB
+group and retained byte tail, and 16 decoded tail records. These are Adapter
+policy limits, not native format limits. A complete first copy is classified by
+ordinary parsing before its smaller admission limit applies; an unclassified
+first partial line retains the ordinary 16 MiB scan limit. The remaining three
+slots use bounded lookahead. Real answers keep ordinary text limits. Proof
+rereads the committed prefix when a complete replay candidate is encountered;
+retained memory is bounded, but verification I/O is O(committed prefix). The
+existing concurrent-writer limitations still apply; no atomic snapshot is supplied.
 A real usage item that exceeds a fresh page's reserved Canonical capacity fails
 with a source limit. Insufficient remaining space defers it to the next page;
 it does not leave an impossible item waiting indefinitely. Retrying with enough
@@ -254,7 +303,9 @@ Legacy Reader Sessions still use complete reads; this contract does not establis
 publication-head pagination. The combined PostgreSQL CI guard now requires the
 Claude subtest itself to pass, rejecting missing or skipped results.
 
-The two-record text-tail increment additionally passed Claude typecheck and all
+The two-record text-tail increment was integrated through
+[PR #189](https://github.com/SingleMai/ATape/pull/189) after final-commit CI and all
+Security gates passed. It additionally passed Claude typecheck and all
 136 Adapter tests, including 40 new public-Interface cases. Installed Claude
 `verify:package`, CLI typecheck, the four Collector/Server E2E tests, documentation
 and architecture guards passed. Checks cover one-Event pages with a fresh runtime
@@ -280,6 +331,49 @@ generation, complete paged Raw bytes, unchanged polling, policy recovery and
 history after source deletion passed. The prefix cut is a test append boundary,
 not another native snapshot.
 
+The [automatic text replay fixture](../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/README.md)
+retains five native invocation snapshots: seed, warmup and three resumed
+automatic rounds. First-round copies add only the slug; later copies retain it
+and are also byte-identical to their originals after declared path substitution.
+Each round selects the current three-record tail and new boundary/summary.
+Selected model-message evidence shows each new summary entering context once.
+The loopback mock's artificial 190000-token input counters and 20-percent trigger
+setting force the workflows; they do not establish real tokenization or billing.
+All three summary responses lack persisted assistant JSONL usage.
+
+Claude typecheck and all 230 Adapter tests passed, including 94 automatic-profile
+public Interface cases. They cover current-tail/slug/unknown-field conflicts,
+reused anchors, seven incomplete group cuts, source and tail capacity, answer
+fragments and usage deferral, invalid/child checkpoints and prefix rewrites.
+An iterative JSON comparison accepts equal 4000-level unknown fields within the
+record byte cap and rejects changed deep values without exhausting the call
+stack. Raw receipt recovery also retains an old parser cursor while upload
+receipts independently advance into the proved group. Original-CWD mutation
+between attribution and collection is rejected without new Canonical/Raw data.
+CLI typecheck, Go HTTP compile, documentation and architecture guards passed.
+
+Local installed Claude `verify:package` and the four Collector/Server E2E tests
+passed for automatic text replay. Package checks use one-Event pages, recreated
+runtimes and exact unacknowledged retries through all five native snapshots,
+partial first copies, complete one/two/three-slot groups, pending summaries and
+real answers. Derived cuts are source prefixes, not extra native snapshots.
+An independent public Interface check used the previously merged Adapter at
+`b43c952dc7b60555ed242c590089d2d999f5f09b` to acknowledge the first original G,
+then resumed with this Implementation: five old Events remained and only five
+new Events completed all three rounds, with one complete stable Raw object.
+
+The extended installed-daemon contract passed 32 independently restarted source
+stages on authenticated HTTP and real Docker/PostgreSQL, retaining the foreground, both manual-tail, policy/redaction,
+unsupported-source repair and deletion checks. Each automatic round captures
+original U/G, polls unchanged, admits the Raw-only group through S, restarts and
+polls with one pending Canonical Session, then captures the real answer and
+returns to zero pending. Reader grows from four to six, eight and ten unique
+Events while usage grows from two to three, four and five API IDs, ending at
+760023 input / 63 output. Copies and summaries add no Events or usage; Session
+metadata can still produce Canonical batches. Old Reader prefixes, exact Search
+anchors, stable Raw object/generation and all physical source bytes passed.
+The required non-skipped Claude contract guard also passed.
+
 Controlled counters establish projection and deduplication, not provider billing.
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
@@ -290,6 +384,6 @@ deployment is claimed.
 
 Full Active Path support additionally needs an explicit legacy-to-publication
 migration; switching the Adapter manifest or deleting checkpoints is not one.
-Automatic compaction needs a separate proved UUID-replay
-profile, and parallel tool-result parents need a tool-batch profile; neither is
-enabled by the current manual boundary rules.
+Parallel tool-result parents and automatic compaction outside the exact text
+replay group need additional native profiles; the automatic profile does not
+enable them through generic duplicate or parent relaxation.

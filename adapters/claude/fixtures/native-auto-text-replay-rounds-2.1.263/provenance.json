@@ -1,0 +1,1857 @@
+{
+  "kind": "controlled-native-multi-round-auto-text-replay-source-evidence",
+  "status": "Controlled source evidence. Automated acceptance and remaining limits belong to the owning guide and caller checks.",
+  "claudeVersion": "2.1.263",
+  "nativeBinarySha256Before": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "nativeBinarySha256After": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "binaryHashEvidence": "Before: original provenance/harness/results. After: original evidence/analyze output. They match the prior manual/one-round executable hash.",
+  "capturedDate": "2026-10-08",
+  "sessionId": "43526b2f-6f23-4f37-9627-c75f50bfb9b9",
+  "fixtureCwd": "/fixture/native-auto-text-replay-rounds/workspace",
+  "slug": "rustling-watching-sunrise",
+  "sourceResearchDirectory": "/tmp/atape-claude-auto-rounds-native.4Y6rHO",
+  "sourceEvidenceSha256": "11b8f62de5a92063d057e19f00c83811a79a787313a64f09b6c1aebeface9eac",
+  "sourceProvenanceSha256": "15cb07f7ba1ccd7fc7af6bcf24fbb4e85fd307dd76a9cc3d61d43a8714d513fb",
+  "sourceProofNarrativeSha256": "776d1de0359033d81b1e7cc9e1b0457fd6628e93089e5c5208d0f250235eaebd",
+  "sourceHarnessSha256": "a6a281c4ced489f052e16f9ce0427d685f2dc4a9b0d1a83d2f741d4a088d2a28",
+  "sourceAnalyzerSha256": "18a43754d93f19621e19ddb0a5b73a0e111c390061ad6fd51debd633b493b3d1",
+  "transport": "127.0.0.1 deterministic Anthropic Messages SSE with fake authentication; no real model invoked",
+  "origin": {
+    "native": "record UUIDs, timestamps, parents, slug behavior, source copies, boundary/summary/answer sequencing, compaction metadata, append persistence and same-Session resume",
+    "mocked": "prompts, response text, sequential API IDs, token counters; no real billing or actual tokenization measured",
+    "toolExecution": "none; Read available but no calls/results",
+    "personalHistoryUsed": false,
+    "newNativeInvocationsForPreparation": 0
+  },
+  "pathSubstitutions": [
+    {
+      "from": "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace",
+      "to": "/fixture/native-auto-text-replay-rounds/workspace"
+    },
+    {
+      "from": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace",
+      "to": "/fixture/native-auto-text-replay-rounds/workspace"
+    },
+    {
+      "from": "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config",
+      "to": "/fixture/native-auto-text-replay-rounds/config"
+    },
+    {
+      "from": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config",
+      "to": "/fixture/native-auto-text-replay-rounds/config"
+    },
+    {
+      "from": "-private-tmp-atape-claude-auto-rounds-native-4Y6rHO-auto-text-workspace",
+      "to": "-fixture-native-auto-text-replay-rounds-workspace"
+    }
+  ],
+  "transformation": "Only literal UTF-8 path substitutions. Source JSONL and complete request capture are not reserialized. Native source bytes/metadata/IDs/timestamps are otherwise retained. Selected request evidence is an explicitly derived JSON subset.",
+  "environmentControls": {
+    "HOME": "isolated temporary home for the entire case",
+    "CLAUDE_CONFIG_DIR": "same isolated config for all five fresh CLI processes",
+    "ANTHROPIC_BASE_URL": "loopback ephemeral endpoint",
+    "authentication": "fake key omitted from prepared material",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+    "mockWarmupAndPostcompactAnswerInputTokens": 190000,
+    "DISABLE_AUTO_COMPACT": "unset",
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "LANG": "en_US.UTF-8"
+  },
+  "nativeSnapshots": [
+    {
+      "phase": "seed",
+      "file": "seed.jsonl",
+      "kind": "actual unchanged native invocation snapshot except declared paths",
+      "sourceFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/seed.jsonl",
+      "original": {
+        "bytes": 2706,
+        "sha256": "a2162784127482cfb11d1c42320c0082fb1ed0debfd5903032dd3da421ea8d8e"
+      },
+      "sanitized": {
+        "bytes": 2640,
+        "sha256": "0e7e9425e001540606d384a6ed8edd2157e394f16f86a743596cc6efa1ff57af"
+      },
+      "strictPreviousOriginalBytePrefix": null,
+      "strictPreviousSanitizedBytePrefix": null,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 3,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 3,
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "-private-tmp-atape-claude-auto-rounds-native-4Y6rHO-auto-text-workspace": 0
+      },
+      "expected": {
+        "recordCount": 7,
+        "physicalUuidRecords": 3,
+        "uniqueUuidRecords": 3,
+        "duplicateRecords": [],
+        "uniqueCanonicalEventCount": 2,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47"
+        ],
+        "distinctUsageCount": 1,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          }
+        },
+        "inputTokens": 23,
+        "outputTokens": 11,
+        "addedUniqueCanonicalEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    },
+    {
+      "phase": "warmup",
+      "file": "warmup.jsonl",
+      "kind": "actual unchanged native invocation snapshot except declared paths",
+      "sourceFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/warmup.jsonl",
+      "original": {
+        "bytes": 5470,
+        "sha256": "438078625900709726b7f2852f210b028f87e6e7c77208c8f49530d8bf6323e5"
+      },
+      "sanitized": {
+        "bytes": 5338,
+        "sha256": "f88cc44abdf44a485289a743b78c6f59fa2279aea6f128f9b045b574f01bd84e"
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 6,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 6,
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "-private-tmp-atape-claude-auto-rounds-native-4Y6rHO-auto-text-workspace": 0
+      },
+      "expected": {
+        "recordCount": 14,
+        "physicalUuidRecords": 6,
+        "uniqueUuidRecords": 6,
+        "duplicateRecords": [],
+        "uniqueCanonicalEventCount": 4,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f"
+        ],
+        "distinctUsageCount": 2,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 190023,
+        "outputTokens": 24,
+        "addedUniqueCanonicalEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    },
+    {
+      "phase": "continue",
+      "file": "continue.jsonl",
+      "kind": "actual unchanged native invocation snapshot except declared paths",
+      "sourceFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/continue.jsonl",
+      "original": {
+        "bytes": 12424,
+        "sha256": "e4c7edc6c512ea7210fe448b1d355067ba3aea2869383f5cc7a6cb3d43790012"
+      },
+      "sanitized": {
+        "bytes": 12102,
+        "sha256": "c95d7ca08be4e6df538b660de72c1b346ec6efd42b678aecaa15a0f92f5e2c2d"
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 13,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 13,
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 1,
+        "-private-tmp-atape-claude-auto-rounds-native-4Y6rHO-auto-text-workspace": 1
+      },
+      "expected": {
+        "recordCount": 27,
+        "physicalUuidRecords": 13,
+        "uniqueUuidRecords": 11,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          }
+        ],
+        "uniqueCanonicalEventCount": 6,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6"
+        ],
+        "distinctUsageCount": 3,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 380023,
+        "outputTokens": 37,
+        "addedUniqueCanonicalEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    },
+    {
+      "phase": "secondcontinue",
+      "file": "secondcontinue.jsonl",
+      "kind": "actual unchanged native invocation snapshot except declared paths",
+      "sourceFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/secondcontinue.jsonl",
+      "original": {
+        "bytes": 19420,
+        "sha256": "8f36e5ac833f80712d1d0645fd332735156ad5b02aa0b044f564438d6ee96a1a"
+      },
+      "sanitized": {
+        "bytes": 18908,
+        "sha256": "704466f523d99b734cdc82902f16806264bc90bde7cc6b5a2a4e112185cb3140"
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 20,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 20,
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 2,
+        "-private-tmp-atape-claude-auto-rounds-native-4Y6rHO-auto-text-workspace": 2
+      },
+      "expected": {
+        "recordCount": 40,
+        "physicalUuidRecords": 20,
+        "uniqueUuidRecords": 16,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "originalLine": 33,
+            "copyLine": 35,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c",
+            "originalLine": 34,
+            "copyLine": 36,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          }
+        ],
+        "uniqueCanonicalEventCount": 8,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+          "19c7f087-fc36-4e39-b9b4-f71e12f997f8"
+        ],
+        "distinctUsageCount": 4,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_6": {
+            "sourceUsageId": "msg_atape_auto_text_mock_6",
+            "sourceUuid": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+            "latestObservationLine": 39,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 570023,
+        "outputTokens": 50,
+        "addedUniqueCanonicalEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    },
+    {
+      "phase": "thirdcontinue",
+      "file": "thirdcontinue.jsonl",
+      "kind": "actual unchanged native invocation snapshot except declared paths",
+      "sourceFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/thirdcontinue.jsonl",
+      "original": {
+        "bytes": 26429,
+        "sha256": "f53d7053d6a56ab9c4d5d50980f5007092cdb350d099de5eb6ea183f6bda3538"
+      },
+      "sanitized": {
+        "bytes": 25727,
+        "sha256": "334c129074427d20b61c309a920f35053bac98e0123cc3e300d36b83eef074b7"
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 27,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/workspace": 27,
+        "/private/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 0,
+        "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/config": 3,
+        "-private-tmp-atape-claude-auto-rounds-native-4Y6rHO-auto-text-workspace": 3
+      },
+      "expected": {
+        "recordCount": 53,
+        "physicalUuidRecords": 27,
+        "uniqueUuidRecords": 21,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "originalLine": 33,
+            "copyLine": 35,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c",
+            "originalLine": 34,
+            "copyLine": 36,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+            "originalLine": 46,
+            "copyLine": 48,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "cf820682-b9d0-4108-9758-2c5c40e34799",
+            "originalLine": 47,
+            "copyLine": 49,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          }
+        ],
+        "uniqueCanonicalEventCount": 10,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+          "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+          "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+          "43b56575-e869-43d7-af84-0edbc5480fbc"
+        ],
+        "distinctUsageCount": 5,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_6": {
+            "sourceUsageId": "msg_atape_auto_text_mock_6",
+            "sourceUuid": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+            "latestObservationLine": 39,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_8": {
+            "sourceUsageId": "msg_atape_auto_text_mock_8",
+            "sourceUuid": "43b56575-e869-43d7-af84-0edbc5480fbc",
+            "latestObservationLine": 52,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 760023,
+        "outputTokens": 63,
+        "addedUniqueCanonicalEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    }
+  ],
+  "testCuts": [
+    {
+      "round": 1,
+      "part": "originals",
+      "kind": "derived complete-LF append/pagination test cut, not another native snapshot",
+      "nativeParentSnapshot": "continue.jsonl",
+      "prefixThroughLine": 21,
+      "original": {
+        "bytes": 7298,
+        "sha256": "d73ae2a55a7743adaf99e5aed7dc55e7161b89cedee9dad17bda9fa3e352f631"
+      },
+      "sanitized": {
+        "bytes": 7122,
+        "sha256": "d85301e6da7a2db3d148e47db38d9687edf1aff361407700d1b4689d22ca0474"
+      },
+      "strictPrefixOfNativeSnapshot": true,
+      "expected": {
+        "recordCount": 21,
+        "physicalUuidRecords": 8,
+        "uniqueUuidRecords": 8,
+        "duplicateRecords": [],
+        "uniqueCanonicalEventCount": 5,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b"
+        ],
+        "distinctUsageCount": 2,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 190023,
+        "outputTokens": 24
+      },
+      "label": "round-1-originals",
+      "providedAsFile": false
+    },
+    {
+      "round": 1,
+      "part": "through-summary",
+      "kind": "derived complete-LF append/pagination test cut, not another native snapshot",
+      "nativeParentSnapshot": "continue.jsonl",
+      "prefixThroughLine": 25,
+      "original": {
+        "bytes": 11114,
+        "sha256": "67126ab601ec54c383ccbc1a05eee01df2dd8c78db8e7edc7f4f5a7c9830142f"
+      },
+      "sanitized": {
+        "bytes": 10814,
+        "sha256": "305efa2470ee6cfd57ed069abef2d6498bc13e968911bc4a022b0a9cd7476626"
+      },
+      "strictPrefixOfNativeSnapshot": true,
+      "expected": {
+        "recordCount": 25,
+        "physicalUuidRecords": 12,
+        "uniqueUuidRecords": 10,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          }
+        ],
+        "uniqueCanonicalEventCount": 5,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b"
+        ],
+        "distinctUsageCount": 2,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 190023,
+        "outputTokens": 24
+      },
+      "label": "round-1-through-summary",
+      "providedAsFile": false
+    },
+    {
+      "round": 2,
+      "part": "originals",
+      "kind": "derived complete-LF append/pagination test cut, not another native snapshot",
+      "nativeParentSnapshot": "secondcontinue.jsonl",
+      "prefixThroughLine": 34,
+      "original": {
+        "bytes": 14298,
+        "sha256": "bcbfb2ebfff55f9d802b7cbd5fb4b9351c842813cb8e3e8d4b2e1ee4749c6087"
+      },
+      "sanitized": {
+        "bytes": 13932,
+        "sha256": "1690db39b3b7598fd419c98107bb09d8472c32debe0e6a9a2df79a96f573d5e0"
+      },
+      "strictPrefixOfNativeSnapshot": true,
+      "expected": {
+        "recordCount": 34,
+        "physicalUuidRecords": 15,
+        "uniqueUuidRecords": 13,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          }
+        ],
+        "uniqueCanonicalEventCount": 7,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "b395ca71-b808-449b-b8f4-4cb627a1ef89"
+        ],
+        "distinctUsageCount": 3,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 380023,
+        "outputTokens": 37
+      },
+      "label": "round-2-originals",
+      "providedAsFile": false
+    },
+    {
+      "round": 2,
+      "part": "through-summary",
+      "kind": "derived complete-LF append/pagination test cut, not another native snapshot",
+      "nativeParentSnapshot": "secondcontinue.jsonl",
+      "prefixThroughLine": 38,
+      "original": {
+        "bytes": 18112,
+        "sha256": "c410b80527843895f56b01ab7f1be08a456daf8d2ab46bfa622063b71d89ae07"
+      },
+      "sanitized": {
+        "bytes": 17622,
+        "sha256": "9891011ac24ee1320dadc43a08ec2c26ce5c4a204bbcb27f3f8ad74e19843b86"
+      },
+      "strictPrefixOfNativeSnapshot": true,
+      "expected": {
+        "recordCount": 38,
+        "physicalUuidRecords": 19,
+        "uniqueUuidRecords": 15,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "originalLine": 33,
+            "copyLine": 35,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c",
+            "originalLine": 34,
+            "copyLine": 36,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          }
+        ],
+        "uniqueCanonicalEventCount": 7,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "b395ca71-b808-449b-b8f4-4cb627a1ef89"
+        ],
+        "distinctUsageCount": 3,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 380023,
+        "outputTokens": 37
+      },
+      "label": "round-2-through-summary",
+      "providedAsFile": false
+    },
+    {
+      "round": 3,
+      "part": "originals",
+      "kind": "derived complete-LF append/pagination test cut, not another native snapshot",
+      "nativeParentSnapshot": "thirdcontinue.jsonl",
+      "prefixThroughLine": 47,
+      "original": {
+        "bytes": 21303,
+        "sha256": "5222db18b93f0e9aee2a93ab1de78c17a199b2ca08bd3560f3825c83cbad401b"
+      },
+      "sanitized": {
+        "bytes": 20747,
+        "sha256": "4d108d63939e738860e79f80bed5f61f52fbc3dd63bd59f1e37d2c0486c39536"
+      },
+      "strictPrefixOfNativeSnapshot": true,
+      "expected": {
+        "recordCount": 47,
+        "physicalUuidRecords": 22,
+        "uniqueUuidRecords": 18,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "originalLine": 33,
+            "copyLine": 35,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c",
+            "originalLine": 34,
+            "copyLine": 36,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          }
+        ],
+        "uniqueCanonicalEventCount": 9,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+          "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+          "58844dbe-2081-4489-be6a-cb7c0b0aae78"
+        ],
+        "distinctUsageCount": 4,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_6": {
+            "sourceUsageId": "msg_atape_auto_text_mock_6",
+            "sourceUuid": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+            "latestObservationLine": 39,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 570023,
+        "outputTokens": 50
+      },
+      "label": "round-3-originals",
+      "providedAsFile": false
+    },
+    {
+      "round": 3,
+      "part": "through-summary",
+      "kind": "derived complete-LF append/pagination test cut, not another native snapshot",
+      "nativeParentSnapshot": "thirdcontinue.jsonl",
+      "prefixThroughLine": 51,
+      "original": {
+        "bytes": 25119,
+        "sha256": "ef2983f47bdaa7663b4aa2f72ff783590e880a4be5547241063484b75c5dfd11"
+      },
+      "sanitized": {
+        "bytes": 24439,
+        "sha256": "28897c5b9142af5fa695a3e6a8b44847296352fa5df83d64f44a188c56050d37"
+      },
+      "strictPrefixOfNativeSnapshot": true,
+      "expected": {
+        "recordCount": 51,
+        "physicalUuidRecords": 26,
+        "uniqueUuidRecords": 20,
+        "duplicateRecords": [
+          {
+            "uuid": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "originalLine": 20,
+            "copyLine": 22,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+            "originalLine": 21,
+            "copyLine": 23,
+            "mode": "first-added-slug",
+            "serializedBytesEqual": false
+          },
+          {
+            "uuid": "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "originalLine": 33,
+            "copyLine": 35,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c",
+            "originalLine": 34,
+            "copyLine": 36,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+            "originalLine": 46,
+            "copyLine": 48,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          },
+          {
+            "uuid": "cf820682-b9d0-4108-9758-2c5c40e34799",
+            "originalLine": 47,
+            "copyLine": 49,
+            "mode": "existing-slug-full-serialized-and-decoded-equality",
+            "serializedBytesEqual": true
+          }
+        ],
+        "uniqueCanonicalEventCount": 9,
+        "eventSourceUuids": [
+          "aa9af34e-5fbe-420e-9682-c906f1b474cf",
+          "2955586e-e34b-411d-9149-6fb968126b47",
+          "8c740b5a-c60b-4357-9b3f-d56f00cae821",
+          "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+          "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+          "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+          "58844dbe-2081-4489-be6a-cb7c0b0aae78"
+        ],
+        "distinctUsageCount": 4,
+        "latestUsageByApiId": {
+          "msg_atape_auto_text_mock_1": {
+            "sourceUsageId": "msg_atape_auto_text_mock_1",
+            "sourceUuid": "2955586e-e34b-411d-9149-6fb968126b47",
+            "latestObservationLine": 6,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 23,
+            "outputTokens": 11
+          },
+          "msg_atape_auto_text_mock_2": {
+            "sourceUsageId": "msg_atape_auto_text_mock_2",
+            "sourceUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "latestObservationLine": 12,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_4": {
+            "sourceUsageId": "msg_atape_auto_text_mock_4",
+            "sourceUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "latestObservationLine": 26,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          },
+          "msg_atape_auto_text_mock_6": {
+            "sourceUsageId": "msg_atape_auto_text_mock_6",
+            "sourceUuid": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+            "latestObservationLine": 39,
+            "model": "claude-sonnet-4-6",
+            "inputTokens": 190000,
+            "outputTokens": 13
+          }
+        },
+        "inputTokens": 570023,
+        "outputTokens": 50
+      },
+      "label": "round-3-through-summary",
+      "providedAsFile": false
+    }
+  ],
+  "rounds": [
+    {
+      "round": 1,
+      "phase": "continue",
+      "lines": {
+        "A": 12,
+        "originalU": 20,
+        "originalG": 21,
+        "copyU": 22,
+        "copyG": 23,
+        "B": 24,
+        "S": 25,
+        "answer": 26
+      },
+      "A": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+      "U": "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+      "G": "66ae70ac-3e09-4d34-a2ac-17b596ad9005",
+      "B": "a4fb866b-232a-42a5-8164-19a85224c8d1",
+      "S": "82c422fe-7aea-44ae-aa77-3ee78006f04f",
+      "answer": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+      "retainedUuidList": [
+        "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+        "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+        "66ae70ac-3e09-4d34-a2ac-17b596ad9005"
+      ],
+      "slug": "rustling-watching-sunrise",
+      "slugMode": "first-added",
+      "comparisons": [
+        {
+          "record": "U",
+          "mode": "first-added-slug",
+          "originalHasSlug": false,
+          "decodedEqualsBeforeSlugRemoval": false,
+          "decodedEqualsAfterOnlyNewSlugRemoval": true,
+          "originalSerializedLineBytesEqual": false,
+          "sanitizedSerializedLineBytesEqual": false,
+          "originalLineSha256": "a7f8a768dfdacbabaa59f046ccec8ba2ab581b390066a8adc3750dcd8e08e48e",
+          "copyLineSha256": "2169a50a426192fa32c231fd502cafb37b6b8abef81fbef45a73495f5701521d",
+          "sanitizedOriginalLineSha256": "05be7c890102dd1d7b914e7d01e99cf130c5c754c606129887acc30973f861c6",
+          "sanitizedCopyLineSha256": "60f63e0cf3ec9e1369a40248d5b31ec51c41118e55e04029a71521bd3a9f2782"
+        },
+        {
+          "record": "G",
+          "mode": "first-added-slug",
+          "originalHasSlug": false,
+          "decodedEqualsBeforeSlugRemoval": false,
+          "decodedEqualsAfterOnlyNewSlugRemoval": true,
+          "originalSerializedLineBytesEqual": false,
+          "sanitizedSerializedLineBytesEqual": false,
+          "originalLineSha256": "bd0245b1191d7797237f498a85c8dc6673a9a5b7e447ef0ba2036d0050abfbd1",
+          "copyLineSha256": "072d1b8598ba9ad20325e692b1c28624b8ea94ab0454020294b3880853091270",
+          "sanitizedOriginalLineSha256": "be20f46a5190aa2c83e7de6d0a0e12ae904c6e559ea6d135b222843904da0875",
+          "sanitizedCopyLineSha256": "9d24ea4a52826e86075289a84074a4a010ea343ce76ddba39762494c02a82407"
+        }
+      ],
+      "freshBoundaryAndSummary": true,
+      "summaryPromptIdEqualsOriginalUserPromptId": true,
+      "compactMetadata": {
+        "trigger": "auto",
+        "preTokens": 190052,
+        "postTokens": 279,
+        "cumulativeDroppedTokens": 189773,
+        "durationMs": 13,
+        "preservedSegment": {
+          "headUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+          "anchorUuid": "82c422fe-7aea-44ae-aa77-3ee78006f04f",
+          "tailUuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005"
+        },
+        "preservedMessages": {
+          "anchorUuid": "82c422fe-7aea-44ae-aa77-3ee78006f04f",
+          "uuids": [
+            "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "66ae70ac-3e09-4d34-a2ac-17b596ad9005"
+          ],
+          "allUuids": [
+            "ae25ea70-1d82-4224-8e31-b4c47dc70c0f",
+            "b0cfb1b0-ab91-4cc2-829c-a5399e3c9c2b",
+            "66ae70ac-3e09-4d34-a2ac-17b596ad9005"
+          ]
+        }
+      },
+      "uuidlessAtoUGap": {
+        "types": [
+          "last-prompt",
+          "mode",
+          "last-prompt",
+          "mode",
+          "atis-latch",
+          "queue-operation",
+          "queue-operation"
+        ],
+        "leafMetadata": [
+          {
+            "line": 13,
+            "leafUuid": "ae25ea70-1d82-4224-8e31-b4c47dc70c0f"
+          },
+          {
+            "line": 15,
+            "leafUuid": "66ae70ac-3e09-4d34-a2ac-17b596ad9005"
+          }
+        ]
+      },
+      "original": {
+        "committedOriginalPrefix": {
+          "start": 0,
+          "end": 7298,
+          "bytes": 7298,
+          "sha256": "d73ae2a55a7743adaf99e5aed7dc55e7161b89cedee9dad17bda9fa3e352f631"
+        },
+        "rawWitnessGroup": {
+          "start": 7298,
+          "end": 11114,
+          "bytes": 3816,
+          "sha256": "dbc604d31db867eaa99596cbd2bbb32bca4fb126dbcceb6b39eb0e9aed262770"
+        },
+        "AThroughG": {
+          "start": 4129,
+          "end": 7298,
+          "bytes": 3169,
+          "sha256": "918a88cf14654c89979016c2503a4212662468ba5668401e6cc4545243fb7317"
+        }
+      },
+      "sanitized": {
+        "committedOriginalPrefix": {
+          "start": 0,
+          "end": 7122,
+          "bytes": 7122,
+          "sha256": "d85301e6da7a2db3d148e47db38d9687edf1aff361407700d1b4689d22ca0474"
+        },
+        "rawWitnessGroup": {
+          "start": 7122,
+          "end": 10814,
+          "bytes": 3692,
+          "sha256": "8943978927330e036aef01849d77064683cc114f672a9c4cbb072f63cca43418"
+        },
+        "AThroughG": {
+          "start": 4019,
+          "end": 7122,
+          "bytes": 3103,
+          "sha256": "aad1f38cb17a22898f318c79beb5c2640a24ee4c0e8163b1ee80b2b6845faf42"
+        }
+      },
+      "sourceSummaryContentSha256": "1179bf0903531594be1386305185011351170fd2952985794e0125c34ee2c6e6",
+      "sourceAnswerApiId": "msg_atape_auto_text_mock_4"
+    },
+    {
+      "round": 2,
+      "phase": "secondcontinue",
+      "lines": {
+        "A": 26,
+        "originalU": 33,
+        "originalG": 34,
+        "copyU": 35,
+        "copyG": 36,
+        "B": 37,
+        "S": 38,
+        "answer": 39
+      },
+      "A": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+      "U": "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+      "G": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c",
+      "B": "15c8c79a-a175-4318-9711-372e1ef1bd00",
+      "S": "a26a47ce-dff0-4df6-9ca2-f2e0572cfb49",
+      "answer": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+      "retainedUuidList": [
+        "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+        "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+        "a94a30e0-d6a4-40fe-a4ca-048e66412f2c"
+      ],
+      "slug": "rustling-watching-sunrise",
+      "slugMode": "existing-unchanged",
+      "comparisons": [
+        {
+          "record": "U",
+          "mode": "existing-slug-unchanged",
+          "originalHasSlug": true,
+          "decodedEqualsBeforeSlugRemoval": true,
+          "decodedEqualsAfterOnlyNewSlugRemoval": true,
+          "originalSerializedLineBytesEqual": true,
+          "sanitizedSerializedLineBytesEqual": true,
+          "originalLineSha256": "63f357ccb755cefc1067e3d0ea61cf3ed9836ae7f2cd1789b885531171122959",
+          "copyLineSha256": "63f357ccb755cefc1067e3d0ea61cf3ed9836ae7f2cd1789b885531171122959",
+          "sanitizedOriginalLineSha256": "1aa53df33a489a6f6c46bbdf68008be7b2a28f8dc3c7487d255e71ec80254e3e",
+          "sanitizedCopyLineSha256": "1aa53df33a489a6f6c46bbdf68008be7b2a28f8dc3c7487d255e71ec80254e3e"
+        },
+        {
+          "record": "G",
+          "mode": "existing-slug-unchanged",
+          "originalHasSlug": true,
+          "decodedEqualsBeforeSlugRemoval": true,
+          "decodedEqualsAfterOnlyNewSlugRemoval": true,
+          "originalSerializedLineBytesEqual": true,
+          "sanitizedSerializedLineBytesEqual": true,
+          "originalLineSha256": "e4992d3784a4228addcb1b7a9a75691a6f42bfe0db376053741f2be146cf4714",
+          "copyLineSha256": "e4992d3784a4228addcb1b7a9a75691a6f42bfe0db376053741f2be146cf4714",
+          "sanitizedOriginalLineSha256": "856f20a4eb8b9787560db48b73417145fefb5f62ffdf6586c3134215cd908ec1",
+          "sanitizedCopyLineSha256": "856f20a4eb8b9787560db48b73417145fefb5f62ffdf6586c3134215cd908ec1"
+        }
+      ],
+      "freshBoundaryAndSummary": true,
+      "summaryPromptIdEqualsOriginalUserPromptId": true,
+      "compactMetadata": {
+        "trigger": "auto",
+        "preTokens": 190050,
+        "postTokens": 280,
+        "cumulativeDroppedTokens": 379543,
+        "durationMs": 15,
+        "preservedSegment": {
+          "headUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+          "anchorUuid": "a26a47ce-dff0-4df6-9ca2-f2e0572cfb49",
+          "tailUuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c"
+        },
+        "preservedMessages": {
+          "anchorUuid": "a26a47ce-dff0-4df6-9ca2-f2e0572cfb49",
+          "uuids": [
+            "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "a94a30e0-d6a4-40fe-a4ca-048e66412f2c"
+          ],
+          "allUuids": [
+            "a453e9bf-3851-4424-b59a-f195cd3fc6e6",
+            "b395ca71-b808-449b-b8f4-4cb627a1ef89",
+            "a94a30e0-d6a4-40fe-a4ca-048e66412f2c"
+          ]
+        }
+      },
+      "uuidlessAtoUGap": {
+        "types": [
+          "last-prompt",
+          "last-prompt",
+          "mode",
+          "atis-latch",
+          "queue-operation",
+          "queue-operation"
+        ],
+        "leafMetadata": [
+          {
+            "line": 27,
+            "leafUuid": "a453e9bf-3851-4424-b59a-f195cd3fc6e6"
+          },
+          {
+            "line": 28,
+            "leafUuid": "a94a30e0-d6a4-40fe-a4ca-048e66412f2c"
+          }
+        ]
+      },
+      "original": {
+        "committedOriginalPrefix": {
+          "start": 0,
+          "end": 14298,
+          "bytes": 14298,
+          "sha256": "bcbfb2ebfff55f9d802b7cbd5fb4b9351c842813cb8e3e8d4b2e1ee4749c6087"
+        },
+        "rawWitnessGroup": {
+          "start": 14298,
+          "end": 18112,
+          "bytes": 3814,
+          "sha256": "ac958904894474145f6bc6a10321bb3fe1f8048838b5519c9ff0b1ed33a6dc17"
+        },
+        "AThroughG": {
+          "start": 11114,
+          "end": 14298,
+          "bytes": 3184,
+          "sha256": "0b31d6122bd38536f06df375991a5d8fd3458a689ba6f9e14f231268f37c3b75"
+        }
+      },
+      "sanitized": {
+        "committedOriginalPrefix": {
+          "start": 0,
+          "end": 13932,
+          "bytes": 13932,
+          "sha256": "1690db39b3b7598fd419c98107bb09d8472c32debe0e6a9a2df79a96f573d5e0"
+        },
+        "rawWitnessGroup": {
+          "start": 13932,
+          "end": 17622,
+          "bytes": 3690,
+          "sha256": "1243bd99613818dc969adb2543ce0a0f3f8224b5f2b482665222690183b11323"
+        },
+        "AThroughG": {
+          "start": 10814,
+          "end": 13932,
+          "bytes": 3118,
+          "sha256": "6075fdd7defb9aefdf863c8c61b0afebc118794de22df665a5616e016ae35728"
+        }
+      },
+      "sourceSummaryContentSha256": "693678b87e65e9f9b5fd5da3947914f51e48651b5672046ed9b4513ac5c590ed",
+      "sourceAnswerApiId": "msg_atape_auto_text_mock_6"
+    },
+    {
+      "round": 3,
+      "phase": "thirdcontinue",
+      "lines": {
+        "A": 39,
+        "originalU": 46,
+        "originalG": 47,
+        "copyU": 48,
+        "copyG": 49,
+        "B": 50,
+        "S": 51,
+        "answer": 52
+      },
+      "A": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+      "U": "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+      "G": "cf820682-b9d0-4108-9758-2c5c40e34799",
+      "B": "1dd3819c-7d54-4430-ac72-ed4dd8a78898",
+      "S": "dc971a3f-3fd9-40ab-affd-f1f3065d8e59",
+      "answer": "43b56575-e869-43d7-af84-0edbc5480fbc",
+      "retainedUuidList": [
+        "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+        "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+        "cf820682-b9d0-4108-9758-2c5c40e34799"
+      ],
+      "slug": "rustling-watching-sunrise",
+      "slugMode": "existing-unchanged",
+      "comparisons": [
+        {
+          "record": "U",
+          "mode": "existing-slug-unchanged",
+          "originalHasSlug": true,
+          "decodedEqualsBeforeSlugRemoval": true,
+          "decodedEqualsAfterOnlyNewSlugRemoval": true,
+          "originalSerializedLineBytesEqual": true,
+          "sanitizedSerializedLineBytesEqual": true,
+          "originalLineSha256": "ee684b9b5cfb169859a009a3d8234cec44dca612e55f5f184e11c967d4731821",
+          "copyLineSha256": "ee684b9b5cfb169859a009a3d8234cec44dca612e55f5f184e11c967d4731821",
+          "sanitizedOriginalLineSha256": "a0e0734e9e0563fe9f0cd0a0eafb03a0a1fd51975f8f87eb7ffe570022151502",
+          "sanitizedCopyLineSha256": "a0e0734e9e0563fe9f0cd0a0eafb03a0a1fd51975f8f87eb7ffe570022151502"
+        },
+        {
+          "record": "G",
+          "mode": "existing-slug-unchanged",
+          "originalHasSlug": true,
+          "decodedEqualsBeforeSlugRemoval": true,
+          "decodedEqualsAfterOnlyNewSlugRemoval": true,
+          "originalSerializedLineBytesEqual": true,
+          "sanitizedSerializedLineBytesEqual": true,
+          "originalLineSha256": "11abd746998dbc1ad2a5ca83cb9e1694ef1662d2533361a7c8cacc9f2b8a8616",
+          "copyLineSha256": "11abd746998dbc1ad2a5ca83cb9e1694ef1662d2533361a7c8cacc9f2b8a8616",
+          "sanitizedOriginalLineSha256": "c85004f574cdec18471327bb13ba208fbb526cd2de328e95afc7e782e3f3c395",
+          "sanitizedCopyLineSha256": "c85004f574cdec18471327bb13ba208fbb526cd2de328e95afc7e782e3f3c395"
+        }
+      ],
+      "freshBoundaryAndSummary": true,
+      "summaryPromptIdEqualsOriginalUserPromptId": true,
+      "compactMetadata": {
+        "trigger": "auto",
+        "preTokens": 190051,
+        "postTokens": 281,
+        "cumulativeDroppedTokens": 569313,
+        "durationMs": 14,
+        "preservedSegment": {
+          "headUuid": "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+          "anchorUuid": "dc971a3f-3fd9-40ab-affd-f1f3065d8e59",
+          "tailUuid": "cf820682-b9d0-4108-9758-2c5c40e34799"
+        },
+        "preservedMessages": {
+          "anchorUuid": "dc971a3f-3fd9-40ab-affd-f1f3065d8e59",
+          "uuids": [
+            "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+            "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+            "cf820682-b9d0-4108-9758-2c5c40e34799"
+          ],
+          "allUuids": [
+            "19c7f087-fc36-4e39-b9b4-f71e12f997f8",
+            "58844dbe-2081-4489-be6a-cb7c0b0aae78",
+            "cf820682-b9d0-4108-9758-2c5c40e34799"
+          ]
+        }
+      },
+      "uuidlessAtoUGap": {
+        "types": [
+          "last-prompt",
+          "last-prompt",
+          "mode",
+          "atis-latch",
+          "queue-operation",
+          "queue-operation"
+        ],
+        "leafMetadata": [
+          {
+            "line": 40,
+            "leafUuid": "19c7f087-fc36-4e39-b9b4-f71e12f997f8"
+          },
+          {
+            "line": 41,
+            "leafUuid": "cf820682-b9d0-4108-9758-2c5c40e34799"
+          }
+        ]
+      },
+      "original": {
+        "committedOriginalPrefix": {
+          "start": 0,
+          "end": 21303,
+          "bytes": 21303,
+          "sha256": "5222db18b93f0e9aee2a93ab1de78c17a199b2ca08bd3560f3825c83cbad401b"
+        },
+        "rawWitnessGroup": {
+          "start": 21303,
+          "end": 25119,
+          "bytes": 3816,
+          "sha256": "9693e0bd0aa93409b2a95c4a29b83d26b78777e72c849b30368a3c64aac37791"
+        },
+        "AThroughG": {
+          "start": 18112,
+          "end": 21303,
+          "bytes": 3191,
+          "sha256": "c13e098458caf5afe53d3c323d8b0ad1cb910c5081720df2eb101ea98d257389"
+        }
+      },
+      "sanitized": {
+        "committedOriginalPrefix": {
+          "start": 0,
+          "end": 20747,
+          "bytes": 20747,
+          "sha256": "4d108d63939e738860e79f80bed5f61f52fbc3dd63bd59f1e37d2c0486c39536"
+        },
+        "rawWitnessGroup": {
+          "start": 20747,
+          "end": 24439,
+          "bytes": 3692,
+          "sha256": "5b53fa5a22b45fc0e320004d101b2b0a65b39dfb063484fa3d1315c8bc3e02ff"
+        },
+        "AThroughG": {
+          "start": 17622,
+          "end": 20747,
+          "bytes": 3125,
+          "sha256": "a49820249d2a3e4ef27a2d62ce9171f1140adc4792fe532bed39181aeb347004"
+        }
+      },
+      "sourceSummaryContentSha256": "b79aa4f0d8dc57f379b880c598389f82b52e678af5cc5af4196bf8963f6ff8c6",
+      "sourceAnswerApiId": "msg_atape_auto_text_mock_8"
+    }
+  ],
+  "invocations": [
+    {
+      "phase": "seed",
+      "sourceResultFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/seed-result.json",
+      "sourceResultSha256": "1b17865b1b03e107e9b4715882d3c2d33d8829ba5f9e5fc0abb09237a27ed6a9",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--session-id",
+        "43526b2f-6f23-4f37-9627-c75f50bfb9b9",
+        "ATAPE_AUTO_TEXT_SEED: Remember cobalt heron 482."
+      ],
+      "controls": {
+        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+        "mockWarmupAndPostcompactAnswerInputTokens": 190000
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutTopLevelUsageMockOnly": {
+        "input_tokens": 23,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 11
+      },
+      "stdoutModelUsageMockOnly": {
+        "inputTokens": 23,
+        "outputTokens": 11,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      }
+    },
+    {
+      "phase": "warmup",
+      "sourceResultFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/warmup-result.json",
+      "sourceResultSha256": "c09a40d983aa2cddb028cb83a5fd75fc2c8eb61f31c6d5bfe5e840e62ee5ccef",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "43526b2f-6f23-4f37-9627-c75f50bfb9b9",
+        "ATAPE_AUTO_TEXT_WARMUP: Confirm the synthetic context."
+      ],
+      "controls": {
+        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+        "mockWarmupAndPostcompactAnswerInputTokens": 190000
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutTopLevelUsageMockOnly": {
+        "input_tokens": 190000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13
+      },
+      "stdoutModelUsageMockOnly": {
+        "inputTokens": 190000,
+        "outputTokens": 13,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      }
+    },
+    {
+      "phase": "continue",
+      "sourceResultFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/continue-result.json",
+      "sourceResultSha256": "1d560dddb6976bb81c291d10961745198c06f067361660f5c0ef7acc9903a794",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "43526b2f-6f23-4f37-9627-c75f50bfb9b9",
+        "ATAPE_AUTO_TEXT_CONTINUE: Resume the synthetic task after compaction."
+      ],
+      "controls": {
+        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+        "mockWarmupAndPostcompactAnswerInputTokens": 190000
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutTopLevelUsageMockOnly": {
+        "input_tokens": 190000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13
+      },
+      "stdoutModelUsageMockOnly": {
+        "inputTokens": 190051,
+        "outputTokens": 32,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      }
+    },
+    {
+      "phase": "secondcontinue",
+      "sourceResultFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/secondcontinue-result.json",
+      "sourceResultSha256": "03d8114e1cd2449582058e44603de24206dd7aa86d0018691cc2fcecc4c1689d",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "43526b2f-6f23-4f37-9627-c75f50bfb9b9",
+        "ATAPE_AUTO_TEXT_SECOND_CONTINUE: Confirm stable resume again."
+      ],
+      "controls": {
+        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+        "mockWarmupAndPostcompactAnswerInputTokens": 190000
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutTopLevelUsageMockOnly": {
+        "input_tokens": 190000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13
+      },
+      "stdoutModelUsageMockOnly": {
+        "inputTokens": 190051,
+        "outputTokens": 32,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      }
+    },
+    {
+      "phase": "thirdcontinue",
+      "sourceResultFile": "/tmp/atape-claude-auto-rounds-native.4Y6rHO/auto_text/thirdcontinue-result.json",
+      "sourceResultSha256": "dd28b04e9ad317dd3eafcd34068a61c86e0e7b943df3cae7f7eb7d556e4a945c",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "43526b2f-6f23-4f37-9627-c75f50bfb9b9",
+        "ATAPE_AUTO_TEXT_THIRD_CONTINUE: Confirm stable resume once more."
+      ],
+      "controls": {
+        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+        "mockWarmupAndPostcompactAnswerInputTokens": 190000
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutTopLevelUsageMockOnly": {
+        "input_tokens": 190000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13
+      },
+      "stdoutModelUsageMockOnly": {
+        "inputTokens": 190051,
+        "outputTokens": 32,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0
+      }
+    }
+  ],
+  "sourceRequests": {
+    "file": "source-requests.json",
+    "kind": "derived selected model-message evidence only; no SDK system/tools schema",
+    "sha256": "4a0ef1c4b25c9497af6a43a527c7e3b551db8fb189bb45afad4a1755d804fde4",
+    "bytes": 23287,
+    "completeRequestsOriginal": {
+      "bytes": 71738,
+      "sha256": "f3cddacb9cf9db3fced879b006296a9f9db42c08f37bed17973c25f8c9aae52b"
+    },
+    "completeRequestsSanitized": {
+      "bytes": 71558,
+      "sha256": "8d945ff6c11c9a022f55950c88498a89bf51d18441b17ffc64085de322c3ce82"
+    },
+    "messagesRequests": 8,
+    "summaryRequests": 3,
+    "helloRequests": 5,
+    "countTokensRequests": 0,
+    "roundProofs": [
+      {
+        "round": 1,
+        "phase": "continue",
+        "summaryRequestEntryIndex": 6,
+        "postRequestEntryIndex": 7,
+        "postRoles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "currentSummaryExactLocations": [
+          [
+            0,
+            1
+          ]
+        ],
+        "currentSummaryExactOccurrences": 1,
+        "currentSummaryTextSha256": "1179bf0903531594be1386305185011351170fd2952985794e0125c34ee2c6e6",
+        "previousSummaryExactOccurrencesInNewSummaryRequest": null,
+        "stalePreviousSummaryInPostRequest": false,
+        "retainedAssistantTextExact": true,
+        "originalUserTextExactOccurrences": 1,
+        "totalTokensReminderLoaded": true
+      },
+      {
+        "round": 2,
+        "phase": "secondcontinue",
+        "summaryRequestEntryIndex": 9,
+        "postRequestEntryIndex": 10,
+        "postRoles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "currentSummaryExactLocations": [
+          [
+            0,
+            1
+          ]
+        ],
+        "currentSummaryExactOccurrences": 1,
+        "currentSummaryTextSha256": "693678b87e65e9f9b5fd5da3947914f51e48651b5672046ed9b4513ac5c590ed",
+        "previousSummaryExactOccurrencesInNewSummaryRequest": 1,
+        "stalePreviousSummaryInPostRequest": false,
+        "retainedAssistantTextExact": true,
+        "originalUserTextExactOccurrences": 1,
+        "totalTokensReminderLoaded": true
+      },
+      {
+        "round": 3,
+        "phase": "thirdcontinue",
+        "summaryRequestEntryIndex": 12,
+        "postRequestEntryIndex": 13,
+        "postRoles": [
+          "user",
+          "assistant",
+          "user"
+        ],
+        "currentSummaryExactLocations": [
+          [
+            0,
+            1
+          ]
+        ],
+        "currentSummaryExactOccurrences": 1,
+        "currentSummaryTextSha256": "b79aa4f0d8dc57f379b880c598389f82b52e678af5cc5af4196bf8963f6ff8c6",
+        "previousSummaryExactOccurrencesInNewSummaryRequest": 1,
+        "stalePreviousSummaryInPostRequest": false,
+        "retainedAssistantTextExact": true,
+        "originalUserTextExactOccurrences": 1,
+        "totalTokensReminderLoaded": true
+      }
+    ],
+    "completeRequestRetention": "The complete source request capture remains in the original temporary generation directory; hashes preserve its provenance. It is not supplied in this fixture."
+  },
+  "summarizationUsageLimit": {
+    "inferredMockSummaryApiIds": [
+      "msg_atape_auto_text_mock_3",
+      "msg_atape_auto_text_mock_5",
+      "msg_atape_auto_text_mock_7"
+    ],
+    "apiIdEvidence": "Deterministic harness SSE sequential ID generator and source IDs 1/2/4/6/8; summary IDs are not captured JSONL assistant records.",
+    "perSummaryMockInputTokens": 51,
+    "perSummaryMockOutputTokens": 19,
+    "threeSummaryMockInputTokens": 153,
+    "threeSummaryMockOutputTokens": 57,
+    "eachPostcompactStdoutModelUsage": {
+      "inputTokens": 190051,
+      "outputTokens": 32
+    },
+    "eachPersistedPostcompactAssistantUsage": {
+      "inputTokens": 190000,
+      "outputTokens": 13
+    },
+    "assistantJsonlUsageMissingForAllSummaries": true,
+    "compactMetadataIsAssistantUsage": false
+  },
+  "expectedTotals": {
+    "uniqueCanonicalEvents": 10,
+    "distinctAssistantApiIds": 5,
+    "inputTokens": 760023,
+    "outputTokens": 63,
+    "apiIds": [
+      "msg_atape_auto_text_mock_1",
+      "msg_atape_auto_text_mock_2",
+      "msg_atape_auto_text_mock_4",
+      "msg_atape_auto_text_mock_6",
+      "msg_atape_auto_text_mock_8"
+    ],
+    "deduplication": "Do not count copies of U/G as new Canonical Events. Preserve every physical Raw record. Retain latest sourceUsageId revision before usage aggregation."
+  },
+  "verifiedDuringPreparation": [
+    "native snapshot hashes match source evidence",
+    "path-only decoded equality for five snapshots and full request capture",
+    "original/sanitized strict byte-prefix chains",
+    "six complete-LF cuts computed using each round actual positions",
+    "round1 copies differ only by newly added slug (full keys/value equality otherwise)",
+    "round2/3 copied lines are exact serialized bytes and complete decoded equals before/after sanitization",
+    "exact last-unique A/U/G, fresh B/S, metadata and prompt/parent graph",
+    "every new S loaded exactly once in its post request; prior S loaded once in next summary request",
+    "no tools, synthetic bridge, manual command controls or extra repeated UUIDs",
+    "distinct real API usage computed from JSONL and all summarization response records absent",
+    "source recorded before/after binary hashes equal"
+  ],
+  "scopeLimits": [
+    "This proves three sampled automatic text rounds under native 2.1.263, not arbitrary repetition/records/attachments or general auto support.",
+    "Only two separately evidenced slug modes: absent→new bounded slug in round1, existing unchanged slug with complete equality in rounds2/3.",
+    "Unknown fields cannot be dropped or normalized when proving copies.",
+    "Each round uses current A/U/G and fresh B/S; historical groups are not authorized by UUID membership alone.",
+    "UUID-less A→U gaps vary and may contain forward leafUuid references; exact count/order/current-leaf equality is not established.",
+    "No source migration, Active Path replacement, atomic snapshot, alternate uploader or provider-specific Server semantics follow."
+  ]
+}

@@ -14,6 +14,10 @@ const MaxDiscoveryEntries = 10_000
 const MaxHeaderBytes = 64 * 1024 * 1024
 const MaxCursorBytes = 1024 * 1024
 const MaxDecodedCursorBytes = 16 * 1024 * 1024
+const MaxAutoRecordBytes = 64 * 1024
+const MaxAutoGroupBytes = 256 * 1024
+const MaxAutoTailBytes = 256 * 1024
+const MaxAutoTailRecords = 16
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
 const CompactionSchema = Schema.Struct({
@@ -22,6 +26,11 @@ const CompactionSchema = Schema.Struct({
   promptId: Schema.optionalKey(Schema.String)
 })
 type Compaction = typeof CompactionSchema.Type
+const AutoTextSchema = Schema.Struct({
+  v: Schema.Literal(1), boundaryUuid: Schema.String, summaryUuid: Schema.String,
+  promptId: Schema.String, slug: Schema.String
+})
+type AutoText = typeof AutoTextSchema.Type
 const StreamCursorSchema = Schema.Struct({
   v: Schema.Literal(1), sessionId: Schema.String, bytes: Schema.Number,
   digest: Schema.String, origin: Schema.String,
@@ -33,7 +42,7 @@ const StreamCursorSchema = Schema.Struct({
     lastUuid: Schema.NullOr(Schema.String), seen: Schema.Array(Schema.String),
     calls: Schema.Array(Schema.Tuple([Schema.String, Schema.String, Schema.String])),
     order: Schema.Number, eventSkip: Schema.Number, title: Schema.String,
-    compaction: Schema.optionalKey(CompactionSchema)
+    compaction: Schema.optionalKey(CompactionSchema), autoText: Schema.optionalKey(AutoTextSchema)
   }))
 })
 const ChildSchema = Schema.Struct({
@@ -131,7 +140,7 @@ export const collectClaudePage = (archive: Archive, request: AdapterCollectReque
         const sourceObjectId = `${candidate.agentId ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
         if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(sourceObjectId) ?? 0))
         if (!checkpoint?.stream || checkpoint.usageVersion !== 1 || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0 ||
-          checkpoint.stream.compaction && checkpoint.stream.compaction.phase !== "resume") pendingCanonicalSessions++
+          checkpoint.stream.compaction && checkpoint.stream.compaction.phase !== "resume" || checkpoint?.stream?.autoText) pendingCanonicalSessions++
       }
     }
     return { ...page, progress: { sourceFiles: streams.length, pendingRawBytes, pendingCanonicalSessions,
@@ -297,6 +306,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         hasMore = true; break
       }
       if (line.content.toString("utf8").trim() === "") {
+        if (state.autoText) fail("unsupported", "Claude automatic compaction requires its first real answer.")
         hash.update(line.content); rawBytes += line.content.length; at = line.end
         continue
       }
@@ -310,6 +320,23 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         : record.isSidechain === true || identified && (record.isSidechain !== undefined && record.isSidechain !== false || record.agentId !== undefined)
       if (wrongThread)
         fail("unsupported", "Claude record does not belong to its selected Thread.")
+      if (state.autoText) verifyAutoTextAnswer(record, root, state.autoText)
+      if (record.type === "user" && typeof record.uuid === "string" && seen.has(record.uuid)) {
+        if (delegated || state.compaction || state.autoText)
+          fail("unsupported", "Claude automatic replay requires an unblocked root Thread.")
+        if (state.eventSkip !== 0) fail("cursor", "Claude replay checkpoint contains uncommitted Event progress.")
+        const group = await readAutoTextGroup(handle, line, record, at, before.size, hash.copy().digest("hex"), root, [...seen], request.signal)
+        if (!group) break // An incomplete witness has no immediate continuation page or acknowledged copy bytes.
+        const bytes = group.contents.reduce((total, content) => total + content.length, 0)
+        const limit = Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation)
+        if (bytes > limit) fail("limit", "A Claude automatic replay group exceeds the requested Raw page limit.")
+        if (rawBytes + bytes > limit) { hasMore = true; break }
+        for (const content of group.contents) hash.update(content)
+        seen.add(group.stage.boundaryUuid); seen.add(group.stage.summaryUuid)
+        state = { ...state, autoText: group.stage, lastUuid: group.stage.summaryUuid, order: state.order + 4, eventSkip: 0 }
+        rawBytes += bytes; at = group.end; hasMore = at < before.size
+        break // The answer starts a fresh page; lookahead never consumes prefetched ordinary records.
+      }
       const transition = compactionTransition(record, state.lastUuid, state.compaction, delegated !== undefined)
       if (transition.textTail) {
         await verifyPreservedTextTail(handle, at, hash.copy().digest("hex"), root, transition.textTail, request.signal)
@@ -318,6 +345,12 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       // UUID-less bookkeeping stays Raw-only; it cannot stand in for a turn.
       if (conversation && (typeof record.uuid !== "string" || !record.uuid.trim() || record.uuid.length > 500 || record.uuid.includes("\0")))
         fail("unsupported", "Claude conversation record has no valid UUID.")
+      // Attribution selects the original identity before this handle is opened.
+      // Compare that identity with the actual first committed UUID record; its
+      // bytes subsequently participate in the current-prefix proof as usual.
+      if (typeof record.uuid === "string" && seen.size === 0 && (record.uuid !== root.uuid || record.type !== "user" ||
+        record.parentUuid !== null || record.isMeta === true || record.sessionId !== sessionId || record.cwd !== origin))
+        fail("changed", "Claude original identity changed during collection.")
       if (transition.boundary && transition.next && seen.has(transition.next.summaryUuid))
         fail("unsupported", "Claude manual compaction summary identity already belongs to captured history.")
       if (typeof record.uuid === "string" && (seen.has(record.uuid) || record.parentUuid !== state.lastUuid && !transition.boundary))
@@ -371,7 +404,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       if (typeof record.uuid === "string") seen.add(record.uuid)
       if (child && !children.has(child.agentId)) { children.set(child.agentId, child); canonicalLimit = recordLimit }
       calls = nextCalls
-      const { compaction: _previousCompaction, ...committed } = state
+      const { compaction: _previousCompaction, autoText: _answeredAutoText, ...committed } = state
       state = { ...committed, ...(transition.next ? { compaction: transition.next } : {}),
         lastUuid: typeof record.uuid === "string" ? record.uuid : state.lastUuid, order: state.order + 1, eventSkip: 0 }
       hash.update(line.content); rawBytes += line.content.length; at = line.end
@@ -474,6 +507,160 @@ function compactionTransition(record: RecordValue, lastUuid: string | null, stag
   return fail("unsupported", "Claude manual compaction control sequence changed.")
 }
 
+const autoId = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 500 && !value.includes("\0")
+const autoRoot = (record: RecordValue, root: RecordValue) => record.version === "2.1.263" && record.sessionId === root.sessionId &&
+  record.cwd === root.cwd && record.isSidechain === false && record.agentId === undefined && autoId(record.uuid)
+/** These are parsed, byte-capped JSON values. An explicit worklist preserves
+ * all unknown values without making source nesting consume the JS call stack. */
+function equalJson(a: unknown, b: unknown): boolean {
+  const pending: Array<readonly [unknown, unknown]> = [[a, b]]
+  while (pending.length) {
+    const [left, right] = pending.pop()!
+    if (Object.is(left, right)) continue
+    if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false
+    if (Array.isArray(left) || Array.isArray(right)) {
+      if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+      for (let index = 0; index < left.length; index++) pending.push([left[index], right[index]])
+    } else {
+      const x = left as RecordValue, y = right as RecordValue, keys = Object.keys(x)
+      if (keys.length !== Object.keys(y).length) return false
+      for (const key of keys) {
+        if (!Object.hasOwn(y, key)) return false
+        pending.push([x[key], y[key]])
+      }
+    }
+  }
+  return true
+}
+function autoAssistant(record: RecordValue, root: RecordValue): boolean {
+  const message = object(record.message), blocks = message?.content, model = string(message?.model)
+  const block = Array.isArray(blocks) && blocks.length === 1 ? object(blocks[0]) : undefined
+  return autoRoot(record, root) && record.type === "assistant" && record.apiBlockIndex === 0 &&
+    (record.isMeta === undefined || record.isMeta === false) && record.isCompactSummary === undefined && record.isVisibleInTranscriptOnly === undefined &&
+    message?.role === "assistant" && autoId(message.id) && !!model?.trim() && model.length <= 200 && model !== "<synthetic>" &&
+    block?.type === "text" && typeof block.text === "string" && block.text.length > 0
+}
+function verifyAutoTextAnswer(record: RecordValue, root: RecordValue, stage: AutoText): void {
+  if (!autoAssistant(record, root) || record.parentUuid !== stage.summaryUuid || record.slug !== stage.slug ||
+    record.logicalParentUuid != null || record.subtype === "compact_boundary" || record.compactMetadata !== undefined)
+    fail("unsupported", "Claude automatic compaction requires its first real answer.")
+}
+
+/** Hash the current committed bytes and retain only a bounded, LF-framed tail.
+ * Old cursors and newly committed same-page originals use this same proof;
+ * emitted fragments never enter it before their usage and bytes commit. */
+async function autoTextOriginals(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, seen: ReadonlyArray<string>, signal: AbortSignal): Promise<readonly [RecordValue, RecordValue, RecordValue]> {
+  if (seen.length < 3) fail("unsupported", "Claude automatic replay has no current three-record tail.")
+  if (seen[0] !== root.uuid) fail("changed", "Claude original identity changed during replay validation.")
+  const expected = seen.slice(-3), proofHash = createHash("sha256"), block = Buffer.alloc(64 * 1024)
+  const ends = [0]
+  let tail = Buffer.alloc(0), bytes = 0
+  while (bytes < committed) {
+    signal.throwIfAborted()
+    const read = await handle.read(block, 0, Math.min(block.length, committed - bytes), bytes)
+    if (!read.bytesRead) fail("changed", "The committed Claude prefix changed during replay validation.")
+    const content = block.subarray(0, read.bytesRead)
+    proofHash.update(content)
+    for (let at = content.indexOf(10); at !== -1; at = content.indexOf(10, at + 1)) {
+      ends.push(bytes + at + 1)
+      if (ends.length > MaxAutoTailRecords + 1) ends.shift()
+    }
+    tail = Buffer.from(Buffer.concat([tail, content]).subarray(-MaxAutoTailBytes))
+    bytes += read.bytesRead
+  }
+  if (bytes !== committed || proofHash.digest("hex") !== expectedDigest || ends.at(-1) !== committed)
+    fail("changed", "The committed Claude prefix changed during replay validation.")
+  const tailStart = committed - tail.length, originals: RecordValue[] = []
+  for (let index = ends.length - 1; index > 0; index--) {
+    const start = ends[index - 1]!, end = ends[index]!
+    if (start < tailStart || end - start > MaxAutoRecordBytes)
+      fail("limit", "Claude automatic replay originals exceed the bounded tail proof.")
+    const content = tail.subarray(start - tailStart, end - tailStart)
+    let record: RecordValue
+    try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(content))) }
+    catch { fail("unsupported", "Claude automatic replay tail contains an unsupported physical record.") }
+    if (originals.length < 2) {
+      if (record.uuid !== expected[2 - originals.length]) fail("unsupported", "Claude automatic replay requires adjacent current user and attachment records.")
+      originals.push(record)
+    } else if (record.uuid !== undefined) {
+      if (record.uuid !== expected[0]) fail("unsupported", "Claude automatic replay has an intervening UUID record.")
+      originals.push(record); break
+    } else if (!["last-prompt", "mode", "atis-latch", "queue-operation"].includes(string(record.type) ?? "") ||
+      record.message !== undefined || record.parentUuid != null || record.logicalParentUuid != null || record.agentId !== undefined ||
+      record.isSidechain !== undefined && record.isSidechain !== false || record.sessionId !== undefined && record.sessionId !== root.sessionId ||
+      record.isCompactSummary !== undefined || record.isVisibleInTranscriptOnly !== undefined) {
+      fail("unsupported", "Claude automatic replay tail contains unsupported bookkeeping.")
+    }
+  }
+  if (originals.length !== 3) fail("limit", "Claude automatic replay originals exceed the bounded tail proof.")
+  const [g, u, a] = originals as [RecordValue, RecordValue, RecordValue]
+  const user = object(u.message), attachment = object(g.attachment)
+  if (!autoAssistant(a, root) || !autoRoot(u, root) || !autoRoot(g, root) ||
+    u.type !== "user" || u.userType !== "external" || user?.role !== "user" || typeof user.content !== "string" || !user.content.length || !autoId(u.promptId) ||
+    u.isMeta !== undefined && u.isMeta !== false || u.isCompactSummary !== undefined || u.isVisibleInTranscriptOnly !== undefined ||
+    u.parentUuid !== a.uuid || g.parentUuid !== u.uuid || g.type !== "attachment" || g.message !== undefined ||
+    attachment?.type !== "total_tokens_reminder" || typeof attachment.text !== "string" || !attachment.text.length ||
+    g.isMeta !== undefined && g.isMeta !== false || g.isCompactSummary !== undefined || g.isVisibleInTranscriptOnly !== undefined)
+    fail("unsupported", "Claude automatic replay has no supported assistant/user/reminder tail.")
+  return [a, u, g]
+}
+
+async function readAutoTextGroup(handle: Awaited<ReturnType<typeof open>>, first: { content: Buffer; end: number }, copy: RecordValue,
+  committed: number, sampledEnd: number, expectedDigest: string, root: RecordValue, seen: ReadonlyArray<string>, signal: AbortSignal):
+  Promise<{ readonly contents: ReadonlyArray<Buffer>; readonly end: number; readonly stage: AutoText } | undefined> {
+  // The unknown first line was read by the ordinary 16 MiB parser. Enforce the
+  // smaller profile admission limit only now that a complete duplicate is known.
+  if (first.content.length > MaxAutoRecordBytes) fail("limit", "A Claude automatic replay record exceeds 64 KiB.")
+  const originals = await autoTextOriginals(handle, committed, expectedDigest, root, seen, signal)
+  const [a, u, g] = originals, ids = originals.map(record => record.uuid), slug = copy.slug
+  const absent = originals.every(record => !Object.hasOwn(record, "slug"))
+  if (!autoId(slug) || !Object.hasOwn(copy, "slug") || !absent && !originals.every(record => record.slug === slug))
+    fail("unsupported", "Claude automatic replay has conflicting slug evidence.")
+  const verifyCopy = (value: RecordValue, original: RecordValue) => {
+    const { slug: _newSlug, ...withoutSlug } = value
+    if (!autoRoot(value, root) || value.slug !== slug || !(absent ? equalJson(withoutSlug, original) : equalJson(value, original)))
+      fail("unsupported", "Claude automatic replay differs from its complete original record.")
+  }
+  verifyCopy(copy, u)
+  const contents = [first.content], known = new Set(seen)
+  let stage: AutoText | undefined
+  const equalIds = (value: unknown) => Array.isArray(value) && value.length === ids.length && value.every((id, index) => id === ids[index])
+  for await (const line of readRecords(handle, first.end, Math.min(sampledEnd, committed + MaxAutoGroupBytes), signal, MaxAutoRecordBytes)) {
+    if (!line.content.toString("utf8").trim()) fail("unsupported", "Claude automatic replay group is not physically adjacent.")
+    let record: RecordValue
+    try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+    catch { fail("format", "Claude automatic replay contains a malformed complete record.") }
+    if (contents.length === 1) verifyCopy(record, g)
+    else if (contents.length === 2) {
+      const metadata = object(record.compactMetadata), segment = object(metadata?.preservedSegment), messages = object(metadata?.preservedMessages)
+      const anchor = segment?.anchorUuid
+      if (!autoRoot(record, root) || record.type !== "system" || record.subtype !== "compact_boundary" || record.isMeta !== undefined ||
+        record.isCompactSummary !== undefined || record.isVisibleInTranscriptOnly !== undefined ||
+        record.message !== undefined || record.parentUuid !== null || record.logicalParentUuid !== g.uuid || record.slug !== slug ||
+        metadata?.trigger !== "auto" || segment?.headUuid !== a.uuid || segment?.tailUuid !== g.uuid || !autoId(anchor) ||
+        anchor === record.uuid || messages?.anchorUuid !== anchor || !equalIds(messages?.uuids) || !equalIds(messages?.allUuids) ||
+        known.has(record.uuid as string) || known.has(anchor))
+        fail("unsupported", "Claude automatic replay boundary has no current-tail witness.")
+      stage = { v: 1, boundaryUuid: record.uuid as string, summaryUuid: anchor, promptId: u.promptId as string, slug }
+    } else {
+      const message = object(record.message)
+      if (!stage || !autoRoot(record, root) || record.uuid !== stage.summaryUuid || record.parentUuid !== stage.boundaryUuid ||
+        record.type !== "user" || record.isMeta !== undefined || record.promptId !== stage.promptId || record.slug !== slug ||
+        record.isCompactSummary !== true || record.isVisibleInTranscriptOnly !== true || record.logicalParentUuid != null ||
+        record.subtype !== undefined || record.compactMetadata !== undefined ||
+        message?.role !== "user" || typeof message.content !== "string" || !message.content.trim())
+        fail("unsupported", "Claude automatic replay summary does not match its boundary.")
+      contents.push(line.content)
+      return { contents, end: line.end, stage }
+    }
+    contents.push(line.content)
+  }
+  if (sampledEnd - committed >= MaxAutoGroupBytes)
+    fail("limit", "A Claude automatic replay group exceeds 256 KiB.")
+  return undefined
+}
+
 /** Reconstruct only the last two UUID records from the exact bytes that are
  * already fully committed. Re-reading on the same handle supplies old cursors
  * and same-page appends without replaying any Canonical or Raw projection. */
@@ -574,7 +761,7 @@ async function readRawPrefix(handle: Awaited<ReturnType<typeof open>>, start: nu
   return fail("format", "Claude Raw source contains invalid UTF-8.")
 }
 
-async function* readRecords(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, signal: AbortSignal) {
+async function* readRecords(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, signal: AbortSignal, recordLimit = MaxRecordBytes) {
   let at = start, pending = Buffer.alloc(0), lineStart = start
   while (at < end) {
     signal.throwIfAborted()
@@ -585,12 +772,13 @@ async function* readRecords(handle: Awaited<ReturnType<typeof open>>, start: num
     pending = Buffer.concat([pending, block.subarray(0, read.bytesRead)])
     let newline: number
     while ((newline = pending.indexOf(10)) !== -1) {
-      if (newline + 1 > MaxRecordBytes) fail("limit", "Claude JSONL record exceeds 16 MiB.")
+      if (newline + 1 > recordLimit) fail("limit", recordLimit === MaxRecordBytes ? "Claude JSONL record exceeds 16 MiB." : "A Claude automatic replay record exceeds 64 KiB.")
       const content = pending.subarray(0, newline + 1)
       yield { content, end: lineStart + newline + 1 }
       pending = pending.subarray(newline + 1); lineStart += newline + 1
     }
-    if (pending.length > MaxRecordBytes) fail("limit", "Claude JSONL record exceeds 16 MiB.")
+    if (pending.length > recordLimit || recordLimit !== MaxRecordBytes && pending.length === recordLimit)
+      fail("limit", recordLimit === MaxRecordBytes ? "Claude JSONL record exceeds 16 MiB." : "A Claude automatic replay record exceeds 64 KiB.")
   }
 }
 
@@ -703,7 +891,7 @@ function decodeCursor(value: string | null): Cursor | undefined {
         agents.add(child.agentId); tools.add(child.toolCallId)
         if (child.checkpoint) {
           const checkpoint = decodeCursor(JSON.stringify(child.checkpoint))!
-          if (checkpoint.sessionId !== c.sessionId || checkpoint.origin !== c.origin) throw new Error()
+          if (checkpoint.sessionId !== c.sessionId || checkpoint.origin !== c.origin || checkpoint.stream?.autoText) throw new Error()
         }
       }
       if (c.childAfter !== undefined && !agents.has(c.childAfter)) throw new Error()
@@ -718,6 +906,10 @@ function decodeCursor(value: string | null): Cursor | undefined {
       stage.boundaryUuid === stage.summaryUuid || !c.stream!.seen.includes(stage.boundaryUuid) ||
       (stage.phase === "summary" ? c.stream!.lastUuid !== stage.boundaryUuid || c.stream!.seen.includes(stage.summaryUuid)
         : !stage.promptId || stage.promptId.length > 500 || !c.stream!.seen.includes(stage.summaryUuid)))) throw new Error()
+    const auto = c.stream?.autoText
+    if (auto && (stage || c.projectionRevision !== 4 || c.usageVersion !== 1 || !c.observedAt || timestamp(c.observedAt) !== c.observedAt ||
+      ![auto.boundaryUuid, auto.summaryUuid, auto.promptId, auto.slug].every(autoId) || auto.boundaryUuid === auto.summaryUuid ||
+      c.stream!.lastUuid !== auto.summaryUuid || c.stream!.seen.at(-2) !== auto.boundaryUuid || c.stream!.seen.at(-1) !== auto.summaryUuid)) throw new Error()
     return c
   } catch { return fail("cursor", "Claude checkpoint is invalid; it was not reset.") }
 }

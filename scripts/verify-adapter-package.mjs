@@ -89,6 +89,7 @@ try {
     await verifyClaudeForeground(adapter, context, request.limits)
     await verifyClaudeManualCompaction(adapter, context, request.limits)
     await verifyClaudeManualTextTail(adapter, context, request.limits)
+    await verifyClaudeAutomaticTextReplay(adapter, context, request.limits)
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -374,6 +375,127 @@ async function verifyClaudeManualTextTail(adapter, context, limits) {
       assert.ok(rawContent.includes(marker))
       assert.ok(!JSON.stringify([events, [...usage.values()]]).includes(marker), `${marker} must remain Raw-only`)
     }
+  } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
+}
+
+async function verifyClaudeAutomaticTextReplay(adapter, context, limits) {
+  const fixtureDirectory = join(packageRoot, "fixtures", "native-auto-text-replay-rounds-2.1.263")
+  const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
+  const { sessionId, fixtureCwd } = provenance
+  const autoHome = join(temporaryRoot, "auto-text-source-home")
+  const directory = join(autoHome, "projects", "fixture"), sourceFile = join(directory, `${sessionId}.jsonl`)
+  await mkdir(directory, { recursive: true })
+  process.env.ATAPE_CLAUDE_HOME = autoHome
+  const pagedLimits = { ...limits, eventsPerObservation: 1 }
+  let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
+  const rawProgress = new Map(), events = [], usage = new Map()
+  const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
+  const appendSource = async source => {
+    assert.ok(source.startsWith(previousSource), "Automatic replay test cuts must preserve the native prefix")
+    if (previousSource === "") await writeFile(sourceFile, source)
+    else await appendFile(sourceFile, source.slice(previousSource.length))
+    previousSource = source
+  }
+  const assertTotals = expected => {
+    assert.deepEqual(events.map(event => event.sourceEventId), expected.eventSourceUuids.map(uuid => `${uuid}:0`))
+    assert.equal(events.length, expected.uniqueCanonicalEventCount)
+    assert.equal(usage.size, expected.distinctUsageCount)
+    assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), expected.inputTokens)
+    assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), expected.outputTokens)
+    assert.deepEqual([...usage.keys()].sort(), Object.keys(expected.latestUsageByApiId).sort())
+    for (const [apiId, value] of Object.entries(expected.latestUsageByApiId)) {
+      const sample = usage.get(apiId)
+      assert.equal(sample.model, value.model)
+      assert.equal(sample.inputTokens, value.inputTokens)
+      assert.equal(sample.outputTokens, value.outputTokens)
+    }
+  }
+  const drain = async (expected, source, pending) => {
+    let finished = false
+    for (let index = 0; index < limits.pagesPerCycle; index++) {
+      const page = await collect()
+      assert.deepEqual(await collect(), page, "Installed automatic replay must retry identically after reopening")
+      assert.equal(page.sourceFailures, undefined)
+      assert.equal(typeof page.nextCursor, "string")
+      for (const observation of page.observations) {
+        assert.equal(observation.session.sourceSessionId, sessionId)
+        assert.deepEqual(observation.threads.map(thread => thread.sourceThreadId), ["root"])
+        assert.ok(Buffer.byteLength(JSON.stringify({ ...observation, rawSegments: [] })) <= limits.canonicalBytesPerObservation)
+        for (const event of observation.events) {
+          assert.equal(event.sourceThreadId, "root")
+          assert.ok(!events.some(previous => previous.sourceEventId === event.sourceEventId))
+          events.push(event)
+        }
+        for (const sample of observation.usage) {
+          assert.equal(sample.sourceThreadId, "root")
+          assert.ok(!usage.has(sample.sourceUsageId), "Copied users and summaries must not add or replay usage")
+          usage.set(sample.sourceUsageId, sample)
+        }
+        for (const raw of observation.rawSegments) {
+          sourceObjectId ??= raw.sourceObjectId
+          sourceGeneration ??= raw.sourceGeneration
+          assert.equal(raw.sourceObjectId, sourceObjectId)
+          assert.equal(raw.sourceGeneration, sourceGeneration)
+          assert.equal(raw.sourceOffset, Buffer.byteLength(rawContent))
+          rawContent += raw.content
+          rawProgress.set(raw.sourceObjectId, { sourceSessionId: sessionId, sourceObjectId: raw.sourceObjectId,
+            sourceGeneration: raw.sourceGeneration, sourceOffset: Buffer.byteLength(rawContent), finalized: raw.final })
+        }
+      }
+      cursor = page.nextCursor
+      if (!page.hasMore) { finished = true; break }
+    }
+    assert.ok(finished, "Installed automatic replay did not finish within its page budget")
+    assertTotals(expected)
+    assert.equal(rawContent, source)
+    assert.ok(events.every(event => event.rawRef.sourceObjectId === sourceObjectId))
+    const idle = await collect()
+    assert.deepEqual(idle.observations, [])
+    assert.equal(idle.nextCursor, cursor)
+    assert.equal(idle.hasMore, false)
+    assert.equal(idle.sourceFailures, undefined)
+    assert.equal(idle.progress.pendingCanonicalSessions, pending)
+  }
+  const prefix = (source, line) => source.split("\n").slice(0, line).join("\n") + "\n"
+  try {
+    for (const snapshot of provenance.nativeSnapshots) {
+      const source = (await readFile(join(fixtureDirectory, snapshot.file), "utf8")).replaceAll(
+        JSON.stringify(fixtureCwd).slice(1, -1), JSON.stringify(projectDirectory).slice(1, -1)
+      )
+      const round = provenance.rounds.find(round => round.phase === snapshot.phase)
+      if (round) {
+        const originals = prefix(source, round.lines.originalG)
+        const originalExpected = provenance.testCuts.find(cut => cut.round === round.round && cut.part === "originals").expected
+        await appendSource(originals)
+        await drain(originalExpected, originals, 0)
+        // These are byte/line cuts of a native invocation, not additional native snapshots.
+        // Incomplete copied groups cannot advance either Canonical or eligible Raw progress.
+        const firstCopy = source.split("\n")[round.lines.copyU - 1]
+        const waitingSources = [originals + firstCopy.slice(0, Math.floor(firstCopy.length / 2)),
+          prefix(source, round.lines.copyU), prefix(source, round.lines.copyG), prefix(source, round.lines.B)]
+        for (const waiting of waitingSources) {
+          await appendSource(waiting)
+          const page = await collect()
+          assert.deepEqual(await collect(), page)
+          assert.deepEqual(page.observations, [])
+          assert.equal(page.nextCursor, cursor)
+          assert.equal(page.hasMore, false)
+          assert.equal(page.sourceFailures, undefined)
+          assert.equal(page.progress.pendingCanonicalSessions, 1)
+        }
+        const summary = prefix(source, round.lines.S)
+        await appendSource(summary)
+        const summaryExpected = provenance.testCuts.find(cut => cut.round === round.round && cut.part === "through-summary").expected
+        await drain(summaryExpected, summary, 1)
+      }
+      await appendSource(source)
+      await drain(snapshot.expected, source, 0)
+    }
+    for (const missing of provenance.summarizationUsageLimit.inferredMockSummaryApiIds) assert.ok(!usage.has(missing))
+    assert.equal(events.length, 10)
+    assert.equal(usage.size, 5)
+    assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), 760023)
+    assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), 63)
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 

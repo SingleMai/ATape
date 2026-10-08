@@ -1,0 +1,604 @@
+{
+  "kind": "derived selected model-message evidence; not complete provider requests",
+  "selection": "Only text blocks containing native source markers or the retained total_tokens reminder. Original request/message/block indices and block metadata remain attached. SDK system text, tool schemas and unrelated request fields are excluded.",
+  "originalCompleteRequestsSha256": "f3cddacb9cf9db3fced879b006296a9f9db42c08f37bed17973c25f8c9aae52b",
+  "sanitizedCompleteRequestsSha256": "8d945ff6c11c9a022f55950c88498a89bf51d18441b17ffc64085de322c3ce82",
+  "requests": [
+    {
+      "sourceRequestEntryIndex": 2,
+      "phase": "seed",
+      "summaryRequest": false,
+      "mockResponseKind": "seed",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 2,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SEED: Remember cobalt heron 482.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "919b54ed0eed246e55c845c26bc7cca60bc1bb24acdf2ef06772da35af0b0d34"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 4,
+      "phase": "warmup",
+      "summaryRequest": false,
+      "mockResponseKind": "warmup",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 2,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SEED: Remember cobalt heron 482."
+              },
+              "textSha256": "919b54ed0eed246e55c845c26bc7cca60bc1bb24acdf2ef06772da35af0b0d34"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SEED: cobalt heron 482."
+              },
+              "textSha256": "e3f676ad834dcbb1d7e03edc3f94662fd2fa3c1e8cdc7eae1288431ed5cf0fa0"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_WARMUP: Confirm the synthetic context.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "8479014afb9318003251d9d1727cfd584a7553444a4c8a1f18ea13ff4cae3692"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 6,
+      "phase": "continue",
+      "summaryRequest": true,
+      "mockResponseKind": "summary",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 2,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SEED: Remember cobalt heron 482."
+              },
+              "textSha256": "919b54ed0eed246e55c845c26bc7cca60bc1bb24acdf2ef06772da35af0b0d34"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SEED: cobalt heron 482.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "e3f676ad834dcbb1d7e03edc3f94662fd2fa3c1e8cdc7eae1288431ed5cf0fa0"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_WARMUP: Confirm the synthetic context.\n"
+              },
+              "textSha256": "d9e05e505142438ffdd9b8ecfa41e64b26762321b0ec531c691a167a6d232a02"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 7,
+      "phase": "continue",
+      "summaryRequest": false,
+      "mockResponseKind": "continue",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_TEXT_SUMMARY_CONTINUE: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-text-replay-rounds/config/projects/-fixture-native-auto-text-replay-rounds-workspace/43526b2f-6f23-4f37-9627-c75f50bfb9b9.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+              },
+              "textSha256": "1179bf0903531594be1386305185011351170fd2952985794e0125c34ee2c6e6"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_WARMUP: cobalt heron 482."
+              },
+              "textSha256": "2d6357e2c3a6ba742a041004032dac229df8dee3a2396579cabff675ba66acb6"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_CONTINUE: Resume the synthetic task after compaction.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "1163a2de1bb44f599116f278682fd026588c25f1c360bd3f0ae5fb032491d72a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 9,
+      "phase": "secondcontinue",
+      "summaryRequest": true,
+      "mockResponseKind": "summary",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_TEXT_SUMMARY_CONTINUE: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-text-replay-rounds/config/projects/-fixture-native-auto-text-replay-rounds-workspace/43526b2f-6f23-4f37-9627-c75f50bfb9b9.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+              },
+              "textSha256": "1179bf0903531594be1386305185011351170fd2952985794e0125c34ee2c6e6"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_WARMUP: cobalt heron 482.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "2d6357e2c3a6ba742a041004032dac229df8dee3a2396579cabff675ba66acb6"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_CONTINUE: Resume the synthetic task after compaction.\n"
+              },
+              "textSha256": "ea77c06cbc1b69e90b4dc687541c0c0557d59d8285966644ccbf70ce686f697f"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 10,
+      "phase": "secondcontinue",
+      "summaryRequest": false,
+      "mockResponseKind": "secondcontinue",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_TEXT_SUMMARY_SECONDCONTINUE: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-text-replay-rounds/config/projects/-fixture-native-auto-text-replay-rounds-workspace/43526b2f-6f23-4f37-9627-c75f50bfb9b9.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+              },
+              "textSha256": "693678b87e65e9f9b5fd5da3947914f51e48651b5672046ed9b4513ac5c590ed"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_CONTINUE: cobalt heron 482."
+              },
+              "textSha256": "9d10fade3ab374cb478f0041ed84b4919e2a3964785a3e45b8f545557363132f"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SECOND_CONTINUE: Confirm stable resume again.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "b4769ad19788f92a22dcb84cee7676d5ee23e01cb7702c6919e8c5149327024c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 12,
+      "phase": "thirdcontinue",
+      "summaryRequest": true,
+      "mockResponseKind": "summary",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_TEXT_SUMMARY_SECONDCONTINUE: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-text-replay-rounds/config/projects/-fixture-native-auto-text-replay-rounds-workspace/43526b2f-6f23-4f37-9627-c75f50bfb9b9.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+              },
+              "textSha256": "693678b87e65e9f9b5fd5da3947914f51e48651b5672046ed9b4513ac5c590ed"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_CONTINUE: cobalt heron 482.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "9d10fade3ab374cb478f0041ed84b4919e2a3964785a3e45b8f545557363132f"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SECOND_CONTINUE: Confirm stable resume again.\n"
+              },
+              "textSha256": "cd8b3cb4fefa8c99e549f25c2db9f2a91336f878d3f0fcbc95bb344c5666ba48"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "sourceRequestEntryIndex": 13,
+      "phase": "thirdcontinue",
+      "summaryRequest": false,
+      "mockResponseKind": "thirdcontinue",
+      "model": "claude-sonnet-4-6",
+      "allModelMessageRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "selectedMessagesOnly": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_AUTO_TEXT_SUMMARY_THIRDCONTINUE: Synthetic seed context cobalt heron 482 and Read files amber lynx 204 / violet crane 619. Continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-auto-text-replay-rounds/config/projects/-fixture-native-auto-text-replay-rounds-workspace/43526b2f-6f23-4f37-9627-c75f50bfb9b9.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+              },
+              "textSha256": "b79aa4f0d8dc57f379b880c598389f82b52e678af5cc5af4196bf8963f6ff8c6"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_SECONDCONTINUE: cobalt heron 482."
+              },
+              "textSha256": "a61a59218eeea4ee15f6ad3ca797c62c2c4fbc01b1eb4a17b9aacb5f7fa12ed0"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "selectedBlocks": [
+            {
+              "sourceBlockIndex": 0,
+              "block": {
+                "type": "text",
+                "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+              },
+              "textSha256": "a4955e6b6ae0469a241dc5faf0a550ccabeda29d60797bdebb353f74696347ca"
+            },
+            {
+              "sourceBlockIndex": 1,
+              "block": {
+                "type": "text",
+                "text": "ATAPE_AUTO_TEXT_THIRD_CONTINUE: Confirm stable resume once more.",
+                "cache_control": {
+                  "type": "ephemeral"
+                }
+              },
+              "textSha256": "0ea6846d7d6ca28400fde3247a5986fbcb0ab1fe004ff1727256985977caedae"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "roundProofs": [
+    {
+      "round": 1,
+      "phase": "continue",
+      "summaryRequestEntryIndex": 6,
+      "postRequestEntryIndex": 7,
+      "postRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "currentSummaryExactLocations": [
+        [
+          0,
+          1
+        ]
+      ],
+      "currentSummaryExactOccurrences": 1,
+      "currentSummaryTextSha256": "1179bf0903531594be1386305185011351170fd2952985794e0125c34ee2c6e6",
+      "previousSummaryExactOccurrencesInNewSummaryRequest": null,
+      "stalePreviousSummaryInPostRequest": false,
+      "retainedAssistantTextExact": true,
+      "originalUserTextExactOccurrences": 1,
+      "totalTokensReminderLoaded": true
+    },
+    {
+      "round": 2,
+      "phase": "secondcontinue",
+      "summaryRequestEntryIndex": 9,
+      "postRequestEntryIndex": 10,
+      "postRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "currentSummaryExactLocations": [
+        [
+          0,
+          1
+        ]
+      ],
+      "currentSummaryExactOccurrences": 1,
+      "currentSummaryTextSha256": "693678b87e65e9f9b5fd5da3947914f51e48651b5672046ed9b4513ac5c590ed",
+      "previousSummaryExactOccurrencesInNewSummaryRequest": 1,
+      "stalePreviousSummaryInPostRequest": false,
+      "retainedAssistantTextExact": true,
+      "originalUserTextExactOccurrences": 1,
+      "totalTokensReminderLoaded": true
+    },
+    {
+      "round": 3,
+      "phase": "thirdcontinue",
+      "summaryRequestEntryIndex": 12,
+      "postRequestEntryIndex": 13,
+      "postRoles": [
+        "user",
+        "assistant",
+        "user"
+      ],
+      "currentSummaryExactLocations": [
+        [
+          0,
+          1
+        ]
+      ],
+      "currentSummaryExactOccurrences": 1,
+      "currentSummaryTextSha256": "b79aa4f0d8dc57f379b880c598389f82b52e678af5cc5af4196bf8963f6ff8c6",
+      "previousSummaryExactOccurrencesInNewSummaryRequest": 1,
+      "stalePreviousSummaryInPostRequest": false,
+      "retainedAssistantTextExact": true,
+      "originalUserTextExactOccurrences": 1,
+      "totalTokensReminderLoaded": true
+    }
+  ]
+}

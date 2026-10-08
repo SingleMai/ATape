@@ -124,6 +124,10 @@ synthetic bridge's zero counters do not create a usage item.
 
 ## Verification and remaining scope
 
+[ADR-0089](0089-claude-automatic-text-replay-on-legacy-capture.md) adds a separate
+fixture-proved automatic text replay decision. It does not broaden this manual
+profile's retained tail shapes or control sequence.
+
 Verify through production Adapter, Collector and installed-package Interfaces:
 capture before compaction, append the native compacted snapshot, append real
 continuation, restore the runtime at every bounded page, verify stable old IDs,
