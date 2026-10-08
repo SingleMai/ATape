@@ -1,0 +1,1140 @@
+{
+  "status": "controlled native source evidence; owning guide records implementation and acceptance",
+  "originalSourcesNotModified": true,
+  "sourceResearchDirectory": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1",
+  "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+  "fixtureCwd": "/fixture/native-manual-large-read-reinjection/workspace",
+  "fixtureConfig": "/fixture/native-manual-large-read-reinjection/config",
+  "fixtureHome": "/fixture/native-manual-large-read-reinjection/home",
+  "binaryVersion": "2.1.263",
+  "recordedBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "recordedBinaryEvidence": {
+    "path": "/Users/liying/.local/share/claude/versions/2.1.263",
+    "reportedVersion": "2.1.263 (Claude Code)",
+    "beforeSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+    "afterSha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9"
+  },
+  "sourceEvidence": {
+    "captureHarnessSha256": "6adde67276531eef123d3f31ce3974709ae6ac4e4f80c231bd5f064b9fa0624c",
+    "actualEnvironmentRecordedBeforeSpawning": true,
+    "actualEnvironment": {
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "HOME": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/home",
+      "LANG": "en_US.UTF-8",
+      "TMPDIR": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1",
+      "CLAUDE_CONFIG_DIR": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/config",
+      "ANTHROPIC_BASE_URL": "http://127.0.0.1:64793",
+      "ANTHROPIC_API_KEY": "atape-loopback-fake-key-no-provider",
+      "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+      "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+      "DISABLE_AUTOUPDATER": "1",
+      "DISABLE_AUTO_COMPACT": "1"
+    },
+    "initialHomeEmpty": true,
+    "initialConfigEmpty": true,
+    "actualCwd": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/workspace",
+    "originalRootCwd": "/private/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/workspace",
+    "actualBinaryInvocations": 6,
+    "nativeAttempts": 1,
+    "totalModelRequests": 7,
+    "routeCounts": {
+      "/api/hello": 6,
+      "/v1/messages?beta=true": 7,
+      "/v1/messages/count_tokens?beta=true": 4
+    },
+    "loopbackHelloResponseStatus": 404,
+    "osEgressFirewallApplied": false,
+    "processBudget": {
+      "sigtermMs": 45000,
+      "sigkillMs": 50000
+    },
+    "routeBudget": {
+      "maximumModelRequests": 20,
+      "maximumModelRequestsPerPhase": 5,
+      "maximumRequestBytes": 8388608
+    },
+    "savedNewHarnessIsExecutionAuthority": true,
+    "oldEditedHarnessIsExecutionAuthority": false
+  },
+  "sourceRequests": {
+    "file": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/requests.json",
+    "bytes": 1255801,
+    "sha256": "866b7cc2ccd0efdfc77a92ea445efb37868784ae50c1f2f6bcb6c47bef454a9b",
+    "rawBodyHashesCapturedBeforeParsing": true,
+    "rawBodyRecovery": "reconstruction accepted only when bytes and SHA256 equaled originally captured HTTP body; bootstrap GET bodies are empty"
+  },
+  "pathTransformation": {
+    "operation": "ordered literal UTF-8 byte substitutions; JSONL never reserialized for writes",
+    "replacements": [
+      {
+        "from": "-private-tmp-atape-claude-large-read-manual-native-54exPQ-attempt-1-workspace",
+        "to": "-fixture-native-manual-large-read-reinjection-workspace",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 0,
+          "warmup": 0,
+          "toolturn": 0,
+          "compact": 1,
+          "continue": 1,
+          "secondcontinue": 1
+        }
+      },
+      {
+        "from": "-tmp-atape-claude-large-read-manual-native-54exPQ-attempt-1-workspace",
+        "to": "-fixture-native-manual-large-read-reinjection-workspace",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 0,
+          "warmup": 0,
+          "toolturn": 0,
+          "compact": 1,
+          "continue": 1,
+          "secondcontinue": 1
+        }
+      },
+      {
+        "from": "/private/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/workspace",
+        "to": "/fixture/native-manual-large-read-reinjection/workspace",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 3,
+          "warmup": 6,
+          "toolturn": 16,
+          "compact": 23,
+          "continue": 28,
+          "secondcontinue": 31
+        }
+      },
+      {
+        "from": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/workspace",
+        "to": "/fixture/native-manual-large-read-reinjection/workspace",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 3,
+          "warmup": 6,
+          "toolturn": 20,
+          "compact": 33,
+          "continue": 38,
+          "secondcontinue": 41
+        }
+      },
+      {
+        "from": "/private/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/config",
+        "to": "/fixture/native-manual-large-read-reinjection/config",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 0,
+          "warmup": 0,
+          "toolturn": 0,
+          "compact": 0,
+          "continue": 0,
+          "secondcontinue": 0
+        }
+      },
+      {
+        "from": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/config",
+        "to": "/fixture/native-manual-large-read-reinjection/config",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 0,
+          "warmup": 0,
+          "toolturn": 0,
+          "compact": 1,
+          "continue": 1,
+          "secondcontinue": 1
+        }
+      },
+      {
+        "from": "/private/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/home",
+        "to": "/fixture/native-manual-large-read-reinjection/home",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 0,
+          "warmup": 0,
+          "toolturn": 0,
+          "compact": 0,
+          "continue": 0,
+          "secondcontinue": 0
+        }
+      },
+      {
+        "from": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/home",
+        "to": "/fixture/native-manual-large-read-reinjection/home",
+        "originalOccurrenceCountsByPhase": {
+          "seed": 0,
+          "warmup": 0,
+          "toolturn": 0,
+          "compact": 0,
+          "continue": 0,
+          "secondcontinue": 0
+        }
+      }
+    ],
+    "relativeDisplayPathEffect": "Only embedded workspace suffix replaced; five ../ components retained.",
+    "allNonPathBytesPreserved": true,
+    "decodedLeafComparisonPassed": true,
+    "strictBytePrefixesPreserved": true
+  },
+  "nativeSnapshots": [
+    {
+      "phase": "seed",
+      "file": "seed.jsonl",
+      "kind": "actual native snapshot with declared literal path replacements only",
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/seed.jsonl",
+      "originalBytes": 2741,
+      "originalSha256": "514aa017e062dff49cb9ab425886331396ab1328cc8bba69efbd823fdaa37e59",
+      "bytes": 2675,
+      "sha256": "a7bbbac73f059a7ab1e996230e7be96fa3db742a5d2c34a84a61ec9cf4794d9d",
+      "recordCount": 7,
+      "strictPreviousBytePrefix": true,
+      "allCompleteLF": true,
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 2,
+        "distinctPersistedRealApiUsageCount": 1,
+        "inputTokens": 23,
+        "outputTokens": 11
+      },
+      "addedLogicalRealEventSourceIds": [
+        "6929895c-29b7-4b4d-9d45-ac05c4f3c001:0",
+        "963eba14-97e0-4fe1-b0c0-7ed1d312f94a:0"
+      ]
+    },
+    {
+      "phase": "warmup",
+      "file": "warmup.jsonl",
+      "kind": "actual native snapshot with declared literal path replacements only",
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/warmup.jsonl",
+      "originalBytes": 5536,
+      "originalSha256": "fe775f703b44c9a453d0eec2d638141976015e3030573f9b419e436878fc8d23",
+      "bytes": 5404,
+      "sha256": "c0bdf80776b7fcdb0d6125e4ff7ebc55611d92ef045d2b6f3dd2734db7e7b8f7",
+      "recordCount": 14,
+      "strictPreviousBytePrefix": true,
+      "allCompleteLF": true,
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 4,
+        "distinctPersistedRealApiUsageCount": 2,
+        "inputTokens": 52,
+        "outputTokens": 24
+      },
+      "addedLogicalRealEventSourceIds": [
+        "3ffb9023-3be1-4cee-adc6-f21eb712195e:0",
+        "da5a6f6d-4a63-4473-a0d2-2fe9b85bf456:0"
+      ]
+    },
+    {
+      "phase": "toolturn",
+      "file": "toolturn.jsonl",
+      "kind": "actual native snapshot with declared literal path replacements only",
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/toolturn.jsonl",
+      "originalBytes": 410901,
+      "originalSha256": "4641204ef8500e237c928a94471c83de9c2bfcd5874b82947765ea48bfcdf370",
+      "bytes": 410493,
+      "sha256": "4f61be8ab7e33bc6e725654c6c55c72ffe6b1f08547acc5aa89cdd6c92f90073",
+      "recordCount": 29,
+      "strictPreviousBytePrefix": true,
+      "allCompleteLF": true,
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "addedLogicalRealEventSourceIds": [
+        "07378973-ad96-43a7-9ecc-ba97aaf0bc39:0",
+        "925bcc1a-5b24-454b-9149-3d054dc1b05d:0",
+        "f44ff0e1-241a-497a-aaa8-59c54fba27f2:0",
+        "8665cd81-dccd-4168-96bf-16e2f68d4da5:0",
+        "178d2cc8-d709-4243-aad5-f8043f181bc3:0",
+        "744ace91-4d39-422d-8105-ef20bb770c28:0",
+        "ea34de47-fd2a-4539-bfaa-695eb70487e5:0",
+        "b06cb79e-b46c-4a13-87fa-c98baa1a8b08:0"
+      ]
+    },
+    {
+      "phase": "compact",
+      "file": "compact.jsonl",
+      "kind": "actual native snapshot with declared literal path replacements only",
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/compact.jsonl",
+      "originalBytes": 615228,
+      "originalSha256": "2b8394af85fad27e2ef17ecbc6c49b313255edb6e98f59680ddcd93347617030",
+      "bytes": 614546,
+      "sha256": "6d303314ef8c8fd4a34bdff4bb025aa9c65259492e112c35962879f26bb51b8e",
+      "recordCount": 43,
+      "strictPreviousBytePrefix": true,
+      "allCompleteLF": true,
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "addedLogicalRealEventSourceIds": []
+    },
+    {
+      "phase": "continue",
+      "file": "continue.jsonl",
+      "kind": "actual native snapshot with declared literal path replacements only",
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/continue.jsonl",
+      "originalBytes": 619819,
+      "originalSha256": "573cc21cdeddf332d0a1939cdaaafd0f8081d8a59162db8a999301c5a4527694",
+      "bytes": 619027,
+      "sha256": "30eee8d0b179e70c314138bd05e8fb901c20b08c0f1cecf7167ebc582b7ceff8",
+      "recordCount": 51,
+      "strictPreviousBytePrefix": true,
+      "allCompleteLF": true,
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 14,
+        "distinctPersistedRealApiUsageCount": 5,
+        "inputTokens": 159,
+        "outputTokens": 77
+      },
+      "addedLogicalRealEventSourceIds": [
+        "f6dfaa63-8fdc-4efb-acf7-3039bae7eead:0",
+        "ffa23253-d5ab-4ac1-8325-87f646c56829:0"
+      ]
+    },
+    {
+      "phase": "secondcontinue",
+      "file": "secondcontinue.jsonl",
+      "kind": "actual native snapshot with declared literal path replacements only",
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/secondcontinue.jsonl",
+      "originalBytes": 622677,
+      "originalSha256": "9879291f9c7844c5a2d24465a745d2d9e915a45864a387b8fef3a284b01562fb",
+      "bytes": 621819,
+      "sha256": "deb667a9830fd7d967cb14028a83bb34a63ab8e2dd3373698c499c713e7c4ec7",
+      "recordCount": 57,
+      "strictPreviousBytePrefix": true,
+      "allCompleteLF": true,
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 16,
+        "distinctPersistedRealApiUsageCount": 6,
+        "inputTokens": 188,
+        "outputTokens": 90
+      },
+      "addedLogicalRealEventSourceIds": [
+        "ea05c961-9e64-448b-9f40-febd83fcf544:0",
+        "8bb527d0-a5dc-47eb-ad98-b847acc7ed81:0"
+      ]
+    }
+  ],
+  "nativeInvocations": [
+    {
+      "phase": "seed",
+      "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+      "exit": 0,
+      "signal": null,
+      "startedAt": "2026-10-08T14:29:44.873Z",
+      "finishedAt": "2026-10-08T14:29:45.587Z",
+      "actualResultFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/seed-result.json",
+      "actualEnvFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/seed-invocation.json"
+    },
+    {
+      "phase": "warmup",
+      "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+      "exit": 0,
+      "signal": null,
+      "startedAt": "2026-10-08T14:29:45.588Z",
+      "finishedAt": "2026-10-08T14:29:45.796Z",
+      "actualResultFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/warmup-result.json",
+      "actualEnvFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/warmup-invocation.json"
+    },
+    {
+      "phase": "toolturn",
+      "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+      "exit": 0,
+      "signal": null,
+      "startedAt": "2026-10-08T14:29:45.797Z",
+      "finishedAt": "2026-10-08T14:29:46.008Z",
+      "actualResultFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/toolturn-result.json",
+      "actualEnvFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/toolturn-invocation.json"
+    },
+    {
+      "phase": "compact",
+      "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+      "exit": 0,
+      "signal": null,
+      "startedAt": "2026-10-08T14:29:46.012Z",
+      "finishedAt": "2026-10-08T14:29:46.214Z",
+      "actualResultFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/compact-result.json",
+      "actualEnvFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/compact-invocation.json"
+    },
+    {
+      "phase": "continue",
+      "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+      "exit": 0,
+      "signal": null,
+      "startedAt": "2026-10-08T14:29:46.219Z",
+      "finishedAt": "2026-10-08T14:29:46.410Z",
+      "actualResultFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/continue-result.json",
+      "actualEnvFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/continue-invocation.json"
+    },
+    {
+      "phase": "secondcontinue",
+      "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c",
+      "exit": 0,
+      "signal": null,
+      "startedAt": "2026-10-08T14:29:46.415Z",
+      "finishedAt": "2026-10-08T14:29:46.602Z",
+      "actualResultFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/secondcontinue-result.json",
+      "actualEnvFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/secondcontinue-invocation.json"
+    }
+  ],
+  "nativeResultsAreArgvAuthority": true,
+  "nativeArgvCommonPrefix": [
+    "--restricted",
+    "--safe-mode",
+    "--tools",
+    "Read",
+    "--allowedTools",
+    "Read",
+    "--permission-mode",
+    "manual",
+    "--permission-prompts",
+    "none",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--no-chrome",
+    "--model",
+    "claude-sonnet-4-6",
+    "--effort",
+    "low",
+    "--system-prompt",
+    "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+    "--print",
+    "--output-format",
+    "json"
+  ],
+  "nativeArgvReconstruction": {
+    "initialPhase": "seed",
+    "initialFlags": [
+      "--session-id",
+      "b179ae84-44d8-4f32-adee-7f176edf363c"
+    ],
+    "remainingFlags": [
+      "--resume",
+      "b179ae84-44d8-4f32-adee-7f176edf363c"
+    ],
+    "promptsByPhase": {
+      "seed": "ATAPE_MANUAL_LARGE_SEED: Remember cobalt heron 482.",
+      "warmup": "ATAPE_MANUAL_LARGE_WARMUP: Confirm the synthetic context.",
+      "toolturn": "ATAPE_MANUAL_LARGE_TOOLS: Read a.txt and b.txt once, without truncation, then give two text blocks.",
+      "compact": "/compact Preserve synthetic read context and continue from the tool final.",
+      "continue": "ATAPE_MANUAL_LARGE_CONTINUE: Resume the synthetic task after compaction.",
+      "secondcontinue": "ATAPE_MANUAL_LARGE_SECOND_CONTINUE: Confirm stable resume again."
+    }
+  },
+  "manualTail": {
+    "originalFinalTextLines": [
+      25,
+      26
+    ],
+    "retainedOriginalUuids": [
+      "ea34de47-fd2a-4539-bfaa-695eb70487e5",
+      "b06cb79e-b46c-4a13-87fa-c98baa1a8b08"
+    ],
+    "apiId": "msg_atape_manual_large_1_mock_4",
+    "apiBlockIndices": [
+      0,
+      1
+    ],
+    "boundaryLine": 34,
+    "boundaryUuid": "bb99f0fd-aec2-4827-a77a-a02b6d293d78",
+    "summaryLine": 35,
+    "summaryUuid": "e71ee8e5-d682-456c-9802-df7e7374f05b",
+    "slug": "replicated-swinging-kernighan",
+    "trigger": "manual",
+    "noUuidCopies": true,
+    "fileReinjectionIsAfterExistingTwoTextTailAndControlSequence": true
+  },
+  "fileReinjection": [
+    {
+      "line": 39,
+      "uuid": "b7107243-c11b-4a81-81c4-4d083c235baa",
+      "parentUuid": "319f28cd-6d4d-4f3e-8426-1e29d6165326",
+      "earlierOwnCallUuid": "8665cd81-dccd-4168-96bf-16e2f68d4da5",
+      "earlierResultUuid": "744ace91-4d39-422d-8105-ef20bb770c28",
+      "earlierResultLine": 23,
+      "fullAttachmentContentDeepEqualsWholeNativeReceipt": true,
+      "fullSerializedContentObjectEqualsOriginalToolUseResultObject": true,
+      "filenameLiteralEqualsOwnCallAndReceiptPath": true,
+      "rootKnownFlagsPresent": {
+        "isSidechain": false
+      },
+      "originalSharedObjectBytes": 98668,
+      "originalSharedObjectSha256": "823f4f17865e969102a6f66512f5aa7d9243d51e2f6afb93dd73651aca7783be",
+      "attachmentFilename": "/fixture/native-manual-large-read-reinjection/workspace/b.txt",
+      "displayPath": "../../../../../fixture/native-manual-large-read-reinjection/workspace/b.txt",
+      "sanitizedSharedObjectBytes": 98654,
+      "sanitizedSharedObjectSha256": "5f5ad42e4614697eb4a5db433b06348fe8e43587e51a505b1cedf0e703a148bf",
+      "originalResultFrameBytesIncludingLF": 198664,
+      "originalResultFrameSha256": "a70a8869a09cf387304d66a215ddf4f3adf0f61a7be6e32dca6686951c17ae5d",
+      "sanitizedResultFrameBytesIncludingLF": 198628,
+      "sanitizedResultFrameSha256": "fcb4468686323a33d3eb0309585bf4d9e3f41329c92b7fdc642fc0fad32af2eb",
+      "originalFileAttachmentFrameBytesIncludingLF": 99342,
+      "originalFileAttachmentFrameSha256": "287a18059ba87fbfa9d62686193338947a4d8d6024b0565c1da4c503148bdb8d",
+      "sanitizedFileAttachmentFrameBytesIncludingLF": 99278,
+      "sanitizedFileAttachmentFrameSha256": "05602acb6a796a23dfba0147d3dec89d6ea05a31d925102b7bc9d733ddb23ae5",
+      "originalFileContentUtf8Bytes": 98304,
+      "numberedToolResultContentUtf8Bytes": 98968,
+      "numLines": 193,
+      "startLine": 1,
+      "totalLines": 193
+    },
+    {
+      "line": 40,
+      "uuid": "7532062e-721a-4926-96dd-26718afbe86c",
+      "parentUuid": "b7107243-c11b-4a81-81c4-4d083c235baa",
+      "earlierOwnCallUuid": "f44ff0e1-241a-497a-aaa8-59c54fba27f2",
+      "earlierResultUuid": "178d2cc8-d709-4243-aad5-f8043f181bc3",
+      "earlierResultLine": 22,
+      "fullAttachmentContentDeepEqualsWholeNativeReceipt": true,
+      "fullSerializedContentObjectEqualsOriginalToolUseResultObject": true,
+      "filenameLiteralEqualsOwnCallAndReceiptPath": true,
+      "rootKnownFlagsPresent": {
+        "isSidechain": false
+      },
+      "originalSharedObjectBytes": 98668,
+      "originalSharedObjectSha256": "961ba3d51f2ca60fae708d3b8db33510018b5baf35666d35b030961f6522d2cb",
+      "attachmentFilename": "/fixture/native-manual-large-read-reinjection/workspace/a.txt",
+      "displayPath": "../../../../../fixture/native-manual-large-read-reinjection/workspace/a.txt",
+      "sanitizedSharedObjectBytes": 98654,
+      "sanitizedSharedObjectSha256": "6a0f7a75a51cb11db83fc1dfd809ba21a033d11d2efe0ee9f7f55828b9691a38",
+      "originalResultFrameBytesIncludingLF": 198664,
+      "originalResultFrameSha256": "e6be07f5db20c35ca85c77aa4bd72f9a6a380c7a1187b09c1ea549ff324c9443",
+      "sanitizedResultFrameBytesIncludingLF": 198628,
+      "sanitizedResultFrameSha256": "2c5ec71d08e8784e617d029f0a3879fcd9a420ec2651ceea32aa388ac78c6bb9",
+      "originalFileAttachmentFrameBytesIncludingLF": 99342,
+      "originalFileAttachmentFrameSha256": "33e795863a83a47c533ccdd3b593d3b83b4e7d0ff879547ea5c36e82e124c710",
+      "sanitizedFileAttachmentFrameBytesIncludingLF": 99278,
+      "sanitizedFileAttachmentFrameSha256": "444afbf37c200c06c742da3ea5437ba5bc33caa1a7c568b4acff3b8e9bdc051c",
+      "originalFileContentUtf8Bytes": 98304,
+      "numberedToolResultContentUtf8Bytes": 98968,
+      "numLines": 193,
+      "startLine": 1,
+      "totalLines": 193
+    }
+  ],
+  "firstResumeBridge": {
+    "metaLine": 46,
+    "metaUuid": "c44aead0-fdda-4d23-b194-8dc883d7231f",
+    "metaPromptId": "970b68d8-c774-44cb-8259-ead0f7ee7bc7",
+    "metaParentUuid": "7532062e-721a-4926-96dd-26718afbe86c",
+    "metaText": "Continue from where you left off.",
+    "syntheticLine": 47,
+    "syntheticUuid": "e031901b-f8de-483a-b2fa-5a1e5ad8adf9",
+    "syntheticMessageId": "d5ac5cb8-93f9-4108-b288-b766d877cdb9",
+    "syntheticModel": "<synthetic>",
+    "syntheticApiBlockIndexPresent": false,
+    "syntheticIsApiErrorMessage": false,
+    "syntheticUsage": {
+      "output_tokens_details": null,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": null,
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": null,
+      "iterations": null,
+      "speed": null
+    },
+    "syntheticParentUuid": "c44aead0-fdda-4d23-b194-8dc883d7231f",
+    "realUserLine": 48,
+    "realUserUuid": "f6dfaa63-8fdc-4efb-acf7-3039bae7eead",
+    "realUserPromptId": "970b68d8-c774-44cb-8259-ead0f7ee7bc7",
+    "realUserParentUuid": "e031901b-f8de-483a-b2fa-5a1e5ad8adf9",
+    "metaAndRealPromptIdsEqual": true
+  },
+  "uuidlessBookkeepingDifferencesFromOldSmallCorpus": {
+    "newFinalPhysicalLines": 57,
+    "oldActualFinalPhysicalLines": 53,
+    "newUuidRecordCount": 31,
+    "oldUuidRecordCount": 31,
+    "sameUuidGraphByRecordedTypeParentFlagsAndIndex": true,
+    "addedRecords": [
+      {
+        "line": 30,
+        "record": {
+          "type": "mode",
+          "mode": "normal",
+          "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c"
+        }
+      },
+      {
+        "line": 31,
+        "record": {
+          "type": "atis-latch",
+          "atis": "",
+          "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c"
+        }
+      },
+      {
+        "line": 42,
+        "record": {
+          "type": "mode",
+          "mode": "normal",
+          "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c"
+        }
+      },
+      {
+        "line": 43,
+        "record": {
+          "type": "atis-latch",
+          "atis": "",
+          "sessionId": "b179ae84-44d8-4f32-adee-7f176edf363c"
+        }
+      }
+    ],
+    "capacityAcceptanceNotImplied": true
+  },
+  "summarizationUsageGap": {
+    "mockApiId": "msg_atape_manual_large_1_mock_5",
+    "mockResponseUsage": {
+      "input_tokens": 51,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 19
+    },
+    "hasAssistantJsonlRecord": false,
+    "jsonlUsageRecoverable": false,
+    "bookkeepingAndStdoutAreNotSourceUsage": true,
+    "noRealProviderBilling": true
+  },
+  "diskEvidence": [
+    {
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/workspace/a.txt",
+      "fixtureFile": "/fixture/native-manual-large-read-reinjection/workspace/a.txt",
+      "bytes": 98304,
+      "sha256": "0758847cb4428745fc77a5901e2c86db0aa9560197a2e3d7f9545a7bf97c2113",
+      "fullUtf8ContentEqualsReadReceipt": true,
+      "lineCounters": {
+        "numLines": 193,
+        "startLine": 1,
+        "totalLines": 193
+      },
+      "nonemptyLines": 192,
+      "bytesPerLineIncludingLF": 512,
+      "noReadOffsetOrLimitInput": true,
+      "contentRecoverableFromReceiptLine": 22
+    },
+    {
+      "originalFile": "/tmp/atape-claude-large-read-manual-native.54exPQ/attempt-1/workspace/b.txt",
+      "fixtureFile": "/fixture/native-manual-large-read-reinjection/workspace/b.txt",
+      "bytes": 98304,
+      "sha256": "99e9b4081cc26a4dde32f66ed3104b485277d4afec2e74bca6d4c0155d6f590e",
+      "fullUtf8ContentEqualsReadReceipt": true,
+      "lineCounters": {
+        "numLines": 193,
+        "startLine": 1,
+        "totalLines": 193
+      },
+      "nonemptyLines": 192,
+      "bytesPerLineIncludingLF": 512,
+      "noReadOffsetOrLimitInput": true,
+      "contentRecoverableFromReceiptLine": 23
+    }
+  ],
+  "requestProof": [
+    {
+      "originalRequestIndex": 8,
+      "phase": "toolturn",
+      "response": "tool-final",
+      "sourceSummaryExactLoadedAt": [],
+      "rawRequestBytes": 204203,
+      "rawRequestSha256": "c7d5c16af4a2881a23660dcf88a414eeab13bf337d19b40a8648b99918534ad6",
+      "newToolExecutionAfterCompact": null
+    },
+    {
+      "originalRequestIndex": 10,
+      "phase": "compact",
+      "response": "summary",
+      "sourceSummaryExactLoadedAt": [],
+      "rawRequestBytes": 210802,
+      "rawRequestSha256": "1b4b9c8ab33daa627a5f012280861e3f72163573079da5e1efe8c6d7df2fd9b5",
+      "newToolExecutionAfterCompact": null
+    },
+    {
+      "originalRequestIndex": 14,
+      "phase": "continue",
+      "response": "continue",
+      "sourceSummaryExactLoadedAt": [
+        0
+      ],
+      "rawRequestBytes": 205455,
+      "rawRequestSha256": "60e0559dd45b5569528eda5366b489076814c8842d936047ff57662193fd34c8",
+      "newToolExecutionAfterCompact": false
+    },
+    {
+      "originalRequestIndex": 16,
+      "phase": "secondcontinue",
+      "response": "secondcontinue",
+      "sourceSummaryExactLoadedAt": [
+        0
+      ],
+      "rawRequestBytes": 205794,
+      "rawRequestSha256": "032229d1eb37a293b3e5d4cb8cd6f37283f8b36bead60ee846322d1506cf97bd",
+      "newToolExecutionAfterCompact": false
+    }
+  ],
+  "selectedSourceRequests": {
+    "file": "selected-source-requests.json",
+    "bytes": 18683,
+    "sha256": "85e2a7c7244ed0b5bbc2557ab6b2b3ee4674b2e705b66369c92723be73d4b427",
+    "sourceSelectedArtifactSha256": "b20828437bdd01e8f9deccd32ce16e8761499ccb118304c4226184baa5f8a958",
+    "originalRequestIndices": [
+      8,
+      10,
+      14,
+      16
+    ],
+    "derivation": "Relevant model-message coordinates; short text, complete summary and tool metadata retained. Long Read-bearing text represented by exact transformed byte count/hash and marker previews. No SDK system prompt/tools schema. Full original HTTP bodies remain temporary."
+  },
+  "derivedCuts": [
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "toolturn",
+      "label": "retained-final-text-tail",
+      "throughLine": 26,
+      "bytes": 410088,
+      "sha256": "8bdaa2e7f5a2c298ba7528157d77c668546c4c72bb0871454283b44e0d9d43c9",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 410496,
+      "originalSha256": "7f6354c5f30939fa6c8d922acd07a2610258f76ce481d4b79b05849cbdad5c86"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "B",
+      "throughLine": 34,
+      "bytes": 412099,
+      "sha256": "e5924d83c8f2b7da772111841bc31c5efc54828c74d55b22a9ec2550b5a409d8",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 412529,
+      "originalSha256": "b5ccb3edb16cc4ae9dd20640607f06680dcd99b205ad63e237f3e63dea727ed1"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "S",
+      "throughLine": 35,
+      "bytes": 413657,
+      "sha256": "d3ffece4d3b80c0c218f6b65aac1d157bd7c23b1318db62c3e75184e06c65552",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 414145,
+      "originalSha256": "665aebdf31b5a4236101cfa15b9b526472916c46fa8a0b764bcb49ce6691882e"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "caveat",
+      "throughLine": 36,
+      "bytes": 414416,
+      "sha256": "f91d2b0f5ca1538bb463da48465d23f0ef2d724753a690ab30b7f98496b686ed",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 414926,
+      "originalSha256": "cef9cd48ceeaa6a19b6c31a153b01debddd027f4af60f1b71a89fcaeb2a5eef6"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "command",
+      "throughLine": 37,
+      "bytes": 415117,
+      "sha256": "bb9f5b92e6226a3af5537e37c76d4d0c0ad557c26a910ab408a3e3096f64a5e4",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 415649,
+      "originalSha256": "460710564922ba11b006ed89e884d3189672f115d22a9cfe308ad4e9eca54fdb"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "stdout",
+      "throughLine": 38,
+      "bytes": 415700,
+      "sha256": "429e446e3875b15374fcd7de7e5e6ca7e3cea62a005904ebaf89007b818f94d2",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 416254,
+      "originalSha256": "8aba1a7c41c43d4ca083d68cf3ff17a690028b2d6b0c5a7b916ee1353720c433"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "fileB",
+      "throughLine": 39,
+      "bytes": 514978,
+      "sha256": "2839b4e3fbad6b412bd3410b026704d0641cffeae32437bb30c31d3ff6c1ba4f",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 515596,
+      "originalSha256": "3b86301bbe1944225d5ecafc904bc6cb091ec5da403923943119d81d98198335"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "compact",
+      "label": "fileA",
+      "throughLine": 40,
+      "bytes": 614256,
+      "sha256": "4acd5335f415b7fa9bd7c5ccc3f1243df1c0a6bb022466d32f0fb89cb2b6e234",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 614938,
+      "originalSha256": "1ba732f86610210b0922db18d850847dc4dc0d679ed274c0488ee43b592fc5b7"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "continue",
+      "label": "meta-continue",
+      "throughLine": 46,
+      "bytes": 615481,
+      "sha256": "4dd57157ef1da0c6c6bf4b26551a37253872479d3909c3607e6911361b8d9523",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 616185,
+      "originalSha256": "6c0b5c4c3fde3291d493bdfb51b84a63223c6acb58db4616ba5af1f6d0127ea8"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "continue",
+      "label": "synthetic-bridge",
+      "throughLine": 47,
+      "bytes": 616580,
+      "sha256": "ac85a5ef462ce591b4f24c94c087b983545abeceb64eb8b8d546b9db6c2e0833",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 12,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 617306,
+      "originalSha256": "9be8385ee2455b7e967ea8f15a866abf3d4b177292f722fbe62ce0e321558fa0"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "continue",
+      "label": "real-user",
+      "throughLine": 48,
+      "bytes": 617200,
+      "sha256": "1cf722bbe77f50faf61799994cfc21bca591251bc6ac7e4bb6b2629d5dd3c746",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 13,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 617948,
+      "originalSha256": "dbdcb7a9c573d0ead752ce191fff8877da4b1b5f5992075249f97ba36f27a5e9"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "continue",
+      "label": "real-user-attachment",
+      "throughLine": 49,
+      "bytes": 617722,
+      "sha256": "230ee9d3bd0bb6b603cb35112f774ef57e1227df4207114811e6e188f672fe75",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 13,
+        "distinctPersistedRealApiUsageCount": 4,
+        "inputTokens": 130,
+        "outputTokens": 64
+      },
+      "originalBytes": 618492,
+      "originalSha256": "3134d82b18e68e9e254b40e350165b2455b0511de852f4650249f4c66c59e10c"
+    },
+    {
+      "kind": "derived complete-LF prefix, not new native snapshot",
+      "providedAsFile": false,
+      "sourcePhase": "continue",
+      "label": "real-answer",
+      "throughLine": 50,
+      "bytes": 618815,
+      "sha256": "c09d8e94febe5849d4f9c2e5ed0039947245fa7cf5034136ba86e32ffc946025",
+      "expectedLogicalData": {
+        "uniqueRealEventCount": 14,
+        "distinctPersistedRealApiUsageCount": 5,
+        "inputTokens": 159,
+        "outputTokens": 77
+      },
+      "originalBytes": 619607,
+      "originalSha256": "3087fea5a6279d98be1ce3247d48afe9331883cf1dd16ed56362fd936439de53"
+    }
+  ],
+  "derivedCutsAreNewNativeInvocations": false,
+  "derivedCutFilesProvided": false,
+  "expectedDataScope": "Source-derived logical expectations for the selected manual profile, excluding controls; does not state Adapter acceptance passed.",
+  "persistedRealApiUsageAtFinalSnapshot": {
+    "msg_atape_manual_large_1_mock_1": {
+      "sourceRecordUuid": "963eba14-97e0-4fe1-b0c0-7ed1d312f94a",
+      "apiBlockIndex": 0,
+      "usage": {
+        "input_tokens": 23,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 11,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "endByte": 2484,
+      "line": 6,
+      "model": "claude-sonnet-4-6",
+      "inputTokens": 23,
+      "outputTokens": 11
+    },
+    "msg_atape_manual_large_1_mock_2": {
+      "sourceRecordUuid": "da5a6f6d-4a63-4473-a0d2-2fe9b85bf456",
+      "apiBlockIndex": 0,
+      "usage": {
+        "input_tokens": 29,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "endByte": 5124,
+      "line": 12,
+      "model": "claude-sonnet-4-6",
+      "inputTokens": 29,
+      "outputTokens": 13
+    },
+    "msg_atape_manual_large_1_mock_3": {
+      "sourceRecordUuid": "8665cd81-dccd-4168-96bf-16e2f68d4da5",
+      "apiBlockIndex": 2,
+      "usage": {
+        "input_tokens": 37,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 17,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "endByte": 10235,
+      "line": 21,
+      "model": "claude-sonnet-4-6",
+      "inputTokens": 37,
+      "outputTokens": 17
+    },
+    "msg_atape_manual_large_1_mock_4": {
+      "sourceRecordUuid": "b06cb79e-b46c-4a13-87fa-c98baa1a8b08",
+      "apiBlockIndex": 1,
+      "usage": {
+        "input_tokens": 41,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 23,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "endByte": 410088,
+      "line": 26,
+      "model": "claude-sonnet-4-6",
+      "inputTokens": 41,
+      "outputTokens": 23
+    },
+    "msg_atape_manual_large_1_mock_6": {
+      "sourceRecordUuid": "ffa23253-d5ab-4ac1-8325-87f646c56829",
+      "apiBlockIndex": 0,
+      "usage": {
+        "input_tokens": 29,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "endByte": 618815,
+      "line": 50,
+      "model": "claude-sonnet-4-6",
+      "inputTokens": 29,
+      "outputTokens": 13
+    },
+    "msg_atape_manual_large_1_mock_7": {
+      "sourceRecordUuid": "8bb527d0-a5dc-47eb-ad98-b847acc7ed81",
+      "apiBlockIndex": 0,
+      "usage": {
+        "input_tokens": 29,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 13,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard"
+      },
+      "endByte": 621615,
+      "line": 56,
+      "model": "claude-sonnet-4-6",
+      "inputTokens": 29,
+      "outputTokens": 13
+    }
+  },
+  "logicalRealEventSourceIdsAtFinalSnapshot": [
+    "6929895c-29b7-4b4d-9d45-ac05c4f3c001:0",
+    "963eba14-97e0-4fe1-b0c0-7ed1d312f94a:0",
+    "3ffb9023-3be1-4cee-adc6-f21eb712195e:0",
+    "da5a6f6d-4a63-4473-a0d2-2fe9b85bf456:0",
+    "07378973-ad96-43a7-9ecc-ba97aaf0bc39:0",
+    "925bcc1a-5b24-454b-9149-3d054dc1b05d:0",
+    "f44ff0e1-241a-497a-aaa8-59c54fba27f2:0",
+    "8665cd81-dccd-4168-96bf-16e2f68d4da5:0",
+    "178d2cc8-d709-4243-aad5-f8043f181bc3:0",
+    "744ace91-4d39-422d-8105-ef20bb770c28:0",
+    "ea34de47-fd2a-4539-bfaa-695eb70487e5:0",
+    "b06cb79e-b46c-4a13-87fa-c98baa1a8b08:0",
+    "f6dfaa63-8fdc-4efb-acf7-3039bae7eead:0",
+    "ffa23253-d5ab-4ac1-8325-87f646c56829:0",
+    "ea05c961-9e64-448b-9f40-febd83fcf544:0",
+    "8bb527d0-a5dc-47eb-ad98-b847acc7ed81:0"
+  ],
+  "limitations": [
+    "Native 2.1.263 controlled loopback model replies, not live-model behavior or provider billing.",
+    "Loopback /api/hello GET bootstrap returned 404; native processes still exited 0.",
+    "No OS egress firewall was applied; native nonessential/background/update traffic was disabled by environment.",
+    "Fresh HOME/config/workspace; no personal history or credentials loaded.",
+    "Only first manual two-Read/text-plan compaction; not repeated Read auto or other tool layouts.",
+    "Exactly two 96KiB files; no larger native limit or repeated/tool-bearing auto compaction is proved."
+  ],
+  "sourcePreparationVerification": {
+    "originalAndCandidateSnapshotHashes": "PASS",
+    "literalPathOnlyBytes": "PASS",
+    "originalAndCandidateStrictPrefixes": "PASS",
+    "bothFullSerializedReceiptObjectEqualities": "PASS",
+    "selectedRequestsHash": "PASS",
+    "derivedCutCount": 13,
+    "derivedCutBytesAndHashes": "PASS",
+    "fixturePreparationRanNewNativeOrLiveInvocations": false
+  }
+}

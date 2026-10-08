@@ -1,0 +1,339 @@
+[
+  {
+    "requestIndex": 8,
+    "phase": "toolturn",
+    "responseKind": "tool-final",
+    "method": "POST",
+    "url": "/v1/messages?beta=true",
+    "originalRawBytes": 204203,
+    "originalRawSha256": "c7d5c16af4a2881a23660dcf88a414eeab13bf337d19b40a8648b99918534ad6",
+    "selectedMessages": [
+      {
+        "messageIndex": 5,
+        "role": "assistant",
+        "containsExactSummary": false,
+        "containsReadDiskMarkers": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "ATAPE_MANUAL_LARGE_TOOL_PLAN: Read both complete synthetic files once."
+          },
+          {
+            "type": "tool_use",
+            "id": "call_manual_large_1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-manual-large-read-reinjection/workspace/a.txt"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "call_manual_large_1_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-manual-large-read-reinjection/workspace/b.txt"
+            }
+          }
+        ]
+      },
+      {
+        "messageIndex": 6,
+        "role": "user",
+        "containsExactSummary": false,
+        "containsReadDiskMarkers": true,
+        "content": [
+          {
+            "tool_use_id": "call_manual_large_1_read_a",
+            "type": "tool_result",
+            "content": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 98968,
+              "sha256": "4d19913239d8e75ec404ae2ee7f51d16d8f2a1da695d861fc3d85aa01936eb62",
+              "headUtf8": "1\tATAPE_LARGE_READ_A_0001: amber lynx 204. AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "tailUtf8": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n193\t",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_A_0001",
+                "ATAPE_LARGE_READ_A_0192"
+              ]
+            }
+          },
+          {
+            "tool_use_id": "call_manual_large_1_read_b",
+            "type": "tool_result",
+            "content": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 99055,
+              "sha256": "ff83d12ceb69025881f4bf94a10d2063a781bfdfad145b8e86582c8e981c8219",
+              "headUtf8": "1\tATAPE_LARGE_READ_B_0001: violet crane 619. BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+              "tailUtf8": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n193\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_B_0001",
+                "ATAPE_LARGE_READ_B_0192"
+              ]
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "requestIndex": 10,
+    "phase": "compact",
+    "responseKind": "summary",
+    "method": "POST",
+    "url": "/v1/messages?beta=true",
+    "originalRawBytes": 210802,
+    "originalRawSha256": "1b4b9c8ab33daa627a5f012280861e3f72163573079da5e1efe8c6d7df2fd9b5",
+    "selectedMessages": [
+      {
+        "messageIndex": 5,
+        "role": "assistant",
+        "containsExactSummary": false,
+        "containsReadDiskMarkers": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "ATAPE_MANUAL_LARGE_TOOL_PLAN: Read both complete synthetic files once."
+          },
+          {
+            "type": "tool_use",
+            "id": "call_manual_large_1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-manual-large-read-reinjection/workspace/a.txt"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "call_manual_large_1_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-manual-large-read-reinjection/workspace/b.txt"
+            },
+            "cache_control": {
+              "type": "ephemeral"
+            }
+          }
+        ]
+      },
+      {
+        "messageIndex": 6,
+        "role": "user",
+        "containsExactSummary": false,
+        "containsReadDiskMarkers": true,
+        "content": [
+          {
+            "tool_use_id": "call_manual_large_1_read_a",
+            "type": "tool_result",
+            "content": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 98968,
+              "sha256": "4d19913239d8e75ec404ae2ee7f51d16d8f2a1da695d861fc3d85aa01936eb62",
+              "headUtf8": "1\tATAPE_LARGE_READ_A_0001: amber lynx 204. AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "tailUtf8": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n193\t",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_A_0001",
+                "ATAPE_LARGE_READ_A_0192"
+              ]
+            }
+          },
+          {
+            "tool_use_id": "call_manual_large_1_read_b",
+            "type": "tool_result",
+            "content": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 99055,
+              "sha256": "ff83d12ceb69025881f4bf94a10d2063a781bfdfad145b8e86582c8e981c8219",
+              "headUtf8": "1\tATAPE_LARGE_READ_B_0001: violet crane 619. BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+              "tailUtf8": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n193\n\n<system-reminder>\n<total_tokens>14999988 tokens left</total_tokens>\n</system-reminder>",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_B_0001",
+                "ATAPE_LARGE_READ_B_0192"
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 6461,
+              "sha256": "bdde31f836b959ebc354fc181edbedd1e16b7a3fdcaf5f55e82148f3fa9b99c7",
+              "headUtf8": "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.\n- You already have all the context you need in the conversation above.\n- Tool calls will be REJECTED and will waste your only tur",
+              "tailUtf8": "al Instructions:\nPreserve synthetic read context and continue from the tool final.\n\nREMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task.",
+              "diskMarkersPresent": []
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "requestIndex": 14,
+    "phase": "continue",
+    "responseKind": "continue",
+    "method": "POST",
+    "url": "/v1/messages?beta=true",
+    "originalRawBytes": 205455,
+    "originalRawSha256": "60e0559dd45b5569528eda5366b489076814c8842d936047ff57662193fd34c8",
+    "selectedMessages": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "containsExactSummary": true,
+        "containsReadDiskMarkers": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-08.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n\n"
+          },
+          {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_MANUAL_LARGE_SUMMARY: Synthetic seed cobalt heron 482. Successfully read both complete 96 KiB synthetic files a.txt and b.txt. A contains amber lynx 204 and B contains violet crane 619. Retain the read context and continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-manual-large-read-reinjection/config/projects/-fixture-native-manual-large-read-reinjection-workspace/b179ae84-44d8-4f32-adee-7f176edf363c.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        ]
+      },
+      {
+        "messageIndex": 3,
+        "role": "user",
+        "containsExactSummary": false,
+        "containsReadDiskMarkers": true,
+        "content": [
+          {
+            "type": "text",
+            "text": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 99038,
+              "sha256": "8921c12c3bec4b9dd9d90b45fb335e5234bffcd29f90863e1c1c7b61168a780b",
+              "headUtf8": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_LARGE_READ_B_0001: violet crane 619. BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+              "tailUtf8": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n193\t\n</system-reminder>",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_B_0001",
+                "ATAPE_LARGE_READ_B_0192"
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-large-read-reinjection/workspace/a.txt\"}\n</system-reminder>"
+          },
+          {
+            "type": "text",
+            "text": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 99039,
+              "sha256": "a8f485297fccbf8dbe9a6476aa78148698a6afe46cf4e99293e6ba52d35a914d",
+              "headUtf8": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_LARGE_READ_A_0001: amber lynx 204. AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "tailUtf8": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n193\t\n</system-reminder>\n",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_A_0001",
+                "ATAPE_LARGE_READ_A_0192"
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>\n"
+          },
+          {
+            "type": "text",
+            "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args>Preserve synthetic read context and continue from the tool final.</command-args>\n"
+          },
+          {
+            "type": "text",
+            "text": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\n"
+          },
+          {
+            "type": "text",
+            "text": "Continue from where you left off."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "requestIndex": 16,
+    "phase": "secondcontinue",
+    "responseKind": "secondcontinue",
+    "method": "POST",
+    "url": "/v1/messages?beta=true",
+    "originalRawBytes": 205794,
+    "originalRawSha256": "032229d1eb37a293b3e5d4cb8cd6f37283f8b36bead60ee846322d1506cf97bd",
+    "selectedMessages": [
+      {
+        "messageIndex": 0,
+        "role": "user",
+        "containsExactSummary": true,
+        "containsReadDiskMarkers": false,
+        "content": [
+          {
+            "type": "text",
+            "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-08.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n\n"
+          },
+          {
+            "type": "text",
+            "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_MANUAL_LARGE_SUMMARY: Synthetic seed cobalt heron 482. Successfully read both complete 96 KiB synthetic files a.txt and b.txt. A contains amber lynx 204 and B contains violet crane 619. Retain the read context and continue the latest task.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-manual-large-read-reinjection/config/projects/-fixture-native-manual-large-read-reinjection-workspace/b179ae84-44d8-4f32-adee-7f176edf363c.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+          }
+        ]
+      },
+      {
+        "messageIndex": 3,
+        "role": "user",
+        "containsExactSummary": false,
+        "containsReadDiskMarkers": true,
+        "content": [
+          {
+            "type": "text",
+            "text": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 99038,
+              "sha256": "8921c12c3bec4b9dd9d90b45fb335e5234bffcd29f90863e1c1c7b61168a780b",
+              "headUtf8": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_LARGE_READ_B_0001: violet crane 619. BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+              "tailUtf8": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\n193\t\n</system-reminder>",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_B_0001",
+                "ATAPE_LARGE_READ_B_0192"
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-manual-large-read-reinjection/workspace/a.txt\"}\n</system-reminder>"
+          },
+          {
+            "type": "text",
+            "text": {
+              "kind": "selected text evidence, full original request remains temporary",
+              "utf8Bytes": 99039,
+              "sha256": "a8f485297fccbf8dbe9a6476aa78148698a6afe46cf4e99293e6ba52d35a914d",
+              "headUtf8": "<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_LARGE_READ_A_0001: amber lynx 204. AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "tailUtf8": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n193\t\n</system-reminder>\n",
+              "diskMarkersPresent": [
+                "ATAPE_LARGE_READ_A_0001",
+                "ATAPE_LARGE_READ_A_0192"
+              ]
+            }
+          },
+          {
+            "type": "text",
+            "text": "<local-command-caveat>Caveat: The messages below were generated by the user while running local commands. DO NOT respond to these messages or otherwise consider them in your response unless the user explicitly asks you to.</local-command-caveat>\n"
+          },
+          {
+            "type": "text",
+            "text": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args>Preserve synthetic read context and continue from the tool final.</command-args>\n"
+          },
+          {
+            "type": "text",
+            "text": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>\n"
+          },
+          {
+            "type": "text",
+            "text": "Continue from where you left off."
+          }
+        ]
+      }
+    ]
+  }
+]
