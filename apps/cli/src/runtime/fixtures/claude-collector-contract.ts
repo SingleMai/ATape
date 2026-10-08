@@ -20,17 +20,34 @@ const sourceDirectory = join(sourceHome, "projects", "opaque-native-project")
 const familyId = "d33bd4a6-a5ce-47d3-b4d3-91e62386940f", agentId = "a5b93406db8c7fefd"
 const compactId = "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d"
 const tailId = "48656330-5cf7-4f7c-97d4-674c41750762"
+const autoId = "43526b2f-6f23-4f37-9627-c75f50bfb9b9"
 const rootFile = join(sourceDirectory, `${familyId}.jsonl`)
 const childFile = join(sourceDirectory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compactFile = join(sourceDirectory, `${compactId}.jsonl`)
 const tailFile = join(sourceDirectory, `${tailId}.jsonl`)
+const autoFile = join(sourceDirectory, `${autoId}.jsonl`)
 const compactFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-compact-2.1.263/", import.meta.url)
 const tailFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/", import.meta.url)
+const autoFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/", import.meta.url)
 const familyFixture = new URL("../../../../../adapters/claude/fixtures/native-foreground-child-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
 const tailSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, tailFixture), "utf8")
   .replaceAll("/fixture/native-manual-text-tail/workspace", workspace)
+const autoSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, autoFixture), "utf8")
+  .replaceAll("/fixture/native-auto-text-replay-rounds/workspace", workspace)
+const autoRounds = (JSON.parse(readFileSync(new URL("provenance.json", autoFixture), "utf8")) as {
+  rounds: ReadonlyArray<{ round: number; phase: string; lines: { originalG: number; S: number } }>
+}).rounds
+const completeLinePrefix = (source: string, lines: number) => {
+  let end = 0
+  for (let line = 0; line < lines; line++) {
+    const newline = source.indexOf("\n", end)
+    assert.ok(newline >= end, "Native complete-line prefix is incomplete")
+    end = newline + 1
+  }
+  return source.slice(0, end)
+}
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(input.home, "client") })
 const installed = join(input.home, "installed"), binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
 const at = "2026-10-08T00:00:00Z"
@@ -49,14 +66,8 @@ if (input.phase === "initial") {
   writeFileSync(rootFile, root); writeFileSync(childFile, child); writeFileSync(compactFile, compactSnapshot("before"))
   // A complete native-line cut puts the same API response's head and tail in
   // different acknowledged daemon cycles without reserializing any record.
-  const tailBefore = tailSnapshot("before")
-  let headEnd = 0
-  for (let line = 0; line < 19; line++) {
-    const newline = tailBefore.indexOf("\n", headEnd)
-    assert.ok(newline >= headEnd, "Native split-text head prefix is incomplete")
-    headEnd = newline + 1
-  }
-  writeFileSync(tailFile, tailBefore.slice(0, headEnd))
+  writeFileSync(tailFile, completeLinePrefix(tailSnapshot("before"), 19))
+  writeFileSync(autoFile, autoSnapshot("warmup"))
   const foreign = join(input.home, "foreign-project"); mkdirSync(foreign)
   writeFileSync(join(sourceDirectory, "foreign.jsonl"), root.replaceAll(familyId, "foreign-claude-session").replaceAll(workspace, foreign))
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
@@ -72,6 +83,14 @@ if (input.phase === "tail-before") writeFileSync(tailFile, tailSnapshot("before"
 if (input.phase === "tail-compact") writeFileSync(tailFile, tailSnapshot("compacted"))
 if (input.phase === "tail-continued") writeFileSync(tailFile, tailSnapshot("continued"))
 if (input.phase === "tail-continued-again") writeFileSync(tailFile, tailSnapshot("continued-again"))
+const autoStage = /^auto-([123])-(originals|summary|answer)$/.exec(input.phase)
+if (autoStage) {
+  const round = autoRounds.find(round => round.round === Number(autoStage[1]))
+  assert.ok(round, "Native automatic round is missing")
+  const source = autoSnapshot(round.phase)
+  writeFileSync(autoFile, autoStage[2] === "answer" ? source
+    : completeLinePrefix(source, autoStage[2] === "originals" ? round.lines.originalG : round.lines.S))
+}
 if (input.phase === "raw-off") {
   const source = readFileSync(compactFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
   const last = rows.findLast(row => typeof row.uuid === "string")
@@ -125,10 +144,10 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   assert.ok(state.checkpoint?.cursor)
   assert.equal(state.checkpoint.canonicalPublished, true)
   const decoded = JSON.parse(state.checkpoint.cursor)
-  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId].sort(),
+  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId].sort(),
     "Foreign source was captured or a known checkpoint was reset")
   return { installationId: state.installationId, cursor: state.checkpoint.cursor, rawObjects: state.checkpoint.rawObjects,
     observations: job.observations ?? 0, canonicalEvents: job.canonicalEvents ?? 0, canonicalBatches: job.canonicalBatches ?? 0,
-    rawChunks: job.rawChunks ?? 0, sourceFailures: job.sourceFailures ?? [] }
+    rawChunks: job.rawChunks ?? 0, sourceFailures: job.sourceFailures ?? [], progress: job.progress }
 }).pipe(Effect.scoped, Effect.provide(layer), Effect.provide(Logger.layer([]))))
 process.stdout.write(JSON.stringify(result))

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -71,6 +72,10 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		CanonicalBatches int                       `json:"canonicalBatches"`
 		RawChunks        int                       `json:"rawChunks"`
 		SourceFailures   []struct{ Reason string } `json:"sourceFailures"`
+		Progress         *struct {
+			PendingCanonicalSessions int   `json:"pendingCanonicalSessions"`
+			PendingRawBytes          int64 `json:"pendingRawBytes"`
+		} `json:"progress"`
 	}
 	run := func(phase string) snapshot {
 		t.Helper()
@@ -94,6 +99,8 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		if err := json.Unmarshal(output, &result); err != nil || result.InstallationID == "" || result.Cursor == "" {
 			t.Fatalf("Claude %s lost progress: %v %s", phase, err, output)
 		}
+		t.Logf("Claude installed %s: observations=%d events=%d batches=%d Raw=%d failures=%d progress=%+v", phase,
+			result.Observations, result.CanonicalEvents, result.CanonicalBatches, result.RawChunks, len(result.SourceFailures), result.Progress)
 		return result
 	}
 	send := func(method, path, body string) *httptest.ResponseRecorder {
@@ -245,6 +252,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	const familyID = "d33bd4a6-a5ce-47d3-b4d3-91e62386940f"
 	const compactID = "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d"
 	const tailID = "48656330-5cf7-4f7c-97d4-674c41750762"
+	const autoID = "43526b2f-6f23-4f37-9627-c75f50bfb9b9"
 	const agentID = "a5b93406db8c7fefd"
 	sourceDirectory := filepath.Join(home, "source", "projects", "opaque-native-project")
 	assertSourceRaw := func(sessionID string, expectedFiles map[string]string) rawarchive.SessionArchive {
@@ -267,15 +275,15 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	setRaw(true)
 	defer setRaw(false)
 	initial := run("initial")
-	if initial.CanonicalEvents != 18 || initial.RawChunks != 4 {
+	if initial.CanonicalEvents != 22 || initial.RawChunks != 5 {
 		t.Fatalf("Claude initial installed capture: %+v", initial)
 	}
 	var memory conversation.ProjectMemory
 	decodeResponse(t, send(http.MethodGet, "/api/v1/projects/"+project.ID+"/memory", ""), &memory)
-	if len(memory.Trail) != 3 {
+	if len(memory.Trail) != 4 {
 		t.Fatal("Claude included a foreign source or split its foreground family")
 	}
-	familySession, compactSession, tailSession := "", "", ""
+	familySession, compactSession, tailSession, autoSession := "", "", "", ""
 	for _, session := range memory.Trail {
 		if strings.HasPrefix(session.Title, "ATAPE_NATIVE_FOREGROUND_ROOT") {
 			familySession = session.ID
@@ -286,8 +294,11 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		if strings.HasPrefix(session.Title, "ATAPE_MANUAL_TEXT_SEED") {
 			tailSession = session.ID
 		}
+		if strings.HasPrefix(session.Title, "ATAPE_AUTO_TEXT_SEED") {
+			autoSession = session.ID
+		}
 	}
-	if familySession == "" || compactSession == "" || tailSession == "" {
+	if familySession == "" || compactSession == "" || tailSession == "" || autoSession == "" {
 		t.Fatal("Claude lost native Session identities")
 	}
 	root := read(familySession, "root", 4)
@@ -417,6 +428,119 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude split text unchanged polling replayed usage or changed Raw receipts")
 	}
 	usage(tailSession, 5, 151, 73)
+	// This fourth native Session repeats the strict automatic U/G-copy profile
+	// across three appends. All cuts are complete prefixes of native snapshots;
+	// every run starts a fresh installed daemon and uses the same HTTP/PG path.
+	autoFiles := map[string]string{autoID + ".jsonl": filepath.Join(sourceDirectory, autoID+".jsonl")}
+	autoPrevious := read(autoSession, "root", 4)
+	usage(autoSession, 2, 190023, 24)
+	autoInitialArchive := assertSourceRaw(autoSession, autoFiles)
+	assertAutoProgress := func(phase string, capture snapshot, pending int) {
+		t.Helper()
+		if capture.InstallationID != initial.InstallationID || len(capture.SourceFailures) != 0 || capture.Progress == nil ||
+			capture.Progress.PendingCanonicalSessions != pending || capture.Progress.PendingRawBytes != 0 {
+			t.Fatalf("Claude automatic %s lost its caller progress: same installation=%t failures=%d progress=%+v want pending=%d",
+				phase, capture.InstallationID == initial.InstallationID, len(capture.SourceFailures), capture.Progress, pending)
+		}
+	}
+	assertAutoView := func(phase string, events, count int, input, output int64) {
+		t.Helper()
+		current := read(autoSession, "root", events)
+		previousJSON, _ := json.Marshal(autoPrevious.Events)
+		prefixJSON, _ := json.Marshal(current.Events[:len(autoPrevious.Events)])
+		if !bytes.Equal(previousJSON, prefixJSON) {
+			t.Fatalf("Claude automatic %s replayed or re-keyed acknowledged Events", phase)
+		}
+		ids := map[string]bool{}
+		for _, event := range current.Events {
+			if ids[event.ID] {
+				t.Fatalf("Claude automatic %s duplicated an Event", phase)
+			}
+			ids[event.ID] = true
+			for _, control := range []string{"ATAPE_AUTO_TEXT_SUMMARY", "15000000 tokens left"} {
+				if strings.Contains(event.Text, control) {
+					t.Fatalf("Claude automatic %s projected internal control as a conversation Event", phase)
+				}
+			}
+		}
+		usage(autoSession, count, input, output)
+		archive := assertSourceRaw(autoSession, autoFiles)
+		if len(autoInitialArchive.Objects) != 1 || len(archive.Objects) != 1 ||
+			archive.Objects[0].ObjectID != autoInitialArchive.Objects[0].ObjectID {
+			t.Fatalf("Claude automatic %s replaced its Raw source object", phase)
+		}
+		for _, control := range []string{"ATAPE_AUTO_TEXT_SUMMARY", "15000000 tokens left"} {
+			if len(search(control).Results) != 0 {
+				t.Fatalf("Claude automatic %s indexed internal control: %s", phase, control)
+			}
+		}
+		autoPrevious = current
+	}
+	assertAutoIdle := func(phase string, previous snapshot, pending int, events, count int, input, output int64) {
+		t.Helper()
+		idle := run(phase)
+		assertAutoProgress(phase, idle, pending)
+		if idle.Cursor != previous.Cursor || idle.Observations != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 ||
+			!bytes.Equal(idle.RawObjects, previous.RawObjects) {
+			t.Fatalf("Claude automatic %s advanced a no-progress checkpoint or Raw receipt", phase)
+		}
+		assertAutoView(phase, events, count, input, output)
+	}
+	for round := 1; round <= 3; round++ {
+		prefix := fmt.Sprintf("auto-%d-", round)
+		events, count := 4+2*(round-1), 2+round-1
+		input, output := int64(190023+190000*(round-1)), int64(24+13*(round-1))
+		originals := run(prefix + "originals")
+		assertAutoProgress(prefix+"originals", originals, 0)
+		if originals.CanonicalEvents != 1 || originals.RawChunks != 1 {
+			t.Fatalf("Claude automatic round %d original U/G events=%d Raw=%d", round, originals.CanonicalEvents, originals.RawChunks)
+		}
+		assertAutoView(prefix+"originals", events+1, count, input, output)
+		assertAutoIdle(prefix+"originals-idle", originals, 0, events+1, count, input, output)
+		summary := run(prefix + "summary")
+		assertAutoProgress(prefix+"summary", summary, 1)
+		if summary.CanonicalEvents != 0 || summary.RawChunks != 1 {
+			t.Fatalf("Claude automatic round %d U/G copies or B/S events=%d Raw=%d", round, summary.CanonicalEvents, summary.RawChunks)
+		}
+		assertAutoView(prefix+"summary", events+1, count, input, output)
+		assertAutoIdle(prefix+"summary-idle", summary, 1, events+1, count, input, output)
+		answer := run(prefix + "answer")
+		assertAutoProgress(prefix+"answer", answer, 0)
+		if answer.CanonicalEvents != 1 || answer.RawChunks != 1 {
+			t.Fatalf("Claude automatic round %d real answer events=%d Raw=%d", round, answer.CanonicalEvents, answer.RawChunks)
+		}
+		assertAutoView(prefix+"answer", events+2, count+1, input+190000, output+13)
+		assertAutoIdle(prefix+"answer-idle", answer, 0, events+2, count+1, input+190000, output+13)
+	}
+	for _, expected := range []struct {
+		term  string
+		count int
+	}{
+		{"ATAPE_AUTO_TEXT_CONTINUE:", 2},
+		{"ATAPE_AUTO_TEXT_SECOND_CONTINUE:", 1},
+		{"ATAPE_AUTO_TEXT_SECONDCONTINUE:", 1},
+		{"ATAPE_AUTO_TEXT_THIRD_CONTINUE:", 1},
+		{"ATAPE_AUTO_TEXT_THIRDCONTINUE:", 1},
+	} {
+		hits := search(expected.term)
+		if len(hits.Results) != expected.count {
+			t.Fatalf("Claude automatic Search duplicated source copies or lost continuation: %s %+v", expected.term, hits.Results)
+		}
+		for _, hit := range hits.Results {
+			if hit.SessionID != autoSession || hit.ThreadID != "root" {
+				t.Fatal("Claude automatic Search crossed Session/root identity")
+			}
+			var anchored conversation.Conversation
+			decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+autoSession+"?thread=root&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+			found := false
+			for _, event := range anchored.Events {
+				found = found || event.ID == hit.EventID && strings.Contains(event.Text, expected.term)
+			}
+			if anchored.Session.ID != autoSession || anchored.Thread.ID != "root" || !found {
+				t.Fatal("Claude automatic Search anchor did not resolve its exact Event")
+			}
+		}
+	}
 	compact := run("compact")
 	if compact.CanonicalEvents != 0 || compact.RawChunks != 1 {
 		t.Fatal("Claude compact controls created conversation Events or lost Raw")
@@ -485,6 +609,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	retainedArchive, retainedRaw := readRaw(compactSession)
 	tailRetainedArchive, tailRetainedRaw := readRaw(tailSession)
+	autoRetainedArchive, autoRetainedRaw := readRaw(autoSession)
 	deleted := run("delete")
 	if deleted.Cursor != repaired.Cursor || deleted.InstallationID != initial.InstallationID || !bytes.Equal(deleted.RawObjects, repaired.RawObjects) || deleted.CanonicalBatches != 0 || deleted.RawChunks != 0 {
 		t.Fatal("Claude source deletion discarded checkpoints or history")
@@ -493,6 +618,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	read(familySession, childID, 4)
 	read(compactSession, "root", 7)
 	read(tailSession, "root", 11)
+	read(autoSession, "root", 10)
 	deletedArchive, deletedRaw := readRaw(compactSession)
 	retainedJSON, _ := json.Marshal(retainedArchive)
 	deletedJSON, _ := json.Marshal(deletedArchive)
@@ -507,4 +633,11 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude source deletion changed split text captured Raw")
 	}
 	usage(tailSession, 5, 151, 73)
+	autoDeletedArchive, autoDeletedRaw := readRaw(autoSession)
+	autoRetainedJSON, _ := json.Marshal(autoRetainedArchive)
+	autoDeletedJSON, _ := json.Marshal(autoDeletedArchive)
+	if !bytes.Equal(autoRetainedJSON, autoDeletedJSON) || autoRetainedRaw[autoID+".jsonl"] != autoDeletedRaw[autoID+".jsonl"] {
+		t.Fatal("Claude source deletion changed automatic replay captured Raw")
+	}
+	usage(autoSession, 5, 760023, 63)
 }
