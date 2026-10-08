@@ -358,6 +358,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       const sample = originalSample && delegated ? { ...originalSample, sourceThreadId: childThreadId(delegated.child.agentId) } : originalSample
       if (sample) {
         const bytes = Buffer.byteLength(JSON.stringify(sample))
+        if (bytes > recordLimit) fail("limit", "A Claude usage sample exceeds the Canonical observation limit.")
         if (usage.size >= request.limits.eventsPerObservation || eventBytes + bytes > recordLimit) {
           state = { ...state, eventSkip: skip }; hasMore = true; break
         }

@@ -165,6 +165,60 @@ it("commits usage deferred after its Event before using that source record as pr
   expectRaw(collected.pages, again)
 })
 
+it.each([true, false])("rejects usage that cannot fit a fresh page and resumes with sufficient capacity (Raw %s)", async rawEnabled => {
+  const source = rows(before), answerAt = source.findIndex(row => row.type === "assistant"), answer = source[answerAt]!
+  answer.message.id = "x".repeat(500)
+  const prefix = lines(source.slice(0, answerAt)), complete = prefix + lines([answer])
+  await writeFile(file, prefix)
+  const initial = await drain(null, rawEnabled), retainedProgress = [...progress]
+  const eventOnly = structuredClone(answer); delete eventOnly.message.usage
+  await writeFile(file, prefix + lines([eventOnly]))
+  const input = request(initial.cursor, rawEnabled, { canonicalBytesPerObservation: 8941 }), fits = await read(input)
+  expect(events([fits])).toHaveLength(1)
+  expect(fits.observations.flatMap(observation => observation.usage ?? [])).toEqual([])
+  for (const observation of fits.observations) expect(Buffer.byteLength(JSON.stringify({ ...observation, rawSegments: [] })))
+    .toBeLessThanOrEqual(input.limits.canonicalBytesPerObservation)
+  await writeFile(file, complete)
+  await expect(read(input)).rejects.toMatchObject({ reason: "limit", message: "A Claude usage sample exceeds the Canonical observation limit." })
+  await expect(read(input)).rejects.toMatchObject({ reason: "limit" })
+  expect(progress).toEqual(retainedProgress)
+  const rest = await drain(initial.cursor, rawEnabled), captured = [...initial.pages, ...rest.pages]
+  expect(events(rest.pages).map(event => event.sourceEventId)).toEqual(events([fits]).map(event => event.sourceEventId))
+  expect(latestUsage(captured)).toEqual({ records: 1, input: 23, output: 11 })
+  if (rawEnabled) expectRaw(captured, complete)
+  else {
+    expect(raw(captured)).toEqual([])
+    const backfill = await drain(rest.cursor)
+    expect(events(backfill.pages)).toEqual([])
+    expect(backfill.pages.flatMap(page => page.observations.flatMap(observation => observation.usage ?? []))).toEqual([])
+    expectRaw(backfill.pages, complete)
+  }
+})
+
+it("retains an acknowledged Event checkpoint when its pending usage needs a larger page", async () => {
+  const source = rows(before), answerAt = source.findIndex(row => row.type === "assistant"), answer = source[answerAt]!
+  answer.message.id = "x".repeat(500)
+  const prefix = lines(source.slice(0, answerAt)), complete = prefix + lines([answer])
+  await writeFile(file, prefix)
+  const initial = await drain()
+  await appendFile(file, lines([answer]))
+  const input = request(initial.cursor, true, { canonicalBytesPerObservation: 9440 }), deferred = await read(input)
+  expect(await read(input)).toEqual(deferred)
+  expect(events([deferred])).toHaveLength(1)
+  expect(deferred.observations.flatMap(observation => observation.usage ?? [])).toEqual([])
+  expect(raw([deferred])).toEqual([])
+  expect(deferred.hasMore).toBe(true)
+  acknowledge(deferred)
+  const retainedProgress = [...progress], blocked = request(deferred.nextCursor, true, { canonicalBytesPerObservation: 8941 })
+  await expect(read(blocked)).rejects.toMatchObject({ reason: "limit" })
+  await expect(read(blocked)).rejects.toMatchObject({ reason: "limit" })
+  expect(progress).toEqual(retainedProgress)
+  const rest = await drain(deferred.nextCursor), captured = [...initial.pages, deferred, ...rest.pages]
+  expect(events(rest.pages)).toEqual([])
+  expect(latestUsage(captured)).toEqual({ records: 1, input: 23, output: 11 })
+  expectRaw(captured, complete)
+})
+
 it("uses the same collect Interface when a long-lived runtime caches previously verified prefix hashes", async () => {
   const runtime = await createAtapeAdapter(context), captured: AdapterCollectionPage[] = []
   let cursor: string | null = null, finished = false

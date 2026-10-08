@@ -151,6 +151,10 @@ source/cursor ceilings: 16 MiB records, 256 KiB text fragments, bounded discover
 and compressed metadata cursors. Large total archives stream across pages;
 changed files still require hashing previously captured bytes to verify prefixes.
 Smaller Host budgets may reject a record or fragment that cannot fit.
+A real usage item that exceeds a fresh page's reserved Canonical capacity fails
+with a source limit. Insufficient remaining space defers it to the next page;
+it does not leave an impossible item waiting indefinitely. Retrying with enough
+capacity preserves any already acknowledged Event and resumes its usage/Raw.
 Canonical pagination reserves the encoded root/child Thread headers before
 adding Events or usage, including a newly admitted child's header. Wide families
 therefore retain the requested page bound for both root and child text pages.
@@ -251,7 +255,7 @@ publication-head pagination. The combined PostgreSQL CI guard now requires the
 Claude subtest itself to pass, rejecting missing or skipped results.
 
 The two-record text-tail increment additionally passed Claude typecheck and all
-133 Adapter tests, including 37 new public-Interface cases. Installed Claude
+136 Adapter tests, including 40 new public-Interface cases. Installed Claude
 `verify:package`, CLI typecheck, the four Collector/Server E2E tests, documentation
 and architecture guards passed. Checks cover one-Event pages with a fresh runtime
 and identical unacknowledged retries, 600,000-character text records fragmented
@@ -260,6 +264,9 @@ incomplete appends, Raw off/on and unsupported-tail isolation. A separate public
 Interface check generated an acknowledged projection-4 checkpoint with the
 previous merged Adapter Implementation, then resumed compact and both
 continuations with only four new Events and unchanged old identities.
+The additional budget regressions cover impossible usage capacity with Raw on
+and off, and an acknowledged Event whose pending usage resumes without replay
+after a too-small page is rejected.
 
 The extended installed-daemon PostgreSQL contract passed 14 independently
 restarted source stages while retaining the original foreground and singleton

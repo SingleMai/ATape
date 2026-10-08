@@ -118,6 +118,9 @@ integrity, while parsing and publication resume at the saved record position.
 Each newly encountered two-record manual boundary adds one streaming proof pass
 over the committed prefix with bounded memory; the source is not an atomic
 snapshot against concurrent rewrites.
+A usage item that cannot fit a fresh page's reserved Canonical capacity reports
+a source limit; remaining-space exhaustion defers it normally. Increasing the
+capacity resumes pending usage/Raw without replaying an acknowledged Event.
 Discovery scans at most 10,000 directory entries. Metadata-only cursors are
 compressed above 16,000 bytes, with a 1 MiB wire / 16 MiB expanded bound. Capacity
 errors retain committed progress. Only sources with readable identity
@@ -206,7 +209,7 @@ retains four additional snapshots with one same-response split text tail and two
 real continuation turns. The records keep distinct Event IDs while their shared
 API usage ID counts once at its latest revision. This corpus supplies no executed
 Read call or compaction-response JSONL usage.
-Local checks for the extended text-tail profile passed all 133 Adapter tests,
+Local checks for the extended text-tail profile passed all 136 Adapter tests,
 typecheck, installed `verify:package`, Collector/Go E2E and the installed-daemon
 PostgreSQL contract. Its response head and tail were also delivered in separate
 daemon runs: Reader gained the second Event while usage stayed at one shared API
