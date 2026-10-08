@@ -119,6 +119,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0091](0091-claude-read-turn-automatic-replay.md) | Claude Read-turn automatic replay on legacy capture |
 | [0092](0092-claude-manual-read-file-reinjection.md) | Claude manual Read file reinjection on legacy capture |
 | [0093](0093-claude-larger-manual-read-records.md) | Larger Claude manual Read records |
+| [0094](0094-claude-repeated-single-read-auto-file.md) | Repeated Claude single-Read automatic replay and prior-file reinjection |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

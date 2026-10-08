@@ -1121,7 +1121,7 @@
   ],
   "limitations": [
     "Native 2.1.263 controlled loopback model replies, not live-model behavior or provider billing.",
-    "Loopback /api/hello GET bootstrap returned 404; native processes still exited 0.",
+    "Loopback /api/hello HEAD bootstrap returned 404; native processes still exited 0.",
     "No OS egress firewall was applied; native nonessential/background/update traffic was disabled by environment.",
     "Fresh HOME/config/workspace; no personal history or credentials loaded.",
     "Only first manual two-Read/text-plan compaction; not repeated Read auto or other tool layouts.",

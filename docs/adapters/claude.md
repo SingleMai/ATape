@@ -311,8 +311,8 @@ result cannot authorize replay before it completes.
 The source copies all six/eight records, then appends B/S. Its retained metadata
 names only the four/six records from P through A: U/G are copied but excluded
 from those arrays. Segment endpoints are P/A, logical parent is A, and both
-anchors name the new summary S. Every original omits slug; each copy adds only
-the same first slug and must otherwise equal the complete decoded original,
+anchors name the new summary S. In the first-slug layout, every original omits
+slug; each copy adds only the same first slug and must otherwise equal the complete decoded original,
 including unknown values, API usage, tool input/output and parent edges.
 An authenticated tail of the exact current committed prefix proves this graph;
 global seen/call membership merely helps select the profile.
@@ -327,11 +327,34 @@ the same API usage identity. Missing answers stay pending without busy retries.
 Old projection-4 checkpoints and independent Raw receipts retain their existing
 recovery, Event identities and complete physical source bytes.
 
-Each sampled tool case has one first-slug automatic round followed by two
-ordinary resumes. Existing-slug tool replay, repeated tool rounds, tool-only
-layouts without P, other/more/error/async/interleaved calls, children and Active
-Path replacement remain outside this profile. Manual file reinjection has its
-separate narrow profile above; text replay retains its proved repeated-slug scope.
+[ADR-0094](../architecture/adr/0094-claude-repeated-single-read-auto-file.md)
+adds two consecutive single-Read automatic rounds. The second originals/copies
+all retain the first slug exactly. A historical witness proves both complete
+single turns, their original/copy graphs and new B/S identities, and the first
+round's real two-record answer. The next user follows that answer leaf; the two
+literal Read paths differ. After the second S, one native file attachment must
+exactly reproduce the entire first successful receipt, including unknown values.
+The Adapter uses stored source evidence rather than opening the referenced file.
+
+That file commits as Raw-only and keeps the required real answer pending. The
+existing private pending state recognizes B/S/file as its seen tail and
+re-proves the file against the current prefix before accepting a real index-0
+answer parented by it. Event fragments and deferred usage preserve the state;
+only full answer commit clears it. The selected file answer has a valid recorded
+timestamp, a fresh API identity and `end_turn`; known file async/status controls
+are absent. Nonzero Event progress at a file checkpoint requires its complete
+valid next answer and consistent Event time. EOF/partial input cannot establish
+it; zero-progress file EOF waits without busy continuation. These checks verify
+cursor/source consistency rather than authenticate arbitrary cursor forgery.
+Unsupported complete files/answers retain the caller's input ACK. No cursor
+field, round counter or public Interface changes are needed.
+
+The older single/two-Read corpora each establish one first-slug round and two
+ordinary resumes. Repeated two-Read, reversed results, further rounds/multiple
+reinjected files, same-path changes, tool-only layouts without P,
+other/more/error/async/interleaved calls, children and Active Path replacement
+remain outside these profiles. Manual file reinjection keeps its separate
+profile above; text replay retains its proved repeated-slug scope.
 
 ## Bounds and Raw policy
 
@@ -365,6 +388,17 @@ fragmentation rules. The existing text proof's 256 KiB policies are unchanged.
 Both groups must fit the fresh requested source-page capacity even with Raw off;
 remaining-space exhaustion defers the whole group. Proof still costs
 O(committed prefix) I/O/hash and does not create an atomic filesystem snapshot.
+The two-round single-Read file witness retains at most 64 complete physical LF
+frames within 4 MiB. Selected original/copy/control/first-round answer frames and the
+single reinjected file each fit 64 KiB including LF. These additional historical
+proof limits do not expand the existing automatic group limits or ordinary
+parsing. Oversized earlier unrelated history may fall out of the witness window;
+selected history beyond it is unsupported. Serialized retention is not an RSS
+bound, and the same-handle prefix proof is not an atomic snapshot.
+The second replay group and its file each require proof of their proposed
+committed prefix before ACK. Appending B/S or the file must still leave the
+complete witness inside that window; otherwise the Adapter preserves the
+preceding recoverable ACK.
 Manual Read reinjection allows selected original receipt slots R0/R1 up to
 2 MiB each, selected file frames up to 1 MiB each and the atomic file pair up to
 2 MiB. Other selected originals, the five compact controls and Meta/synthetic
@@ -778,6 +812,53 @@ All four Collector/Server E2E tests, CLI typecheck, Go HTTP compile, architectur
 and documentation guards passed. These are local implementation and integration
 checks; final PR gates, publication and Server deployment have separate evidence.
 
+The repeated single-Read increment uses five native snapshots from a new Claude
+Code 2.1.263 Session: seed, warmup, first automatic round, second automatic round
+and ordinary resume. The first round received a complete public Adapter ACK
+before the second native invocation. Both rounds read distinct real files; the
+second source keeps the common slug and its one file contains the entire first
+successful receipt. The [fixture ledger](../../adapters/claude/fixtures/native-repeated-auto-read-2.1.263/README.md)
+records literal prefix cuts, source/request hashes, excluded setup failures and
+the separate reversed two-Read capture. That capture did not reach a first
+complete Adapter ACK and is not positive repeated-profile evidence. Final
+logical totals are eighteen Events, seven recorded real API identities and
+380163/117 controlled counters; absent summary usage is not fabricated.
+
+All 741 Claude Adapter tests passed, including 95 new public Interface cases.
+They cover existing-slug copies, historical own-call/answer graphs, complete
+unknown-value equality, old/current-file confusion, pending and fragmented
+answers, Raw off/backfill/advanced receipts, damaged cursors and source repair.
+Exact 64 KiB file/selected-frame and 64-frame/4 MiB historical bounds are covered.
+The prospective summary/file prefix must fit before ACK: an added file or B/S
+that evicts required history rejects while preserving the previous checkpoint.
+Nonzero file-tail Event progress requires a valid complete next answer and its
+recorded Event time; genuine Event-only checkpoints and deferred usage still
+resume. These are consistency checks, not authentication against coordinated
+cursor forgery or timestamp collisions.
+
+The final installed bundle passed all prior package scenarios plus five native
+snapshots, 36 derived LF cuts, seventeen partial slots, seventeen independently
+advanced Raw receipts and twelve fresh-capacity cases. Independent acceptance
+resumed fifteen actual opaque checkpoints produced by the previous merged
+Implementation at `e127772632dc63b94cb230f12aed09a58f58d4b1`, including two genuine
+Event-only checkpoints, and passed 29 capacity/identity/cursor/repair/cancellation
+probes. Old Event objects and Raw object/generation stayed stable, with complete
+physical bytes and latest-once usage. This uses the prior Git Implementation;
+upgrades from historical published binaries remain unverified.
+
+The expanded authenticated HTTP/PostgreSQL contract adds seventeen native source
+phases and six idle polls to the previous 113 runs: 136 independent installed
+managed-daemon runs, ten Sessions and eleven Raw objects. Local acceptance passed
+on the candidate before the final prospective-window guard
+(`dc0e1261fb26dc929b1d51dfef03d54b7208f4b3ffc81cc01f69564f09a49b95`
+source SHA-256), as did all four Collector/Server E2E tests. It verifies stable
+old Reader Events, both own-call result anchors, latest usage, real-message Search
+anchors, internal/tool exclusion, complete contiguous Raw and deletion retention.
+The final Implementation's typecheck, installed-package/upgrade/fault checks
+and 741 tests passed; exact final-head PostgreSQL/E2E acceptance remains a required
+PR CI gate with its separate run evidence. No publication or manual Server
+deployment is claimed by these local checks.
+
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
 Provider-specific browser staging and upgrades from historical published binaries
@@ -791,7 +872,8 @@ Tool-result batches outside the exact two-Read layouts, automatic compaction
 outside the exact text and Read-turn replay groups, and manual file reinjection
 outside the selected two-file control chain need additional native profiles;
 none enables them through generic duplicate or parent relaxation.
-The next selected completeness increment is native repeated automatic Read
-compaction with an existing slug. It needs actual later tool rounds and exact
-current-tail evidence before changing admission. Larger automatic receipts,
-single/no-plan manual layouts and Active Path adoption remain separate work.
+The next completeness increment is to authenticate the newly captured reversed
+two-Read result layout, then acquire later-round evidence before admitting its
+repeated automatic compaction. Further rounds with multiple prior files, larger
+automatic receipts, single/no-plan manual layouts and Active Path adoption remain
+separate work.

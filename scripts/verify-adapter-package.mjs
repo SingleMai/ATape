@@ -93,6 +93,9 @@ try {
     await verifyClaudeAutomaticTextReplay(adapter, context, request.limits)
     await verifyClaudeReadPair(adapter, context, request.limits)
     await verifyClaudeAutomaticReadReplay(adapter, context, request.limits)
+    await verifyClaudeAutomaticReadReplay(adapter, context, request.limits, {
+      fixtureName: "native-repeated-auto-read-2.1.263", homeName: "repeated-automatic-read", repeated: true
+    })
     await verifyClaudeManualReadReinjection(adapter, context, request.limits)
     await verifyClaudeManualReadReinjection(adapter, context, request.limits, {
       fixtureName: "native-manual-large-read-reinjection-2.1.263",
@@ -621,22 +624,28 @@ async function verifyClaudeReadPair(adapter, context, limits) {
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 
-async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
-  const fixtureDirectory = join(packageRoot, "fixtures", "native-auto-read-replay-2.1.263")
+async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options = {}) {
+  const fixtureDirectory = join(packageRoot, "fixtures", options.fixtureName ?? "native-auto-read-replay-2.1.263")
   const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
   const relocate = source => source.replaceAll(JSON.stringify(provenance.fixtureCwd).slice(1, -1),
     JSON.stringify(projectDirectory).slice(1, -1))
   const prefix = (source, line) => source.split("\n").slice(0, line).join("\n") + "\n"
   const pagedLimits = { ...limits, eventsPerObservation: 1 }
+  if (options.repeated) {
+    const selected = await readFile(join(fixtureDirectory, provenance.selectedSourceRequests.file))
+    assert.equal(selected.byteLength, provenance.selectedSourceRequests.bytes)
+    assert.equal(createHash("sha256").update(selected).digest("hex"), provenance.selectedSourceRequests.sha256)
+  }
   try {
     for (const fixtureCase of provenance.cases) {
-      const selectedHome = join(temporaryRoot, `automatic-read-${fixtureCase.profile}`)
+      const selectedHome = join(temporaryRoot, `${options.homeName ?? "automatic-read"}-${fixtureCase.profile}`)
       const directory = join(selectedHome, "projects", "fixture")
       await mkdir(directory, { recursive: true })
       process.env.ATAPE_CLAUDE_HOME = selectedHome
       const sourceFile = join(directory, `${fixtureCase.sessionId}.jsonl`)
       let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
       const rawProgress = new Map(), events = [], usage = new Map()
+      let testedCuts = 0, testedPartials = 0, receiptRecoveries = 0, capacityCases = 0
       const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
       const appendSource = async source => {
         assert.ok(source.startsWith(previousSource), "Automatic Read replay must retain its native source prefix")
@@ -644,7 +653,97 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
         else await appendFile(sourceFile, source.slice(previousSource.length))
         previousSource = source
       }
-      const drain = async (expected, source, committedSource, pending, incompleteGroup = false) => {
+      const recoverAdvancedRawReceipts = async (page, source, lines, pending) => {
+        assert.ok(page.observations.every(observation => observation.events.length === 0 && observation.usage.length === 0))
+        const offered = page.observations.flatMap(observation => observation.rawSegments)
+        assert.ok(offered.length > 0, "A proved replay/file must offer eligible Raw bytes before parser ACK")
+        assert.equal(offered[0].sourceOffset, Buffer.byteLength(rawContent))
+        const end = offered.at(-1).sourceOffset + Buffer.byteLength(offered.at(-1).content)
+        for (const line of lines) {
+          const offset = Buffer.byteLength(prefix(source, line - 1)) + 32
+          assert.ok(offset > Buffer.byteLength(rawContent) && offset < end)
+          let recoveredCursor = cursor, recoveredContent = Buffer.from(source).subarray(0, offset).toString("utf8")
+          let receipt = { sourceSessionId: fixtureCase.sessionId, sourceObjectId, sourceGeneration,
+            sourceOffset: offset, finalized: false }, finished = false
+          for (let index = 0; index < limits.pagesPerCycle; index++) {
+            const request = () => collectInstalled(adapter, context, recoveredCursor, [receipt], pagedLimits)
+            const recovered = await request()
+            assert.deepEqual(await request(), recovered, "Old parser and advanced replay/file Raw receipt must retry exactly")
+            assert.equal(recovered.sourceFailures, undefined)
+            for (const observation of recovered.observations) {
+              assert.deepEqual(observation.events, [])
+              assert.deepEqual(observation.usage, [])
+              for (const raw of observation.rawSegments) {
+                assert.equal(raw.sourceObjectId, sourceObjectId)
+                assert.equal(raw.sourceGeneration, sourceGeneration)
+                assert.equal(raw.sourceOffset, Buffer.byteLength(recoveredContent))
+                recoveredContent += raw.content
+                receipt = { ...receipt, sourceOffset: Buffer.byteLength(recoveredContent), finalized: raw.final }
+              }
+            }
+            recoveredCursor = recovered.nextCursor
+            if (!recovered.hasMore) { finished = true; break }
+          }
+          assert.ok(finished, "Advanced replay/file Raw receipt recovery exceeded its page budget")
+          assert.equal(recoveredContent, source)
+          const idle = await collectInstalled(adapter, context, recoveredCursor, [receipt], pagedLimits)
+          assert.deepEqual(await collectInstalled(adapter, context, recoveredCursor, [receipt], pagedLimits), idle)
+          assert.deepEqual(idle.observations, [])
+          assert.equal(idle.nextCursor, recoveredCursor)
+          assert.equal(idle.hasMore, false)
+          assert.equal(idle.progress.pendingCanonicalSessions, pending)
+          assert.equal(idle.progress.pendingRawBytes, 0)
+          receiptRecoveries++
+        }
+      }
+      const assertOriginalUsage = committedSource => {
+        // Source UUIDs distinguish real split API records from byte-for-byte
+        // replay copies. Check each API's revision against its latest committed
+        // original record, including F0 before the later F1 exists.
+        const identified = new Set(), latest = new Map()
+        let end = 0
+        for (const line of committedSource.split("\n").filter(Boolean)) {
+          end += Buffer.byteLength(line) + 1
+          const record = JSON.parse(line)
+          if (!record.uuid || identified.has(record.uuid)) continue
+          identified.add(record.uuid)
+          if (record.type === "assistant" && record.message?.usage) latest.set(record.message.id, { record, end })
+        }
+        assert.equal(latest.size, usage.size)
+        for (const [apiId, value] of latest) {
+          const sample = usage.get(apiId)
+          assert.equal(sample.model, value.record.message.model)
+          assert.equal(sample.inputTokens, value.record.message.usage.input_tokens)
+          assert.equal(sample.outputTokens, value.record.message.usage.output_tokens)
+          assert.equal(sample.revision, value.end, "Copied API usage must not move its original source revision")
+        }
+      }
+      const freshRawCapacity = async source => {
+        const bytes = Buffer.byteLength(source) - Buffer.byteLength(rawContent)
+        const receipts = [...rawProgress.values()], durable = JSON.stringify({ cursor, receipts })
+        const selectedFile = process.env.ATAPE_CLAUDE_SESSION_FILE
+        process.env.ATAPE_CLAUDE_SESSION_FILE = sourceFile
+        try { for (const enabled of [false, true]) {
+          const below = { ...pagedLimits, rawSegmentBytes: bytes - 1, rawBytesPerObservation: bytes - 1 }
+          for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(
+            () => collectInstalled(adapter, context, cursor, receipts, below, enabled), error => error.reason === "limit")
+          const exact = { ...below, rawSegmentBytes: bytes, rawBytesPerObservation: bytes }
+          const page = await collectInstalled(adapter, context, cursor, receipts, exact, enabled)
+          assert.deepEqual(await collectInstalled(adapter, context, cursor, receipts, exact, enabled), page)
+          assert.equal(page.sourceFailures, undefined)
+          assert.notEqual(page.nextCursor, cursor)
+          assert.equal(page.hasMore, false)
+          assert.ok(page.observations.every(observation => observation.events.length === 0 && observation.usage.length === 0))
+          assert.equal(page.observations.flatMap(observation => observation.rawSegments).map(raw => raw.content).join(""),
+            enabled ? source.slice(rawContent.length) : "")
+          assert.equal(JSON.stringify({ cursor, receipts }), durable)
+          capacityCases += 2
+        } } finally {
+          if (selectedFile === undefined) delete process.env.ATAPE_CLAUDE_SESSION_FILE
+          else process.env.ATAPE_CLAUDE_SESSION_FILE = selectedFile
+        }
+      }
+      const drain = async (expected, source, committedSource, pending, incompleteGroup = false, recoveryLines) => {
         const previousCursor = cursor, previousEvents = [...events], previousUsage = [...usage]
         let finished = false
         for (let index = 0; index < limits.pagesPerCycle; index++) {
@@ -653,6 +752,7 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
           assert.equal(page.sourceFailures, undefined)
           assert.equal(typeof page.nextCursor, "string")
           if (incompleteGroup) assert.deepEqual(page.observations, [], "Unproved copies/B must not advance Canonical or Raw")
+          if (recoveryLines && index === 0) await recoverAdvancedRawReceipts(page, source, recoveryLines, pending)
           for (const observation of page.observations) {
             assert.equal(observation.session.sourceSessionId, fixtureCase.sessionId)
             assert.deepEqual(observation.threads.map(thread => thread.sourceThreadId), ["root"])
@@ -694,7 +794,7 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
         assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), expected.inputTokens)
         assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), expected.outputTokens)
         assert.deepEqual(events.map(event => event.sourceEventId), fixtureCase.eventSourceIds.slice(0, expected.uniqueCanonicalEventCount))
-        if (expected.usageSourceIds) for (const apiId of expected.usageSourceIds) {
+        if (expected.usageSourceIds && !options.repeated) for (const apiId of expected.usageSourceIds) {
           const value = fixtureCase.latestUsageByApiId[apiId]
           const sample = usage.get(apiId)
           assert.equal(sample.model, value.model)
@@ -702,6 +802,7 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
           assert.equal(sample.outputTokens, value.outputTokens)
           assert.equal(sample.revision, Buffer.byteLength(prefix(source, value.latestObservationLine)), "Raw-only copied usage must not advance its source revision")
         }
+        if (options.repeated) assertOriginalUsage(committedSource)
         assert.equal(rawContent, committedSource)
         assert.ok(events.every(event => event.rawRef.sourceObjectId === sourceObjectId))
         const idle = await collect()
@@ -714,12 +815,36 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
         assert.equal(idle.progress.pendingRawBytes, Buffer.byteLength(source) - Buffer.byteLength(committedSource))
       }
       for (const snapshot of fixtureCase.nativeSnapshots) {
-        const source = relocate(await readFile(join(fixtureDirectory, snapshot.file), "utf8"))
+        const recorded = await readFile(join(fixtureDirectory, snapshot.file), "utf8")
+        if (options.repeated) {
+          assert.equal(Buffer.byteLength(recorded), snapshot.sanitized.bytes)
+          assert.equal(createHash("sha256").update(recorded).digest("hex"), snapshot.sanitized.sha256)
+        }
+        const source = relocate(recorded)
         for (const cut of fixtureCase.derivedTestCuts.filter(cut => cut.nativeParentSnapshot === snapshot.file)) {
           const cutSource = prefix(source, cut.prefixThroughLine)
+          let recoveryLines
+          if (options.repeated) {
+            const recordedCut = prefix(recorded, cut.prefixThroughLine)
+            assert.equal(Buffer.byteLength(recordedCut), cut.sanitized.bytes)
+            assert.equal(createHash("sha256").update(recordedCut).digest("hex"), cut.sanitized.sha256)
+            const round = fixtureCase.rounds.find(round => round.round === cut.round)
+            if ((round && cut.prefixThroughLine >= round.lines.copyStart && cut.prefixThroughLine <= round.lines.S) || cut.slot === "prior-file") {
+              const line = source.split("\n")[cut.prefixThroughLine - 1]
+              const partial = prefix(source, cut.prefixThroughLine - 1) + line.slice(0, Math.floor(line.length / 2))
+              const committed = rawContent
+              await appendSource(partial)
+              await drain(cut.expected, partial, committed, 1, true)
+              testedPartials++
+            }
+            if (cut.slot === "S") recoveryLines = Array.from({ length: round.lines.S - round.lines.copyStart + 1 }, (_, index) => round.lines.copyStart + index)
+            if (cut.slot === "prior-file") recoveryLines = [cut.prefixThroughLine]
+          }
           await appendSource(cutSource)
+          if (options.repeated && recoveryLines) await freshRawCapacity(cutSource)
           await drain(cut.expected, cutSource, prefix(source, cut.parserAndRawCommitThroughLine),
-            cut.expected.pendingCanonicalSessions, cut.incompleteAtomicReplayGroup)
+            cut.expected.pendingCanonicalSessions, cut.incompleteAtomicReplayGroup, recoveryLines)
+          testedCuts++
         }
         await appendSource(source)
         await drain(snapshot.expected, source, source, 0)
@@ -735,8 +860,26 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
         assert.equal(result.update.status, "completed")
         assert.equal(result.update.rawOutput, receipt.sourceResultBlock.content)
       }
-      for (const uuid of [fixtureCase.boundary.uuid, fixtureCase.summary.uuid]) {
+      const controls = options.repeated ? fixtureCase.rounds.flatMap(round => [round.boundary.uuid, round.summary.uuid])
+        : [fixtureCase.boundary.uuid, fixtureCase.summary.uuid]
+      for (const uuid of controls) {
         assert.ok(!events.some(event => event.sourceEventId.startsWith(`${uuid}:`)))
+      }
+      if (options.repeated) {
+        const relation = fixtureCase.priorFileReinjection
+        const records = previousSource.trimEnd().split("\n").map(line => JSON.parse(line))
+        assert.deepEqual(records[relation.line - 1].attachment.content, records[relation.earlierResultLine - 1].toolUseResult)
+        assert.ok(!events.some(event => event.sourceEventId.startsWith(`${relation.uuid}:`)))
+        for (const marker of fixtureCase.summarizationUsageLimit.knownSummaryMarkers) {
+          assert.ok(rawContent.includes(marker))
+          assert.ok(!JSON.stringify([events, [...usage.values()]]).includes(marker))
+        }
+        for (const apiId of fixtureCase.summarizationUsageLimit.missingSummaryApiIds) assert.ok(!usage.has(apiId))
+        assert.equal(testedCuts, 36)
+        assert.equal(testedPartials, 17)
+        assert.equal(receiptRecoveries, 17)
+        assert.equal(capacityCases, 12)
+        process.stdout.write("Verified native repeated automatic Read: 5 snapshots, 36 LF cuts, 17 partial slots, 17 advanced Raw receipts, 12 fresh capacity cases; 18 Events, 7 API usage IDs, 380163/117 tokens\n")
       }
     }
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
