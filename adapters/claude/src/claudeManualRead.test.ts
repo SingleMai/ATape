@@ -333,20 +333,27 @@ it("retains ordinary incomplete-line rules until a large first candidate has a c
 })
 
 it.each([36, 41])("enforces fresh group source capacity and defers the full group when page capacity is already used: %i", async count => {
-  const source = snapshots[5]!, group = prefix(source, count + 2).slice(prefix(source, count).length), size = Buffer.byteLength(group)
-  await writeFile(file, prefix(source, count)); const initial = await drain()
-  await appendFile(file, source.slice(prefix(source, count).length))
+  const source = snapshots[5]!, committed = prefix(source, count), throughGroup = prefix(source, count + 2)
+  const group = throughGroup.slice(committed.length), size = Buffer.byteLength(group)
+  await writeFile(file, committed); const initial = await drain()
+  await appendFile(file, group)
   await reject(request(initial.cursor, true, { rawSegmentBytes: size - 1, rawBytesPerObservation: size - 1 }), "limit")
   const recovered = await drain(initial.cursor, true, { rawSegmentBytes: size, rawBytesPerObservation: size })
-  expect(events(recovered.pages)).toHaveLength(4); expectRaw([...initial.pages, ...recovered.pages], source)
+  expect(events(recovered.pages)).toEqual([]); expect(usage(recovered.pages)).toEqual([])
+  expectRaw([...initial.pages, ...recovered.pages], throughGroup)
+  await appendFile(file, source.slice(throughGroup.length)); const continuation = await drain(recovered.cursor)
+  expect(events(continuation.pages)).toHaveLength(4); expectRaw([...initial.pages, ...recovered.pages, ...continuation.pages], source)
   progress = []; const before = count === 36 ? 35 : 40
   await writeFile(file, prefix(source, before)); const old = await drain()
-  await appendFile(file, source.slice(prefix(source, before).length))
+  await appendFile(file, throughGroup.slice(prefix(source, before).length))
   const input = request(old.cursor, true, { rawSegmentBytes: size, rawBytesPerObservation: size }), deferred = await read(input)
   expect(await read(input)).toEqual(deferred); expect(deferred.hasMore).toBe(true)
   expect(raw([deferred]).map(segment => segment.content).join("")).toBe(prefix(source, count).slice(prefix(source, before).length))
   acknowledge(deferred); const rest = await drain(deferred.nextCursor, true, { rawSegmentBytes: size, rawBytesPerObservation: size })
-  expect(events(rest.pages)).toHaveLength(4); expectRaw([...old.pages, deferred, ...rest.pages], source)
+  expect(events(rest.pages)).toEqual([]); expect(usage(rest.pages)).toEqual([])
+  expectRaw([...old.pages, deferred, ...rest.pages], throughGroup)
+  await appendFile(file, source.slice(throughGroup.length)); const tail = await drain(rest.cursor)
+  expect(events(tail.pages)).toHaveLength(4); expectRaw([...old.pages, deferred, ...rest.pages, ...tail.pages], source)
 })
 
 it.each([36, 41])("keeps old parser input and independent Raw receipts inside each proved group: %i", async count => {
