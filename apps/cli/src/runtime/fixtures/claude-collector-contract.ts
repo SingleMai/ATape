@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { inflateRawSync } from "node:zlib"
 import { CLICredentialStore, CollectorStateStore, installAdapter, planToolChange, applyToolChange,
   startManagedCollector, stopManagedCollector, inspectManagedCollector } from "@atape/application"
 import { type StoredCLICredential } from "@atape/domain"
@@ -23,6 +24,7 @@ const tailId = "48656330-5cf7-4f7c-97d4-674c41750762"
 const autoId = "43526b2f-6f23-4f37-9627-c75f50bfb9b9"
 const pairToolId = "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3", pairPlanId = "cf19053f-9c3c-49b7-8fce-461ae05d8294"
 const autoReadSingleId = "611cd738-0d92-41ce-b1e3-64ba1a10a70a", autoReadDualId = "bb9cf168-c9d3-4fea-9428-bd7fc8460755"
+const largeManualReadId = "b179ae84-44d8-4f32-adee-7f176edf363c"
 const rootFile = join(sourceDirectory, `${familyId}.jsonl`)
 const childFile = join(sourceDirectory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compactFile = join(sourceDirectory, `${compactId}.jsonl`)
@@ -30,6 +32,7 @@ const tailFile = join(sourceDirectory, `${tailId}.jsonl`)
 const autoFile = join(sourceDirectory, `${autoId}.jsonl`)
 const pairToolFile = join(sourceDirectory, `${pairToolId}.jsonl`), pairPlanFile = join(sourceDirectory, `${pairPlanId}.jsonl`)
 const autoReadSingleFile = join(sourceDirectory, `${autoReadSingleId}.jsonl`), autoReadDualFile = join(sourceDirectory, `${autoReadDualId}.jsonl`)
+const largeManualReadFile = join(sourceDirectory, `${largeManualReadId}.jsonl`)
 const compactFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-compact-2.1.263/", import.meta.url)
 const tailFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/", import.meta.url)
 const autoFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/", import.meta.url)
@@ -37,6 +40,7 @@ const familyFixture = new URL("../../../../../adapters/claude/fixtures/native-fo
 const pairFixture = new URL("../../../../../adapters/claude/fixtures/native-read-pair-2.1.263/", import.meta.url)
 const autoReadFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-read-replay-2.1.263/", import.meta.url)
 const manualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-read-reinjection-2.1.263/", import.meta.url)
+const largeManualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-large-read-reinjection-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
 const tailSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, tailFixture), "utf8")
@@ -49,6 +53,8 @@ const autoReadSnapshot = (file: string) => readFileSync(new URL(file, autoReadFi
   .replaceAll("/fixture/native-auto-tool-replay/workspace", workspace)
 const manualReadSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, manualReadFixture), "utf8")
   .replaceAll("/fixture/native-manual-read-reinjection/workspace", workspace)
+const largeManualReadSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, largeManualReadFixture), "utf8")
+  .replaceAll("/fixture/native-manual-large-read-reinjection/workspace", workspace)
 const autoReadCases = (JSON.parse(readFileSync(new URL("provenance.json", autoReadFixture), "utf8")) as {
   cases: ReadonlyArray<{ id: string; profile: string; lines: { plan: number; calls: ReadonlyArray<number>; results: ReadonlyArray<number>; A: number; S: number; F0: number } }>
 }).cases
@@ -93,6 +99,7 @@ if (input.phase === "initial") {
   writeFileSync(pairPlanFile, pairSnapshot("text-plan/warmup.jsonl"))
   writeFileSync(autoReadSingleFile, autoReadSnapshot("auto_single/warmup.jsonl"))
   writeFileSync(autoReadDualFile, autoReadSnapshot("auto/warmup.jsonl"))
+  writeFileSync(largeManualReadFile, largeManualReadSnapshot("seed"))
   const foreign = join(input.home, "foreign-project"); mkdirSync(foreign)
   writeFileSync(join(sourceDirectory, "foreign.jsonl"), root.replaceAll(familyId, "foreign-claude-session").replaceAll(workspace, foreign))
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
@@ -158,6 +165,18 @@ if (manualReadStage) {
   assert.ok(next.startsWith(readFileSync(pairPlanFile, "utf8")), "Manual Read phase changed the existing native prefix")
   writeFileSync(pairPlanFile, next)
 }
+const largeManualReadStage = /^large-manual-read-(warmup|toolturn|boundary|summary|caveat|command|stdout|file-first|files|bookkeeping|meta|bridge|user|continue|secondcontinue)$/.exec(input.phase)
+if (largeManualReadStage) {
+  const slot = largeManualReadStage[1]!
+  const phase = ["warmup", "toolturn", "secondcontinue"].includes(slot) ? slot
+    : ["bookkeeping", "meta", "bridge", "user", "continue"].includes(slot) ? "continue" : "compact"
+  const source = largeManualReadSnapshot(phase)
+  const cuts: Record<string, number> = { boundary: 34, summary: 35, caveat: 36, command: 37, stdout: 38,
+    "file-first": 39, files: 40, bookkeeping: 45, meta: 46, bridge: 47, user: 48 }
+  const next = cuts[slot] === undefined ? source : completeLinePrefix(source, cuts[slot])
+  assert.ok(next.startsWith(readFileSync(largeManualReadFile, "utf8")), "Large manual Read phase changed the native prefix")
+  writeFileSync(largeManualReadFile, next)
+}
 if (input.phase === "raw-off") {
   const source = readFileSync(compactFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
   const last = rows.findLast(row => typeof row.uuid === "string")
@@ -210,8 +229,10 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   const state = yield* states.snapshot(input.origin, input.userId, input.projectId, adapterId)
   assert.ok(state.checkpoint?.cursor)
   assert.equal(state.checkpoint.canonicalPublished, true)
-  const decoded = JSON.parse(state.checkpoint.cursor)
-  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId, pairToolId, pairPlanId, autoReadSingleId, autoReadDualId].sort(),
+  const cursor = state.checkpoint.cursor
+  const decoded = JSON.parse(cursor.startsWith("z3:")
+    ? inflateRawSync(Buffer.from(cursor.slice(3), "base64url"), { maxOutputLength: 16 * 1024 * 1024 }).toString("utf8") : cursor)
+  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId, pairToolId, pairPlanId, autoReadSingleId, autoReadDualId, largeManualReadId].sort(),
     "Foreign source was captured or a known checkpoint was reset")
   return { installationId: state.installationId, cursor: state.checkpoint.cursor, rawObjects: state.checkpoint.rawObjects,
     observations: job.observations ?? 0, canonicalEvents: job.canonicalEvents ?? 0, canonicalBatches: job.canonicalBatches ?? 0,

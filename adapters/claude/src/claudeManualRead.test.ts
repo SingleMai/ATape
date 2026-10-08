@@ -311,21 +311,22 @@ it("admits exact 64 KiB selected frames and 128 KiB groups with fresh source cap
 it.each(["original receipt", "summary", "first file", "second file", "Meta", "bridge"])
 ("rejects an over-cap selected %s without applying its limit to ordinary parsing", async kind => {
   const source = rows(snapshots[5]!), index = ({ "original receipt": 22, summary: 32, "first file": 36, "second file": 37, Meta: 41, bridge: 42 } as Record<string, number>)[kind]!
-  sized(source[index]!, 64 * 1024 + 1); const text = lines(source), count = index < 40 ? 36 : 41
+  const limit = kind === "original receipt" ? 2 * 1024 * 1024 : kind === "first file" || kind === "second file" ? 1024 * 1024 : 64 * 1024
+  sized(source[index]!, limit + 1); const text = lines(source), count = index < 40 ? 36 : 41
   await writeFile(file, prefix(text, count)); const initial = await drain()
   await appendFile(file, text.slice(prefix(text, count).length)); await reject(request(initial.cursor), "limit")
 })
 
 it.each([38, 43])("reports limit for a recognized second slot %i with no room for LF", async count => {
   const source = rows(snapshots[5]!), row = source[count - 1]!, start = count === 38 ? 36 : 41
-  sized(row, 64 * 1024 + 1)
+  sized(row, (count === 38 ? 1024 * 1024 : 64 * 1024) + 1)
   await writeFile(file, prefix(snapshots[5]!, start)); const initial = await drain()
   await appendFile(file, lines(source.slice(start, count - 1)) + lines([row]).slice(0, -1))
   await reject(request(initial.cursor), "limit")
 })
 
 it("retains ordinary incomplete-line rules until a large first candidate has a complete LF", async () => {
-  const source = rows(snapshots[5]!); sized(source[36]!, 70_000)
+  const source = rows(snapshots[5]!); sized(source[36]!, 1024 * 1024 + 1)
   await writeFile(file, prefix(snapshots[5]!, 36)); const initial = await drain()
   await appendFile(file, lines([source[36]!]).slice(0, -1))
   const pending = await read(request(initial.cursor)); expect(pending.observations).toEqual([]); expect(pending.nextCursor).toBe(initial.cursor)

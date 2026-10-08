@@ -145,6 +145,8 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   file branch cannot skip or duplicate Meta. Old no-file direct stdout bridges
   remain supported through actual-leaf proof. Real subsequent turns retain the
   existing root, Event/usage/Raw identities and projection-4 cursor schema.
+  After committed files, sampled UUID-less mode/atis-latch bookkeeping requires
+  renewed current-prefix/file proof and incoming identity validation.
 
 ## Explicit limits
 
@@ -198,13 +200,20 @@ no-plan layouts and other/more/error/async results need further profiles. Text
 replay retains its separate 256 KiB policies and repeated scope.
 Manual Read reinjection selects only one first-slug text-plan/exact-two-successful
 Read turn, its final text pair and reverse-order two-file chain. Each selected
-original/control/file/bridge frame fits 64 KiB including LF, and each file-pair or
-Meta/bridge group fits 128 KiB. The current-prefix pass retains ten bounded
-original frames and five control frames; oversized unrelated earlier records
+original receipt R0/R1 fits 2 MiB and each selected file frame fits 1 MiB; their
+file pair fits 2 MiB. Other selected originals, compact controls and Meta/bridge
+frames retain 64 KiB, with 128 KiB per Meta/bridge group. These limits count whole
+UTF-8 JSONL frames including LF, not file-body size. The larger native sample
+reads two 98,304-byte files; the policy does not cover every ordinary 16 MiB
+receipt. The current-prefix pass retains ten bounded potential originals and
+five controls. Candidate classification limits storage only; full positional
+and graph proof still governs admission. Oversized unrelated earlier records
 fall out of the ring. Both groups must fit fresh source capacity even with Raw
 off; remaining-space exhaustion defers them whole. An unknown first partial
-line keeps ordinary 16 MiB scanning; recognized admission and subsequent slots
-use the smaller profile cap. No-file manual profiles retain ordinary limits.
+line keeps ordinary 16 MiB scanning; a recognized second file uses 1 MiB and a
+second bridge uses 64 KiB bounded lookahead. No-file manual profiles retain
+ordinary limits and their existing bookkeeping types. After committed files,
+mode/atis-latch records require current-prefix/file and incoming identity proof.
 Single/no-plan/other/error/async tools, more files, changed/repeated reinjection,
 children and broader manual/automatic composition remain unsupported. The Adapter
 uses complete stored receipt equality, including unknown values; it never opens
@@ -312,6 +321,11 @@ synthetic content and actual native source persistence:
   continuations. Entire reinjected content objects equal the original receipts.
   Config/workspace were isolated; inherited HOME was not recorded. Derived cuts
   are append boundaries, not additional native captures.
+- [Larger manual Read file reinjection](fixtures/native-manual-large-read-reinjection-2.1.263/README.md):
+  six native snapshots from a fresh isolated HOME/config/workspace, with two
+  complete 98,304-byte Reads and the same graph plus mode/atis-latch bookkeeping.
+  Full reinjected objects equal their original receipts. Selected request
+  evidence retains hashes and byte counts for large text rather than its body.
 
 Mock usage counters establish projection/deduplication, not billing. Compaction
 responses have no assistant JSONL usage, so their actual usage remains unavailable.

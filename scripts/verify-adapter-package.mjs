@@ -94,6 +94,11 @@ try {
     await verifyClaudeReadPair(adapter, context, request.limits)
     await verifyClaudeAutomaticReadReplay(adapter, context, request.limits)
     await verifyClaudeManualReadReinjection(adapter, context, request.limits)
+    await verifyClaudeManualReadReinjection(adapter, context, request.limits, {
+      fixtureName: "native-manual-large-read-reinjection-2.1.263",
+      homeName: "manual-large-read-reinjection", omitToolOutput: true,
+      summaryMarker: "ATAPE_MANUAL_LARGE_SUMMARY", missingSummaryUsageId: "msg_atape_manual_large_1_mock_5"
+    })
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -278,12 +283,12 @@ async function verifyClaudeManualCompaction(adapter, context, limits) {
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 
-async function collectInstalled(adapter, context, cursor, rawProgress, limits) {
+async function collectInstalled(adapter, context, cursor, rawProgress, limits, rawCaptureEnabled) {
   // Reopen the installed artifact for every page, using only durable Host state.
   const runtime = await adapter.createAtapeAdapter({ ...context, signal: AbortSignal.timeout(5_000) })
   try {
     return await runtime.collect({ protocolVersion: context.protocolVersion, cursor, limits,
-      rawProgress, signal: AbortSignal.timeout(5_000) })
+      rawProgress, ...(rawCaptureEnabled === undefined ? {} : { rawCaptureEnabled }), signal: AbortSignal.timeout(5_000) })
   } finally { await runtime.close?.() }
 }
 
@@ -737,11 +742,11 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits) {
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 
-async function verifyClaudeManualReadReinjection(adapter, context, limits) {
-  const fixtureDirectory = join(packageRoot, "fixtures", "native-manual-read-reinjection-2.1.263")
+async function verifyClaudeManualReadReinjection(adapter, context, limits, options = {}) {
+  const fixtureDirectory = join(packageRoot, "fixtures", options.fixtureName ?? "native-manual-read-reinjection-2.1.263")
   const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
   const { sessionId, fixtureCwd } = provenance
-  const selectedHome = join(temporaryRoot, "manual-read-reinjection")
+  const selectedHome = join(temporaryRoot, options.homeName ?? "manual-read-reinjection")
   const directory = join(selectedHome, "projects", "fixture"), sourceFile = join(directory, `${sessionId}.jsonl`)
   await mkdir(directory, { recursive: true })
   process.env.ATAPE_CLAUDE_HOME = selectedHome
@@ -749,9 +754,20 @@ async function verifyClaudeManualReadReinjection(adapter, context, limits) {
     JSON.stringify(projectDirectory).slice(1, -1))
   const prefix = (source, line) => source.split("\n").slice(0, line).join("\n") + "\n"
   const digest = source => createHash("sha256").update(source).digest("hex")
+  const fileLines = provenance.fileReinjection.map(file => file.line)
+  const stdoutLine = fileLines[0] - 1
+  const { metaLine, syntheticLine } = provenance.firstResumeBridge
+  const bookkeepingLine = metaLine - 1
+  assert.equal(fileLines[1], fileLines[0] + 1)
+  assert.equal(syntheticLine, metaLine + 1)
+  if (provenance.selectedSourceRequests) {
+    const recorded = await readFile(join(fixtureDirectory, provenance.selectedSourceRequests.file))
+    assert.equal(recorded.byteLength, provenance.selectedSourceRequests.bytes)
+    assert.equal(digest(recorded), provenance.selectedSourceRequests.sha256)
+  }
   const pagedLimits = { ...limits, eventsPerObservation: 1 }
   let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
-  let testedCuts = 0, testedPartials = 0, receiptRecoveries = 0
+  let testedCuts = 0, testedPartials = 0, receiptRecoveries = 0, capacityCases = 0
   const rawProgress = new Map(), events = [], usage = new Map()
   const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
   const appendSource = async source => {
@@ -899,6 +915,34 @@ async function verifyClaudeManualReadReinjection(adapter, context, limits) {
     await drain(expected, partial, prefix(source, committedLine), 1, true)
     testedPartials++
   }
+  const freshGroupCapacity = async source => {
+    const bytes = Buffer.byteLength(prefix(source, fileLines[1])) - Buffer.byteLength(prefix(source, stdoutLine))
+    const inputReceipts = [...rawProgress.values()]
+    const durableInput = JSON.stringify({ cursor, inputReceipts })
+    const selectedFile = process.env.ATAPE_CLAUDE_SESSION_FILE
+    process.env.ATAPE_CLAUDE_SESSION_FILE = sourceFile
+    try { for (const enabled of [false, true]) {
+      const requested = { ...pagedLimits, rawSegmentBytes: bytes - 1, rawBytesPerObservation: bytes - 1 }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await assert.rejects(() => collectInstalled(adapter, context, cursor, inputReceipts, requested, enabled),
+          error => error.reason === "limit")
+      }
+      const exact = { ...requested, rawSegmentBytes: bytes, rawBytesPerObservation: bytes }
+      const page = await collectInstalled(adapter, context, cursor, inputReceipts, exact, enabled)
+      assert.deepEqual(await collectInstalled(adapter, context, cursor, inputReceipts, exact, enabled), page)
+      assert.equal(page.sourceFailures, undefined)
+      assert.notEqual(page.nextCursor, cursor)
+      assert.equal(page.hasMore, false)
+      assert.ok(page.observations.every(observation => observation.events.length === 0 && observation.usage.length === 0))
+      assert.equal(page.observations.flatMap(observation => observation.rawSegments).map(raw => raw.content).join(""),
+        enabled ? source.slice(prefix(source, stdoutLine).length) : "")
+      assert.equal(JSON.stringify({ cursor, inputReceipts }), durableInput)
+      capacityCases += 2
+    } } finally {
+      if (selectedFile === undefined) delete process.env.ATAPE_CLAUDE_SESSION_FILE
+      else process.env.ATAPE_CLAUDE_SESSION_FILE = selectedFile
+    }
+  }
   try {
     for (const snapshot of provenance.nativeSnapshots) {
       const recorded = await readFile(join(fixtureDirectory, snapshot.file), "utf8")
@@ -910,23 +954,26 @@ async function verifyClaudeManualReadReinjection(adapter, context, limits) {
         assert.equal(Buffer.byteLength(recordedCut), cut.bytes)
         assert.equal(digest(recordedCut), cut.sha256)
         if (cut.label === "fileB" || cut.label === "fileA") {
-          await partialSlot(source, cut.throughLine, cut.expectedLogicalData, 36)
+          await partialSlot(source, cut.throughLine, cut.expectedLogicalData, stdoutLine)
         }
         if (cut.label === "meta-continue") {
           // UUID-less native queues are committed before the next atomic group.
-          const queues = prefix(source, 41)
+          const queues = prefix(source, bookkeepingLine)
           await appendSource(queues)
           await drain(cut.expectedLogicalData, queues, queues, 0)
-          await partialSlot(source, 42, cut.expectedLogicalData, 41)
+          await partialSlot(source, metaLine, cut.expectedLogicalData, bookkeepingLine)
         }
-        if (cut.label === "synthetic-bridge") await partialSlot(source, 43, cut.expectedLogicalData, 41)
+        if (cut.label === "synthetic-bridge") await partialSlot(source, syntheticLine, cut.expectedLogicalData, bookkeepingLine)
         const cutSource = prefix(source, cut.throughLine)
         const incomplete = cut.label === "fileB" || cut.label === "meta-continue"
-        const committed = prefix(source, cut.label === "fileB" ? 36 : cut.label === "meta-continue" ? 41 : cut.throughLine)
+        const committed = prefix(source, cut.label === "fileB" ? stdoutLine : cut.label === "meta-continue" ? bookkeepingLine : cut.throughLine)
         const pending = ["B", "S", "caveat", "command", "fileB", "meta-continue"].includes(cut.label) ? 1 : 0
         await appendSource(cutSource)
+        // Capacity is measured at this group's EOF; later groups use their own
+        // default capacity rather than a path-length-dependent earlier budget.
+        if (options.omitToolOutput && cut.label === "fileA") await freshGroupCapacity(cutSource)
         await drain(cut.expectedLogicalData, cutSource, committed, pending, incomplete,
-          cut.label === "fileA" ? [37, 38] : cut.label === "synthetic-bridge" ? [42, 43] : undefined)
+          cut.label === "fileA" ? fileLines : cut.label === "synthetic-bridge" ? [metaLine, syntheticLine] : undefined)
         testedCuts++
       }
       await appendSource(source)
@@ -944,21 +991,29 @@ async function verifyClaudeManualReadReinjection(adapter, context, limits) {
       assert.equal(result.update.sessionUpdate, "tool_call_update")
       assert.equal(result.update.toolCallId, call.update.toolCallId)
       assert.equal(result.update.status, "completed")
-      assert.equal(result.update.rawOutput, resultRecord.message.content[0].content)
+      if (options.omitToolOutput) {
+        assert.ok(Buffer.byteLength(JSON.stringify(resultRecord.message.content[0].content)) > 64 * 1024)
+        assert.equal(Object.hasOwn(result.update, "rawOutput"), false)
+        assert.equal(result.fidelity, "partial")
+      } else assert.equal(result.update.rawOutput, resultRecord.message.content[0].content)
+      assert.deepEqual(finalRecords[relation.line - 1].attachment.content, resultRecord.toolUseResult)
       assert.ok(!events.some(event => event.sourceEventId.startsWith(`${relation.uuid}:`)))
     }
-    for (const marker of ["ATAPE_MANUAL_SUMMARY", "<command-name>/compact", "Continue from where you left off.", "No response requested."]) {
+    for (const marker of [options.summaryMarker ?? "ATAPE_MANUAL_SUMMARY", "<command-name>/compact", "Continue from where you left off.", "No response requested."]) {
       assert.ok(rawContent.includes(marker))
       assert.ok(!JSON.stringify([events, [...usage.values()]]).includes(marker), `${marker} must remain internal Raw context`)
     }
-    assert.ok(!usage.has("msg_atape_manual_mock_5"))
+    assert.ok(!usage.has(options.missingSummaryUsageId ?? "msg_atape_manual_mock_5"))
     assert.ok(!usage.has(provenance.firstResumeBridge.syntheticMessageId))
     assert.equal(testedCuts, 13)
     assert.equal(testedPartials, 4)
     assert.equal(receiptRecoveries, 4)
     assert.equal(events.length, 16)
     assert.equal(usage.size, 6)
-    process.stdout.write("Verified native manual Read reinjection: 6 snapshots, 13 cuts, 4 partial slots, 4 advanced Raw receipts; 16 Events, 6 API usage IDs, 188/90 tokens\n")
+    assert.equal(capacityCases, options.omitToolOutput ? 4 : 0)
+    process.stdout.write("Verified native " + (options.omitToolOutput ? "large " : "") +
+      "manual Read reinjection: 6 snapshots, 13 cuts, 4 partial slots, 4 advanced Raw receipts; 16 Events, 6 API usage IDs, 188/90 tokens" +
+      (options.omitToolOutput ? "; omitted large tool details and 4 fresh capacity cases" : "") + "\n")
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 

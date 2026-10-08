@@ -3,6 +3,10 @@
 - Status: Accepted scope; implementation and acceptance are recorded in the feature guide
 - Date: 2026-10-08
 
+[ADR-0093](0093-claude-larger-manual-read-records.md) later selects separate
+larger receipt/file bounds for this same graph; the original decision below
+records the smaller initial envelope. The current guide owns implemented scope.
+
 ## Context
 
 [ADR-0088](0088-claude-manual-compaction-on-legacy-capture.md) admits selected

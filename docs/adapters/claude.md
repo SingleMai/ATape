@@ -200,8 +200,10 @@ compaction, rewind or forks.
 
 ## Manual Read file reinjection
 
-[ADR-0092](../architecture/adr/0092-claude-manual-read-file-reinjection.md) admits
-one additional native Claude Code 2.1.263 manual root sequence. Its ten adjacent
+[ADR-0092](../architecture/adr/0092-claude-manual-read-file-reinjection.md) and
+[ADR-0093](../architecture/adr/0093-claude-larger-manual-read-records.md) admit
+the sampled Claude Code 2.1.263 manual root sequence at small and larger Read
+sizes. Its ten adjacent
 originals are external user, token reminder, text plan at API index 0, two Read
 calls at indices 1/2, their ordered successful own-call results, another token
 reminder and final text records at indices 0/1 of a later API response. The manual
@@ -235,13 +237,17 @@ no Canonical Events or usage. Only real later user/assistant turns append to the
 existing root Thread. The sampled Meta and real user share a new prompt, but no
 new durable real-user prompt protocol is introduced. Supported opaque cursors,
 projection revision 4, Event anchors and Raw object/generation remain intact.
+After the committed files, UUID-less `mode` and `atis-latch` bookkeeping is
+admitted only after the current prefix, selected files and incoming identity
+are proved again. Type names alone cannot authorize progress; the generic
+no-file compaction transition retains its existing bookkeeping types.
 Independent Raw receipts can advance inside a proved group while the Host keeps
 an older parser cursor; retries prove the group again and resume contiguous Raw
 bytes. Parser group atomicity does not make Canonical and Raw delivery a single
 distributed transaction.
 
-Only this one first-slug, text-plan, exact-two successful Read sequence and reverse
-file order was sampled. Single Read, no-plan layouts, more/other/error/async tools,
+Both native corpora sample one first-slug, text-plan, exact-two successful Read
+sequence and reverse file order. Single Read, no-plan layouts, more/other/error/async tools,
 changed or repeated file reinjection, children and wider manual/automatic
 composition remain outside this increment. Summary and reinjected files enter
 model context as provider-generated records; they remain outside Reader/Search
@@ -359,14 +365,26 @@ fragmentation rules. The existing text proof's 256 KiB policies are unchanged.
 Both groups must fit the fresh requested source-page capacity even with Raw off;
 remaining-space exhaustion defers the whole group. Proof still costs
 O(committed prefix) I/O/hash and does not create an atomic filesystem snapshot.
-Manual Read reinjection caps each selected original/control/file/bridge frame
-at 64 KiB including LF, with 128 KiB per two-record group. A bounded ring retains
-ten originals and five controls; oversized unrelated prehistory falls out of the
-ring without adding a new source limit. Selected required witnesses must fit the
-cap. Both groups must fit fresh requested source capacity even with Raw disabled;
-insufficient remaining page capacity defers the entire group. The first complete
-candidate receives the smaller admission cap; an unknown first partial line
-keeps ordinary 16 MiB scanning, while the second slot uses bounded lookahead.
+Manual Read reinjection allows selected original receipt slots R0/R1 up to
+2 MiB each, selected file frames up to 1 MiB each and the atomic file pair up to
+2 MiB. Other selected originals, the five compact controls and Meta/synthetic
+frames retain 64 KiB; the Meta/bridge group retains 128 KiB. All frame limits
+count complete UTF-8 JSONL including LF, escaping and unknown values, rather
+than file-body bytes. The native larger sample reads two 98,304-byte files
+without truncation; these policies provide headroom above that sample, not a
+native ceiling or support for every ordinary 16 MiB receipt.
+A bounded ring retains ten potential originals and five controls. Candidate
+classification chooses storage capacity only; selected positions and the full
+graph independently determine admission. Oversized unrelated prehistory falls
+out of the ring without adding a new source limit. A valid selected graph uses
+at most 6.8125 MiB of serialized original/control/file frame equivalents; the
+untrusted candidate ring and control/file slots can retain 22.3125 MiB before
+validation. The scanner, transient decoding, JSON objects and equality worklist
+are additional memory, so these figures are not RSS guarantees.
+Both groups must fit fresh requested source capacity even with Raw disabled;
+insufficient remaining page capacity defers the entire group. An unknown first
+partial line keeps ordinary 16 MiB scanning; the recognized second file slot
+uses 1 MiB bounded lookahead and the second bridge slot retains 64 KiB.
 Old no-file manual profiles keep their ordinary record limits. Prefix proof adds
 O(committed prefix) I/O/hash and preserves existing concurrent-writer limits.
 A real usage item that exceeds a fresh page's reserved Canonical capacity fails
@@ -670,57 +688,95 @@ assistant usage; its separate stdout model counters are excluded. Config and
 workspace were isolated, but inherited HOME was unrecorded. These source facts
 do not establish implementation, installed-package or integration acceptance.
 
-For the manual Read reinjection increment, Claude typecheck and all 580 Adapter
-tests passed, including 97 new public Interface cases. They cover both atomic
-groups and every partial slot, compact EOF before a later process, current-prefix
-proof, required original/control/metadata identity, full receipt equality with
-4000-level unknown values, exact 64 KiB/128 KiB bounds, fresh/remaining source
-capacity, genuine Event-only usage deferral and final-text fragmentation. Invalid
-file or bridge groups preserve the preceding ACK; damaged Event progress cannot
-skip Raw-only slots. Old no-file manual bridge tests remain supported.
+The initial manual Read reinjection increment was integrated through
+[PR #193](https://github.com/SingleMai/ATape/pull/193) after its final-commit CI
+and Security gates passed. Its local checks included 580 Adapter tests, installed
+Claude package verification, four Collector/Server E2E tests and 92 authenticated
+HTTP/PostgreSQL managed-daemon runs. Eighteen actual prior-Implementation upgrade
+checks and 90 independent fault/resource checks preserved acknowledged progress.
 
-The installed Claude `verify:package` passed all six native snapshots, thirteen
-derived LF cuts, four partial file/Meta/bridge slots and four independently
-advanced Raw receipts paired with an older parser cursor. Every page recreates
-the installed runtime and retries identical unacknowledged input. Compact files
-add zero Events or usage; two continuations end at sixteen unique Events, six
-real API usage IDs and 188/90 mock counters. Old prefixes, own-call associations,
-one Raw object/generation and every physical source byte passed. Prior installed
-package scenarios also passed.
+The [larger manual Read fixture](../../adapters/claude/fixtures/native-manual-large-read-reinjection-2.1.263/README.md)
+adds six native snapshots from a fresh, initially empty HOME/config/workspace.
+Claude actually reads two complete 98,304-byte files, compacts and resumes twice.
+After literal path substitution, original receipt frames are 198,628 bytes and
+reinjected file frames are 99,278 bytes, including LF. The final source has
+31 UUID records and 57 physical lines; extra UUID-less mode/atis-latch records
+appear before compact and after the files. Both complete file content objects
+still equal their corresponding receipts. Selected model requests retain the
+full summary and short text, but represent large Read-bearing text with exact
+hashes, byte counts and endpoint previews. This source evidence establishes
+one larger instance of the selected graph, not all native Read sizes or layouts.
+Its expected final logical totals are sixteen Events, six recorded real API IDs
+and 188/90 mock counters. Missing summary usage remains unavailable.
 
-Independent public Interface checks used the previous merged Implementation at
-`a102b4495a280f458791ddbc66678eb07a6aeec7` to generate opaque checkpoints at calls,
-pending R0, final text and every manual boundary/summary/control phase. Genuine
-native C1/A0 Event-only checkpoints retained pending usage; two large-text
-fragment checkpoints used a clearly marked controlled derivative rather than a
-new native capture. All eighteen upgrade checks preserved acknowledged Events,
-latest usage and Raw identity. Another 90 independent fault/resource checks
-covered identity/content/control conflicts and exact-source repair, malformed
-Event skips, EOF, budgets, byte caps, independently advanced Raw receipts and
-oversized irrelevant prehistory. Active compaction stages reject a damaged
-nonzero Event skip at EOF, partial input or blank lines before source admission;
-ordinary complete bookkeeping already had an Event-count guard. These are prior
-Git Implementation upgrades,
-not acceptance against historical published binaries.
+For the larger manual Read increment, Claude typecheck and all 646 Adapter tests
+passed, including 66 new public Interface cases and the initial 97 manual cases
+with only their three capacity-dependent expectations updated. Checks cover both
+native corpora, all thirteen LF cuts and four partial slots, exact and above
+2 MiB receipt/1 MiB file/2 MiB group limits, unchanged 64 KiB selected controls,
+fresh/remaining capacity with Raw off/on, final-text fragmentation and genuine
+Event-only pending usage. Candidate-like records in a nonreceipt position still
+fail its smaller selected cap. Equal deep/wide unknown values remain fully
+compared; changed values reject without new ACK. After-file mode/atis-latch
+identity conflicts reject, while those types after a no-file stdout remain
+unsupported. Existing automatic and no-file bounds remain covered.
 
-The final authenticated HTTP/Docker PostgreSQL contract passed 92 independently
-restarted managed-daemon runs, retaining all 73 prior runs and adding thirteen
-manual source phases plus six unchanged polls. It extends the already captured
-text-plan Read Session: its old twelve Events/four API usage IDs and 130/64
-counters remain through boundary, summary, local controls, files and the
-Meta/synthetic bridge. A lone first file or lone Meta sends no observation,
-Canonical batch or Raw and leaves its parser cursor unchanged with one pending
-Canonical Session. Each complete group commits and returns to zero pending.
-Only real new user/assistant turns grow Reader to fourteen Events/five usage IDs
-at 159/77, then sixteen/six at 188/90. Prior Event prefixes, own-call tool links,
-exact message-body Search anchors and exclusion of tool/internal records passed.
-Each Session retains its Raw object/generation and complete physical bytes.
-All prior redaction, Raw policy/backfill, unsupported-source repair and deletion
-checks remain covered; the required non-skipped Claude contract guard passed.
-The final four Collector/Server E2E tests, CLI typecheck, Go HTTP compile,
-architecture and documentation guards also passed. This records local
-implementation and integration acceptance; PR gates, package publication and
-Server deployment remain separate.
+The installed Claude `verify:package` passed both manual corpora's six native
+snapshots, thirteen derived LF cuts, four partial file/Meta/bridge slots and four
+independently advanced Raw receipts paired with an older parser cursor. Every
+page recreates the installed runtime and retries identical unacknowledged input.
+Four additional large-file fresh-capacity cases cover below/exact capacity with
+Raw off/on at the selected group's EOF. Both corpora end at sixteen unique Events,
+six real usage IDs and 188/90 latest mock counters, with stable prefixes, own-call
+associations and complete Raw bytes. Large successful Read results retain their
+completed status and omit oversized Canonical tool details under the unchanged
+shared policy. Prior installed package scenarios also passed.
+
+Independent checks generated thirteen actual opaque checkpoints with the
+previous merged Implementation at `999246918097bf90194c38797fa709e9312c33aa`,
+covering C0/C1, R0 with pending usage, R1, final text and each boundary/control
+through stdout. That Implementation admits the ordinary larger Read turn but
+rejects the first reinjected file under its old 64 KiB limit. This Implementation
+resumes those acknowledged checkpoints through both continuations with all old
+Event objects unchanged, latest-once usage, the same Raw object/generation and
+complete contiguous bytes. Restoring the exact old prefix stays idle. These are
+prior Git Implementation upgrades, not historical published binary acceptance.
+Two additional genuine old C1/A0 Event-only checkpoints resumed pending usage
+without replaying their published Events. Together with fourteen independent
+capacity/identity/cancellation probes, all 29 checks passed. The derived exact
+envelope uses 2 MiB receipts and 1 MiB files; oversized receipts/files and the
+unchanged 64 KiB boundary/summary limits fail with typed capacity errors. Invalid
+post-file metadata and no-file mode/atis records reject without changing input
+receipts. Cancellation was observed during public collection with a 1 ms abort
+timer, followed by identical retries on a reopened runtime; the exact internal
+interruption point was not observed.
+
+A fresh current-bundle-only Node 24.18.0 process on Darwin measured the explicit
+6,317,932-byte padded derivative at the exact receipt/file caps. After ordinary
+capture through stdout, eight public collection pages completed both groups,
+two resumes and idle in 1.26 seconds. Sampled RSS increased from approximately
+227 MiB to 251 MiB; process-lifetime high-water was also approximately 251 MiB.
+The process retained the source text, runtime and setup allocations without
+forced GC. Sampling can miss synchronous peaks; this serial single-source
+measurement is neither an Adapter-only RSS bound nor a concurrency guarantee.
+
+The expanded authenticated HTTP/Docker PostgreSQL contract passed 113 independent
+managed-daemon runs against installed CLI/Claude tarballs: all 92 prior runs plus
+15 larger source phases and six unchanged polls. Initial attribution captures
+nine Sessions and ten Raw objects, excluding the foreign source. The larger
+Session preserves twelve Events/four API IDs and 130/64 counters across compact,
+files, mode/atis bookkeeping and Meta/bridge, then completes sixteen/six at
+188/90. Lone file/Meta slots preserve their preceding cursor and eligible Raw
+prefix; full groups commit once. Reader tool results retain completed status,
+own-call anchors and omitted oversized details. Real-message Search anchors,
+internal/tool exclusion, stable old Reader prefixes, Raw object/generation and
+complete paged bytes passed. Both ordinary and compressed opaque cursor forms
+are accepted by the contract fixture without changing the production format.
+Raw policy/backfill, unsupported-source repair and source-deletion retention
+remain covered; the required non-skipped Claude contract guard passed.
+All four Collector/Server E2E tests, CLI typecheck, Go HTTP compile, architecture
+and documentation guards passed. These are local implementation and integration
+checks; final PR gates, publication and Server deployment have separate evidence.
 
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
@@ -735,3 +791,7 @@ Tool-result batches outside the exact two-Read layouts, automatic compaction
 outside the exact text and Read-turn replay groups, and manual file reinjection
 outside the selected two-file control chain need additional native profiles;
 none enables them through generic duplicate or parent relaxation.
+The next selected completeness increment is native repeated automatic Read
+compaction with an existing slug. It needs actual later tool rounds and exact
+current-tail evidence before changing admission. Larger automatic receipts,
+single/no-plan manual layouts and Active Path adoption remain separate work.

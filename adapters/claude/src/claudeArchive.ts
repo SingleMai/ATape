@@ -19,7 +19,10 @@ const MaxAutoGroupBytes = 256 * 1024
 const MaxProofTailBytes = 256 * 1024
 const MaxReadReplayTailBytes = 512 * 1024
 const MaxReadReplayGroupBytes = 640 * 1024
-const MaxManualReadGroupBytes = 128 * 1024
+const MaxManualReadReceiptBytes = 2 * 1024 * 1024
+const MaxManualReadFileBytes = 1024 * 1024
+const MaxManualReadFileGroupBytes = 2 * MaxManualReadFileBytes
+const MaxManualReadBridgeGroupBytes = 2 * MaxWitnessRecordBytes
 const MaxAutoTailRecords = 16
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
@@ -379,15 +382,17 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       if (state.compaction?.phase === "resume" && record.type === "assistant") {
         await verifyManualBridgeLeaf(handle, at, hash.copy().digest("hex"), root, state.lastUuid, state.compaction.promptId, request.signal)
       }
+      let fileBookkeeping: ReturnType<typeof compactionTransition> | undefined
       if (state.compaction?.phase === "resume" && record.uuid === undefined) {
         const leaf = await manualPrefixLeaf(handle, at, hash.copy().digest("hex"), root, request.signal)
         if (object(leaf?.attachment)?.type === "file") {
           await manualReadWitness(handle, at, hash.copy().digest("hex"), root, state.compaction, [...seen], calls, true, request.signal)
           if (!manualBookkeeping(record, root, state.lastUuid))
             fail("unsupported", "Claude manual Read bookkeeping identity or graph changed.")
+          fileBookkeeping = { next: state.compaction, rawOnly: true }
         }
       }
-      const transition = compactionTransition(record, state.lastUuid, state.compaction, delegated !== undefined)
+      const transition = fileBookkeeping ?? compactionTransition(record, state.lastUuid, state.compaction, delegated !== undefined)
       if (transition.textTail) {
         await verifyPreservedTextTail(handle, at, hash.copy().digest("hex"), root, transition.textTail, request.signal)
       }
@@ -937,7 +942,15 @@ const manualBookkeeping = (record: RecordValue | undefined, root: RecordValue, l
   record.subtype === undefined && record.isApiErrorMessage === undefined && record.attachment === undefined &&
   (record.type !== "last-prompt" || record.leafUuid === leaf)
 
-type ManualFrame = { readonly uuid: unknown; readonly physical: number; readonly record: RecordValue | undefined }
+// Candidate classification limits retained storage; only the selected slots and
+// their complete graph proof can admit these records as Read receipts or files.
+const manualReceiptCandidate = (record: RecordValue) => {
+  const blocks = object(record.message)?.content
+  return record.type === "user" && object(record.toolUseResult)?.type === "text" &&
+    Array.isArray(blocks) && blocks.length === 1 && object(blocks[0])?.type === "tool_result"
+}
+const manualFileCandidate = (record: RecordValue) => record.type === "attachment" && object(record.attachment)?.type === "file"
+type ManualFrame = { readonly uuid: unknown; readonly physical: number; readonly bytes: number; readonly record: RecordValue | undefined }
 async function manualReadWitness(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
   root: RecordValue, stage: Compaction, seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>,
   filesCommitted: boolean, signal: AbortSignal): Promise<{ readonly receipts: readonly [RecordValue, RecordValue]; readonly paths: readonly [string, string]; readonly slug: string }> {
@@ -945,11 +958,14 @@ async function manualReadWitness(handle: Awaited<ReturnType<typeof open>>, commi
   let originals: ManualFrame[] | undefined, prior: unknown = null, gap = true, originalGap = false, repeatedBoundary = false, excess = false
   await scanManualPrefix(handle, committed, expectedDigest, root, signal, (record, physical, bytes) => {
     if (record?.uuid === undefined) { gap &&= manualBookkeeping(record, root, prior); return }
-    const frame = { uuid: record.uuid, physical, record: bytes <= MaxWitnessRecordBytes ? record : undefined }
     if (record.uuid === stage.boundaryUuid) {
       if (originals) repeatedBoundary = true
       else { originals = [...ring]; originalGap = gap }
     }
+    const limit = originals
+      ? controls.length >= 5 && manualFileCandidate(record) ? MaxManualReadFileBytes : MaxWitnessRecordBytes
+      : manualReceiptCandidate(record) ? MaxManualReadReceiptBytes : MaxWitnessRecordBytes
+    const frame = { uuid: record.uuid, physical, bytes, record: bytes <= limit ? record : undefined }
     if (originals) {
       if (controls.length < 7) controls.push(frame)
       else excess = true
@@ -964,7 +980,9 @@ async function manualReadWitness(handle: Awaited<ReturnType<typeof open>>, commi
     controls.some((frame, index) => frame.uuid !== seen[boundaryIndex + index] || index > 0 && frame.physical !== controls[index - 1]!.physical + 1) ||
     seen.length !== boundaryIndex + count)
     fail("unsupported", "Claude manual Read has no current adjacent original/control witness.")
-  if ([...originals, ...controls].some(frame => !frame.record)) fail("limit", "Claude manual Read witness exceeds 64 KiB.")
+  if (originals.some((frame, index) => !frame.record || frame.bytes > (index === 5 || index === 6 ? MaxManualReadReceiptBytes : MaxWitnessRecordBytes)) ||
+    controls.some((frame, index) => !frame.record || frame.bytes > (index >= 5 ? MaxManualReadFileBytes : MaxWitnessRecordBytes)))
+    fail("limit", "A selected Claude manual Read witness exceeds its record limit.")
   const original = originals.map(frame => frame.record!), sequence = controls.map(frame => frame.record!)
   if (original.some(record => !readRoot(record, root) || record.userType !== "external" || record.slug !== undefined || record.isApiErrorMessage !== undefined))
     fail("unsupported", "Claude manual Read original identity or markers changed.")
@@ -1036,8 +1054,10 @@ async function readManualGroup(handle: Awaited<ReturnType<typeof open>>, first: 
   committed: number, sampledEnd: number, expectedDigest: string, root: RecordValue, stage: Compaction,
   seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>, signal: AbortSignal):
   Promise<{ readonly contents: readonly [Buffer, Buffer]; readonly end: number; readonly uuids: readonly [string, string]; readonly keepStage: boolean } | undefined> {
-  if (first.content.length > MaxWitnessRecordBytes) fail("limit", "A Claude manual Read record exceeds 64 KiB.")
-  const files = object(record.attachment)?.type === "file"
+  const files = manualFileCandidate(record)
+  const recordLimit = files ? MaxManualReadFileBytes : MaxWitnessRecordBytes
+  const groupLimit = files ? MaxManualReadFileGroupBytes : MaxManualReadBridgeGroupBytes
+  if (first.content.length > recordLimit) fail("limit", "A Claude manual Read record exceeds its selected record limit.")
   const witness = await manualReadWitness(handle, committed, expectedDigest, root, stage, seen, calls, !files, signal)
   if (files) verifyManualFile(record, root, witness, 0, seen.at(-1), seen)
   else {
@@ -1049,7 +1069,7 @@ async function readManualGroup(handle: Awaited<ReturnType<typeof open>>, first: 
       object(blocks[0])?.type !== "text" || object(blocks[0])?.text !== "Continue from where you left off.")
       fail("unsupported", "Claude manual Read has no supported internal Continue control.")
   }
-  for await (const line of readRecords(handle, first.end, Math.min(sampledEnd, committed + MaxManualReadGroupBytes), signal, MaxWitnessRecordBytes)) {
+  for await (const line of readRecords(handle, first.end, Math.min(sampledEnd, committed + groupLimit), signal, recordLimit)) {
     if (!line.content.toString("utf8").trim()) fail("unsupported", "Claude manual Read group is not physically adjacent.")
     let next: RecordValue
     try { next = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
@@ -1066,7 +1086,7 @@ async function readManualGroup(handle: Awaited<ReturnType<typeof open>>, first: 
     }
     return { contents: [first.content, line.content], end: line.end, uuids: [record.uuid as string, next.uuid as string], keepStage: files }
   }
-  if (sampledEnd - committed >= MaxManualReadGroupBytes) fail("limit", "A Claude manual Read group exceeds its bounded source capacity.")
+  if (sampledEnd - committed >= groupLimit) fail("limit", "A Claude manual Read group exceeds its bounded source capacity.")
   return undefined
 }
 
@@ -1141,13 +1161,15 @@ async function* readRecords(handle: Awaited<ReturnType<typeof open>>, start: num
     pending = Buffer.concat([pending, block.subarray(0, read.bytesRead)])
     let newline: number
     while ((newline = pending.indexOf(10)) !== -1) {
-      if (newline + 1 > recordLimit) fail("limit", recordLimit === MaxRecordBytes ? "Claude JSONL record exceeds 16 MiB." : "A Claude automatic replay record exceeds 64 KiB.")
+      if (newline + 1 > recordLimit) fail("limit", recordLimit === MaxRecordBytes ? "Claude JSONL record exceeds 16 MiB." :
+        recordLimit === MaxManualReadFileBytes ? "A Claude manual Read file record exceeds 1 MiB." : "A Claude automatic replay record exceeds 64 KiB.")
       const content = pending.subarray(0, newline + 1)
       yield { content, end: lineStart + newline + 1 }
       pending = pending.subarray(newline + 1); lineStart += newline + 1
     }
     if (pending.length > recordLimit || recordLimit !== MaxRecordBytes && pending.length === recordLimit)
-      fail("limit", recordLimit === MaxRecordBytes ? "Claude JSONL record exceeds 16 MiB." : "A Claude automatic replay record exceeds 64 KiB.")
+      fail("limit", recordLimit === MaxRecordBytes ? "Claude JSONL record exceeds 16 MiB." :
+        recordLimit === MaxManualReadFileBytes ? "A Claude manual Read file record exceeds 1 MiB." : "A Claude automatic replay record exceeds 64 KiB.")
   }
 }
 
