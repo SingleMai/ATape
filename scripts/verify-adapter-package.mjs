@@ -88,6 +88,7 @@ try {
   if (adapterId === "claude") {
     await verifyClaudeForeground(adapter, context, request.limits)
     await verifyClaudeManualCompaction(adapter, context, request.limits)
+    await verifyClaudeManualTextTail(adapter, context, request.limits)
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -279,6 +280,101 @@ async function collectInstalled(adapter, context, cursor, rawProgress, limits) {
     return await runtime.collect({ protocolVersion: context.protocolVersion, cursor, limits,
       rawProgress, signal: AbortSignal.timeout(5_000) })
   } finally { await runtime.close?.() }
+}
+
+async function verifyClaudeManualTextTail(adapter, context, limits) {
+  const fixtureDirectory = join(packageRoot, "fixtures", "native-manual-text-tail-2.1.263")
+  const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
+  const { sessionId, fixtureCwd } = provenance
+  const textHome = join(temporaryRoot, "manual-text-tail-source-home")
+  const directory = join(textHome, "projects", "fixture"), sourceFile = join(directory, `${sessionId}.jsonl`)
+  await mkdir(directory, { recursive: true })
+  process.env.ATAPE_CLAUDE_HOME = textHome
+  const pagedLimits = { ...limits, eventsPerObservation: 1 }
+  let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
+  const rawProgress = new Map(), events = [], usage = new Map()
+  const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
+  try {
+    for (const snapshot of provenance.snapshots) {
+      const source = (await readFile(join(fixtureDirectory, snapshot.file), "utf8")).replaceAll(
+        JSON.stringify(fixtureCwd).slice(1, -1), JSON.stringify(projectDirectory).slice(1, -1)
+      )
+      assert.ok(source.startsWith(previousSource), `${snapshot.file} must preserve the native source prefix`)
+      if (previousSource === "") await writeFile(sourceFile, source)
+      else await appendFile(sourceFile, source.slice(previousSource.length))
+      previousSource = source
+      const oldEvents = events.length, oldUsage = usage.size
+      let finished = false
+      for (let index = 0; index < limits.pagesPerCycle; index++) {
+        const page = await collect()
+        assert.deepEqual(await collect(), page, `${snapshot.file} must retry identically after reopening`)
+        assert.equal(page.sourceFailures, undefined)
+        assert.equal(typeof page.nextCursor, "string")
+        for (const observation of page.observations) {
+          assert.equal(observation.session.sourceSessionId, sessionId)
+          assert.deepEqual(observation.threads.map(thread => thread.sourceThreadId), ["root"])
+          for (const event of observation.events) {
+            assert.equal(event.sourceThreadId, "root")
+            assert.ok(!events.some(previous => previous.sourceEventId === event.sourceEventId))
+            events.push(event)
+          }
+          for (const sample of observation.usage) {
+            assert.equal(sample.sourceThreadId, "root")
+            assert.notEqual(sample.model, "<synthetic>")
+            const previous = usage.get(sample.sourceUsageId)
+            if (previous) {
+              assert.equal(sample.sourceUsageId, provenance.retainedTail.apiId)
+              assert.ok(sample.revision > previous.revision)
+              assert.equal(sample.inputTokens, previous.inputTokens)
+              assert.equal(sample.outputTokens, previous.outputTokens)
+            }
+            usage.set(sample.sourceUsageId, sample)
+          }
+          for (const raw of observation.rawSegments) {
+            sourceObjectId ??= raw.sourceObjectId
+            sourceGeneration ??= raw.sourceGeneration
+            assert.equal(raw.sourceObjectId, sourceObjectId)
+            assert.equal(raw.sourceGeneration, sourceGeneration)
+            assert.equal(raw.sourceOffset, Buffer.byteLength(rawContent))
+            rawContent += raw.content
+            rawProgress.set(JSON.stringify([raw.sourceObjectId, raw.sourceGeneration]), {
+              sourceSessionId: sessionId, sourceObjectId: raw.sourceObjectId, sourceGeneration: raw.sourceGeneration,
+              sourceOffset: Buffer.byteLength(rawContent), finalized: raw.final
+            })
+          }
+        }
+        cursor = page.nextCursor
+        if (!page.hasMore) { finished = true; break }
+      }
+      assert.ok(finished, `${snapshot.file} did not finish within its page budget`)
+      assert.equal(events.length - oldEvents, snapshot.expected.addedEvents)
+      assert.equal(usage.size - oldUsage, snapshot.expected.addedDistinctUsage)
+      assert.equal(events.length, snapshot.expected.eventCount)
+      assert.equal(usage.size, snapshot.expected.distinctUsageCount)
+      assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), snapshot.expected.inputTokens)
+      assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), snapshot.expected.outputTokens)
+      for (const [apiId, expected] of Object.entries(snapshot.expected.distinctUsageByApiId)) {
+        const sample = usage.get(apiId)
+        assert.ok(sample, `${snapshot.file} must retain assistant usage ${apiId}`)
+        assert.equal(sample.inputTokens, expected.inputTokens)
+        assert.equal(sample.outputTokens, expected.outputTokens)
+        assert.equal(sample.model, expected.model)
+      }
+      assert.equal(rawContent, source)
+      assert.ok(events.every(event => event.rawRef.sourceObjectId === sourceObjectId))
+      const restarted = await collect()
+      assert.deepEqual(restarted.observations, [])
+      assert.equal(restarted.hasMore, false)
+      assert.equal(restarted.nextCursor, cursor)
+      assert.equal(restarted.sourceFailures, undefined)
+    }
+    assert.deepEqual(events.map(event => event.sourceEventId),
+      provenance.snapshots.at(-1).expected.eventSourceUuids.map(uuid => `${uuid}:0`))
+    for (const marker of ["ATAPE_MANUAL_TEXT_SUMMARY", "<command-name>/compact", "No response requested."]) {
+      assert.ok(rawContent.includes(marker))
+      assert.ok(!JSON.stringify([events, [...usage.values()]]).includes(marker), `${marker} must remain Raw-only`)
+    }
+  } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 
 async function run(file, arguments_, cwd) {

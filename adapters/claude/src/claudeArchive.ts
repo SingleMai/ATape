@@ -311,6 +311,9 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       if (wrongThread)
         fail("unsupported", "Claude record does not belong to its selected Thread.")
       const transition = compactionTransition(record, state.lastUuid, state.compaction, delegated !== undefined)
+      if (transition.textTail) {
+        await verifyPreservedTextTail(handle, at, hash.copy().digest("hex"), root, transition.textTail, request.signal)
+      }
       // Events and usage share the same admitted conversation identity. Native
       // UUID-less bookkeeping stays Raw-only; it cannot stand in for a turn.
       if (conversation && (typeof record.uuid !== "string" || !record.uuid.trim() || record.uuid.length > 500 || record.uuid.includes("\0")))
@@ -403,19 +406,23 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
  * chain. Its bounded state commits with each complete record's prefix; none of
  * these native control records becomes a fabricated conversation message. */
 function compactionTransition(record: RecordValue, lastUuid: string | null, stage: Compaction | undefined, delegated: boolean):
-  { readonly boundary?: boolean; readonly rawOnly?: boolean; readonly next?: Compaction } {
+  { readonly boundary?: boolean; readonly rawOnly?: boolean; readonly next?: Compaction; readonly textTail?: readonly [string, string] } {
   const marked = record.subtype === "compact_boundary" || record.compactMetadata !== undefined
   const validId = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 500 && !value.includes("\0")
   if (marked) {
     const metadata = object(record.compactMetadata), segment = object(metadata?.preservedSegment), messages = object(metadata?.preservedMessages)
-    const anchor = segment?.anchorUuid
+    const anchor = segment?.anchorUuid, head = segment?.headUuid
     const singleton = (value: unknown) => Array.isArray(value) && value.length === 1 && value[0] === lastUuid
+    const pair = (value: unknown) => Array.isArray(value) && value.length === 2 && value[0] === head && value[1] === lastUuid
+    const singleTail = head === lastUuid && singleton(messages?.uuids) && singleton(messages?.allUuids)
+    const textTail = validId(head) && head !== lastUuid && pair(messages?.uuids) && pair(messages?.allUuids)
     if (delegated || stage || record.version !== "2.1.263" || record.type !== "system" || record.subtype !== "compact_boundary" ||
       record.isSidechain !== false || record.isMeta !== false || record.parentUuid !== null || !lastUuid || record.logicalParentUuid !== lastUuid ||
-      !validId(record.uuid) || metadata?.trigger !== "manual" || segment?.headUuid !== lastUuid || segment.tailUuid !== lastUuid ||
-      !validId(anchor) || anchor === record.uuid || messages?.anchorUuid !== anchor || !singleton(messages.uuids) || !singleton(messages.allUuids))
+      !validId(record.uuid) || metadata?.trigger !== "manual" || segment?.tailUuid !== lastUuid ||
+      !validId(anchor) || anchor === record.uuid || messages?.anchorUuid !== anchor || !singleTail && !textTail)
       fail("unsupported", "Claude manual compaction has no supported append-only root evidence.")
-    return { boundary: true, rawOnly: true, next: { v: 1, boundaryUuid: record.uuid, summaryUuid: anchor, phase: "summary" } }
+    return { boundary: true, rawOnly: true, next: { v: 1, boundaryUuid: record.uuid, summaryUuid: anchor, phase: "summary" },
+      ...(textTail && validId(head) ? { textTail: [head, lastUuid] as const } : {}) }
   }
   if (record.logicalParentUuid != null) fail("unsupported", "Claude logical parent requires supported compaction evidence.")
   if (!stage) {
@@ -464,6 +471,46 @@ function compactionTransition(record: RecordValue, lastUuid: string | null, stag
       return { rawOnly: true, next: { ...stage, phase: "resume" } }
   }
   return fail("unsupported", "Claude manual compaction control sequence changed.")
+}
+
+/** Reconstruct only the last two UUID records from the exact bytes that are
+ * already fully committed. Re-reading on the same handle supplies old cursors
+ * and same-page appends without replaying any Canonical or Raw projection. */
+async function verifyPreservedTextTail(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, expected: readonly [string, string], signal: AbortSignal): Promise<void> {
+  type TextRecord = { uuid: string; parent: unknown; apiId: string; model: string; block: unknown; physical: number }
+  const validId = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 500 && !value.includes("\0")
+  const textRecord = (record: RecordValue, physical: number): TextRecord | undefined => {
+    const message = object(record.message), content = message?.content, model = string(message?.model)
+    const body = Array.isArray(content) && content.length === 1 ? object(content[0]) : undefined, text = body?.text
+    if (record.type !== "assistant" || record.version !== "2.1.263" || record.sessionId !== root.sessionId ||
+      record.isSidechain !== false || record.agentId !== undefined || record.isMeta === true ||
+      record.isCompactSummary === true || record.isVisibleInTranscriptOnly === true ||
+      !validId(record.uuid) || !validId(message?.id) || message.role !== "assistant" || !model || model.length > 200 || model === "<synthetic>" ||
+      body?.type !== "text" || typeof text !== "string" || !text.length) return undefined
+    return { uuid: record.uuid, parent: record.parentUuid, apiId: message.id, model, block: record.apiBlockIndex, physical }
+  }
+  const proofHash = createHash("sha256")
+  let head: TextRecord | undefined, tail: TextRecord | undefined, physical = 0, bytes = 0, originalRoot = false
+  for await (const line of readRecords(handle, 0, committed, signal)) {
+    proofHash.update(line.content); bytes = line.end; physical++
+    if (!line.content.toString("utf8").trim()) continue
+    let record: RecordValue
+    try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+    catch { fail("format", "Claude committed prefix contains a malformed JSONL record.") }
+    if (!originalRoot && typeof record.uuid === "string") {
+      if (record.uuid !== root.uuid || record.type !== "user" || record.parentUuid !== null || record.sessionId !== root.sessionId || record.cwd !== root.cwd)
+        fail("changed", "Claude original identity changed during preserved-tail validation.")
+      originalRoot = true
+    }
+    if (record.uuid !== undefined) { head = tail; tail = textRecord(record, physical) }
+  }
+  if (bytes !== committed || proofHash.digest("hex") !== expectedDigest)
+    fail("changed", "The committed Claude prefix changed during preserved-tail validation.")
+  if (!originalRoot || !head || !tail || head.uuid !== expected[0] || tail.uuid !== expected[1] ||
+    tail.physical !== head.physical + 1 || tail.parent !== head.uuid || head.apiId !== tail.apiId || head.model !== tail.model ||
+    head.block !== 0 || tail.block !== 1)
+    fail("unsupported", "Claude manual compaction has no supported same-response text tail.")
 }
 
 function bindChild(record: RecordValue, calls: Map<string, { name: string; uuid: string }>, delegated: boolean): Child | undefined {

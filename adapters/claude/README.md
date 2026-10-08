@@ -80,8 +80,13 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
 - Native manual root `/compact` on Claude Code 2.1.263, retaining the original
   byte prefix and visible conversation before appending real continuation turns.
   A null-parent `compact_boundary` must explicitly name the current last UUID
-  as its logical parent; both preserved-segment endpoints and the single
-  preserved-message UUID must name that same tail. The preserved anchors select
+  as its logical parent. The preserved tail is either that single UUID or
+  exactly two physically adjacent assistant records from the same API response,
+  with matching role/model, indices 0/1, one nonempty text block each and a direct
+  parent edge. Both preserved UUID arrays and segment endpoints must name that
+  tail in order. The Adapter proves the pair from the currently committed source
+  bytes, without replaying old Events/usage or changing checkpoints. The preserved
+  anchors select
   the next user-shaped summary, which must have `isCompactSummary` and
   `isVisibleInTranscriptOnly` set. A strict checkpointed state machine accepts
   the native summary → caveat → `/compact` command → stdout → zero-token
@@ -94,8 +99,9 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
 
 ## Explicit limits
 
-No automatic compaction, cross-file continuation, larger preserved segments,
-copied UUID replay, child compaction, branching/rewind, background or nested subagents,
+No automatic compaction, cross-file continuation, tails outside the singleton
+or exact two-record text shapes, copied UUID replay, child compaction,
+branching/rewind, background or nested subagents,
 interrupted child runs, child forks or spill collection in this increment.
 Foreground parentage is fixed before publication; there is no implicit reparenting
 or atomic family replacement. Ambiguous graphs, changed committed prefixes,
@@ -109,6 +115,9 @@ reserved before filling Canonical pages. Text fragments are at most 256 KiB; sma
 explicitly if one record or fragment cannot fit. Prefix hashing detects edits to
 already captured bytes; a changed file requires streaming those bytes again for
 integrity, while parsing and publication resume at the saved record position.
+Each newly encountered two-record manual boundary adds one streaming proof pass
+over the committed prefix with bounded memory; the source is not an atomic
+snapshot against concurrent rewrites.
 Discovery scans at most 10,000 directory entries. Metadata-only cursors are
 compressed above 16,000 bytes, with a 1 MiB wire / 16 MiB expanded bound. Capacity
 errors retain committed progress. Only sources with readable identity
@@ -184,13 +193,24 @@ with a loopback model mock, not personal history or live provider billing.
 The [manual-compaction fixture record](fixtures/native-manual-compact-2.1.263/README.md)
 retains separate before/compacted/continued snapshots from the same controlled
 native version, with the original prefix preserved and no UUID replay. It
-establishes the selected source shape. Local checks passed all 96 Adapter tests,
+establishes the selected source shape. The foreground/singleton increment passed
+96 Adapter tests,
 typecheck, installed `verify:package`, Collector/Go E2E and the installed-daemon
 contract over authenticated HTTP with real PostgreSQL. The latter covers
 Reader/Search navigation, exact usage, Raw byte continuity and policy/redaction
 recovery, source diagnostics and retained history. A 100-Thread regression also
 verifies root/child pagination under the Canonical byte bound. Provider-specific
 browser staging and historical published-binary upgrades remain unverified.
+The [two-record text-tail fixture record](fixtures/native-manual-text-tail-2.1.263/README.md)
+retains four additional snapshots with one same-response split text tail and two
+real continuation turns. The records keep distinct Event IDs while their shared
+API usage ID counts once at its latest revision. This corpus supplies no executed
+Read call or compaction-response JSONL usage.
+Local checks for the extended text-tail profile passed all 133 Adapter tests,
+typecheck, installed `verify:package`, Collector/Go E2E and the installed-daemon
+PostgreSQL contract. Its response head and tail were also delivered in separate
+daemon runs: Reader gained the second Event while usage stayed at one shared API
+ID. Two continuations finished at 11 Events, five usage IDs and 151/73 tokens.
 The [current Claude guide](../../docs/adapters/claude.md#verification-and-remaining-work)
 owns the detailed acceptance evidence and limits. See
 [ADR-0087](../../docs/architecture/adr/0087-claude-foreground-subagents.md) and

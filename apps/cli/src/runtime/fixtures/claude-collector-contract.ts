@@ -19,13 +19,18 @@ const adapterId = "claude", workspace = join(input.home, "workspace"), sourceHom
 const sourceDirectory = join(sourceHome, "projects", "opaque-native-project")
 const familyId = "d33bd4a6-a5ce-47d3-b4d3-91e62386940f", agentId = "a5b93406db8c7fefd"
 const compactId = "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d"
+const tailId = "48656330-5cf7-4f7c-97d4-674c41750762"
 const rootFile = join(sourceDirectory, `${familyId}.jsonl`)
 const childFile = join(sourceDirectory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compactFile = join(sourceDirectory, `${compactId}.jsonl`)
+const tailFile = join(sourceDirectory, `${tailId}.jsonl`)
 const compactFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-compact-2.1.263/", import.meta.url)
+const tailFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/", import.meta.url)
 const familyFixture = new URL("../../../../../adapters/claude/fixtures/native-foreground-child-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
+const tailSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, tailFixture), "utf8")
+  .replaceAll("/fixture/native-manual-text-tail/workspace", workspace)
 const paths = defaultNodeClientPaths({ ATAPE_HOME: join(input.home, "client") })
 const installed = join(input.home, "installed"), binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
 const at = "2026-10-08T00:00:00Z"
@@ -42,6 +47,16 @@ if (input.phase === "initial") {
   const root = readFileSync(new URL(`${familyId}.jsonl`, familyFixture), "utf8").replaceAll("/fixture/native-foreground-child", workspace)
   const child = readFileSync(new URL(`${familyId}/subagents/agent-${agentId}.jsonl`, familyFixture), "utf8").replaceAll("/fixture/native-foreground-child", workspace)
   writeFileSync(rootFile, root); writeFileSync(childFile, child); writeFileSync(compactFile, compactSnapshot("before"))
+  // A complete native-line cut puts the same API response's head and tail in
+  // different acknowledged daemon cycles without reserializing any record.
+  const tailBefore = tailSnapshot("before")
+  let headEnd = 0
+  for (let line = 0; line < 19; line++) {
+    const newline = tailBefore.indexOf("\n", headEnd)
+    assert.ok(newline >= headEnd, "Native split-text head prefix is incomplete")
+    headEnd = newline + 1
+  }
+  writeFileSync(tailFile, tailBefore.slice(0, headEnd))
   const foreign = join(input.home, "foreign-project"); mkdirSync(foreign)
   writeFileSync(join(sourceDirectory, "foreign.jsonl"), root.replaceAll(familyId, "foreign-claude-session").replaceAll(workspace, foreign))
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
@@ -53,6 +68,10 @@ if (input.phase === "initial") {
 }
 if (input.phase === "compact") writeFileSync(compactFile, compactSnapshot("compacted"))
 if (input.phase === "continued") writeFileSync(compactFile, compactSnapshot("continued"))
+if (input.phase === "tail-before") writeFileSync(tailFile, tailSnapshot("before"))
+if (input.phase === "tail-compact") writeFileSync(tailFile, tailSnapshot("compacted"))
+if (input.phase === "tail-continued") writeFileSync(tailFile, tailSnapshot("continued"))
+if (input.phase === "tail-continued-again") writeFileSync(tailFile, tailSnapshot("continued-again"))
 if (input.phase === "raw-off") {
   const source = readFileSync(compactFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
   const last = rows.findLast(row => typeof row.uuid === "string")
@@ -106,7 +125,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   assert.ok(state.checkpoint?.cursor)
   assert.equal(state.checkpoint.canonicalPublished, true)
   const decoded = JSON.parse(state.checkpoint.cursor)
-  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId].sort(),
+  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId].sort(),
     "Foreign source was captured or a known checkpoint was reset")
   return { installationId: state.installationId, cursor: state.checkpoint.cursor, rawObjects: state.checkpoint.rawObjects,
     observations: job.observations ?? 0, canonicalEvents: job.canonicalEvents ?? 0, canonicalBatches: job.canonicalBatches ?? 0,

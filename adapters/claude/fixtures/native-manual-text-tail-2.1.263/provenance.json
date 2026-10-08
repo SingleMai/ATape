@@ -1,0 +1,692 @@
+{
+  "kind": "controlled-native-source-corpus",
+  "status": "Native source evidence; automated acceptance belongs to the caller tests and verification results.",
+  "claudeVersion": "2.1.263",
+  "nativeBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "capturedDate": "2026-10-08",
+  "sessionId": "48656330-5cf7-4f7c-97d4-674c41750762",
+  "sourceResearchDirectory": "/tmp/atape-claude-auto-tail-native.aPAWtV",
+  "sourceResearchMetadataSha256": "bd5c9a46a652ad1108ad99dcf9d26d20fb7ae367c014736fe29a22e930abdf17",
+  "sourceResearchNarrativeSha256": "ebc808314bc9b7ee378ee557bb42e367013b466ed0829a244e34b2307199c94a",
+  "sourceHarnessSha256": "3031f0fdd575d858e20c804d971ac1622e4a0187c5de331fb8806d52fa12b4da",
+  "transport": "127.0.0.1 deterministic Anthropic Messages SSE; fake authentication; no real model invocation",
+  "origin": {
+    "native": "record UUIDs, split-record persistence, parents, compact boundary and metadata, command controls, summary wrapper, synthetic bridge, resume persistence",
+    "mocked": "model response text, API response IDs, token counters; no real billing or tokenization measured",
+    "toolExecution": "none; Read allowed but no tool_use/tool_result in this case",
+    "personalHistoryUsed": false,
+    "newNativeInvocationsForSanitization": 0
+  },
+  "pathSubstitutions": [
+    {
+      "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace",
+      "to": "/fixture/native-manual-text-tail/workspace"
+    },
+    {
+      "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace",
+      "to": "/fixture/native-manual-text-tail/workspace"
+    },
+    {
+      "from": "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config",
+      "to": "/fixture/native-manual-text-tail/config"
+    },
+    {
+      "from": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config",
+      "to": "/fixture/native-manual-text-tail/config"
+    },
+    {
+      "from": "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-text-workspace",
+      "to": "-fixture-native-manual-text-tail-workspace"
+    }
+  ],
+  "transformation": "Literal UTF-8 byte replacements only; no JSON serialization, field removal, UUID/API id/model/index/metadata/content changes beyond the listed path values.",
+  "environmentControls": {
+    "CLAUDE_CONFIG_DIR": "separate temporary configuration directory per case (sanitized path /fixture/native-manual-text-tail/config)",
+    "ANTHROPIC_BASE_URL": "loopback only (ephemeral port)",
+    "authentication": "fake key value intentionally omitted",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_AUTO_COMPACT": "1",
+    "LANG": "en_US.UTF-8",
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "automaticCompactionOverrideUsed": false
+  },
+  "invocations": [
+    {
+      "name": "seed",
+      "sourceResultFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/seed-result.json",
+      "sourceResultSha256": "2b640904db224b33b0360dbf5478f72f85ef31cfe575b709c7465b16b6ff86e2",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--session-id",
+        "48656330-5cf7-4f7c-97d4-674c41750762",
+        "ATAPE_MANUAL_TEXT_SEED: Remember cobalt heron 482."
+      ],
+      "recordedControls": {
+        "DISABLE_AUTO_COMPACT": "1"
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutType": "success",
+      "stdoutModelUsageMockOnly": {
+        "claude-sonnet-4-6": {
+          "inputTokens": 23,
+          "outputTokens": 11,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    },
+    {
+      "name": "warmup",
+      "sourceResultFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/warmup-result.json",
+      "sourceResultSha256": "546a0af5ff9ef8057ae28014329e0560d708eb2cebe140cb6fc9096a2b50320b",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "48656330-5cf7-4f7c-97d4-674c41750762",
+        "ATAPE_MANUAL_TEXT_WARMUP: Confirm the synthetic context."
+      ],
+      "recordedControls": {
+        "DISABLE_AUTO_COMPACT": "1"
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutType": "success",
+      "stdoutModelUsageMockOnly": {
+        "claude-sonnet-4-6": {
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    },
+    {
+      "name": "multitext",
+      "sourceResultFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/multitext-result.json",
+      "sourceResultSha256": "31bec2e87cbf948c424d74cf4f275946d0b031fb3c39ae4bc2c9e7fe46632ea9",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "48656330-5cf7-4f7c-97d4-674c41750762",
+        "ATAPE_MANUAL_TEXT_FINAL: Give the synthetic reply in two text blocks."
+      ],
+      "recordedControls": {
+        "DISABLE_AUTO_COMPACT": "1"
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutType": "success",
+      "stdoutModelUsageMockOnly": {
+        "claude-sonnet-4-6": {
+          "inputTokens": 41,
+          "outputTokens": 23,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    },
+    {
+      "name": "compact",
+      "sourceResultFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/compact-result.json",
+      "sourceResultSha256": "5ba91841d5f157742d73b22dc067a0713b3b4d776686e937ea8b709757d59b21",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "48656330-5cf7-4f7c-97d4-674c41750762",
+        "/compact Preserve synthetic context and continue from the final."
+      ],
+      "recordedControls": {
+        "DISABLE_AUTO_COMPACT": "1"
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutType": "success",
+      "stdoutModelUsageMockOnly": {
+        "claude-sonnet-4-6": {
+          "inputTokens": 51,
+          "outputTokens": 19,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    },
+    {
+      "name": "continue",
+      "sourceResultFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/continue-result.json",
+      "sourceResultSha256": "88afb1c5e16934b6fcc2849319f656bb4a5e4618b13873569bb8254e09169f5e",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "48656330-5cf7-4f7c-97d4-674c41750762",
+        "ATAPE_MANUAL_TEXT_CONTINUE: Resume the synthetic task after compaction."
+      ],
+      "recordedControls": {
+        "DISABLE_AUTO_COMPACT": "1"
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutType": "success",
+      "stdoutModelUsageMockOnly": {
+        "claude-sonnet-4-6": {
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    },
+    {
+      "name": "secondcontinue",
+      "sourceResultFile": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/secondcontinue-result.json",
+      "sourceResultSha256": "ce11c77278aa005218dcb542270780635d2041210e652925c66afd6ee553c51e",
+      "argv": [
+        "--restricted",
+        "--safe-mode",
+        "--tools",
+        "Read",
+        "--allowedTools",
+        "Read",
+        "--permission-mode",
+        "manual",
+        "--permission-prompts",
+        "none",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "{\"mcpServers\":{}}",
+        "--no-chrome",
+        "--model",
+        "claude-sonnet-4-6",
+        "--effort",
+        "low",
+        "--system-prompt",
+        "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+        "--print",
+        "--output-format",
+        "json",
+        "--resume",
+        "48656330-5cf7-4f7c-97d4-674c41750762",
+        "ATAPE_MANUAL_TEXT_SECOND_CONTINUE: Confirm stable resume again."
+      ],
+      "recordedControls": {
+        "DISABLE_AUTO_COMPACT": "1"
+      },
+      "exit": 0,
+      "signal": null,
+      "stderr": "",
+      "stdoutType": "success",
+      "stdoutModelUsageMockOnly": {
+        "claude-sonnet-4-6": {
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 0
+        }
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "phase": "before",
+      "sourceSnapshot": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/multitext.jsonl",
+      "file": "before.jsonl",
+      "original": {
+        "bytes": 9278,
+        "sha256": "998e9a1ec819d9b287ce6ef97e5bc363fcf4c026201a72277b40157beafb170b"
+      },
+      "sanitized": {
+        "bytes": 8988,
+        "sha256": "41075b5a2e7bfe408ed143b0a7b97e72b8f048b90dfd2a2cf7c53022bc1d5e1c"
+      },
+      "recordCount": 21,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 10,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 10,
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 0,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 0,
+        "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-text-workspace": 0
+      },
+      "strictPreviousOriginalBytePrefix": null,
+      "strictPreviousSanitizedBytePrefix": null,
+      "expected": {
+        "eventCount": 7,
+        "eventSourceUuids": [
+          "62602e03-937c-4d5f-bf78-7464528e2fac",
+          "c8606432-acd7-487e-ba18-ccdee8afb1d9",
+          "f5fa1572-c0ae-4fe8-a3cc-f45ff0cd99d1",
+          "6144dfc9-0215-42df-b0de-3c75d794172e",
+          "4aa91696-b2fd-4320-8537-bcb859de4254",
+          "efa512f0-1a00-47b4-8311-8a804635a4df",
+          "f7e8db2a-f843-4a96-a9d0-07fbadb3df1a"
+        ],
+        "distinctUsageCount": 3,
+        "distinctUsageByApiId": {
+          "msg_atape_manual_text_mock_8": {
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_9": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_10": {
+            "inputTokens": 41,
+            "outputTokens": 23,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "inputTokens": 93,
+        "outputTokens": 47,
+        "uuidRecords": 10,
+        "duplicateUuids": [],
+        "addedEvents": 7,
+        "addedDistinctUsage": 3
+      }
+    },
+    {
+      "phase": "compacted",
+      "sourceSnapshot": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/compact.jsonl",
+      "file": "compacted.jsonl",
+      "original": {
+        "bytes": 14663,
+        "sha256": "fa8e237a09f6aff5782f2f186767a096bf76d5343c0c1865e701a3314596603d"
+      },
+      "sanitized": {
+        "bytes": 14178,
+        "sha256": "dce91564d09a50aef58ce2cf9bbad91926a2f5fb517a8a7c1a636b09d46e060c"
+      },
+      "recordCount": 31,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 15,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 15,
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 0,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 1,
+        "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-text-workspace": 1
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "expected": {
+        "eventCount": 7,
+        "eventSourceUuids": [
+          "62602e03-937c-4d5f-bf78-7464528e2fac",
+          "c8606432-acd7-487e-ba18-ccdee8afb1d9",
+          "f5fa1572-c0ae-4fe8-a3cc-f45ff0cd99d1",
+          "6144dfc9-0215-42df-b0de-3c75d794172e",
+          "4aa91696-b2fd-4320-8537-bcb859de4254",
+          "efa512f0-1a00-47b4-8311-8a804635a4df",
+          "f7e8db2a-f843-4a96-a9d0-07fbadb3df1a"
+        ],
+        "distinctUsageCount": 3,
+        "distinctUsageByApiId": {
+          "msg_atape_manual_text_mock_8": {
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_9": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_10": {
+            "inputTokens": 41,
+            "outputTokens": 23,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "inputTokens": 93,
+        "outputTokens": 47,
+        "uuidRecords": 15,
+        "duplicateUuids": [],
+        "addedEvents": 0,
+        "addedDistinctUsage": 0
+      }
+    },
+    {
+      "phase": "continued",
+      "sourceSnapshot": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/continue.jsonl",
+      "file": "continued.jsonl",
+      "original": {
+        "bytes": 18622,
+        "sha256": "71637db2d762ec3b2064de9cf4c499d02ad96e29f253d93a53fb35e11820ca11"
+      },
+      "sanitized": {
+        "bytes": 18021,
+        "sha256": "f4a49c1085271931215439e7b4f31e99d13b12fa096a7736913d6d2b7a19fb67"
+      },
+      "recordCount": 38,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 19,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 19,
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 0,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 1,
+        "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-text-workspace": 1
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "expected": {
+        "eventCount": 9,
+        "eventSourceUuids": [
+          "62602e03-937c-4d5f-bf78-7464528e2fac",
+          "c8606432-acd7-487e-ba18-ccdee8afb1d9",
+          "f5fa1572-c0ae-4fe8-a3cc-f45ff0cd99d1",
+          "6144dfc9-0215-42df-b0de-3c75d794172e",
+          "4aa91696-b2fd-4320-8537-bcb859de4254",
+          "efa512f0-1a00-47b4-8311-8a804635a4df",
+          "f7e8db2a-f843-4a96-a9d0-07fbadb3df1a",
+          "4e102f04-6402-4684-b47a-b67a932fb406",
+          "7d4922bc-1833-4f23-9cd0-a08c3aa5c6ed"
+        ],
+        "distinctUsageCount": 4,
+        "distinctUsageByApiId": {
+          "msg_atape_manual_text_mock_8": {
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_9": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_10": {
+            "inputTokens": 41,
+            "outputTokens": 23,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_12": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "inputTokens": 122,
+        "outputTokens": 60,
+        "uuidRecords": 19,
+        "duplicateUuids": [],
+        "addedEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    },
+    {
+      "phase": "continued-again",
+      "sourceSnapshot": "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/secondcontinue.jsonl",
+      "file": "continued-again.jsonl",
+      "original": {
+        "bytes": 21450,
+        "sha256": "e4263d5f5eeb92bf0693e3e2be6b3138ec7bebca0b44899cea1c3cc0eec26d0c"
+      },
+      "sanitized": {
+        "bytes": 20762,
+        "sha256": "9db7bc96fefd869693a2c896690b3e7fe547f3418ee86ce9cb2d4fe25a7b08f9"
+      },
+      "recordCount": 44,
+      "pathReplacementOccurrences": {
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 22,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/workspace": 22,
+        "/private/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 0,
+        "/tmp/atape-claude-auto-tail-native.aPAWtV/manual_text/config": 1,
+        "-private-tmp-atape-claude-auto-tail-native-aPAWtV-manual-text-workspace": 1
+      },
+      "strictPreviousOriginalBytePrefix": true,
+      "strictPreviousSanitizedBytePrefix": true,
+      "expected": {
+        "eventCount": 11,
+        "eventSourceUuids": [
+          "62602e03-937c-4d5f-bf78-7464528e2fac",
+          "c8606432-acd7-487e-ba18-ccdee8afb1d9",
+          "f5fa1572-c0ae-4fe8-a3cc-f45ff0cd99d1",
+          "6144dfc9-0215-42df-b0de-3c75d794172e",
+          "4aa91696-b2fd-4320-8537-bcb859de4254",
+          "efa512f0-1a00-47b4-8311-8a804635a4df",
+          "f7e8db2a-f843-4a96-a9d0-07fbadb3df1a",
+          "4e102f04-6402-4684-b47a-b67a932fb406",
+          "7d4922bc-1833-4f23-9cd0-a08c3aa5c6ed",
+          "238314b6-59dc-4032-a555-23957e793ba2",
+          "3f448cc3-d119-464c-af18-87b6c120a7c7"
+        ],
+        "distinctUsageCount": 5,
+        "distinctUsageByApiId": {
+          "msg_atape_manual_text_mock_8": {
+            "inputTokens": 23,
+            "outputTokens": 11,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_9": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_10": {
+            "inputTokens": 41,
+            "outputTokens": 23,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_12": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          },
+          "msg_atape_manual_text_mock_13": {
+            "inputTokens": 29,
+            "outputTokens": 13,
+            "model": "claude-sonnet-4-6"
+          }
+        },
+        "inputTokens": 151,
+        "outputTokens": 73,
+        "uuidRecords": 22,
+        "duplicateUuids": [],
+        "addedEvents": 2,
+        "addedDistinctUsage": 1
+      }
+    }
+  ],
+  "retainedTail": {
+    "headUuid": "efa512f0-1a00-47b4-8311-8a804635a4df",
+    "tailUuid": "f7e8db2a-f843-4a96-a9d0-07fbadb3df1a",
+    "headLine": 19,
+    "tailLine": 20,
+    "apiId": "msg_atape_manual_text_mock_10",
+    "apiBlockIndices": [
+      0,
+      1
+    ],
+    "oneTextBlockPerRecord": true,
+    "physicallyContiguous": true,
+    "tailParentEqualsHead": true,
+    "boundaryUuid": "9b025818-181f-4866-bc33-d503aff7780f",
+    "boundaryLine": 26,
+    "summaryUuid": "fdece27e-a749-4fae-be46-8b8ce630a878",
+    "summaryLine": 27,
+    "boundaryLogicalParentEqualsTail": true,
+    "preservedUuidArraysEqualOrderedPair": true,
+    "summaryImmediatelyAfterBoundary": true
+  },
+  "syntheticBridge": [
+    {
+      "sourceUuid": "22ba13ca-7319-424e-a903-3f54e284fcff",
+      "apiId": "f3ec9cfe-e2c0-4cca-a16c-64a405d71b5a",
+      "usage": {
+        "output_tokens_details": null,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": null,
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": null,
+        "iterations": null,
+        "speed": null
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "No response requested."
+        }
+      ]
+    }
+  ],
+  "usageLimit": "The mock compaction API call reports 51 input / 19 output in CLI stdout modelUsage but has no corresponding assistant JSONL record. Do not create a Canonical usage record from stdout or compactMetadata. Split text records share one API ID and count once. The zero-token synthetic bridge contributes no usage.",
+  "expectedTotals": {
+    "events": 11,
+    "distinctAssistantApiIds": 5,
+    "inputTokens": 151,
+    "outputTokens": 73,
+    "addedEventsByPhase": [
+      7,
+      0,
+      2,
+      2
+    ],
+    "addedDistinctUsageByPhase": [
+      3,
+      0,
+      1,
+      1
+    ]
+  },
+  "verifiedDuringPreparation": [
+    "original SHA256 matches research metadata",
+    "literal path-only decoded equality",
+    "all snapshots end in complete LF record",
+    "original and sanitized exact byte prefix chain",
+    "record counts and unique UUIDs",
+    "same Session and native version retained",
+    "exact 2-record response head/tail/API id/apiBlockIndex/text/parent proof",
+    "boundary/summary/anchor ownership and physical adjacency",
+    "ordinary UUID parent chain with sole compact-boundary exception",
+    "no tool-use/result bodies",
+    "expected marker Events and distinct API-ID usage",
+    "zero-token synthetic bridge"
+  ],
+  "fixtureCwd": "/fixture/native-manual-text-tail/workspace"
+}
