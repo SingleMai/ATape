@@ -244,6 +244,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	const familyID = "d33bd4a6-a5ce-47d3-b4d3-91e62386940f"
 	const compactID = "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d"
+	const tailID = "48656330-5cf7-4f7c-97d4-674c41750762"
 	const agentID = "a5b93406db8c7fefd"
 	sourceDirectory := filepath.Join(home, "source", "projects", "opaque-native-project")
 	assertSourceRaw := func(sessionID string, expectedFiles map[string]string) rawarchive.SessionArchive {
@@ -266,15 +267,15 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	setRaw(true)
 	defer setRaw(false)
 	initial := run("initial")
-	if initial.CanonicalEvents != 12 || initial.RawChunks != 3 {
+	if initial.CanonicalEvents != 18 || initial.RawChunks != 4 {
 		t.Fatalf("Claude initial installed capture: %+v", initial)
 	}
 	var memory conversation.ProjectMemory
 	decodeResponse(t, send(http.MethodGet, "/api/v1/projects/"+project.ID+"/memory", ""), &memory)
-	if len(memory.Trail) != 2 {
+	if len(memory.Trail) != 3 {
 		t.Fatal("Claude included a foreign source or split its foreground family")
 	}
-	familySession, compactSession := "", ""
+	familySession, compactSession, tailSession := "", "", ""
 	for _, session := range memory.Trail {
 		if strings.HasPrefix(session.Title, "ATAPE_NATIVE_FOREGROUND_ROOT") {
 			familySession = session.ID
@@ -282,8 +283,11 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		if strings.HasPrefix(session.Title, "ATAPE_NATIVE_COMPACT_SEED") {
 			compactSession = session.ID
 		}
+		if strings.HasPrefix(session.Title, "ATAPE_MANUAL_TEXT_SEED") {
+			tailSession = session.ID
+		}
 	}
-	if familySession == "" || compactSession == "" {
+	if familySession == "" || compactSession == "" || tailSession == "" {
 		t.Fatal("Claude lost native Session identities")
 	}
 	root := read(familySession, "root", 4)
@@ -316,6 +320,103 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	usage(compactSession, 2, 52, 24)
 	manualFiles := map[string]string{compactID + ".jsonl": filepath.Join(sourceDirectory, compactID+".jsonl")}
 	beforeArchive := assertSourceRaw(compactSession, manualFiles)
+	// This third native Session retains two text records from one response.
+	// Keep its staged daemon restarts independent of the original single-tail
+	// assertions below, so broader evidence cannot weaken the first profile.
+	tailFiles := map[string]string{tailID + ".jsonl": filepath.Join(sourceDirectory, tailID+".jsonl")}
+	tailHead := read(tailSession, "root", 6)
+	usage(tailSession, 3, 93, 47)
+	tailHeadArchive := assertSourceRaw(tailSession, tailFiles)
+	tailBeforeCapture := run("tail-before")
+	if tailBeforeCapture.InstallationID != initial.InstallationID || tailBeforeCapture.CanonicalEvents != 1 || tailBeforeCapture.RawChunks != 1 {
+		t.Fatal("Claude same-API split text did not append across daemon checkpoints")
+	}
+	tailBefore := read(tailSession, "root", 7)
+	tailHeadJSON, _ := json.Marshal(tailHead.Events)
+	tailHeadPrefixJSON, _ := json.Marshal(tailBefore.Events[:len(tailHead.Events)])
+	if !bytes.Equal(tailHeadJSON, tailHeadPrefixJSON) {
+		t.Fatal("Claude same-API split text replayed its acknowledged head")
+	}
+	// Both blocks emit usage with different source-byte revisions. The real SQL
+	// upsert must retain one sourceUsageId and must not add counters twice.
+	usage(tailSession, 3, 93, 47)
+	tailBeforeArchive := assertSourceRaw(tailSession, tailFiles)
+	if len(tailHeadArchive.Objects) != 1 || len(tailBeforeArchive.Objects) != 1 || tailHeadArchive.Objects[0].ObjectID != tailBeforeArchive.Objects[0].ObjectID {
+		t.Fatal("Claude same-API split text replaced its acknowledged Raw object")
+	}
+	for _, term := range []string{"ATAPE_MANUAL_TEXT_FINAL_A:", "ATAPE_MANUAL_TEXT_FINAL_B:"} {
+		hits := search(term)
+		if len(hits.Results) != 1 || hits.Results[0].SessionID != tailSession || hits.Results[0].ThreadID != "root" {
+			t.Fatalf("Claude split text Search lost its Session/root: %s %+v", term, hits.Results)
+		}
+		var anchored conversation.Conversation
+		decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+tailSession+"?thread=root&at="+url.QueryEscape(hits.Results[0].EventID)+"&limit=2", ""), &anchored)
+		if anchored.Session.ID != tailSession || anchored.Thread.ID != "root" || len(anchored.Events) == 0 {
+			t.Fatal("Claude split text Search anchor lost Reader identity")
+		}
+		found := false
+		for _, event := range anchored.Events {
+			found = found || event.ID == hits.Results[0].EventID && strings.Contains(event.Text, term)
+		}
+		if !found {
+			t.Fatal("Claude split text Search anchor did not resolve its exact Event")
+		}
+	}
+	tailPrevious, tailLatest := tailBefore, tailBeforeCapture
+	for _, stage := range []struct {
+		phase                 string
+		events, usage, added  int
+		input, output         int64
+		searchTerm            string
+		expectedSearchResults int
+	}{
+		{"tail-compact", 7, 3, 0, 93, 47, "", 0},
+		{"tail-continued", 9, 4, 2, 122, 60, "ATAPE_MANUAL_TEXT_CONTINUE:", 2},
+		{"tail-continued-again", 11, 5, 2, 151, 73, "ATAPE_MANUAL_TEXT_SECONDCONTINUE:", 1},
+	} {
+		tailLatest = run(stage.phase)
+		if tailLatest.InstallationID != initial.InstallationID || tailLatest.CanonicalEvents != stage.added || tailLatest.RawChunks != 1 {
+			t.Fatalf("Claude split text %s did not append the exact native increment: %+v", stage.phase, tailLatest)
+		}
+		current := read(tailSession, "root", stage.events)
+		previousJSON, _ := json.Marshal(tailPrevious.Events)
+		prefixJSON, _ := json.Marshal(current.Events[:len(tailPrevious.Events)])
+		if !bytes.Equal(previousJSON, prefixJSON) {
+			t.Fatalf("Claude split text %s replayed or re-keyed old Events", stage.phase)
+		}
+		usage(tailSession, stage.usage, stage.input, stage.output)
+		archive := assertSourceRaw(tailSession, tailFiles)
+		if len(tailBeforeArchive.Objects) != 1 || len(archive.Objects) != 1 || archive.Objects[0].ObjectID != tailBeforeArchive.Objects[0].ObjectID {
+			t.Fatalf("Claude split text %s replaced its source Raw object", stage.phase)
+		}
+		for _, term := range []string{"ATAPE_MANUAL_TEXT_SUMMARY", "No response requested", "local-command", "command-name"} {
+			if len(search(term).Results) != 0 {
+				t.Fatalf("Claude split text internal control reached Search: %s", term)
+			}
+			for _, event := range current.Events {
+				if strings.Contains(event.Text, term) {
+					t.Fatalf("Claude split text %s projected internal control as a conversation Event", stage.phase)
+				}
+			}
+		}
+		if stage.searchTerm != "" {
+			hits := search(stage.searchTerm)
+			if len(hits.Results) != stage.expectedSearchResults {
+				t.Fatalf("Claude split text %s Search lost continuation: %+v", stage.phase, hits.Results)
+			}
+			for _, hit := range hits.Results {
+				if hit.SessionID != tailSession || hit.ThreadID != "root" {
+					t.Fatal("Claude split text continuation Search crossed identity")
+				}
+			}
+		}
+		tailPrevious = current
+	}
+	tailNoop := run("tail-noop")
+	if tailNoop.Cursor != tailLatest.Cursor || tailNoop.CanonicalBatches != 0 || tailNoop.RawChunks != 0 || !bytes.Equal(tailNoop.RawObjects, tailLatest.RawObjects) {
+		t.Fatal("Claude split text unchanged polling replayed usage or changed Raw receipts")
+	}
+	usage(tailSession, 5, 151, 73)
 	compact := run("compact")
 	if compact.CanonicalEvents != 0 || compact.RawChunks != 1 {
 		t.Fatal("Claude compact controls created conversation Events or lost Raw")
@@ -383,6 +484,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude exact source restoration reset capture")
 	}
 	retainedArchive, retainedRaw := readRaw(compactSession)
+	tailRetainedArchive, tailRetainedRaw := readRaw(tailSession)
 	deleted := run("delete")
 	if deleted.Cursor != repaired.Cursor || deleted.InstallationID != initial.InstallationID || !bytes.Equal(deleted.RawObjects, repaired.RawObjects) || deleted.CanonicalBatches != 0 || deleted.RawChunks != 0 {
 		t.Fatal("Claude source deletion discarded checkpoints or history")
@@ -390,6 +492,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	read(familySession, "root", 4)
 	read(familySession, childID, 4)
 	read(compactSession, "root", 7)
+	read(tailSession, "root", 11)
 	deletedArchive, deletedRaw := readRaw(compactSession)
 	retainedJSON, _ := json.Marshal(retainedArchive)
 	deletedJSON, _ := json.Marshal(deletedArchive)
@@ -397,4 +500,11 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude source deletion changed captured Raw")
 	}
 	usage(compactSession, 3, 81, 37)
+	tailDeletedArchive, tailDeletedRaw := readRaw(tailSession)
+	tailRetainedJSON, _ := json.Marshal(tailRetainedArchive)
+	tailDeletedJSON, _ := json.Marshal(tailDeletedArchive)
+	if !bytes.Equal(tailRetainedJSON, tailDeletedJSON) || tailRetainedRaw[tailID+".jsonl"] != tailDeletedRaw[tailID+".jsonl"] {
+		t.Fatal("Claude source deletion changed split text captured Raw")
+	}
+	usage(tailSession, 5, 151, 73)
 }

@@ -18,6 +18,12 @@ local command controls and a synthetic assistant bridge before ordinary turns
 continue. There is no copied UUID replay or withdrawal of old conversation data.
 This case can be captured additively without migrating existing Sessions.
 
+A second controlled run preserves two physically adjacent assistant records
+from one API response. Each carries one nonempty text block, with API block
+indices 0 and 1 and a direct parent edge. Both UUIDs already occur in the
+committed prefix; the boundary names them in order without copying either
+record. This is a second bounded tail shape within the same manual profile.
+
 The source runtime in [ADR-0068](0068-source-capture-runtime.md) is not such a
 migration. The current Host rejects legacy checkpoints in source mode, and the
 Server excludes legacy Sessions from publication reservations. A future switch
@@ -37,10 +43,22 @@ introduced.
   root `system` / `compact_boundary` record only for the sampled version
   `2.1.263`, with `compactMetadata.trigger: "manual"`, `parentUuid: null` and
   `logicalParentUuid` equal to the current unique last UUID in that stream.
-- `preservedSegment.headUuid` and `tailUuid`, and the sole entries in
-  `preservedMessages.uuids` and `allUuids`, must equal that same last UUID. Both
-  metadata anchors must identify the immediately following summary UUID. This
-  does not authorize replaying a larger preserved segment or joining files.
+- Admit either a singleton whose segment endpoints and both preserved UUID
+  arrays equal that last UUID, or the exact two-record text tail above. For the
+  pair, both arrays must equal the ordered head/tail UUIDs, the segment endpoints
+  must match and the tail must be the current last UUID. Both metadata anchors
+  must identify the immediately following summary UUID. No copied records,
+  arbitrary longer segment or cross-file join is admitted.
+- Prove a two-record tail from source bytes, rather than treating seen UUIDs as
+  semantic evidence. At the boundary, stream the currently committed prefix
+  through the same open file handle, hashing those exact bytes while retaining
+  at most two UUID-record proofs and their physical record positions. Compare
+  against the current committed prefix hash, including records newly committed
+  on this page. Both records must have native root identity, version 2.1.263,
+  the same valid API ID, assistant role and model, indices 0/1 and one nonempty
+  text block each. The second parent must select the first and their physical
+  records must be adjacent. UUID-less bookkeeping after the pair can remain
+  in the prefix; bookkeeping between the two records breaks adjacency.
 - The summary must be a root user record parented by the boundary, carrying
   `isCompactSummary: true` and `isVisibleInTranscriptOnly: true`. Accept only
   the fixture-proved continuation: summary, local-command caveat, `/compact`
@@ -67,6 +85,9 @@ identity once observed. Stage, last UUID, seen UUIDs, prefix hash, byte offset
 and physical record order advance together only after a complete record is
 accepted. A page ending at any stage can recreate the runtime and resume without
 publishing a partial control record or forgetting the required next UUID.
+The two-record proof neither reprojects acknowledged Events or usage nor adds a
+cursor field or projection revision. A fragmented conversation record enters
+the proved prefix only after all its Events and usage have been admitted.
 
 An unfinished source can retain the stage and poll for the remaining records;
 it does not fabricate Canonical progress. A conflicting next UUID or native
@@ -88,6 +109,12 @@ forced replay of unchanged projection-4 prefixes.
 - Admit only the exact manual append profile (selected): preserves Depth and
   Locality within the source Implementation and uses the existing caller
   Interface, with deliberately narrower compatibility.
+- Persist a new semantic tail ledger in every cursor: avoids a boundary reread
+  but expands durable compatibility and requires recovery for old checkpoints.
+  The selected lazy source proof keeps the Interface and checkpoint unchanged,
+  at the cost of one extra streaming pass over the committed prefix for each
+  newly encountered two-record boundary. Memory stays bounded by record limits;
+  this does not establish an atomic snapshot against concurrent source rewrites.
 
 The compaction model response itself has no assistant record in this corpus.
 Its actual token usage cannot be recovered from JSONL. `compactMetadata` counts
@@ -103,11 +130,14 @@ continuation, restore the runtime at every bounded page, verify stable old IDs,
 no summary/control Search Events, actual assistant usage, unchanged polling,
 independent Raw off/on recovery and complete captured source bytes. Exercise
 supported old cursors without resets, unfinished stages, malformed or conflicting
-markers, automatic triggers, multiple preserved UUIDs and prefix rewrites.
+markers, automatic triggers, invalid same-response pairs, longer preserved tails
+and prefix rewrites. Split records retain distinct Event identities but their
+shared API usage ID is an upsert: aggregate the latest revision once, including
+when the two records fall on different pages.
 
 The [Claude guide](../../adapters/claude.md) records actual implementation and
-checks. The native corpus samples one manual root profile on Claude Code
-2.1.263 with a loopback model mock. It does not establish auto-compaction,
+checks. The native corpora sample singleton and exact two-record text tails on
+Claude Code 2.1.263 with a loopback model mock. They do not establish auto-compaction,
 cross-file continuation, child compaction, copied replay, rewind, forks, broader
 version support or real-provider billing. General Active Path replacement still
 needs an explicit legacy-to-publication migration. No package publication or
