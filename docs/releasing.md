@@ -66,6 +66,10 @@ ATAPE_RELEASE_TAG="v$(node -p 'require("./package.json").version')"
 node scripts/check-release-tag.mjs "$ATAPE_RELEASE_TAG"
 ```
 
+Server and Web runtime Dockerfiles upgrade Alpine packages before adding their
+runtime dependencies. Security scans the resulting images; candidate evidence
+must identify the immutable images actually tested.
+
 `test:release` checks the four-file, self-contained Adapter packages, builds all
 seven checksummed tarballs and installs the CLI into a clean prefix. It installs
 a disposable integration and verifies the installed console/daemon through a PTY.
