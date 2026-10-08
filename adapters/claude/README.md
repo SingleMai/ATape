@@ -47,7 +47,7 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   subsequent collections. Moving a file does not create a new Session; missing
   files retain their checkpoints and captured history. Existing single-file v1
   checkpoints are carried forward without resetting their committed prefixes.
-- A root with append-only local history, the narrow manual and automatic compaction profiles
+- A root with append-only local history, the narrow two-Read and manual/automatic compaction profiles
   below and proved ordinary foreground
   child streams, all with valid UTF-8 JSONL. A correlated successful `Agent` or
   `Task` result's `toolUseResult.agentId` selects the child at
@@ -65,6 +65,8 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   from absence. Values beyond 64 KiB / depth 32 / 10,000 nodes remain only in Raw.
   Unknown contents and nonempty thinking also remain Raw. Tool-bearing projections
   retain their conservative partial status; this is not complete ACP content support.
+  Search matches user/assistant message bodies; tool summaries, labels and full
+  input/output are excluded. Reader retains exact tool Event anchors and details.
 - Stable record UUID + physical block-slot Event identities; replay does not
   duplicate messages. Same-model-message split records remain distinct.
 - Complete-line eligibility, bounded record pagination and existing
@@ -109,10 +111,22 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   round needs new current-tail proof and unseen B/S. Existing chronological
   Events, usage identities, Raw receipts and projection-4 checkpoints remain;
   copied users and internal summaries do not become extra Reader/Search turns.
+- Native Claude Code 2.1.263 root responses with exactly two successful Read
+  calls in the sampled order: `Read@0, Read@1`, or `text@0, Read@1, Read@2`.
+  The following results each name their own call in parent, tool ID and
+  `sourceToolAssistantUUID`, with matching literal file metadata and shared
+  prompt identity. Current-prefix byte proof establishes the call/API layout;
+  global call membership cannot authorize an old parent. Each result commits as
+  its ordinary tool update. A private checkpoint after the first requires the
+  second as the next physical record and remains pending at EOF. Full second
+  result commit restores ordinary chaining through final/resumed answers.
+  Existing projection-4 progress and Event/Raw keys remain stable, and repeated
+  assistant usage updates one API identity at its latest revision.
 
 ## Explicit limits
 
-No automatic compaction beyond the exact text replay group, cross-file continuation,
+No tool-parent batches beyond the exact ordered successful two-Read layouts,
+automatic compaction beyond the exact text replay group, cross-file continuation,
 manual tails outside the singleton or exact two-record text shapes, arbitrary
 copied UUID replay, child compaction,
 branching/rewind, background or nested subagents,
@@ -143,6 +157,14 @@ are unfinished. Retained proof memory is bounded, not total verification I/O.
 A usage item that cannot fit a fresh page's reserved Canonical capacity reports
 a source limit; remaining-space exhaustion defers it normally. Increasing the
 capacity resumes pending usage/Raw without replaying an acknowledged Event.
+Read-pair proof retains a 256 KiB byte tail and decodes at most three physically
+adjacent call/plan records, each at most 64 KiB including LF. The private saved
+file path is nonempty, NUL-free and at most 64 KiB of UTF-8. These are Adapter
+policy limits. Receipts keep ordinary 16 MiB parsing and per-record source/Event
+budgets, without requiring both to fit together. Proof costs O(committed prefix)
+I/O/hash; large tool results retain the existing bounded-detail/Raw policy.
+Reversed, failed, async, interleaved, child or other-tool batches are outside
+the profile. No atomic snapshot or general old-call parent permission is supplied.
 Discovery scans at most 10,000 directory entries. Metadata-only cursors are
 compressed above 16,000 bytes, with a 1 MiB wire / 16 MiB expanded bound. Capacity
 errors retain committed progress. Only sources with readable identity
@@ -212,44 +234,28 @@ explicit migration or rejection. See [ADR-0032](../../docs/architecture/adr/0032
 Claude Code 2.1.263 invocation, with home/temporary paths substituted. It is not
 byte-identical original Raw and contains only synthetic prompt/tool content.
 Tests invoke this production Adapter, not a separate model of its behavior.
-The [foreground fixture record](fixtures/native-foreground-child-2.1.263/README.md)
-contains a controlled native Claude Code 2.1.263 direct Agent/Read family produced
-with a loopback model mock, not personal history or live provider billing.
-The [manual-compaction fixture record](fixtures/native-manual-compact-2.1.263/README.md)
-retains separate before/compacted/continued snapshots from the same controlled
-native version, with the original prefix preserved and no UUID replay. It
-establishes the selected source shape. The foreground/singleton increment passed
-96 Adapter tests,
-typecheck, installed `verify:package`, Collector/Go E2E and the installed-daemon
-contract over authenticated HTTP with real PostgreSQL. The latter covers
-Reader/Search navigation, exact usage, Raw byte continuity and policy/redaction
-recovery, source diagnostics and retained history. A 100-Thread regression also
-verifies root/child pagination under the Canonical byte bound. Provider-specific
-browser staging and historical published-binary upgrades remain unverified.
-The [two-record text-tail fixture record](fixtures/native-manual-text-tail-2.1.263/README.md)
-retains four additional snapshots with one same-response split text tail and two
-real continuation turns. The records keep distinct Event IDs while their shared
-API usage ID counts once at its latest revision. This corpus supplies no executed
-Read call or compaction-response JSONL usage.
-Local checks for the extended text-tail profile passed all 136 Adapter tests,
-typecheck, installed `verify:package`, Collector/Go E2E and the installed-daemon
-PostgreSQL contract. Its response head and tail were also delivered in separate
-daemon runs: Reader gained the second Event while usage stayed at one shared API
-ID. Two continuations finished at 11 Events, five usage IDs and 151/73 tokens.
+Additional native source records use deterministic loopback model responses,
+synthetic content and actual native source persistence:
+
+- [Foreground child](fixtures/native-foreground-child-2.1.263/README.md): one
+  completed direct Agent/Read family with separate root/child Raw streams.
+- [Manual compaction](fixtures/native-manual-compact-2.1.263/README.md): retained
+  singleton tail, Raw-only controls and real continuation.
+- [Manual text tail](fixtures/native-manual-text-tail-2.1.263/README.md): two
+  same-response text records and two continuations. Text mentions Read, but no
+  Read operation was executed in this run.
+- [Automatic text replay](fixtures/native-auto-text-replay-rounds-2.1.263/README.md):
+  five native snapshots with three automatic rounds and exact copied U/G.
+- [Two Read results](fixtures/native-read-pair-2.1.263/README.md): two independent
+  response layouts, actual synthetic-file Read operations and own-call parents.
+  The older text-plan case does not establish a fresh HOME.
+
+Mock usage counters establish projection/deduplication, not billing. Compaction
+responses have no assistant JSONL usage, so their actual usage remains unavailable.
 The [current Claude guide](../../docs/adapters/claude.md#verification-and-remaining-work)
-owns the detailed acceptance evidence and limits. See
-[ADR-0087](../../docs/architecture/adr/0087-claude-foreground-subagents.md) and
-[ADR-0088](../../docs/architecture/adr/0088-claude-manual-compaction-on-legacy-capture.md) for
-foreground and manual scope.
-The [automatic text replay fixture](fixtures/native-auto-text-replay-rounds-2.1.263/README.md)
-adds five native snapshots with three automatic rounds and exact copied U/G
-records. Claude typecheck and 230 Adapter tests passed, including 94 new public
-cases. Local installed package and real authenticated PostgreSQL/managed-daemon
-checks passed, retaining ten unique Events, five recorded API usage IDs and
-760023/63 controlled counters. Copies and summaries remain Raw-only, pending
-answers survive restarts and complete source bytes retain one Raw object.
-[ADR-0089](../../docs/architecture/adr/0089-claude-automatic-text-replay-on-legacy-capture.md)
-selects this separate automatic profile. This records no package publication or
-deployment.
+owns implementation checks, integration evidence and remaining limits. The
+corresponding ADRs record decisions rather than delivery status. Source fixtures
+alone do not establish package publication, deployment, browser staging or
+upgrades from historical published binaries.
 
 For a local development build, install `./adapters/claude` through Integration maintenance before choosing tools.

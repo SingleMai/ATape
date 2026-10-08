@@ -21,21 +21,29 @@ const familyId = "d33bd4a6-a5ce-47d3-b4d3-91e62386940f", agentId = "a5b93406db8c
 const compactId = "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d"
 const tailId = "48656330-5cf7-4f7c-97d4-674c41750762"
 const autoId = "43526b2f-6f23-4f37-9627-c75f50bfb9b9"
+const pairToolId = "d0a2fe9a-191b-4666-9dfc-7edda5abc1e3", pairPlanId = "cf19053f-9c3c-49b7-8fce-461ae05d8294"
 const rootFile = join(sourceDirectory, `${familyId}.jsonl`)
 const childFile = join(sourceDirectory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compactFile = join(sourceDirectory, `${compactId}.jsonl`)
 const tailFile = join(sourceDirectory, `${tailId}.jsonl`)
 const autoFile = join(sourceDirectory, `${autoId}.jsonl`)
+const pairToolFile = join(sourceDirectory, `${pairToolId}.jsonl`), pairPlanFile = join(sourceDirectory, `${pairPlanId}.jsonl`)
 const compactFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-compact-2.1.263/", import.meta.url)
 const tailFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/", import.meta.url)
 const autoFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/", import.meta.url)
 const familyFixture = new URL("../../../../../adapters/claude/fixtures/native-foreground-child-2.1.263/", import.meta.url)
+const pairFixture = new URL("../../../../../adapters/claude/fixtures/native-read-pair-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
 const tailSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, tailFixture), "utf8")
   .replaceAll("/fixture/native-manual-text-tail/workspace", workspace)
 const autoSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, autoFixture), "utf8")
   .replaceAll("/fixture/native-auto-text-replay-rounds/workspace", workspace)
+const pairSnapshot = (file: string) => readFileSync(new URL(file, pairFixture), "utf8")
+  .replaceAll("/fixture/native-parallel-read/workspace", workspace)
+const pairCases = (JSON.parse(readFileSync(new URL("provenance.json", pairFixture), "utf8")) as {
+  cases: ReadonlyArray<{ id: string; batch: { calls: ReadonlyArray<{ line: number }>; results: ReadonlyArray<{ line: number }> } }>
+}).cases
 const autoRounds = (JSON.parse(readFileSync(new URL("provenance.json", autoFixture), "utf8")) as {
   rounds: ReadonlyArray<{ round: number; phase: string; lines: { originalG: number; S: number } }>
 }).rounds
@@ -68,6 +76,10 @@ if (input.phase === "initial") {
   // different acknowledged daemon cycles without reserializing any record.
   writeFileSync(tailFile, completeLinePrefix(tailSnapshot("before"), 19))
   writeFileSync(autoFile, autoSnapshot("warmup"))
+  // Native LF cuts stage each same-API call and its own-parent result in
+  // separate installed daemon cycles. They are not new native invocations.
+  writeFileSync(pairToolFile, completeLinePrefix(pairSnapshot("tool-only/tools.jsonl"), 4))
+  writeFileSync(pairPlanFile, pairSnapshot("text-plan/warmup.jsonl"))
   const foreign = join(input.home, "foreign-project"); mkdirSync(foreign)
   writeFileSync(join(sourceDirectory, "foreign.jsonl"), root.replaceAll(familyId, "foreign-claude-session").replaceAll(workspace, foreign))
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
@@ -90,6 +102,20 @@ if (autoStage) {
   const source = autoSnapshot(round.phase)
   writeFileSync(autoFile, autoStage[2] === "answer" ? source
     : completeLinePrefix(source, autoStage[2] === "originals" ? round.lines.originalG : round.lines.S))
+}
+const pairStage = /^pair-(tool|plan)-(plan|call0|call1|r0|r1|final-a|final|resume)$/.exec(input.phase)
+if (pairStage) {
+  const planned = pairStage[1] === "plan", slot = pairStage[2]
+  const fixtureCase = pairCases.find(fixtureCase => fixtureCase.id === (planned ? "text-plan" : "tool-only"))
+  assert.ok(fixtureCase, "Native Read-pair case is missing")
+  const file = planned ? pairPlanFile : pairToolFile
+  const source = pairSnapshot(planned ? "text-plan/toolturn.jsonl" : slot === "resume" ? "tool-only/resume.jsonl" : "tool-only/tools.jsonl")
+  const line = slot === "plan" ? 19 : slot === "call0" ? fixtureCase.batch.calls[0]!.line
+    : slot === "call1" ? fixtureCase.batch.calls[1]!.line : slot === "r0" ? fixtureCase.batch.results[0]!.line
+      : slot === "r1" ? fixtureCase.batch.results[1]!.line : slot === "final-a" ? 25 : undefined
+  const next = line === undefined ? source : completeLinePrefix(source, line)
+  assert.ok(next.startsWith(readFileSync(file, "utf8")), "Read-pair phase changed the native prefix")
+  writeFileSync(file, next)
 }
 if (input.phase === "raw-off") {
   const source = readFileSync(compactFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
@@ -144,7 +170,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   assert.ok(state.checkpoint?.cursor)
   assert.equal(state.checkpoint.canonicalPublished, true)
   const decoded = JSON.parse(state.checkpoint.cursor)
-  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId].sort(),
+  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId, pairToolId, pairPlanId].sort(),
     "Foreign source was captured or a known checkpoint was reset")
   return { installationId: state.installationId, cursor: state.checkpoint.cursor, rawObjects: state.checkpoint.rawObjects,
     observations: job.observations ?? 0, canonicalEvents: job.canonicalEvents ?? 0, canonicalBatches: job.canonicalBatches ?? 0,

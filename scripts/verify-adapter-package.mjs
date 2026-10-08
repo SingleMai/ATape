@@ -90,6 +90,7 @@ try {
     await verifyClaudeManualCompaction(adapter, context, request.limits)
     await verifyClaudeManualTextTail(adapter, context, request.limits)
     await verifyClaudeAutomaticTextReplay(adapter, context, request.limits)
+    await verifyClaudeReadPair(adapter, context, request.limits)
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -496,6 +497,119 @@ async function verifyClaudeAutomaticTextReplay(adapter, context, limits) {
     assert.equal(usage.size, 5)
     assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), 760023)
     assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), 63)
+  } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
+}
+
+async function verifyClaudeReadPair(adapter, context, limits) {
+  const fixtureDirectory = join(packageRoot, "fixtures", "native-read-pair-2.1.263")
+  const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
+  const relocate = source => source.replaceAll(JSON.stringify(provenance.fixtureCwd).slice(1, -1),
+    JSON.stringify(projectDirectory).slice(1, -1))
+  const prefix = (source, line) => source.split("\n").slice(0, line).join("\n") + "\n"
+  const pagedLimits = { ...limits, eventsPerObservation: 1 }
+  try {
+    for (const fixtureCase of provenance.cases) {
+      const directory = join(temporaryRoot, `read-pair-${fixtureCase.id}`, "projects", "fixture")
+      await mkdir(directory, { recursive: true })
+      process.env.ATAPE_CLAUDE_HOME = join(temporaryRoot, `read-pair-${fixtureCase.id}`)
+      const sourceFile = join(directory, `${fixtureCase.sessionId}.jsonl`)
+      let cursor = null, previousSource = "", rawContent = "", sourceObjectId, sourceGeneration
+      const rawProgress = new Map(), events = [], usage = new Map()
+      const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], pagedLimits)
+      const appendSource = async source => {
+        assert.ok(source.startsWith(previousSource), "Read-pair cuts must retain the native prefix")
+        if (!previousSource) await writeFile(sourceFile, source)
+        else await appendFile(sourceFile, source.slice(previousSource.length))
+        previousSource = source
+      }
+      const drain = async (expected, source, pending) => {
+        const previousEvents = [...events]
+        let finished = false
+        for (let index = 0; index < limits.pagesPerCycle; index++) {
+          const page = await collect()
+          assert.deepEqual(await collect(), page, "Installed Read-pair retry must be identical after reopening")
+          assert.equal(page.sourceFailures, undefined)
+          assert.equal(typeof page.nextCursor, "string")
+          for (const observation of page.observations) {
+            assert.equal(observation.session.sourceSessionId, fixtureCase.sessionId)
+            assert.deepEqual(observation.threads.map(thread => thread.sourceThreadId), ["root"])
+            assert.ok(observation.events.length <= 1)
+            assert.ok(Buffer.byteLength(JSON.stringify({ ...observation, rawSegments: [] })) <= limits.canonicalBytesPerObservation)
+            for (const event of observation.events) {
+              assert.equal(event.sourceThreadId, "root")
+              assert.ok(!events.some(previous => previous.sourceEventId === event.sourceEventId))
+              events.push(event)
+            }
+            for (const sample of observation.usage) {
+              assert.equal(sample.sourceThreadId, "root")
+              const previous = usage.get(sample.sourceUsageId)
+              assert.ok(!previous || sample.revision > previous.revision, "Split API records must update one usage identity at a later revision")
+              usage.set(sample.sourceUsageId, sample)
+            }
+            for (const raw of observation.rawSegments) {
+              sourceObjectId ??= raw.sourceObjectId
+              sourceGeneration ??= raw.sourceGeneration
+              assert.equal(raw.sourceObjectId, sourceObjectId)
+              assert.equal(raw.sourceGeneration, sourceGeneration)
+              assert.equal(raw.sourceOffset, Buffer.byteLength(rawContent))
+              rawContent += raw.content
+              rawProgress.set(raw.sourceObjectId, { sourceSessionId: fixtureCase.sessionId, sourceObjectId: raw.sourceObjectId,
+                sourceGeneration: raw.sourceGeneration, sourceOffset: Buffer.byteLength(rawContent), finalized: raw.final })
+            }
+          }
+          cursor = page.nextCursor
+          if (!page.hasMore) { finished = true; break }
+        }
+        assert.ok(finished, "Installed Read-pair did not finish within its page budget")
+        assert.deepEqual(events.slice(0, previousEvents.length), previousEvents)
+        assert.equal(events.length, expected.uniqueCanonicalEventCount)
+        assert.equal(usage.size, expected.distinctUsageCount)
+        assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0), expected.inputTokens)
+        assert.equal([...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0), expected.outputTokens)
+        if (expected.eventSourceUuids) assert.deepEqual(events.map(event => event.sourceEventId), expected.eventSourceUuids.map(uuid => `${uuid}:0`))
+        if (expected.latestUsageByApiId) for (const [apiId, value] of Object.entries(expected.latestUsageByApiId)) {
+          const sample = usage.get(apiId)
+          assert.equal(sample.model, value.model)
+          assert.equal(sample.inputTokens, value.inputTokens)
+          assert.equal(sample.outputTokens, value.outputTokens)
+          assert.equal(sample.revision, Buffer.byteLength(prefix(source, value.latestObservationLine)))
+        }
+        assert.equal(rawContent, source)
+        assert.ok(events.every(event => event.rawRef.sourceObjectId === sourceObjectId))
+        const idle = await collect()
+        assert.deepEqual(await collect(), idle)
+        assert.deepEqual(idle.observations, [])
+        assert.equal(idle.nextCursor, cursor)
+        assert.equal(idle.hasMore, false)
+        assert.equal(idle.sourceFailures, undefined)
+        assert.equal(idle.progress.pendingCanonicalSessions, pending)
+        assert.equal(idle.progress.pendingRawBytes, 0)
+      }
+      for (const snapshot of fixtureCase.nativeSnapshots) {
+        const source = relocate(await readFile(join(fixtureDirectory, snapshot.file), "utf8"))
+        for (const cut of fixtureCase.derivedTestCuts.filter(cut => cut.nativeParentSnapshot === snapshot.file)) {
+          const cutSource = prefix(source, cut.prefixThroughLine)
+          await appendSource(cutSource)
+          await drain(cut.expected, cutSource, cut.expected.pendingCanonicalSessions)
+        }
+        await appendSource(source)
+        await drain(snapshot.expected, source, 0)
+      }
+      for (const call of fixtureCase.batch.calls) {
+        const event = events.find(event => event.sourceEventId === `${call.uuid}:0`)
+        assert.equal(event.update.sessionUpdate, "tool_call")
+        assert.equal(event.update.toolCallId, call.toolBlock.id)
+        assert.equal(event.update.title, "Read")
+        assert.deepEqual(event.update.rawInput, JSON.parse(relocate(JSON.stringify(call.toolBlock.input))))
+      }
+      for (const result of fixtureCase.batch.results) {
+        const event = events.find(event => event.sourceEventId === `${result.uuid}:0`)
+        assert.equal(event.update.sessionUpdate, "tool_call_update")
+        assert.equal(event.update.toolCallId, result.toolResultBlock.tool_use_id)
+        assert.equal(event.update.status, "completed")
+        assert.equal(event.update.rawOutput, result.toolResultBlock.content)
+      }
+    }
   } finally { process.env.ATAPE_CLAUDE_HOME = sourceHome }
 }
 

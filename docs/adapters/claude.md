@@ -29,11 +29,12 @@ evidence produce an attribution diagnostic. Both CLI and Adapter require
 `atape.git-attribution.v1`. Ordinary-directory matching remains path-scoped.
 
 Root and admitted foreground child streams use append-only UTF-8 JSONL. Ordinary
-records form a strict linear chain; the root also admits the narrow native manual
-and automatic compaction profiles below:
+records form a strict linear chain; the root also admits the narrow native Read
+result and manual/automatic compaction profiles below:
 
 - User/assistant text and bounded tool calls/results, including escaped Input/Output
-  details in the common reader. Tool summaries feed Search; full tool values do not.
+  details in the common reader. [Search](../api/project-search.md) matches user and
+  assistant message bodies; tool summaries and full tool values are excluded.
 - Stable record UUID and physical block-slot Event identities, with per-Session
   incremental progress and one changed Session per page.
 - Complete-line parsing, bounded text fragments and appendable Raw objects.
@@ -45,7 +46,7 @@ Conversation records require a valid UUID and matching Thread identity before
 projecting either Events or usage. UUID-less native bookkeeping remains Raw-only;
 it cannot create a turn or an assistant usage record.
 
-Wider auto-compaction, cross-file continuation, child compaction, branching/rewind,
+Wider tool batches and auto-compaction, cross-file continuation, child compaction, branching/rewind,
 background or nested subagents and spill collection remain outside the supported
 profiles. Unknown content and nonempty thinking remain Raw when captured;
 tool-bearing projections retain partial fidelity. The retained controlled native
@@ -84,6 +85,55 @@ interrupted child runs, child forks, child compaction and rewind require further
 profiles and are not enabled by accepting ordinary foreground evidence.
 Root pages are drained before child pages; a sustained root backlog can delay
 child capture. Admitted children rotate between pages once the root is caught up.
+
+## Two Read results from one response
+
+[ADR-0090](../architecture/adr/0090-claude-read-pair-result-parents.md) selects two
+native Claude Code 2.1.263 root layouts: adjacent `Read@0, Read@1` calls, or one
+`text@0` followed by `Read@1, Read@2`. Each physical record has one content block;
+all members share one real assistant API ID/model/role and `tool_use` stop reason.
+The second call is parented by the first, and the optional text plan must be the immediately
+preceding record with a direct parent edge to the first call.
+
+The following two successful results arrive in call order. Each native user
+record has one `tool_result`; its parent and `sourceToolAssistantUUID` both name
+its own call, and its tool ID matches that call. These parents differ from the
+preceding physical record. The result must have the sampled text/file metadata
+and a literal file path equal to the Read input. Both results share a prompt ID.
+File line counters are positive safe integers and the returned range fits
+`totalLines`; zero-line or malformed metadata is outside this profile.
+`is_error` and known async/Agent/status markers are absent in this profile.
+Selected Session/CWD, root ownership and native control omissions must agree.
+The Adapter does not read the referenced files or regenerate their output.
+
+Before admitting the first result, a bounded tail of the currently committed
+source bytes proves the calls and optional plan. It is decoded from the same
+bytes that establish the current prefix hash, including calls fully committed
+earlier on that page. Existing call-map membership alone cannot authorize an old
+parent. An Event-only call whose usage or bytes remain pending is not in the proof.
+
+The first result commits as its ordinary single `tool_call_update`, then ends
+the page with a private `readPair` checkpoint requiring the second result as the
+next physical record. EOF remains one pending Canonical Session without a busy
+continuation loop. A partial second result waits; any complete intervening
+record is unsupported and preserves acknowledged progress. The second result
+clears the state only when its full record commits, then ordinary chaining
+continues through the final answer and resumed conversation. EOF after the calls
+alone does not invent a pending result.
+
+Each receipt keeps ordinary per-record budgets; the two receipts need not fit in
+one page. Raw receipts can advance independently through admitted bytes while
+the Host retains an older parser cursor, and retries prove the same calls again.
+Existing projection-4 checkpoints, physical block-slot Event IDs, tool
+associations and Raw identity/generation are preserved. Split call records
+update one API usage identity at its latest revision rather than summing counters.
+Large result values follow the existing bounded tool-details policy; results do
+not become user messages or fabricated text fragments. Their exact Event anchors
+remain available in Reader; Search covers actual conversation text.
+
+This profile does not admit more calls, reversed/interleaved/error/async results,
+other tools, child batches or tool-bearing compaction. It does not grant general
+parent exceptions to historical calls or globally change the older linear profile.
 
 ## Manual root compaction
 
@@ -200,6 +250,12 @@ slots use bounded lookahead. Real answers keep ordinary text limits. Proof
 rereads the committed prefix when a complete replay candidate is encountered;
 retained memory is bounded, but verification I/O is O(committed prefix). The
 existing concurrent-writer limitations still apply; no atomic snapshot is supplied.
+Read-pair proof admits at most three physical witness records, each at most
+64 KiB including LF, from a 256 KiB retained byte tail. The saved literal file
+path is nonempty, NUL-free and at most 64 KiB of UTF-8. These are Adapter profile
+and cursor policies, not native format limits. Result records retain ordinary
+16 MiB parsing and requested source-page admission. Proof costs O(committed
+prefix) I/O/hash with bounded retained memory; it does not add snapshot semantics.
 A real usage item that exceeds a fresh page's reserved Canonical capacity fails
 with a source limit. Insufficient remaining space defers it to the next page;
 it does not leave an impossible item waiting indefinitely. Retrying with enough
@@ -341,6 +397,10 @@ The loopback mock's artificial 190000-token input counters and 20-percent trigge
 setting force the workflows; they do not establish real tokenization or billing.
 All three summary responses lack persisted assistant JSONL usage.
 
+The automatic text increment was integrated through
+[PR #190](https://github.com/SingleMai/ATape/pull/190) after its final-commit CI
+and all Security gates passed.
+
 Claude typecheck and all 230 Adapter tests passed, including 94 automatic-profile
 public Interface cases. They cover current-tail/slug/unknown-field conflicts,
 reused anchors, seven incomplete group cuts, source and tail capacity, answer
@@ -374,6 +434,48 @@ metadata can still produce Canonical batches. Old Reader prefixes, exact Search
 anchors, stable Raw object/generation and all physical source bytes passed.
 The required non-skipped Claude contract guard also passed.
 
+The [two-Read fixture](../../adapters/claude/fixtures/native-read-pair-2.1.263/README.md)
+retains four actual native snapshots in two independent Sessions. The tool-only
+case uses a recorded fresh HOME/config/workspace; the older text-plan case proves
+isolated config/workspace but does not record fresh HOME. Both execute actual
+Read on synthetic files. Captured model requests contain both results once;
+native request assembly changes the second result's formatting, so Raw/request
+byte equality is not claimed. These selected snapshots contain no compaction.
+The tool-only resume ends at eight Events, three recorded API usage IDs and
+101/31 mock counters; the text-plan toolturn ends at twelve Events, four IDs and
+130/64. Ten test cuts are derived LF prefixes, not additional native runs.
+
+An independent public Interface check used the previously merged Implementation
+at `31cf92a68ac3a9a02a2fc2a2559ed23b1a3155f3` to acknowledge each layout through
+its second call. This Implementation preserved the three/eight old Events and
+appended only five/four new Events respectively. Every page recreated the runtime
+and retried identical unacknowledged input. R0 EOF remained one pending Canonical
+Session; full R1 commit returned to zero. Own-call updates, latest API usage and
+complete contiguous Raw bytes retained one object/generation per Session.
+
+For the two-Read increment, Claude typecheck and all 328 Adapter tests passed,
+including 98 new public Interface cases. They cover both native layouts,
+same-page and restarted proof, partial receipts, pending EOF, genuine C1
+Event-only/usage-pending recovery, fresh/remaining source and Canonical budgets,
+large result detail omission, independent Raw receipts with an older parser
+cursor, Raw off/backfill, deep unknown fields and malformed recognized cursors.
+Both first-result and pending-second checkpoints reject a nonzero result skip,
+preventing a damaged cursor from silently dropping the sole tool update.
+The final installed Claude `verify:package`, CLI typecheck, four Collector/Server
+E2E tests, documentation and architecture guards passed.
+
+The extended authenticated HTTP/Docker PostgreSQL contract passed 49 managed
+daemon runs, retaining all 32 prior stages and adding 13 Read source phases plus
+four unchanged polls. Each call/result and split final text arrives in a separate
+process and HTTP delivery. Reader retains the old Event prefix, associates both
+updates with their own Read calls and resolves both exact result anchors. R0's
+unchanged restart remains pending with no upload; R1 completes it. API usage
+upserts once across call/text revisions. Raw object/generation, exact paged bytes,
+source diagnostics/repair, policy/redaction and history after deletion passed.
+Message-body Search resolves native user/plan/final/resume anchors exactly once
+and excludes tool summaries, IDs and full values. The required non-skipped Claude
+contract guard passed.
+
 Controlled counters establish projection and deduplication, not provider billing.
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
@@ -384,6 +486,6 @@ deployment is claimed.
 
 Full Active Path support additionally needs an explicit legacy-to-publication
 migration; switching the Adapter manifest or deleting checkpoints is not one.
-Parallel tool-result parents and automatic compaction outside the exact text
-replay group need additional native profiles; the automatic profile does not
-enable them through generic duplicate or parent relaxation.
+Tool-result batches outside the exact two-Read layouts and automatic compaction
+outside the exact text replay group need additional native profiles; neither
+profile enables them through generic duplicate or parent relaxation.
