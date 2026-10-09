@@ -2,23 +2,61 @@ import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import { CollectorDaemonProcess, CollectorDaemonProcessError } from "./collectorDaemon.ts"
 import { checkCLIUpgrade, CLIUpgradeError, CLIUpgradePlatform, upgradeCLI, resumeCLIUpgrade } from "./cliUpgrade.ts"
+import { emptyClientConfig, releasePackageNames, type ClientConfig, type ReleaseBundle } from "@atape/domain"
+import { AutomaticUpdateError, AutomaticUpdatePlatform } from "./automaticUpdates.ts"
+import { ClientConfigStore } from "./clientManagement.ts"
 
-const fixture = (version = "0.4.2", running = true, wanted = running) => {
+const bundle = (version: string, integrity = `sha512-${"A".repeat(86)}==`): ReleaseBundle => ({
+  protocol: "atape.release-bundle.v1", version, captureStateContract: "atape.client.v3-capture.v2", updateControlProtocol: "atape.update-control.v1",
+  packages: releasePackageNames.map(name => ({ name, integrity,
+    tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` }))
+})
+const fixture = (version = "0.4.2", running = true, wanted = running, installed = "0.4.1") => {
   let failInstall = false, failResume = false, installs = 0, pauses = 0, stale = false
+  let stopDuringActivation = false
+  let failPrepare = false, changedIntegrity = false, runtimeVersion = "0.4.1"
   let owned = false, acquisitions = 0, releases = 0
   let installWait: Promise<void> | undefined, startWait: Promise<void> | undefined
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
+  let config: ClientConfig = { ...emptyClientConfig(), toolsConfigured: true, autoUpdateEnabled: false, enabledAdapterIds: ["codex"], adapters: [{
+    adapterId: "codex", packageName: "@atape/adapter-codex", upgradeSpec: "@atape/adapter-codex", version: "0.4.1",
+    displayName: "Codex", installedAt: "before", updatedAt: "before"
+  }] }
+  const prepared: Array<{ bundle: ReleaseBundle; adapters: ClientConfig["adapters"] }> = []
+  const activations: Array<{ bundle: ReleaseBundle; automatic: boolean }> = [], entryBundles: ReleaseBundle[] = []
   const layer = Layer.mergeAll(
+    Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(structuredClone(config)).pipe(
+      Effect.tap(result => Effect.sync(() => { if (result.config) config = result.config })), Effect.map(result => result.value)
+    ) })),
+    Layer.succeed(AutomaticUpdatePlatform, AutomaticUpdatePlatform.of({
+      supported: () => Effect.die("Manual upgrade already owns supported installation"),
+      recoveryPending: () => Effect.die("Unexpected automatic schedule check"), schedule: () => Effect.die("Unexpected schedule check"),
+      target: () => Effect.die("Manual upgrade keeps its selected bundle"), record: () => Effect.die("Unexpected schedule mutation"), launch: () => Effect.die("Unexpected worker launch"),
+      prepare: (bundle, adapters) => Effect.suspend(() => {
+        prepared.push({ bundle, adapters })
+        return failPrepare ? Effect.fail(new AutomaticUpdateError({ reason: "prepare", message: "unavailable archive" })) :
+          Effect.succeed({ key: "prepared-release", bundle: changedIntegrity ? { ...bundle, packages: bundle.packages.map(item =>
+            ({ ...item, integrity: `sha512-${"A".repeat(85)}Q==` })) } : bundle })
+      }),
+      activate: (value, automatic) => Effect.sync(() => {
+        activations.push({ bundle: value.bundle, automatic })
+        if (stopDuringActivation) { wanted = false; running = false }
+        runtimeVersion = value.bundle.version
+        config = { ...config, adapters: config.adapters.map(adapter => prepared.at(-1)?.adapters.some(selected => selected.adapterId === adapter.adapterId)
+          ? { ...adapter, version: value.bundle.version } : adapter) }
+      })
+    })),
     Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
       acquireOwnership: () => Effect.acquireRelease(Effect.suspend(() => {
         if (owned) return Effect.fail(new CLIUpgradeError({ reason: "installation", message: "Another update owns maintenance" }))
         return Effect.sync(() => { owned = true; acquisitions++ })
       }), () => Effect.sync(() => { owned = false; releases++ })),
-      latest: () => Effect.succeed(version),
-      install: () => Effect.suspend(() => {
+      latest: () => Effect.succeed(bundle(version)), installedVersion: () => Effect.succeed(installed),
+      install: bundle => Effect.suspend(() => {
         installs++
+        entryBundles.push(bundle)
         return failInstall ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "offline" }))
-          : installWait ? Effect.promise(() => installWait!) : Effect.void
+          : (installWait ? Effect.promise(() => installWait!) : Effect.void).pipe(Effect.tap(() => Effect.sync(() => { installed = bundle.version })))
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
@@ -49,10 +87,93 @@ const fixture = (version = "0.4.2", running = true, wanted = running) => {
   }
   return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) => Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
     ownership: () => ({ owned, acquisitions, releases }), hold,
-    stale: () => { stale = true }, installs: () => installs, pauses: () => pauses, starts, running: () => running, failInstall: () => { failInstall = true }, failResume: (value = true) => { failResume = value } }
+    prepared, activations, entryBundles, runtimeVersion: () => runtimeVersion, config: () => structuredClone(config),
+    edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) },
+    configure: (value: boolean) => { config = { ...config, toolsConfigured: value, ...(value ? {} : { adapters: [] }) } },
+    stopDuringActivation: () => { stopDuringActivation = true },
+    failPrepare: () => { failPrepare = true }, changePreparedIntegrity: () => { changedIntegrity = true },
+    stale: () => { stale = true }, installs: () => installs, pauses: () => pauses, starts, running: () => running, failInstall: (value = true) => { failInstall = value }, failResume: (value = true) => { failResume = value } }
 }
 
 describe("CLI upgrade Module", () => {
+  it("passes one complete immutable bundle to preparation, manual activation and command entry refresh", async () => {
+    const client = fixture()
+    client.edit(config => ({ ...config, autoStartEnabled: false, adapters: [...config.adapters,
+      { ...config.adapters[0]!, adapterId: "claude", packageName: "@atape/adapter-claude", upgradeSpec: "@atape/adapter-claude" },
+      { ...config.adapters[0]!, adapterId: "opencode", packageName: "@atape/adapter-opencode", upgradeSpec: "file:/local/opencode" },
+      { ...config.adapters[0]!, adapterId: "custom", packageName: "@custom/tool", upgradeSpec: "@custom/tool" }
+    ] }))
+    const before = client.config(), selected = bundle("0.4.2")
+    await client.run(upgradeCLI("0.4.1"))
+    expect(client.prepared).toEqual([{ bundle: selected, adapters: before.adapters.slice(0, 2) }])
+    expect(client.activations).toEqual([{ bundle: selected, automatic: false }])
+    expect(client.entryBundles).toEqual([selected])
+    expect(client.runtimeVersion()).toBe("0.4.2")
+    expect(client.config()).toEqual({ ...before, adapters: before.adapters.map((adapter, index) => index < 2 ? { ...adapter, version: "0.4.2" } : adapter) })
+  })
+
+  it("rejects changed integrity at the same prepared version before activation or global installation", async () => {
+    const client = fixture()
+    client.changePreparedIntegrity()
+    const before = client.config()
+    await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "install", message: expect.stringContaining("differs") })
+    expect(client.activations).toEqual([])
+    expect(client.entryBundles).toEqual([])
+    expect(client.pauses()).toBe(0)
+    expect(client.config()).toEqual(before)
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
+  })
+
+  it("retains an activated runtime after command entry failure and retries the older entry at the same runtime version", async () => {
+    const client = fixture()
+    client.failInstall()
+    await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "install",
+      message: expect.stringContaining("0.4.2 runtime is selected, but the global command entry could not be refreshed") })
+    expect(client.runtimeVersion()).toBe("0.4.2")
+    expect(client.activations).toHaveLength(1)
+    expect(await client.run(checkCLIUpgrade("0.4.2"))).toBe("0.4.2")
+    client.failInstall(false)
+    expect(await client.run(upgradeCLI("0.4.2"))).toMatchObject({ version: "0.4.2", updated: true, resumed: true })
+    expect(client.prepared).toHaveLength(1)
+    expect(client.activations).toHaveLength(1)
+    expect(client.entryBundles).toEqual([bundle("0.4.2"), bundle("0.4.2")])
+    expect(await client.run(checkCLIUpgrade("0.4.2"))).toBeUndefined()
+  })
+
+  it("reports stopped sync when Stop wins during a runtime-only alignment", async () => {
+    const client = fixture("0.4.2", true, true, "0.4.2")
+    client.stopDuringActivation()
+    expect(await client.run(upgradeCLI("0.4.2"))).toEqual({ version: "0.4.2", updated: true, resumed: false })
+    expect(client.activations).toHaveLength(1)
+    expect(client.installs()).toBe(0)
+    expect(client.running()).toBe(false)
+    expect(client.starts).toEqual([])
+  })
+
+  it("keeps the old runtime and command entry usable if full preparation fails", async () => {
+    const client = fixture()
+    const before = client.config()
+    client.failPrepare()
+    await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "install", message: expect.stringContaining("could not be prepared") })
+    expect(client.runtimeVersion()).toBe("0.4.1")
+    expect(client.config()).toEqual(before)
+    expect(client.activations).toEqual([])
+    expect(client.entryBundles).toEqual([])
+    expect(client.pauses()).toBe(0)
+    expect(client.running()).toBe(true)
+  })
+
+  it("refreshes only the verified command entry before tools are configured", async () => {
+    const client = fixture("0.4.2", false)
+    client.configure(false)
+    const before = client.config()
+    expect(await client.run(upgradeCLI("0.4.1"))).toEqual({ version: "0.4.2", updated: true, resumed: false })
+    expect(client.prepared).toEqual([])
+    expect(client.activations).toEqual([])
+    expect(client.entryBundles).toEqual([bundle("0.4.2")])
+    expect(client.config()).toEqual(before)
+  })
+
   it("upgrades and resumes only previously running sync with its original settings", async () => {
     const client = fixture()
     expect(await client.run(upgradeCLI("0.4.1"))).toEqual({ version: "0.4.2", updated: true, resumed: true })
@@ -66,12 +187,14 @@ describe("CLI upgrade Module", () => {
     expect(stopped.starts).toEqual([])
   })
   it("finishes an external package update even when npm already reports the current version", async () => {
-    const client = fixture("0.4.2")
+    const client = fixture("0.4.2", true, true, "0.4.2")
+    client.configure(false)
     client.stale()
     expect(await client.run(upgradeCLI("0.4.2"))).toEqual({ version: "0.4.2", updated: false, resumed: true })
     expect(client.installs()).toBe(0)
     expect(await client.run(upgradeCLI("0.4.2"))).toEqual({ version: "0.4.2", updated: false, resumed: false })
-    const stopped = fixture("0.4.2", false)
+    const stopped = fixture("0.4.2", false, false, "0.4.2")
+    stopped.configure(false)
     stopped.stale()
     expect((await stopped.run(upgradeCLI("0.4.2"))).resumed).toBe(false)
   })
@@ -101,7 +224,8 @@ describe("CLI upgrade Module", () => {
     expect(await fixture().run(checkCLIUpgrade("development"))).toBeUndefined()
     const offline = Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
       acquireOwnership: () => Effect.die("Startup lookup cannot acquire update ownership"),
-      latest: () => Effect.fail(new CLIUpgradeError({ reason: "check", message: "offline" })), install: () => Effect.void
+      latest: () => Effect.fail(new CLIUpgradeError({ reason: "check", message: "offline" })),
+      installedVersion: () => Effect.die("Offline lookup cannot inspect the command entry"), install: () => Effect.void
     }))
     expect(await Effect.runPromise(checkCLIUpgrade("0.4.1").pipe(Effect.provide(offline)))).toBeUndefined()
   })

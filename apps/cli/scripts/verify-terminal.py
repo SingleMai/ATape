@@ -1,5 +1,7 @@
 """Installed-binary PTY acceptance. All state and capture sources are disposable."""
+import base64
 import fcntl
+import hashlib
 import json
 import os
 import pty
@@ -24,6 +26,26 @@ for name in ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GIT_DIR", "GIT_WOR
              "ATAPE_CONFIG_FILE", "ATAPE_COLLECTOR_STATE_FILE", "ATAPE_COLLECTOR_PROCESS_FILE", "ATAPE_COLLECTOR_STATUS_FILE",
              "ATAPE_COLLECTOR_LOG_FILE", "ATAPE_ADAPTER_DIRECTORY"):
     env.pop(name, None)
+
+# UI-only update choices use a fresh catalog, never a public lookup. Record any
+# attempted release transport before refusing it, while local Server calls keep
+# their normal production fetch implementation.
+release_requests = root / "unexpected-release-fetch.jsonl"
+release_guard = root / "guard-release-fetch.mjs"
+release_guard.write_text("""import { appendFileSync } from "node:fs";
+const original = globalThis.fetch;
+globalThis.fetch = async (input, ...args) => {
+  const address = input instanceof Request ? input.url : String(input);
+  const url = new URL(address);
+  if (url.hostname === "registry.npmjs.org" || url.hostname === "api.github.com" && url.pathname.includes("/releases/")) {
+    appendFileSync(process.env.TERMINAL_FIXTURE_RELEASE_REQUESTS, JSON.stringify(address) + "\\n");
+    throw new Error("Fresh catalog terminal fixture forbids public release transport");
+  }
+  return Reflect.apply(original, globalThis, [input, ...args]);
+};
+""")
+env["TERMINAL_FIXTURE_RELEASE_REQUESTS"] = str(release_requests)
+env["NODE_OPTIONS"] = " ".join(filter(None, [env.get("NODE_OPTIONS"), "--import=" + release_guard.resolve().as_uri()]))
 
 fixture_script = Path(__file__).resolve().parent.parent / "src/runtime/fixtures/terminal-state.ts"
 
@@ -128,8 +150,9 @@ def verify_privacy_rules():
     client.write_text(json.dumps({"version": 3, "projects": [], "adapters": [],
                                   "toolsConfigured": True, "enabledAdapterIds": [],
                                   "autoUpdateEnabled": False, "autoStartEnabled": False}))
-    (home / "cache").mkdir(mode=0o700)
-    (home / "cache/cli-update.json").write_bytes(cache.read_bytes())
+    privacy_cache = home / "cache/release-discovery/catalog.json"
+    privacy_cache.parent.mkdir(mode=0o700, parents=True)
+    privacy_cache.write_bytes(cache.read_bytes())
     overrides = {"ATAPE_HOME": str(home), "ATAPE_REDACT_VALUES": "[]"}
     terminal = Terminal(overrides=overrides)
     terminals.append(terminal)
@@ -243,14 +266,28 @@ def verify_privacy_rules():
 
 terminals = []
 try:
-    # Seed a future release in this disposable home's cache: packaged startup
-    # choices are deterministic and never depend on the public npm registry.
+    # Seed a complete future bundle for the installed runtime's capture/control
+    # pair. These canonical SRI values describe metadata-only UI fixture bytes;
+    # this acceptance always skips package execution. Real acquired tarballs are
+    # exercised separately by verify-automatic-update.mjs.
     current = cli("--version").strip().split()[-1].split(".")
     available = f"{int(current[0]) + 1}.0.0"
-    cache = root / "home" / "cache" / "cli-update.json"
+    runtime = json.loads((Path(binary).resolve().parent.parent / "package.json").read_text())["atapeRuntime"]
+    packages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude", "@atape/adapter-codebuddy",
+                "@atape/adapter-kimi", "@atape/adapter-opencode", "@atape/adapter-grok"]
+    bundle = {"protocol": "atape.release-bundle.v1", "version": available,
+              "captureStateContract": runtime["stateContract"], "updateControlProtocol": runtime["updateControlProtocol"],
+              "packages": [{"name": name,
+                            "integrity": "sha512-" + base64.b64encode(hashlib.sha512((name + "@" + available).encode()).digest()).decode(),
+                            "tarball": f"https://registry.npmjs.org/{name}/-/{name.removeprefix('@atape/')}-{available}.tgz"}
+                           for name in packages]}
+    cache = root / "home/cache/release-discovery/catalog.json"
+    # Python's parents=True uses the default mode for intermediate directories;
+    # credentials require ATAPE_HOME itself to remain private.
     (root / "home").mkdir(mode=0o700, exist_ok=True)
-    cache.parent.mkdir(mode=0o700, exist_ok=True)
-    cache.write_text(json.dumps({"checkedAt": int(time.time() * 1000), "version": available}))
+    cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    cache.write_text(json.dumps({"checkedAt": int(time.time() * 1000),
+                                 "catalog": {"protocol": "atape.update-catalog.v1", "revision": 1, "bundles": [bundle]}}))
     terminal = Terminal(skip_updates=False)
     terminals.append(terminal)
     terminal.drain(.5)
@@ -496,6 +533,7 @@ try:
     terminal.finish("q")
     terminals.pop()
     verify_privacy_rules()
+    assert not release_requests.exists(), "fresh catalog UI choices attempted public release transport: " + release_requests.read_text()
     print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation, integration maintenance, executable replacement handoff, language, privacy editing/validation/cancellation/escaped input and background lifetime.")
 finally:
     for terminal in terminals:

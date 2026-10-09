@@ -163,16 +163,48 @@ Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and 
 
 ## Publication order and recovery
 
-The workflow publishes the CLI and all six Adapters sequentially, then creates the GitHub Release. If a later step fails, rerunning the same workflow is safe only when already-published npm integrity matches the locally rebuilt tarball. A mismatch stops publication and requires investigation; npm versions are immutable and must never be overwritten.
+Publication workflows serialize in the fixed `atape-release-publication` queue
+without canceling an active run. One publication Module owns ordering: six
+Adapters first, CLI last, then the versioned GitHub Release, and finally the
+persistent compatible catalog. It publishes private copies of the exact verified
+local tarball bytes. Reruns skip an existing npm version only when its integrity
+matches. A definite immutable-version conflict during npm propagation proceeds to
+the same public visibility check; authentication and other failures stop the run.
 
-The final, non-prerelease GitHub Release also authorizes clients to select that
-completed version for [managed automatic updates](cli/setup-and-adapters.md#upgrade-the-cli-and-adapters).
-Create it only after the CLI and all official Adapters at that exact version are
-available and verified. A client resolves the release version once, then prepares
-`@atape/cli@<version>` and every eligible installed official registry Adapter at
-the same version. Individual npm `latest` tags are not the automatic activation
-signal; packages published during an incomplete workflow must not become a mixed
-client installation.
+Before any version is advertised, anonymously retrieve all seven exact public npm
+manifests **and their tarball bytes**. Check identities, canonical URLs and SHA-512
+against the local artifacts within one ten-minute propagation budget. Each artifact
+is limited to 16 MiB, matching client acquisition. An incomplete or mismatched
+publication does not change the catalog. Existing versioned Release assets are
+also compared byte for byte before completing a draft or updating its descriptor.
+JSON-encoded descriptor and catalog bodies are limited to 128 KiB before the
+first npm write, leaving room for GitHub metadata within the client budget.
+`publication.json` retains the workflow's publication result.
+
+The versioned stable Release contains one delimited `atape.release-bundle.v1`
+descriptor. The fixed prerelease `atape-update-catalog-v1` contains
+`atape.update-catalog.v1` JSON with monotonic revision and the latest complete
+bundle by capture/control pair. It does not become GitHub Latest and its tag is
+never moved. Same-version descriptor changes, catalog regression and removed
+families fail. Publication updates the catalog last; an older queued run cannot
+move an existing target backward.
+
+The v1 reader requires the original seven packages and accepts up to 32 unique
+`@atape/*` entries. This allows additive official Adapters without changing the
+reader protocol. All entries participate in immutable byte identity; unknown
+Adapters are not automatically installed. The current publisher still verifies
+exactly the seven packages built by this repository.
+
+This increment publishes only capture v2/control v1/catalog v1 packages. Forward
+compatible packages use explicit npm `latest`; a historical rerun behind the
+public CLI target uses `atape-managed` and does not become GitHub Latest. This
+uses the existing Trusted Publisher `npm publish` permission, without requiring a
+separate `npm dist-tag` management grant. Capable clients discover the complete
+catalog instead of individual tags; immutable historical clients retain their
+old behavior. Future capture-contract publication is rejected before the first
+npm publish. Before enabling it, retain a genuine catalog-capable v2 bridge at
+legacy GitHub/npm Latest and design permanent compatible routing and migration.
+See [ADR-0108](architecture/adr/0108-compatible-release-bundle-discovery.md).
 
 Before releasing changes to configuration, checkpoints, journals or the managed
 installation descriptor, verify the retained previous runtime can read the
@@ -186,8 +218,11 @@ records the selected update Interface and recovery obligations.
 
 The CLI package declares its managed-runtime compatibility in `atapeRuntime`:
 `protocol: "atape.runtime.v1"` and
-`stateContract: "atape.client.v3-capture.v2"`. A client validates these exact
-values and the installed executable version before activation. Do not retain
+`stateContract: "atape.client.v3-capture.v2"`,
+`updateControlProtocol: "atape.update-control.v1"`, and
+`releaseCatalogProtocol: "atape.update-catalog.v1"`. Publication checks the actual
+CLI archive; clients validate these capabilities and the installed executable
+version before activation. Do not retain
 the marker across an incompatible state-format change merely to make unattended
 installation pass; design and verify migration/recovery first.
 

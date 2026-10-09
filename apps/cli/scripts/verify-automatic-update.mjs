@@ -44,9 +44,8 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory, hist
   const currentFile = join(home, "releases", "current.json")
   const controlSelectionFile = join(home, "updates", "runtime.json")
   const selectedPackage = join(home, "releases", version, "node_modules", "@atape", "cli")
-  // Keep CLI acquisition offline while exercising validation of the exact
-  // packaged CLI and a newly prepared official Adapter generation.
-  await cp(donorPackage, selectedPackage, { recursive: true })
+  // Historical bytes still use their own legacy acquisition contract.
+  if (historical) await cp(donorPackage, selectedPackage, { recursive: true })
 
   const adapter = join(root, "official-codex")
   await mkdir(adapter, { recursive: true })
@@ -56,8 +55,48 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory, hist
       harnesses: ["codex"], gitAttribution: "atape.git-attribution.v1", rawCapturePolicy: "atape.raw-capture.v1"
     }
   }))
-  const healthyAdapter = "export const createAtapeAdapter = async () => { throw new Error('readiness must not collect or construct provider runtime') }\n"
+  const healthyAdapter = `import { writeFileSync } from "node:fs";
+if (process.env.UPDATE_FIXTURE_PREFLIGHT_HANG === "1") {
+  writeFileSync(process.env.UPDATE_FIXTURE_HANGING_IMPORT, JSON.stringify({ pid: process.pid }));
+  process.on("SIGTERM", () => {});
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+}
+export const createAtapeAdapter = async () => { throw new Error("readiness must not collect or construct provider runtime") };\n`
   await writeFile(join(adapter, "index.js"), healthyAdapter)
+  const realNpm = (await execute("which", ["npm"], { encoding: "utf8" })).stdout.trim()
+  assert.ok(realNpm.startsWith("/"), "Identify npm before installing the isolated command Adapter")
+  const archives = join(root, "archives")
+  await mkdir(archives)
+  const pack = async source => {
+    const result = await execute(realNpm, ["pack", "--json", "--ignore-scripts", "--pack-destination", archives], {
+      cwd: source, env: historical?.environment ?? process.env, encoding: "utf8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024
+    })
+    return join(archives, JSON.parse(result.stdout)[0].filename)
+  }
+  const publicPackages = {}
+  for (const name of officialPackages) {
+    let source = name === "@atape/cli" ? donorPackage : adapter
+    if (name !== "@atape/cli" && name !== "@atape/adapter-codex") {
+      source = join(root, name.slice("@atape/".length))
+      const id = name.slice("@atape/adapter-".length)
+      await mkdir(source)
+      await writeFile(join(source, "package.json"), JSON.stringify({ name, version, type: "module", atapeAdapter: {
+        ...await json(join(adapter, "package.json")).then(value => value.atapeAdapter), adapterId: id, displayName: `Fixture ${id}`, harnesses: [id]
+      } }))
+      await writeFile(join(source, "index.js"), "export const createAtapeAdapter = async () => { throw new Error('unused fixture Adapter') };\n")
+    }
+    const archive = name === "@atape/cli" && historical?.environment?.PRIVACY_FIXTURE_CANDIDATE_TARBALL
+      ? historical.environment.PRIVACY_FIXTURE_CANDIDATE_TARBALL : await pack(source)
+    const details = await json(join(source, "package.json"))
+    publicPackages[name] = { archive, manifest: { ...details, dist: {
+      integrity: `sha512-${createHash("sha512").update(await readFile(archive)).digest("base64")}`,
+      tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz`
+    } } }
+  }
+  const bundle = { protocol: "atape.release-bundle.v1", version, captureStateContract: manifest.atapeRuntime.stateContract,
+    updateControlProtocol: manifest.atapeRuntime.updateControlProtocol, packages: officialPackages.map(name => ({ name, ...publicPackages[name].manifest.dist })) }
+  const publicFixture = join(root, "public-release.json")
+  await writeFile(publicFixture, JSON.stringify({ bundle, packages: publicPackages }))
   const originalAdapter = { adapterId: "codex", packageName: "@atape/adapter-codex", version: previous,
     upgradeSpec: "@atape/adapter-codex", displayName: "Fixture Codex", installedAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }
   // This earlier Adapter descriptor uses the test implementation above. It is
@@ -101,6 +140,17 @@ globalThis.fetch = async input => {
   if (address === "https://api.github.com/repos/SingleMai/ATape/releases/latest") return Response.json({
     tag_name: "v" + process.env.UPDATE_FIXTURE_VERSION, prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z"
   });
+  const fixture = JSON.parse(readFileSync(process.env.UPDATE_FIXTURE_PUBLIC_RELEASE, "utf8"));
+  if (address === "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1") return Response.json({
+    tag_name: "atape-update-catalog-v1", prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z",
+    body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: 1, bundles: [fixture.bundle] })
+  });
+  if (address === "https://api.github.com/repos/SingleMai/ATape/releases/tags/v" + process.env.UPDATE_FIXTURE_VERSION) return Response.json({
+    tag_name: "v" + process.env.UPDATE_FIXTURE_VERSION, prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z",
+    body: "<!-- atape.release-bundle.v1:start -->\\n" + JSON.stringify(fixture.bundle) + "\\n<!-- atape.release-bundle.v1:end -->"
+  });
+  const artifact = Object.values(fixture.packages).find(item => item.manifest.dist.tarball === address);
+  if (artifact) return new Response(readFileSync(artifact.archive));
   const parsed = new URL(address);
   const segments = parsed.pathname.slice(1).split("/");
   const name = decodeURIComponent(segments[0]);
@@ -108,7 +158,7 @@ globalThis.fetch = async input => {
     return Response.json({ name, version: process.env.UPDATE_FIXTURE_VERSION });
   if (parsed.origin !== "https://registry.npmjs.org" || segments.length !== 2 || segments[1] !== process.env.UPDATE_FIXTURE_VERSION ||
     !${JSON.stringify(officialPackages)}.includes(name)) throw new Error("Unexpected external request in isolated update fixture: " + address);
-  return Response.json({ name, version: process.env.UPDATE_FIXTURE_VERSION });
+  return Response.json(fixture.packages[name].manifest);
 };\n`)
   const bin = join(root, "bin")
   await mkdir(bin, { recursive: true })
@@ -122,7 +172,19 @@ else if (args[0] === "config" && args[1] === "get" && args[2] === "registry") co
 else if (args[0] === "install") {
   if (!args.includes("--ignore-scripts")) throw new Error("Fixture installation must disable scripts");
   const prefix = args[args.indexOf("--prefix") + 1];
-  if (args.includes("--global") && args.includes("@atape/cli@" + process.env.UPDATE_FIXTURE_VERSION)) {
+  const archiveArgument = args.find(value => /\\.tgz$/.test(value) && fs.existsSync(value.replace(/^file:/, "")));
+  if (archiveArgument) {
+    const archive = archiveArgument.replace(/^file:/, "");
+    const fixture = JSON.parse(fs.readFileSync(process.env.UPDATE_FIXTURE_PUBLIC_RELEASE, "utf8"));
+    const integrity = "sha512-" + require("node:crypto").createHash("sha512").update(fs.readFileSync(archive)).digest("base64");
+    const item = fixture.bundle.packages.find(item => item.integrity === integrity);
+    if (!item) throw new Error("npm did not receive an acquired archive matching the immutable public bundle");
+    if (args.includes("--global") && (item.name !== "@atape/cli" || prefix !== process.env.PRIVACY_FIXTURE_PREFIX))
+      throw new Error("Global install escaped the isolated verified CLI prefix");
+    require("node:child_process").execFileSync(process.env.UPDATE_FIXTURE_REAL_NPM,
+      ["install", ...(args.includes("--global") ? ["--global"] : []), "--prefix", prefix, archive, "--offline", "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund"],
+      { env: { ...process.env, PATH: process.env.UPDATE_FIXTURE_ORIGINAL_PATH }, stdio: "pipe", timeout: 120000 });
+  } else if (args.includes("--global") && args.includes("@atape/cli@" + process.env.UPDATE_FIXTURE_VERSION)) {
     if (process.env.PRIVACY_FIXTURE_REAL_NPM) {
       if (prefix !== process.env.PRIVACY_FIXTURE_PREFIX) throw new Error("Global install escaped isolated prefix");
       require("node:child_process").execFileSync(process.env.PRIVACY_FIXTURE_REAL_NPM,
@@ -140,7 +202,9 @@ else if (args[0] === "install") {
     ATAPE_BOOTSTRAP_ENTRY: bootstrap, ATAPE_RUNTIME_DIRECT: "1", NODE_OPTIONS: [historical?.environment?.NODE_OPTIONS, `--import=${pathToFileURL(preload).href}`].filter(Boolean).join(" "),
     UPDATE_FIXTURE_VERSION: version, UPDATE_FIXTURE_GLOBAL_ROOT: globalRoot, UPDATE_FIXTURE_ADAPTER: adapter,
     UPDATE_FIXTURE_DONOR: donorPackage, UPDATE_FIXTURE_TRACE: trace, UPDATE_FIXTURE_METADATA: metadata, UPDATE_FIXTURE_NPM_CALLS: calls,
-    UPDATE_FIXTURE_HANGING_IMPORT: hangingImport }
+    UPDATE_FIXTURE_HANGING_IMPORT: hangingImport, UPDATE_FIXTURE_PUBLIC_RELEASE: publicFixture,
+    UPDATE_FIXTURE_REAL_NPM: realNpm, UPDATE_FIXTURE_ORIGINAL_PATH: historical?.environment?.PATH ?? process.env.PATH,
+    npm_config_cache: historical?.environment?.npm_config_cache ?? join(root, "npm-cache") }
   for (const name of ["ATAPE_CONFIG_FILE", "ATAPE_COLLECTOR_STATE_FILE", "ATAPE_COLLECTOR_PROCESS_FILE", "ATAPE_COLLECTOR_STATUS_FILE",
     "ATAPE_COLLECTOR_LOG_FILE", "ATAPE_ADAPTER_DIRECTORY", "ATAPE_UPDATE_WORKER_TOKEN", "ATAPE_COLLECTOR_READY_FILE", "ATAPE_COLLECTOR_READY_TOKEN"]) delete environment[name]
   const command = async (entry, args, env = environment) => execute(process.execPath, [entry, ...args], {
@@ -168,12 +232,7 @@ process.on("SIGTERM", () => { appendFileSync(${JSON.stringify(collectorSignals)}
     await writeFile(collectorFile, originalProcess)
     await waitFor(() => exists(collectorHeartbeat), async () => "Original fixture Collector did not start")
     const heartbeatBefore = (await readFile(collectorHeartbeat)).length
-    await writeFile(join(adapter, "index.js"), `import { writeFileSync } from "node:fs";
-writeFileSync(process.env.UPDATE_FIXTURE_HANGING_IMPORT, JSON.stringify({ pid: process.pid }));
-process.on("SIGTERM", () => {});
-Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
-export const createAtapeAdapter = async () => { throw new Error("Unreachable factory") };\n`)
-    const failedDispatch = await command(launch, [])
+    const failedDispatch = await command(launch, [], { ...environment, UPDATE_FIXTURE_PREFLIGHT_HANG: "1" })
     await waitFor(async () => {
       assert.equal(await exists(maintenanceFile), false, "Adapter preparation closed collection admission")
       assert.equal(await readFile(collectorFile, "utf8"), originalProcess, "Adapter preparation changed the running Collector")
@@ -197,7 +256,6 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
     originalCollector.kill("SIGTERM")
     await waitFor(async () => originalCollector.exitCode !== null, async () => "Original fixture Collector did not stop after the regression check")
     await rm(collectorFile)
-    await writeFile(join(adapter, "index.js"), healthyAdapter)
     await writeFile(join(home, "updates", "state.json"), JSON.stringify({ nextCheckAt: 0, failures: 1 }))
     const dispatched = await command(launch, [])
     const selectedFile = historical ? currentFile : controlSelectionFile
@@ -239,13 +297,29 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
     await waitFor(async () => workers.every(worker => !processExists(worker.pid)),
       async () => "Detached update worker did not exit after activation")
     const requests = (await readFile(metadata, "utf8")).trim().split("\n").map(line => JSON.parse(line))
-    assert.equal(requests[0], "https://api.github.com/repos/SingleMai/ATape/releases/latest")
-    assert.equal(requests.length, (officialPackages.length + 1) * 2)
-    assert.equal(requests[officialPackages.length + 1], requests[0])
-    assert.ok(requests.filter(address => address !== requests[0]).every(address => address.endsWith(`/${version}`)))
+    if (historical) {
+      assert.equal(requests[0], "https://api.github.com/repos/SingleMai/ATape/releases/latest")
+      assert.equal(requests.length, (officialPackages.length + 1) * 2)
+      assert.equal(requests[officialPackages.length + 1], requests[0])
+      assert.ok(requests.filter(address => address !== requests[0]).every(address => address.endsWith(`/${version}`)))
+    } else {
+      const catalogURL = "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1"
+      const versionURL = `https://api.github.com/repos/SingleMai/ATape/releases/tags/v${version}`
+      assert.equal(requests[0], catalogURL)
+      assert.equal(requests.filter(address => address === catalogURL).length, 2)
+      assert.ok(requests.includes(versionURL), "Preparation must check the immutable version descriptor")
+      for (const name of ["@atape/cli", "@atape/adapter-codex"])
+        assert.ok(requests.filter(address => address === publicPackages[name].manifest.dist.tarball).length >= 2,
+          `Both preparation attempts must acquire verified ${name} bytes`)
+      assert.ok(requests.every(address => address === catalogURL || address === versionURL ||
+        bundle.packages.some(item => item.tarball === address)), "Capable workers must use catalog/descriptor/artifacts rather than npm latest")
+    }
     const npmCalls = (await readFile(calls, "utf8")).trim().split("\n").map(line => JSON.parse(line))
     assert.ok(npmCalls.every(args => args[0] !== "install" || !args.includes("--global")), "Automatic update must not replace the global npm bootstrap")
-    assert.ok(npmCalls.some(args => args.includes(`@atape/adapter-codex@${version}`)))
+    assert.ok(npmCalls.some(args => historical ? args.includes(`@atape/adapter-codex@${version}`) :
+      args.some(argument => argument.startsWith("file:") && argument.endsWith(".tgz"))), "Adapter acquisition must use its supported immutable source")
+    if (!historical) assert.ok(npmCalls.filter(args => args[0] === "install").every(args =>
+      args.some(argument => argument.endsWith(".tgz"))), "Capable npm installations must consume verified local archives")
     await writeFile(trace, "")
     const delegated = await command(bootstrap, ["--version"], { ...environment, ATAPE_RUNTIME_DIRECT: "0" })
     assert.equal(delegated.stdout.trim(), `ATape ${version}`)
@@ -256,7 +330,7 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
       ? "Verified genuine supplied 0.5.4 v2 automatic worker, exact candidate activation/delegation, bounded preflight retry, existing synthetic v2 checkpoint bytes and stopped intent preservation.\n"
       : "Verified packaged v2 independent automatic update worker, bounded test Adapter preflight and healthy retry, exact release alignment and bootstrap delegation (same-contract fixture; not historical compatibility)\n")
     return { root, home, bootstrap, bootstrapPackage, globalRoot, environment, version, beforeDigest, currentFile, collectorFile, configFile, trace,
-      donorPackage, selectedEntry, preserved, originalAdapter }
+      donorPackage, selectedEntry, preserved, originalAdapter, bundle, publicPackages }
   } finally {
     for (const worker of await workerEntries()) {
       try { process.kill(worker.pid, "SIGKILL") } catch (cause) { if (cause.code !== "ESRCH") throw cause }

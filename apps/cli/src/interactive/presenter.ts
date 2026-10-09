@@ -215,7 +215,7 @@ export class ExperiencePresenter {
     const failure = describeClientFailure(error)
     this.show({ kind: "menu", title: t("cli.presenter.recoverTitle", "Let's get this working"), details: [failure.message],
       options: failure.actions.map(action => ({ value: action.kind === "review" ? "retry" : action.kind === "sign_in" ? "login" : action.kind === "update_tool" ? "reader" : "retry",
-        label: action.kind === "update_tool" ? t("cli.presenter.installLatest", "Install latest published {tool} integration and continue", { tool: toolLabel(action.adapterId) })
+        label: action.kind === "update_tool" ? t("cli.presenter.installMatching", "Install {tool} integration for this ATape version and continue", { tool: toolLabel(action.adapterId) })
           : action.kind === "sign_in" ? t("cli.presenter.signInAgain", "Sign in again")
           : action.kind === "review" ? t("cli.presenter.reviewAgain", "Review again") : t("cli.presenter.retryOperation", "Retry this operation") }))
     }, value => {
@@ -632,7 +632,11 @@ export class ExperiencePresenter {
         t("cli.tools.intro", "Manage ATape and its conversation sync integrations."),
         ...releases.map(release => {
           const older = release.status === "ahead" ? t("cli.tools.releaseOlder", " (older)") : ""
-          const latest = release.latest
+          const latest = release.commandEntryVersion
+            ? t("cli.tools.commandEntryBehind", " · command entry {current} → {version}", { current: release.commandEntryVersion, version: release.latest ?? release.version })
+            : release.id !== "cli" && release.latest
+            ? t("cli.tools.matchingVersion", " · for ATape {version}{older}", { version: release.latest, older })
+            : release.latest
             ? release.status === "available"
               ? t("cli.tools.releaseLatest", " → {version} (latest)", { version: release.latest })
               : t("cli.tools.releaseLatestOlder", " · latest {version}{older}", { version: release.latest, older })
@@ -644,9 +648,11 @@ export class ExperiencePresenter {
             release.source === "local" ? t("cli.tools.releaseLocal", " · file/URL install") : release.source === "custom" ? t("cli.tools.releaseCustom", " · custom package") : ""}`
           return `${releaseName(release)}: ${release.version}${latest}${flags}`
         }),
-        t("cli.tools.cacheNotice", "Latest versions are cached for 12 hours.")
+        t("cli.tools.bundleNotice", "CLI releases are cached for 12 hours. Official integrations match the running ATape version.")
       ], options: [
-        ...updateable.map(release => ({ value: `update:${release.id}`, label: release.source === "local"
+        ...updateable.map(release => ({ value: `update:${release.id}`, label: release.commandEntryVersion
+          ? t("cli.tools.refreshCommandEntry", "Refresh ATape command entry to {version}", { version: release.latest ?? "" })
+          : release.source === "local"
           ? t("cli.tools.usePublished", "Use published {label} integration {version}", { label: release.label, version: release.latest ?? "" })
           : t("cli.tools.updateRelease", "Update {name} to {version}", { name: releaseName(release), version: release.latest ?? "" }) })),
         { value: "configure", label: t("cli.tools.chooseTools", "Choose tools to sync") },

@@ -1,4 +1,4 @@
-import { emptyClientConfig, type AdapterInstallation, type ClientConfig } from "@atape/domain"
+import { emptyClientConfig, releasePackageNames, type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer, Logger } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -6,6 +6,11 @@ import { AutomaticUpdateError, AutomaticUpdatePlatform, kickAutomaticUpdates, ru
   type PreparedAutomaticUpdate } from "./automaticUpdates.ts"
 import { ClientConfigStore, ClientConfigStoreError } from "./clientManagement.ts"
 
+const bundle = (version = "0.5.2"): ReleaseBundle => ({
+  protocol: "atape.release-bundle.v1", version, captureStateContract: "atape.client.v3-capture.v2", updateControlProtocol: "atape.update-control.v1",
+  packages: releasePackageNames.map(name => ({ name, integrity: `sha512-${"A".repeat(86) + "=="}`,
+    tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` }))
+})
 const Hour = 60 * 60 * 1_000
 const adapter = (id: string, version = "0.5.1", upgradeSpec = `@atape/adapter-${id}`): AdapterInstallation => ({
   adapterId: id, packageName: `@atape/adapter-${id}`, version, upgradeSpec, displayName: id,
@@ -24,9 +29,9 @@ const fixture = (options: {
   let config: ClientConfig = { ...emptyClientConfig(), toolsConfigured: true, ...options.config }
   let schedule = options.schedule ?? { nextCheckAt: 0, failures: 0 }
   let onPrepare: (() => void) | undefined
-  let badPrepared = false, badConfig = false, leases = 0, released = 0, targets = 0, launches = 0, supportChecks = 0, scheduleChecks = 0
+  let badPrepared: "version" | "integrity" | undefined, badConfig = false, leases = 0, released = 0, targets = 0, launches = 0, supportChecks = 0, scheduleChecks = 0
   const errors = new Map<FailurePoint, AutomaticUpdateError>()
-  const preparations: Array<{ version: string; adapters: ReadonlyArray<AdapterInstallation> }> = []
+  const preparations: Array<{ bundle: ReleaseBundle; adapters: ReadonlyArray<AdapterInstallation> }> = []
   const activations: Array<{ prepared: PreparedAutomaticUpdate; automatic: boolean }> = []
   const records: ScheduleRecord[] = []
   const logs: unknown[] = []
@@ -44,11 +49,13 @@ const fixture = (options: {
       recoveryPending: () => perform("recoveryPending", () => options.recoveryPending === true),
       supported: () => perform("supported", () => { supportChecks++; return options.supported !== false }),
       schedule: () => perform("schedule", () => { scheduleChecks++; return schedule }),
-      target: () => perform("target", () => { targets++; return options.version ?? "0.5.2" }),
-      prepare: (version, adapters) => perform("prepare", () => {
-        preparations.push({ version, adapters })
+      target: () => perform("target", () => { targets++; return bundle(options.version ?? "0.5.2") }),
+      prepare: (selected, adapters) => perform("prepare", () => {
+        preparations.push({ bundle: selected, adapters })
         onPrepare?.()
-        return { version: badPrepared ? "0.5.9" : version, key: "prepared-slot" }
+        return { bundle: badPrepared === "version" ? bundle("0.5.9") : badPrepared === "integrity" ? {
+          ...selected, packages: selected.packages.map(item => ({ ...item, integrity: `sha512-${"B".repeat(84) + "AQ=="}` }))
+        } : selected, key: "prepared-slot" }
       }).pipe(Effect.flatMap(prepared => Effect.acquireRelease(
         Effect.sync(() => { leases++; return prepared }), () => Effect.sync(() => { leases--; released++ })))),
       activate: (prepared, automatic) => perform("activate", () => {
@@ -73,7 +80,7 @@ const fixture = (options: {
       errors.set(point, error)
       return error
     },
-    corruptPrepared: () => { badPrepared = true },
+    corruptPrepared: (kind: "version" | "integrity" = "version") => { badPrepared = kind },
     corruptConfig: () => { badConfig = true }
   }
 }
@@ -192,8 +199,8 @@ describe("automatic updates through the application Interface", () => {
     const installed = [adapter("codex", "0.5.1"), adapter("claude", "0.5.2")]
     const client = fixture({ config: { adapters: installed, enabledAdapterIds: ["codex"] } })
     expect(await client.run(runAutomaticUpdates("0.5.2"))).toEqual({ updated: true, version: "0.5.2" })
-    expect(client.preparations).toEqual([{ version: "0.5.2", adapters: installed }])
-    expect(client.activations).toEqual([{ prepared: { version: "0.5.2", key: "prepared-slot" }, automatic: true }])
+    expect(client.preparations).toEqual([{ bundle: bundle(), adapters: installed }])
+    expect(client.activations).toEqual([{ prepared: { bundle: bundle(), key: "prepared-slot" }, automatic: true }])
     expect(client.leases()).toBe(0)
     expect(client.released()).toBe(1)
     expect(client.records[0]).toMatchObject({ failures: 0, version: "0.5.2" })
@@ -288,9 +295,9 @@ describe("automatic updates through the application Interface", () => {
     expect(JSON.stringify(client.logs)).toContain("Could not save automatic update retry schedule")
   })
 
-  it("refuses a prepared slot for another release and closes its scope", async () => {
+  it.each(["version", "integrity"] as const)("refuses a prepared slot with changed %s and closes its scope", async kind => {
     const client = fixture()
-    client.corruptPrepared()
+    client.corruptPrepared(kind)
     await expect(client.run(runAutomaticUpdates("0.5.1"))).rejects.toMatchObject({ reason: "prepare" })
     expect(client.activations).toEqual([])
     expect(client.released()).toBe(1)

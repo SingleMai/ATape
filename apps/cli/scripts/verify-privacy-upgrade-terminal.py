@@ -39,6 +39,12 @@ def send(events):
         drain()
 
 try:
+    deadline = time.monotonic() + 20
+    while b"Your Projects" not in output and b"Upgrade now or skip for this session." not in output and time.monotonic() < deadline and process.poll() is None:
+        drain()
+    if b"Upgrade now or skip for this session." in output:
+        output = b""
+        send(["\x1b[B", "\r"])
     wait("Your Projects")
     send(["\t", "\x1b[C", "\r"])
     wait("Accounts")

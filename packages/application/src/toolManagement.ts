@@ -5,6 +5,7 @@ import { CLIExperienceError, CLISetupPlatform } from "./cliSetupPlatform.ts"
 import { currentProject, verifyProjectAccount, startExperienceCollector } from "./projectAccess.ts"
 import { inspectManagedCollector } from "./collectorDaemon.ts"
 import { officialSources } from "@atape/adapter-catalog"
+import { stableVersion } from "./releaseVersion.ts"
 
 export type SourceChoice = {
   readonly id: string
@@ -69,13 +70,16 @@ const ensureSources = Effect.fn("CLIExperience.ensureSources")(function*(ids: Re
     const official = officialSources.find(source => source.id === id)
     if (!installed) {
       if (!official) return yield* new CLIExperienceError({ reason: "selection", message: `Source ${id} is no longer installed.` })
-      installed = (yield* installAdapter(official.packageName)).adapter
+      installed = (yield* installAdapter(yield* officialPackageSpec(official.packageName, platform.runtimeReleaseVersion))).adapter
+    } else if (official?.packageName === installed.packageName && installed.upgradeSpec === installed.packageName &&
+      stableVersion(platform.runtimeReleaseVersion) && installed.version !== platform.runtimeReleaseVersion) {
+      installed = (yield* upgradeAdapters(id))[0]!
     }
     if (git && !(yield* platform.supportsGit(installed))) {
       if (!official || installed.packageName !== official.packageName) {
         return yield* new CLIExperienceError({ reason: "upgrade", message: `Upgrade ${installed.displayName} to support shared Git attribution, then retry.` })
       }
-      installed = (yield* installAdapter(`${official.packageName}@latest`, { installation: installed })).adapter
+      installed = (yield* upgradeAdapters(id))[0]!
       if (!(yield* platform.supportsGit(installed))) {
         return yield* new CLIExperienceError({ reason: "upgrade", message: `The installed ${installed.displayName} package still lacks shared Git attribution. Install a compatible package and retry.` })
       }
@@ -98,13 +102,10 @@ export const updateSyncReader = Effect.fn("CLIExperience.updateSyncReader")(func
   for (const connected of config.projects.filter(item => item.adapterIds.length > 0)) yield* verifyProjectAccount(connected)
   const installed = config.adapters.find(adapter => adapter.adapterId === id)
   const source = officialSources.find(source => source.id === id)
-  if (installed && source?.packageName === installed.packageName) {
-    yield* installAdapter(`${source.packageName}@latest`, { installation: installed })
-  }
-  else if (installed) yield* upgradeAdapters(id)
+  if (installed) yield* upgradeAdapters(id)
   else {
     if (!source) return yield* new CLIExperienceError({ reason: "selection", message: `The ${id} reader is no longer available. Choose another tool to sync.` })
-    yield* installAdapter(source.packageName)
+    yield* installAdapter(yield* officialPackageSpec(source.packageName, (yield* CLISetupPlatform).runtimeReleaseVersion))
   }
   const current = yield* inspectClient()
   if (toolScope(current) !== toolScope(config)) return yield* changed("Projects or tools changed during the update. Review the project again.")
@@ -115,3 +116,6 @@ export const updateSyncReader = Effect.fn("CLIExperience.updateSyncReader")(func
 })
 
 const changed = (message: string) => new CLIExperienceError({ reason: "changed", message })
+const officialPackageSpec = (name: string, version: string) => stableVersion(version)
+  ? Effect.succeed(`${name}@${version}`)
+  : Effect.fail(new CLIExperienceError({ reason: "upgrade", message: "Use an installed ATape release for official integrations, or install a local integration source for development." }))

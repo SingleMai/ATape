@@ -7,18 +7,25 @@ import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { defaultNodeClientPaths } from "./clientLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
+import { cliVersion } from "../version.ts"
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
-const fixture = async (override: (root: string) => Record<string, string> = () => ({})) => {
+const fixture = async (override: (root: string) => Record<string, string> = () => ({}), runtimeReleaseVersion?: string) => {
   const root = await mkdtemp(join(tmpdir(), "atape-guided-"))
   roots.push(root)
   const environment = { ATAPE_HOME: root, ATAPE_KIMI_HOME: join(root, "missing-kimi"), ATAPE_GROK_HOME: join(root, "missing-grok"), ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(root, "missing-codebuddy"),
     XDG_DATA_HOME: join(root, "data"), OPENCODE_DB: "", ...override(root) }
   const paths = defaultNodeClientPaths(environment)
-  const layer = makeCLISetupPlatformLayer(paths, environment)
+  const layer = makeCLISetupPlatformLayer(paths, environment, runtimeReleaseVersion)
   return { root, paths, run: <A, E>(effect: Effect.Effect<A, E, CLISetupPlatform>) => Effect.runPromise(effect.pipe(Effect.provide(layer))) }
 }
 describe("Node guided setup Adapter", () => {
+  it.each([undefined, "0.5.5"])("uses the actual composed runtime version %s rather than npm bootstrap metadata", async version => {
+    const client = await fixture(root => ({ ATAPE_BOOTSTRAP_ENTRY: join(root, "npm", "dist", "atape.js") }), version)
+    await mkdir(join(client.root, "npm", "dist"), { recursive: true })
+    await writeFile(join(client.root, "npm", "package.json"), JSON.stringify({ name: "@atape/cli", version: "99.0.0" }))
+    expect(await client.run(CLISetupPlatform.use(platform => Effect.succeed(platform.runtimeReleaseVersion)))).toBe(version ?? cliVersion)
+  })
   it("detects Grok from the selected home without reading transcripts", async () => {
     const client = await fixture(root => ({ ATAPE_GROK_HOME: join(root, "selected-grok") }))
     await mkdir(join(client.root, "selected-grok"))

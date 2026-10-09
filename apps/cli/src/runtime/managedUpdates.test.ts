@@ -1,9 +1,10 @@
 import { AdapterPackageError, AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CollectorDaemonProcess, runAutomaticUpdates,
   type PreparedAutomaticUpdate } from "@atape/application"
-import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, type AdapterInstallation, type ClientConfig } from "@atape/domain"
+import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releasePackageNames, releaseBundleSection,
+  type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
-import { randomUUID } from "node:crypto"
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { createHash, randomUUID } from "node:crypto"
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -48,21 +49,27 @@ if (args[0]==="root") {
 }
 else if (args[0]==="install") {
   if (process.env.MANAGED_TEST_FAIL_NPM==="true") process.exit(1);
-  const spec=args.find(arg=>arg.startsWith("@atape/cli@")), version=spec.slice("@atape/cli@".length);
+  const artifact=args.at(-1), version=JSON.parse(fs.readFileSync(artifact,"utf8")).version;
+  if (process.env.MANAGED_TEST_HANG_NPM==="true") {
+    fs.writeFileSync(process.env.MANAGED_TEST_NPM_STARTED, artifact);
+    process.on("SIGTERM",()=>{fs.writeFileSync(process.env.MANAGED_TEST_NPM_EXITED,JSON.stringify({artifactExists:fs.existsSync(artifact)}));process.exit(0)});
+    setInterval(()=>{},1000);
+  } else {
   const destination=path.join(args[args.indexOf("--prefix")+1],"node_modules","@atape","cli");
   fs.mkdirSync(path.join(destination,"dist"),{recursive:true});
   fs.writeFileSync(path.join(destination,"package.json"),JSON.stringify({name:"@atape/cli",version,type:"module",
     atapeRuntime:{protocol:"atape.runtime.v1",stateContract:process.env.MANAGED_TEST_CONTRACT,
-      updateControlProtocol:process.env.MANAGED_TEST_CONTROL}}));
+      updateControlProtocol:process.env.MANAGED_TEST_CONTROL,releaseCatalogProtocol:process.env.MANAGED_TEST_CATALOG}}));
   const reported=process.env.MANAGED_TEST_WRONG_VERSION || version;
   fs.writeFileSync(path.join(destination,"dist","atape.js"), (${cliSource.toString()})(reported));
+  }
 } else process.exit(2);
 `)
   await chmod(join(bin, "npm"), 0o700)
   const environment: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, ATAPE_HOME: paths.atapeHome,
     MANAGED_TEST_CALLS: calls, MANAGED_TEST_MODULES: modules, MANAGED_TEST_CONTRACT: managedStateContract,
-    ...(options.control ? { MANAGED_TEST_CONTROL: updateControlProtocol } : {}),
-    MANAGED_TEST_STARTED: join(root, "started.json") }
+    MANAGED_TEST_CONTROL: updateControlProtocol, MANAGED_TEST_CATALOG: "atape.update-catalog.v1",
+    MANAGED_TEST_STARTED: join(root, "started.json"), MANAGED_TEST_NPM_STARTED: join(root, "npm-started"), MANAGED_TEST_NPM_EXITED: join(root, "npm-exited.json") }
   const adapterSpecs: string[] = [], fetches: string[] = []
   const adapters: AdapterInstallation[] = ["codex", "claude"].map(id => ({ adapterId: id, packageName: `@atape/adapter-${id}`,
     version: "0.5.2", upgradeSpec: `@atape/adapter-${id}`, displayName: id,
@@ -71,7 +78,14 @@ else if (args[0]==="install") {
     enabledAdapterIds: ["codex"], adapters, projects: [{ id: "project", instanceOrigin: "https://example.invalid", userId: "user",
       teamId: "team", teamSlug: "team", teamName: "Team", name: "Project", type: "directory", path: root,
       createdAt: "2026-10-09T00:00:00.000Z" }] }
-  const behavior = { missingPackage: "", invalidFactory: false }
+  const behavior = { missingPackage: "", invalidFactory: false, targetVersion: "0.5.3", corruptArtifact: false,
+    changedDescriptor: false }
+  const artifactBytes = (name: string, version: string) => Buffer.from(JSON.stringify({ name, version }))
+  const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-bundle.v1", version,
+    captureStateContract: managedStateContract, updateControlProtocol,
+    packages: releasePackageNames.map(name => ({ name,
+      integrity: `sha512-${createHash("sha512").update(artifactBytes(name, version)).digest("base64")}`,
+      tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) })
   const writeAdapter = async (adapter: AdapterInstallation, invalid = false) => {
     const packageRoot = adapterPackageRoot(paths.adapterDirectory, adapter)
     await mkdir(packageRoot, { recursive: true })
@@ -97,21 +111,37 @@ else if (args[0]==="install") {
   }))
   const fetchMetadata: typeof fetch = async url => {
     const address = String(url); fetches.push(address)
-    if (address.startsWith("https://api.github.com/")) return Response.json({ tag_name: "v0.5.3", draft: false, prerelease: false,
-      published_at: "2026-10-01T00:00:00.000Z" })
-    const parts = new URL(address).pathname.slice(1).split("/"), name = decodeURIComponent(parts[0]!), version = parts[1]!
-    return name === behavior.missingPackage ? new Response("Not published", { status: 404 }) : Response.json({ name, version })
+    if (address.startsWith("https://api.github.com/")) {
+      const tag = decodeURIComponent(new URL(address).pathname.split("/").at(-1)!)
+      if (tag === "atape-update-catalog-v1") {
+        const advertised = bundle(behavior.targetVersion)
+        const incomplete = { ...advertised, packages: advertised.packages.filter(item => item.name !== behavior.missingPackage) }
+        return Response.json({ tag_name: tag, draft: false, prerelease: true, published_at: "2026-10-01T00:00:00.000Z",
+          body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: Number(behavior.targetVersion.split(".").at(-1)) + 1, bundles: [incomplete] }) })
+      }
+      const descriptor = bundle(tag.slice(1))
+      const changed = behavior.changedDescriptor ? { ...descriptor, packages: descriptor.packages.map((item, index) => index === 0
+        ? { ...item, integrity: bundle("0.5.99").packages[0]!.integrity } : item) } : descriptor
+      return Response.json({ tag_name: tag, draft: false, prerelease: false, published_at: "2026-10-01T00:00:00.000Z", body: releaseBundleSection(changed) })
+    }
+    const name = releasePackageNames.find(name => address.startsWith(`https://registry.npmjs.org/${name}/-/`))
+    if (!name) throw new Error(`Unexpected fixture URL ${address}`)
+    const version = /-(\d+\.\d+\.\d+)\.tgz$/.exec(address)?.[1]
+    if (!version) throw new Error("Missing artifact version")
+    return new Response(behavior.corruptArtifact ? Buffer.from("corrupt archive") : artifactBytes(name, version))
   }
   const layer = (path = entry, version = "0.5.2") => makeAutomaticUpdatePlatformLayer(paths, path, version, environment, fetchMetadata).pipe(Layer.provide(packages))
-  const run = <A, E>(effect: Effect.Effect<A, E, AutomaticUpdatePlatform>, path = entry, version = "0.5.2") =>
-    Effect.runPromise(effect.pipe(Effect.provide(layer(path, version))))
-  const prepare = (version = "0.5.3", selected: ReadonlyArray<AdapterInstallation> = adapters) => run(Effect.scoped(
-    AutomaticUpdatePlatform.use(platform => platform.prepare(version, selected))))
+  const run = <A, E>(effect: Effect.Effect<A, E, AutomaticUpdatePlatform>, path = entry, version = "0.5.2", signal?: AbortSignal) =>
+    Effect.runPromise(effect.pipe(Effect.provide(layer(path, version))), signal ? { signal } : undefined)
+  const prepare = (version = "0.5.3", selected: ReadonlyArray<AdapterInstallation> = adapters, signal?: AbortSignal) => {
+    behavior.targetVersion = version
+    return run(Effect.scoped(AutomaticUpdatePlatform.use(platform => platform.prepare(bundle(version), selected))), entry, "0.5.2", signal)
+  }
   const activate = (prepared: PreparedAutomaticUpdate, automatic = true) => run(AutomaticUpdatePlatform.use(platform => platform.activate(prepared, automatic)))
   const daemonLayer = makeNodeCollectorDaemonLayer(paths, () => resolveRuntimeEntry(paths.atapeHome, entry), environment)
   const daemonRun = <A, E>(effect: Effect.Effect<A, E, CollectorDaemonProcess>) => Effect.runPromise(effect.pipe(Effect.provide(daemonLayer)))
   const daemon = await daemonRun(CollectorDaemonProcess)
-  return { root, paths, entry, calls, environment, adapters, adapterSpecs, config, behavior, fetches, run, prepare, activate, daemon, daemonRun,
+  return { root, paths, entry, calls, environment, adapters, adapterSpecs, config, behavior, bundle, fetches, run, prepare, activate, daemon, daemonRun,
     raw: async () => JSON.parse(await readFile(paths.configFile, "utf8")) as ClientConfig,
     selected: () => Effect.runPromise(readSelectedClientConfig(paths)),
     save: (next: ClientConfig) => atomicJSON(paths.configFile, next),
@@ -119,6 +149,106 @@ else if (args[0]==="install") {
 }
 
 describe.skipIf(process.platform === "win32")("managed update Node Adapter", () => {
+  it("discovers a complete catalog bundle and refreshes automatic targets without legacy Latest", async () => {
+    const f = await fixture()
+    const target = () => f.run(AutomaticUpdatePlatform.use(platform => platform.target()))
+    expect(await target()).toEqual(f.bundle("0.5.3"))
+    expect(await target()).toEqual(f.bundle("0.5.3"))
+    expect(f.fetches).toHaveLength(2)
+    expect(f.fetches.every(address => address.endsWith("/tags/atape-update-catalog-v1"))).toBe(true)
+    expect(await f.npmCalls()).toEqual([])
+  })
+
+  it("rejects a same-version descriptor rewrite before installing any candidate", async () => {
+    const f = await fixture()
+    f.behavior.changedDescriptor = true
+    await expect(f.prepare()).rejects.toMatchObject({ reason: "release" })
+    expect((await f.npmCalls()).some(args => args[0] === "install")).toBe(false)
+    expect(f.adapterSpecs).toEqual([])
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("rejects corrupted downloaded CLI bytes and cleans its lease while the original Collector stays running", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.behavior.corruptArtifact = true
+      await expect(f.prepare()).rejects.toMatchObject({ reason: "prepare" })
+      expect((await f.npmCalls()).some(args => args[0] === "install")).toBe(false)
+      expect(await readdir(join(f.paths.atapeHome, "cache", "release-discovery", "artifacts"))).toEqual([])
+      expect((await f.daemonRun(f.daemon.inspect()))?.pid).toBe(original.pid)
+      expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  })
+
+  it.each(["MANAGED_TEST_CONTROL", "MANAGED_TEST_CATALOG"])("requires actual candidate capability %s even over a historical bootstrap", async capability => {
+    const f = await fixture()
+    delete f.environment[capability]
+    await expect(f.prepare()).rejects.toMatchObject({ reason: "prepare" })
+    expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("matches the entire durable bundle rather than only its version before maintenance", async () => {
+    const f = await fixture(), prepared = await f.prepare()
+    const changed = { ...prepared.bundle, packages: prepared.bundle.packages.map((item, index) => index === 3
+      ? { ...item, integrity: f.bundle("0.5.99").packages[index]!.integrity } : item) }
+    await expect(f.activate({ ...prepared, bundle: changed })).rejects.toMatchObject({ reason: "handoff" })
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
+    expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(false)
+  })
+
+  it("refuses an existing same-version generation with different runnable bytes without overwriting it", async () => {
+    const f = await fixture(), prepared = await f.prepare()
+    const entry = runtimeEntry(f.paths.atapeHome, prepared.bundle.version)
+    const different = `${await readFile(entry, "utf8")}\n// A different same-version build.\n`
+    await writeFile(entry, different)
+    await expect(f.prepare()).rejects.toMatchObject({ reason: "prepare" })
+    expect(await readFile(entry, "utf8")).toBe(different)
+    expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
+    expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(false)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("reuses a byte-identical immutable generation only after comparison with the verified archive install", async () => {
+    const f = await fixture(), first = await f.prepare(), again = await f.prepare()
+    expect(again.bundle).toEqual(first.bundle)
+    expect(again.key).not.toBe(first.key)
+    expect((await f.npmCalls()).filter(args => args[0] === "install")).toHaveLength(2)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("requires the retained bootstrap generation to match the actual installed bootstrap bytes", async () => {
+    const f = await fixture()
+    await f.prepare()
+    const retained = runtimeEntry(f.paths.atapeHome, "0.5.2")
+    const different = `${await readFile(retained, "utf8")}\n// A different retained build.\n`
+    await writeFile(retained, different)
+    await expect(f.prepare()).rejects.toMatchObject({ reason: "prepare" })
+    expect(await readFile(retained, "utf8")).toBe(different)
+    expect(await readFile(f.entry, "utf8")).not.toBe(different)
+    expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(false)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("keeps the verified archive until cancelled npm terminates, then removes the lease", async () => {
+    const f = await fixture(), cancellation = new AbortController()
+    f.environment.MANAGED_TEST_HANG_NPM = "true"
+    const task = f.prepare("0.5.3", f.adapters, cancellation.signal)
+    const rejected = expect(task).rejects.toBeDefined()
+    let artifact: string | undefined
+    try {
+      await expect.poll(async () => readFile(f.environment.MANAGED_TEST_NPM_STARTED!, "utf8").catch(() => undefined)).toBeDefined()
+      artifact = await readFile(f.environment.MANAGED_TEST_NPM_STARTED!, "utf8")
+      expect(JSON.parse(await readFile(artifact, "utf8")).version).toBe("0.5.3")
+    } finally { cancellation.abort(); await rejected }
+    expect(JSON.parse(await readFile(f.environment.MANAGED_TEST_NPM_EXITED!, "utf8"))).toEqual({ artifactExists: true })
+    await expect(readFile(artifact!)).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await readdir(join(f.paths.atapeHome, "cache", "release-discovery", "artifacts"))).toEqual([])
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
   it("recognizes only the owning npm installation and does not inspect npm for development builds", async () => {
     const f = await fixture()
     expect(await f.run(AutomaticUpdatePlatform.use(platform => platform.supported()), f.entry, "0.5.2-dev")).toBe(false)
@@ -198,19 +328,24 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     const f = await fixture()
     await f.activate(await f.prepare("0.5.4"))
     await expect(f.prepare("0.5.3", (await f.selected()).adapters)).rejects.toMatchObject({ reason: "prepare" })
-    expect((await readRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
+    expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
     expect((await f.selected()).adapters.map(adapter => adapter.version)).toEqual(["0.5.4", "0.5.4"])
     expect(await needsUpdateRecovery(f.paths)).toBe(false)
   })
 
   it("pins the complete release and every prepared official package to one version with lifecycle scripts disabled", async () => {
     const f = await fixture(), prepared = await f.prepare()
-    expect(prepared.version).toBe("0.5.3")
+    expect(prepared.bundle.version).toBe("0.5.3")
     expect(f.adapterSpecs).toEqual(["@atape/adapter-codex@0.5.3", "@atape/adapter-claude@0.5.3"])
-    expect(f.fetches).toHaveLength(7)
-    expect(f.fetches.every(url => url.endsWith("/0.5.3") && !url.endsWith("/latest"))).toBe(true)
+    expect(f.fetches).toHaveLength(3)
+    expect(f.fetches[0]).toContain("atape-update-catalog-v1")
+    expect(f.fetches[1]).toContain("/tags/v0.5.3")
+    expect(f.fetches[2]).toBe(f.bundle("0.5.3").packages.find(item => item.name === "@atape/cli")!.tarball)
     const installation = (await f.npmCalls()).find(args => args[0] === "install")!
-    expect(installation).toContain("@atape/cli@0.5.3")
+    expect(installation).not.toContain("@atape/cli@0.5.3")
+    const archive = installation.at(-1)!
+    expect(archive).toContain("release-discovery/artifacts/.lease-")
+    await expect(readFile(archive)).rejects.toMatchObject({ code: "ENOENT" })
     expect(installation).toContain("--save-exact")
     expect(installation).toContain("--ignore-scripts")
     expect(installation).toContain("--engine-strict")
@@ -273,7 +408,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     const f = await fixture()
     await f.activate(await f.prepare("0.5.3"))
     await f.activate(await f.prepare("0.5.4", (await f.selected()).adapters))
-    expect((await readRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
+    expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
     expect((await f.selected()).adapters.map(adapter => adapter.version)).toEqual(["0.5.4", "0.5.4"])
     expect(await f.raw()).toEqual(f.config)
   }, 30_000)
@@ -413,12 +548,12 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect(await needsUpdateRecovery(f.paths)).toBe(false)
   }, 15_000)
 
-  it("rechecks the target control capability after preflight without starting a durable transaction", async () => {
+  it.each(["updateControlProtocol", "releaseCatalogProtocol"])("rechecks target capability %s after preflight without starting a durable transaction", async capability => {
     const f = await fixture({ control: true }), prepared = await f.prepare()
-    await atomicJSON(join(dirname(dirname(runtimeEntry(f.paths.atapeHome, prepared.version))), "package.json"), {
-      name: "@atape/cli", version: prepared.version, type: "module",
-      atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract }
-    })
+    const path = join(dirname(dirname(runtimeEntry(f.paths.atapeHome, prepared.bundle.version))), "package.json")
+    const manifest = JSON.parse(await readFile(path, "utf8"))
+    delete manifest.atapeRuntime[capability]
+    await atomicJSON(path, manifest)
     await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
     expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
     expect(await createUpdateControl(f.paths.atapeHome).recoveryPending()).toBe(false)

@@ -73,6 +73,7 @@ describe("Installed OpenCode Git attribution", () => {
     const paths = defaultNodeClientPaths({ ATAPE_HOME: join(root, "atape") })
     const adapter = (await Effect.runPromise(installAdapter(join(artifacts, artifact.filename)).pipe(Effect.provide(Layer.mergeAll(
       makeConfigStoreLayer(paths.configFile), makeAdapterPackagesLayer(paths.adapterDirectory),
+      makeCLISetupPlatformLayer(paths, {}),
       makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "")
     ))))).adapter
     expect(await Effect.runPromise(CLISetupPlatform.use(platform => platform.supportsGit(adapter)).pipe(

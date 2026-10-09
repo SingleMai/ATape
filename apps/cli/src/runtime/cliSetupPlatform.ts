@@ -9,9 +9,11 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path"
 import { officialSourceLocations } from "@atape/adapter-catalog/node"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { adapterPackageRoot } from "./adapterInstallation.ts"
+import { cliVersion } from "../version.ts"
 
-export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = process.env) => Layer.succeed(
+export const makeCLISetupPlatformLayer = (paths: NodeClientPaths, environment = process.env, runtimeReleaseVersion = cliVersion) => Layer.succeed(
   CLISetupPlatform, CLISetupPlatform.of({
+    runtimeReleaseVersion,
     detectSources: () => localIO(async () => {
       const detected: string[] = []
       for (const { id, kind, path } of officialSourceLocations(environment, homedir())) {

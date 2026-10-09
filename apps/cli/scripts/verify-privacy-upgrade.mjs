@@ -24,6 +24,11 @@ export async function verifyPrivacyUpgrade(donorPackage, fixtureDirectory, basel
   const realNpm = (await execute("which", ["npm"], { encoding: "utf8" })).stdout.trim()
   assert.ok(realNpm.startsWith("/"), "The real npm executable must be identified before installing the isolated command Adapter")
   const candidate = await realpath(candidateTarball)
+  const candidateVersion = (await json(join(donorPackage, "package.json"))).version
+  const candidateParts = candidateVersion.split(".").map(Number)
+  assert.ok(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(candidateVersion) && candidateParts.every(Number.isSafeInteger) &&
+    (candidateParts[0] > 0 || candidateParts[1] > 5 || candidateParts[1] === 5 && candidateParts[2] > 4),
+    "Privacy entry-refresh acceptance requires a real candidate version newer than the published 0.5.4 bootstrap")
   const nativeCalls = join(root, "forbidden-native.jsonl")
   const nativeGuard = join(root, "guard-native.mjs")
   await writeFile(nativeGuard, `import childProcess from "node:child_process";
@@ -63,6 +68,9 @@ syncBuiltinESMExports();\n`)
   const baselineEntryDigest = await digest(join(baselinePackage, "dist", "atape.js"))
   const upgraded = await verifyAutomaticUpdate(donorPackage, join(root, "automatic"), { bootstrapPackage: baselinePackage, environment })
   assert.equal(upgraded.beforeDigest, baselineEntryDigest)
+  assert.equal(upgraded.bundle.packages.find(item => item.name === "@atape/cli").integrity,
+    `sha512-${createHash("sha512").update(await readFile(candidate)).digest("base64")}`,
+    "Manual command-entry refresh must acquire the exact supplied candidate archive")
   const env = { ...upgraded.environment, ATAPE_RUNTIME_DIRECT: "0" }
   const command = (entry, args = []) => execute(process.execPath, [entry, ...args], {
     cwd: root, env, encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024
@@ -77,8 +85,6 @@ syncBuiltinESMExports();\n`)
   const beforePreferences = await json(upgraded.configFile)
   const settingsConfig = { ...beforePreferences, autoUpdateEnabled: false }
   await writeFile(upgraded.configFile, `${JSON.stringify(settingsConfig)}\n`, { mode: 0o600 })
-  await mkdir(join(upgraded.home, "cache"), { recursive: true })
-  await writeFile(join(upgraded.home, "cache", "cli-update.json"), JSON.stringify({ checkedAt: Date.now(), version: upgraded.version }))
   const terminal = fileURLToPath(new URL("verify-privacy-upgrade-terminal.py", import.meta.url))
   process.stdout.write((await execute("python3", [terminal, upgraded.bootstrap, root], { cwd: root, env, encoding: "utf8", timeout: 45_000 })).stdout)
   const entries = async () => (await readFile(upgraded.trace, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line))
@@ -106,8 +112,9 @@ syncBuiltinESMExports();\n`)
   const evidence = {
     baselineVersion: "0.5.4", baselineIntegrity, baselineTarballSha256: await digest(baselineTarball), baselineEntrySha256: baselineEntryDigest,
     candidateVersion: upgraded.version, candidateTarballSha256: await digest(candidate), candidateEntrySha256: targetDigest,
-    baselineWorkerUnmodified: true, metadataAndAutomaticAcquisition: "controlled offline Adapter; exact installed candidate",
-    realNpmEntryRefresh: "actual npm install --global --prefix isolated-prefix exact-candidate.tgz --offline --ignore-scripts",
+    baselineWorkerUnmodified: true, historicalAutomaticAcquisition: "genuine 0.5.4 legacy metadata contract and controlled exact package source",
+    manualDiscovery: "complete immutable catalog and version descriptor with SHA-512 for seven real fixture tarballs",
+    realNpmEntryRefresh: "verified downloaded candidate bytes passed to actual npm install --global --prefix isolated-prefix archive.tgz --offline --ignore-scripts",
     managedSettingsBeforeEntryRefresh: true, oldBootstrapRedactionTestExitCode: 2, redactionTestAfterEntryRefresh: true,
     selectedAdapterOverlayPreserved: true, syntheticExistingV2CheckpointBytesPreserved: true, stopIntentPreserved: true,
     candidateCollectorStarted: false, providerCaptureTested: false, policyHistoryReconciliation: "existing shared Host caller contracts; not simulated by this upgrade fixture",

@@ -1,5 +1,6 @@
-import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
+import { AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
+import { releasePackageNames, type ReleaseBundle } from "@atape/domain"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -11,7 +12,12 @@ import { ExperienceView } from "./view.ts"
 import { afterEach, describe, expect, it } from "vitest"
 import { defaultNodeClientPaths, makeNodeClientLayer } from "../runtime/clientLayers.ts"
 import { ExperiencePresenter, type Screen } from "./presenter.ts"
+import { makeCLISetupPlatformLayer } from "../runtime/cliSetupPlatform.ts"
 
+const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-bundle.v1", version,
+  captureStateContract: "atape.client.v3-capture.v2", updateControlProtocol: "atape.update-control.v1",
+  packages: releasePackageNames.map(name => ({ name, integrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
+    tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) })
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
 const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false, setupReview = false, manualStartupUpdates = update !== undefined, privacyEnvironment: NodeJS.ProcessEnv = {}) => {
@@ -42,7 +48,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
       inspect: () => Effect.sync(() => ({ state: loginRegistered ? "registered" as const : "missing" as const })),
       reconcile: enabled => Effect.sync(() => { loginRegistrations.push(enabled); loginRegistered = enabled; return { state: enabled ? "registered" as const : "missing" as const } })
     })),
-    Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: () => toolUpdate ? Effect.succeed("0.4.4") : Effect.fail(new ToolUpdateError({ message: "offline" })) })),
+    makeCLISetupPlatformLayer(defaultNodeClientPaths(environment), environment, toolUpdate ? "0.4.4" : update ? "0.4.1" : "development"),
     ...(setupReview ? [Layer.succeed(ProjectSetupGateway, ProjectSetupGateway.of({
       loadWorkspace: () => Effect.succeed({ user: { id: "user-1", displayName: "Mai" },
         teams: [{ id: "team-1", slug: "team", displayName: "Team", role: "owner" }], projects: [] }),
@@ -62,10 +68,15 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     acquireOwnership: () => Effect.void,
     latest: () => Effect.suspend(() => {
       updateChecks++
-      return Effect.tryPromise({ try: () => update.then(version => { if (version === "offline") throw new Error("offline"); return version }), catch: () => new CLIUpgradeError({ reason: "check", message: "offline" }) })
+      return Effect.tryPromise({ try: () => update.then(version => { if (version === "offline") throw new Error("offline"); return bundle(version) }), catch: () => new CLIUpgradeError({ reason: "check", message: "offline" }) })
     }),
+    installedVersion: () => Effect.succeed("0.4.1"),
     install: () => Effect.sync(() => { installs++ }).pipe(Effect.andThen(failInstall
       ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "Installation failed" })) : Effect.void))
+  })), Layer.succeed(AutomaticUpdatePlatform, AutomaticUpdatePlatform.of({
+    recoveryPending: () => Effect.succeed(false), supported: () => Effect.succeed(true), schedule: () => Effect.succeed({ nextCheckAt: 0, failures: 0 }),
+    target: () => Effect.die("Manual update already selected a bundle"), prepare: selected => Effect.succeed({ bundle: selected, key: "prepared" }),
+    activate: () => Effect.void, record: () => Effect.void, launch: () => Effect.void
   })), ...(failFirstResume ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       refresh: () => Effect.succeed(false),
     inspect: () => Effect.sync(() => syncRunning ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
@@ -487,13 +498,13 @@ describe("interactive navigation through the presenter Interface", () => {
     expect(home.actions?.find(action => action.value === "tools")?.label).toBe("Tools and updates")
     client.presenter.submit("tools")
     const tools = await client.wait(screen => screen.title === "Tools and updates")
-    expect(tools.details.join("\n")).toContain("Codex sync: 0.3.1 → 0.4.4 (latest) · enabled · file/URL install")
+    expect(tools.details.join("\n")).toContain("Codex sync: 0.3.1 · for ATape 0.4.4 · enabled · file/URL install")
     expect(tools.options?.[0]?.label).toBe("Use published Codex integration 0.4.4")
     const ui = terminal(client.presenter, 24)
     await expect.poll(() => ui.frame()).toContain("Use published Codex integration 0.4.4")
     await ui.send("\r")
     const updated = await client.wait(screen => Boolean(screen.notice?.includes("integration updated")))
-    expect(updated.details.join("\n")).toContain("Codex sync: 0.4.4 · latest 0.4.4 · enabled")
+    expect(updated.details.join("\n")).toContain("Codex sync: 0.4.4 · for ATape 0.4.4 · enabled")
     expect(client.toolInstalls).toEqual(["@atape/adapter-codex@0.4.4"])
     expect((await client.runtime.runPromise(inspectClient())).enabledAdapterIds).toEqual(["codex"])
     client.presenter.back()
@@ -508,7 +519,7 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.layout === "projects")
     client.presenter.submit("tools")
     const tools = await client.wait(screen => screen.title === "Tools and updates")
-    expect(tools.details.join("\n")).toContain("latest unavailable")
+    expect(tools.details.join("\n")).toContain("Codex sync: 0.3.1")
     expect(tools.options?.[0]?.label).toBe("Update ATape to 0.4.4")
     client.presenter.submit("update:cli")
     await expect.poll(client.restarted).toBe(true)
@@ -567,7 +578,7 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.title === "Update available")
     client.presenter.submit("upgrade")
     const failed = await client.wait(screen => screen.title === "Update could not finish")
-    expect(failed.details).toContain("Installation failed")
+    expect(failed.details.join("\n")).toContain("Installation failed")
     expect(failed.options?.map(option => option.value)).toEqual(["upgrade", "skip"])
     expect(client.restarted()).toBe(false)
     client.presenter.submit("skip")

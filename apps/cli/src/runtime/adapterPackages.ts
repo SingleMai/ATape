@@ -6,25 +6,28 @@ import { Effect, Layer, Schema, type Scope } from "effect"
 import { adapterPackageRoot, prepareAdapterSlot, trackAdapterSlot, pruneAdapterSlots } from "./adapterInstallation.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { downloadAdapterPackage, inspectLocalAdapterPackage, type AdapterPackageFetch } from "./adapterPackageSource.ts"
+import type { ReleaseDiscovery } from "./releaseDiscovery.ts"
 
 export const makeAdapterPackagesLayer = (
   adapterDirectory: string,
   fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch,
-  protectedSlots: () => Promise<ReadonlyArray<string>> = async () => []
+  protectedSlots: () => Promise<ReadonlyArray<string>> = async () => [],
+  releaseDiscovery?: ReleaseDiscovery
 ) => Layer.succeed(
   AdapterPackages,
   AdapterPackages.of({
     prune: input => pruneAdapterSlots(adapterDirectory, input, protectedSlots),
-    install: (packageSpec) => installAdapterPackage(adapterDirectory, packageSpec, fetchAdapterPackage)
+    install: (packageSpec) => installAdapterPackage(adapterDirectory, packageSpec, fetchAdapterPackage, releaseDiscovery)
   })
 )
 
 const installAdapterPackage = (
   adapterDirectory: string,
   packageSpec: string,
-  fetchAdapterPackage: AdapterPackageFetch
+  fetchAdapterPackage: AdapterPackageFetch,
+  releaseDiscovery: ReleaseDiscovery | undefined
 ): Effect.Effect<InstalledAdapterPackage, AdapterPackageError, Scope.Scope> => Effect.acquireUseRelease(
-  acquirePackageSource(adapterDirectory, packageSpec, fetchAdapterPackage),
+  acquirePackageSource(adapterDirectory, packageSpec, fetchAdapterPackage, releaseDiscovery),
   (source) => installAcquiredAdapterPackage(adapterDirectory, packageSpec, source),
   (source) => Effect.promise(() => source.release().catch(() => undefined))
 )
@@ -42,6 +45,11 @@ const installAcquiredAdapterPackage = (
     return yield* new AdapterPackageError({
       reason: "manifest", packageSpec, message: "Could not determine the Adapter package name."
     })
+  }
+  if (preflight && (preflight.name !== packageName || source.expectedVersion !== undefined && preflight.version !== source.expectedVersion ||
+    source.expectedAdapterId !== undefined && preflight.manifest.adapterId !== source.expectedAdapterId)) {
+    return yield* new AdapterPackageError({ reason: "manifest", packageSpec,
+      message: "The verified archive does not match the requested official Adapter identity and version." })
   }
   const slot = yield* prepareAdapterSlot(adapterDirectory, packageSpec)
   yield* Effect.callback<void, AdapterPackageError>(resume => {
@@ -70,9 +78,10 @@ const installAcquiredAdapterPackage = (
     })
   })
   const decoded = yield* decodePackageManifest(packageSpec, packageJSON)
-  if (decoded.name !== packageName) {
+  if (decoded.name !== packageName || source.expectedVersion !== undefined && decoded.version !== source.expectedVersion ||
+    source.expectedAdapterId !== undefined && decoded.manifest.adapterId !== source.expectedAdapterId) {
     return yield* new AdapterPackageError({
-      reason: "manifest", packageSpec, message: `Installed package name ${decoded.name} does not match ${packageName}.`
+      reason: "manifest", packageSpec, message: `Installed package identity or version does not match ${packageName}.`
     })
   }
   const entryPath = resolve(packageRoot, decoded.manifest.entry)
@@ -139,6 +148,8 @@ type PackageSource = {
   readonly packageJSON?: unknown
   readonly installSpec: string
   readonly upgradeSpec: string
+  readonly expectedVersion?: string
+  readonly expectedAdapterId?: string
   readonly release: () => Promise<void>
 }
 
@@ -147,14 +158,38 @@ const packageNamePattern = /^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-
 const acquirePackageSource = (
   adapterDirectory: string,
   packageSpec: string,
-  fetchAdapterPackage: AdapterPackageFetch
+  fetchAdapterPackage: AdapterPackageFetch,
+  releaseDiscovery: ReleaseDiscovery | undefined
 ): Effect.Effect<PackageSource, AdapterPackageError> => {
-  const registry = packageSpec.match(/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)(?:@[^\s/]+)?$/)
+  const registry = packageSpec.match(/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)(?:@([^\s/]+))?$/)
   if (registry?.[1]) {
+    const packageName = registry[1], version = registry[2]
+    const official = officialSources.find(item => item.packageName === packageName)
+    if (official) {
+      if (!releaseDiscovery || !version || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) ||
+        version.length >= 40 || !version.split(".").every(part => Number.isSafeInteger(Number(part)))) {
+        return Effect.fail(new AdapterPackageError({ reason: "invalid_spec", packageSpec,
+          message: "Official registry Adapters require release discovery and an exact stable release version." }))
+      }
+      return Effect.tryPromise({
+        try: async signal => {
+          const bundle = await releaseDiscovery.exact({ version, signal })
+          if (bundle.version !== version) throw new Error("Discovered Adapter version mismatch")
+          const archive = await releaseDiscovery.acquireArtifact(bundle, packageName, signal)
+          try {
+            const inspected = await inspectLocalAdapterPackage(archive.path)
+            return { packageName, packageJSON: inspected.packageJSON, installSpec: `file:${archive.path}`,
+              upgradeSpec: packageName, expectedVersion: version, expectedAdapterId: official.id, release: archive.release }
+          } catch (cause) { await archive.release().catch(() => {}); throw cause }
+        },
+        catch: cause => new AdapterPackageError({ reason: "invalid_spec", packageSpec,
+          message: errorMessage("Could not acquire the immutable official Adapter release", cause) })
+      })
+    }
     return Effect.succeed({
-      packageName: registry[1],
+      packageName,
       installSpec: packageSpec,
-      upgradeSpec: registry[1],
+      upgradeSpec: packageName,
       release: noRelease
     })
   }

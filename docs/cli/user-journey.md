@@ -79,8 +79,9 @@ uses the default; a saved choice survives later launches.
 Opening ATape or the already-running Collector can trigger a due independent
 update worker. Successful checks schedule the next attempt after 24 hours plus
 0–6 hours of jitter; failures start with a one-hour exponential backoff capped at
-24 hours before jitter. The completed stable GitHub Release selects one version for the
-CLI/Collector and installed official registry Adapters. Preparation keeps the
+24 hours before jitter. The persistent compatible catalog selects one complete
+version bundle for the CLI/Collector and installed official registry Adapters;
+versioned Release descriptors bind exact package SHA-512 identities. Preparation keeps the
 old version running; activation pauses new collection and uses a bounded
 cancellation/termination handoff rather than waiting for history to finish.
 It preserves schedule, checkpoints and account-bound journals and resumes only
@@ -101,22 +102,22 @@ terminal and reopen the installed CLI with the original arguments, directory and
 ATAPE_HOME. Failures offer Retry and Skip. Help and version do not show this choice. Non-interactive application launches fail
 with plain guidance.
 
-Updating ATape from Tools and updates checks fresh metadata and updates the active npm global CLI
-installation. After installation is verified, it resumes the current home's
-previously running sync with its existing settings. Stopped sync stays stopped;
-Projects, sign-in and checkpoints remain intact. Equal/newer installed versions
-are a no-op. Other package managers and development builds receive guidance
-instead of an inferred installation target. This explicit CLI operation retains
-the original in-place npm update and restart path; Adapter upgrades remain
-separate. Automatic updates use the unified version-directory transaction.
-The internal manual CLI upgrade first preserves the currently effective Adapter
-installation records in configuration, so replacing the bootstrap does not reset
-those selections even when npm fails.
-External npm replacement that changes the bootstrap executable invalidates its
-managed selection. The new bootstrap and original Adapter source records take
-precedence without that preservation step; Tools shows the resulting versions,
-and a later due automatic check
-can align them again. Identical executable bytes do not force a new selection.
+Updating ATape from Tools and updates checks the complete compatible bundle,
+prepares its verified CLI and official Adapter archives, and activates their
+version directories together. It then refreshes the active global npm command
+entry from that same CLI archive. Previously running sync resumes with its
+settings; stopped sync stays stopped. Projects, sign-in and checkpoints remain
+intact. The runtime and command entry are inspected separately: an entry-refresh
+failure after successful activation offers retry even when the runtime already
+equals the target. A complete equal/newer installation is a no-op. Other package
+managers and development builds receive guidance instead of an inferred target.
+
+Before replacing the npm bootstrap, manual upgrading preserves the effective
+Adapter records in configuration. Independent control binds the verified new
+bootstrap identity and keeps the capture contract and reader floor. External
+replacement also requires owned recovery before delegation; legacy-only
+selections retain their historical replacement behavior. See the setup guide's
+[replacement and recovery rules](setup-and-adapters.md#explicit-maintenance-and-external-replacement).
 
 `atape` opens the Project list after initial setup. A configured installation
 with no Projects shows an empty list with `Add project`, rather than restarting
@@ -273,15 +274,18 @@ login startup acceptance is recorded in the setup guide.
 
 ## Updating without memorizing package commands
 
-Tools and updates checks the CLI and installed official integrations
-in parallel. Each package has its own twelve-hour successful-result cache.
-Check again bypasses those caches. Offline checks retain current versions and
-show latest unavailable, without blocking tool configuration or navigation.
+Tools and updates checks the complete CLI bundle through shared twelve-hour
+catalog caching. Check again bypasses that cache. Official integrations display
+the exact version matching the running CLI; standalone maintenance cannot move
+them to another CLI release. Initialization, tool additions and Git repair use
+that same exact version. Offline catalog checks retain installed versions without
+blocking navigation. A command entry behind the selected runtime retains its
+explicit refresh action.
 Uninstalled integrations are set up through Choose tools to sync.
 
 An official integration installed from a file or URL is marked explicitly.
 Use published <tool> integration <version> replaces that source with the exact
-reviewed npm version and records the registry source for subsequent updates.
+running CLI version and records the registry source for subsequent updates.
 A newer installed release is never downgraded. Custom publisher packages use Integration maintenance; matching an official adapter ID alone does not permit replacement.
 
 Package maintenance preserves global selection, Projects and checkpoints and
@@ -292,14 +296,15 @@ verified installation/restart and sync recovery workflow, including after the
 startup update prompt was skipped. Stale update selections require another check.
 
 The ToolUpdates Module hides release comparison and source/installation checks.
-AdapterReleases is the npm metadata Seam; its Node Adapter shares bounded fetch
-and cache behavior with CLI upgrades. A unified page was chosen over per-tool
+The Node releaseDiscovery Module owns the remote metadata Seam, monotonic catalog
+cache, exact descriptors and bounded SHA-512 archive verification shared by CLI
+and official Adapter installation. A unified page was chosen over per-tool
 settings pages to keep version maintenance in one global location. Integration maintenance provides original-source refresh for custom packages,
 trusted package/path installation and preview/confirmed cleanup.
 
 Explicit package maintenance remains available alongside the managed automatic
 path. npm preparation itself is not an atomic rollback transaction; managed
-automatic updates prepare separate version directories before selection and keep
+automatic and configured manual upgrades prepare separate version directories before selection and keep
 the previous compatible generation for recovery. Cancellation waits for owned
 subprocess termination before releasing maintenance ownership. Broader package
 manager adoption, continuous crash supervision, release-directory garbage

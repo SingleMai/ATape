@@ -113,7 +113,6 @@
   "cli.presenter.checkingUpdates": "正在检查更新",
   "cli.presenter.continueStopped": "在同步停止的情况下继续",
   "cli.presenter.findingProject": "正在查找你的项目",
-  "cli.presenter.installLatest": "安装最新发布的 {tool} 集成并继续",
   "cli.presenter.integrationUpdated": "{label} 集成已更新。正在运行的同步将在下次尝试时使用它。",
   "cli.presenter.opening": "正在打开 ATape",
   "cli.presenter.readingProjects": "正在读取本地项目",
@@ -305,7 +304,6 @@
   "cli.tools.applySummary": "工具：{tools} · {projects} 个已连接项目",
   "cli.tools.applyTiming": "更改将在后续周期生效；正在进行的上传可能仍会完成。",
   "cli.tools.applyTitle": "将工具应用到所有项目？",
-  "cli.tools.cacheNotice": "最新版本会缓存 12 小时。",
   "cli.tools.checkAgain": "再次检查",
   "cli.tools.checkingVersions": "正在检查工具版本",
   "cli.tools.chooseTools": "选择要同步的工具",
@@ -375,5 +373,10 @@
   "cli.welcome.step5": "在 Web 应用中阅读对话并管理你的团队。",
   "cli.welcome.subtitle": "先选择一次工具，然后连接你想要同步的项目。",
   "cli.welcome.tagline": "你的对话，汇聚一处。",
-  "cli.welcome.title": "欢迎使用 ATape"
+  "cli.welcome.title": "欢迎使用 ATape",
+  "cli.presenter.installMatching": "安装与当前 ATape 版本匹配的 {tool} 集成并继续",
+  "cli.tools.commandEntryBehind": " · 命令入口 {current} → {version}",
+  "cli.tools.matchingVersion": " · 匹配 ATape {version}{older}",
+  "cli.tools.bundleNotice": "CLI 版本清单缓存 12 小时。官方集成与当前运行的 ATape 版本保持一致。",
+  "cli.tools.refreshCommandEntry": "刷新 ATape 命令入口到 {version}"
 }
