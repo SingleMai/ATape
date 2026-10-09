@@ -125,7 +125,7 @@ else if (args[0] === "install") {
       require("node:child_process").execFileSync(process.env.PRIVACY_FIXTURE_REAL_NPM,
         ["install", "--global", "--prefix", prefix, process.env.PRIVACY_FIXTURE_CANDIDATE_TARBALL, "--offline", "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund"],
         { env: { ...process.env, PATH: process.env.PRIVACY_FIXTURE_ORIGINAL_PATH }, stdio: "pipe", timeout: 120000 });
-    } else fs.cpSync(process.env.UPDATE_FIXTURE_DONOR, path.join(process.env.UPDATE_FIXTURE_GLOBAL_ROOT, "@atape/cli"), { recursive: true });
+    } else throw new Error("Global installation requires the isolated historical manual-refresh fixture");
   } else if (args.includes("@atape/adapter-codex@" + process.env.UPDATE_FIXTURE_VERSION)) {
     fs.cpSync(process.env.UPDATE_FIXTURE_ADAPTER, path.join(prefix, "node_modules/@atape/adapter-codex"), { recursive: true });
   } else if (args.includes("@atape/cli@" + process.env.UPDATE_FIXTURE_VERSION)) {
@@ -228,6 +228,7 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
     assert.equal(requests[officialPackages.length + 1], requests[0])
     assert.ok(requests.filter(address => address !== requests[0]).every(address => address.endsWith(`/${version}`)))
     const npmCalls = (await readFile(calls, "utf8")).trim().split("\n").map(line => JSON.parse(line))
+    assert.ok(npmCalls.every(args => args[0] !== "install" || !args.includes("--global")), "Automatic update must not replace the global npm bootstrap")
     assert.ok(npmCalls.some(args => args.includes(`@atape/adapter-codex@${version}`)))
     await writeFile(trace, "")
     const delegated = await command(bootstrap, ["--version"], { ...environment, ATAPE_RUNTIME_DIRECT: "0" })
