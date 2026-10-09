@@ -267,9 +267,22 @@ it("rejects symlinked child directories before reading their contents", async ()
   expect((await read(request(first.nextCursor))).sourceFailures).toEqual([{ source: childPath, reason: "unsupported" }])
 })
 
-it("requires a completed foreground parent receipt and never guesses a relation from a path", async () => {
+it("keeps an asynchronous receipt and subsequent root reply without guessing a child relation", async () => {
+  // Generated relationship mutation of the retained foreground fixture.
   await rewrite(rootFile, rootText, row => row.toolUseResult?.agentId ? { ...row, toolUseResult: { ...row.toolUseResult, status: "async_launched", isAsync: true } } : row)
-  await expect(read()).rejects.toThrow("completed foreground")
+  const done = await drain(), observations = done.pages.flatMap(page => page.observations)
+  const events = observations.flatMap(observation => observation.events)
+  expect(events).toHaveLength(4)
+  expect(events.every(event => event.sourceThreadId === "root" && event.childSourceThreadId === undefined)).toBe(true)
+  expect(events.at(-1)?.update).toMatchObject({ content: { text: "ATAPE_ROOT_FINAL: delegated read reviewed." } })
+  expect(observations.every(observation => observation.threads.length === 1)).toBe(true)
+  expect(observations.flatMap(observation => observation.usage ?? [])).toHaveLength(2)
+  expect(observations.flatMap(observation => observation.rawSegments).map(raw => raw.content).join(""))
+    .toBe(await readFile(rootFile, "utf8"))
+  const idle = await read(request(done.cursor))
+  expect(idle).toMatchObject({ observations: [], nextCursor: done.cursor,
+    sourceFailures: [{ source: rootFile, reason: "unsupported" }] })
+  expect(await read(request(done.cursor))).toEqual(idle)
 })
 
 it("continues child-only appends with the same Thread and Raw object", async () => {
@@ -284,9 +297,16 @@ it("continues child-only appends with the same Thread and Raw object", async () 
   expect(child.rawSegments[0]?.sourceOffset).toBe(Buffer.byteLength(childText))
 })
 
-it("rejects an escaped family path before publishing a child relation", async () => {
+it("keeps the current Thread when its child locator cannot form a safe family path", async () => {
+  // Generated Session identity mutation, not a claim of native acquisition.
   await rewrite(rootFile, rootText, row => ({ ...row, ...(row.sessionId ? { sessionId: "../outside" } : {}) }))
-  await expect(read()).rejects.toThrow("safe source path component")
+  const done = await drain(), observations = done.pages.flatMap(page => page.observations)
+  expect(observations.flatMap(observation => observation.events)).toHaveLength(4)
+  expect(observations.every(observation => observation.threads.length === 1)).toBe(true)
+  expect(observations.flatMap(observation => observation.events).every(event => event.childSourceThreadId === undefined)).toBe(true)
+  expect(observations.every(observation => observation.session.sourceSessionId === "../outside")).toBe(true)
+  expect((await read(request(done.cursor))).sourceFailures)
+    .toEqual([{ source: rootFile, reason: "unsupported" }])
 })
 
 it("rejects conflicting agent identities for one parent tool call as a source error", async () => {
@@ -383,11 +403,27 @@ it("paginates near-limit root and child text with complete headers for 100 Threa
   expect((await read(request(cursor))).observations).toEqual([])
 }, 60_000)
 
-it("reports nested delegation explicitly while preserving the parent checkpoint", async () => {
+it("keeps nested Agent records and replies in their admitted current child Thread", async () => {
+  // Generated Agent mutation of the retained child's ordinary Read layout.
   await rewrite(childPath, childText, row => row.type === "assistant" && row.message?.content?.some((block: Record<string, unknown>) => block.type === "tool_use")
     ? { ...row, message: { ...row.message, content: row.message.content.map((block: Record<string, unknown>) => block.type === "tool_use" ? { ...block, name: "Agent" } : block) } }
-    : row)
-  const first = await read(); acknowledge(first)
-  expect(await read(request(first.nextCursor))).toMatchObject({ observations: [], nextCursor: first.nextCursor,
+    : row.type === "user" && Array.isArray(row.message?.content) && row.message.content.some((block: Record<string, unknown>) => block.type === "tool_result")
+      ? { ...row, toolUseResult: { status: "completed", agentId: "generated-grandchild" } } : row)
+  // An invalid existing proposed source must not be read without a proven link.
+  await writeFile(join(directory, sessionId, "subagents", "agent-generated-grandchild.jsonl"), "not-json\n")
+  const done = await drain(), observations = done.pages.flatMap(page => page.observations)
+  const events = observations.flatMap(observation => observation.events)
+  expect(events).toHaveLength(8)
+  expect(events.filter(event => event.sourceThreadId === threadId)).toHaveLength(4)
+  expect(events.filter(event => event.childSourceThreadId !== undefined)).toHaveLength(1)
+  expect(events.find(event => event.sourceThreadId === threadId && event.update.sessionUpdate === "tool_call")?.update)
+    .toMatchObject({ title: "Agent" })
+  expect(events.at(-1)?.update).toMatchObject({ content: { text: "ATAPE_CHILD_FINAL: cobalt heron 482 read once." } })
+  expect(observations.flatMap(observation => observation.usage ?? [])).toHaveLength(4)
+  expect(new Set(observations.flatMap(observation => observation.rawSegments).map(raw => raw.sourceName)))
+    .toEqual(new Set([`${sessionId}.jsonl`, `agent-${agentId}.jsonl`]))
+  const idle = await read(request(done.cursor))
+  expect(idle).toMatchObject({ observations: [], nextCursor: done.cursor,
     sourceFailures: [{ source: childPath, reason: "unsupported" }] })
+  expect(await read(request(done.cursor))).toEqual(idle)
 })

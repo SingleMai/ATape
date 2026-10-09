@@ -64,14 +64,14 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	tarball, cliTarball := pack("adapters/claude"), pack("apps/cli")
 	type snapshot struct {
-		InstallationID   string                    `json:"installationId"`
-		Cursor           string                    `json:"cursor"`
-		RawObjects       json.RawMessage           `json:"rawObjects"`
-		Observations     int                       `json:"observations"`
-		CanonicalEvents  int                       `json:"canonicalEvents"`
-		CanonicalBatches int                       `json:"canonicalBatches"`
-		RawChunks        int                       `json:"rawChunks"`
-		SourceFailures   []struct{ Reason string } `json:"sourceFailures"`
+		InstallationID   string                            `json:"installationId"`
+		Cursor           string                            `json:"cursor"`
+		RawObjects       json.RawMessage                   `json:"rawObjects"`
+		Observations     int                               `json:"observations"`
+		CanonicalEvents  int                               `json:"canonicalEvents"`
+		CanonicalBatches int                               `json:"canonicalBatches"`
+		RawChunks        int                               `json:"rawChunks"`
+		SourceFailures   []struct{ Source, Reason string } `json:"sourceFailures"`
 		Progress         *struct {
 			PendingCanonicalSessions int   `json:"pendingCanonicalSessions"`
 			PendingRawBytes          int64 `json:"pendingRawBytes"`
@@ -1457,15 +1457,201 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	if repaired.Cursor != on.Cursor || len(repaired.SourceFailures) != 0 {
 		t.Fatal("Claude exact source restoration reset capture")
 	}
+	// Generated mutations of the retained family test current Thread continuity,
+	// without claiming native background/nested lifecycle acquisition. The proposed
+	// child files exist and are otherwise plausible; only the current streams may
+	// enter Reader, usage, Search or Raw.
+	familyFiles := map[string]string{familyID + ".jsonl": filepath.Join(sourceDirectory, familyID+".jsonl"),
+		"agent-" + agentID + ".jsonl": filepath.Join(sourceDirectory, familyID, "subagents", "agent-"+agentID+".jsonl")}
+	familyBeforeArchive, familyBeforeRaw := readRaw(familySession)
+	assertStablePrefix := func(phase string, previous, current []conversation.Event) {
+		t.Helper()
+		if len(current) < len(previous) {
+			t.Fatalf("Claude %s removed acknowledged current Thread Events", phase)
+		}
+		for n, event := range previous {
+			candidate := current[n]
+			// A ChildThreadRef includes the live child Event count. Its identity is
+			// checked separately below; the current stream's Event data stays exact.
+			event.ChildThread, candidate.ChildThread = nil, nil
+			left, _ := json.Marshal(event)
+			right, _ := json.Marshal(candidate)
+			if !bytes.Equal(left, right) {
+				t.Fatalf("Claude %s replayed or re-keyed current Thread Event %d", phase, n)
+			}
+		}
+	}
+	assertUnlinkedView := func(phase string, rootEvents, childEvents, usageCount int, input, output int64) (conversation.Conversation, conversation.Conversation) {
+		t.Helper()
+		currentRoot, currentChild := read(familySession, "root", rootEvents), read(familySession, childID, childEvents)
+		assertStablePrefix(phase, root.Events, currentRoot.Events)
+		assertStablePrefix(phase, child.Events, currentChild.Events)
+		links := 0
+		for _, event := range currentRoot.Events {
+			if event.ChildThread != nil {
+				links++
+				if event.ChildThread.ID != childID {
+					t.Fatal("Claude unproved root receipt acquired child navigation")
+				}
+			}
+		}
+		if links != 1 {
+			t.Fatal("Claude current root lost or invented child navigation")
+		}
+		for _, event := range currentChild.Events {
+			if event.ChildThread != nil {
+				t.Fatal("Claude unproved nested receipt acquired child navigation")
+			}
+		}
+		stored, exists, err := store.Conversation(t.Context(), authentication.Principal{UserID: grant.User.ID, Method: authentication.WebAuthentication}, familySession, "root")
+		if err != nil || !exists || len(stored.Threads) != 2 {
+			t.Fatalf("Claude unproved delegation created a Thread: exists=%t threads=%d error=%v", exists, len(stored.Threads), err)
+		}
+		usage(familySession, usageCount, input, output)
+		return currentRoot, currentChild
+	}
+	assertUnlinkedDiagnostics := func(phase string, capture snapshot, expected int) {
+		t.Helper()
+		pending := 0
+		if phase == "unlinked-nested-partial" {
+			pending = 1 // The incomplete line is known backlog, not an admitted record.
+		}
+		if capture.InstallationID != initial.InstallationID || len(capture.SourceFailures) != expected || capture.Progress == nil || capture.Progress.PendingCanonicalSessions != pending {
+			t.Fatalf("Claude %s lost nonblocking diagnostics or current progress: %+v", phase, capture)
+		}
+		seen := map[string]bool{}
+		for _, failure := range capture.SourceFailures {
+			if failure.Reason != "unsupported" || failure.Source == "" || seen[failure.Source] {
+				t.Fatalf("Claude %s lost bounded source/reason diagnostic identity: %+v", phase, capture.SourceFailures)
+			}
+			seen[failure.Source] = true
+		}
+	}
+	setRaw(false)
+	unlinkedLatest := repaired
+	for n, slot := range []string{"async", "running", "error"} {
+		phase := "unlinked-root-" + slot
+		capture := run(phase)
+		assertUnlinkedDiagnostics(phase, capture, 1)
+		if capture.CanonicalEvents != 3 || capture.RawChunks != 0 || !bytes.Equal(capture.RawObjects, repaired.RawObjects) {
+			t.Fatalf("Claude %s blocked ordinary records or advanced disabled Raw: %+v", phase, capture)
+		}
+		currentRoot, _ := assertUnlinkedView(phase, 7+3*n, 4, 6+2*n, int64(102+34*n), int64(54+18*n))
+		call, result, reply := currentRoot.Events[4+3*n], currentRoot.Events[5+3*n], currentRoot.Events[6+3*n]
+		callID := "call_generated_unlinked_" + slot
+		if call.Kind != "tool_call" || call.Tool == nil || call.Tool.ToolCallID != callID || result.Kind != "tool_result" || result.Tool == nil ||
+			result.Tool.ToolCallID != callID || result.Tool.Status == nil || (slot == "error" && *result.Tool.Status != "failed") ||
+			(slot != "error" && *result.Tool.Status != "completed") || !strings.Contains(reply.Text, "ATAPE_CURRENT_THREAD_"+slot+":") {
+			t.Fatalf("Claude %s changed ordinary tool/result/reply projection", phase)
+		}
+		hits := search("ATAPE_CURRENT_THREAD_" + slot + ":")
+		if len(hits.Results) != 1 || hits.Results[0].SessionID != familySession || hits.Results[0].ThreadID != "root" || hits.Results[0].EventID != reply.ID {
+			t.Fatal("Claude unlinked root continuation lost its exact Search anchor")
+		}
+		unlinkedLatest = capture
+	}
+	nestedCall := run("unlinked-nested-call")
+	assertUnlinkedDiagnostics("unlinked-nested-call", nestedCall, 1)
+	if nestedCall.CanonicalEvents != 1 || nestedCall.RawChunks != 0 || !bytes.Equal(nestedCall.RawObjects, repaired.RawObjects) {
+		t.Fatal("Claude pending nested call blocked the admitted child or invented receipt evidence")
+	}
+	_, nestedHead := assertUnlinkedView("unlinked-nested-call", 13, 5, 11, 187, 99)
+	if nestedHead.Events[4].Kind != "tool_call" || nestedHead.Events[4].Tool == nil || nestedHead.Events[4].Tool.ToolCallID != "call_generated_unlinked_nested" {
+		t.Fatal("Claude nested invocation did not remain a tool in its admitted child")
+	}
+	nestedPartial := run("unlinked-nested-partial")
+	assertUnlinkedDiagnostics("unlinked-nested-partial", nestedPartial, 1)
+	if nestedPartial.Cursor != nestedCall.Cursor || nestedPartial.Observations != 0 || nestedPartial.CanonicalBatches != 0 || nestedPartial.RawChunks != 0 || !bytes.Equal(nestedPartial.RawObjects, nestedCall.RawObjects) {
+		t.Fatal("Claude partial nested receipt advanced accepted source progress")
+	}
+	assertUnlinkedView("unlinked-nested-partial", 13, 5, 11, 187, 99)
+	nestedComplete := run("unlinked-nested-complete")
+	assertUnlinkedDiagnostics("unlinked-nested-complete", nestedComplete, 2)
+	if nestedComplete.CanonicalEvents != 2 || nestedComplete.RawChunks != 0 || !bytes.Equal(nestedComplete.RawObjects, repaired.RawObjects) {
+		t.Fatal("Claude nested relationship failure blocked current child continuation")
+	}
+	unlinkedRoot, unlinkedChild := assertUnlinkedView("unlinked-nested-complete", 13, 7, 12, 204, 108)
+	assertStablePrefix("unlinked-nested-complete", nestedHead.Events, unlinkedChild.Events)
+	nestedResult, nestedReply := unlinkedChild.Events[5], unlinkedChild.Events[6]
+	if nestedResult.Kind != "tool_result" || nestedResult.Tool == nil || nestedResult.Tool.ToolCallID != "call_generated_unlinked_nested" ||
+		!strings.Contains(nestedReply.Text, "ATAPE_CURRENT_THREAD_nested:") {
+		t.Fatal("Claude nested receipt/following reply did not remain in its admitted child")
+	}
+	nestedHits := search("ATAPE_CURRENT_THREAD_nested:")
+	if len(nestedHits.Results) != 1 || nestedHits.Results[0].SessionID != familySession || nestedHits.Results[0].ThreadID != childID || nestedHits.Results[0].EventID != nestedReply.ID {
+		t.Fatal("Claude nested current Thread reply lost its exact Search anchor")
+	}
+	for _, slot := range []string{"async", "running", "error", "nested"} {
+		for _, term := range []string{"ATAPE_UNLINKED_TOOL_" + slot, "ATAPE_UNPROVED_HISTORY_" + slot} {
+			if len(search(term).Results) != 0 {
+				t.Fatalf("Claude unproved history or tool details reached Search: %s", term)
+			}
+		}
+	}
+	// A fresh root page returns before the child rotation. Already captured
+	// child's diagnostic must remain visible even on this ordinary root append.
+	rootResume := run("unlinked-root-resume")
+	assertUnlinkedDiagnostics("unlinked-root-resume", rootResume, 2)
+	if rootResume.CanonicalEvents != 1 || rootResume.RawChunks != 0 || !bytes.Equal(rootResume.RawObjects, repaired.RawObjects) {
+		t.Fatal("Claude ordinary root append blocked or advanced disabled Raw after nested delegation")
+	}
+	resumedRoot, resumedChild := assertUnlinkedView("unlinked-root-resume", 14, 7, 13, 221, 117)
+	assertStablePrefix("unlinked-root-resume", unlinkedRoot.Events, resumedRoot.Events)
+	assertStablePrefix("unlinked-root-resume", unlinkedChild.Events, resumedChild.Events)
+	resumeHits := search("ATAPE_CURRENT_THREAD_root_resume:")
+	if len(resumeHits.Results) != 1 || resumeHits.Results[0].SessionID != familySession || resumeHits.Results[0].ThreadID != "root" || resumeHits.Results[0].EventID != resumedRoot.Events[13].ID {
+		t.Fatal("Claude ordinary root append after nested delegation lost its exact Search anchor")
+	}
+	unlinkedRoot = resumedRoot
+	assertUnlinkedIdle := func(phase string, previous snapshot) snapshot {
+		t.Helper()
+		idle := run(phase)
+		assertUnlinkedDiagnostics(phase, idle, 2)
+		oldFailures, _ := json.Marshal(previous.SourceFailures)
+		newFailures, _ := json.Marshal(idle.SourceFailures)
+		if idle.Cursor != previous.Cursor || idle.Observations != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 || !bytes.Equal(idle.RawObjects, previous.RawObjects) || !bytes.Equal(oldFailures, newFailures) {
+			t.Fatal("Claude idle restart lost unlinked diagnostics or repeated accepted progress")
+		}
+		assertUnlinkedView(phase, 14, 7, 13, 221, 117)
+		return idle
+	}
+	unlinkedLatest = assertUnlinkedIdle("unlinked-idle", rootResume)
+	familyStillArchive, familyStillRaw := readRaw(familySession)
+	familyBeforeJSON, _ := json.Marshal(familyBeforeArchive)
+	familyStillJSON, _ := json.Marshal(familyStillArchive)
+	if !bytes.Equal(familyBeforeJSON, familyStillJSON) || familyBeforeRaw[familyID+".jsonl"] != familyStillRaw[familyID+".jsonl"] || familyBeforeRaw["agent-"+agentID+".jsonl"] != familyStillRaw["agent-"+agentID+".jsonl"] {
+		t.Fatal("Claude Raw-off unlinked continuation changed acknowledged archives")
+	}
+	setRaw(true)
+	unlinkedBackfill := run("unlinked-backfill")
+	assertUnlinkedDiagnostics("unlinked-backfill", unlinkedBackfill, 2)
+	// Legacy Raw observations repeat current Session/Thread headers; they must
+	// add no Events or usage rather than promising zero header-only batches.
+	if unlinkedBackfill.CanonicalEvents != 0 || unlinkedBackfill.RawChunks != 2 || unlinkedBackfill.Progress.PendingRawBytes != 0 {
+		t.Fatal("Claude unlinked current Thread Raw backfill reprojected Events or omitted bytes")
+	}
+	backfilledFamily := assertSourceRaw(familySession, familyFiles)
+	if len(backfilledFamily.Objects) != len(familyBeforeArchive.Objects) {
+		t.Fatal("Claude unproved child acquired a Raw object")
+	}
+	for n, object := range backfilledFamily.Objects {
+		if object.ObjectID != familyBeforeArchive.Objects[n].ObjectID || object.CurrentGeneration != familyBeforeArchive.Objects[n].CurrentGeneration {
+			t.Fatal("Claude unlinked continuation changed root/child Raw identities")
+		}
+	}
+	backfilledRoot, backfilledChild := assertUnlinkedView("unlinked-backfill", 14, 7, 13, 221, 117)
+	assertStablePrefix("unlinked-backfill", unlinkedRoot.Events, backfilledRoot.Events)
+	assertStablePrefix("unlinked-backfill", unlinkedChild.Events, backfilledChild.Events)
+	unlinkedLatest = assertUnlinkedIdle("unlinked-backfill-idle", unlinkedBackfill)
 	retainedArchive, retainedRaw := readRaw(compactSession)
 	tailRetainedArchive, tailRetainedRaw := readRaw(tailSession)
 	autoRetainedArchive, autoRetainedRaw := readRaw(autoSession)
 	deleted := run("delete")
-	if deleted.Cursor != repaired.Cursor || deleted.InstallationID != initial.InstallationID || !bytes.Equal(deleted.RawObjects, repaired.RawObjects) || deleted.CanonicalBatches != 0 || deleted.RawChunks != 0 {
+	if deleted.Cursor != unlinkedLatest.Cursor || deleted.InstallationID != initial.InstallationID || !bytes.Equal(deleted.RawObjects, unlinkedLatest.RawObjects) || deleted.CanonicalBatches != 0 || deleted.RawChunks != 0 {
 		t.Fatal("Claude source deletion discarded checkpoints or history")
 	}
-	read(familySession, "root", 4)
-	read(familySession, childID, 4)
+	read(familySession, "root", 14)
+	read(familySession, childID, 7)
 	read(compactSession, "root", 7)
 	read(tailSession, "root", 11)
 	read(autoSession, "root", 10)

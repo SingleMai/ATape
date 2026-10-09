@@ -114,12 +114,35 @@ parent tool-result Event. Each stream has independent prefix, Canonical and Raw
 progress. Child CWD changes do not reassign the family. Admitted children rotate
 between pages after the root catches up; sustained root backlog can delay them.
 Missing captured child files retain their history/checkpoints. Unproved children
-produce diagnostics without blocking other attributable sources.
+are not selected from directory contents.
+
+[ADR-0098](../architecture/adr/0098-claude-current-thread-continuity.md) separates
+current Thread capture from child admission. A valid Agent/Task invocation or
+receipt remains a tool Event in its current Thread, including asynchronous,
+noncompleted, error and nested delegation. Its ordinary following messages,
+real assistant usage and eligible Raw continue. An actual Agent/Task receipt
+without an admitted child produces an `unsupported` diagnostic for the current
+source, while publishing no child link/header and reading no proposed child
+file. Pending calls alone do not produce that diagnostic. Unsafe locators,
+missing ownership evidence and multi-Event receipts also remain unlinked.
+
+Diagnostics are deduplicated per source/reason and rebuilt from authenticated
+committed source bytes, including idle collection after restart, even when a
+root page or another child returns before the affected child's normal turn.
+Only its already acknowledged prefix
+is inspected for this visibility; pending bytes and unproved children are not
+collected. Diagnostics indicate
+partial relationship capture even when the current Thread is caught up. Already
+pinned ownership contradictions, malformed records, wrong Thread/Session
+identity, stale parent/call correlation and changed prefixes still fail before
+ACK. Raw-only replay copies create neither relationships nor new diagnostics.
 
 The same compaction reducer applies within a selected child Thread. Generated
 checks cover child continuation; the recorded foreground fixture establishes only
-its ordinary Agent/Read relationship. Nested/background delegation, interrupted
-child runs, child forks and spill collection remain outside this relationship.
+its ordinary Agent/Read relationship. Capture of nested/background or interrupted
+child histories, child forks and spill collection remains outside this
+relationship. Capturing the current Thread around an unlinked receipt does not
+establish capture of that proposed child.
 
 ## Bounds and Raw policy
 
@@ -141,6 +164,9 @@ bounds can still limit a large archive; unlimited compaction cycles do not imply
 unlimited checkpoint capacity. Cold reconstruction costs O(committed source)
 I/O/hash and is cancellable. Independently restarting every small control page
 repeats that scan; many tiny pages increase total collection work. Retained serialized bytes are not an RSS guarantee.
+Family diagnostics also scan the committed prefixes of admitted children that
+were not visited before the current page returned, so a root page can cost
+O(committed family source) work.
 Same-handle prefix checks and final stat retain legacy concurrent-writer limits;
 they do not create an atomic filesystem snapshot.
 
@@ -188,7 +214,7 @@ and deploying a Server are separate actions.
 
 ## Verification and remaining work
 
-All 148 public `createAtapeAdapter`/`collect` tests pass. The installed package
+All 184 public `createAtapeAdapter`/`collect` tests pass. The installed package
 check and those suites exercise all twelve retained native compaction scenarios and explicitly generated
 1/2/3/10/100-cycle histories. Generated coverage varies ordinary gaps, tools,
 result order, context files and the first real continuation. It checks every
@@ -196,34 +222,50 @@ complete-line and partial-EOF cut, exact retry after reopening, original usage
 revisions, independent Raw backfill, child ownership, malformed copies/controls,
 source repair and parser/checkpoint capacity. Deep unknown JSON and changed values
 are compared through the same caller Interface. These are behavior tests, not
-new native captures.
+new native captures. The 36 generated unlinked-delegation cases add missing,
+asynchronous, noncompleted, error, unsafe and multi-Event receipt checks;
+current-Thread continuation, partial LF, one-Event pages, Raw-off/backfill and
+family diagnostics after root or sibling pages. Real source/correlation and
+pinned ownership conflicts remain failures. No new native child lifecycle
+acquisition is claimed.
 
 The candidate source SHA-256 is
-`0748f8cfb75514e80d255c59b045a69cde1779f0bf68eee0664383eb4970da66`;
+`597c849f44ffd83f628d89b59a178e6511e7db758f4ddf3fa01377017b796b4e`;
 its built bundle is
-`910afd6c3322a6e0db0e4b09293a1c828a047ce6f5f371bf164db3330c13bb43`.
+`0e029ba7427ea322975ae827b201451f998199e638e3a7b5c6291e5d16487733`.
 The installed tarball check covers native append/restart, generated 1/3/100 mixed
-cycles and Raw-off capture followed by bounded backfill.
+cycles, six generated unlinked-receipt cases, cold idle/retry and Raw-off capture
+followed by bounded backfill. The shared Codex package verifier also passes.
 
-Genuine compatibility inputs were produced by the previous main commit
-`de57001ed98d58a9048c5e8c0263e510dd8a731a`, source
-`640f7c11a57b957b63b854ae1b10e41844d65d8ead6ec0608bc9df923d0e5b85`,
-and bundle
-`d540f752884bbe77464a00f7a3001fb903f97c507ef569f6ea9e66d8d727fa94`.
-Across the twelve native scenarios, 481 saved LF checkpoints and 24 actual
-Event-only/deferred-usage inputs resume on the candidate through fresh runtimes
-and exact retries. All 505 preserve the complete original Event vector, latest
-usage objects, contiguous Raw suffix, object and generation. Inputs were generated
-through the real old factory, without changing private checkpoint fields.
+Genuine compatibility inputs for this candidate were produced by previous main
+`c661ad01aaa4202f62abf9a660f0032fc0a16d8d`, source
+`0748f8cfb75514e80d255c59b045a69cde1779f0bf68eee0664383eb4970da66`,
+bundle `910afd6c3322a6e0db0e4b09293a1c828a047ce6f5f371bf164db3330c13bb43`.
+All six generated continuations reproduce the old blockage. Their 65 genuine
+opaque inputs, including ten actual Event-only/deferred-usage inputs and
+independent old Raw receipts, resume on this candidate through fresh runtimes
+and exact retries. They preserve complete original Event vectors, latest usage
+objects and contiguous acknowledged Raw suffix/object/generation. Raw-off inputs
+also retain Canonical identity through later backfill. No private checkpoint
+fields were rewritten.
 
-All four Collector/Server E2E checks pass. The final source and bundle also pass
-187 independently restarted managed-Collector runs through authenticated
-HTTP/PostgreSQL, including actual native LF/control ACKs, Reader/tool anchors,
-latest-once usage, message-only Search, Raw-off/backfill, source repair and
-deletion retention. The required Claude contract actually ran and passed; it
-was not skipped. The local contract log SHA-256 is
-`bc1ed204618ea83017e9a92ca9092ff6b3522ca1c757a863943ad0d59ecf3eef`.
-Earlier native acquisition does not stand in for candidate verification. Package publication and Server deployment are separate actions.
+The earlier compaction increment at `c661ad0` separately verified 505 genuine
+inputs produced by `de57001ed98d58a9048c5e8c0263e510dd8a731a` (481 native LF
+checkpoints and 24 Event-only inputs). That recorded compatibility evidence
+belongs to its tested candidate; the current increment's 65 upgrades and
+retained native regression suites establish the checks run here.
+
+All four Collector/Server E2E checks pass. The final source and bundle pass the
+authenticated HTTP/PostgreSQL contract with 197 independently restarted
+managed-Collector stages. Its additional ten generated stages cover
+root and selected-child ordinary continuation around unlinked receipts, partial
+LF, persistent family diagnostics, Reader/tool/Search anchors, latest-once usage,
+unproved child exclusion and independent Raw backfill. The required contract
+actually ran and passed without skipping (305.39 seconds for its subtest). The
+local final log SHA-256 is
+`7aac9ca86cd6980f6103c4db4236d4341f9cd371b255755bae4b55439fbe9dc5`.
+The earlier increment's 187-stage pass is not this candidate's acceptance.
+Package publication and Server deployment are separate actions.
 
 Native source facts, acquisition controls, snapshot/cut hashes and request/usage
 limits are owned by the fixture records:

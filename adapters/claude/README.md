@@ -58,6 +58,12 @@ normalizer behind the existing paged collect Interface:
   becomes `claude-agent:<agentId>` under root with separate Canonical/Raw progress.
   The same compaction rule applies within an admitted child Thread.
   `.meta.json` is not read and finding a child file alone is not admission.
+- Valid current Thread records continue around background, noncompleted, error
+  or nested Agent/Task receipts. Unproved receipts report an `unsupported`
+  diagnostic without creating a child link/Thread or reading its proposed file.
+  Pending calls alone do not warn. Diagnostics survive idle restart through
+  authenticated prefix reconstruction and deduplicate per source/reason. Pinned
+  ownership conflicts and invalid source/graph evidence still stop that source.
 
 Shared Input/Output details are collapsed and escaped, with Host redaction before
 network requests. Unknown content/nonempty thinking remain captured Raw;
@@ -90,7 +96,9 @@ it does not promise compatibility with every version or source shape.
 ## Partial collection and recovery
 
 Project → Sync details shows bounded, redacted local source diagnostics. Healthy
-Sessions continue; failed Sessions retain progress and retry. Up to 32 diagnostics
+Sessions continue; failed Sessions retain progress and retry. Unlinked delegation
+diagnostics permit the proved current Thread to advance while its child capture
+remains partial. Up to 32 diagnostics
 are reported with a truncation flag. Duplicate source Session identities are
 isolated. Repair malformed data or restore its exact captured prefix; deleting
 checkpoints cannot repair source semantics. Global capacity/corrupt cursor/Host
@@ -122,10 +130,11 @@ older runs inherited HOME without recording it. Generated repeated sequences are
 behavior tests, not additional native invocations. Mock counters are not billing.
 
 Public-factory and installed-package checks cover repeatable compaction and
-independent Raw backfill; 505 genuine previous-main opaque inputs preserve
-Events, latest usage and Raw identity through upgrade. The guide records the
-source/bundle hashes and the passed authenticated Collector acceptance: 187
-independently restarted managed-daemon runs with Reader, usage, Search and Raw
-assertions. Native acquisition alone does not establish
+current Thread continuation around unlinked delegation, with independent Raw
+backfill. This candidate passes 65 genuine previous-main opaque upgrades; the
+earlier compaction increment recorded its own 505-input upgrade evidence. The
+guide records current source/bundle hashes and passed authenticated Collector
+acceptance for 197 independently restarted managed-daemon stages with Reader, usage,
+Search and Raw assertions. Native acquisition alone does not establish
 publication, deployment, browser staging or compatibility with every historical
 published package. All earlier checks retain their recorded scope.
