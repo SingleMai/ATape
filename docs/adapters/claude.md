@@ -191,6 +191,8 @@ source semantics.
 
 Current acceptance uses the shipped factory's sourceCapture Interface, the shared
 collection Interface, installed packages and authenticated HTTP/PostgreSQL.
+The [candidate record](../releases/evidence/claude-active-path-2026-10-09.md)
+binds completed local checks and their limits separately from final PR gates.
 Genuine previous-main `f6093535e92acfee47170b53c7dec7244fccf8c7` artifacts produce
 legacy checkpoints; current code is not relabeled as an old package. Historical
 collect tests are separate evidence and cannot substitute for current sourceCapture
