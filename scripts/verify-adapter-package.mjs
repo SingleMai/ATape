@@ -88,6 +88,8 @@ try {
   await runtime.close?.()
   if (adapterId === "claude") {
     await verifyClaudeForeground(adapter, context, request.limits)
+    await verifyClaudeForeground(adapter, context, request.limits, "native-thinking-2.1.263")
+    await verifyClaudeForeground(adapter, context, request.limits, "native-thinking-2.1.263", false)
     await verifyClaudeContinuity(adapter, context, request.limits)
     await verifyClaudeUnlinkedDelegation(adapter, context, request.limits)
   }
@@ -103,8 +105,8 @@ try {
   await rm(temporaryRoot, { recursive: true, force: true })
 }
 
-async function verifyClaudeForeground(adapter, context, limits) {
-  const fixtureDirectory = join(packageRoot, "fixtures", "native-foreground-child-2.1.263")
+async function verifyClaudeForeground(adapter, context, limits, fixtureName = "native-foreground-child-2.1.263", rawEnabled = true) {
+  const fixtureDirectory = join(packageRoot, "fixtures", fixtureName)
   const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
   const { sessionId, agentId, fixtureCwd } = provenance
   const childThreadId = `claude-agent:${agentId}`
@@ -124,10 +126,11 @@ async function verifyClaudeForeground(adapter, context, limits) {
     writeFile(join(directory, rootName), rootSource),
     writeFile(join(childDirectory, childName), childSource)
   ])
+  process.env.ATAPE_CLAUDE_SESSION_FILE = join(directory, rootName)
 
   let cursor = null, finished = false
   const rawProgress = new Map(), observations = []
-  const collect = () => collectInstalled(adapter, context, cursor, [...rawProgress.values()], limits)
+  const collect = (raw = rawEnabled) => collectInstalled(adapter, context, cursor, [...rawProgress.values()], limits, raw)
   for (let index = 0; index < limits.pagesPerCycle; index++) {
     const page = await collect()
     assert.equal(page.sourceFailures, undefined)
@@ -150,10 +153,23 @@ async function verifyClaudeForeground(adapter, context, limits) {
   assert.deepEqual([...threads.keys()].sort(), [childThreadId, "root"].sort())
   assert.equal(threads.get(childThreadId).parentSourceThreadId, "root")
   const events = observations.flatMap(observation => observation.events)
-  assert.equal(events.length, 8)
-  assert.equal(new Set(events.map(event => JSON.stringify([event.sourceThreadId, event.sourceEventId]))).size, 8)
-  assert.equal(events.filter(event => event.sourceThreadId === "root").length, 4)
-  assert.equal(events.filter(event => event.sourceThreadId === childThreadId).length, 4)
+  const thoughtCount = provenance.thoughts?.length ?? 0
+  assert.equal(events.length, 8 + thoughtCount)
+  assert.equal(new Set(events.map(event => JSON.stringify([event.sourceThreadId, event.sourceEventId]))).size, events.length)
+  assert.equal(events.filter(event => event.sourceThreadId === "root").length, 4 + thoughtCount / 2)
+  assert.equal(events.filter(event => event.sourceThreadId === childThreadId).length, 4 + thoughtCount / 2)
+  const thoughts = events.filter(event => event.update.sessionUpdate === "agent_thought_chunk")
+  assert.equal(thoughts.length, thoughtCount)
+  for (const expected of provenance.thoughts ?? []) {
+    const event = thoughts.find(event => event.sourceEventId === `${expected.uuid}:${expected.block}`)
+    assert.ok(event)
+    assert.equal(event.update.content.text, expected.body)
+    assert.equal(event.update.messageId, `${expected.uuid}:${expected.block}`)
+    assert.equal(event.sourceThreadId, expected.source.includes("/subagents/") ? childThreadId : "root")
+    assert.equal(event.rawRef.fragment, `record=${expected.uuid}&block=${expected.block}`)
+    assert.equal(event.projectionRevision, 5)
+    assert.ok(!JSON.stringify(event.update).includes(expected.signature))
+  }
   const delegation = events.filter(event => event.childSourceThreadId !== undefined)
   assert.equal(delegation.length, 1)
   assert.equal(delegation[0].sourceThreadId, "root")
@@ -171,7 +187,28 @@ async function verifyClaudeForeground(adapter, context, limits) {
     assert.equal(samples.reduce((sum, sample) => sum + sample.inputTokens, 0), 34)
     assert.equal(samples.reduce((sum, sample) => sum + sample.outputTokens, 0), 18)
   }
-  const raw = observations.flatMap(observation => observation.rawSegments)
+  let raw = observations.flatMap(observation => observation.rawSegments)
+  if (!rawEnabled) {
+    assert.deepEqual(raw, [])
+    let backfillFinished = false
+    for (let index = 0; index < limits.pagesPerCycle; index++) {
+      const backfill = await collect(true)
+      assert.equal(backfill.sourceFailures, undefined)
+      assert.deepEqual(backfill.observations.flatMap(observation => observation.events), [])
+      assert.deepEqual(backfill.observations.flatMap(observation => observation.usage ?? []), [])
+      raw.push(...backfill.observations.flatMap(observation => observation.rawSegments))
+      cursor = backfill.nextCursor
+      for (const observation of backfill.observations) for (const segment of observation.rawSegments) {
+        rawProgress.set(JSON.stringify([segment.sourceObjectId, segment.sourceGeneration]), {
+          sourceSessionId: observation.session.sourceSessionId, sourceObjectId: segment.sourceObjectId,
+          sourceGeneration: segment.sourceGeneration,
+          sourceOffset: segment.sourceOffset + Buffer.byteLength(segment.content), finalized: segment.final
+        })
+      }
+      if (!backfill.observations.length && !backfill.hasMore) { backfillFinished = true; break }
+    }
+    assert.ok(backfillFinished, "Installed Claude thinking Raw backfill did not finish")
+  }
   assert.equal(raw.length, 2)
   assert.equal(new Set(raw.map(segment => segment.sourceObjectId)).size, 2)
   for (const [name, source, threadId] of [[rootName, rootSource, "root"], [childName, childSource, childThreadId]]) {
@@ -186,6 +223,8 @@ async function verifyClaudeForeground(adapter, context, limits) {
   assert.equal(restarted.hasMore, false)
   assert.equal(restarted.nextCursor, cursor)
   assert.equal(restarted.sourceFailures, undefined)
+  if (thoughtCount > 0) process.stdout.write(`Verified installed Claude native thinking family (Raw ${rawEnabled ? "on" : "off/backfill"})\n`)
+  process.env.ATAPE_CLAUDE_SESSION_FILE = ""
 }
 
 async function collectInstalled(adapter, context, cursor, rawProgress, limits, rawCaptureEnabled) {

@@ -14,7 +14,7 @@ import { makeNodeCollectorDaemonLayer } from "../collectorDaemonLayers.ts"
 
 const input = JSON.parse(readFileSync(0, "utf8")) as {
   phase: string; origin: string; credential: string; userId: string; home: string;
-  tarball: string; cliTarball: string; projectId: string; teamId: string
+  tarball: string; previousTarball?: string; cliTarball: string; projectId: string; teamId: string
 }
 const adapterId = "claude", workspace = join(input.home, "workspace"), sourceHome = join(input.home, "source")
 const sourceDirectory = join(sourceHome, "projects", "opaque-native-project")
@@ -27,6 +27,7 @@ const autoReadSingleId = "611cd738-0d92-41ce-b1e3-64ba1a10a70a", autoReadDualId 
 const largeManualReadId = "b179ae84-44d8-4f32-adee-7f176edf363c"
 const repeatedAutoReadId = "f2479149-41f5-4f6c-a3e2-7d46eca6ff30"
 const reversedReadPairId = "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a"
+const thinkingId = "generated-claude-thinking-contract"
 const rootFile = join(sourceDirectory, `${familyId}.jsonl`)
 const childFile = join(sourceDirectory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compactFile = join(sourceDirectory, `${compactId}.jsonl`)
@@ -37,6 +38,7 @@ const autoReadSingleFile = join(sourceDirectory, `${autoReadSingleId}.jsonl`), a
 const largeManualReadFile = join(sourceDirectory, `${largeManualReadId}.jsonl`)
 const repeatedAutoReadFile = join(sourceDirectory, `${repeatedAutoReadId}.jsonl`)
 const reversedReadPairFile = join(sourceDirectory, `${reversedReadPairId}.jsonl`)
+const thinkingFile = join(sourceDirectory, `${thinkingId}.jsonl`)
 const compactFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-compact-2.1.263/", import.meta.url)
 const tailFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/", import.meta.url)
 const autoFixture = new URL("../../../../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/", import.meta.url)
@@ -91,16 +93,19 @@ const completeLinePrefix = (source: string, lines: number) => {
   }
   return source.slice(0, end)
 }
-const paths = defaultNodeClientPaths({ ATAPE_HOME: join(input.home, "client") })
+const thinkingPhase = input.phase.startsWith("thinking-")
+// The optional previous artifact must create its own real checkpoint. It cannot
+// read a newer projection cursor from the preceding candidate-only scenarios.
+const paths = defaultNodeClientPaths({ ATAPE_HOME: join(input.home, thinkingPhase ? "thinking-client" : "client") })
 const installed = join(input.home, "installed"), binary = join(installed, "node_modules", "@atape", "cli", "dist", "atape.js")
 const at = "2026-10-08T00:00:00Z"
 const environment = { ...process.env, ATAPE_HOME: paths.atapeHome, ATAPE_CLAUDE_HOME: sourceHome,
-  ATAPE_CLAUDE_SESSION_FILE: "", ATAPE_CODEX_HOME: join(input.home, "missing-codex"),
+  ATAPE_CLAUDE_SESSION_FILE: input.phase.startsWith("thinking-") ? thinkingFile : "", ATAPE_CODEX_HOME: join(input.home, "missing-codex"),
   ATAPE_KIMI_HOME: join(input.home, "missing-kimi"), ATAPE_GROK_HOME: join(input.home, "missing-grok"),
   ATAPE_CODEBUDDY_HOME: join(input.home, "missing-codebuddy"), OPENCODE_DB: join(input.home, "missing-opencode"),
   ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_COLLECTOR_DAEMON: "0", TEST_SECRET: "SENSITIVE_TEST_TOKEN" }
 process.env.ATAPE_CLAUDE_HOME = sourceHome
-process.env.ATAPE_CLAUDE_SESSION_FILE = ""
+process.env.ATAPE_CLAUDE_SESSION_FILE = environment.ATAPE_CLAUDE_SESSION_FILE
 if (input.phase === "initial") {
   mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 })
   mkdirSync(workspace, { recursive: true }); mkdirSync(dirname(childFile), { recursive: true })
@@ -124,6 +129,9 @@ if (input.phase === "initial") {
   writeFileSync(join(sourceDirectory, "foreign.jsonl"), root.replaceAll(familyId, "foreign-claude-session").replaceAll(workspace, foreign))
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
     { cwd: input.home, stdio: "pipe", timeout: 120000 })
+}
+if (input.phase === "initial" || input.phase === "thinking-seed") {
+  mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
   writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId,
@@ -308,19 +316,57 @@ if (input.phase === "unlinked-root-resume") {
       id: "msg_generated_unlinked_root_resume", stop_reason: "end_turn",
       content: [{ type: "text", text: "ATAPE_CURRENT_THREAD_root_resume: both unlinked diagnostics remain visible." }] } }) + "\n")
 }
+// Generated mixed blocks establish projection and delivery behavior; they are
+// not a claim of native acquisition or recovery of opaque provider reasoning.
+if (input.phase === "thinking-seed") {
+  const rows = readFileSync(rootFile, "utf8").trimEnd().split("\n").map(line => JSON.parse(line))
+  const user = rows.find(row => row.type === "user"), assistant = rows.find(row => row.type === "assistant")
+  const base = { cwd: workspace, sessionId: thinkingId, isSidechain: false, version: "2.1.263" }
+  const mixed = { ...assistant, ...base, uuid: "generated-thinking-mixed", parentUuid: "generated-thinking-user",
+    timestamp: "2026-10-08T13:00:01Z", message: { ...assistant.message, id: "msg_generated_thinking_mixed",
+      content: [{ type: "thinking", thinking: "ATAPE_THOUGHT_ONLY_mixed: SENSITIVE_TEST_TOKEN reasoning text.", signature: "ATAPE_THOUGHT_SIGNATURE" },
+        { type: "text", text: "ATAPE_THINKING_MESSAGE_mixed: a visible plan." },
+        { type: "tool_use", id: "call_generated_thinking_read", name: "Read", input: { file_path: join(workspace, "thinking-fixture.txt") } },
+        { type: "thinking", thinking: " \n\t " }, { type: "thinking", thinking: "\u0085" }, { type: "thinking", thinking: "\ufeff" }] } }
+  const result = { ...user, ...base, uuid: "generated-thinking-result", parentUuid: mixed.uuid,
+    sourceToolAssistantUUID: mixed.uuid, timestamp: "2026-10-08T13:00:02Z", message: { role: "user", content: [{
+      type: "tool_result", tool_use_id: "call_generated_thinking_read", content: "ATAPE_THINKING_TOOL_OUTPUT: generated fixture contents." }] } }
+  const final = { ...assistant, ...base, uuid: "generated-thinking-final", parentUuid: result.uuid,
+    timestamp: "2026-10-08T13:00:03Z", message: { ...assistant.message, id: "msg_generated_thinking_final", stop_reason: "end_turn",
+      content: [{ type: "redacted_thinking", data: "ATAPE_REDACTED_PAYLOAD" },
+        { type: "thinking", thinking: "ATAPE_THOUGHT_ONLY_final: SENSITIVE_TEST_TOKEN conclusion.", signature: "ATAPE_THOUGHT_SIGNATURE" },
+        { type: "text", text: "ATAPE_THINKING_MESSAGE_final: a visible answer." }] } }
+  // The old projection has no visible Event at this later EOF timestamp. Keep
+  // its real API identity so usage remains latest-once across the split records.
+  const thoughtOnly = { ...final, uuid: "generated-thinking-eof", parentUuid: final.uuid, timestamp: "2026-10-08T13:00:04Z",
+    message: { ...final.message, content: [{ type: "thinking", thinking: "ATAPE_THOUGHT_ONLY_eof: SENSITIVE_TEST_TOKEN later recorded thought.",
+      signature: "ATAPE_THOUGHT_SIGNATURE" }] } }
+  writeFileSync(thinkingFile, [{ ...user, ...base, uuid: "generated-thinking-user", parentUuid: null,
+    timestamp: "2026-10-08T13:00:00Z", message: { role: "user", content: "ATAPE_GENERATED_THINKING_SEED: mixed blocks." } }, mixed, result, final, thoughtOnly]
+    .map(row => JSON.stringify(row) + "\n").join(""))
+}
+if (input.phase === "thinking-append") {
+  const source = readFileSync(thinkingFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
+  const template = rows.find(row => row.type === "assistant"), last = rows.findLast(row => typeof row.uuid === "string")
+  writeFileSync(thinkingFile, source + JSON.stringify({ ...template, uuid: "generated-thinking-append", parentUuid: last.uuid,
+    timestamp: "2026-10-08T13:01:00Z", message: { ...template.message, id: "msg_generated_thinking_append", stop_reason: "end_turn",
+      content: [{ type: "thinking", thinking: "ATAPE_THOUGHT_ONLY_append: SENSITIVE_TEST_TOKEN later thought.", signature: "ATAPE_THOUGHT_SIGNATURE" },
+        { type: "text", text: "ATAPE_THINKING_MESSAGE_append: a later visible answer." }] } }) + "\n")
+}
 if (input.phase === "delete") rmSync(join(sourceHome, "projects"), { recursive: true })
 
 const layer = Layer.merge(makeNodeClientLayer(paths, environment), makeNodeCollectorDaemonLayer(paths, binary, environment))
 const result = await Effect.runPromise(Effect.gen(function*() {
-  if (input.phase === "initial") {
+  if (input.phase === "initial" || input.phase === "thinking-seed") {
     const credentials = yield* CLICredentialStore
     const credential: StoredCLICredential = { version: 1, instanceOrigin: input.origin, apiOrigin: input.origin,
       credential: input.credential, credentialId: "claude-integration-credential", capabilityVersion: "atape-cli.v1",
       createdAt: at, user: { id: input.userId, displayName: "Claude fixture" } }
     yield* credentials.replace({ credential })
-    assert.equal((yield* installAdapter(input.tarball)).adapter.adapterId, adapterId)
+    assert.equal((yield* installAdapter(input.phase === "thinking-seed" && input.previousTarball ? input.previousTarball : input.tarball)).adapter.adapterId, adapterId)
     yield* planToolChange([adapterId]).pipe(Effect.flatMap(applyToolChange))
   }
+  if (input.phase === "thinking-upgrade") assert.equal((yield* installAdapter(input.tarball)).adapter.adapterId, adapterId)
   const before = (yield* inspectManagedCollector()).lastCycleCompletedAt
   const job = yield* Effect.acquireUseRelease(
     startManagedCollector({ intervalMs: 10000, concurrency: 1 }),
@@ -348,7 +394,8 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   const cursor = state.checkpoint.cursor
   const decoded = JSON.parse(cursor.startsWith("z3:")
     ? inflateRawSync(Buffer.from(cursor.slice(3), "base64url"), { maxOutputLength: 16 * 1024 * 1024 }).toString("utf8") : cursor)
-  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), [compactId, familyId, tailId, autoId, pairToolId, pairPlanId, autoReadSingleId, autoReadDualId, largeManualReadId, repeatedAutoReadId, reversedReadPairId].sort(),
+  assert.deepEqual(decoded.sessions.map((entry: { checkpoint: { sessionId: string } }) => entry.checkpoint.sessionId).sort(), (thinkingPhase ? [thinkingId]
+    : [compactId, familyId, tailId, autoId, pairToolId, pairPlanId, autoReadSingleId, autoReadDualId, largeManualReadId, repeatedAutoReadId, reversedReadPairId]).sort(),
     "Foreign source was captured or a known checkpoint was reset")
   return { installationId: state.installationId, cursor: state.checkpoint.cursor, rawObjects: state.checkpoint.rawObjects,
     observations: job.observations ?? 0, canonicalEvents: job.canonicalEvents ?? 0, canonicalBatches: job.canonicalBatches ?? 0,

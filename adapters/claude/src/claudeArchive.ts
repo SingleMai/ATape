@@ -14,6 +14,7 @@ const MaxDiscoveryEntries = 10_000
 const MaxHeaderBytes = 64 * 1024 * 1024
 const MaxCursorBytes = 1024 * 1024
 const MaxDecodedCursorBytes = 16 * 1024 * 1024
+const ProjectionRevision = 5
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
 const CompactionSchema = Schema.Struct({
@@ -150,7 +151,8 @@ export const collectClaudePage = (archive: Archive, request: AdapterCollectReque
           ? [candidate.sessionId, checkpoint.origin, first, candidate.agentId] : [candidate.sessionId, checkpoint.origin, first]))) : undefined
         const sourceObjectId = `${candidate.agentId ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
         if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(sourceObjectId) ?? 0))
-        if (!checkpoint?.stream || checkpoint.usageVersion !== 1 || checkpoint.bytes < size || checkpoint.stream.eventSkip > 0 ||
+        if (!checkpoint?.stream || checkpoint.projectionRevision !== ProjectionRevision || checkpoint.usageVersion !== 1 || !checkpoint.observedAt ||
+          checkpoint.bytes < size || checkpoint.stream.eventSkip > 0 ||
           checkpoint.stream.continuation && checkpoint.stream.continuation.phase !== "resume" ||
           !checkpoint.normalizationVersion && (checkpoint.stream.compaction && checkpoint.stream.compaction.phase !== "resume" ||
             checkpoint.stream.autoText || checkpoint.stream.readPair)) pendingCanonicalSessions++
@@ -204,6 +206,8 @@ async function collect(archive: Archive, request: AdapterCollectRequest): Promis
 }
 
 const childThreadId = (agentId: string) => `claude-agent:${agentId}`
+const currentStream = (cursor: Cursor | undefined) =>
+  cursor?.projectionRevision === ProjectionRevision && cursor.usageVersion === 1 && cursor.observedAt ? cursor.stream : undefined
 const childFile = (file: string, sessionId: string, agentId: string) => {
   if (!/^[A-Za-z0-9_-]{1,500}$/.test(sessionId)) fail("unsupported", "Claude family identity is not a safe source path component.")
   return join(dirname(file), sessionId, "subagents", `agent-${agentId}.jsonl`)
@@ -236,7 +240,7 @@ async function collectFamily(archive: Archive, candidate: Candidate, previous: C
       session: { ...observation.session, revision, updatedAt, title: checkpoint.stream?.title || observation.session.title }, threads: familyThreads(children) }
     if (Buffer.byteLength(JSON.stringify({ ...captured, rawSegments: [] })) > request.limits.canonicalBytesPerObservation)
       fail("limit", "Claude family metadata exceeds the requested Canonical page limit.")
-    return { ...page, nextCursor: JSON.stringify(next), hasMore: page.hasMore || children.some(child => !child.checkpoint),
+    return { ...page, nextCursor: JSON.stringify(next), hasMore: page.hasMore || children.some(child => !currentStream(child.checkpoint)),
       observations: [captured] }
   }
   if (page.observations.length) {
@@ -347,7 +351,9 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (hash.copy().digest("hex") !== cursor.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
       }
     }
-    const resume = cursor?.projectionRevision === 4 && cursor.usageVersion === 1 && cursor.observedAt ? cursor.stream : undefined
+    const resume = currentStream(cursor)
+    const generation = digest(Buffer.from(JSON.stringify(delegated ? [sessionId, origin, root.uuid, delegated.child.agentId] : [sessionId, origin, root.uuid])))
+    const sourceObjectId = `${delegated ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
     // Normalization and Event projection are independent versions. Validate
     // already-normalized source facts before the existing projection/usage
     // backfill path starts again at byte zero.
@@ -357,8 +363,13 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       const relationship = bindChild(record, calls, delegated !== undefined, delegated?.children ?? [...children.values()], sessionId)
       restoredUnlinked ||= relationship.unlinked
     }
-    if (cursor?.normalizationVersion === 1 && !resume)
-      await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, request.signal, restoreRelationships)
+    if (cursor && !resume) {
+      const previous = await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, request.signal, restoreRelationships)
+      if (cursor.normalizationVersion === 1 && !equalJson(cursor.stream?.continuation, previous.continuation))
+        fail("cursor", "Claude checkpoint continuation does not match its committed source.")
+      await validatePendingProjection(handle, before.size, cursor, root, previous, sourceObjectId, request.signal,
+        delegated !== undefined, delegated?.children ?? [...children.values()])
+    }
     let at = resume ? cursor!.bytes : 0
     if (!resume) hash = createHash("sha256")
     let state: NonNullable<Cursor["stream"]> = resume ?? { lastUuid: null, seen: [], calls: [], order: 0, eventSkip: 0, title: rootTitle(root) }
@@ -378,8 +389,6 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     const adoptedNormalization = !!resume && cursor?.normalizationVersion !== 1
     const { compaction: _legacyManual, autoText: _legacyAuto, readPair: _legacyPair, continuation: _oldContinuation, ...normalizedState } = state
     state = { ...normalizedState, ...(normalization.continuation ? { continuation: normalization.continuation } : {}) }
-    const generation = digest(Buffer.from(JSON.stringify(delegated ? [sessionId, origin, root.uuid, delegated.child.agentId] : [sessionId, origin, root.uuid])))
-    const sourceObjectId = `${delegated ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
     const events: AdapterEvent[] = []
     const usage = new Map<string, AdapterUsage>()
     const rawProgress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId && p.sourceGeneration === generation)
@@ -489,11 +498,13 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     const prefixDigest = hash.copy().digest("hex")
     archive.hashCache = { file, stamp, bytes: at, digest: prefixDigest, hash: hash.copy() }
     const observedAt = events.at(-1)?.occurredAt ?? cursor?.observedAt ?? timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
-    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: 4, usageVersion: 1, normalizationVersion: 1, observedAt,
+    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: ProjectionRevision, usageVersion: 1, normalizationVersion: 1, observedAt,
       publication: (cursor?.publication ?? 0) + 1,
       ...(!delegated && children.size ? { children: [...children.values()], ...(cursor?.childAfter ? { childAfter: cursor.childAfter } : {}) } : {}),
       stream: { ...state, seen: [...seen], calls: [...calls].map(([id, call]) => [id, call.name, call.uuid]) } }
-    const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 3
+    // Thinking can advance updatedAt at the same captured bytes as projection 4.
+    // Its Session snapshot needs a newer revision even though Event bytes stay fixed.
+    const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 4
     return { protocolVersion: request.protocolVersion, nextCursor: JSON.stringify(next), hasMore,
       observations: [{ observationId: `claude-${digest(Buffer.from(JSON.stringify([next, events.map(e => e.sourceEventId)])))}`, observedAt,
         session: { sourceSessionId: sessionId, revision, title: state.title || "Untitled Claude conversation", summary: "Claude Code conversation", insight: "",
@@ -794,8 +805,34 @@ async function restoreNormalization(handle: Awaited<ReturnType<typeof open>>, co
   return context
 }
 
+/** An upgrade reprojects from zero, but cannot use that reset to legitimize an
+ * old partial page. Its skip belongs to that checkpoint's visible projection. */
+async function validatePendingProjection(handle: Awaited<ReturnType<typeof open>>, size: number, cursor: Cursor,
+  root: RecordValue, context: Normalization, sourceObjectId: string, signal: AbortSignal,
+  delegated: boolean, children: ReadonlyArray<Child>): Promise<void> {
+  const skip = cursor.stream?.eventSkip ?? 0
+  if (skip === 0) return
+  for await (const line of readRecords(handle, cursor.bytes, size, signal)) {
+    if (!line.content.toString("utf8").trim()) fail("cursor", "Claude checkpoint has no complete pending conversation record.")
+    const record = parseSourceRecord(line.content)
+    const transition = await normalizeSourceRecord(handle, record, root, context, signal)
+    if (transition.rawOnly || cursor.observedAt !== undefined && timestamp(record.timestamp) !== cursor.observedAt)
+      fail("cursor", "Claude checkpoint has no admitted pending conversation record.")
+    const calls = new Map(context.calls)
+    const projected = projectRecord(record, context.order, line.end, sourceObjectId, calls,
+      cursor.projectionRevision === ProjectionRevision ? ProjectionRevision : 4)
+    bindChild(record, calls, delegated, children, cursor.sessionId)
+    if (skip > projected.events.length) fail("cursor", "Claude record checkpoint exceeds its event count.")
+    return
+  }
+  fail("cursor", "Claude checkpoint has no complete pending conversation record.")
+}
+
 type ChildBinding = { readonly child?: Child; readonly unlinked: boolean }
 const userCommandText = (text: string) => /^<(?:command-name|local-command|bash-input)/.test(text.trimStart())
+// Host JavaScript and Server Go both require text with a nonblank body. Go's
+// Unicode whitespace also includes NEL, which JavaScript's \s does not.
+const hasThoughtBody = (text: string) => /[^\s\u0085]/u.test(text)
 /** The foreground relation needs one projected result Event. Unknown Raw-only
  * blocks do not add Events; real text or another result does. */
 function singleResultEvent(record: RecordValue): boolean {
@@ -907,7 +944,7 @@ function rootTitle(root: RecordValue): string {
 }
 
 function projectRecord(record: RecordValue, order: number, revision: number, sourceObjectId: string,
-  calls: Map<string, { name: string; uuid: string }>): { events: AdapterEvent[]; partial: boolean } {
+  calls: Map<string, { name: string; uuid: string }>, projectionRevision: 4 | 5 = ProjectionRevision): { events: AdapterEvent[]; partial: boolean } {
   const events: AdapterEvent[] = []
   let partial = false
   if (!record.uuid || record.isMeta === true || record.type !== "user" && record.type !== "assistant") return { events, partial }
@@ -925,6 +962,9 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
         // Source command envelopes need a provider mapping, not fake user prose.
         if (record.type === "user" && userCommandText(block.text)) { partial = true; continue }
         update = { sessionUpdate: record.type === "user" ? "user_message_chunk" : "agent_message_chunk", content: { type: "text", text: block.text } }
+      } else if (projectionRevision === ProjectionRevision && block?.type === "thinking" && record.type === "assistant" &&
+        typeof block.thinking === "string" && block.thinking.length > 0) {
+        update = { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: block.thinking } }
       } else if (block?.type === "tool_use" && record.type === "assistant" && typeof block.id === "string" && typeof block.name === "string") {
         if (calls.has(block.id)) fail("unsupported", "Claude tool IDs are ambiguous in this session.")
         calls.set(block.id, { name: block.name, uuid: record.uuid as string })
@@ -941,15 +981,21 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
         continue
       } else { partial = true; continue }
       if (!update) continue
-      const message = update.sessionUpdate === "user_message_chunk" || update.sessionUpdate === "agent_message_chunk" ? update : undefined
+      const message = update.sessionUpdate === "user_message_chunk" || update.sessionUpdate === "agent_message_chunk" ||
+        update.sessionUpdate === "agent_thought_chunk" ? update : undefined
       const chunks = message?.content.type === "text" ? splitText(message.content.text) : [undefined]
-      for (const [part, text] of chunks.entries()) events.push({
-        sourceEventId: `${record.uuid}:${slot}${chunks.length > 1 ? `:${part}` : ""}`, sourceThreadId: "root",
-        revision, projectionRevision: 4, sourceOrder: order, eventIndex: slot * 128 + part,
-        orderFidelity: "native", fidelity, occurredAt,
-        rawRef: { _tag: "object", sourceObjectId, fragment: `record=${record.uuid}&block=${slot}` },
-        update: message && text !== undefined ? { ...message, messageId: `${record.uuid}:${slot}`, content: { type: "text", text } } : update
-      })
+      const thought = update.sessionUpdate === "agent_thought_chunk"
+      if (thought && chunks.some(text => text !== undefined && !hasThoughtBody(text))) { partial = true; fidelity = "partial" }
+      for (const [part, text] of chunks.entries()) {
+        if (thought && text !== undefined && !hasThoughtBody(text)) continue
+        events.push({
+          sourceEventId: `${record.uuid}:${slot}${chunks.length > 1 ? `:${part}` : ""}`, sourceThreadId: "root",
+          revision, projectionRevision, sourceOrder: order, eventIndex: slot * 128 + part,
+          orderFidelity: "native", fidelity, occurredAt,
+          rawRef: { _tag: "object", sourceObjectId, fragment: `record=${record.uuid}&block=${slot}` },
+          update: message && text !== undefined ? { ...message, messageId: `${record.uuid}:${slot}`, content: { type: "text", text } } : update
+        })
+      }
     }
   return { events, partial }
 }
@@ -997,7 +1043,7 @@ function decodeCursor(value: string | null): Cursor | undefined {
     if (Buffer.byteLength(value) > MaxDecodedCursorBytes) throw new Error()
     const c = Schema.decodeUnknownSync(CursorSchema)(JSON.parse(value))
     if (!c.sessionId || !isAbsolute(c.origin) || !Number.isSafeInteger(c.bytes) || c.bytes < 0 || !/^[a-f0-9]{64}$/.test(c.digest)) throw new Error()
-    if (c.projectionRevision !== undefined && ![2, 3, 4].includes(c.projectionRevision)) throw new Error()
+    if (c.projectionRevision !== undefined && ![2, 3, 4, ProjectionRevision].includes(c.projectionRevision)) throw new Error()
     if (c.familyRevision !== undefined && (!Number.isSafeInteger(c.familyRevision) || c.familyRevision < 1)) throw new Error()
     if (c.familyObservedAt !== undefined && timestamp(c.familyObservedAt) !== c.familyObservedAt) throw new Error()
     if (c.children) {

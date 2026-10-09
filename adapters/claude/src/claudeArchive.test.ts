@@ -318,13 +318,13 @@ it("treats a missing Claude projects directory as an empty source without resett
   expect(await collect()).toMatchObject({ observations: [], nextCursor: null, hasMore: false })
 })
 
-it("reprojects an old checkpoint once without changing source/session revisions or event IDs", async () => {
+it("reprojects a generated older checkpoint once without changing source/session revisions or event IDs", async () => {
   const first = await collect(), old = JSON.parse(first.nextCursor!)
   delete old.sessions[0].checkpoint.projectionRevision
   const upgraded = await collect(request(JSON.stringify(old)))
   expect(upgraded.observations[0]?.session).toEqual(first.observations[0]?.session)
   expect(upgraded.observations[0]?.events.map(e => e.sourceEventId)).toEqual(first.observations[0]?.events.map(e => e.sourceEventId))
-  expect(upgraded.observations[0]?.events.every(e => e.projectionRevision === 4)).toBe(true)
+  expect(upgraded.observations[0]?.events.every(e => e.projectionRevision === 5)).toBe(true)
   expect((await collect(request(upgraded.nextCursor))).observations).toEqual([])
 })
 
