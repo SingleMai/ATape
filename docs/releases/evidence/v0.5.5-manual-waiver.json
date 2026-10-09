@@ -1,0 +1,23 @@
+{
+  "protocol": "atape.manual-release-waiver.v1",
+  "releaseVersion": "0.5.5",
+  "authEpoch": "auth-v1",
+  "status": "authorized",
+  "candidateCommit": "84b11b7782cf1dc0eb49ec24738e605dfedb5513",
+  "authorizedOn": "2026-10-09",
+  "authorization": "On 2026-10-10 Asia/Singapore (2026-10-09 UTC), the user replied ‘可以’ to the recommendation to publish the completed privacy increment and verify the real 0.5.4 upgrade path. Under ADR-0048 this authorizes coordinated 0.5.5 package publication and waiver of the listed manual staging checks only. Automated CI, integration and security gates remain mandatory. Server deployment and database migration are not authorized.",
+  "scope": "manual-staging-only",
+  "unverifiedChecks": [
+    "candidate-artifacts",
+    "official-topology",
+    "github-provider-staging-smoke",
+    "official-domain-egress-deny-smoke",
+    "two-user-two-team",
+    "waf-tls-callback",
+    "backup-restore",
+    "observability-secret-sample",
+    "rollback",
+    "release-signoff"
+  ],
+  "riskNotice": "docs/releases/v0.5.5.md"
+}
