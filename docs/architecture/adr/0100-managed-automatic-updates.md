@@ -2,6 +2,9 @@
 
 Status: Accepted
 
+Login startup is amended by [ADR-0103](0103-login-startup.md); the original
+increment's lack of OS supervision below remains its recorded scope.
+
 Date: 2026-10-09
 
 Amends [ADR-0044](0044-cli-self-upgrade.md) for managed installation and

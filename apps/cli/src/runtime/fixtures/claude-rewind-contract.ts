@@ -77,7 +77,7 @@ if (legacy) {
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball],
     { cwd: input.home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true, mode: 0o700 })
-  writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
+  writeFileSync(paths.configFile, JSON.stringify({ version: 3, autoStartEnabled: false, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "claude-rewind-contract",
     teamName: "Claude rewind contract", name: "Claude rewind", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }

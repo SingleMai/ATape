@@ -1,9 +1,9 @@
 import { decideProjectSetup, describeClientFailure,
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, refreshManagedCollector, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
-  experienceOnboardingURL, inspectCLIExperience, inspectClient, automaticUpdatesEnabled, inspectTools, planToolChange, applyToolChange,
+  experienceOnboardingURL, inspectCLIExperience, inspectClient, automaticUpdatesEnabled, loginStartupEnabled, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
-  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, setAutomaticUpdates, installAdapter, upgradeAdapters, pruneAdapterPackages,
+  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, setAutomaticUpdates, inspectLoginStartup, setLoginStartup, reconcileLoginStartup, installAdapter, upgradeAdapters, pruneAdapterPackages,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
 } from "@atape/application"
 import type { AdapterSourceFailure, LocalProject } from "@atape/domain"
@@ -426,7 +426,10 @@ export class ExperiencePresenter {
       t("cli.review.background", "Background sync continues after you exit."),
       plan.automaticUpdatesEnabled
         ? t("cli.review.automaticUpdatesOn", "Automatic updates are on by default for ATape and official npm integrations. Turn off in Settings.")
-        : t("cli.review.automaticUpdatesOff", "Automatic updates are off. Turn on in Settings.")
+        : t("cli.review.automaticUpdatesOff", "Automatic updates are off. Turn on in Settings."),
+      plan.loginStartupEnabled
+        ? t("cli.review.loginStartupOn", "Login startup is on by default. Sync resumes when you log in, unless you stopped it. Turn off in Settings.")
+        : t("cli.review.loginStartupOff", "Login startup is off. Turn on in Settings.")
     ]
     this.show({ kind: "menu", title: t("cli.review.title", "Review and connect"), details, options: [
       { value: "confirm", label: t("cli.review.connectAndSync", "Connect and sync") },
@@ -437,8 +440,9 @@ export class ExperiencePresenter {
       if (value === "confirm") {
         this.work(t("cli.review.connecting", "Connecting your Project"), completeGuidedSetup({ plan, teamId, sourceIds: ids, ...(name ? { name } : {}),
           progress: title => Effect.sync(() => { this.publish({ ...this.screen, title }) })
-        }).pipe(Effect.flatMap(project => observeInitialSync(project).pipe(Effect.map(snapshot => ({ project, snapshot }))))),
-        ({ project, snapshot }) => this.showConsole(snapshot, project),
+        }).pipe(Effect.flatMap(project => Effect.all({ snapshot: observeInitialSync(project), startup: inspectLoginStartup() }).pipe(Effect.map(result => ({ project, ...result }))))),
+        ({ project, snapshot, startup }) => this.showConsole(snapshot, project, false, startup.enabled && startup.state !== "registered"
+          ? t("cli.settings.loginStartupAttention", "Login startup needs attention. Open Settings to inspect and retry.") : undefined),
         error => this.failed(error, () => this.prepare(true, { teamId, ...(name ? { name } : {}) }), () => this.pathScreen()), () => this.list())
       } else if (value === "name") this.show({ kind: "input", title: t("cli.review.projectName", "Project name"), initial: projectName, details: [] }, value => this.reviewSetup(plan, teamId, ids, String(value)), () => this.reviewSetup(plan, teamId, ids, name))
       else if (value === "team") this.show({ kind: "menu", title: t("cli.team.title", "Choose a Team"), details: [], options: plan.project.teams.map(team => ({ value: team.id, label: team.displayName })) }, value => this.reviewProject(plan, String(value)), () => this.reviewSetup(plan, teamId, ids, name))
@@ -727,6 +731,12 @@ export class ExperiencePresenter {
     this.work(t("cli.tools.reading", "Reading tools"), inspectTools(), inspection => this.showSources(t("cli.tools.whichConversations", "Which conversations should ATape sync?"), inspection.choices, selected, [
       t("cli.tools.selectionApplies", "This selection applies to all connected projects on this machine."),
       t("cli.tools.selectionSetup", "ATape will set up the selected tools when you save."),
+      ...(!inspection.configured ? [automaticUpdatesEnabled(inspection.config)
+        ? t("cli.review.automaticUpdatesOn", "Automatic updates are on by default for ATape and official npm integrations. Turn off in Settings.")
+        : t("cli.review.automaticUpdatesOff", "Automatic updates are off. Turn on in Settings."),
+      loginStartupEnabled(inspection.config)
+        ? t("cli.review.loginStartupOn", "Login startup is on by default. Sync resumes when you log in, unless you stopped it. Turn off in Settings.")
+        : t("cli.review.loginStartupOff", "Login startup is off. Turn on in Settings.")] : []),
     ], ids => this.work(t("cli.tools.reviewingChanges", "Reviewing tool changes"), planToolChange(ids), plan => {
       const apply = () => this.work(t("cli.tools.settingUp", "Setting up tools"), applyToolChange(plan), () => {
         this.toolsConfigured = true; this.enabledTools = plan.ids
@@ -752,21 +762,32 @@ export class ExperiencePresenter {
     }, undefined, () => this.configureTools(after, back, ids)), back), undefined, back)
   }
   private settings() {
-    this.work(t("cli.settings.reading", "Reading settings"), inspectCLIExperience(), snapshot => this.show({ kind: "menu", title: t("cli.console.settings", "Settings"),
+    this.work(t("cli.settings.reading", "Reading settings"), Effect.all({ snapshot: inspectCLIExperience(), startup: inspectLoginStartup() }), ({ snapshot, startup }) => this.show({ kind: "menu", title: t("cli.console.settings", "Settings"),
       details: [t("cli.settings.server", "Server: {origin}", { origin: this.instanceOrigin }),
         snapshot.automaticUpdatesEnabled
           ? t("cli.settings.automaticUpdatesOn", "Automatic updates: on · ATape and official npm integrations")
           : t("cli.settings.automaticUpdatesOff", "Automatic updates: off"),
+        startup.enabled
+          ? startup.state === "registered" ? t("cli.settings.loginStartupOn", "Login startup: on · resumes sync unless you stopped it")
+            : t("cli.settings.loginStartupPending", "Login startup: on · needs attention")
+          : t("cli.settings.loginStartupOff", "Login startup: off · current sync is unchanged"),
+        ...(startup.enabled && startup.state !== "registered" && startup.message ? [safeTerminalText(startup.message)] : []),
         snapshot.collector.running ? t("cli.settings.syncRunning", "Background sync is running. Exiting keeps it running.") : t("cli.settings.syncStopped", "Background sync is stopped.")],
       options: [{ value: "accounts", label: t("cli.settings.accounts", "Accounts") },
         { value: "automatic-updates", label: snapshot.automaticUpdatesEnabled
           ? t("cli.settings.disableAutomaticUpdates", "Turn off automatic updates")
           : t("cli.settings.enableAutomaticUpdates", "Turn on automatic updates") },
+        { value: "login-startup", label: startup.enabled
+          ? t("cli.settings.disableLoginStartup", "Turn off login startup")
+          : t("cli.settings.enableLoginStartup", "Turn on login startup") },
+        ...(startup.enabled && startup.state !== "registered" ? [{ value: "repair-login-startup", label: t("cli.settings.repairLoginStartup", "Retry login startup registration") }] : []),
         { value: "language", label: t("cli.settings.language", "Language") }, { value: "server", label: t("cli.settings.changeServer", "Change server") },
         { value: snapshot.collector.running ? "stop" : "start", label: snapshot.collector.running
           ? t("cli.settings.stopAll", "Stop sync for all projects") : t("cli.console.startSync", "Start sync") }]
     }, value => value === "automatic-updates"
       ? this.work(t("cli.settings.savingAutomaticUpdates", "Saving automatic updates"), setAutomaticUpdates(!snapshot.automaticUpdatesEnabled), () => this.settings(), undefined, () => this.settings())
+      : value === "login-startup" ? this.work(t("cli.settings.savingLoginStartup", "Saving login startup"), setLoginStartup(!startup.enabled), () => this.settings(), undefined, () => this.settings())
+      : value === "repair-login-startup" ? this.work(t("cli.settings.repairingLoginStartup", "Registering login startup"), reconcileLoginStartup(), () => this.settings(), undefined, () => this.settings())
       : value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
       : this.consoleAction(String(value)), () => this.list()))
   }

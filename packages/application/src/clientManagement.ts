@@ -136,6 +136,9 @@ export const effectiveClientConfig = (config: ClientConfig): ClientSnapshot =>
 export const automaticUpdatesEnabled = (config: Pick<ClientConfig, "autoUpdateEnabled">): boolean =>
   config.autoUpdateEnabled !== false
 
+export const loginStartupEnabled = (config: Pick<ClientConfig, "autoStartEnabled">): boolean =>
+  config.autoStartEnabled !== false
+
 export const setAutomaticUpdates = Effect.fn("Client.setAutomaticUpdates")(function*(enabled: boolean) {
   const store = yield* ClientConfigStore
   return yield* store.transact<boolean, never, never>(config => Effect.succeed(

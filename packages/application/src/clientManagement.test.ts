@@ -41,6 +41,8 @@ const fixture = (fixedUpgradeSpec?: string) => {
   const packageRequests: Array<string> = []
   const layer = Layer.mergeAll(
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      resume: () => Effect.die("Unexpected resume"),
+      pause: () => Effect.die("Unexpected pause"),
       refresh: () => Effect.suspend(() => { refreshes++; return failRefresh
         ? Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "Could not refresh Host" }))
         : Effect.succeed(false) }), inspect: () => Effect.succeed(undefined),

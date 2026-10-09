@@ -7,6 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { verifyAutomaticUpdate } from "./verify-automatic-update.mjs"
+import { verifyLoginStartup } from "./verify-login-startup.mjs"
 
 const execute = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -63,7 +64,7 @@ try {
   const help = (await atape(["--help"])).stdout
   assert.match(help, /^ATape CLI/m)
   assert.match(help, /projects, tools and settings/)
-  assert.doesNotMatch(help, /atape (upgrade|adapters|setup|status)|__collector-daemon/)
+  assert.doesNotMatch(help, /atape (upgrade|adapters|setup|status)|__(collector-daemon|automatic-update|login-start)/)
   assert.equal((await atape(["--version"])).stdout.trim(), `ATape ${packageManifest.version}`)
   for (const args of [["status"], ["login"], ["setup"], ["collect"], ["adapters", "prune"], []]) {
     await assert.rejects(atape(args), error => error.cause?.code === 2)
@@ -71,6 +72,7 @@ try {
 
   if (process.platform !== "win32") {
     await verifyAutomaticUpdate(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "automatic-update"))
+    await verifyLoginStartup(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "login-startup"))
     const remote = await startFixtureServer()
     fixtureServer = remote.server
     environment.ATAPE_INSTANCE_URL = remote.origin

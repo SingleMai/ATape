@@ -15,7 +15,7 @@ import {
 import { execFile, spawn } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import { mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Option, Schema } from "effect"
 import { acquireProcessLock } from "./processLock.ts"
@@ -52,6 +52,13 @@ const CollectorMaintenance = Schema.Struct({
 })
 type CollectorMaintenance = typeof CollectorMaintenance.Type
 const maintenanceFile = (processFile: string) => `${processFile}.maintenance.json`
+const CollectorDesiredState = Schema.Union([
+  Schema.Struct({ version: Schema.Literal(1), wanted: Schema.Literal(false) }),
+  Schema.Struct({ version: Schema.Literal(1), wanted: Schema.Literal(true), intervalMs: Schema.Number, concurrency: Schema.Number,
+    established: Schema.optionalKey(Schema.Literal(true)) })
+])
+type CollectorDesiredState = typeof CollectorDesiredState.Type
+const desiredStateFile = (processFile: string) => `${processFile}.desired.json`
 
 // The worker and collection admission use this Interface rather than interpreting
 // the durable gate. A failed or crashed maintenance remains closed until recovery.
@@ -116,9 +123,9 @@ const performCollectorMaintenance = async <A>(
   const claim = await lock(async () => {
     const previous = await readMaintenance(paths.collectorProcessFile)
     const running = await readProcessRecord(paths.collectorProcessFile)
-    const resume = previous === undefined
-      ? running && (running.restartPending || await isOwnedProcess(running, deadline))
-        ? { intervalMs: running.intervalMs, concurrency: running.concurrency } : undefined
+    const desired = await desiredState(paths.collectorProcessFile, running, previous, deadline)
+    const resume = !desired.wanted ? undefined : previous === undefined
+      ? { intervalMs: desired.intervalMs, concurrency: desired.concurrency }
       : previous.resume
     const gate: CollectorMaintenance = { version: 1, token, ownerPid: process.pid,
       generation: previous?.generation ?? 0, phase: "pausing", ...(resume ? { resume } : {}) }
@@ -152,6 +159,7 @@ const performCollectorMaintenance = async <A>(
       await lock(async () => {
         const gate = await ownedMaintenance(paths.collectorProcessFile, token)
         if (gate.generation !== claim.gate.generation || !gate.resume) return
+        if (!(await desiredState(paths.collectorProcessFile, undefined, gate, deadline)).wanted) return
         const entry = await resolveEntry()
         checkReadinessDeadline()
         const runtimeKey = await executableKey(entry)
@@ -167,7 +175,11 @@ const performCollectorMaintenance = async <A>(
         while (performance.now() < readyDeadline) {
           const gate = await ownedMaintenance(paths.collectorProcessFile, token)
           // User Stop wins even while the new runtime is preparing readiness.
-          if (gate.generation !== claim.gate.generation || !gate.resume) return
+          if (gate.generation !== claim.gate.generation || !gate.resume ||
+            !(await readDesiredState(paths.collectorProcessFile))?.wanted) {
+            await stopCurrent()
+            return
+          }
           const ready = await readFile(readyFile, "utf8").then(value => JSON.parse(value) as unknown).catch(() => undefined)
           let owned: boolean
           try { owned = await isOwnedProcess(launched, readyDeadline) } catch (cause) {
@@ -257,6 +269,8 @@ const makeCollectorDaemonProcessLayer = (
   CollectorDaemonProcess,
   CollectorDaemonProcess.of({
     start: (options) => processStart(paths, entryFile, environment, options),
+    resume: () => processResume(paths, entryFile, environment),
+    pause: () => processPause(paths.collectorProcessFile),
     refresh: () => processRefresh(paths, entryFile, environment),
     stop: () => processStop(paths.collectorProcessFile),
     inspect: () => processInspect(paths.collectorProcessFile)
@@ -273,16 +287,45 @@ const processStart = (
   return withProcessLock(paths.collectorProcessFile, async () => {
     await rejectMaintenance(paths.collectorProcessFile)
     const existing = await readProcessRecord(paths.collectorProcessFile)
-    const entry = await resolveCollectorEntry(entryFile)
-    const runtimeKey = await executableKey(entry)
-    if (existing !== undefined && await isOwnedProcess(existing)) {
-      if (!existing.restartPending && existing.runtimeKey === runtimeKey) return { ...presentProcess(existing), created: false }
-      return restartProcess(paths, entry, environment, existing, runtimeKey)
-    }
-    if (existing?.restartPending) return restartProcess(paths, entry, environment, existing, runtimeKey)
-    if (existing !== undefined) await rm(paths.collectorProcessFile, { force: true })
-    return launchProcess(paths, entry, environment, options, runtimeKey)
+    const owned = existing !== undefined && await isOwnedProcess(existing)
+    const schedule = existing && (owned || existing.restartPending) ? existing : options
+    await writeDesiredState(paths.collectorProcessFile, { version: 1, wanted: true,
+      intervalMs: schedule.intervalMs, concurrency: schedule.concurrency,
+      ...(owned || existing?.restartPending ? { established: true } : {}) })
+    return startProcess(paths, entryFile, environment, options, existing, owned)
   }).pipe(Effect.uninterruptible)
+}
+
+const processResume = (paths: NodeCollectorDaemonPaths, entryFile: CollectorEntry, environment: NodeJS.ProcessEnv) => {
+  if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
+  return withProcessLock(paths.collectorProcessFile, async () => {
+    const existing = await readProcessRecord(paths.collectorProcessFile)
+    const gate = await readMaintenance(paths.collectorProcessFile)
+    const desired = await desiredState(paths.collectorProcessFile, existing, gate)
+    if (!desired.wanted) return undefined
+    await rejectMaintenance(paths.collectorProcessFile)
+    return startProcess(paths, entryFile, environment, desired, existing,
+      existing !== undefined && await isOwnedProcess(existing))
+  }, 10_000).pipe(Effect.uninterruptible)
+}
+
+// Callers already hold the transition lock and have established user intent.
+const startProcess = async (
+  paths: NodeCollectorDaemonPaths, entryFile: CollectorEntry, environment: NodeJS.ProcessEnv,
+  options: ResolvedCollectorDaemonOptions, existing: CollectorProcessRecord | undefined, owned: boolean
+) => {
+  const entry = await resolveCollectorEntry(entryFile)
+  const runtimeKey = await executableKey(entry)
+  if (existing !== undefined && owned) {
+    if (!existing.restartPending && existing.runtimeKey === runtimeKey) {
+      await establishDesiredState(paths.collectorProcessFile)
+      return { ...presentProcess(existing), created: false }
+    }
+    return restartProcess(paths, entry, environment, existing, runtimeKey)
+  }
+  if (existing !== undefined) return restartProcess(paths, entry, environment,
+    existing.restartPending ? existing : { ...existing, intervalMs: options.intervalMs, concurrency: options.concurrency }, runtimeKey)
+  return launchProcess(paths, entry, environment, options, runtimeKey)
 }
 
 const processRefresh = (paths: NodeCollectorDaemonPaths, entryFile: CollectorEntry, environment: NodeJS.ProcessEnv) => {
@@ -291,9 +334,10 @@ const processRefresh = (paths: NodeCollectorDaemonPaths, entryFile: CollectorEnt
   return withProcessLock(paths.collectorProcessFile, async () => {
     await rejectMaintenance(paths.collectorProcessFile)
     const existing = await readProcessRecord(paths.collectorProcessFile)
+    if (!(await desiredState(paths.collectorProcessFile, existing)).wanted) return false
     if (existing === undefined) return false
     if (!existing.restartPending && !(await isOwnedProcess(existing))) {
-      await rm(paths.collectorProcessFile, { force: true })
+      await writeProcessRecord(paths.collectorProcessFile, { ...existing, restartPending: true })
       return false
     }
     // Read the replacement before stopping; an unreadable installation must
@@ -314,6 +358,7 @@ const restartProcess = async (
 ) => {
   const pending = { ...existing, restartPending: true }
   await writeProcessRecord(paths.collectorProcessFile, pending)
+  await establishDesiredState(paths.collectorProcessFile)
   try {
     await stopOwnedProcess(paths.collectorProcessFile, existing, false)
     return await launchProcess(paths, entryFile, environment, existing, runtimeKey)
@@ -387,6 +432,9 @@ const launchProcess = async (
     })
     throw cause
   }
+  // Once a PID record exists, its removal by a retained pre-intent CLI means
+  // Stop. Preserve that distinction even if ownership confirmation then fails.
+  await establishDesiredState(paths.collectorProcessFile)
   while (performance.now() < deadline) {
     if (await isOwnedProcess(record, deadline)) return { ...presentProcess(record), created: true }
     await delay(Math.min(50, Math.max(0, deadline - performance.now())))
@@ -399,9 +447,23 @@ const launchProcess = async (
   })
 }
 
+const processPause = (processFile: string) => {
+  if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
+  return withProcessLock(processFile, async () => {
+    const record = await readProcessRecord(processFile)
+    await desiredState(processFile, record, await readMaintenance(processFile))
+    if (record === undefined) return false
+    await writeProcessRecord(processFile, { ...record, restartPending: true })
+    return stopOwnedProcess(processFile, record, false)
+  }, 10_000).pipe(Effect.uninterruptible)
+}
+
 const processStop = (processFile: string) => {
   if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
   return withProcessLock(processFile, async () => {
+    // Persist even when no PID exists: a login trigger or interrupted updater
+    // must not reinterpret the absent process as permission to resume.
+    await writeDesiredState(processFile, { version: 1, wanted: false })
     const gate = await readMaintenance(processFile)
     if (gate) {
       const { resume: _, ...stopped } = gate
@@ -434,9 +496,16 @@ const processInspect = (processFile: string) => {
   if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
   return withProcessLock(processFile, async () => {
     const record = await readProcessRecord(processFile)
+    const desired = await desiredState(processFile, record, await readMaintenance(processFile))
     if (record === undefined) return undefined
-    if (await isOwnedProcess(record)) return presentProcess(record)
-    if (!record.restartPending) await rm(processFile, { force: true })
+    if (await isOwnedProcess(record)) {
+      await establishDesiredState(processFile)
+      return presentProcess(record)
+    }
+    if (!record.restartPending) {
+      if (desired.wanted) await writeProcessRecord(processFile, { ...record, restartPending: true })
+      else await rm(processFile, { force: true })
+    }
     return undefined
   })
 }
@@ -561,6 +630,52 @@ const readMaintenance = async (processFile: string): Promise<CollectorMaintenanc
   }
 }
 
+const readDesiredState = async (processFile: string): Promise<CollectorDesiredState | undefined> => {
+  try {
+    const desired = Schema.decodeUnknownSync(CollectorDesiredState)(JSON.parse(await readFile(desiredStateFile(processFile), "utf8")))
+    if (desired.wanted && (!Number.isInteger(desired.intervalMs) || desired.intervalMs < 10_000 || desired.intervalMs > 3_600_000 ||
+      !Number.isInteger(desired.concurrency) || desired.concurrency < 1 || desired.concurrency > 8)) {
+      throw new Error("Invalid Collector schedule")
+    }
+    return desired
+  } catch (cause) {
+    if (hasCode(cause, "ENOENT")) return undefined
+    throw new CollectorDaemonProcessError({ reason: "identity", message: "The saved Collector sync intent is invalid. Open ATape and choose Start or Stop." })
+  }
+}
+
+// Migration happens under the same transition lock as Start, Stop and updates.
+// A stale PID or restart marker alone is not evidence that the user wants sync.
+// Once established, metadata survives crashes and pauses. A retained older CLI
+// can still Stop without knowing this file: it removes the PID and gate.resume.
+const desiredState = async (
+  processFile: string, running?: CollectorProcessRecord, gate?: CollectorMaintenance, deadline?: number
+): Promise<CollectorDesiredState> => {
+  const saved = await readDesiredState(processFile)
+  if (saved) {
+    if (saved.wanted && saved.established && !running && !gate?.resume) {
+      const stopped = { version: 1, wanted: false } as const
+      await writeDesiredState(processFile, stopped)
+      return stopped
+    }
+    return saved
+  }
+  const resume = gate?.resume ?? (running && await isOwnedProcess(running, deadline) ? running : undefined)
+  const desired: CollectorDesiredState = resume
+    ? { version: 1, wanted: true, intervalMs: resume.intervalMs, concurrency: resume.concurrency, established: true }
+    : { version: 1, wanted: false }
+  await writeDesiredState(processFile, desired)
+  return desired
+}
+
+const writeDesiredState = (processFile: string, desired: CollectorDesiredState) =>
+  writeControlState(desiredStateFile(processFile), desired)
+
+const establishDesiredState = async (processFile: string) => {
+  const desired = await readDesiredState(processFile)
+  if (desired?.wanted && !desired.established) await writeDesiredState(processFile, { ...desired, established: true })
+}
+
 const ownedMaintenance = async (processFile: string, token: string) => {
   const gate = await readMaintenance(processFile)
   if (!gate || gate.token !== token) throw new CollectorDaemonProcessError({ reason: "identity", message: "Collector maintenance ownership changed." })
@@ -574,10 +689,15 @@ const rejectMaintenance = async (processFile: string) => {
 }
 
 const writeMaintenance = async (processFile: string, gate: CollectorMaintenance) => {
-  const file = maintenanceFile(processFile), temporary = `${file}.${randomUUID()}.tmp`
+  await writeControlState(maintenanceFile(processFile), gate)
+}
+
+const writeControlState = async (file: string, value: unknown) => {
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 })
+  const temporary = join(dirname(file), `.collector-control-${randomUUID()}.tmp`)
   try {
     const handle = await open(temporary, "wx", 0o600)
-    try { await handle.writeFile(`${JSON.stringify(gate)}\n`); await handle.sync() } finally { await handle.close() }
+    try { await handle.writeFile(`${JSON.stringify(value)}\n`); await handle.sync() } finally { await handle.close() }
     await rename(temporary, file)
     await syncDirectory(dirname(file))
   } finally { await rm(temporary, { force: true }) }

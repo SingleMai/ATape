@@ -1,7 +1,7 @@
 import type { LocalProject } from "@atape/domain"
 import { normalizeInstanceTopology } from "@atape/domain"
 import { Clock, Effect } from "effect"
-import { type ClientSnapshot, automaticUpdatesEnabled, inspectClient, removeProject } from "./clientManagement.ts"
+import { type ClientSnapshot, automaticUpdatesEnabled, loginStartupEnabled, inspectClient, removeProject } from "./clientManagement.ts"
 import { applyProjectSetup, planProjectSetup, decideProjectSetup, ProjectSetupGateway,
   type ProjectSetupPlan, type ProjectSetupSelection } from "./projectSetup.ts"
 import { inspectManagedCollector, type ManagedCollectorJobStatus, type ManagedCollectorStatus } from "./collectorDaemon.ts"
@@ -22,6 +22,7 @@ export type GuidedSetupPlan = {
   readonly config: ClientSnapshot
   readonly detected: ReadonlyArray<string>
   readonly automaticUpdatesEnabled: boolean
+  readonly loginStartupEnabled: boolean
   readonly existingDirectory?: LocalProject
 }
 
@@ -40,6 +41,7 @@ export const prepareGuidedSetup = Effect.fn("CLIExperience.prepare")(function*(i
     return yield* changed("This directory is already connected with a different Project or account. Remove its local capture before reconnecting.")
   }
   return { project, config, detected, automaticUpdatesEnabled: automaticUpdatesEnabled(config),
+    loginStartupEnabled: loginStartupEnabled(config),
     ...(existingDirectory ? { existingDirectory } : {}) } satisfies GuidedSetupPlan
 })
 

@@ -17,6 +17,7 @@ import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
 import { makeAdapterReleasesLayer } from "./adapterReleases.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
+import { makeLoginStartupPlatformLayer } from "./loginStartup.ts"
 import { makeSelectedConfigStoreLayer, readSelectedClientConfig, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
 
 // Existing Node caller Interface; implementations live at their own Seams.
@@ -71,6 +72,7 @@ export const makeNodeClientLayer = (
     makeSelectedConfigStoreLayer(paths),
     makeCLISetupPlatformLayer(paths, environment),
     makeCLIUpgradePlatformLayer(paths.atapeHome, bootstrapEntry, environment),
+    makeLoginStartupPlatformLayer(paths, bootstrapEntry, environment),
     makeAdapterReleasesLayer(paths.atapeHome),
     locator,
     packages,

@@ -55,7 +55,7 @@ if (input.phase === "initial") {
   mkdirSync(join(home, "foreign-project")); writeFileSync(join(directory, "foreign-codebuddy-session.jsonl"), foreign)
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
-  writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
+  writeFileSync(paths.configFile, JSON.stringify({ version: 3, autoStartEnabled: false, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "acme", teamName: "Fixture", name: "CodeBuddy", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }
 if (input.phase === "fork-foreign") {

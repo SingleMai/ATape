@@ -81,9 +81,11 @@ describe("Node CLI upgrade Adapter", () => {
     const process = Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       refresh: () => Effect.succeed(false),
       inspect: () => Effect.succeed({ pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 }),
-      stop: () => Effect.succeed(true),
-      start: options => Effect.sync(() => { starting = true }).pipe(Effect.andThen(Effect.promise(() => wait)),
-        Effect.as({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true }))
+      pause: () => Effect.succeed(true),
+      stop: () => Effect.die("Maintenance must not change user intent"),
+      start: () => Effect.die("Maintenance must not issue Start"),
+      resume: () => Effect.sync(() => { starting = true }).pipe(Effect.andThen(Effect.promise(() => wait)),
+        Effect.as({ intervalMs: 45_000, concurrency: 2, pid: 2, startedAt: "later", logFile: "log", created: true }))
     }))
     const effect = recovery ? resumeCLIUpgrade({ version: "0.4.2", intervalMs: 45_000, concurrency: 2 }) : upgradeCLI("0.4.1")
     const pending = client.run(effect.pipe(Effect.provide(process)))
@@ -205,6 +207,8 @@ setInterval(() => {}, 1000);
     await writeFile(join(dirname(dirname(client.entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version: actual }))
     await writeFile(client.entry, `console.log("ATape ${actual}")`)
     const process = Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      resume: () => Effect.die("Unexpected login resume"),
+      pause: () => Effect.die("Stale update cannot pause collection"),
       refresh: () => Effect.die("Stale update cannot refresh collection"), inspect: () => Effect.succeed(undefined),
       stop: () => Effect.die("Stale update cannot stop collection"), start: () => Effect.die("Stale update cannot start collection")
     }))

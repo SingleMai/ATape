@@ -86,6 +86,15 @@ export const stopManagedCollector = Effect.fn("CollectorDaemon.stop")(function*(
   return yield* process.stop()
 })
 
+// Login is a local continuation. It never asks for interactive authentication or
+// changes sync intent when setup or the configured collection scope is absent.
+export const resumeManagedCollector = Effect.fn("CollectorDaemon.resume")(function*() {
+  const config = yield* inspectClient()
+  if (!config.toolsConfigured || configuredJobs(config).length === 0) return undefined
+  yield* validateManagedConfig(config)
+  return yield* (yield* CollectorDaemonProcess).resume()
+})
+
 export const inspectManagedCollector = Effect.fn("CollectorDaemon.inspect")(function*() {
   const process = yield* CollectorDaemonProcess
   const statuses = yield* CollectorRunStatusStore

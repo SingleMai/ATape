@@ -1,4 +1,4 @@
-import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
+import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -23,10 +23,24 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   }
   let installs = 0, restarted = false, updateChecks = 0
   let syncRunning = failFirstResume
+  let syncWanted = failFirstResume
+  let loginRegistered = true
+  const loginRegistrations: boolean[] = []
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
+  const startSync = (options: { intervalMs: number; concurrency: number }) => Effect.suspend(() => {
+    syncWanted = true
+    starts.push(options)
+    if (starts.length === 1) return Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "temporary failure" }))
+    syncRunning = true
+    return Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
+  })
   const toolInstalls: string[] = []
   const prunes: boolean[] = []
   const base = Layer.mergeAll(makeNodeClientLayer(defaultNodeClientPaths(environment), environment),
+    Layer.succeed(LoginStartupPlatform, LoginStartupPlatform.of({
+      inspect: () => Effect.sync(() => ({ state: loginRegistered ? "registered" as const : "missing" as const })),
+      reconcile: enabled => Effect.sync(() => { loginRegistrations.push(enabled); loginRegistered = enabled; return { state: enabled ? "registered" as const : "missing" as const } })
+    })),
     Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: () => toolUpdate ? Effect.succeed("0.4.4") : Effect.fail(new ToolUpdateError({ message: "offline" })) })),
     ...(setupReview ? [Layer.succeed(ProjectSetupGateway, ProjectSetupGateway.of({
       loadWorkspace: () => Effect.succeed({ user: { id: "user-1", displayName: "Mai" },
@@ -54,13 +68,10 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   })), ...(failFirstResume ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       refresh: () => Effect.succeed(false),
     inspect: () => Effect.sync(() => syncRunning ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
-    stop: () => Effect.sync(() => { syncRunning = false; return true }),
-    start: options => Effect.suspend(() => {
-      starts.push(options)
-      if (starts.length === 1) return Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "temporary failure" }))
-      syncRunning = true
-      return Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
-    })
+    stop: () => Effect.sync(() => { syncWanted = false; syncRunning = false; return true }),
+    pause: () => Effect.sync(() => { syncRunning = false; return true }),
+    resume: () => syncWanted ? startSync({ intervalMs: 45_000, concurrency: 2 }) : Effect.succeed(undefined),
+    start: startSync
   }))] : [])) : base)
   if (manualStartupUpdates) await runtime.runPromise(setAutomaticUpdates(false))
   let exited = false
@@ -112,7 +123,9 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     start()
     void wait(screen => screen.layout === "projects").then(() => presenter.submit("add"))
   }
-  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, updateChecks: () => updateChecks, restarted: () => restarted }
+  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, loginRegistrations,
+    loseLoginRegistration: () => { loginRegistered = false },
+    syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, updateChecks: () => updateChecks, restarted: () => restarted }
 }
 
 const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
@@ -134,6 +147,39 @@ const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
+  it("turns login startup off and on without changing sync intent or other settings", async () => {
+    const client = await fixture()
+    await client.toolsReady()
+    const before = await client.runtime.runPromise(inspectClient())
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("settings")
+    await client.wait(screen => screen.title === "Settings" && screen.details.includes("Login startup: on · resumes sync unless you stopped it"))
+    client.presenter.submit("login-startup")
+    await client.wait(screen => screen.title === "Settings" && screen.details.includes("Login startup: off · current sync is unchanged"))
+    expect(await client.runtime.runPromise(inspectClient())).toEqual({ ...before, autoStartEnabled: false })
+    client.presenter.submit("login-startup")
+    await client.wait(screen => screen.title === "Settings" && screen.details.includes("Login startup: on · resumes sync unless you stopped it"))
+    expect(await client.runtime.runPromise(inspectClient())).toEqual({ ...before, autoStartEnabled: true })
+    expect(client.loginRegistrations).toEqual([false, true])
+    expect(client.starts).toEqual([])
+  })
+
+  it("shows and repairs a missing native registration separately from the on preference", async () => {
+    const client = await fixture()
+    await client.toolsReady()
+    client.loseLoginRegistration()
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("settings")
+    const pending = await client.wait(screen => screen.title === "Settings" && screen.details.includes("Login startup: on · needs attention"))
+    expect(pending.options).toContainEqual({ value: "repair-login-startup", label: "Retry login startup registration" })
+    client.presenter.submit("repair-login-startup")
+    const registered = await client.wait(screen => screen.title === "Settings" && screen.details.includes("Login startup: on · resumes sync unless you stopped it"))
+    expect(registered.options?.some(option => option.value === "repair-login-startup")).toBe(false)
+    expect(client.loginRegistrations).toEqual([true])
+  })
+
   it("opens Projects with automatic updates on by default without asking the manual release platform", async () => {
     const client = await fixture(false, new Promise<string>(() => {}), false, false, false, false, false, false)
     await client.toolsReady()
@@ -348,7 +394,8 @@ describe("interactive navigation through the presenter Interface", () => {
     client.presenter.start()
     await client.wait(screen => screen.layout === "welcome")
     client.presenter.submit("connect")
-    await client.wait(screen => screen.title === "Which conversations should ATape sync?")
+    const tools = await client.wait(screen => screen.title === "Which conversations should ATape sync?")
+    expect(tools.details).toContain("Login startup is on by default. Sync resumes when you log in, unless you stopped it. Turn off in Settings.")
     client.presenter.submit(["codex"])
     await client.wait(screen => screen.suggestions?.some(item => item.path === directory + "/") ?? false)
     client.presenter.pathChanged(directory)

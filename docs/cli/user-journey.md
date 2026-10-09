@@ -57,7 +57,8 @@ identity applies only outside Git.
    import of existing history plus continuing sync. `Connect and sync` performs
    the confirmed connection. It also states that automatic updates are on by
    default for ATape and official npm integrations and can be turned off in
-   Settings. A saved off preference is shown instead when applicable. Editing a
+   Settings. Login startup also defaults on and explains that a deliberate Stop
+   remains stopped. A saved off preference is shown instead when applicable. Editing a
    value returns to the same review.
 6. Open the Project status immediately after connection, with bounded waiting
    for first sync. Do not add a success page requiring another Continue action.
@@ -129,7 +130,7 @@ The home screen exposes these global actions:
 | --- | --- |
 | Add project | Connect a repository or ordinary folder to a destination |
 | Tools and updates | Choose conversations to sync, inspect versions and update ATape or its integrations |
-| Settings | Accounts, server addresses, automatic updates and global background sync controls |
+| Settings | Accounts, server addresses, automatic updates, login startup and global background sync controls |
 
 The Project list shows names and sync outcomes. Since tool selection is global,
 do not repeat an identical tool list in every row. Show enabled tools once in
@@ -159,9 +160,11 @@ separate release work.
 
 Background sync state belongs in the home summary. If stopped, offer a contextual
 `Start sync` action there. Stopping is a global setting with an impact confirmation.
-Exiting leaves background sync running. After a reboot, the user can open `atape`
-and select Start sync; no automatic reboot recovery is
-introduced.
+Exiting leaves background sync running. Login startup defaults on after setup
+and resumes sync at the next login unless the user explicitly stopped it.
+Settings distinguishes the preference from native registration and offers repair
+when unavailable. Disabling future login startup leaves current sync running.
+The [setup guide](setup-and-adapters.md#login-startup) owns platform and verification limits.
 
 ## Project details
 
@@ -255,8 +258,8 @@ the console. Public business subcommands and their flags have been removed.
 Verify fresh install, second Project, global additions/removals, cancellation,
 interrupted installation, checkpoint preservation, no-Team and expired-login
 recovery, and installed-package PTY flows. Merge and publication require their
-own delivery steps. Additional terminal platform acceptance and reboot persistence
-remain outside this increment.
+own delivery steps. Additional terminal platform acceptance remains separate;
+login startup acceptance is recorded in the setup guide.
 
 ## Updating without memorizing package commands
 
@@ -289,7 +292,7 @@ path. npm preparation itself is not an atomic rollback transaction; managed
 automatic updates prepare separate version directories before selection and keep
 the previous compatible generation for recovery. Cancellation waits for owned
 subprocess termination before releasing maintenance ownership. Broader package
-manager adoption, automatic boot/login recovery, release-directory garbage
+manager adoption, continuous crash supervision, release-directory garbage
 collection and log recall remain outside this increment. Published-installation
 acceptance still requires candidate-specific evidence.
 

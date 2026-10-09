@@ -1,10 +1,11 @@
 import { emptyClientConfig, AdapterProtocolVersion, type ClientConfig, type CollectorCheckpoint, type CollectorRunState } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { AdapterPackages, ClientConfigStore, ProjectLocator, inspectClient, installAdapter, setupProject, setAutomaticUpdates } from "./clientManagement.ts"
+import { AdapterPackages, ClientConfigStore, ProjectLocator, inspectClient, installAdapter, setupProject, setAutomaticUpdates, loginStartupEnabled } from "./clientManagement.ts"
 import { CollectorDaemonProcess, CollectorRunStatusStore } from "./collectorDaemon.ts"
 import { CollectorStateStore } from "./collector.ts"
 import { ProjectSetupGateway, type SetupRemoteProject } from "./projectSetup.ts"
+import { LoginStartupError, LoginStartupPlatform, setLoginStartup } from "./loginStartup.ts"
 import {
   CLISetupPlatform, completeGuidedSetup,
   inspectCLIExperience, prepareGuidedSetup, removeExperienceProject, startExperienceCollector, stopExperienceCollector,
@@ -22,6 +23,8 @@ const fixture = () => {
   let runState: CollectorRunState = { version: 1, jobs: [] }
   let checkpoint: CollectorCheckpoint | undefined
   let onInstall: (() => void) | undefined
+  let failRegistration = false
+  const loginRegistrations: boolean[] = []
   const packages: string[] = []
   const projects: SetupRemoteProject[] = []
   const keys: string[] = []
@@ -66,10 +69,21 @@ const fixture = () => {
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      resume: () => Effect.die("Interactive setup must issue Start, not background Resume"),
+      pause: () => Effect.die("Interactive setup must not pause for maintenance"),
       refresh: () => Effect.succeed(false),
       inspect: () => Effect.succeed(running ? { pid: 10, startedAt: date, intervalMs: 30000, concurrency: 4, logFile: "/logs/collector" } : undefined),
       start: options => Effect.sync(() => { starts++; running = true; return { ...options, pid: 10, startedAt: date, logFile: "/logs/collector", created: true } }),
       stop: () => Effect.sync(() => { const was = running; running = false; return was })
+    })),
+    Layer.succeed(LoginStartupPlatform, LoginStartupPlatform.of({
+      inspect: () => Effect.succeed({ state: "missing" }),
+      reconcile: enabled => Effect.suspend(() => {
+        loginRegistrations.push(enabled)
+        return failRegistration
+          ? Effect.fail(new LoginStartupError({ reason: "manager", message: "User manager is unavailable" }))
+          : Effect.succeed({ state: enabled ? "registered" as const : "missing" as const })
+      })
     })),
     Layer.succeed(CollectorRunStatusStore, CollectorRunStatusStore.of({
       read: () => Effect.succeed(runState), recordCycle: () => Effect.void, recordCollectorFailure: () => Effect.void
@@ -84,6 +98,7 @@ const fixture = () => {
     failInstall: (value: boolean) => { failInstall = value },
     record: (state: CollectorRunState, progress?: CollectorCheckpoint) => { runState = state; checkpoint = progress },
     packages, keys, creations: () => creations, starts: () => starts,
+    loginRegistrations, failRegistration: () => { failRegistration = true },
     edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) },
     remoteProjects: projects, duringInstall: (callback: () => void) => { onInstall = callback }
   }
@@ -92,6 +107,33 @@ const input = { instanceOrigin: "https://atape.net", path: "/work/payments" }
 const progress = () => Effect.void
 
 describe("CLI experience application Interface", () => {
+  it.each([true, false])("initializes login startup with the effective preference %s and preserves an explicit opt-out", async enabled => {
+    const client = fixture()
+    if (!enabled) await client.run(setLoginStartup(false))
+    const initial = await client.run(prepareGuidedSetup(input))
+    expect(initial.loginStartupEnabled).toBe(enabled)
+    expect(client.loginRegistrations).toEqual(enabled ? [] : [false])
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const plan = await client.run(prepareGuidedSetup(input))
+    await client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress }))
+    expect(loginStartupEnabled(client.config())).toBe(enabled)
+    if (!enabled) expect(client.config().autoStartEnabled).toBe(false)
+    expect(client.loginRegistrations.at(-1)).toBe(enabled)
+    expect(client.starts()).toBe(1)
+  })
+
+  it("keeps initialized sync usable when the native login manager cannot register it", async () => {
+    const client = fixture()
+    client.failRegistration()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    const plan = await client.run(prepareGuidedSetup(input))
+    await expect(client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["codex"], progress })))
+      .resolves.toMatchObject({ id: "project-1" })
+    expect(client.starts()).toBe(1)
+    expect(client.loginRegistrations).toEqual([true])
+    expect((await client.run(inspectCLIExperience())).collector.running).toBe(true)
+  })
+
   it("reports the effective automatic update preference in the console and setup review", async () => {
     const client = fixture()
     expect((await client.run(inspectCLIExperience())).automaticUpdatesEnabled).toBe(true)

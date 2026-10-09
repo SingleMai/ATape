@@ -15,6 +15,8 @@ const fixture = () => {
   const installs: string[] = [], checks: Array<{ name: string; cached: boolean }> = []
   const layer = Layer.mergeAll(
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      resume: () => Effect.die("Unexpected resume"),
+      pause: () => Effect.die("Unexpected pause"),
       refresh: () => Effect.succeed(false), inspect: () => Effect.succeed(undefined),
       start: () => Effect.die("Unexpected start"), stop: () => Effect.die("Unexpected stop")
     })),

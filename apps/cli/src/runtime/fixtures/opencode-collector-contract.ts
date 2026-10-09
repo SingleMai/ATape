@@ -53,7 +53,7 @@ if (input.phase === "initial") {
     { cwd: home, timeout: 120000, stdio: ["ignore", "pipe", "pipe"] })
   const installedVersion = JSON.parse(readFileSync(join(paths.adapterDirectory, "node_modules", "@atape", "adapter-opencode", "package.json"), "utf8")).version as string
   mkdirSync(dirname(paths.configFile), { recursive: true })
-  writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [adapterId], projects: [project],
+  writeFileSync(paths.configFile, JSON.stringify({ version: 3, autoStartEnabled: false, toolsConfigured: true, enabledAdapterIds: [adapterId], projects: [project],
     adapters: [{ adapterId, packageName, version: installedVersion, displayName: "OpenCode", upgradeSpec: packageName, installedAt: at, updatedAt: at }] }))
 }
 if (input.phase === "recover-activation") {

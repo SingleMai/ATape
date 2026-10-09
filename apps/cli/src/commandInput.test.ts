@@ -18,6 +18,8 @@ describe("single CLI entry", () => {
     ["__collector-daemon", "--daemon-token", "token", "--interval", "1e2"],
     ["__collector-daemon", "--daemon-token", "token", "extra"],
     ["__automatic-update"], ["__automatic-update", "--update-token", "token"],
+    ["__login-start"], ["__login-start", "--startup-token", "token"],
+    ["__login-start", "--startup-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "--no-browser"],
     ["__automatic-update", "--update-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "extra"]])("rejects unsupported arguments %j", (...args) => {
     expect(() => parseCLI(args)).toThrow()
   })
@@ -28,5 +30,9 @@ describe("single CLI entry", () => {
   it("decodes the independent updater's internal invocation", () => {
     expect(parseCLI(["__automatic-update", "--update-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]))
       .toEqual({ kind: "__automatic-update", options: { updateToken: "e859003d-90b4-44f6-ae5a-c14aa3c8ede7" } })
+  })
+  it("decodes only the registered login coordinator's internal invocation", () => {
+    expect(parseCLI(["__login-start", "--startup-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]))
+      .toEqual({ kind: "__login-start", options: { startupToken: "e859003d-90b4-44f6-ae5a-c14aa3c8ede7" } })
   })
 })

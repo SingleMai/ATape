@@ -55,7 +55,7 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory) {
   await writeFile(join(legacyAdapter, "package.json"), JSON.stringify({ ...await json(join(adapter, "package.json")), version: previous }))
   const configFile = join(home, "config", "client.json")
   await mkdir(dirname(configFile), { recursive: true })
-  const raw = { version: 3, projects: [], adapters: [originalAdapter], toolsConfigured: true, enabledAdapterIds: ["codex"] }
+  const raw = { version: 3, projects: [], adapters: [originalAdapter], toolsConfigured: true, enabledAdapterIds: ["codex"], autoStartEnabled: false }
   const encodedRaw = `${JSON.stringify(raw)}\n`
   await writeFile(configFile, encodedRaw)
 

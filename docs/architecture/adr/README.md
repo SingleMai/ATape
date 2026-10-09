@@ -128,6 +128,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0100](0100-managed-automatic-updates.md) | Managed automatic CLI and official Adapter updates |
 | [0101](0101-claude-active-path-and-legacy-adoption.md) | Claude Active Path and explicit legacy adoption |
 | [0102](0102-claude-background-subagents.md) | Claude direct background subagents |
+| [0103](0103-login-startup.md) | User login startup and durable sync intent |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

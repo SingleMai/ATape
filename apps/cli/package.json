@@ -6,7 +6,8 @@
   "type": "module",
   "atapeRuntime": {
     "protocol": "atape.runtime.v1",
-    "stateContract": "atape.client.v3-capture.v1"
+    "stateContract": "atape.client.v3-capture.v1",
+    "loginStartupProtocol": "atape.login-startup.v1"
   },
   "repository": {
     "type": "git",
