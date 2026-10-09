@@ -2,8 +2,9 @@
 
 The Host applies one shared Redaction Module before Canonical and Raw upload and
 before retaining source diagnostics. Adapters supply provider data; they do not
-own the privacy policy. This guide describes the implementation in this checkout,
-not a published CLI release. See [ADR-0105](../architecture/adr/0105-client-redaction-policy.md)
+own the privacy policy. The capabilities below require CLI 0.5.5 or later;
+[release notes](../releases/v0.5.5.md) record publication and acceptance scope.
+See [ADR-0105](../architecture/adr/0105-client-redaction-policy.md)
 and [ADR-0106](../architecture/adr/0106-redaction-settings.md).
 
 ## Supported rules

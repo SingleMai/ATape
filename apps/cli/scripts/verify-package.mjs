@@ -9,6 +9,7 @@ import { promisify } from "node:util"
 import { verifyAutomaticUpdate } from "./verify-automatic-update.mjs"
 import { verifyLoginStartup } from "./verify-login-startup.mjs"
 import { verifyLegacyStateContract } from "./verify-legacy-state-contract.mjs"
+import { verifyPrivacyUpgrade } from "./verify-privacy-upgrade.mjs"
 
 const execute = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -81,6 +82,9 @@ try {
     await verifyLoginStartup(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "login-startup"))
     if (process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL) {
       await verifyLegacyStateContract(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "legacy-state-contract"), process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL)
+    }
+    if (process.env.ATAPE_VERIFY_PRIVACY_BASELINE_TARBALL) {
+      await verifyPrivacyUpgrade(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "privacy-upgrade"), process.env.ATAPE_VERIFY_PRIVACY_BASELINE_TARBALL, tarball)
     }
     const remote = await startFixtureServer()
     fixtureServer = remote.server
