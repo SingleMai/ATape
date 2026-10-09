@@ -143,13 +143,22 @@ See [Raw capture policy](../cli/raw-capture.md).
 ## Recovery and upgrades
 
 The explicit `atape.legacy-migration.v1` capability decodes this Adapter's old
-single-file, discovery and compressed z3 checkpoints offline. The shared Host
-never parses provider cursor internals. Before adoption, the Adapter authenticates
+single-file, discovery and compressed z3 checkpoints. Acknowledged root UUIDs are
+decoded offline. For an older cursor or a partly delivered first root record that
+lacks that UUID, the Adapter uses bounded source reads to verify the original
+header and available prefix; unavailable or contradictory evidence is diagnosed.
+The Server checks existing capture ownership/scope and binds the publication
+Origin. A zero-byte old checkpoint has no historical first-record UUID/body
+hash; this fallback validates current evidence without recovering that absent
+proof. Committed prefix hashes remain mandatory. The shared Host never
+parses provider cursor internals. Before adoption, the Adapter authenticates
 acknowledged prefixes and validates old partial-page state against its old projection.
 Unknown schemas and inconsistent old state fail with a diagnostic.
 
 The Host durably freezes the installation, Project creation, exact original
-checkpoint and Raw acknowledgements before remote adoption. The global checkpoint
+checkpoint and Raw acknowledgements before remote adoption. Each frozen checkpoint
+or source header is bounded at 2 MiB and charged to journal admission; attempted
+freezes remain charged after a compare-and-set race. The global checkpoint
 selects that immutable snapshot by digest using compare-and-set. A concurrent
 legacy checkpoint update cannot substitute a different frozen baseline. Recovery
 replays existing journal obligations before opening source files.
@@ -163,9 +172,10 @@ The Host allocates new revisions above the old floor and persists source metadat
 and prefix proofs with the activated capture. Later collection validates this proof
 without reusing the old legacy cursor.
 
-Frozen redacted Canonical/Raw delivery and activation reconciliation can recover
+Sealed redacted Canonical/Raw delivery and activation reconciliation can recover
 without source files, including a committed activation whose response was lost.
-Legacy batch capture had no durable prepared outbox; migration cannot invent an
+Unsealed preparation must reopen the source. Legacy batch capture had no durable
+prepared outbox; migration cannot invent an
 old unacknowledged payload. Source loss can prevent new projection or Raw backfill.
 Raw-off legacy references without uploaded objects do not require recreation of
 obsolete object IDs; later backfill uses the new Host-packed format.

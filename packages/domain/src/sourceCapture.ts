@@ -85,7 +85,7 @@ export type SourceCaptureRuntimeV2 = {
   readonly protocolVersion: typeof SourceCaptureVersion2
   readonly discover: (request: SourceDiscoverRequest) => unknown | PromiseLike<unknown>
   readonly open: (request: SourceOpenRequestV2) => SourceCaptureViewV2 | PromiseLike<SourceCaptureViewV2>
-  /** Offline, bounded decoding of this provider's own acknowledged legacy cursor. */
+  /** Bounded decoding/validation of this provider's own acknowledged legacy cursor. */
   readonly legacyMigration?: (request: SourceLegacyMigrationRequest) => unknown | PromiseLike<unknown>
 }
 export type SourceCaptureRuntime = SourceCaptureRuntimeV1 | SourceCaptureRuntimeV2

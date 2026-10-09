@@ -23,7 +23,7 @@ export const createAtapeAdapter = async (
       },
       legacyMigration: request => {
         if (stopped) throw new Error("Claude runtime is closed.")
-        return Effect.runPromise(migrateClaudeSources(request), { signal: signal(request.signal) })
+        return Effect.runPromise(migrateClaudeSources(archive, { ...request, signal: signal(request.signal) }), { signal: signal(request.signal) })
       },
       open: async request => {
         if (stopped || active) throw new Error("Claude runtime is closed or already has an open view.")

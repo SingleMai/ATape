@@ -19,7 +19,7 @@ async function run() {
   const historical = await freezeClaudeLegacy()
   console.log(`Frozen genuine Claude legacy ${historical.metadata.revision} tarball sha256=${historical.metadata.tarball.sha256}`)
   const child = spawn("go", ["test", "./internal/adapters/httpapi", "-run",
-    "^TestHTTPAuthenticationAndAuthorizationContract$/^(native|legacy)_Claude_Collector$", "-count=1", "-json", "-timeout=20m"], {
+    "^TestHTTPAuthenticationAndAuthorizationContract$/^(native|legacy)_Claude_Collector$", "-count=1", "-json", "-timeout=30m"], {
     cwd: fileURLToPath(new URL("../server", import.meta.url)),
     env: { ...process.env, ATAPE_CLAUDE_LEGACY_TARBALL: historical.tarball, ATAPE_INTEGRATION_TESTS: "1", TESTCONTAINERS_RYUK_DISABLED: "true" },
     stdio: ["ignore", "pipe", "inherit"]

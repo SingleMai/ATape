@@ -376,11 +376,13 @@ function commitNormalizedRecord(context: Normalization, record: RecordValue, ref
  * index references come from the bytes included in the verified prefix hash. */
 async function restoreNormalization(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
   root: RecordValue, state: NonNullable<Cursor["stream"]> | undefined, signal: AbortSignal,
-  onOrdinaryRecord?: (record: RecordValue, calls: ReadonlyMap<string, SourceCall>) => void): Promise<Normalization> {
+  onOrdinaryRecord?: (record: RecordValue, calls: ReadonlyMap<string, SourceCall>) => void,
+  admit: () => void = () => {}, recordLimit = MaxRecordBytes): Promise<Normalization> {
   const context: Normalization = { records: new Map(), calls: new Map(), leaf: null, order: 0, continuation: undefined, response: undefined }
   const hash = createHash("sha256")
   let at = 0
-  for await (const line of readRecords(handle, 0, committed, signal)) {
+  for await (const line of readRecords(handle, 0, committed, signal, recordLimit)) {
+    admit()
     hash.update(line.content)
     if (line.content.toString("utf8").trim()) {
       const record = parseSourceRecord(line.content)
@@ -424,10 +426,11 @@ async function restoreNormalization(handle: Awaited<ReturnType<typeof open>>, co
  * old partial page. Its skip belongs to that checkpoint's visible projection. */
 async function validatePendingProjection(handle: Awaited<ReturnType<typeof open>>, size: number, cursor: Cursor,
   root: RecordValue, context: Normalization, sourceObjectId: string, signal: AbortSignal,
-  delegated: boolean, children: ReadonlyArray<Child>): Promise<void> {
+  delegated: boolean, children: ReadonlyArray<Child>, admit: () => void = () => {}, recordLimit = MaxRecordBytes): Promise<void> {
   const skip = cursor.stream?.eventSkip ?? 0
   if (skip === 0) return
-  for await (const line of readRecords(handle, cursor.bytes, size, signal)) {
+  for await (const line of readRecords(handle, cursor.bytes, size, signal, recordLimit)) {
+    admit()
     if (!line.content.toString("utf8").trim()) fail("cursor", "Claude checkpoint has no complete pending conversation record.")
     const record = parseSourceRecord(line.content)
     const transition = await normalizeSourceRecord(handle, record, root, context, signal)
@@ -756,17 +759,20 @@ async function readHeader(file: string, signal: AbortSignal): Promise<RecordValu
   try {
     const details = await handle.stat()
     if (!details.isFile()) fail("format", "Claude source is not a regular file.")
-    let records = 0
-    for await (const line of readRecords(handle, 0, Math.min(details.size, MaxHeaderBytes), signal)) {
-      if (++records > 256) return undefined
-      if (line.content.toString("utf8").trim().length === 0) continue
-      let record: RecordValue
-      try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
-      catch { return undefined }
-      if (typeof record.uuid === "string") return record
-    }
-    return undefined
+    return await readOpenedHeader(handle, details.size, signal)
   } finally { await handle.close() }
+}
+async function readOpenedHeader(handle: Awaited<ReturnType<typeof open>>, size: number, signal: AbortSignal): Promise<RecordValue | undefined> {
+  let records = 0
+  for await (const line of readRecords(handle, 0, Math.min(size, MaxHeaderBytes), signal)) {
+    if (++records > 256) return undefined
+    if (line.content.toString("utf8").trim().length === 0) continue
+    let record: RecordValue
+    try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
+    catch { return undefined }
+    if (typeof record.uuid === "string") return record
+  }
+  return undefined
 }
 async function belongsToProject(archive: Archive, root: RecordValue, signal: AbortSignal): Promise<boolean> {
   const origin = string(root.cwd)
@@ -839,18 +845,60 @@ export const discoverClaudeSources = (archive: Archive, request: { cursor: strin
     return { sources, cursor: done ? null : last!, done, ...diagnostics.snapshot() }
   }, catch: captureFailure
 })
-export const migrateClaudeSources = (request: SourceLegacyMigrationRequest): Effect.Effect<SourceDiscoveryPage, ClaudeArchiveError> => Effect.try({
-  try: () => {
-    const state = decodeDiscoveryCursor(request.checkpointCursor), sources = state.sessions.map(({ checkpoint }) => {
-      const first = checkpoint.stream?.seen[0]
-      if (!autoId(first) || !autoId(checkpoint.sessionId) || !isAbsolute(checkpoint.origin)) fail("cursor", "Claude legacy checkpoint has no proven creation Origin.")
-      return { sourceId: checkpoint.sessionId, originKey: first, cwd: checkpoint.origin }
-    }).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0)
-    const unique = new Set(sources.map(source => source.sourceId))
-    if (unique.size !== sources.length) fail("cursor", "Claude legacy checkpoint repeats a source identity.")
-    const page = sources.filter(source => request.cursor === null || source.sourceId > request.cursor).slice(0, request.limits.pageRows)
-    const last = page.at(-1)?.sourceId, done = last === undefined || !sources.some(source => source.sourceId > last)
-    return { sources: page, cursor: done ? null : last!, done, sourceFailures: [], sourceFailuresTruncated: false }
+export const migrateClaudeSources = (archive: Archive, request: SourceLegacyMigrationRequest): Effect.Effect<SourceDiscoveryPage, ClaudeArchiveError> => Effect.tryPromise({
+  try: async () => {
+    const state = decodeDiscoveryCursor(request.checkpointCursor), diagnostics = new SourceDiagnostics()
+    for (const { checkpoint } of state.sessions) if (!autoId(checkpoint.sessionId) || !isAbsolute(checkpoint.origin) ||
+      checkpoint.stream?.seen[0] !== undefined && !autoId(checkpoint.stream.seen[0]))
+      fail("cursor", "Claude legacy checkpoint has invalid creation identity facts.")
+    const sessions = [...state.sessions].sort((a, b) => a.checkpoint.sessionId < b.checkpoint.sessionId ? -1 : a.checkpoint.sessionId > b.checkpoint.sessionId ? 1 : 0)
+    const page = sessions.filter(({ checkpoint }) => request.cursor === null || checkpoint.sessionId > request.cursor).slice(0, request.limits.pageRows)
+    const sources: SourceDiscoveryPage["sources"][number][] = []
+    const started = performance.now(), check = () => {
+      request.signal.throwIfAborted()
+      if (performance.now() - started >= request.limits.durationMs) fail("limit", "Claude legacy Origin resolution exceeded its deadline.")
+    }
+    let candidates: Candidate[] | undefined
+    for (const session of page) {
+      check()
+      const { checkpoint } = session, first = checkpoint.stream?.seen[0]
+      if (first !== undefined) {
+        sources.push({ sourceId: checkpoint.sessionId, originKey: first, cwd: checkpoint.origin }); continue
+      }
+      let source = session.file || checkpoint.sessionId
+      try {
+        // A legacy first-record partial page (or an older cursor without a
+        // stream) has no acknowledged root UUID. Resolve only that page's
+        // source, authenticating every byte the old cursor actually committed.
+        candidates ??= await sourceCandidates(archive, request.signal, diagnostics)
+        check()
+        const candidate = candidates.find(candidate => candidate.sessionId === checkpoint.sessionId)
+        if (!candidate) fail("io", "The legacy Claude source is unavailable or ambiguous.")
+        source = candidate.file
+        const handle = await open(candidate.file, constants.O_RDONLY | constants.O_NOFOLLOW)
+        try {
+          const before = await handle.stat()
+          if (!before.isFile()) fail("format", "Claude source is not a regular file.")
+          const root = await readOpenedHeader(handle, before.size, request.signal)
+          if (!root) fail("format", "Claude source has no complete original record.")
+          const origin = sourceOrigin(root)
+          if (origin.sourceId !== checkpoint.sessionId || origin.cwd !== checkpoint.origin)
+            fail("changed", "Claude legacy source identity changed.")
+          if (root.isSidechain !== undefined && root.isSidechain !== false || root.agentId !== undefined)
+            fail("unsupported", "Claude legacy source is not an original root Thread.")
+          if (!await belongsToProject(archive, root, request.signal)) fail("attribution", "Claude legacy source is outside the selected Project.")
+          await validateLegacyStream(handle, before.size, root, checkpoint, false, checkpoint.children ?? [], request.signal, request.limits, check)
+          const after = await handle.stat()
+          if (after.ino !== before.ino || after.size < before.size || after.size === before.size && after.mtimeMs !== before.mtimeMs)
+            fail("changed", "Claude source changed while resolving its legacy Origin.")
+          check(); sources.push(origin)
+        } finally { await handle.close() }
+      } catch (cause) { diagnostics.capture(source, cause, request.signal) }
+    }
+    // Failed entries also advance this bounded page, so a missing source cannot
+    // prevent healthy legacy Sessions from being considered on later pages.
+    const last = page.at(-1)?.checkpoint.sessionId, done = last === undefined || !sessions.some(({ checkpoint }) => checkpoint.sessionId > last)
+    return { sources, cursor: done ? null : last!, done, ...diagnostics.snapshot() }
   }, catch: captureFailure
 })
 async function authenticateSource(handle: Awaited<ReturnType<typeof open>>, proof: SourceProof, size: number, signal: AbortSignal): Promise<void> {
@@ -865,15 +913,17 @@ async function authenticateSource(handle: Awaited<ReturnType<typeof open>>, proo
   if (hash.digest("hex") !== proof.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
 }
 async function validateLegacyStream(handle: Awaited<ReturnType<typeof open>>, size: number, root: RecordValue, cursor: Cursor | undefined,
-  delegated: boolean, pins: ReadonlyArray<Child>, signal: AbortSignal): Promise<void> {
+  delegated: boolean, pins: ReadonlyArray<Child>, signal: AbortSignal, limits?: SourceCaptureLimits, check: () => void = () => {}): Promise<void> {
   if (!cursor) return
-  if (cursor.sessionId !== root.sessionId || cursor.origin !== root.cwd || cursor.stream?.seen[0] !== root.uuid)
+  if (cursor.sessionId !== root.sessionId || cursor.origin !== root.cwd || cursor.stream?.seen[0] !== undefined && cursor.stream.seen[0] !== root.uuid)
     fail("changed", "Claude legacy creation Origin changed.")
+  let records = 0
+  const admit = () => { check(); if (limits && ++records > limits.records) fail("limit", "Claude legacy source exceeds its record admission.") }
   const previous = await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, signal,
-    (record, calls) => { bindChild(record, calls, delegated, pins, cursor.sessionId) })
+    (record, calls) => { bindChild(record, calls, delegated, pins, cursor.sessionId) }, admit, limits?.rowBytes)
   if (cursor.normalizationVersion === 1 && !equalJson(cursor.stream?.continuation, previous.continuation))
     fail("cursor", "Claude checkpoint continuation does not match its committed source.")
-  await validatePendingProjection(handle, size, cursor, root, previous, "migration-validation", signal, delegated, pins)
+  await validatePendingProjection(handle, size, cursor, root, previous, "migration-validation", signal, delegated, pins, admit, limits?.rowBytes)
 }
 async function indexCaptureStream(file: string, rootIdentity: RecordValue | undefined, threadId: string, limits: SourceCaptureLimits,
   signal: AbortSignal, diagnostics: SourceDiagnostics, pins: Map<string, Child>, proof: SourceProof | undefined,
@@ -891,7 +941,7 @@ async function indexCaptureStream(file: string, rootIdentity: RecordValue | unde
     const before = await handle.stat()
     if (!before.isFile()) fail("format", "Claude source is not a regular file.")
     if (proof) await authenticateSource(handle, proof, before.size, signal)
-    await validateLegacyStream(handle, before.size, root, legacy, delegated, [...pins.values()], signal)
+    await validateLegacyStream(handle, before.size, root, legacy, delegated, [...pins.values()], signal, limits, check)
     const nodes = new Map<string, CaptureNode>(), refs: RecordRef[] = [], originals = new Map<string, RecordRef>(), hash = createHash("sha256")
     let context = emptyNormalization(), bytes = 0, explicitEmpty = false
     const restore = async (leaf: string | null) => {

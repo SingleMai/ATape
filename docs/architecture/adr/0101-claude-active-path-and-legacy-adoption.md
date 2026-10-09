@@ -54,6 +54,17 @@ discard fields whose interpretation changes replacement semantics.
 The shared Host owns migration and recovery behind its existing collection
 Interface. The Adapter validates and decodes its own opaque legacy checkpoint;
 the shared workflow never parses Claude cursor internals or guesses Origins.
+Acknowledged root UUIDs permit offline decoding. A genuine pending first record
+can leave no root UUID in that checkpoint, and older cursor formats can omit its
+stream state. Only then the Adapter resolves the original header through bounded
+read-only source access, checks Session/CWD and any authenticated prefix, and
+validates pending projection state before adoption. The Server verifies existing
+capture ownership and source scope, then pins the supplied Origin for publication.
+Legacy storage did not preserve a separate root UUID Origin: a zero-byte cursor
+cannot authenticate its partly delivered first record's historical UUID/body.
+The fallback validates current source evidence without claiming that unavailable
+proof. Missing or ambiguous evidence produces a source
+diagnostic; it never authorizes inventing an Origin or resetting progress.
 Freeze migration binding to the installation, account, Project creation, old
 checkpoint and acknowledged Raw metadata before remote adoption. Source-free
 journal recovery runs before new provider work. Legacy has no durable prepared

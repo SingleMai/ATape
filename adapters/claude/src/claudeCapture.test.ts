@@ -1,9 +1,10 @@
 import { SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
   type AdapterOpenContext, type SourceOpenRequestV2, type SourceCaptureFrame } from "@atape/domain"
 import { Effect, Schema } from "effect"
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
+import { inflateRawSync } from "node:zlib"
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest"
 import { makeSecretRedactorLayer, prepareCanonicalSlice } from "../../../packages/application/src/index.ts"
 import { createAtapeAdapter } from "./index.ts"
@@ -501,6 +502,108 @@ it("authenticates a genuine previous public pending Event cursor before selectin
     const current = await capture(request({ legacyCheckpoint: pending.nextCursor }))
     expect(current.events.map(event => event.sourceEventId)).toEqual(["root:0", "first:0", "first:1", "current:0", "new:0", "new:1"])
   } finally { await old.close?.() }
+})
+
+const legacyFirstPage = async (values: Row[], target = file) => {
+  await writeFile(target, encode(values)); vi.stubEnv("ATAPE_CLAUDE_SESSION_FILE", target)
+  const old = await historical.createAtapeAdapter(context)
+  try { return await old.collect({ protocolVersion: "atape.adapter.v1alpha1", cursor: null, rawCaptureEnabled: false,
+    rawProgress: [], limits: { ...AdapterCollectionLimits, eventsPerObservation: 1 }, signal: context.signal }) as Row }
+  finally { await old.close?.() }
+}
+// Generated compatibility mutations below decode old public output; they are
+// separate from the unchanged genuine previous-factory cursor acceptance cases.
+const legacyState = (cursor: string): Row => JSON.parse(cursor.startsWith("z3:")
+  ? inflateRawSync(Buffer.from(cursor.slice(3), "base64url")).toString("utf8") : cursor)
+it.each([false, true])("resolves a genuine first-root partial page with no acknowledged UUID (bookkeeping %s)", async bookkeeping => {
+  const values = rows().slice(0, 2)
+  values[0]!.message.content = [{ type: "text", text: "first root part" }, { type: "text", text: "second root part" }]
+  const controls = bookkeeping ? [{ type: "queue-operation", sessionId: sid, operation: "enqueue", timestamp: values[0]!.timestamp }] : []
+  const old = await legacyFirstPage([...controls, ...values]), state = legacyState(old.nextCursor), checkpoint = state.sessions[0].checkpoint
+  expect(old.observations.flatMap((observation: Row) => observation.events).map((event: Row) => event.sourceEventId)).toEqual(["root:0"])
+  expect(checkpoint.stream).toMatchObject({ seen: [], eventSkip: 1 })
+  expect(checkpoint.bytes).toBe(Buffer.byteLength(encode(controls)))
+  const runtime = await createAtapeAdapter(context)
+  try {
+    const page = await runtime.sourceCapture.legacyMigration!({ checkpointCursor: old.nextCursor, cursor: null, limits, signal: context.signal }) as Row
+    expect(page).toMatchObject({ sources: [{ sourceId: sid, originKey: "root", cwd: directory }], done: true, sourceFailures: [] })
+    expect(await runtime.sourceCapture.legacyMigration!({ checkpointCursor: old.nextCursor, cursor: null, limits, signal: context.signal })).toEqual(page)
+  } finally { await runtime.close() }
+  const current = await capture(request({ legacyCheckpoint: old.nextCursor }))
+  expect(current.header.session.sourceSessionId).toBe(old.observations[0].session.sourceSessionId)
+  expect(current.header.origin).toEqual({ sourceId: sid, originKey: "root", cwd: directory })
+  expect(current.events.map(event => event.sourceEventId)).toEqual(["root:0", "root:1", "first:0", "first:1"])
+  expect(current.usage.map(sample => sample.sourceUsageId)).toEqual(["api-first"])
+  expect(rawText(current.frames)).toBe(encode([...controls, ...values]))
+})
+it("does not claim an absent historical UUID or body proof for a zero-byte genuine legacy cursor", async () => {
+  const values = rows().slice(0, 2)
+  values[0]!.message.content = [{ type: "text", text: "old first" }, { type: "text", text: "old second" }]
+  const old = await legacyFirstPage(values)
+  expect(legacyState(old.nextCursor).sessions[0].checkpoint.bytes).toBe(0)
+  values[0]!.uuid = "current-root"; values[0]!.message.content[0].text = "current first"
+  values[1]!.parentUuid = "current-root"; await writeFile(file, encode(values))
+  const runtime = await createAtapeAdapter(context)
+  try {
+    expect(await runtime.sourceCapture.legacyMigration!({ checkpointCursor: old.nextCursor, cursor: null, limits, signal: context.signal }))
+      .toMatchObject({ sources: [{ sourceId: sid, originKey: "current-root", cwd: directory }], sourceFailures: [] })
+  } finally { await runtime.close() }
+  const actual = await capture(request({ legacyCheckpoint: old.nextCursor }))
+  expect(actual.events[0]?.sourceEventId).toBe("current-root:0")
+  expect(actual.header.session.sourceSessionId).toBe(sid)
+})
+it("authenticates a generated older checkpoint without stream metadata and rejects its changed committed prefix", async () => {
+  await writeFile(file, encode(rows().slice(0, 2)))
+  const old = await historical.createAtapeAdapter(context)
+  let cursor: string
+  try { cursor = (await old.collect({ protocolVersion: "atape.adapter.v1alpha1", cursor: null, rawCaptureEnabled: false,
+    rawProgress: [], limits: AdapterCollectionLimits, signal: context.signal }) as Row).nextCursor }
+  finally { await old.close?.() }
+  const generated = legacyState(cursor!), checkpoint = generated.sessions[0].checkpoint
+  delete checkpoint.stream; delete checkpoint.normalizationVersion
+  const generatedCursor = JSON.stringify(generated), runtime = await createAtapeAdapter(context)
+  try {
+    expect(await runtime.sourceCapture.legacyMigration!({ checkpointCursor: generatedCursor, cursor: null, limits, signal: context.signal }))
+      .toMatchObject({ sources: [{ sourceId: sid, originKey: "root" }], sourceFailures: [] })
+    expect((await capture(request({ legacyCheckpoint: generatedCursor }))).events.map(event => event.sourceEventId))
+      .toEqual(["root:0", "first:0", "first:1"])
+    await writeFile(file, encode(rows().slice(0, 2)).replace("think first", "think changed"))
+    expect(await runtime.sourceCapture.legacyMigration!({ checkpointCursor: generatedCursor, cursor: null, limits, signal: context.signal }))
+      .toMatchObject({ sources: [], sourceFailures: [{ source: file, reason: "changed" }], done: true })
+    await expect(capture(request({ legacyCheckpoint: generatedCursor }))).rejects.toMatchObject({ reason: "changed" })
+  } finally { await runtime.close() }
+})
+it.each(["missing", "duplicate", "unprovable"])("isolates a generated %s unresolved legacy entry and advances to a healthy source", async failure => {
+  const folder = join(directory, "projects", "project"); await mkdir(folder, { recursive: true })
+  const sourceFolder = await realpath(folder), brokenFile = join(sourceFolder, "broken.jsonl"), healthyFile = join(sourceFolder, "healthy.jsonl")
+  const brokenValues: Row[] = rows().slice(0, 2).map(row => ({ ...row, sessionId: "a-broken" }))
+  brokenValues[0]!.message = { role: "user", content: [{ type: "text", text: "one" }, { type: "text", text: "two" }] }
+  const broken = await legacyFirstPage(brokenValues, brokenFile)
+  const healthyValues = rows().slice(0, 2).map(row => ({ ...row, sessionId: "z-healthy" }))
+  const healthy = await legacyFirstPage(healthyValues, healthyFile)
+  const generated = { v: 2, after: "z-healthy", sessions: [...legacyState(broken.nextCursor).sessions, ...legacyState(healthy.nextCursor).sessions] }
+  if (failure === "missing") await rm(brokenFile)
+  else if (failure === "duplicate") await writeFile(join(sourceFolder, "duplicate.jsonl"), encode(brokenValues))
+  else await writeFile(brokenFile, encode(brokenValues.map(row => ({ ...row, isSidechain: true, agentId: "unproved" }))))
+  vi.stubEnv("ATAPE_CLAUDE_SESSION_FILE", ""); vi.stubEnv("ATAPE_CLAUDE_HOME", directory)
+  const runtime = await createAtapeAdapter(context), pagedLimits = { ...limits, pageRows: 1 }
+  try {
+    const first = await runtime.sourceCapture.legacyMigration!({ checkpointCursor: JSON.stringify(generated), cursor: null, limits: pagedLimits, signal: context.signal }) as Row
+    expect(first).toMatchObject({ sources: [], cursor: "a-broken", done: false })
+    expect(first.sourceFailures).toContainEqual({ source: brokenFile, reason: failure === "missing" ? "io" : failure === "duplicate" ? "duplicate" : "unsupported" })
+    const second = await runtime.sourceCapture.legacyMigration!({ checkpointCursor: JSON.stringify(generated), cursor: first.cursor, limits: pagedLimits, signal: context.signal }) as Row
+    expect(second).toMatchObject({ sources: [{ sourceId: "z-healthy", originKey: "root" }], done: true, sourceFailures: [] })
+  } finally { await runtime.close() }
+})
+it("rejects corrupt generated pending-first-root state instead of resetting its skip", async () => {
+  const values = rows().slice(0, 2); values[0]!.message.content = [{ type: "text", text: "one" }, { type: "text", text: "two" }]
+  const old = await legacyFirstPage(values), generated = legacyState(old.nextCursor)
+  generated.sessions[0].checkpoint.stream.eventSkip = 3
+  const runtime = await createAtapeAdapter(context)
+  try {
+    await expect(runtime.sourceCapture.legacyMigration!({ checkpointCursor: JSON.stringify(generated), cursor: null, limits, signal: context.signal }))
+      .rejects.toMatchObject({ reason: "cursor" })
+  } finally { await runtime.close() }
 })
 
 it.each(["JSON", "UTF-8"])("rejects malformed complete %s rows without replacing the prior public checkpoint", async format => {
