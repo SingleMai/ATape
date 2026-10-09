@@ -161,3 +161,29 @@ Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and 
 ## Publication order and recovery
 
 The workflow publishes the CLI and all six Adapters sequentially, then creates the GitHub Release. If a later step fails, rerunning the same workflow is safe only when already-published npm integrity matches the locally rebuilt tarball. A mismatch stops publication and requires investigation; npm versions are immutable and must never be overwritten.
+
+The final, non-prerelease GitHub Release also authorizes clients to select that
+completed version for [managed automatic updates](cli/setup-and-adapters.md#upgrade-the-cli-and-adapters).
+Create it only after the CLI and all official Adapters at that exact version are
+available and verified. A client resolves the release version once, then prepares
+`@atape/cli@<version>` and every eligible installed official registry Adapter at
+the same version. Individual npm `latest` tags are not the automatic activation
+signal; packages published during an incomplete workflow must not become a mixed
+client installation.
+
+Before releasing changes to configuration, checkpoints, journals or the managed
+installation descriptor, verify the retained previous runtime can read the
+resulting state. Automatic rollback is limited to compatible state contracts;
+unified package versions alone do not establish that compatibility. Changes that
+require migration need an explicit supported migration/recovery design before
+being offered through unattended updates. Keep candidate evidence specific to the
+checks actually run; creating the GitHub Release does not deploy the Server or
+migrate an Instance. [ADR-0100](architecture/adr/0100-managed-automatic-updates.md)
+records the selected update Interface and recovery obligations.
+
+The CLI package declares its managed-runtime compatibility in `atapeRuntime`:
+`protocol: "atape.runtime.v1"` and
+`stateContract: "atape.client.v3-capture.v1"`. A client validates these exact
+values and the installed executable version before activation. Do not retain
+the marker across an incompatible state-format change merely to make unattended
+installation pass; design and verify migration/recovery first.

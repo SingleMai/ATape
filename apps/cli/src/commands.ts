@@ -4,7 +4,7 @@ import { cliVersion } from "./version.ts"
 import { t } from "./i18n/index.ts"
 import type { ParsedCLI } from "./commandInput.ts"
 
-export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" }>) {
+export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" | "__automatic-update" }>) {
   if (cli.kind === "__collector-daemon") return yield* runManagedCollector(cli.options)
   yield* Effect.sync(() => { process.stdout.write(`${cli.kind === "version" ? `ATape ${cliVersion}` : helpText()}\n`) })
 })

@@ -1,9 +1,10 @@
 // Disposable PTY fixture preparation/cleanup. Never imported by the executable.
 import { Effect } from "effect"
-import { applyToolChange, installAdapter, planToolChange, stopManagedCollector } from "@atape/application"
+import { applyToolChange, installAdapter, planToolChange, setAutomaticUpdates, stopManagedCollector } from "@atape/application"
 import { defaultNodeClientPaths, makeNodeClientLayer } from "../clientLayers.ts"
 
 await Effect.runPromise(Effect.gen(function*() {
+  yield* setAutomaticUpdates(false)
   if (process.argv[2] === "stop") {
     yield* stopManagedCollector()
   } else {

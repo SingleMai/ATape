@@ -1,7 +1,7 @@
 import type { LocalProject } from "@atape/domain"
 import { normalizeInstanceTopology } from "@atape/domain"
 import { Clock, Effect } from "effect"
-import { type ClientSnapshot, inspectClient, removeProject } from "./clientManagement.ts"
+import { type ClientSnapshot, automaticUpdatesEnabled, inspectClient, removeProject } from "./clientManagement.ts"
 import { applyProjectSetup, planProjectSetup, decideProjectSetup, ProjectSetupGateway,
   type ProjectSetupPlan, type ProjectSetupSelection } from "./projectSetup.ts"
 import { inspectManagedCollector, type ManagedCollectorJobStatus, type ManagedCollectorStatus } from "./collectorDaemon.ts"
@@ -21,6 +21,7 @@ export type GuidedSetupPlan = {
   readonly project: ProjectSetupPlan
   readonly config: ClientSnapshot
   readonly detected: ReadonlyArray<string>
+  readonly automaticUpdatesEnabled: boolean
   readonly existingDirectory?: LocalProject
 }
 
@@ -38,7 +39,8 @@ export const prepareGuidedSetup = Effect.fn("CLIExperience.prepare")(function*(i
     project.exactMatches.some(match => match.project.id === owner.id))) {
     return yield* changed("This directory is already connected with a different Project or account. Remove its local capture before reconnecting.")
   }
-  return { project, config, detected, ...(existingDirectory ? { existingDirectory } : {}) } satisfies GuidedSetupPlan
+  return { project, config, detected, automaticUpdatesEnabled: automaticUpdatesEnabled(config),
+    ...(existingDirectory ? { existingDirectory } : {}) } satisfies GuidedSetupPlan
 })
 
 export type SetupProgress = "Connecting Project" | "Starting background sync" | "Waiting for first sync"
@@ -142,6 +144,7 @@ export const inspectCLIExperience = Effect.fn("CLIExperience.inspect")(function*
         : broken ? { kind: "tool", adapterId: broken.adapterId, action: "update" } : recovery })
   }
   return { projects, collector, activeInstanceOrigin: config.activeInstanceOrigin,
+    automaticUpdatesEnabled: automaticUpdatesEnabled(config),
     toolsConfigured: config.toolsConfigured, enabledTools: config.enabledAdapterIds,
     needsAttention: projects.filter(item => ["sign_in", "sign_in_elsewhere", "repair", "partial", "tool"].includes(item.recovery.kind)).length }
 })

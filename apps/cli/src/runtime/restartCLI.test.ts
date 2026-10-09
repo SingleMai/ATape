@@ -25,6 +25,18 @@ it("opens the replaced executable with the original arguments and environment an
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
+it("reopens the replaced npm bootstrap when upgrading from a retained managed CLI", async () => {
+  const root = await mkdtemp(join(tmpdir(), "atape-restart-managed-"))
+  try {
+    const managed = join(root, "managed.cjs"), bootstrap = join(root, "npm-global.cjs"), output = join(root, "opened.txt")
+    await writeFile(managed, `require("node:fs").writeFileSync(process.env.RESTART_TEST_OUTPUT, "retained old CLI");`)
+    await writeFile(bootstrap, `require("node:fs").writeFileSync(process.env.RESTART_TEST_OUTPUT, "new global CLI");`)
+    expect(await Effect.runPromise(restartInstalledCLI(managed, ["--no-browser"], { ...process.env,
+      ATAPE_BOOTSTRAP_ENTRY: bootstrap, RESTART_TEST_OUTPUT: output }))).toBe(0)
+    expect(await readFile(output, "utf8")).toBe("new global CLI")
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
 it.skipIf(process.platform === "win32")("hands keyboard input to the new process after Ink exits", async () => {
   const root = await mkdtemp(join(tmpdir(), "atape-restart-terminal-"))
   try {

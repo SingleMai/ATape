@@ -14,6 +14,8 @@ import {
   installAdapter,
   removeProject,
   setupProject,
+  automaticUpdatesEnabled,
+  setAutomaticUpdates,
   upgradeAdapters
 } from "./clientManagement"
 
@@ -89,6 +91,19 @@ const fixture = (fixedUpgradeSpec?: string) => {
 }
 
 describe("Client management Module", () => {
+  it("defaults automatic updates on and preserves tools and Projects when toggled", async () => {
+    const client = fixture()
+    await client.run(installAdapter("@atape/adapter-codex"))
+    await client.run(setupProject(setupInput()))
+    const original = structuredClone(client.read())
+    expect(original.autoUpdateEnabled).toBeUndefined()
+    expect(automaticUpdatesEnabled(await client.run(inspectClient()))).toBe(true)
+    expect(await client.run(setAutomaticUpdates(false))).toBe(false)
+    expect(automaticUpdatesEnabled(await client.run(inspectClient()))).toBe(false)
+    expect(client.read()).toEqual({ ...original, autoUpdateEnabled: false })
+    expect(await client.run(setAutomaticUpdates(true))).toBe(true)
+    expect(client.read()).toEqual({ ...original, autoUpdateEnabled: true })
+  })
   it("requires the current Host before activating an installation and preserves config when refresh fails", async () => {
     const client = fixture()
     await client.run(installAdapter("@atape/adapter-codex"))

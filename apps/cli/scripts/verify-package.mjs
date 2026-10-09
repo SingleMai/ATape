@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
+import { verifyAutomaticUpdate } from "./verify-automatic-update.mjs"
 
 const execute = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -69,6 +70,7 @@ try {
   }
 
   if (process.platform !== "win32") {
+    await verifyAutomaticUpdate(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "automatic-update"))
     const remote = await startFixtureServer()
     fixtureServer = remote.server
     environment.ATAPE_INSTANCE_URL = remote.origin

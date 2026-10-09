@@ -1,4 +1,4 @@
-import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, inspectCLIExperience, inspectClient, setupProject } from "@atape/application"
+import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -14,20 +14,26 @@ import { ExperiencePresenter, type Screen } from "./presenter.ts"
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
-const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false) => {
+const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false, setupReview = false, manualStartupUpdates = update !== undefined) => {
   const root = await mkdtemp(join(tmpdir(), "atape-presenter-"))
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
     XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
     ATAPE_KIMI_HOME: join(root, "no-kimi"), ATAPE_GROK_HOME: join(root, "no-grok"), ATAPE_CODEX_HOME: join(root, "no-codex"), ATAPE_CLAUDE_HOME: join(root, "no-claude"), ATAPE_CODEBUDDY_HOME: join(root, "no-codebuddy"), OPENCODE_DB: join(root, "no-opencode.db")
   }
-  let installs = 0, restarted = false
+  let installs = 0, restarted = false, updateChecks = 0
   let syncRunning = failFirstResume
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
   const toolInstalls: string[] = []
   const prunes: boolean[] = []
   const base = Layer.mergeAll(makeNodeClientLayer(defaultNodeClientPaths(environment), environment),
     Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: () => toolUpdate ? Effect.succeed("0.4.4") : Effect.fail(new ToolUpdateError({ message: "offline" })) })),
+    ...(setupReview ? [Layer.succeed(ProjectSetupGateway, ProjectSetupGateway.of({
+      loadWorkspace: () => Effect.succeed({ user: { id: "user-1", displayName: "Mai" },
+        teams: [{ id: "team-1", slug: "team", displayName: "Team", role: "owner" }], projects: [] }),
+      matchGitProject: () => Effect.succeed({ status: "none" }),
+      createProject: () => Effect.die("Setup review must not create a Project")
+    }))] : []),
     ...(toolUpdate ? [Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: input => maintenance ? Effect.sync(() => {
       prunes.push(input.apply)
       return { applied: input.apply, removed: input.apply ? 1 : 0, more: false,
@@ -38,7 +44,11 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
         manifest: { protocolVersion: "atape.adapter.v1alpha1", adapterId: "codex", displayName: "Codex", entry: "./index.js", harnesses: ["codex"] } }
     }) }))] : []))
   const runtime = ManagedRuntime.make(update ? Layer.mergeAll(base, Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
-    latest: () => Effect.tryPromise({ try: () => update.then(version => { if (version === "offline") throw new Error("offline"); return version }), catch: () => new CLIUpgradeError({ reason: "check", message: "offline" }) }),
+    acquireOwnership: () => Effect.void,
+    latest: () => Effect.suspend(() => {
+      updateChecks++
+      return Effect.tryPromise({ try: () => update.then(version => { if (version === "offline") throw new Error("offline"); return version }), catch: () => new CLIUpgradeError({ reason: "check", message: "offline" }) })
+    }),
     install: () => Effect.sync(() => { installs++ }).pipe(Effect.andThen(failInstall
       ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "Installation failed" })) : Effect.void))
   })), ...(failFirstResume ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
@@ -52,6 +62,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
       return Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
     })
   }))] : [])) : base)
+  if (manualStartupUpdates) await runtime.runPromise(setAutomaticUpdates(false))
   let exited = false
   let nextDelay: Promise<void> | undefined
   const releases: Array<() => void> = []
@@ -101,7 +112,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     start()
     void wait(screen => screen.layout === "projects").then(() => presenter.submit("add"))
   }
-  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, restarted: () => restarted }
+  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, updateChecks: () => updateChecks, restarted: () => restarted }
 }
 
 const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
@@ -123,6 +134,49 @@ const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
+  it("opens Projects with automatic updates on by default without asking the manual release platform", async () => {
+    const client = await fixture(false, new Promise<string>(() => {}), false, false, false, false, false, false)
+    await client.toolsReady()
+    expect((await client.runtime.runPromise(inspectClient())).autoUpdateEnabled).toBeUndefined()
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    expect(client.updateChecks()).toBe(0)
+    expect(client.installs()).toBe(0)
+  })
+
+  it("turns automatic updates off and on in Settings without changing capture settings", async () => {
+    const client = await fixture()
+    await client.toolsReady()
+    const before = await client.runtime.runPromise(inspectClient())
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("settings")
+    const enabled = await client.wait(screen => screen.title === "Settings")
+    expect(enabled.details).toContain("Automatic updates: on · ATape and official npm integrations")
+    expect(enabled.options).toContainEqual({ value: "automatic-updates", label: "Turn off automatic updates" })
+    client.presenter.submit("automatic-updates")
+    const disabled = await client.wait(screen => screen.title === "Settings" && screen.details.includes("Automatic updates: off"))
+    expect(disabled.options).toContainEqual({ value: "automatic-updates", label: "Turn on automatic updates" })
+    expect(await client.runtime.runPromise(inspectClient())).toEqual({ ...before, autoUpdateEnabled: false })
+    client.presenter.submit("automatic-updates")
+    await client.wait(screen => screen.title === "Settings" && screen.details.includes("Automatic updates: on · ATape and official npm integrations"))
+    expect(await client.runtime.runPromise(inspectClient())).toEqual({ ...before, autoUpdateEnabled: true })
+  })
+  it.each([true, false])("explains automatic updates in initialization review when enabled is %s", async enabled => {
+    const client = await fixture(false, undefined, false, false, false, false, true)
+    await client.toolsReady()
+    if (!enabled) await client.runtime.runPromise(setAutomaticUpdates(false))
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("add")
+    await client.wait(screen => screen.pathInput === true)
+    client.presenter.submit(client.root)
+    const review = await client.wait(screen => screen.title === "Review and connect")
+    expect(review.details).toContain(enabled
+      ? "Automatic updates are on by default for ATape and official npm integrations. Turn off in Settings."
+      : "Automatic updates are off. Turn on in Settings.")
+    expect((await client.runtime.runPromise(inspectClient())).projects).toEqual([])
+  })
   it("saves a language from Settings without modifying tool or project choices", async () => {
     const client = await fixture()
     await client.toolsReady()

@@ -49,6 +49,14 @@ def cli(*args):
 
 class Terminal:
     def __init__(self, args=(), overrides=None, skip_updates=True):
+        # These scenarios intentionally exercise the manual startup Upgrade/Skip
+        # choice. Default-on unattended updates are accepted separately against
+        # the packaged independent worker in verify-automatic-update.mjs.
+        path = root / "home/config/client.json"
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        saved = json.loads(path.read_text()) if path.exists() else {"version": 3, "projects": [], "adapters": [], "toolsConfigured": False, "enabledAdapterIds": []}
+        saved["autoUpdateEnabled"] = False
+        path.write_text(json.dumps(saved))
         self.master, self.slave = pty.openpty()
         self.before = termios.tcgetattr(self.slave)
         self.resize(80, 24)
@@ -347,14 +355,14 @@ try:
     terminal.wait("Your Projects")
     terminal.send("\t\x1b[C\r")
     terminal.wait("Accounts")
-    terminal.send("\x1b[B\r")
+    terminal.send("\x1b[B" * 2 + "\r")
     terminal.wait("English")
     terminal.send("\r")
     terminal.wait("Language saved.")
     assert config()["locale"] == "en"
     terminal.send("\x1b")
     terminal.wait("Accounts")
-    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.send("\x1b[B" * 4 + "\r")
     terminal.wait("Stop background sync?")
     assert running(), "opening the stop review stopped sync"
     terminal.send("\x1b[B\r")
