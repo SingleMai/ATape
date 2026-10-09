@@ -159,6 +159,18 @@ See [Raw capture policy](../cli/raw-capture.md).
 
 ## Recovery and upgrades
 
+The first release with this v2 path, 0.5.4, requires a stopped manual CLI upgrade
+from 0.5.3 or older; see
+[the transition steps](../cli/setup-and-adapters.md#explicit-maintenance-and-external-replacement).
+Before opening or migrating the account journal or replacing a legacy global
+checkpoint, the Host checks Server publication v2 target and legacy-adoption
+capabilities. Missing support reports unsupported capture and leaves that local
+state unchanged. Package publication does not deploy these Server capabilities.
+After journal v8 migration or remote adoption, recover through a v2 runtime:
+0.5.3 cannot read v8, and a local backup cannot undo the Server's legacy-write
+fence. [ADR-0104](../architecture/adr/0104-capture-v2-state-upgrade.md) records this
+compatibility boundary.
+
 The explicit `atape.legacy-migration.v1` capability decodes this Adapter's old
 single-file, discovery and compressed z3 checkpoints. Acknowledged root UUIDs are
 decoded offline. For an older cursor or a partly delivered first root record that

@@ -16,6 +16,7 @@ import { syncPackageTree } from "./adapterPackages.ts"
 import { withClientConfigFileLock } from "./clientConfig.ts"
 import { validateCollectorAdapters } from "./collectorReadiness.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
+import { assertNoPendingManualStateUpgrade } from "./manualStateUpgrade.ts"
 export { acquireUpdateWorker } from "./updateOwnership.ts"
 import { RuntimeSelection, atomicJSON, decodeRuntimeSelection, managedStateContract, missing, readBoundedJSON,
   applyRuntimeSelection, readRuntimeSelection, resolveRuntimeEntry, selectRuntime, selectedBootstrap, updateDirectory,
@@ -57,6 +58,7 @@ const sameInstallations = (a: ReadonlyArray<AdapterInstallation>, b: ReadonlyArr
 }
 
 export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: string, environment: NodeJS.ProcessEnv) => {
+  await assertNoPendingManualStateUpgrade(paths)
   const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
   if (!pending && !(await isCollectorMaintenancePending(paths.collectorProcessFile))) return
   const restore = (deadline: number) => pending ? withClientConfigFileLock(paths.configFile, async () => {
@@ -171,6 +173,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         return { version, key }
       }),
       activate: (prepared, automatic) => nodeEffect("handoff", async () => {
+        await assertNoPendingManualStateUpgrade(paths)
         if (!/^[0-9a-f-]{36}$/.test(prepared.key)) throw new Error("Invalid prepared update key.")
         const candidate = Schema.decodeUnknownSync(Prepared)(await readBoundedJSON(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`)))
         if (candidate.selection.version !== prepared.version) throw new Error("Prepared update version changed.")

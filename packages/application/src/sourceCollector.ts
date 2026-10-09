@@ -1,5 +1,5 @@
 import { Clock, Context, Effect, Layer, Schema } from "effect"
-import { SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion2, CollectorCheckpoint, type AdapterInstallation, type AdapterSourceFailure, type LocalProject, type GitSource } from "@atape/domain"
+import { SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion2, PublicationTargetProfile2, CollectorCheckpoint, type AdapterInstallation, type AdapterSourceFailure, type LocalProject, type GitSource } from "@atape/domain"
 import { AdapterRuntimeError, CollectorConfigurationError, CollectorStateError, CollectorStateStore, SecretRedactor,
   type AdapterCollectionReport, type CollectorStateSnapshot, type HostedAdapter } from "./collectorContracts.ts"
 import { CaptureJournal, CaptureJournalError, CaptureJournals, type CaptureOwner, type CaptureSummary } from "./captureJournal.ts"
@@ -69,6 +69,16 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
   const publication = yield* PublicationTransport, raw = yield* RawPublicationTransport, redactor = yield* SecretRedactor
   return SourceCaptureCollector.of({ collect: (project, adapter, host, snapshot) => Effect.scoped(Effect.gen(function*() {
+    // SourceCapture v2 can migrate both the account journal and a legacy cursor.
+    // Check the remote prerequisite before either local irreversible transition.
+    if (host.sourceCapture.protocolVersion === SourceCaptureVersion2) {
+      const capabilities = yield* publication.capabilities({ instanceOrigin: project.instanceOrigin,
+        userId: project.userId, installationId: snapshot.installationId })
+      if (!capabilities.targetProfiles?.includes(PublicationTargetProfile2) || capabilities.legacyAdoption !== true)
+        return yield* new AdapterRuntimeError({ adapterId: adapter.adapterId, reason: "contract", retryable: false,
+          sourceFailureReason: "unsupported",
+          message: "SourceCapture v2 requires Server publication v2 targets and legacy adoption. Update the Server before migrating this capture state." })
+    }
     const journal = yield* journals.open({ instanceOrigin: project.instanceOrigin, userId: project.userId }, limits.journal)
     if (snapshot.installationId !== journal.binding.installationId) return yield* stateFailure("Collector and capture journal installation identities differ.")
     let cursor = initialCursor(), revision = snapshot.checkpoint?.revision ?? 0

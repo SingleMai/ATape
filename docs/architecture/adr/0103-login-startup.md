@@ -7,6 +7,9 @@ Date: 2026-10-09
 Amends [ADR-0100](0100-managed-automatic-updates.md) for login startup. The
 [setup guide](../../cli/setup-and-adapters.md) owns supported behavior and
 verification limits; this decision does not establish release or OS acceptance.
+The initial published startup release requires a v2 bootstrap under
+[ADR-0104](0104-capture-v2-state-upgrade.md). The older-bootstrap discussion below
+applies only within a compatible state contract.
 
 ## Context and constraints
 

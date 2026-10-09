@@ -271,8 +271,11 @@ preparation leaves the current version usable.
 
 The prepared CLI package must declare `atapeRuntime.protocol` as
 `atape.runtime.v1` and `atapeRuntime.stateContract` as
-`atape.client.v3-capture.v1`. A missing or different contract rejects automatic
+`atape.client.v3-capture.v2`. A missing or different contract rejects automatic
 activation; it does not migrate configuration, checkpoints or capture journals.
+The published 0.5.3 worker accepts v1 only, so it keeps its current installation
+when offered 0.5.4. This first v2 release requires the explicit manual transition
+below; later compatible v2 releases retain automatic updates and rollback.
 
 One independent, short-lived updater prepares an isolated version directory and
 Adapter slots while collection continues. It then obtains exclusive maintenance
@@ -351,6 +354,30 @@ Adapter's filesystem or network access.
 
 ### Explicit maintenance and external replacement
 
+**The 0.5.3 → 0.5.4 boundary requires manual installation outside the old
+console.** Use the old CLI to Stop sync, finish interrupted update recovery,
+close old consoles and keep a consistent local-state backup. Install
+`@atape/cli@0.5.4` globally with npm, then open the new console. Its bounded
+private migration ledger preserves the selected official Adapter overlay in
+configuration and retires known v1 current/retained pointers while holding
+update and Collector-process ownership. Interrupted steps replay before the
+new console delegates or starts collection; a later deliberate Adapter change
+is preserved. Preferences, Projects, accounts, capture files and Stop intent
+remain intact. Help and version queries are read-only.
+Keep `ATAPE_CONFIG_FILE` and `ATAPE_COLLECTOR_PROCESS_FILE` overrides consistent
+for that `ATAPE_HOME`; the upgrade receipt is bound to those local paths.
+
+An active Collector, old pending update/maintenance, unknown metadata or busy
+ownership blocks this transition. Restore the old npm CLI to finish recovery
+and Stop sync, then reinstall and retry. Update official Adapters in Tools and
+confirm the Server supports publication v2 targets and legacy adoption before
+Start sync. SourceCapture v2 checks these capabilities before opening an account
+journal or replacing a legacy checkpoint. Starting v2 capture can migrate a v7
+journal to v8 and adopt legacy Sessions irreversibly on the Server. Recover
+through a v2 runtime afterward; an old 0.5.3 reader cannot open v8, and restoring
+local files cannot undo Server adoption. See
+[ADR-0104](../architecture/adr/0104-capture-v2-state-upgrade.md).
+
 Open ATape → Tools and updates to inspect current/latest versions and apply each
 available update. With automatic updates enabled, startup launches due maintenance
 without a blocking Upgrade/Skip choice. With automatic updates disabled, startup
@@ -390,8 +417,9 @@ A direct npm/tarball replacement does not itself run ATape lifecycle management.
 The managed selection records the bootstrap executable's digest. Replacing its
 bytes invalidates that selection while retaining the pointer as local evidence;
 the newly installed bootstrap and original configuration source records take
-precedence. An external npm command does not preserve the managed Adapter overlay
-into those records as the internal upgrade does. Replacing a shared npm bootstrap
+precedence. Outside the explicit v1→v2 transition above, an external npm command
+does not preserve the managed Adapter overlay into those records as the internal
+upgrade does. Replacing a shared npm bootstrap
 from a different `ATAPE_HOME` has this same effect on other homes; their
 preferences and managed selections remain independent. Reopen ATape to complete the
 Collector handoff and inspect current
@@ -501,8 +529,9 @@ or the next login can resume it.
 
 The OS entry binds absolute Node and an owned bundled coordinator at
 `startup/atape.mjs`; npm installation identity remains checked separately. This
-allows a capable managed release to add startup while the npm bootstrap is still
-older. The coordinator delegates to a selected release only when it declares the
+allows later compatible managed releases to reuse a capable bootstrap. The
+first v2 release, 0.5.4, requires a manually installed v2 bootstrap; 0.5.3 cannot
+decode a v2 runtime pointer. The coordinator delegates to a selected release only when it declares the
 login startup capability. A rollback to a release lacking that capability makes
 startup inert; its older Stop operation cannot maintain the new intent contract.
 Return to a capable release and inspect Settings to repair startup. Private metadata keeps required provider paths, explicit

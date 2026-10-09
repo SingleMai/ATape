@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { verifyAutomaticUpdate } from "./verify-automatic-update.mjs"
 import { verifyLoginStartup } from "./verify-login-startup.mjs"
+import { verifyLegacyStateContract } from "./verify-legacy-state-contract.mjs"
 
 const execute = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -73,6 +74,9 @@ try {
   if (process.platform !== "win32") {
     await verifyAutomaticUpdate(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "automatic-update"))
     await verifyLoginStartup(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "login-startup"))
+    if (process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL) {
+      await verifyLegacyStateContract(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "legacy-state-contract"), process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL)
+    }
     const remote = await startFixtureServer()
     fixtureServer = remote.server
     environment.ATAPE_INSTANCE_URL = remote.origin
