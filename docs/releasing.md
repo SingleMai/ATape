@@ -66,6 +66,14 @@ ATAPE_RELEASE_TAG="v$(node -p 'require("./package.json").version')"
 node scripts/check-release-tag.mjs "$ATAPE_RELEASE_TAG"
 ```
 
+The Server toolchain is pinned to Go `1.26.9` in `server/go.mod`, the reachable
+dependency scan and the Server image builder. CI and release workflows read the
+module version. Keep these pins aligned on a supported Go branch when applying
+security updates; the [Go release policy and history](https://go.dev/doc/devel/release)
+record branch support and patch fixes. Go `1.26.9` includes the October 8, 2026
+standard-library security fixes. Historical candidate evidence retains the
+toolchain actually tested.
+
 Server and Web runtime Dockerfiles upgrade Alpine packages before adding their
 runtime dependencies. Security scans the resulting images; candidate evidence
 must identify the immutable images actually tested.

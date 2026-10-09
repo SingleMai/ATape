@@ -133,10 +133,11 @@ it.each([43, 44, 45, 70, 71])("rejects a complete selected dual bridge/file fram
   }
 })
 
+// Each restarted one-event page and exact retry verifies the multi-megabyte committed prefix.
 it("retains only the selected dual history when unrelated ordinary prehistory exceeds 4 MiB", async () => {
   const records = rows(sources[1]!), original = records.findIndex(record => record.type === "user" && record.parentUuid === null)
   records[original]!.unrelatedHistory = "x".repeat(4 * 1024 * 1024 + 1)
   const source = lines(records)
   await writeFile(file, source); const captured = await drain(null, true, { eventsPerObservation: 1 })
   expect(events(captured.pages)).toHaveLength(22); expect(totals(captured.pages)).toEqual({ records: 7, input: 380163, output: 117 }); expectRaw(captured.pages, source)
-})
+}, 30_000)
