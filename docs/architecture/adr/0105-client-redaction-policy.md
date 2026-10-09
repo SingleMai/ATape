@@ -5,6 +5,7 @@
 - Amends the client masking boundary of ADR-0009, ADR-0059 and ADR-0066, and the
   local inspection command scope of ADR-0081
 - Current guide: [Client redaction](../../cli/redaction.md)
+- Extended by [ADR-0106](0106-redaction-settings.md) for interactive global rule management
 
 ## Context and alternatives
 

@@ -34,4 +34,5 @@ export * from "./sourceComparison.ts"
 export * from "./sourceCollector.ts"
 
 export * from "./redaction.ts"
+export * from "./redactionSettings.ts"
 export * from "./collectorRedactionPolicy.ts"

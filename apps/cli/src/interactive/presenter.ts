@@ -2,6 +2,8 @@ import { decideProjectSetup, describeClientFailure,
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, refreshManagedCollector, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, automaticUpdatesEnabled, loginStartupEnabled, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
+  inspectRedactionSettings, validateRedactionSettings, saveRedactionSettings,
+  type RedactionSettingsSnapshot, type RedactionConfiguration, type RedactionPattern,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
   setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, setAutomaticUpdates, inspectLoginStartup, setLoginStartup, reconcileLoginStartup, installAdapter, upgradeAdapters, pruneAdapterPackages,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
@@ -22,6 +24,7 @@ type InputFields = {
   readonly suggestions?: ReadonlyArray<DirectorySuggestion>
   readonly directoriesLoading?: boolean
   readonly pathInput?: boolean
+  readonly inputEncoding?: "literal" | "json"
 }
 type MenuFields = {
   readonly refreshing?: boolean
@@ -43,10 +46,10 @@ type ScreenContent = {
   readonly notice?: string
   readonly context?: string
 } & (
-  | { readonly kind: "busy"; readonly options?: never; readonly selected?: never } & Absent<InputFields & MenuFields>
-  | { readonly kind: "input"; readonly options?: never; readonly selected?: never } & InputFields & Absent<MenuFields>
-  | { readonly kind: "menu"; readonly options: ReadonlyArray<ScreenOption>; readonly selected?: never } & MenuFields & Absent<InputFields>
-  | { readonly kind: "sources"; readonly options: ReadonlyArray<ScreenOption>; readonly selected: ReadonlyArray<string> } & Absent<InputFields & MenuFields>
+  | { readonly kind: "busy"; readonly options?: never; readonly selected?: never; readonly backDisabled?: boolean } & Absent<InputFields & MenuFields>
+  | { readonly kind: "input"; readonly options?: never; readonly selected?: never; readonly backDisabled?: never } & InputFields & Absent<MenuFields>
+  | { readonly kind: "menu"; readonly options: ReadonlyArray<ScreenOption>; readonly selected?: never; readonly backDisabled?: never } & MenuFields & Absent<InputFields>
+  | { readonly kind: "sources"; readonly options: ReadonlyArray<ScreenOption>; readonly selected: ReadonlyArray<string>; readonly backDisabled?: never } & Absent<InputFields & MenuFields>
 )
 export type Screen = ScreenContent & { readonly revision: number }
 const stateLabel = (state: ConsoleProject["state"]): string => {
@@ -124,6 +127,16 @@ const recoveryGuidance = (item: ConsoleProject): string => {
   }
 }
 export const safeTerminalText = (value: string) => value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
+const terminalJSON = (value: string | number): string => JSON.stringify(value).replace(/[\u007f-\u009f\u2028-\u202e\u2066-\u2069]/g,
+  character => `\\u${character.charCodeAt(0).toString(16).padStart(4, "0")}`)
+type RedactionDraft = {
+  readonly snapshot: RedactionSettingsSnapshot
+  readonly configuration: RedactionConfiguration
+  readonly dirty: boolean
+  readonly validation: "valid" | "invalid" | "unchecked"
+}
+type RedactionField = keyof RedactionPattern
+const redactionFields: ReadonlyArray<RedactionField> = ["name", "type", "pattern", "field_pattern", "capture_group"]
 
 export class ExperiencePresenter {
   private screen: Screen = { revision: 0, kind: "busy", title: t("cli.presenter.opening", "Opening ATape"), details: [] }
@@ -153,6 +166,7 @@ export class ExperiencePresenter {
   getSnapshot = () => this.screen
   submit = (value: string | string[]) => this.action(value)
   back = () => {
+    if (this.screen.kind === "busy" && this.screen.backDisabled) return
     const previous = this.previous
     this.cancelOperation()
     previous()
@@ -176,13 +190,13 @@ export class ExperiencePresenter {
   }
   private cancelOperation() { this.generation++; this.operation?.abort(); this.suggestions?.abort() }
   private work<A, E>(title: string, effect: Effect.Effect<A, E, ExperienceRequirements>, success: (value: A) => void,
-    failure?: (error: E) => void, back = this.previous) {
+    failure?: (error: E) => void, back = this.previous, backDisabled = false) {
     this.cancelOperation()
     const generation = this.generation
     const controller = new AbortController()
     this.operation = controller
     const context = this.screen.title
-    this.show({ kind: "busy", title, context, details: this.screen.details }, undefined, back)
+    this.show({ kind: "busy", title, context, details: this.screen.details, ...(backDisabled ? { backDisabled: true } : {}) }, undefined, back)
     void this.run(effect.pipe(Effect.match({
       onFailure: error => ({ ok: false as const, error }), onSuccess: value => ({ ok: true as const, value })
     })), AbortSignal.any([controller.signal, this.lifetime.signal])).then(result => {
@@ -190,10 +204,10 @@ export class ExperiencePresenter {
       this.operation = undefined
       if (result.ok) success(result.value)
       else if (failure) failure(result.error)
-      else this.failed(result.error, () => this.work(title, effect, success, failure, back), back)
+      else this.failed(result.error, () => this.work(title, effect, success, failure, back, backDisabled), back)
     }).catch(error => {
       if (!controller.signal.aborted && !this.lifetime.signal.aborted && generation === this.generation) {
-        this.failed(error, () => this.work(title, effect, success, failure, back), back)
+        this.failed(error, () => this.work(title, effect, success, failure, back, backDisabled), back)
       }
     })
   }
@@ -781,6 +795,7 @@ export class ExperiencePresenter {
           ? t("cli.settings.disableLoginStartup", "Turn off login startup")
           : t("cli.settings.enableLoginStartup", "Turn on login startup") },
         ...(startup.enabled && startup.state !== "registered" ? [{ value: "repair-login-startup", label: t("cli.settings.repairLoginStartup", "Retry login startup registration") }] : []),
+        { value: "privacy", label: t("cli.privacy.title", "Privacy rules") },
         { value: "language", label: t("cli.settings.language", "Language") }, { value: "server", label: t("cli.settings.changeServer", "Change server") },
         { value: snapshot.collector.running ? "stop" : "start", label: snapshot.collector.running
           ? t("cli.settings.stopAll", "Stop sync for all projects") : t("cli.console.startSync", "Start sync") }]
@@ -788,8 +803,140 @@ export class ExperiencePresenter {
       ? this.work(t("cli.settings.savingAutomaticUpdates", "Saving automatic updates"), setAutomaticUpdates(!snapshot.automaticUpdatesEnabled), () => this.settings(), undefined, () => this.settings())
       : value === "login-startup" ? this.work(t("cli.settings.savingLoginStartup", "Saving login startup"), setLoginStartup(!startup.enabled), () => this.settings(), undefined, () => this.settings())
       : value === "repair-login-startup" ? this.work(t("cli.settings.repairingLoginStartup", "Registering login startup"), reconcileLoginStartup(), () => this.settings(), undefined, () => this.settings())
-      : value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
+      : value === "privacy" ? this.privacy() : value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
       : this.consoleAction(String(value)), () => this.list()))
+  }
+  private privacy() {
+    this.work(t("cli.privacy.reading", "Reading privacy rules"), inspectRedactionSettings(), snapshot => this.privacyDraft({
+      snapshot, configuration: snapshot.configuration, dirty: false, validation: snapshot.validation
+    }), error => this.show({ kind: "menu", title: t("cli.privacy.title", "Privacy rules"),
+      details: [this.privacyFailure(error), t("cli.privacy.unreadable", "The existing file was not changed. Repair its JSON/schema or access, then reload.")],
+      options: [{ value: "reload", label: t("cli.privacy.reload", "Reload saved rules") }]
+    }, () => this.privacy(), () => this.settings()), () => this.settings())
+  }
+  private privacyFailure(error: unknown): string {
+    const reason = typeof error === "object" && error !== null && "reason" in error ? error.reason : undefined
+    switch (reason) {
+      case "configuration": return t("cli.privacy.errorConfiguration", "Rules are invalid or exceed a limit. Check types, RE2 syntax and capture groups. At least one pattern is required per rule.")
+      case "environment": return t("cli.privacy.errorEnvironment", "Environment literal configuration is invalid. Correct ATAPE_REDACT_VALUES and reopen ATape.")
+      case "conflict": return t("cli.privacy.errorConflict", "The saved rules changed elsewhere. Your draft is retained; reload saved rules before saving again.")
+      default: return t("cli.privacy.errorIO", "Privacy rules could not be read or saved safely. Check file access and available disk space.")
+    }
+  }
+  private privacyLeave(draft: RedactionDraft, next: () => void) {
+    if (!draft.dirty) return next()
+    this.confirm(t("cli.privacy.discardTitle", "Discard unsaved rules?"),
+      [t("cli.privacy.discardDetail", "Your draft has not been saved. Discard it to continue.")],
+      t("cli.privacy.discard", "Discard draft"), next, () => this.privacyDraft(draft))
+  }
+  private privacyDraft(draft: RedactionDraft, notice?: string) {
+    const rules = draft.configuration.patterns ?? []
+    const validation = draft.validation === "valid" ? t("cli.privacy.valid", "Valid")
+      : draft.validation === "invalid" ? t("cli.privacy.invalid", "Invalid — edit and validate before saving")
+      : t("cli.privacy.unchecked", "Draft needs validation")
+    this.show({ kind: "menu", title: t("cli.privacy.title", "Privacy rules"), ...(notice ? { notice } : {}), details: [
+      t("cli.privacy.builtins", "Built-in credential protection is always on. Custom rules add protection."),
+      t("cli.privacy.count", "Custom rules: {count}{draft}", { count: rules.length, draft: draft.dirty ? t("cli.privacy.unsaved", " · unsaved draft") : "" }),
+      t("cli.privacy.validation", "Validation: {status}", { status: validation }),
+      t("cli.privacy.file", "File: {file}", { file: terminalJSON(draft.snapshot.configFile) }),
+      draft.snapshot.origin === "environment" ? t("cli.privacy.environmentFile", "Selected by ATAPE_REDACTION_CONFIG_FILE")
+        : draft.snapshot.exists ? t("cli.privacy.defaultFile", "Global ATape configuration file") : t("cli.privacy.missingFile", "No saved file; saving will create the global configuration file."),
+      t("cli.privacy.literals", "Environment exact values: {count} (values are hidden)", { count: draft.snapshot.literalCount })
+    ], options: [
+      { value: "add", label: t("cli.privacy.add", "Add custom rule") },
+      ...rules.map((rule, index) => ({ value: `rule:${index}`, label: `${index + 1}. ${terminalJSON(rule.name)} · ${terminalJSON(rule.type)}` })),
+      { value: "validate", label: t("cli.privacy.validate", "Validate rules") },
+      ...(draft.dirty ? [{ value: "save", label: t("cli.privacy.save", "Review and save rules") }] : []),
+      { value: "reload", label: t("cli.privacy.reload", "Reload saved rules") }
+    ] }, value => {
+      if (value === "add") {
+        const next = { ...draft, configuration: { patterns: [...rules, { name: "", type: "" }] }, dirty: true, validation: "unchecked" as const }
+        return this.privacyRule(next, rules.length)
+      }
+      if (value === "reload") return this.privacyLeave(draft, () => this.privacy())
+      if (value === "save") return this.privacyValidate(draft, true)
+      if (value === "validate") return this.privacyValidate(draft, false)
+      if (typeof value === "string" && value.startsWith("rule:")) {
+        const index = Number(value.slice(5))
+        if (rules[index]) this.privacyRule(draft, index)
+      }
+    }, () => this.privacyLeave(draft, () => this.settings()))
+  }
+  private privacyRule(draft: RedactionDraft, index: number, notice?: string) {
+    const rules = draft.configuration.patterns ?? []
+    const rule = rules[index]
+    if (!rule) return this.privacyDraft(draft)
+    this.show({ kind: "menu", title: t("cli.privacy.ruleTitle", "Custom rule {number}", { number: index + 1 }), ...(notice ? { notice } : {}),
+      details: [t("cli.privacy.ruleHint", "Choose a field to edit. Strings are shown as JSON strings so escapes and line breaks stay exact."),
+        ...redactionFields.map(field => `${field}: ${rule[field] === undefined ? t("cli.privacy.omitted", "(not set)") : terminalJSON(rule[field]!)}`)],
+      options: [...redactionFields.map(field => ({ value: field, label: t("cli.privacy.editField", "Edit {field}", { field }) })),
+        { value: "encoded", label: t("cli.privacy.advanced", "Advanced: JSON encoded field") },
+        { value: "delete", label: t("cli.privacy.delete", "Delete rule from draft") },
+        { value: "done", label: t("cli.privacy.done", "Back to rules") }]
+    }, value => {
+      if (value === "delete") return this.confirm(t("cli.privacy.deleteTitle", "Delete this custom rule?"),
+        [terminalJSON(rule.name), t("cli.privacy.deleteDetail", "This changes the draft only. Save the rules to apply it.")],
+        t("cli.privacy.delete", "Delete rule from draft"), () => this.privacyDraft({ ...draft,
+          configuration: { patterns: rules.filter((_, position) => position !== index) }, dirty: true, validation: "unchecked"
+        }), () => this.privacyRule(draft, index))
+      if (value === "done") return this.privacyDraft(draft)
+      if (value === "encoded") return this.show({ kind: "menu", title: t("cli.privacy.advanced", "Advanced: JSON encoded field"),
+        details: [t("cli.privacy.encodedHint", "Use this for exact line breaks or control characters. Ordinary fields can be edited directly from the previous page.")],
+        options: redactionFields.map(field => ({ value: field, label: t("cli.privacy.editField", "Edit {field}", { field }) }))
+      }, field => { if (redactionFields.includes(field as RedactionField)) this.privacyField(draft, index, field as RedactionField, true) }, () => this.privacyRule(draft, index))
+      if (redactionFields.includes(value as RedactionField)) this.privacyField(draft, index, value as RedactionField)
+    }, () => this.privacyDraft(draft))
+  }
+  private privacyField(draft: RedactionDraft, index: number, field: RedactionField, encoded = false, initial?: string, notice?: string) {
+    const rules = draft.configuration.patterns ?? []
+    const rule = rules[index]
+    if (!rule) return this.privacyDraft(draft)
+    const optional = field !== "name" && field !== "type"
+    const existing = rule[field]
+    const json = encoded || typeof existing === "string" && /[\x00-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069]/.test(existing)
+    const hints: Record<RedactionField, string> = {
+      name: t("cli.privacy.nameHint", "A label for this rule."),
+      type: t("cli.privacy.typeHint", "Replacement label: 1–40 ASCII letters, digits, _ or -."),
+      pattern: t("cli.privacy.patternHint", "RE2 value pattern, for example token=(\\w+). RE2 excludes lookarounds and backreferences."),
+      field_pattern: t("cli.privacy.fieldHint", "RE2 JSON field-name pattern, not JSONPath. With a value pattern, both must match."),
+      capture_group: t("cli.privacy.captureHint", "JSON number for the capture group; 0 selects the full match. Requires a value pattern.")
+    }
+    this.show({ kind: "input", inputEncoding: json ? "json" : "literal", title: t("cli.privacy.editField", "Edit {field}", { field }),
+      initial: initial ?? (existing === undefined ? "" : json ? terminalJSON(existing) : String(existing)), ...(notice ? { notice } : {}), details: [hints[field],
+        ...(field !== "capture_group" ? [json
+          ? t("cli.privacy.stringInput", "Enter a JSON string including quotes, for example \"value\". Use \\n or \\u001b for control characters; never paste raw controls.")
+          : t("cli.privacy.literalInput", "Enter the text directly. For line breaks or control characters, use Advanced: JSON encoded field.")] : []),
+        ...(optional ? [t("cli.privacy.optionalInput", "Leave empty to remove this optional field.")] : [])]
+    }, value => {
+      if (typeof value !== "string") return
+      let decoded: unknown
+      try { decoded = optional && value === "" ? undefined : json || field === "capture_group" ? JSON.parse(value) : value }
+      catch { return this.privacyField(draft, index, field, json, value, t("cli.privacy.invalidInput", "Enter a JSON string in quotes, or a JSON number for capture_group. The draft was not changed.")) }
+      if (decoded !== undefined && typeof decoded !== (field === "capture_group" ? "number" : "string")) {
+        return this.privacyField(draft, index, field, json, value, t("cli.privacy.invalidInput", "Enter a JSON string in quotes, or a JSON number for capture_group. The draft was not changed."))
+      }
+      const next: Record<string, unknown> = { ...rule }
+      if (decoded === undefined) delete next[field]
+      else next[field] = decoded
+      this.privacyRule({ ...draft, configuration: { patterns: rules.map((item, position) => position === index ? next as RedactionPattern : item) },
+        dirty: true, validation: "unchecked" }, index)
+    }, () => this.privacyRule(draft, index))
+  }
+  private privacyValidate(draft: RedactionDraft, save: boolean) {
+    this.work(t("cli.privacy.validating", "Validating privacy rules"), validateRedactionSettings(draft.configuration), configuration => {
+      const validated = { ...draft, configuration, validation: "valid" as const }
+      if (!save) return this.privacyDraft(validated, t("cli.privacy.validationPassed", "Rules are valid. Validation does not save them."))
+      this.confirm(t("cli.privacy.saveTitle", "Save global privacy rules?"), [
+        t("cli.privacy.saveCount", "Save {count} custom rules to {file}.", { count: configuration.patterns?.length ?? 0, file: terminalJSON(draft.snapshot.configFile) }),
+        t("cli.privacy.saveTiming", "Applies to future collection jobs across all local projects. A running job keeps its current policy."),
+        t("cli.privacy.saveHistory", "Already accepted history stays unchanged. Some uncertain deliveries under an older policy may pause for recovery."),
+        t("cli.privacy.saveSync", "Built-in protection stays on. Saving does not start or stop background sync.")
+      ], t("cli.privacy.saveConfirm", "Save rules"), () => this.work(t("cli.privacy.saving", "Saving privacy rules"),
+        saveRedactionSettings({ expectedRevision: draft.snapshot.revision, configuration }), snapshot => this.privacyDraft({
+          snapshot, configuration: snapshot.configuration, dirty: false, validation: snapshot.validation
+        }, t("cli.privacy.saved", "Privacy rules saved. Future collection jobs will use them.")),
+        error => this.privacyDraft(validated, this.privacyFailure(error)), () => this.privacyDraft(validated), true), () => this.privacyDraft(validated))
+    }, error => this.privacyDraft({ ...draft, validation: "invalid" }, this.privacyFailure(error)), () => this.privacyDraft(draft))
   }
   private language() {
     this.show({ kind: "menu", title: t("cli.settings.language", "Language"),

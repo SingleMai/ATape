@@ -1,6 +1,6 @@
 import { AdapterPackages, AdapterReleases, ToolUpdateError, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PassThrough } from "node:stream"
@@ -14,12 +14,13 @@ import { ExperiencePresenter, type Screen } from "./presenter.ts"
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
-const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false, setupReview = false, manualStartupUpdates = update !== undefined) => {
+const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false, setupReview = false, manualStartupUpdates = update !== undefined, privacyEnvironment: NodeJS.ProcessEnv = {}) => {
   const root = await mkdtemp(join(tmpdir(), "atape-presenter-"))
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
     XDG_DATA_HOME: join(root, "data"), XDG_STATE_HOME: join(root, "state"),
-    ATAPE_KIMI_HOME: join(root, "no-kimi"), ATAPE_GROK_HOME: join(root, "no-grok"), ATAPE_CODEX_HOME: join(root, "no-codex"), ATAPE_CLAUDE_HOME: join(root, "no-claude"), ATAPE_CODEBUDDY_HOME: join(root, "no-codebuddy"), OPENCODE_DB: join(root, "no-opencode.db")
+    ATAPE_KIMI_HOME: join(root, "no-kimi"), ATAPE_GROK_HOME: join(root, "no-grok"), ATAPE_CODEX_HOME: join(root, "no-codex"), ATAPE_CLAUDE_HOME: join(root, "no-claude"), ATAPE_CODEBUDDY_HOME: join(root, "no-codebuddy"), OPENCODE_DB: join(root, "no-opencode.db"),
+    ...privacyEnvironment
   }
   let installs = 0, restarted = false, updateChecks = 0
   let syncRunning = failFirstResume
@@ -123,7 +124,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     start()
     void wait(screen => screen.layout === "projects").then(() => presenter.submit("add"))
   }
-  return { root, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, loginRegistrations,
+  return { root, environment, presenter, runtime, wait, seed, toolsReady, holdNext, starts, toolInstalls, prunes, loginRegistrations,
     loseLoginRegistration: () => { loginRegistered = false },
     syncRunning: () => syncRunning, exited: () => exited, installs: () => installs, updateChecks: () => updateChecks, restarted: () => restarted }
 }
@@ -147,6 +148,206 @@ const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
+  const privacy = async (environment: NodeJS.ProcessEnv = {}) => {
+    const client = await fixture(false, undefined, false, false, false, false, false, false, environment)
+    await client.toolsReady()
+    client.presenter.start()
+    await client.wait(screen => screen.layout === "projects")
+    client.presenter.submit("settings")
+    await client.wait(screen => screen.title === "Settings")
+    client.presenter.submit("privacy")
+    await client.wait(screen => screen.title === "Privacy rules" && screen.kind === "menu")
+    return client
+  }
+  const privacyField = async (client: Awaited<ReturnType<typeof fixture>>, field: string, value: string, encoded = false) => {
+    if (encoded) {
+      client.presenter.submit("encoded")
+      await client.wait(screen => screen.title === "Advanced: JSON encoded field")
+    }
+    client.presenter.submit(field)
+    await client.wait(screen => screen.kind === "input" && screen.title === `Edit ${field}`)
+    client.presenter.submit(value)
+    await client.wait(screen => screen.title === "Custom rule 1")
+  }
+  it("shows effective privacy settings without exposing environment values or changing sync", async () => {
+    const secret = "private-environment-value-123456"
+    const client = await privacy({ APP_TOKEN: secret, ATAPE_REDACT_VALUES: JSON.stringify([secret, "second-private-literal"]) })
+    const screen = client.presenter.getSnapshot()
+    expect(screen.details).toContain("Built-in credential protection is always on. Custom rules add protection.")
+    expect(screen.details).toContain("Custom rules: 0")
+    expect(screen.details).toContain("Environment exact values: 2 (values are hidden)")
+    expect(JSON.stringify(screen)).not.toContain(secret)
+    expect(JSON.stringify(screen)).not.toContain("second-private-literal")
+    expect(client.starts).toEqual([])
+    expect(await readFile(join(client.environment.ATAPE_HOME!, "config", "redaction.json"), "utf8").catch(() => undefined)).toBeUndefined()
+    client.presenter.submit("validate")
+    await client.wait(screen => screen.notice === "Rules are valid. Validation does not save them.")
+    expect(client.presenter.getSnapshot().options?.some(option => option.value === "save")).toBe(false)
+  })
+  it("edits every custom field, validates, cancels by default, and saves an exact global draft", async () => {
+    const client = await privacy()
+    const configBefore = await client.runtime.runPromise(inspectClient())
+    const configFile = join(client.environment.ATAPE_HOME!, "config", "redaction.json")
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "内部凭据 \"primary\"")
+    await privacyField(client, "type", "INTERNAL")
+    await privacyField(client, "pattern", "token=(\\w+)")
+    await privacyField(client, "field_pattern", "(?i)^credential$")
+    await privacyField(client, "capture_group", "1")
+    client.presenter.submit("done")
+    await client.wait(screen => screen.title === "Privacy rules")
+    client.presenter.submit("save")
+    const review = await client.wait(screen => screen.title === "Save global privacy rules?")
+    expect(review.options?.[0]).toEqual({ value: "back", label: "Cancel" })
+    expect(review.details).toContain("Already accepted history stays unchanged. Some uncertain deliveries under an older policy may pause for recovery.")
+    client.presenter.submit("back")
+    await client.wait(screen => screen.title === "Privacy rules")
+    expect(await readFile(configFile, "utf8").catch(() => undefined)).toBeUndefined()
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Save global privacy rules?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({ patterns: [{ name: "内部凭据 \"primary\"", type: "INTERNAL", pattern: "token=(\\w+)", field_pattern: "(?i)^credential$", capture_group: 1 }] })
+    expect(await client.runtime.runPromise(inspectClient())).toEqual(configBefore)
+    expect(client.starts).toEqual([])
+    client.presenter.submit("rule:0")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "capture_group", "")
+    client.presenter.submit("delete")
+    await client.wait(screen => screen.title === "Delete this custom rule?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.title === "Privacy rules" && screen.details.includes("Custom rules: 0 · unsaved draft"))
+    expect(JSON.parse(await readFile(configFile, "utf8")).patterns).toHaveLength(1)
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Save global privacy rules?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({ patterns: [] })
+  })
+  it("retains invalid drafts and rejects a concurrent overwrite until explicit reload", async () => {
+    const client = await privacy()
+    const configFile = join(client.environment.ATAPE_HOME!, "config", "redaction.json")
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "Draft")
+    await privacyField(client, "type", "INTERNAL")
+    await privacyField(client, "pattern", "(?=unsupported)")
+    client.presenter.submit("done")
+    await client.wait(screen => screen.title === "Privacy rules")
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Privacy rules" && Boolean(screen.notice?.startsWith("Rules are invalid")))
+    expect(client.presenter.getSnapshot().details).toContain("Custom rules: 1 · unsaved draft")
+    expect(await readFile(configFile, "utf8").catch(() => undefined)).toBeUndefined()
+    client.presenter.submit("rule:0")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "pattern", "draft_secret")
+    client.presenter.submit("done")
+    await client.wait(screen => screen.title === "Privacy rules")
+    await mkdir(join(client.environment.ATAPE_HOME!, "config"), { recursive: true })
+    const external = JSON.stringify({ patterns: [{ name: "External", type: "OTHER", pattern: "external_secret" }] })
+    await writeFile(configFile, external, { mode: 0o600 })
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Save global privacy rules?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.title === "Privacy rules" && Boolean(screen.notice?.startsWith("The saved rules changed elsewhere")))
+    expect(await readFile(configFile, "utf8")).toBe(external)
+    client.presenter.submit("rule:0")
+    const retained = await client.wait(screen => screen.title === "Custom rule 1")
+    expect(retained.details).toContain('name: "Draft"')
+    client.presenter.submit("done")
+    client.presenter.submit("reload")
+    const discard = await client.wait(screen => screen.title === "Discard unsaved rules?")
+    expect(discard.options?.[0]).toEqual({ value: "back", label: "Cancel" })
+    client.presenter.submit("back")
+    await client.wait(screen => screen.title === "Privacy rules")
+    client.presenter.submit("reload")
+    await client.wait(screen => screen.title === "Discard unsaved rules?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.title === "Privacy rules" && screen.details.includes("Custom rules: 1"))
+    client.presenter.submit("rule:0")
+    const loaded = await client.wait(screen => screen.title === "Custom rule 1")
+    expect(loaded.details).toContain('name: "External"')
+  })
+  it("round trips exact control characters through the optional encoded editor", async () => {
+    const client = await privacy()
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "Line break")
+    await privacyField(client, "type", "EXACT")
+    await privacyField(client, "pattern", JSON.stringify("line\nbreak\u001b"), true)
+    client.presenter.submit("pattern")
+    const encoded = await client.wait(screen => screen.kind === "input" && screen.title === "Edit pattern")
+    expect(encoded.inputEncoding).toBe("json")
+    expect(encoded.initial).toBe('"line\\nbreak\\u001b"')
+    expect(JSON.stringify(encoded)).not.toContain("\u001b")
+    client.presenter.submit(encoded.initial!)
+    await client.wait(screen => screen.title === "Custom rule 1")
+    client.presenter.submit("done")
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Save global privacy rules?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    const config = JSON.parse(await readFile(join(client.environment.ATAPE_HOME!, "config", "redaction.json"), "utf8"))
+    expect(config.patterns[0]).toEqual({ name: "Line break", type: "EXACT", pattern: "line\nbreak\u001b" })
+  })
+  it("waits for a confirmed save behind a real file lock and keeps the completed revision", async () => {
+    const client = await privacy()
+    const configFile = join(client.environment.ATAPE_HOME!, "config", "redaction.json")
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "First")
+    await privacyField(client, "type", "LOCKED")
+    await privacyField(client, "pattern", "locked_secret")
+    client.presenter.submit("done")
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Save global privacy rules?")
+    await mkdir(join(client.environment.ATAPE_HOME!, "config"), { recursive: true })
+    await writeFile(`${configFile}.lock`, JSON.stringify({ pid: process.pid }), { flag: "wx", mode: 0o600 })
+    const view = terminal(client.presenter, 24, 100)
+    try {
+      client.presenter.submit("confirm")
+      await client.wait(screen => screen.kind === "busy" && screen.backDisabled === true)
+      // The real Node Adapter is waiting on the file exclusion boundary. Back and
+      // Escape cannot report a false cancellation once the user confirms saving.
+      await view.send("\x1b")
+      client.presenter.back()
+      expect(client.presenter.getSnapshot()).toMatchObject({ kind: "busy", backDisabled: true })
+      expect(view.frame()).toContain("Saving… · Ctrl+C Exit")
+      expect(view.frame()).not.toContain("Esc Cancel")
+      expect(await readFile(configFile, "utf8").catch(() => undefined)).toBeUndefined()
+    } finally { await rm(`${configFile}.lock`, { force: true }) }
+    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    expect(JSON.parse(await readFile(configFile, "utf8")).patterns[0].name).toBe("First")
+    // A second edit saves from the completed snapshot rather than the pre-save
+    // revision, which would incorrectly conflict with our own successful write.
+    client.presenter.submit("rule:0")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "Second")
+    client.presenter.submit("done")
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Save global privacy rules?")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    expect(JSON.parse(await readFile(configFile, "utf8")).patterns[0].name).toBe("Second")
+  })
+  it("rejects raw control pastes without stripping their meaning or accepting a stale input", async () => {
+    const client = await privacy()
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    client.presenter.submit("pattern")
+    await client.wait(screen => screen.kind === "input")
+    const view = terminal(client.presenter, 24, 100)
+    await view.send("\x1b[200~first\nsecond\x1b[201~")
+    expect(view.frame()).toContain("Input was not inserted")
+    await view.send("\r")
+    expect(client.presenter.getSnapshot().kind).toBe("input")
+    await view.send("safe_secret")
+    await view.send("\r")
+    const rule = await client.wait(screen => screen.title === "Custom rule 1")
+    expect(rule.details).toContain('pattern: "safe_secret"')
+    expect(rule.details.some(detail => detail.includes("firstsecond"))).toBe(false)
+  })
   it("turns login startup off and on without changing sync intent or other settings", async () => {
     const client = await fixture()
     await client.toolsReady()

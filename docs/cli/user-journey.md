@@ -130,7 +130,7 @@ The home screen exposes these global actions:
 | --- | --- |
 | Add project | Connect a repository or ordinary folder to a destination |
 | Tools and updates | Choose conversations to sync, inspect versions and update ATape or its integrations |
-| Settings | Accounts, server addresses, automatic updates, login startup and global background sync controls |
+| Settings | Accounts, server addresses, privacy rules, automatic updates, login startup and global background sync controls |
 
 The Project list shows names and sync outcomes. Since tool selection is global,
 do not repeat an identical tool list in every row. Show enabled tools once in
@@ -165,6 +165,14 @@ and resumes sync at the next login unless the user explicitly stopped it.
 Settings distinguishes the preference from native registration and offers repair
 when unavailable. Disabling future login startup leaves current sync running.
 The [setup guide](setup-and-adapters.md#login-startup) owns platform and verification limits.
+
+Settings → Privacy rules manages global additive custom rules. The user can
+inspect, add, edit, delete and validate a draft before a default-Cancel save
+review. Failed validation or a conflicting external edit preserves the draft;
+explicit reload discards it. Built-in protection stays enabled, and saving does
+not control background sync or change accepted history. The
+[redaction guide](redaction.md#manage-rules-in-settings) owns file selection,
+environment, editing and recovery limits.
 
 ## Project details
 

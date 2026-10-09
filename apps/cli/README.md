@@ -84,7 +84,7 @@ provide compatibility or migration for older local configurations.
 
 `atape` is the only operational entry. Use Projects for connection and diagnostics,
 Tools and updates for tool selection and versions, and Settings for accounts,
-server, language, login startup and global sync. Integration maintenance under Tools supports
+server, language, privacy rules, login startup and global sync. Integration maintenance under Tools supports
 trusted package/path installation, original-source refresh and confirmed cleanup.
 
 `--help` and `--version` work without a terminal. `--lang` changes the session
@@ -100,6 +100,9 @@ atape redaction-test sample.jsonl
 It applies built-in and custom rules, writes masked content to stdout and safe
 rule counts to stderr, and creates no capture state. See
 [client redaction](../../docs/cli/redaction.md) for configuration and recovery limits.
+Settings → Privacy rules manages the same global custom rules with validation
+and a save review. Built-ins stay enabled; saved changes apply to later jobs
+using that configuration and do not alter accepted history.
 Follow [first-sync verification](../../docs/cli/setup-and-adapters.md#confirm-the-first-sync)
 and [troubleshooting](../../docs/cli/setup-and-adapters.md#troubleshooting) for recovery.
 

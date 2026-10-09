@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { AdapterObservation } from "@atape/domain"
+import type { AcpContentBlock, AdapterObservation } from "@atape/domain"
 import { compileRedactionPolicy, makeRedactionLayer, validateRedactionConfiguration, type RedactionPattern } from "./redaction.ts"
 import { prepareCanonicalSlice, prepareCollectedObservation } from "./collectorPreparation.ts"
 import { rawSourceRecord } from "./rawPreparation.ts"
@@ -141,23 +141,79 @@ describe("Redaction Module", () => {
     const policy = await compile([], ["first-key", "other-key"])
     expect(policy.prepareRaw({ "first-key": 1, "other-key": 2 })).toEqual({ gap: "redaction" })
   })
-  it("retains stable Canonical identity/correlation/counters while masking content", async () => {
-    const initial = observation(), policy = await compile([], ["call", "event"].map(value => `identity-${value}`))
-    const input: AdapterObservation = { ...initial, events: [{ ...initial.events[0]!, sourceEventId: "identity-event", update: {
-      sessionUpdate: "tool_call", toolCallId: "identity-call", title: "fixture", kind: "other", status: "completed", rawInput: { password: "short", token: "has spaces here" }
+  it.each([
+    { label: "text", sessionUpdate: "user_message_chunk", content: { type: "text", text: "synthetic-canary" },
+      expected: { type: "text", text: "[REDACTED]" }, redacted: true },
+    { label: "image URI", sessionUpdate: "agent_message_chunk",
+      content: { type: "image", data: "c3ludGhldGljLWNhbmFyeQ==", mimeType: "image/png", uri: "fixture://synthetic-canary" },
+      expected: { type: "image", data: "c3ludGhldGljLWNhbmFyeQ==", mimeType: "image/png", uri: "fixture://[REDACTED]" }, redacted: true },
+    { label: "audio body", sessionUpdate: "agent_thought_chunk",
+      content: { type: "audio", data: "c3ludGhldGljLWNhbmFyeQ==", mimeType: "audio/wav" },
+      expected: { type: "audio", data: "c3ludGhldGljLWNhbmFyeQ==", mimeType: "audio/wav" }, redacted: false },
+    { label: "resource link", sessionUpdate: "agent_thought_chunk",
+      content: { type: "resource_link", name: "synthetic-canary", uri: "fixture://synthetic-canary", title: "synthetic-canary",
+        description: "synthetic-canary", mimeType: "text/plain", size: 23 },
+      expected: { type: "resource_link", name: "[REDACTED]", uri: "fixture://[REDACTED]", title: "[REDACTED]",
+        description: "[REDACTED]", mimeType: "text/plain", size: 23 }, redacted: true },
+    { label: "text resource", sessionUpdate: "agent_message_chunk",
+      content: { type: "resource", resource: { uri: "fixture://synthetic-canary", text: "synthetic-canary", mimeType: "text/plain" } },
+      expected: { type: "resource", resource: { uri: "fixture://[REDACTED]", text: "[REDACTED]", mimeType: "text/plain" } }, redacted: true },
+    { label: "blob resource URI", sessionUpdate: "user_message_chunk",
+      content: { type: "resource", resource: { uri: "fixture://synthetic-canary", blob: "c3ludGhldGljLWNhbmFyeQ==", mimeType: "application/octet-stream" } },
+      expected: { type: "resource", resource: { uri: "fixture://[REDACTED]", blob: "c3ludGhldGljLWNhbmFyeQ==", mimeType: "application/octet-stream" } }, redacted: true }
+  ] satisfies ReadonlyArray<{ label: string; sessionUpdate: "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk";
+    content: AcpContentBlock; expected: AcpContentBlock; redacted: boolean }>)("prepares standard ACP $label without decoding binary bodies", async sample => {
+    const policy = await compile([], ["synthetic-canary"]), initial = observation()
+    const input: AdapterObservation = { ...initial, events: [{ ...initial.events[0]!, update: {
+      sessionUpdate: sample.sessionUpdate, messageId: "synthetic-canary", content: sample.content
     } }] }
-    const result = await Effect.runPromise(policy.prepareCanonical(input))
-    expect(result.value.events[0]!.sourceEventId).toBe("identity-event")
-    expect(result.value.events[0]!.update).toMatchObject({ toolCallId: "identity-call", rawInput: { password: "[REDACTED]", token: "[REDACTED]" } })
-    expect(result.value.events[0]!.projectionRevision).toBe(4)
-    expect(result.value.events[0]!.fidelity).toBe("redacted")
+    const before = structuredClone(input)
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input).pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]).toEqual({ ...input.events[0]!, fidelity: sample.redacted ? "redacted" : "native",
+      update: { sessionUpdate: sample.sessionUpdate, messageId: "synthetic-canary", content: sample.expected } })
+    expect(input).toEqual(before)
+  })
+  it.each(["tool_call", "tool_call_update"] as const)("masks %s and Canonical metadata while preserving identity, topology, timestamps and counters", async sessionUpdate => {
+    const secret = "identity-canary", masked = "[REDACTED]", initial = observation(), policy = await compile([], [secret])
+    const root = `${secret}-root`, child = `${secret}-child`, sourceObjectId = `${secret}-object`
+    const input: AdapterObservation = { ...initial, observationId: `${secret}-observation`,
+      session: { ...initial.session, sourceSessionId: `${secret}-session`, title: secret, summary: secret, insight: secret,
+        branch: secret, actor: { name: secret, harness: secret } },
+      threads: [{ ...initial.threads[0]!, sourceThreadId: root, label: secret, summary: secret },
+        { ...initial.threads[0]!, sourceThreadId: child, parentSourceThreadId: root, label: secret, summary: secret }],
+      events: [{ ...initial.events[0]!, sourceEventId: `${secret}-event`, sourceThreadId: root, childSourceThreadId: child,
+        rawRef: sessionUpdate === "tool_call" ? { _tag: "object", sourceObjectId, fragment: `#${secret}` } : { _tag: "unavailable", reason: `gap ${secret}` }, update: {
+          sessionUpdate, toolCallId: `${secret}-call`, title: secret, kind: "other", status: "completed",
+          rawInput: { password: "short", token: "has spaces here" }, rawOutput: secret
+        } }],
+      usage: [{ sourceUsageId: `${secret}-usage`, sourceThreadId: child, revision: 2, occurredAt: now, model: secret,
+        inputTokens: 20, outputTokens: 7, cacheReadTokens: 5, cacheWriteTokens: 3 }] }
+    const before = structuredClone(input)
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input).pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation).toEqual({ ...input,
+      session: { ...input.session, title: masked, summary: masked, insight: masked, branch: masked, actor: { name: masked, harness: masked } },
+      threads: input.threads.map(thread => ({ ...thread, label: masked, summary: masked })),
+      events: [{ ...input.events[0]!, fidelity: "redacted", rawRef: sessionUpdate === "tool_call" ? { _tag: "object", sourceObjectId, fragment: `#${masked}` } : { _tag: "unavailable", reason: `gap ${masked}` },
+        update: { sessionUpdate, toolCallId: `${secret}-call`, title: masked, kind: "other", status: "completed",
+          rawInput: { password: masked, token: masked }, rawOutput: masked } }],
+      usage: [{ ...input.usage![0]!, model: masked }] })
+    expect(input).toEqual(before)
+    const raw = await Effect.runPromise(rawSourceRecord("record", { id: input.session.sourceSessionId, sourceObjectId }).pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(raw.masked).toEqual({ row: { id: `${masked}-session`, sourceObjectId: `${masked}-object` } })
+  })
+  it("applies field-only rules to numeric Raw values while retaining booleans, null and other numbers", async () => {
+    const policy = await compile([{ name: "account", type: "account", field_pattern: "^account_number$" }])
+    const raw = await Effect.runPromise(rawSourceRecord("record", { account_number: [12345, true, null], public: 12345,
+      nested: { account_number: 6789 } }).pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(raw.masked).toEqual({ row: { account_number: ["[REDACTED:ACCOUNT]", true, null], public: 12345,
+      nested: { account_number: "[REDACTED:ACCOUNT]" } } })
   })
   it("masks legacy Raw JSON escapes while retaining complete-LF bytes", async () => {
     const policy = await compile([], ["synthetic-canary"])
-    const input: AdapterObservation = { ...observation(), rawSegments: [{ sourceObjectId: "raw", sourceGeneration: "one", sourceOffset: 0, sourceName: "source.jsonl", mediaType: "application/x-ndjson", final: true,
+    const input: AdapterObservation = { ...observation(), rawSegments: [{ sourceObjectId: "raw", sourceGeneration: "one", sourceOffset: 0, sourceName: "synthetic-canary.jsonl", mediaType: "application/x-ndjson", final: true,
       content: String.raw`{"payload":"synthetic-\u0063anary"}` + "\n" }] }
     const result = await Effect.runPromise(prepareCollectedObservation("fixture", input).pipe(Effect.provide(makeRedactionLayer(policy))))
-    expect(result.observation.rawSegments[0]!.content).toBe('{"payload":"[REDACTED]"}\n')
+    expect(result.observation.rawSegments[0]).toEqual({ ...input.rawSegments[0]!, sourceName: "[REDACTED].jsonl", content: '{"payload":"[REDACTED]"}\n' })
     const raw = await Effect.runPromise(rawSourceRecord("native-id", { payload: "synthetic-canary" }).pipe(Effect.provide(makeRedactionLayer(policy))))
     expect(raw.masked).toEqual({ row: { payload: "[REDACTED]" } })
   })
