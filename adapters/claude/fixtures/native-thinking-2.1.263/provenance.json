@@ -9,15 +9,15 @@
       "path": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac.jsonl",
       "originalBytes": 11140,
       "originalSha256": "e54d7ee9e907fab7252b60339806153e35a81938a38bc08798913e6b5b7636c9",
-      "sanitizedBytes": 10492,
-      "sanitizedSha256": "dc5127d92629aa34694f8eec089c92306d1fb84039acf2fca73b9e2a9f51b004"
+      "sanitizedBytes": 10420,
+      "sanitizedSha256": "81c0dddb910f67a85599ee35ed797684a6c2dcadb1086ecdfac18579a75589fe"
     },
     {
       "path": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.jsonl",
       "originalBytes": 9024,
       "originalSha256": "8496b8aa28be4a95d4da82ee2468088c82b1d8fdcd31328780b9696b907d841b",
-      "sanitizedBytes": 8376,
-      "sanitizedSha256": "dae212e4713bedc9cfe7cb3aaed100d89ed252c06a977ca7f795f43659f13ecb"
+      "sanitizedBytes": 8312,
+      "sanitizedSha256": "591bf9111444e03956956d693dc996b0b19f3d4f9c67a7881df64d1845bbd689"
     },
     {
       "path": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.meta.json",
@@ -31,7 +31,7 @@
     {
       "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac.jsonl",
       "recordLine": 7,
-      "recordEndByte": 4644,
+      "recordEndByte": 4612,
       "uuid": "5982ec91-0e5e-4318-ae28-1842de72f5bb",
       "block": 0,
       "apiResponseId": "msg_atape_thinking_mock_1",
@@ -41,7 +41,7 @@
     {
       "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac.jsonl",
       "recordLine": 11,
-      "recordEndByte": 9262,
+      "recordEndByte": 9198,
       "uuid": "e66d1721-e125-48db-a67f-6a06b6ebc0e3",
       "block": 0,
       "apiResponseId": "msg_atape_thinking_mock_4",
@@ -51,7 +51,7 @@
     {
       "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.jsonl",
       "recordLine": 2,
-      "recordEndByte": 1686,
+      "recordEndByte": 1670,
       "uuid": "f018b77c-17e3-46a0-ab93-354b80bd99f7",
       "block": 0,
       "apiResponseId": "msg_atape_thinking_mock_2",
@@ -61,7 +61,7 @@
     {
       "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.jsonl",
       "recordLine": 7,
-      "recordEndByte": 7286,
+      "recordEndByte": 7230,
       "uuid": "c661333f-c163-417e-8812-ac7a10cf11e8",
       "block": 0,
       "apiResponseId": "msg_atape_thinking_mock_3",
@@ -131,5 +131,5 @@
   },
   "exit": 0,
   "stderr": "",
-  "sourceSanitization": "Literal byte replacement of isolated temporary paths only; UUIDs, API IDs, body text, signatures, correlation metadata and record order unchanged."
+  "sourceSanitization": "Literal byte replacement of isolated temporary paths only, with both macOS /private-prefixed and unprefixed aliases mapped to the same fixture path, longest paths first; UUIDs, API IDs, body text, signatures, correlation metadata and record order unchanged."
 }

@@ -52,7 +52,12 @@ receipts remain independent and do not reset. Existing projection-4 Events use
 the same source identities at the higher projection revision; the Server replaces their
 active snapshots through its existing ingestion Interface. New thought Events
 fill previously unused physical coordinates. Usage retains the same source
-identity and byte revision. Root and each admitted child upgrade their own
+identity and byte revision. Advance the Session snapshot revision to the spare
+even value after projection 4's odd byte-based revision. A thought-only EOF can
+advance `updatedAt` without adding source bytes; reusing the old Session revision
+would conflict with its acknowledged metadata. Later appended bytes remain
+monotonic, and the existing family revision handles admitted children. Event and
+usage byte revisions remain unchanged. Root and each admitted child upgrade their own
 opaque checkpoints; pending reporting must include an older child at EOF even
 when Raw is caught up, while retaining missing captured-source semantics.
 Pinned family ownership and unsupported-delegation diagnostics keep their

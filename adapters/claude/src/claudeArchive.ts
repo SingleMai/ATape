@@ -502,7 +502,9 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       publication: (cursor?.publication ?? 0) + 1,
       ...(!delegated && children.size ? { children: [...children.values()], ...(cursor?.childAfter ? { childAfter: cursor.childAfter } : {}) } : {}),
       stream: { ...state, seen: [...seen], calls: [...calls].map(([id, call]) => [id, call.name, call.uuid]) } }
-    const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 3
+    // Thinking can advance updatedAt at the same captured bytes as projection 4.
+    // Its Session snapshot needs a newer revision even though Event bytes stay fixed.
+    const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 4
     return { protocolVersion: request.protocolVersion, nextCursor: JSON.stringify(next), hasMore,
       observations: [{ observationId: `claude-${digest(Buffer.from(JSON.stringify([next, events.map(e => e.sourceEventId)])))}`, observedAt,
         session: { sourceSessionId: sessionId, revision, title: state.title || "Untitled Claude conversation", summary: "Claude Code conversation", insight: "",

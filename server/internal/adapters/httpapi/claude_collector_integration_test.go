@@ -1681,7 +1681,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	// projection upgrade from the retained 197 installed stages. When supplied,
 	// the previous artifact itself produces the persisted seed checkpoint/Raw.
 	thinkingSeed := run("thinking-seed")
-	seedEvents := 7
+	seedEvents := 8
 	if previousTarball != "" {
 		seedEvents = 5
 	}
@@ -1699,7 +1699,23 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	if thinkingSession == "" {
 		t.Fatal("Claude thinking seed lost its attributable Session")
 	}
+	parseThinkingTimestamp := func(value string) time.Time {
+		t.Helper()
+		instant, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			t.Fatalf("Claude thinking timestamp %q is not RFC3339: %v", value, err)
+		}
+		return instant
+	}
 	thinkingBefore := read(thinkingSession, "root", seedEvents)
+	seedUpdatedAt := parseThinkingTimestamp("2026-10-08T13:00:04Z")
+	if previousTarball != "" {
+		seedUpdatedAt = parseThinkingTimestamp("2026-10-08T13:00:03Z")
+	}
+	beforeUpdatedAt := parseThinkingTimestamp(thinkingBefore.Session.UpdatedAt)
+	if !beforeUpdatedAt.Equal(seedUpdatedAt) {
+		t.Fatalf("Claude seed updatedAt=%s want old/new visible EOF=%s", thinkingBefore.Session.UpdatedAt, seedUpdatedAt)
+	}
 	thinkingStoredBefore, exists, err := store.Conversation(t.Context(), authentication.Principal{UserID: grant.User.ID, Method: authentication.WebAuthentication}, thinkingSession, "root")
 	if err != nil || !exists || len(thinkingStoredBefore.Events) != seedEvents {
 		t.Fatalf("Claude thinking seed did not persist its expected Canonical Events: exists=%t error=%v", exists, err)
@@ -1722,10 +1738,14 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	setRaw(false)
 	thinkingUpgrade := run("thinking-upgrade")
 	if thinkingUpgrade.InstallationID != thinkingSeed.InstallationID || thinkingUpgrade.RawChunks != 0 || !bytes.Equal(thinkingUpgrade.RawObjects, thinkingSeed.RawObjects) || len(thinkingUpgrade.SourceFailures) != 0 ||
-		(previousTarball != "" && thinkingUpgrade.CanonicalEvents != 7) || (previousTarball == "" && thinkingUpgrade.CanonicalEvents != 0) {
+		(previousTarball != "" && thinkingUpgrade.CanonicalEvents != 8) || (previousTarball == "" && thinkingUpgrade.CanonicalEvents != 0) {
 		t.Fatalf("Claude installed thinking upgrade reset receipts or used the wrong projection: %+v", thinkingUpgrade)
 	}
-	thinkingProjected := read(thinkingSession, "root", 7)
+	thinkingProjected := read(thinkingSession, "root", 8)
+	projectedUpdatedAt := parseThinkingTimestamp(thinkingProjected.Session.UpdatedAt)
+	if !projectedUpdatedAt.Equal(parseThinkingTimestamp("2026-10-08T13:00:04Z")) || previousTarball != "" && !projectedUpdatedAt.After(beforeUpdatedAt) {
+		t.Fatal("Claude thought-only EOF did not advance the upgraded Session's visible updatedAt")
+	}
 	// New thought slots can precede old text/tool slots. Compare identities and
 	// complete Reader data by Event ID, not by their changed list positions.
 	for _, previous := range thinkingBefore.Events {
@@ -1749,6 +1769,10 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		stored, exists, err := store.Conversation(t.Context(), authentication.Principal{UserID: grant.User.ID, Method: authentication.WebAuthentication}, thinkingSession, "root")
 		if err != nil || !exists || len(stored.Events) != expectedEvents {
 			t.Fatalf("Claude %s lost its Canonical projection: exists=%t events=%d error=%v", phase, exists, len(stored.Events), err)
+		}
+		if phase == "thinking-upgrade" && previousTarball != "" && (stored.Session.Revision <= thinkingStoredBefore.Session.Revision || !stored.Session.UpdatedAt.After(thinkingStoredBefore.Session.UpdatedAt)) {
+			t.Fatalf("Claude thought-only EOF did not advance Session revision and updatedAt: before=%d/%s after=%d/%s",
+				thinkingStoredBefore.Session.Revision, thinkingStoredBefore.Session.UpdatedAt, stored.Session.Revision, stored.Session.UpdatedAt)
 		}
 		byID := map[string]canonical.EventRecord{}
 		for _, event := range stored.Events {
@@ -1791,7 +1815,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		}
 		return current
 	}
-	assertThinkingView("thinking-upgrade", 7, 2, 2)
+	assertThinkingView("thinking-upgrade", 8, 3, 2)
 	for _, slot := range []string{"mixed", "final"} {
 		hits := search("ATAPE_THINKING_MESSAGE_" + slot + ":")
 		if len(hits.Results) != 1 || hits.Results[0].SessionID != thinkingSession || hits.Results[0].ThreadID != "root" {
@@ -1809,10 +1833,10 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	if thinkingAppend.CanonicalEvents != 2 || thinkingAppend.RawChunks != 0 || !bytes.Equal(thinkingAppend.RawObjects, thinkingSeed.RawObjects) || len(thinkingAppend.SourceFailures) != 0 {
 		t.Fatal("Claude Raw-off thought/text append stopped Canonical or advanced Raw receipts")
 	}
-	thinkingCurrent := assertThinkingView("thinking-append", 9, 3, 3)
+	thinkingCurrent := assertThinkingView("thinking-append", 10, 4, 3)
 	assertStablePrefix("thinking-append", thinkingProjected.Events, thinkingCurrent.Events)
 	appendHits := search("ATAPE_THINKING_MESSAGE_append:")
-	if len(appendHits.Results) != 1 || appendHits.Results[0].SessionID != thinkingSession || appendHits.Results[0].ThreadID != "root" || appendHits.Results[0].EventID != thinkingCurrent.Events[8].ID {
+	if len(appendHits.Results) != 1 || appendHits.Results[0].SessionID != thinkingSession || appendHits.Results[0].ThreadID != "root" || appendHits.Results[0].EventID != thinkingCurrent.Events[9].ID {
 		t.Fatal("Claude Raw-off visible text lost its exact Search anchor")
 	}
 	assertThinkingIdle := func(phase string, previous snapshot) snapshot {
@@ -1821,7 +1845,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		if idle.InstallationID != thinkingSeed.InstallationID || idle.Cursor != previous.Cursor || idle.Observations != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 || !bytes.Equal(idle.RawObjects, previous.RawObjects) || len(idle.SourceFailures) != 0 {
 			t.Fatalf("Claude %s repeated thinking/usage or changed acknowledged receipts: %+v", phase, idle)
 		}
-		assertThinkingView(phase, 9, 3, 3)
+		assertThinkingView(phase, 10, 4, 3)
 		return idle
 	}
 	assertThinkingIdle("thinking-idle", thinkingAppend)
@@ -1840,7 +1864,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	if len(thinkingBackfilledArchive.Objects) != 1 || thinkingBackfilledArchive.Objects[0].ObjectID != thinkingArchive.Objects[0].ObjectID || thinkingBackfilledArchive.Objects[0].CurrentGeneration != thinkingArchive.Objects[0].CurrentGeneration {
 		t.Fatal("Claude thinking upgrade/backfill changed the old Raw identity")
 	}
-	thinkingAfterBackfill := assertThinkingView("thinking-backfill", 9, 3, 3)
+	thinkingAfterBackfill := assertThinkingView("thinking-backfill", 10, 4, 3)
 	assertStablePrefix("thinking-backfill", thinkingCurrent.Events, thinkingAfterBackfill.Events)
 	assertThinkingIdle("thinking-backfill-idle", thinkingBackfill)
 	thinkingWireMutex.Lock()
@@ -1866,12 +1890,12 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			}
 		}
 	}
-	for _, sourceEventID := range []string{"generated-thinking-mixed:0", "generated-thinking-final:1", "generated-thinking-append:0"} {
+	for _, sourceEventID := range []string{"generated-thinking-mixed:0", "generated-thinking-final:1", "generated-thinking-eof:0", "generated-thinking-append:0"} {
 		if !wireThoughts[sourceEventID] {
 			t.Fatalf("Claude HTTP did not deliver physical thought coordinate %s", sourceEventID)
 		}
 	}
-	if len(wireThoughts) != 3 {
+	if len(wireThoughts) != 4 {
 		t.Fatal("Claude opaque payload or signature became a Canonical thought")
 	}
 	retainedArchive, retainedRaw := readRaw(compactSession)
@@ -1883,7 +1907,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	read(familySession, "root", 14)
 	read(familySession, childID, 7)
-	assertThinkingView("delete", 9, 3, 3)
+	assertThinkingView("delete", 10, 4, 3)
 	thinkingDeletedArchive, _ := readRaw(thinkingSession)
 	thinkingBackfilledJSON, _ := json.Marshal(thinkingBackfilledArchive)
 	thinkingDeletedJSON, _ := json.Marshal(thinkingDeletedArchive)

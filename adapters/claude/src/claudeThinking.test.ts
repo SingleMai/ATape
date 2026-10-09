@@ -73,8 +73,12 @@ const loadNative = async () => {
   const folder = new URL("../fixtures/native-thinking-2.1.263/", import.meta.url)
   const proof = JSON.parse(await readFile(new URL("provenance.json", folder), "utf8")), sources = new Map<string, string>()
   for (const entry of proof.files.filter((entry: Row) => entry.path.endsWith(".jsonl"))) {
-    const path = join(directory, entry.path), source = (await readFile(new URL(entry.path, folder), "utf8"))
-      .replaceAll(proof.fixtureCwd, directory)
+    const recorded = await readFile(new URL(entry.path, folder), "utf8")
+    for (const line of recorded.trimEnd().split("\n")) {
+      const row = JSON.parse(line) as Row
+      if ("cwd" in row) expect(row.cwd).toBe(proof.fixtureCwd)
+    }
+    const path = join(directory, entry.path), source = recorded.replaceAll(proof.fixtureCwd, directory)
     await mkdir(dirname(path), { recursive: true }); await writeFile(path, source); sources.set(entry.path, source)
   }
   file = join(directory, `${proof.sessionId}.jsonl`); vi.stubEnv("ATAPE_CLAUDE_SESSION_FILE", file)
@@ -368,6 +372,61 @@ it.each(["root", "child"])("upgrades only a generated older %s checkpoint in a m
   expect(rawSources(pages).size).toBe(0)
   expect(rest.pages.at(-1)?.progress).toMatchObject({ pendingCanonicalSessions: 0, pendingRawBytes: 0 })
 })
+
+// These generated version markers verify the public new-factory behavior. The
+// installed contract separately uses genuine prior-factory metadata/checkpoints
+// to verify the same-byte projection-4 -> 5 Server update boundary.
+it.each(["thought-only EOF", "trailing Raw bookkeeping", "partial LF"])(
+  "keeps generated Session metadata monotonic through %s, marker upgrade and later append", async ending => {
+    const rows = generated().slice(0, 2)
+    rows[1]!.message.content = [{ type: "thinking", thinking: "The final complete record contains only a thought." }]
+    const prefix = encode(rows.slice(0, 1)), thoughtLine = encode(rows.slice(1))
+    const next = { ...structuredClone(rows[1]!), uuid: "generated-next", parentUuid: "generated-plan", timestamp: "2026-10-09T02:00:04Z",
+      message: { role: "assistant", id: "generated-next-api", model: "generated-model",
+        content: [{ type: "thinking", thinking: "A following thought remains capturable." }, { type: "text", text: "Following answer" }],
+        usage: { input_tokens: 31, output_tokens: 17, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+    const nextLine = Buffer.from(encode([next])), middle = Math.floor(nextLine.length / 2)
+    const controls = ending === "trailing Raw bookkeeping" ? encode([{ type: "queue-operation", sessionId: sid, operation: "enqueue" }]) + "\n" : ""
+    const session = (pages: AdapterCollectionPage[]) => pages.flatMap(page => page.observations).at(-1)!.session
+    await writeFile(file, prefix)
+    const first = await drain(), firstSession = session(first.pages)
+    await appendFile(file, thoughtLine + controls)
+    if (ending === "partial LF") await appendFile(file, nextLine.subarray(0, middle))
+    const appended = await drain(first.cursor), appendedSession = session(appended.pages)
+    expect(events(appended.pages).map(event => event.sourceEventId)).toEqual(["generated-plan:0"])
+    expect(events(appended.pages)[0]?.revision).toBe(Buffer.byteLength(prefix + thoughtLine))
+    expect(latestUsage(appended.pages)).toMatchObject([{ sourceUsageId: "generated-plan-api", revision: Buffer.byteLength(prefix + thoughtLine) }])
+    expect(appendedSession.revision).toBeGreaterThan(firstSession.revision)
+    expect(Date.parse(appendedSession.updatedAt)).toBeGreaterThan(Date.parse(firstSession.updatedAt))
+    const appendedRaw = appended.pages.flatMap(page => page.observations.flatMap(observation => observation.rawSegments))
+    expect(appendedRaw[0]?.sourceOffset).toBe(Buffer.byteLength(prefix))
+    expect(appendedRaw.map(segment => segment.content).join("")).toBe(thoughtLine + controls)
+    const idle = await collect(request(appended.cursor))
+    expect(idle.observations).toEqual([]); expect(idle.nextCursor).toBe(appended.cursor)
+    expect(await collect(request(appended.cursor))).toEqual(idle)
+
+    const marker = JSON.parse(appended.cursor!)
+    marker.sessions[0].checkpoint.projectionRevision = 4 // Generated marker; never a genuine old producer.
+    const upgraded = await drain(JSON.stringify(marker)), upgradedSession = session(upgraded.pages)
+    expect(events(upgraded.pages)).toEqual([...events(first.pages), ...events(appended.pages)])
+    expect(latestUsage(upgraded.pages)).toEqual(latestUsage(appended.pages))
+    expect(rawSources(upgraded.pages).size).toBe(0)
+    expect(upgradedSession).toEqual(appendedSession)
+    const upgradedIdle = await collect(request(upgraded.cursor))
+    expect(upgradedIdle.observations).toEqual([]); expect(upgradedIdle.nextCursor).toBe(upgraded.cursor)
+
+    await appendFile(file, ending === "partial LF" ? nextLine.subarray(middle) : nextLine)
+    const continued = await drain(upgraded.cursor), continuedSession = session(continued.pages)
+    expect(events(continued.pages).map(event => event.sourceEventId)).toEqual(["generated-next:0", "generated-next:1"])
+    expect(continuedSession.revision).toBeGreaterThan(upgradedSession.revision)
+    expect(Date.parse(continuedSession.updatedAt)).toBeGreaterThan(Date.parse(upgradedSession.updatedAt))
+    expect(latestUsage(continued.pages)).toMatchObject([{ sourceUsageId: "generated-next-api", inputTokens: 31, outputTokens: 17 }])
+    expect(rawSources([...first.pages, ...appended.pages, ...upgraded.pages, ...continued.pages]).get(`${sid}.jsonl`)?.text)
+      .toBe(prefix + thoughtLine + controls + nextLine.toString("utf8"))
+    const finalIdle = await collect(request(continued.cursor))
+    expect(finalIdle.observations).toEqual([]); expect(finalIdle.nextCursor).toBe(continued.cursor)
+    expect(await collect(request(continued.cursor))).toEqual(finalIdle)
+  })
 
 const generatedChildPending = async () => {
   const { proof, child } = await loadNative(), childRows: Row[] = (await readFile(child, "utf8")).trimEnd().split("\n").map(line => JSON.parse(line))

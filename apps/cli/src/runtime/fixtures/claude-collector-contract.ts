@@ -336,8 +336,13 @@ if (input.phase === "thinking-seed") {
       content: [{ type: "redacted_thinking", data: "ATAPE_REDACTED_PAYLOAD" },
         { type: "thinking", thinking: "ATAPE_THOUGHT_ONLY_final: SENSITIVE_TEST_TOKEN conclusion.", signature: "ATAPE_THOUGHT_SIGNATURE" },
         { type: "text", text: "ATAPE_THINKING_MESSAGE_final: a visible answer." }] } }
+  // The old projection has no visible Event at this later EOF timestamp. Keep
+  // its real API identity so usage remains latest-once across the split records.
+  const thoughtOnly = { ...final, uuid: "generated-thinking-eof", parentUuid: final.uuid, timestamp: "2026-10-08T13:00:04Z",
+    message: { ...final.message, content: [{ type: "thinking", thinking: "ATAPE_THOUGHT_ONLY_eof: SENSITIVE_TEST_TOKEN later recorded thought.",
+      signature: "ATAPE_THOUGHT_SIGNATURE" }] } }
   writeFileSync(thinkingFile, [{ ...user, ...base, uuid: "generated-thinking-user", parentUuid: null,
-    timestamp: "2026-10-08T13:00:00Z", message: { role: "user", content: "ATAPE_GENERATED_THINKING_SEED: mixed blocks." } }, mixed, result, final]
+    timestamp: "2026-10-08T13:00:00Z", message: { role: "user", content: "ATAPE_GENERATED_THINKING_SEED: mixed blocks." } }, mixed, result, final, thoughtOnly]
     .map(row => JSON.stringify(row) + "\n").join(""))
 }
 if (input.phase === "thinking-append") {

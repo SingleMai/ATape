@@ -27,7 +27,9 @@ exited successfully with empty stderr and one completed foreground child.
 
 Sanitization replaces isolated temporary path bytes with `/fixture/native-thinking`
 or `/fixture/native-thinking-runtime`; it does not parse and reserialize source
-records. UUIDs, parent edges, timestamps, body text, signatures and correlation
+records. The macOS `/private`-prefixed and unprefixed aliases map to the same
+fixture path, with the longest original paths replaced first. UUIDs, parent
+edges, timestamps, body text, signatures and correlation
 metadata remain unchanged. Original and sanitized hashes are recorded separately.
 Prefix/partial-LF, large-body, mixed-block and compaction mutations used by tests
 are generated cases, not additional native captures. Disposable mock scripts,

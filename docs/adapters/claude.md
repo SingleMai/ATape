@@ -209,7 +209,10 @@ source to add previously omitted thinking, as decided in
 [ADR-0099](../architecture/adr/0099-claude-thinking-projection.md). Existing projection-4 Events
 retain their IDs, byte-based revisions and tool anchors; the Server updates their
 active snapshots at the higher projection revision. Usage source IDs/revisions
-and independent Raw receipts retain their identity. Root and admitted children
+and independent Raw receipts retain their identity. The Session snapshot receives
+a higher revision even at the same source bytes: newly visible thinking at EOF
+can advance its `updatedAt`, and the Server must accept that metadata update.
+Root and admitted children
 upgrade independently, including old children already at EOF. Old in-record
 page progress is first validated against its old visible Event list, then reset
 for the thought-inclusive projection. A missing captured child keeps its retained
@@ -235,11 +238,12 @@ and deploying a Server are separate actions.
 
 ## Verification and remaining work
 
-All 223 public `createAtapeAdapter`/`collect` tests pass on this candidate.
-The 39 thinking checks cover mixed blocks, same-API split records, physical
+All 226 public `createAtapeAdapter`/`collect` tests pass on this candidate.
+The 42 thinking checks cover mixed blocks, same-API split records, physical
 coordinates, exact UTF-8 fragmentation/message grouping, one-Event retries,
 partial LF, Raw off/backfill, thought replay during compaction and independent
-root/child projection upgrades. Every thinking-suite collection slice also passes
+root/child projection upgrades, including thought-only EOF Session metadata and
+later append/idle stability. Every thinking-suite collection slice also passes
 the public Host preparation Interface with real redaction. Blank/NEL/FEFF bodies
 and whitespace-only fragments preserve normal messages/tools/usage without
 violating the nonblank Canonical contract. Generated corrupt old-state cases check pending
@@ -259,9 +263,9 @@ physical coordinates and exact independent root/child Raw. Raw-off collection
 and later bounded backfill emit no duplicate Events or usage.
 
 The candidate source SHA-256 is
-`a96b06e22387caafec027e6bc94d73f78d98f65d7d14c892862b614833ec4926`;
+`4e4e102f9ae2b795f181918ec820a488e379107c7c21daf9cbfcafc64f95a835`;
 its built bundle is
-`8cb8fd606641cac585806c5219b1af1c56afa2f03449a7a8449d1195bc755063`.
+`a36202b782f4fdd5a812b26c96d240455a68ac7993089b4d15af30b2c20e3a00`.
 The installed package check also passes all twelve retained native compaction
 scenarios, generated 1/3/100 mixed cycles and six generated unlinked-receipt
 cases, with cold retry/idle and Raw-off/backfill. The shared Codex package
@@ -275,19 +279,21 @@ Genuine projection-4 compatibility inputs were produced by the public factory
 from previous main `2ee30bd03b48c066871487f81b8c5b7e87a6b6ad`, source
 `597c849f44ffd83f628d89b59a178e6511e7db758f4ddf3fa01377017b796b4e`,
 bundle `0e029ba7427ea322975ae827b201451f998199e638e3a7b5c6291e5d16487733`.
-All 166 inputs pass cold-factory upgrade and exact retry: 158 genuine non-null
-old checkpoints and eight fresh-capture controls. They comprise 43 native
-thinking-family inputs, 37 generated mixed/large-fragment family inputs and
+All 172 inputs pass cold-factory upgrade and exact retry: 162 genuine non-null
+old checkpoints and ten fresh-capture controls. They comprise 43 native
+thinking-family inputs, six native thought-only EOF inputs,
+37 generated mixed/large-fragment family inputs and
 86 generated thinking mutations of retained manual/automatic compaction sources.
 They include 24 actual positive old in-record Event skips, 20 partial-LF inputs
 and two independently advanced old Raw-receipt inputs. Original visible Event
 objects differ only in projection revision; latest usage objects and contiguous
 Raw suffix/object/generation remain exact. Raw-off inputs later backfill without
-new Canonical data. No private fields were rewritten to manufacture old inputs.
+new Canonical data. Equal Session revisions retain identical metadata across
+the old acknowledged state and upgrade. No private fields were rewritten to manufacture old inputs.
 Input manifest SHA-256:
-`361d23b29c9672bc001c0f764fceb5482b5a5d8b8327115103a9018ad4bae905`;
+`9f660b892c23976a366cdd7212409f7c8cf979bfc81f0c31f5e4251739834f69`;
 result SHA-256:
-`03dc1c74b28947b79116daf4edda95f5649734897d26178ae10375fc8c765c6e`.
+`0a05364bad37de9e685dce3f7f3da920702f418320f6dc4685f806ec3b09380c`.
 Earlier increments' 505/65 compatibility checks belong to their own candidates;
 they are not represented as newly rerun acceptance here.
 
@@ -299,17 +305,20 @@ Raw, then the installed candidate upgrades that same state with Raw disabled.
 The tarball contains the frozen old bundle and exact previous-main metadata,
 without version rewriting; SHA-256:
 `f043213e26b5fbad1092bfd1087fab954181182ba041ad0becbb89755fc4af77`.
-The old five Events become seven, all active stored Events move to projection 5,
+The old five Events become eight, all active stored Events move to projection 5,
 and old Reader IDs/data, byte revisions and Raw references stay unchanged.
-A Raw-off thought/text append then reaches nine Events and three latest usage
+A later thought-only EOF advances the Session's visible timestamp and revision
+at the same source bytes. A Raw-off thought/text append then reaches ten Events,
+including four thoughts, and three latest usage
 samples (51 input / 27 output); idle emits nothing and Raw backfill preserves
 the original object/generation and exact retained bytes. Pure blank, NEL and
 FEFF blocks do not block the surrounding messages/tools/usage. Actual HTTP
 request capture verifies thought-body redaction before ingestion, excludes
 signatures/opaque payloads and retains physical block references. Authenticated
 Reader, message-only Search, usage, Raw and deletion-retention assertions pass.
-The Claude subtest took 328.34 seconds; final local log SHA-256:
-`5501756ec8bb41d3547075df197a4d272b8e136f8adba8faaa45ad51f4ae8927`.
+The Claude subtest took 313.15 seconds in an isolated checkout containing only
+this increment; final local log SHA-256:
+`aba2d7a55ceedb5128720c3cadbf58136ba409677d39465f432e866691f57093`.
 CI's default path checks a fresh candidate seed separately; a supplied old
 artifact is required for genuine installed-upgrade evidence. Earlier 187/197-stage
 passes are not acceptance for this candidate.
