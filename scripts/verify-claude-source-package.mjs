@@ -127,6 +127,97 @@ export async function verifyClaudePackage(adapter, context, paths) {
     assert.equal(rawText(removed, f.childId), f.child, "Abandoned proved child remains eligible for Raw backfill")
   }
 
+  const backgroundFolder = join(packageRoot, "fixtures/native-background-child-2.1.263")
+  const backgroundProof = JSON.parse(await readFile(join(backgroundFolder, "provenance.json"), "utf8"))
+  const backgroundSource = async file => {
+    const source = await readFile(join(backgroundFolder, file), "utf8"), proof = backgroundProof.sources[file].sanitized
+    assert.equal(Buffer.byteLength(source), proof.bytes); assert.equal(createHash("sha256").update(source).digest("hex"), proof.sha256)
+    assert.ok(source.endsWith("\n")); assert.equal(source.split("\n").length - 1, proof.completeLFLines)
+    for (const row of parse(source)) if (row.cwd !== undefined) assert.equal(row.cwd, backgroundProof.fixtureCwd)
+    return relocate(source, backgroundProof.fixtureCwd)
+  }
+  const backgroundRoot = await backgroundSource("root.jsonl"), backgroundChild = await backgroundSource("child.jsonl")
+  const prefix = (source, lines) => source.split("\n").slice(0, lines).join("\n") + "\n"
+  const backgroundFile = await fileFor("native-background-lifecycle")
+  const backgroundChildFile = join(dirname(backgroundFile), backgroundProof.sessionId, "subagents", `agent-${backgroundProof.agentId}.jsonl`)
+  const backgroundThread = `claude-agent:${backgroundProof.agentId}`
+  const backgroundRootRows = parse(backgroundRoot), backgroundChildRows = parse(backgroundChild)
+  const backgroundIds = (rows, lines) => lines.map(line => `${rows[line - 1].uuid}:0`)
+  const assertBackground = (actual, rootLines, childLines, apiIds) => {
+    assert.deepEqual(actual.header.sourceFailures, []); assert.deepEqual(actual.header.target.retainedThreadIds, [])
+    assert.deepEqual(actual.events.map(event => event.sourceEventId), [
+      ...backgroundIds(backgroundRootRows, rootLines), ...backgroundIds(backgroundChildRows, childLines)
+    ])
+    assert.deepEqual(actual.usage.map(sample => sample.sourceUsageId).sort(), apiIds.map(id => `msg_atape_bg_90fceeec_${id}`).sort())
+    assert.ok(actual.usage.every(sample => sample.inputTokens === 31 && sample.outputTokens === 17))
+    const links = actual.events.filter(event => event.childSourceThreadId)
+    assert.equal(links.length, 1); assert.equal(links[0].sourceEventId, `${backgroundProof.call.receiptUuid}:0`)
+    assert.equal(links[0].childSourceThreadId, backgroundThread)
+    assert.deepEqual(actual.header.threads.map(thread => thread.sourceThreadId).sort(), ["root", backgroundThread].sort())
+    assert.ok(actual.events.every(event => !event.sourceEventId.startsWith(backgroundProof.notification.uuid)), "Completion notification is Raw control, not a User Event")
+  }
+  await mkdir(dirname(backgroundChildFile), { recursive: true }); selected(backgroundFile)
+  await writeFile(backgroundFile, prefix(backgroundRoot, 10)); await writeFile(backgroundChildFile, prefix(backgroundChild, 5))
+  const runningBackground = await capture(backgroundProof.sessionId, { rawEnabled: false })
+  assertBackground(runningBackground, [3, 7, 8, 10], [1, 2, 3], [2, 4, 3])
+  const unchangedRootBytes = await readFile(backgroundFile)
+  await writeFile(backgroundChildFile, prefix(backgroundChild, 5) + backgroundChild.split("\n")[5].slice(0, 80))
+  assert.deepEqual(await capture(backgroundProof.sessionId, { ...withProof(runningBackground), rawEnabled: false }), runningBackground,
+    "Incomplete child LF does not advance usage, Events or physical prefix proof")
+  await writeFile(backgroundChildFile, backgroundChild)
+  const childOnlyBackground = await capture(backgroundProof.sessionId, { ...withProof(runningBackground), rawEnabled: false })
+  assert.deepEqual(await readFile(backgroundFile), unchangedRootBytes)
+  assertBackground(childOnlyBackground, [3, 7, 8, 10], [1, 2, 3, 6], [2, 4, 3, 5])
+  assert.deepEqual(childOnlyBackground.events.slice(0, 7), runningBackground.events, "Child-only append preserves existing projection anchors")
+  await rm(backgroundChildFile); await writeFile(backgroundFile, prefix(backgroundRoot, 18))
+  const retainedBackground = await capture(backgroundProof.sessionId, { ...withProof(childOnlyBackground), rawEnabled: false })
+  assert.deepEqual(retainedBackground.header.target.retainedThreadIds, [backgroundThread])
+  assert.deepEqual(retainedBackground.events.map(event => event.sourceEventId), backgroundIds(backgroundRootRows, [3, 7, 8, 10, 13, 15, 16, 18]))
+  assert.deepEqual(retainedBackground.header.sourceFailures, [{ source: backgroundChildFile, reason: "io" }])
+  assert.deepEqual(await capture(backgroundProof.sessionId, { ...withProof(retainedBackground), rawEnabled: false }), retainedBackground)
+  const neverCapturedBackground = await capture(backgroundProof.sessionId, { rawEnabled: false })
+  assert.deepEqual(neverCapturedBackground.header.threads.map(thread => thread.sourceThreadId), ["root"])
+  assert.ok(neverCapturedBackground.events.every(event => event.childSourceThreadId === undefined))
+  await writeFile(backgroundChildFile, backgroundChild); await writeFile(backgroundFile, backgroundRoot)
+  const completedBackground = await capture(backgroundProof.sessionId, { ...withProof(retainedBackground), rawEnabled: false })
+  assertBackground(completedBackground, [3, 7, 8, 10, 13, 15, 16, 18, 23, 25, 27], [1, 2, 3, 6], [2, 4, 6, 7, 8, 9, 3, 5])
+  const backgroundBackfill = await capture(backgroundProof.sessionId, withProof(completedBackground))
+  unchanged(completedBackground, backgroundBackfill)
+  assert.equal(rawText(backgroundBackfill), backgroundRoot); assert.equal(rawText(backgroundBackfill, backgroundThread), backgroundChild)
+  await appendFile(backgroundFile, jsonl([{ type: "last-prompt", sessionId: backgroundProof.sessionId,
+    leafUuid: backgroundRootRows[2].uuid, explicit: true, rewound: true }]))
+  const rewoundBackground = await capture(backgroundProof.sessionId, { ...withProof(backgroundBackfill), rawEnabled: false })
+  assert.deepEqual(rewoundBackground.events.map(event => event.sourceEventId), backgroundIds(backgroundRootRows, [3]))
+  assert.deepEqual(rewoundBackground.header.threads.map(thread => thread.sourceThreadId), ["root"])
+  assert.deepEqual(rewoundBackground.usage, []); assert.deepEqual(rewoundBackground.header.target.retainedThreadIds, [])
+  const historicalBackground = await capture(backgroundProof.sessionId, withProof(rewoundBackground))
+  unchanged(rewoundBackground, historicalBackground)
+  assert.equal(rawText(historicalBackground), await readFile(backgroundFile, "utf8"))
+  assert.equal(rawText(historicalBackground, backgroundThread), backgroundChild)
+  assert.deepEqual(await capture(backgroundProof.sessionId, withProof(historicalBackground)), historicalBackground)
+
+  // Every observed snapshot is independently opened with its actually observed
+  // child bytes. Lifecycle prefixes above are explicitly derived test cuts.
+  for (const [rootName, childName] of [["observed-running-root.jsonl", "observed-running-child.jsonl"],
+    ["observed-completed-root.jsonl", "child.jsonl"]]) {
+    const source = await backgroundSource(rootName), child = await backgroundSource(childName)
+    await writeFile(backgroundFile, source); await writeFile(backgroundChildFile, child)
+    const actual = await capture(backgroundProof.sessionId)
+    assert.equal(rawText(actual), source); assert.equal(rawText(actual, backgroundThread), child)
+    assert.deepEqual(actual.header.sourceFailures, [])
+  }
+  for (const mutation of ["foreground-invocation", "missing-async-flag"]) {
+    const root = structuredClone(backgroundRootRows)
+    if (mutation === "foreground-invocation") root[6].message.content[0].input.run_in_background = false
+    else delete root[7].toolUseResult.isAsync
+    await writeFile(backgroundFile, jsonl(root)); await writeFile(backgroundChildFile, backgroundChild)
+    const actual = await capture(backgroundProof.sessionId)
+    assert.deepEqual(actual.header.threads.map(thread => thread.sourceThreadId), ["root"])
+    assert.ok(actual.events.every(event => event.childSourceThreadId === undefined))
+    assert.deepEqual(actual.header.sourceFailures, [{ source: backgroundFile, reason: "unsupported" }])
+    assert.equal(rawText(actual, backgroundThread), "", `${mutation}: no inferred child Raw access`)
+  }
+
   const rewindFolder = join(packageRoot, "fixtures/native-rewind-2.1.263")
   const rewind = JSON.parse(await readFile(join(rewindFolder, "provenance.json"), "utf8"))
   const turns = new Map([
@@ -240,7 +331,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
     return files
   }
   for (const entry of await readdir(join(packageRoot, "fixtures"), { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith("native-")) continue
+    if (!entry.isDirectory() || !entry.name.startsWith("native-") || entry.name === "native-background-child-2.1.263") continue
     const folder = join(packageRoot, "fixtures", entry.name)
     for (const sourceFile of await walk(folder)) {
       if (sourceFile.includes("/subagents/")) continue
@@ -259,7 +350,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
     }
   }
   process.env.ATAPE_CLAUDE_SESSION_FILE = ""; process.env.ATAPE_CLAUDE_HOME = sourceHome
-  process.stdout.write(`Verified installed Claude sourceCapture v2: ${roots} native root snapshots, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, child retention/removal, Raw off/backfill and 6 unlinked cases\n`)
+  process.stdout.write(`Verified installed Claude sourceCapture v2: ${roots + 3} native root snapshots, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
 
   // Generated broad cycles prove one reducer, independently of native profile
   // counts. Bodies and bridge templates are controlled fixture data.

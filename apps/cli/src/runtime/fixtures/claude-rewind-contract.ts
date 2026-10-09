@@ -18,7 +18,9 @@ const input = JSON.parse(readFileSync(0, "utf8")) as {
 }
 const phases = ["legacy-seed", "migration-lost-activate", "recover-deleted", "restored-idle", "retained-progress", "repair-child",
   "native-continue", "root-invalid", "root-repair", "raw-backfill", "abandon-child-and-empty", "abandoned-raw-backfill",
-  "empty-idle", "fresh-after-empty", "final-idle", "native-compact-seed", "native-compact-continue", "native-compact-idle"]
+  "empty-idle", "fresh-after-empty", "final-idle", "native-compact-seed", "native-compact-continue", "native-compact-idle",
+  "background-running", "background-child-only", "background-retained-progress", "background-retained-idle",
+  "background-completed", "background-raw-backfill", "background-rewind", "background-rewind-idle"]
 assert.ok(phases.includes(input.phase), "Unknown rewind contract phase")
 const legacy = input.phase === "legacy-seed", adapterId = "claude"
 const workspace = join(input.home, "workspace"), sourceHome = join(input.home, "source")
@@ -28,11 +30,22 @@ const familyId = "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac", agentId = "aa2bb7928384
 const control = join(directory, `${controlId}.jsonl`), resume = join(directory, `${resumeId}.jsonl`)
 const family = join(directory, `${familyId}.jsonl`), child = join(directory, familyId, "subagents", `agent-${agentId}.jsonl`)
 const compact = join(directory, "2197a21d-e447-4ce2-bb24-4ae0c75b2c9d.jsonl")
+const backgroundId = "2a7f13b3-532e-40ec-a959-41210525d00f", backgroundAgent = "a8722069f7a6392c3"
+const background = join(directory, `${backgroundId}.jsonl`)
+const backgroundChild = join(directory, backgroundId, "subagents", `agent-${backgroundAgent}.jsonl`)
 const fixtures = new URL("../../../../../adapters/claude/fixtures/", import.meta.url)
 const snapshot = (file: string) => readFileSync(new URL(`native-rewind-2.1.263/${file}`, fixtures), "utf8")
   .replaceAll("/atape/fixture/claude-rewind", workspace)
 const familySnapshot = (file: string) => readFileSync(new URL(`native-thinking-2.1.263/${file}`, fixtures), "utf8")
   .replaceAll("/fixture/native-thinking", workspace)
+// These are literal complete-LF prefixes of the retained native files, not
+// additional simultaneous observations of Claude's two independently written files.
+const backgroundSnapshot = (file: string, lines?: number) => {
+  const source = readFileSync(new URL(`native-background-child-2.1.263/${file}`, fixtures), "utf8")
+    .replaceAll("/fixture/native-background-child/workspace", workspace)
+  assert.ok(source.endsWith("\n"))
+  return lines === undefined ? source : source.split("\n").slice(0, lines).join("\n") + "\n"
+}
 const replaceSnapshot = (file: string, next: string) => {
   assert.ok(next.startsWith(readFileSync(file, "utf8")), "Native snapshot changed an acknowledged physical prefix")
   writeFileSync(file, next)
@@ -106,6 +119,25 @@ if (input.phase === "native-compact-seed") writeFileSync(compact,
   readFileSync(new URL("native-manual-compact-2.1.263/before.jsonl", fixtures), "utf8").replaceAll("/fixture/native-manual-compact", workspace))
 if (input.phase === "native-compact-continue") replaceSnapshot(compact,
   readFileSync(new URL("native-manual-compact-2.1.263/continued.jsonl", fixtures), "utf8").replaceAll("/fixture/native-manual-compact", workspace))
+if (input.phase === "background-running") {
+  mkdirSync(dirname(backgroundChild), { recursive: true })
+  writeFileSync(background, backgroundSnapshot("root.jsonl", 10)); writeFileSync(backgroundChild, backgroundSnapshot("child.jsonl", 5))
+}
+if (input.phase === "background-child-only") {
+  const original = readFileSync(background)
+  replaceSnapshot(backgroundChild, backgroundSnapshot("child.jsonl"))
+  assert.deepEqual(readFileSync(background), original, "Child-only append must leave the parent physical bytes unchanged")
+}
+if (input.phase === "background-retained-progress") {
+  renameSync(backgroundChild, join(input.home, "retained-background-child.jsonl"))
+  replaceSnapshot(background, backgroundSnapshot("root.jsonl", 18))
+}
+if (input.phase === "background-completed") {
+  renameSync(join(input.home, "retained-background-child.jsonl"), backgroundChild)
+  replaceSnapshot(background, backgroundSnapshot("root.jsonl"))
+}
+if (input.phase === "background-rewind") append(background, [{ type: "last-prompt", sessionId: backgroundId,
+  leafUuid: rows(background).find(row => row.type === "user")!.uuid, explicit: true, rewound: true }])
 const layer = Layer.merge(makeNodeClientLayer(paths, environment), makeNodeCollectorDaemonLayer(paths, binary, environment))
 const result = await Effect.runPromise(Effect.gen(function*() {
   if (legacy) {

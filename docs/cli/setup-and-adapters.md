@@ -528,7 +528,7 @@ directory round trips for spaces, Unicode, percent signs, dollar signs, quotes,
 backslashes and a trailing space. No Linux user manager was started. Actual logout/login, machine reboot, power loss and
 Linux Collector cgroup acceptance remain unverified. Descriptor parsing and
 controlled commands alone do not establish those behaviors. See
-[ADR-0102](../architecture/adr/0102-login-startup.md).
+[ADR-0103](../architecture/adr/0103-login-startup.md).
 
 ## Local state
 

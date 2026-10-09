@@ -6,6 +6,8 @@ owns attribution, redaction, durable preparation and delivery. The Server select
 a complete Canonical publication atomically for Reader, Search and Overview.
 [ADR-0101](../architecture/adr/0101-claude-active-path-and-legacy-adoption.md)
 records this design and explicit migration of existing legacy Sessions.
+[ADR-0102](../architecture/adr/0102-claude-background-subagents.md) adds proved
+direct background launches through the same Interface.
 
 ## Install and enable
 
@@ -80,11 +82,14 @@ resurrects an abandoned sibling path nor requires a sampled ordinary bridge.
 [ADR-0097](../architecture/adr/0097-claude-compaction-continuity.md) owns the
 continuity rationale. Incomplete trailing JSONL is deferred.
 
-## Foreground subagents
+## Direct subagents
 
 A completed foreground `Agent`/`Task` result admits a direct child only when its
 tool-use ID, exact `sourceToolAssistantUUID`, Agent ID and completion metadata agree.
-Asynchronous and error results do not admit children. The selected source is
+A direct background child instead requires an invocation with
+`run_in_background: true` and a unique non-error launch result with `isAsync: true`,
+`status: "async_launched"` and the same exact invocation/Agent ownership proof.
+An asynchronous flag alone does not prove a background launch. The selected source is
 `<root-file-directory>/<sessionId>/subagents/agent-<agentId>.jsonl`; its first UUID
 record must share the root Session/CWD and declare the Agent ID and sidechain
 ownership. Finding a file alone is insufficient. `.meta.json` is not read.
@@ -93,18 +98,30 @@ The child becomes `claude-agent:<agentId>` under `root`, linked from the actual
 parent tool-result Event. The same graph, thinking, usage and compaction rules
 apply within it. Its current CWD cannot change family attribution.
 
+The background child is captured while running and can append independently of
+root-byte changes. Capture does not wait for completion. Native typed
+`task-notification` user records retain their validated graph ancestry and remain
+Raw-only; their XML result and aggregate usage do not create conversation Events,
+relationships or additional usage. Actual assistant acknowledgements and later
+user turns remain visible. Human-pasted XML without the native typed origin is
+ordinary user content. Output-file locators and sidecars are not read.
+
 If a previously captured child is missing or unreadable, the target retains its
 previous stored membership and prefix proof with a diagnostic while valid root
 capture advances. The selected root must still prove the same parent receipt;
 the Server verifies retention against the base head. A never-captured failed
 child creates neither an empty Thread nor a misleading link. Restoring the exact
 source allows fresh capture. Changed authenticated child bytes are never acknowledged.
+Session `updatedAt` summarizes currently readable selected sources; while a child
+is retained, it may be earlier than that child's last stored Event. Retained Event
+timestamps and membership remain unchanged.
 
-Current Thread capture continues around background, noncompleted, error or nested
+Current Thread capture continues around unproved background, other noncompleted,
+error or nested
 delegation, with an `unsupported` diagnostic for an actual unlinked receipt.
 Pending calls alone do not warn. These receipts do not authorize reading a child
 file. Raw-enabled views may separately archive available child histories proved
-by historical completed root receipts outside the current path, without selecting
+by historical admitted root receipts outside the current path, without selecting
 their Events, usage or relationships. Diagnostics are rebuilt on idle restart and
 deduplicated per source/reason.
 
@@ -155,6 +172,13 @@ parses provider cursor internals. Before adoption, the Adapter authenticates
 acknowledged prefixes and validates old partial-page state against its old projection.
 Unknown schemas and inconsistent old state fail with a diagnostic.
 
+Legacy pending-page validation retains its historical projection slots, including
+task notifications that old collect treated as user messages. The v2 projection
+omits those controls. A previous v2 checkpoint can reopen the same authenticated
+source and atomically replace its old projection with notification exclusion and
+the newly supported background child; source identity and retained Event anchors
+remain stable.
+
 The Host durably freezes the installation, Project creation, exact original
 checkpoint and Raw acknowledgements before remote adoption. Each frozen checkpoint
 or source header is bounded at 2 MiB and charged to journal admission; attempted
@@ -193,6 +217,8 @@ Current acceptance uses the shipped factory's sourceCapture Interface, the share
 collection Interface, installed packages and authenticated HTTP/PostgreSQL.
 The [candidate record](../releases/evidence/claude-active-path-2026-10-09.md)
 binds completed local checks and their limits separately from final PR gates.
+The background increment's checks are recorded in its
+[candidate record](../releases/evidence/claude-background-2026-10-09.md).
 Genuine previous-main `f6093535e92acfee47170b53c7dec7244fccf8c7` artifacts produce
 legacy checkpoints; current code is not relabeled as an old package. Historical
 collect tests are separate evidence and cannot substitute for current sourceCapture
@@ -207,6 +233,7 @@ limits are owned by the fixture records:
 | [Rewind and continuation](../../adapters/claude/fixtures/native-rewind-2.1.263/README.md) | Hidden resume anchor and successful live rewind control; explicit empty leaf and later descendants |
 | [Thinking family](../../adapters/claude/fixtures/native-thinking-2.1.263/README.md) | Four native persisted bodies; root/child same-API split records; mock signatures/usage |
 | [Foreground child](../../adapters/claude/fixtures/native-foreground-child-2.1.263/README.md) | Direct completed Agent/Read family; independent root/child Raw |
+| [Background child](../../adapters/claude/fixtures/native-background-child-2.1.263/README.md) | Direct asynchronous launch, parent continuation, child append and typed completion notification; observed snapshots and derived replay cuts distinguished |
 | [Manual compaction](../../adapters/claude/fixtures/native-manual-compact-2.1.263/README.md) | Singleton retained tail and real continuation |
 | [Manual text tail](../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/README.md) | Same-response text pair; no executed Read |
 | [Automatic text](../../adapters/claude/fixtures/native-auto-text-replay-rounds-2.1.263/README.md) | Three native automatic cycles in five snapshots |
@@ -224,7 +251,7 @@ ledger states its actual controls. Deterministic loopback counters and missing
 summary-response records do not establish real provider cost completeness.
 
 
-Cross-file Session adoption, nested/background child histories, child forks and
+Cross-file Session adoption, nested child histories, child forks and
 spill collection remain separate work. The retained source corpus is Claude Code
 2.1.263 evidence, not a promise for every version or graph shape. Live-provider
 browser staging and upgrades from historical published binaries remain unverified;

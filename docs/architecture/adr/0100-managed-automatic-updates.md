@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-Login startup is amended by [ADR-0102](0102-login-startup.md); the original
+Login startup is amended by [ADR-0103](0103-login-startup.md); the original
 increment's lack of OS supervision below remains its recorded scope.
 
 Date: 2026-10-09

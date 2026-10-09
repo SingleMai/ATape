@@ -160,7 +160,10 @@ function equalJson(a: unknown, b: unknown): boolean {
 type RecordRef = { readonly start: number; readonly end: number; readonly digest: string }
 type ControlKind = "ordinary" | "boundary" | "summary" | "file" | "meta" | "caveat" | "command" | "stdout" | "synthetic"
 type IndexedRecord = { readonly first: RecordRef; value: RecordRef; readonly kind: ControlKind }
-type SourceCall = { readonly uuid: string; readonly name: string; readonly path?: string }
+type SourceCall = { readonly uuid: string; readonly name: string; readonly path?: string; readonly backgroundRequested?: true }
+const sourceCall = (uuid: string, block: RecordValue): SourceCall => ({ uuid, name: block.name as string,
+  ...(typeof object(block.input)?.file_path === "string" ? { path: object(block.input)!.file_path as string } : {}),
+  ...(object(block.input)?.run_in_background === true ? { backgroundRequested: true as const } : {}) })
 type ToolResponse = { readonly id: string; readonly model: unknown; readonly pending: Map<string, SourceCall> }
 type Normalization = {
   readonly records: Map<string, IndexedRecord>; readonly calls: Map<string, SourceCall>
@@ -362,7 +365,7 @@ function commitNormalizedRecord(context: Normalization, record: RecordValue, ref
       const block = object(blockValue)
       if (block?.type !== "tool_use" || typeof block.id !== "string" || typeof block.name !== "string") continue
       if (context.calls.has(block.id)) fail("unsupported", "Claude tool IDs are ambiguous in this Session.")
-      const call = { uuid: uuid!, name: block.name, ...(typeof object(block.input)?.file_path === "string" ? { path: object(block.input)!.file_path as string } : {}) }
+      const call = sourceCall(uuid!, block)
       context.calls.set(block.id, call); context.response.pending.set(block.id, call)
     }
   } else if (record.type === "user") {
@@ -451,7 +454,7 @@ const userCommandText = (text: string) => /^<(?:command-name|local-command|bash-
 // Host JavaScript and Server Go both require text with a nonblank body. Go's
 // Unicode whitespace also includes NEL, which JavaScript's \s does not.
 const hasThoughtBody = (text: string) => /[^\s\u0085]/u.test(text)
-/** The foreground relation needs one projected result Event. Unknown Raw-only
+/** A child relation needs one projected result Event. Unknown Raw-only
  * blocks do not add Events; real text or another result does. */
 function singleResultEvent(record: RecordValue): boolean {
   const message = object(record.message), content = message?.content
@@ -464,7 +467,7 @@ function singleResultEvent(record: RecordValue): boolean {
 
 /** Source identity and ordinary call correlation have already been checked.
  * A valid current-Thread record can carry an unproved child relationship. */
-function bindChild(record: RecordValue, calls: ReadonlyMap<string, { name: string; uuid: string }>, delegated: boolean,
+function bindChild(record: RecordValue, calls: ReadonlyMap<string, SourceCall>, delegated: boolean,
   children: ReadonlyArray<Child>, sessionId: string): ChildBinding {
   const content = object(record.message)?.content
   const result = object(record.toolUseResult), agentId = string(result?.agentId)
@@ -484,10 +487,28 @@ function bindChild(record: RecordValue, calls: ReadonlyMap<string, { name: strin
   if (links.length !== 1 || delegated || !agentId || !/^[A-Za-z0-9_-]{1,128}$/.test(agentId) ||
     !/^[A-Za-z0-9_-]{1,500}$/.test(sessionId) || !singleResultEvent(record)) return { unlinked: true }
   const block = links[0]!, toolCallId = block.tool_use_id as string, call = calls.get(toolCallId)!
-  if (result?.status !== "completed" || result.isAsync !== undefined && result.isAsync !== false ||
-    record.isAsync !== undefined && record.isAsync !== false || block.is_error !== undefined && block.is_error !== false ||
+  const foreground = result?.status === "completed" && (result.isAsync === undefined || result.isAsync === false) &&
+    (record.isAsync === undefined || record.isAsync === false)
+  const background = call.backgroundRequested === true && result?.status === "async_launched" && result.isAsync === true &&
+    (record.isAsync === undefined || record.isAsync === true)
+  if (!foreground && !background || block.is_error !== undefined && block.is_error !== false ||
     record.sourceToolAssistantUUID !== call.uuid) return { unlinked: true }
   return { child: { agentId, toolCallId, toolUuid: call.uuid }, unlinked: false }
+}
+
+/** This is a v2 projection rule. The legacy normalizer must still validate old
+ * pending slots where the same provider notification was a visible user Event. */
+function taskNotification(record: RecordValue, root: RecordValue): boolean {
+  if (object(record.origin)?.kind !== "task-notification") return false
+  const message = object(record.message)
+  if (record.type !== "user" || message?.role !== "user" || typeof message.content !== "string" || !message.content.trim() ||
+    record.queueSkipAttachments !== true || record.isMeta !== undefined && record.isMeta !== false ||
+    !autoId(record.uuid) || !sourceVersion(record.version) || record.sessionId !== root.sessionId || typeof record.cwd !== "string" || !isAbsolute(record.cwd) ||
+    record.attachment !== undefined || record.subtype !== undefined || record.compactMetadata !== undefined ||
+    record.isCompactSummary !== undefined || record.isVisibleInTranscriptOnly !== undefined || !plainControl(record))
+    fail("unsupported", "Claude typed task notification has conflicting source data.")
+  if (!timestamp(record.timestamp)) fail("format", "Claude task notification has no valid timestamp.")
+  return true
 }
 
 function projectUsage(record: RecordValue, revision: number): AdapterUsage | undefined {
@@ -544,7 +565,7 @@ function rootTitle(root: RecordValue): string {
 }
 
 function projectRecord(record: RecordValue, order: number, revision: number, sourceObjectId: string,
-  calls: Map<string, { name: string; uuid: string }>, projectionRevision: 4 | 5 = ProjectionRevision): { events: AdapterEvent[]; partial: boolean } {
+  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 = ProjectionRevision): { events: AdapterEvent[]; partial: boolean } {
   const events: AdapterEvent[] = []
   let partial = false
   if (!record.uuid || record.isMeta === true || record.type !== "user" && record.type !== "assistant") return { events, partial }
@@ -567,7 +588,7 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
         update = { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: block.thinking } }
       } else if (block?.type === "tool_use" && record.type === "assistant" && typeof block.id === "string" && typeof block.name === "string") {
         if (calls.has(block.id)) fail("unsupported", "Claude tool IDs are ambiguous in this session.")
-        calls.set(block.id, { name: block.name, uuid: record.uuid as string })
+        calls.set(block.id, sourceCall(record.uuid as string, block))
         update = { sessionUpdate: "tool_call", toolCallId: block.id, title: block.name, status: "pending", kind: toolKind(block.name),
           ...(isBoundedToolValue(block.input) ? { rawInput: block.input } : {}) }
         partial = true; fidelity = "partial"
@@ -822,7 +843,8 @@ function captureCheckpoint(value: string | undefined): CaptureCheckpoint | undef
   } catch { return fail("cursor", "Claude source checkpoint is invalid; it was not reset.") }
 }
 function sourceOrigin(root: RecordValue) {
-  if (root.type !== "user" || root.parentUuid !== null || root.isMeta === true || !autoId(root.uuid) || !autoId(root.sessionId) || typeof root.cwd !== "string" || !isAbsolute(root.cwd))
+  if (root.type !== "user" || root.parentUuid !== null || root.isMeta === true || object(root.origin)?.kind === "task-notification" ||
+    !autoId(root.uuid) || !autoId(root.sessionId) || typeof root.cwd !== "string" || !isAbsolute(root.cwd))
     fail("unsupported", "Claude source has no trustworthy original user root.")
   return { sourceId: root.sessionId as string, originKey: root.uuid as string, cwd: root.cwd as string }
 }
@@ -963,7 +985,7 @@ async function indexCaptureStream(file: string, rootIdentity: RecordValue | unde
       check(); if (refs.length === limits.records) fail("limit", "Claude source exceeds its record admission.")
       const ref = recordRef(bytes, line.content); refs.push(ref); hash.update(line.content); bytes = line.end
       if (!line.content.toString("utf8").trim()) continue
-      const record = parseSourceRecord(line.content), uuid = string(record.uuid)
+      const record = parseSourceRecord(line.content), uuid = string(record.uuid), notification = taskNotification(record, root)
       if (record.sessionId !== undefined && record.sessionId !== root.sessionId) fail("unsupported", "Mixed Claude Session identities are not supported.")
       if (record.type === "last-prompt") {
         if (!sourceBookkeeping(record, root) || record.explicit !== undefined && typeof record.explicit !== "boolean" || record.rewound !== undefined && typeof record.rewound !== "boolean")
@@ -984,7 +1006,7 @@ async function indexCaptureStream(file: string, rootIdentity: RecordValue | unde
         if (!action.copy) fail("unsupported", "Claude source UUID is ambiguous.")
         commitNormalizedRecord(context, record, ref, action); originals.set(uuid, ref); continue
       }
-      const genuineUser = record.type === "user" && record.isMeta !== true && toolResults(record).length === 0 && record.isCompactSummary === undefined && record.isVisibleInTranscriptOnly === undefined
+      const genuineUser = record.type === "user" && record.isMeta !== true && !notification && toolResults(record).length === 0 && record.isCompactSummary === undefined && record.isVisibleInTranscriptOnly === undefined
       if (genuineUser && record.parentUuid !== context.leaf) {
         if (delegated || !autoId(record.parentUuid) || !nodes.has(record.parentUuid)) fail("unsupported", "Claude branch has no known original anchor.")
         context = await restore(record.parentUuid)
@@ -995,18 +1017,19 @@ async function indexCaptureStream(file: string, rootIdentity: RecordValue | unde
       if (!uuid) { commitNormalizedRecord(context, record, ref, action); continue }
       if (nodes.size === 0 && (uuid !== root.uuid || record.sessionId !== root.sessionId || record.cwd !== root.cwd))
         fail("changed", "Claude original identity changed while opening its view.")
-      const calls = new Map(context.calls), projected = action.rawOnly ? undefined : projectRecord(record, context.order, ref.end, "source-view", calls)
-      const relationship = action.rawOnly ? { unlinked: false } : bindChild(record, calls, delegated, [...pins.values()], root.sessionId as string)
+      const rawOnly = action.rawOnly || notification
+      const calls = new Map(context.calls), projected = rawOnly ? undefined : projectRecord(record, context.order, ref.end, "source-view", calls)
+      const relationship = rawOnly ? { unlinked: false } : bindChild(record, calls, delegated, [...pins.values()], root.sessionId as string)
       if (relationship.child) { childFile(file, root.sessionId as string, relationship.child.agentId); pins.set(relationship.child.agentId, relationship.child) }
       // Projection is validated even for a branch later abandoned by this view.
       void projected
-      nodes.set(uuid, { ref, predecessor, rawOnly: action.rawOnly, kind: action.kind, ...relationship })
+      nodes.set(uuid, { ref, predecessor, rawOnly, kind: action.kind, ...relationship })
       originals.set(uuid, ref); commitNormalizedRecord(context, record, ref, action); explicitEmpty = false
     }
     const selected = new Set<number>(), latestUsage = new Map<string, number>(), children: Child[] = [], chain: CaptureNode[] = []
     for (let uuid = context.leaf; uuid !== null;) { const node = nodes.get(uuid)!; chain.push(node); uuid = node.predecessor }
     let eventCount = 0, observedAt = timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
-    const calls = new Map<string, { name: string; uuid: string }>()
+    const calls = new Map<string, SourceCall>()
     for (const node of chain.reverse()) {
       check(); selected.add(node.ref.start)
       if (node.unlinked) diagnostics.add(file, "unsupported")
@@ -1111,7 +1134,7 @@ export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2
     if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "Claude source metadata exceeds its page admission.")
     let disposed = false, failed = false, streamIndex = 0, refIndex = 0, order = 0, emittedUsage = 0, frameCount = 0
     let handle: Awaited<ReturnType<typeof open>> | undefined
-    let calls = new Map<string, { name: string; uuid: string }>()
+    let calls = new Map<string, SourceCall>()
     let pending: { frames: SourceCaptureFrame[]; at: number } | undefined
     const close = async () => { disposed = true; const current = handle; handle = undefined; if (current) await current.close() }
     const byStart = streams.map(stream => new Map([...stream.nodes.values()].map(node => [node.ref.start, node])))
