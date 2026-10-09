@@ -3,7 +3,9 @@
 The [Claude guide](../../adapters/claude.md) owns current behavior and limits;
 [ADR-0102](../../architecture/adr/0102-claude-background-subagents.md) records the
 decision. This record distinguishes source evidence, local checks and final
-integration gates. Package publication, manual Server deployment and production
+integration gates. [PR #203](https://github.com/SingleMai/ATape/pull/203) records
+the final candidate and its exact-head CI/Security results before merge.
+Package publication, manual Server deployment and production
 database migration are not requested.
 
 ## Candidate and evidence
