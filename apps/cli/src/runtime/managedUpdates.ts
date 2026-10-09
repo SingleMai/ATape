@@ -17,16 +17,19 @@ import { withClientConfigFileLock } from "./clientConfig.ts"
 import { validateCollectorAdapters } from "./collectorReadiness.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { assertNoPendingManualStateUpgrade } from "./manualStateUpgrade.ts"
+import { createUpdateControl, UpdateRuntimeSelection, updateControlProtocol,
+  type UpdateControlTicket, type UpdateRuntimeSelection as ControlSelection } from "./updateControl.ts"
 export { acquireUpdateWorker } from "./updateOwnership.ts"
 import { RuntimeSelection, atomicJSON, decodeRuntimeSelection, managedStateContract, missing, readBoundedJSON,
-  applyRuntimeSelection, readRuntimeSelection, resolveRuntimeEntry, selectRuntime, selectedBootstrap, updateDirectory,
+  applyRuntimeSelection, readEffectiveRuntimeSelection, readRuntimeSelection, resolveRuntimeEntry, runtimeEntry, selectRuntime, selectedBootstrap, updateDirectory,
   type RuntimeSelection as Selection } from "./runtimeSelection.ts"
 
 const Schedule = Schema.Struct({ nextCheckAt: Schema.Number, failures: Schema.Number,
   version: Schema.optionalKey(Schema.String), failure: Schema.optionalKey(Schema.String) })
 const Pending = Schema.Struct({ next: RuntimeSelection, previous: Schema.optionalKey(RuntimeSelection) })
 const Prepared = Schema.Struct({ selection: RuntimeSelection, baseline: Schema.Array(AdapterInstallation),
-  baselineSelection: Schema.optionalKey(RuntimeSelection), enabledAdapterIds: Schema.Array(Schema.String), hasGit: Schema.Boolean })
+  baselineSelection: Schema.optionalKey(Schema.Union([RuntimeSelection, UpdateRuntimeSelection])),
+  controlEligible: Schema.optionalKey(Schema.Boolean), enabledAdapterIds: Schema.Array(Schema.String), hasGit: Schema.Boolean })
 const pendingFile = (home: string) => join(updateDirectory(home), "pending.json")
 const scheduleFile = (home: string) => join(updateDirectory(home), "state.json")
 const retainedFile = (home: string) => join(updateDirectory(home), "retained.json")
@@ -56,35 +59,68 @@ const sameInstallations = (a: ReadonlyArray<AdapterInstallation>, b: ReadonlyArr
     [item.adapterId, item.packageName, item.packageSlot ?? null, item.upgradeSpec, item.displayName, item.version, item.installedAt, item.updatedAt])
   return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 }
+const controlSelection = (selection: Selection | ControlSelection): ControlSelection => {
+  if (selection.protocol === updateControlProtocol) return selection
+  if (!selection.bootstrapIdentity) throw new Error("Independent update control requires a durable bootstrap identity.")
+  return { protocol: updateControlProtocol, version: selection.version, captureStateContract: selection.stateContract,
+    bootstrapEntry: selection.bootstrapEntry, bootstrapIdentity: selection.bootstrapIdentity, adapters: selection.adapters }
+}
+const controlCapable = async (entry: string) => {
+  const manifest = await readBoundedJSON(join(dirname(dirname(entry)), "package.json")) as {
+    atapeRuntime?: { updateControlProtocol?: unknown }
+  }
+  return manifest.atapeRuntime?.updateControlProtocol === updateControlProtocol
+}
 
 export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: string, environment: NodeJS.ProcessEnv) => {
   await assertNoPendingManualStateUpgrade(paths)
+  const control = createUpdateControl(paths.atapeHome)
   const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
-  if (!pending && !(await isCollectorMaintenancePending(paths.collectorProcessFile))) return
-  const restore = (deadline: number) => pending ? withClientConfigFileLock(paths.configFile, async () => {
+  const controlPending = await control.recoveryPending()
+  if (!pending && !controlPending && !(await isCollectorMaintenancePending(paths.collectorProcessFile))) return
+  const restore = (deadline: number) => withClientConfigFileLock(paths.configFile, async () => {
     checkHandoffDeadline(deadline)
     // A later explicit selection wins over an interrupted older transaction.
-    if (isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), pending.next)) {
+    if (pending && isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), pending.next)) {
       checkHandoffDeadline(deadline)
       await selectRuntime(paths.atapeHome, pending.previous)
     }
-  }, Math.max(0, Math.min(5_000, deadline - performance.now()))) : Promise.resolve()
+    // Resolve the historical namespace before independent selection/readiness.
+    // The durable maintenance gate still owns recovery if readiness later fails.
+    if (pending) await rm(pendingFile(paths.atapeHome), { force: true })
+    checkHandoffDeadline(deadline)
+    if (controlPending) {
+      const replacement = await control.bootstrapReplacementSelection()
+      if (replacement) {
+        // A supported manual replacement materializes this overlay before npm.
+        // Repeat conditionally for an external replacement or interrupted call,
+        // before the rebound bootstrap selects its own Adapter-free descriptor.
+        const raw = await rawConfig(paths), effective = applyRuntimeSelection(raw, replacement)
+        if (!sameInstallations(raw.adapters, effective.adapters)) await atomicJSON(paths.configFile, { ...raw, adapters: effective.adapters })
+      }
+      checkHandoffDeadline(deadline)
+      await control.recoverSelection()
+    }
+  }, Math.max(0, Math.min(5_000, deadline - performance.now())))
   await withCollectorMaintenance(paths, () => resolveRuntimeEntry(paths.atapeHome, bootstrap), environment, restore,
     { recover: (_, deadline) => restore(deadline) })
+  if (controlPending) await control.completeRecovery()
   await rm(pendingFile(paths.atapeHome), { force: true })
 }
 
 export const needsUpdateRecovery = async (paths: NodeClientPaths) =>
-  (await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))) !== undefined || isCollectorMaintenancePending(paths.collectorProcessFile)
+  (await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))) !== undefined ||
+  await createUpdateControl(paths.atapeHome).recoveryPending() || isCollectorMaintenancePending(paths.collectorProcessFile)
 
 export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray<string>> => {
-  const selections: Selection[] = []
-  const current = await readRuntimeSelection(home)
+  const selections: (Selection | ControlSelection)[] = []
+  const current = await readEffectiveRuntimeSelection(home)
   if (current) selections.push(current)
   const retained = await readOptional(retainedFile(home), decodeRuntimeSelection)
   if (retained) selections.push(retained)
   const pending = await readOptional(pendingFile(home), Schema.decodeUnknownSync(Pending))
   if (pending) selections.push(pending.next, ...(pending.previous ? [pending.previous] : []))
+  selections.push(...await createUpdateControl(home).protectedSelections())
   return [...new Set(selections.flatMap(selection => selection.adapters.flatMap(pair =>
     [pair.before.packageSlot, pair.after.packageSlot].filter((slot): slot is string => slot !== undefined))))]
 }
@@ -118,6 +154,10 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       target: () => nodeEffect("release", signal => completedReleaseVersion(signal, fetchMetadata)),
       record: input => nodeEffect("state", () => atomicJSON(scheduleFile(paths.atapeHome), input)),
       prepare: (version, adapters) => Effect.gen(function*() {
+        yield* nodeEffect("state", async () => {
+          await assertNoPendingManualStateUpgrade(paths)
+          if (await needsUpdateRecovery(paths)) throw new Error("Interrupted update work must recover before preparing another release.")
+        })
         const original = yield* nodeEffect("unsupported", async () => {
           const original = await bootstrap()
           if (!original) throw new Error("This CLI installation is not managed by npm global.")
@@ -131,7 +171,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         yield* nodeEffect("release", signal => verifyPublishedRelease(version, ["@atape/cli", ...officialSources.map(source => source.packageName)], signal, fetchMetadata))
         const snapshot = yield* nodeEffect("state", () => withClientConfigFileLock(paths.configFile, async () => {
           const raw = await rawConfig(paths)
-          const selection = await readRuntimeSelection(paths.atapeHome)
+          const selection = await readEffectiveRuntimeSelection(paths.atapeHome)
           if (selection) requireForwardUpdate(version, selection.version, "prepare")
           const effective = applyRuntimeSelection(raw, selection)
           const eligible = effective.adapters.filter(adapter => adapter.upgradeSpec === adapter.packageName &&
@@ -165,9 +205,18 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           enabledAdapterIds: [...new Set([...baseline.enabledAdapterIds, ...replacements.map(pair => pair.after.adapterId)])] }
         yield* validateCollectorAdapters(paths, candidateConfig).pipe(
           Effect.mapError(() => updateError("prepare", "The prepared Adapter runtime could not be loaded locally.")))
+        const controlEligible = yield* nodeEffect("prepare", async () => {
+          const targetCapable = await controlCapable(runtimeEntry(paths.atapeHome, version))
+          if (snapshot.selection?.protocol === updateControlProtocol && !targetCapable) {
+            throw new Error("An independent update cannot return to a legacy-only package.")
+          }
+          const bridge = snapshot.selection ? runtimeEntry(paths.atapeHome, snapshot.selection.version) : original
+          return targetCapable && await controlCapable(bridge)
+        })
         yield* nodeEffect("prepare", () => atomicJSON(join(updateDirectory(paths.atapeHome), `${key}.prepared.json`), {
           selection: decodeRuntimeSelection(selection), baseline: baseline.adapters,
           ...(snapshot.selection ? { baselineSelection: snapshot.selection } : {}),
+          ...(controlEligible ? { controlEligible: true } : {}),
           enabledAdapterIds: baseline.enabledAdapterIds, hasGit: baseline.projects.some(project => project.type === "git")
         }))
         return { version, key }
@@ -184,10 +233,20 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         if (installedBootstrap.bootstrapIdentity !== candidate.selection.bootstrapIdentity) {
           throw new Error("The npm bootstrap was replaced while preparing the update.")
         }
+        const control = candidate.controlEligible ? createUpdateControl(paths.atapeHome) : undefined
+        let ticket: UpdateControlTicket | undefined
+        if (control && await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))) {
+          throw new Error("A historical update must recover before independent activation.")
+        }
+        if (control && await control.recoveryPending()) throw new Error("An interrupted independent update must recover before activation.")
         const previous = await readRuntimeSelection(paths.atapeHome) ?? installedBootstrap
-        await atomicJSON(pendingFile(paths.atapeHome), { next: candidate.selection, ...(previous ? { previous } : {}) })
+        if (!control) await atomicJSON(pendingFile(paths.atapeHome), { next: candidate.selection, previous })
         const restore = (deadline: number) => withClientConfigFileLock(paths.configFile, async () => {
           checkHandoffDeadline(deadline)
+          if (control) {
+            if (await control.recoveryPending()) await control.recoverSelection()
+            return
+          }
           if (isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), candidate.selection)) {
             checkHandoffDeadline(deadline)
             await selectRuntime(paths.atapeHome, previous)
@@ -198,7 +257,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
             checkHandoffDeadline(deadline)
             const config = await rawConfig(paths)
             if (!config.toolsConfigured) throw new Error("Tools were disconnected before activation.")
-            if (!isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), candidate.baselineSelection)) {
+            if (!isDeepStrictEqual(await readEffectiveRuntimeSelection(paths.atapeHome), candidate.baselineSelection)) {
               throw new Error("The managed runtime changed before activation.")
             }
             if (automatic && !automaticUpdatesEnabled(config)) throw new Error("Automatic updates were disabled before activation.")
@@ -210,15 +269,33 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
             if (installed.bootstrapIdentity !== candidate.selection.bootstrapIdentity) {
               throw new Error("The npm bootstrap was replaced while preparing the update.")
             }
-            if (previous) await atomicJSON(retainedFile(paths.atapeHome), previous)
+            const targetCapable = await controlCapable(runtimeEntry(paths.atapeHome, prepared.version))
+            const bridgeCapable = await controlCapable(await resolveRuntimeEntry(paths.atapeHome, original))
+            if (Boolean(control) !== (targetCapable && bridgeCapable) ||
+              candidate.baselineSelection?.protocol === updateControlProtocol && !control) {
+              throw new Error("The update-control capability changed before activation.")
+            }
             checkHandoffDeadline(deadline)
-            await selectRuntime(paths.atapeHome, decodeRuntimeSelection(candidate.selection))
+            if (control) {
+              // The durable transaction begins only after quiescence and the
+              // last policy, configuration and ownership checks. Preparation
+              // outside this handoff never closes collection admission.
+              ticket = await control.prepare({ next: controlSelection(candidate.selection),
+                previous: controlSelection(candidate.baselineSelection ?? installedBootstrap) })
+              checkHandoffDeadline(deadline)
+              await control.begin(ticket)
+            } else {
+              await atomicJSON(retainedFile(paths.atapeHome), previous)
+              checkHandoffDeadline(deadline)
+              await selectRuntime(paths.atapeHome, decodeRuntimeSelection(candidate.selection))
+            }
           }, Math.max(0, Math.min(5_000, deadline - performance.now())))
         }, { recover: (_, deadline) => restore(deadline) }) } catch (cause) {
           // A completed rollback (or rejection before commit) must not trigger
           // another handoff. Preserve uncertain or still-gated recovery state.
           await withClientConfigFileLock(paths.configFile, async () => {
             if (await isCollectorMaintenancePending(paths.collectorProcessFile)) return
+            if (control) { await control.completeRecovery(); return }
             const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
             if (isDeepStrictEqual(pending?.next, candidate.selection) &&
               !isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), candidate.selection)) {
@@ -227,7 +304,10 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           }).catch(() => {})
           throw cause
         }
-        await rm(pendingFile(paths.atapeHome), { force: true })
+        if (control) {
+          if (!ticket) throw new Error("The independent update did not begin its durable transaction.")
+          await control.complete(ticket)
+        } else await rm(pendingFile(paths.atapeHome), { force: true })
         await rm(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`), { force: true })
       }),
       launch: () => nodeEffect("state", async () => {

@@ -1,5 +1,6 @@
 import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, type ClientConfig } from "@atape/domain"
 import { Effect } from "effect"
+import { createHash } from "node:crypto"
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -9,6 +10,7 @@ import { isCollectorMaintenancePending, withCollectorMaintenance } from "./colle
 import { prepareCollectorReadiness, validateCollectorAdapters } from "./collectorReadiness.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
 import { atomicJSON, managedStateContract, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
+import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -268,9 +270,57 @@ export function createAtapeAdapter() {}
     let providerOpened = false
     await expect(Effect.runPromise(prepareCollectorReadiness(f.paths, f.environment).pipe(
       Effect.andThen(Effect.sync(() => { providerOpened = true }))
-    ))).rejects.toThrow("Could not inspect the ATape update transaction. Collection remains paused.")
+    ))).rejects.toThrow("The selected ATape runtime is invalid")
     expect(providerOpened).toBe(false)
-    expect(JSON.parse(await readFile(f.readyFile, "utf8"))).toEqual({ token: f.token, pid: process.pid })
+    await expect(readFile(f.readyFile)).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(readFile(f.paths.collectorStateFile)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  it.each(["commit", "recover"] as const)("reports local readiness but admits no provider before control %s", async outcome => {
+    const f = await fixture(), version = "0.6.0"
+    const bootstrap = join(f.paths.atapeHome, "bootstrap.mjs"), bytes = "// fixture bootstrap\n"
+    await writeFile(bootstrap, bytes)
+    const packageRoot = join(f.paths.atapeHome, "releases", version, "node_modules", "@atape", "cli")
+    await mkdir(join(packageRoot, "dist"), { recursive: true })
+    await writeFile(join(packageRoot, "dist", "atape.js"), "// readiness does not execute this fixture\n")
+    await atomicJSON(join(packageRoot, "package.json"), { name: "@atape/cli", version, atapeRuntime: {
+      stateContract: managedStateContract, updateControlProtocol
+    } })
+    const control = createUpdateControl(f.paths.atapeHome)
+    const ticket = await control.prepare({ next: { protocol: updateControlProtocol, version,
+      captureStateContract: managedStateContract, bootstrapEntry: bootstrap,
+      bootstrapIdentity: createHash("sha256").update(bytes).digest("hex"), adapters: [] } })
+    await control.begin(ticket)
+    const cancellation = new AbortController()
+    let providerOpened = false
+    const ready = Effect.runPromise(prepareCollectorReadiness(f.paths, f.environment).pipe(
+      Effect.andThen(Effect.sync(() => { providerOpened = true }))
+    ), { signal: cancellation.signal })
+    void ready.catch(() => {})
+    try {
+      await expect.poll(async () => JSON.parse(await readFile(f.readyFile, "utf8"))).toEqual({ token: f.token, pid: process.pid })
+      expect(providerOpened).toBe(false)
+      if (outcome === "commit") await control.complete(ticket)
+      else {
+        await control.recoverSelection()
+        expect(await control.recoveryPending()).toBe(true)
+        expect(providerOpened).toBe(false)
+        await control.completeRecovery()
+      }
+      await ready
+      expect(providerOpened).toBe(true)
+      expect(await control.recoveryPending()).toBe(false)
+    } finally { cancellation.abort(); await ready.catch(() => {}) }
+  })
+
+  it("keeps providers closed when update-control metadata is malformed", async () => {
+    const f = await fixture()
+    await atomicJSON(join(updateDirectory(f.paths.atapeHome), "control.json"), { protocol: "unknown-control" })
+    let providerOpened = false
+    await expect(Effect.runPromise(prepareCollectorReadiness(f.paths, f.environment).pipe(
+      Effect.andThen(Effect.sync(() => { providerOpened = true }))
+    ))).rejects.toThrow(/update.*metadata|update.*control/i)
+    expect(providerOpened).toBe(false)
     await expect(readFile(f.paths.collectorStateFile)).rejects.toMatchObject({ code: "ENOENT" })
   })
 })

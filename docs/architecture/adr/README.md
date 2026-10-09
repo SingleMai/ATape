@@ -132,6 +132,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0104](0104-capture-v2-state-upgrade.md) | Capture v2 state contract and explicit manual upgrade |
 | [0105](0105-client-redaction-policy.md) | Shared client redaction and policy-bound capture |
 | [0106](0106-redaction-settings.md) | Global redaction settings |
+| [0107](0107-independent-update-control.md) | Independent update control and durable runtime admission |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

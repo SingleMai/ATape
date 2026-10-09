@@ -2,6 +2,9 @@
 
 Status: Accepted (2026-10-09)
 
+[ADR-0107](0107-independent-update-control.md) separates future update control
+from capture admission; it does not alter this published release's boundary.
+
 Amends [ADR-0100](0100-managed-automatic-updates.md) and
 [ADR-0103](0103-login-startup.md) for the first release containing
 [ADR-0101](0101-claude-active-path-and-legacy-adoption.md).

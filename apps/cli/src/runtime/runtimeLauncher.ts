@@ -6,7 +6,8 @@ import { Schema } from "effect"
 import { parseCLI } from "../commandInput.ts"
 import { supportsInteractiveExperience } from "../interactiveEligibility.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { decodeLegacyRuntimeSelection, missing, readBoundedJSON, readRuntimeSelection, resolveRuntimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
+import { decodeLegacyRuntimeSelection, missing, readBoundedJSON, readEffectiveRuntimeSelection, resolveRuntimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
+import { createUpdateControl } from "./updateControl.ts"
 
 // The npm executable remains a stable bootstrap. This Composition Root helper
 // delegates only validated public launches, before constructing the old runtime.
@@ -20,7 +21,11 @@ export const delegateManagedRuntime = async (
     command.kind !== "interactive" && command.kind !== "help" && command.kind !== "version" ||
     command.kind === "interactive" && !supportsInteractiveExperience(environment)) return undefined
   const home = defaultNodeClientPaths(environment).atapeHome
-  if (command.kind === "help" || command.kind === "version") {
+  // A crashed handoff may have selected a target whose files are unavailable.
+  // The capable coordinator enters main to recover under update ownership;
+  // read-only commands still validate their selected executable normally.
+  if (command.kind === "interactive" && await createUpdateControl(home).recoveryPending()) return undefined
+  if ((command.kind === "help" || command.kind === "version") && !await createUpdateControl(home).readSelection()) {
     try {
       const value = await readBoundedJSON(runtimeSelectionFile(home))
       if (typeof value === "object" && value !== null && "stateContract" in value && value.stateContract === "atape.client.v3-capture.v1") {
@@ -29,7 +34,7 @@ export const delegateManagedRuntime = async (
       }
     } catch (cause) { if (!missing(cause)) throw cause }
   }
-  const selected = await readRuntimeSelection(home)
+  const selected = await readEffectiveRuntimeSelection(home)
   if (!selected) return undefined
   const entry = await resolveRuntimeEntry(home, selected.bootstrapEntry)
   if (entry === await realpath(entryFile)) return undefined
@@ -47,7 +52,8 @@ export const delegateAdmittedLoginStartup = async (
 ): Promise<number | undefined> => {
   if (parseCLI(args).kind !== "__login-start") throw new Error("Expected the admitted login startup entry.")
   const home = defaultNodeClientPaths(environment).atapeHome
-  const selected = await readRuntimeSelection(home)
+  if (await createUpdateControl(home).recoveryPending()) return undefined
+  const selected = await readEffectiveRuntimeSelection(home)
   if (!selected) return undefined
   const entry = await resolveRuntimeEntry(home, selected.bootstrapEntry)
   if (entry === await realpath(entryFile)) return undefined

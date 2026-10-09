@@ -9,6 +9,7 @@ import { promisify } from "node:util"
 import { verifyAutomaticUpdate } from "./verify-automatic-update.mjs"
 import { verifyLoginStartup } from "./verify-login-startup.mjs"
 import { verifyLegacyStateContract } from "./verify-legacy-state-contract.mjs"
+import { verifyUpdateBridge } from "./verify-update-bridge.mjs"
 import { verifyPrivacyUpgrade } from "./verify-privacy-upgrade.mjs"
 
 const execute = promisify(execFile)
@@ -80,6 +81,7 @@ try {
   if (process.platform !== "win32") {
     await verifyAutomaticUpdate(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "automatic-update"))
     await verifyLoginStartup(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "login-startup"))
+    await verifyUpdateBridge(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "update-bridge"))
     if (process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL) {
       await verifyLegacyStateContract(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "legacy-state-contract"), process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL)
     }

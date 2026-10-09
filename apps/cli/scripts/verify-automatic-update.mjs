@@ -23,6 +23,7 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory, hist
   const manifest = await json(join(donorPackage, "package.json"))
   assert.equal(manifest.atapeRuntime?.protocol, "atape.runtime.v1")
   assert.equal(manifest.atapeRuntime?.stateContract, "atape.client.v3-capture.v2")
+  assert.equal(manifest.atapeRuntime?.updateControlProtocol, "atape.update-control.v1")
   const version = manifest.version
   const [major, minor, patch] = version.split(".").map(Number)
   const previous = patch > 0 ? `${major}.${minor}.${patch - 1}` : minor > 0 ? `${major}.${minor - 1}.0` : `${major - 1}.0.0`
@@ -36,10 +37,12 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory, hist
     assert.equal(baseline.name, "@atape/cli")
     assert.equal(baseline.version, "0.5.4")
     assert.equal(baseline.atapeRuntime?.stateContract, manifest.atapeRuntime.stateContract)
+    assert.equal(baseline.atapeRuntime?.updateControlProtocol, undefined, "The historical worker must retain its legacy-only update protocol")
     assert.notEqual(beforeDigest, await digest(join(donorPackage, "dist", "atape.js")), "Historical bootstrap must not be the candidate bundle")
   }
   const home = join(root, "home")
   const currentFile = join(home, "releases", "current.json")
+  const controlSelectionFile = join(home, "updates", "runtime.json")
   const selectedPackage = join(home, "releases", version, "node_modules", "@atape", "cli")
   // Keep CLI acquisition offline while exercising validation of the exact
   // packaged CLI and a newly prepared official Adapter generation.
@@ -197,12 +200,25 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
     await writeFile(join(adapter, "index.js"), healthyAdapter)
     await writeFile(join(home, "updates", "state.json"), JSON.stringify({ nextCheckAt: 0, failures: 1 }))
     const dispatched = await command(launch, [])
-    await waitFor(async () => await exists(currentFile) && await exists(join(home, "updates", "state.json")) &&
+    const selectedFile = historical ? currentFile : controlSelectionFile
+    await waitFor(async () => await exists(selectedFile) && await exists(join(home, "updates", "state.json")) &&
       (await readdir(join(home, "updates", "workers")).catch(() => [])).length === 0,
       async () => `Detached update did not complete. Dispatcher: ${dispatched.stdout}\n${dispatched.stderr}\n${await readFile(join(home, "logs", "collector.log"), "utf8").catch(() => "no worker log")}`)
-    const current = await json(currentFile)
-    assert.equal(current.stateContract, manifest.atapeRuntime.stateContract)
-    assert.equal((await json(join(home, "updates", "retained.json"))).stateContract, manifest.atapeRuntime.stateContract)
+    const current = await json(selectedFile)
+    if (historical) {
+      assert.equal(current.protocol, "atape.runtime.v1")
+      assert.equal(current.stateContract, manifest.atapeRuntime.stateContract)
+      assert.equal((await json(join(home, "updates", "retained.json"))).stateContract, manifest.atapeRuntime.stateContract)
+      assert.equal(await exists(controlSelectionFile), false, "The genuine historical worker must activate through its legacy pointer")
+      assert.equal(await exists(join(home, "updates", "control.json")), false, "Historical activation must not fabricate independent control evidence")
+    } else {
+      assert.equal(current.protocol, "atape.update-control.v1")
+      assert.equal(current.captureStateContract, manifest.atapeRuntime.stateContract)
+      const control = await json(join(home, "updates", "control.json"))
+      assert.equal(control.phase, "completed")
+      assert.equal(control.previous.captureStateContract, manifest.atapeRuntime.stateContract)
+      assert.equal(await exists(currentFile), false, "A capable bootstrap must not rewrite the legacy bridge pointer")
+    }
     assert.equal(current.version, version)
     assert.equal(current.bootstrapEntry, bootstrap)
     assert.equal(current.bootstrapIdentity, beforeDigest)

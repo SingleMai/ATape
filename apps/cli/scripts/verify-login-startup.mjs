@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
-import { chmod, cp, mkdir, readFile, realpath, writeFile } from "node:fs/promises"
+import { chmod, cp, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
+import { createUpdateControl, updateControlProtocol } from "../src/runtime/updateControl.ts"
 
 const execute = promisify(execFile)
 const json = async file => JSON.parse(await readFile(file, "utf8"))
@@ -32,6 +33,7 @@ export async function verifyLoginStartup(donorPackage, fixtureDirectory) {
   assert.equal(manifest.atapeRuntime?.protocol, "atape.runtime.v1")
   assert.equal(manifest.atapeRuntime?.stateContract, "atape.client.v3-capture.v2")
   assert.equal(manifest.atapeRuntime?.loginStartupProtocol, "atape.login-startup.v1")
+  assert.equal(manifest.atapeRuntime?.updateControlProtocol, updateControlProtocol)
   const home = join(root, "atape home 空格%$")
   const userHome = join(root, "user")
   const globalRoot = join(root, "prefix", "lib", "node_modules")
@@ -72,11 +74,12 @@ import { syncBuiltinESMExports } from "node:module";
 appendFileSync(${JSON.stringify(commandAdapterTrace)}, JSON.stringify({ pid: process.pid, entry: process.argv[1], args: process.argv.slice(2) }) + "\\n");
 const original = childProcess.execFile;
 childProcess.execFile = function(file, args, options, callback) {
-  if (file !== "/bin/launchctl" && file !== "systemctl") return Reflect.apply(original, this, arguments);
+  if (file !== "/bin/launchctl" && file !== "systemctl" && !(file === "npm" && args.join(" ") === "root --global")) return Reflect.apply(original, this, arguments);
   const child = new EventEmitter(); child.kill = () => true;
   queueMicrotask(() => {
     try {
       appendFileSync(${JSON.stringify(join(root, "native-commands.jsonl"))}, JSON.stringify({ origin: "bundle-command-adapter", file, args }) + "\\n");
+      if (file === "npm") { callback(null, ${JSON.stringify(`${globalRoot}\n`)}, ""); return; }
       const stateFile = ${JSON.stringify(join(root, "controlled-manager.json"))};
       const state = JSON.parse(readFileSync(stateFile, "utf8"));
       const absent = () => Object.assign(new Error("Controlled service is absent"), { code: 1 });
@@ -140,6 +143,25 @@ syncBuiltinESMExports();\n`)
       protocol: manifest.atapeRuntime.protocol, stateContract: manifest.atapeRuntime.stateContract, version: manifest.version,
       bootstrapEntry: await realpath(bootstrap), bootstrapIdentity: bootstrapHash, adapters: []
     }))
+  }
+  const control = createUpdateControl(home)
+  const brokenVersion = manifest.version.replace(/\d+$/, patch => String(Number(patch) + 1))
+  const brokenPackage = join(home, "releases", brokenVersion, "node_modules", "@atape", "cli")
+  const brokenEntry = join(brokenPackage, "dist", "atape.js")
+  const leaveBrokenCompatibleUpdate = async () => {
+    // The successor is controlled fault metadata, not evidence of a published
+    // package. Only the genuine donor bundle runs before/after recovery.
+    await cp(donorPackage, brokenPackage, { recursive: true })
+    await writeFile(join(brokenPackage, "package.json"), JSON.stringify({ ...manifest, version: brokenVersion }))
+    const previous = { protocol: updateControlProtocol, version: manifest.version,
+      captureStateContract: manifest.atapeRuntime.stateContract,
+      bootstrapEntry: await realpath(bootstrap), bootstrapIdentity: bootstrapHash, adapters: [] }
+    const next = { ...previous, version: brokenVersion }
+    const ticket = await control.prepare({ next, previous })
+    await control.begin(ticket)
+    await rm(brokenEntry)
+    assert.equal(await control.recoveryPending(), true)
+    return next
   }
   const requests = []
   const server = createServer(async (request, response) => {
@@ -283,6 +305,29 @@ syncBuiltinESMExports();\n`)
     assert.ok(traces.some(item => item.entry === selectedEntry && item.args[0] === "__login-start"), "Login did not delegate to a capable selected runtime")
     assert.equal((await json(metadataFile)).bootstrap, await realpath(bootstrap), "Registration was rebound to a disposable version directory")
 
+    assert.equal(await fixture("pause"), true)
+    await waitFor("the compatible update fixture pause", () => !processExists(collectorPid))
+    const bridgePointer = await readFile(join(home, "releases", "current.json"), "utf8")
+    const broken = await leaveBrokenCompatibleUpdate()
+    await assert.rejects(command(bootstrap, ["--version"]), cause => cause.code === 1)
+    assert.deepEqual(await control.readSelection(), broken, "A read-only version query mutated pending recovery")
+    await login(metadata.token)
+    assert.equal(await control.recoveryPending(), false, "The bundled login entry did not finish compatible recovery")
+    assert.equal(await control.readSelection(), undefined, "First control rollback did not restore the genuine legacy bridge")
+    assert.equal(await readFile(join(home, "releases", "current.json"), "utf8"), bridgePointer, "Recovery replaced the historical bridge")
+    await waitFor("bundled login to resume the healthy bridge after a missing candidate", async () => {
+      if (!(await exists(processFile))) return false
+      const record = await json(processFile)
+      return record.pid !== collectorPid && processExists(record.pid)
+    })
+    collectorPid = (await json(processFile)).pid
+    assert.equal((await json(processFile)).intervalMs, 23_000)
+    assert.equal((await json(processFile)).concurrency, 2)
+    assert.equal((await json(desiredFile)).wanted, true)
+    await waitFor("the recovered bundled Collector's successful cycle", async () =>
+      (await readFile(collected, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line))
+        .some(item => item.pid === collectorPid))
+
     assert.deepEqual(await fixture("disable"), { state: "missing" })
     assert.equal((await json(configFile)).autoStartEnabled, false)
     assert.equal((await json(metadataFile)).enabled, false)
@@ -306,9 +351,13 @@ syncBuiltinESMExports();\n`)
     assert.equal(await fixture("stop"), true)
     await waitFor("explicit Stop", () => !processExists(collectorPid))
     assert.deepEqual(await json(desiredFile), { version: 1, wanted: false })
+    await leaveBrokenCompatibleUpdate()
     await login((await json(metadataFile)).token)
+    assert.equal(await control.recoveryPending(), false, "Stopped login did not recover the pending compatible transaction")
+    assert.equal(await control.readSelection(), undefined)
+    assert.deepEqual(await json(desiredFile), { version: 1, wanted: false })
     assert.equal(await exists(processFile), false, "Login revived explicitly stopped collection")
-    assert.equal(await exists(browserTrace), false, "Headless login invoked a browser/npm/native manager")
+    assert.equal(await exists(browserTrace), false, "Headless login bypassed the controlled browser/npm/native command Adapter")
     assert.equal(requests.some(request => /auth\/cli\/device-grants|auth\/cli\/token/.test(request)), false, "Login requested interactive authorization")
     assert.equal(createHash("sha256").update(await readFile(bootstrap)).digest("hex"), bootstrapHash, "Login modified npm's bootstrap")
     await writeFile(join(root, "login-startup-acceptance.json"), `${JSON.stringify({
@@ -316,9 +365,11 @@ syncBuiltinESMExports();\n`)
       nativeDescriptorEnvironment: true, restoredPrivateContext: true, sourceAdmissionPreserved: true,
       defaultOn: true, repeatLoginSingleCollector: true, detachedCollectorProcessGroup: true,
       disabledQueuedLoginInert: true, durableStop: true, selectedRuntime: true, preservedSchedule: true,
+      pendingMissingCompatibleTargetRecoveredByBundledEntry: true, pendingRecoveryPreservedStop: true,
+      successorMetadata: "controlled fault fixture; no successor release was executed",
       realLoginEventVerified: false, linuxCollectorCgroupVerified: false
     }, null, 2)}\n`)
-    process.stdout.write("Verified installed v2 headless login, default-on preference, repeat ownership, durable Stop, disabled queued entries, selected runtime and preserved schedule using controlled native commands.\n")
+    process.stdout.write("Verified installed v2 headless login, default-on preference, repeat ownership, durable Stop, disabled queued entries, selected runtime, missing compatible target recovery and preserved schedule using controlled native commands.\n")
   } finally {
     await fixture("stop").catch(() => undefined)
     const lastRecord = await json(processFile).catch(() => undefined)

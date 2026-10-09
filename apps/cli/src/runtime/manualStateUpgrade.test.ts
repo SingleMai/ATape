@@ -1,18 +1,19 @@
 import { CollectorDaemonProcess } from "@atape/application"
 import { emptyClientConfig } from "@atape/domain"
 import { Effect } from "effect"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
 import { assertManualStateUpgradeReady, prepareManualStateUpgrade, recordV2CollectorAdmission } from "./manualStateUpgrade.ts"
-import { makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
+import { makeNodeCollectorDaemonLayer, withCollectorMaintenance } from "./collectorDaemonLayers.ts"
 import { recoverPendingUpdate } from "./managedUpdates.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
-import { managedStateContract, readRuntimeSelection, runtimeSelectionFile } from "./runtimeSelection.ts"
+import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
+import { managedStateContract, readRuntimeSelection, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -54,6 +55,50 @@ const fixture = async (legacy = true) => {
     ledger: async () => JSON.parse(await readFile(ledgerFile, "utf8")) as { phase: string; contract: string } }
 }
 const absent = (path: string) => expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" })
+const controlFixture = async () => {
+  const f = await fixture(false)
+  const bootstrap = join(f.home, "npm", "node_modules", "@atape", "cli", "dist", "atape.js")
+  const source = (version: string) => `import { Effect } from ${JSON.stringify(import.meta.resolve("effect"))};
+import { writeFile } from "node:fs/promises";
+import { defaultNodeClientPaths } from ${JSON.stringify(new URL("./clientPaths.ts", import.meta.url).href)};
+import { admitCollectorProcess } from ${JSON.stringify(new URL("./collectorDaemonLayers.ts", import.meta.url).href)};
+import { recordV2CollectorAdmission } from ${JSON.stringify(new URL("./manualStateUpgrade.ts", import.meta.url).href)};
+import { createUpdateControl } from ${JSON.stringify(new URL("./updateControl.ts", import.meta.url).href)};
+const paths = defaultNodeClientPaths();
+const token = process.argv[process.argv.indexOf("--daemon-token") + 1];
+await Effect.runPromise(admitCollectorProcess(paths.collectorProcessFile, token));
+await createUpdateControl(paths.atapeHome).assertRuntimeAdmission({ version: ${JSON.stringify(version)}, captureStateContract: ${JSON.stringify(managedStateContract)} });
+await Effect.runPromise(recordV2CollectorAdmission(paths, token));
+if (process.env.ATAPE_TEST_FAIL_VERSION === ${JSON.stringify(version)}) process.exit(1);
+if (process.env.ATAPE_COLLECTOR_READY_FILE) await writeFile(process.env.ATAPE_COLLECTOR_READY_FILE, JSON.stringify({ pid: process.pid, token: process.env.ATAPE_COLLECTOR_READY_TOKEN }), { mode: 0o600 });
+setInterval(() => {}, 1000);
+`
+  const writePackage = async (entry: string, version: string, captureStateContract = managedStateContract) => {
+    await mkdir(dirname(entry), { recursive: true })
+    await writeFile(entry, source(version))
+    await writeFile(join(dirname(dirname(entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version, type: "module",
+      atapeRuntime: { stateContract: captureStateContract, updateControlProtocol } }))
+  }
+  await writePackage(bootstrap, "0.5.4")
+  const bootstrapIdentity = createHash("sha256").update(await readFile(bootstrap)).digest("hex")
+  const generation = async (version: string, captureStateContract = managedStateContract): Promise<UpdateRuntimeSelection> => {
+    await writePackage(runtimeEntry(f.home, version), version, captureStateContract)
+    return { protocol: updateControlProtocol, version, captureStateContract, bootstrapEntry: bootstrap, bootstrapIdentity, adapters: [] }
+  }
+  const previous = await generation("0.5.4"), next = await generation("0.5.5")
+  const proofFile = join(f.home, "updates", "v2-collector-admission.json")
+  const control = createUpdateControl(f.home)
+  const runtimeKey = async (entry: string) => createHash("sha256").update(JSON.stringify([process.execPath, await realpath(entry)]))
+    .update(await readFile(entry)).digest("hex")
+  const startingGate = { version: 1, token: randomUUID(), ownerPid: process.ppid, generation: 0,
+    phase: "starting", resume: { intervalMs: 30_000, concurrency: 1 } }
+  return { ...f, bootstrap, previous, next, generation, proofFile, control, runtimeKey, startingGate,
+    maintenanceFile: `${f.paths.collectorProcessFile}.maintenance.json`,
+    readProof: () => readFile(proofFile, "utf8").then(JSON.parse) as Promise<{ pid: number; token: string; contract: string }>,
+    daemon: (failVersion?: string) => Effect.runPromise(CollectorDaemonProcess.pipe(Effect.provide(makeNodeCollectorDaemonLayer(
+      f.paths, () => resolveRuntimeEntry(f.home, bootstrap), { ...process.env, ATAPE_HOME: f.home, ATAPE_TEST_FAIL_VERSION: failVersion }
+    )))) }
+}
 
 describe("explicit manual state upgrade through its interactive caller Interface", () => {
   it("materializes the selected Adapter while preserving settings, bindings, Stop and all capture files", async () => {
@@ -165,6 +210,120 @@ setInterval(() => {}, 1000);
       await expect(f.run()).rejects.toMatchObject({ reason: "running" })
     } finally { await Effect.runPromise(daemon.stop()) }
   }, 25_000)
+
+  it.skipIf(process.platform === "win32")("renews headless admission during an owned control handoff without legacy pointers or an interactive receipt", async () => {
+    const f = await controlFixture(), daemon = await f.daemon()
+    const release = await acquireUpdateWorker(f.home)
+    expect(release).toBeTypeOf("function")
+    try {
+      const original = await Effect.runPromise(daemon.start({ intervalMs: 30_000, concurrency: 1 }))
+      await expect.poll(f.readProof, { timeout: 15_000 }).toMatchObject({ pid: original.pid, contract: managedStateContract })
+      await absent(f.currentFile)
+      await absent(f.retainedFile)
+      await absent(f.ledgerFile)
+      const ticket = await withCollectorMaintenance(f.paths, () => resolveRuntimeEntry(f.home, f.bootstrap),
+        { ...process.env, ATAPE_HOME: f.home }, async () => {
+          const ticket = await f.control.prepare({ next: f.next, previous: f.previous })
+          await f.control.begin(ticket)
+          return ticket
+        }, { readyTimeoutMs: 10_000 })
+      await f.control.complete(ticket)
+      const current = await Effect.runPromise(daemon.inspect())
+      expect(current?.pid).not.toBe(original.pid)
+      const processRecord = JSON.parse(await readFile(f.paths.collectorProcessFile, "utf8"))
+      expect(await f.readProof()).toMatchObject({ pid: current?.pid, token: processRecord.token })
+      expect(await f.control.readSelection()).toEqual(f.next)
+      await f.run()
+      await absent(f.ledgerFile)
+      await absent(f.currentFile)
+      await absent(f.retainedFile)
+      await absent(f.maintenanceFile)
+      expect(await f.persisted()).toEqual(f.config)
+      expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
+    } finally {
+      try { await Effect.runPromise(daemon.stop()) }
+      finally { release?.() }
+    }
+  }, 30_000)
+
+  it.skipIf(process.platform === "win32")("renews admission for the compatible npm fallback after a failed first control handoff", async () => {
+    const f = await controlFixture(), daemon = await f.daemon("0.5.5")
+    const release = await acquireUpdateWorker(f.home)
+    expect(release).toBeTypeOf("function")
+    try {
+      const original = await Effect.runPromise(daemon.start({ intervalMs: 30_000, concurrency: 1 }))
+      await expect.poll(f.readProof, { timeout: 15_000 }).toMatchObject({ pid: original.pid })
+      await expect(withCollectorMaintenance(f.paths, () => resolveRuntimeEntry(f.home, f.bootstrap),
+        { ...process.env, ATAPE_HOME: f.home, ATAPE_TEST_FAIL_VERSION: "0.5.5" }, async () => {
+          const ticket = await f.control.prepare({ next: f.next, previous: f.previous })
+          await f.control.begin(ticket)
+        }, { readyTimeoutMs: 10_000, recover: async () => { await f.control.recoverSelection() } }
+      )).rejects.toMatchObject({ reason: "start", message: "The updated Collector did not become locally ready." })
+      await f.control.completeRecovery()
+      const fallback = await Effect.runPromise(daemon.inspect())
+      expect(fallback?.pid).not.toBe(original.pid)
+      const processRecord = JSON.parse(await readFile(f.paths.collectorProcessFile, "utf8"))
+      expect(await f.readProof()).toMatchObject({ pid: fallback?.pid, token: processRecord.token })
+      expect(await f.control.readSelection()).toBeUndefined()
+      expect(await f.control.recoveryPending()).toBe(false)
+      await f.run()
+      await absent(f.ledgerFile)
+      await absent(f.currentFile)
+      await absent(f.retainedFile)
+      await absent(f.maintenanceFile)
+      expect(await f.persisted()).toEqual(f.config)
+      expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
+    } finally {
+      try { await Effect.runPromise(daemon.stop()) }
+      finally { release?.() }
+    }
+  }, 35_000)
+
+  it.each(["failed gate", "malformed gate", "absent gate", "foreign runtime", "foreign transaction", "malformed control", "no owner", "capture contract"] as const)(
+    "rejects %s before recording independent control admission", async kind => {
+      const f = await controlFixture()
+      const next = kind === "capture contract" ? await f.generation("0.6.0", "atape.client.v3-capture.v3") : f.next
+      const release = await acquireUpdateWorker(f.home)
+      expect(release).toBeTypeOf("function")
+      try {
+        const ticket = await f.control.prepare({ next, previous: f.previous })
+        await f.control.begin(ticket)
+        await writeFile(f.paths.collectorProcessFile, JSON.stringify({ ...f.record,
+          runtimeKey: kind === "foreign runtime" ? "foreign" : await f.runtimeKey(runtimeEntry(f.home, next.version)) }))
+        await writeFile(f.maintenanceFile, JSON.stringify(f.startingGate))
+        if (kind === "failed gate") await writeFile(f.maintenanceFile, JSON.stringify({ ...f.startingGate, phase: "failed" }))
+        if (kind === "malformed gate") await writeFile(f.maintenanceFile, "{")
+        if (kind === "absent gate") await rm(f.maintenanceFile)
+        if (kind === "foreign transaction") await writeFile(join(f.home, "updates", "runtime.json"), JSON.stringify(f.previous))
+        if (kind === "malformed control") await writeFile(join(f.home, "updates", "control.json"), "{")
+        if (kind === "no owner") release?.() // The diagnostic PID remains live; it cannot prove ownership.
+        await expect(Effect.runPromise(recordV2CollectorAdmission(f.paths, f.record.token))).rejects.toMatchObject({ reason: "metadata" })
+        await absent(f.proofFile)
+        await absent(f.ledgerFile)
+        expect(await f.persisted()).toEqual(f.config)
+        expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
+      } finally { release?.() }
+    })
+
+  it.each(["v1 current", "v1 pending", "manual migration", "foreign token"] as const)(
+    "keeps %s outside independent control admission", async kind => {
+      const f = await controlFixture(), release = await acquireUpdateWorker(f.home)
+      expect(release).toBeTypeOf("function")
+      try {
+        const ticket = await f.control.prepare({ next: f.next, previous: f.previous })
+        await f.control.begin(ticket)
+        await writeFile(f.paths.collectorProcessFile, JSON.stringify({ ...f.record, runtimeKey: await f.runtimeKey(runtimeEntry(f.home, f.next.version)) }))
+        await writeFile(f.maintenanceFile, JSON.stringify(f.startingGate))
+        if (kind === "v1 current") await writeFile(f.currentFile, JSON.stringify(f.current))
+        if (kind === "v1 pending") await writeFile(join(f.home, "updates", "pending.json"), JSON.stringify({ next: f.current }))
+        if (kind === "manual migration") await writeFile(f.ledgerFile, JSON.stringify({ protocol: "atape.manual-state-upgrade.v1", contract: managedStateContract,
+          home: f.home, phase: "pending", configFile: f.paths.configFile, processFile: f.paths.collectorProcessFile }), { mode: 0o600 })
+        await expect(Effect.runPromise(recordV2CollectorAdmission(f.paths, kind === "foreign token" ? randomUUID() : f.record.token)))
+          .rejects.toMatchObject({ reason: kind === "foreign token" ? "running" : "metadata" })
+        await absent(f.proofFile)
+        expect(await f.persisted()).toEqual(f.config)
+      } finally { release?.() }
+    })
 
   it("binds a completed receipt to its configuration and process context", async () => {
     const f = await fixture()

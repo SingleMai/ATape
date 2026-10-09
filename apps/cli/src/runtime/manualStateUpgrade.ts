@@ -1,15 +1,17 @@
 import { ClientConfig, emptyClientConfig } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { constants } from "node:fs"
-import { lstat, mkdir, open, realpath, rm } from "node:fs/promises"
+import { lstat, mkdir, open, readFile, realpath, rm } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { dirname, join, resolve } from "node:path"
 import { isDeepStrictEqual } from "node:util"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { withClientConfigFileLock } from "./clientConfig.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
+import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 import { applyRuntimeSelection, atomicJSON, decodeLegacyRuntimeSelection, decodeRuntimeSelection,
-  managedStateContract, missing, readBoundedJSON, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
+  managedStateContract, missing, readBoundedJSON, resolveRuntimeEntry, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
 
 export class ManualStateUpgradeError extends Schema.TaggedError<ManualStateUpgradeError>()("ManualStateUpgradeError", {
   reason: Schema.Literals(["busy", "pending", "running", "metadata"]), message: Schema.String
@@ -104,7 +106,38 @@ export const assertManualStateUpgradeReady = Effect.fn("ManualStateUpgrade.asser
 const exists = async (path: string) => (await optional(() => lstat(path))) !== undefined
 const ProcessRecord = Schema.Struct({ version: Schema.Literal(1), token: Schema.String,
   pid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), startedAt: Schema.String,
+  runtimeKey: Schema.optionalKey(Schema.String),
   intervalMs: Schema.Number, concurrency: Schema.Number, logFile: Schema.String })
+const StartingMaintenance = Schema.Struct({ version: Schema.Literal(1), token: Schema.String,
+  ownerPid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+  generation: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)), phase: Schema.Literal("starting"),
+  resume: Schema.Struct({ intervalMs: Schema.Number, concurrency: Schema.Number }) })
+const validateControlHandoff = async (paths: NodeClientPaths, record: typeof ProcessRecord.Type) => {
+  const maintenance = Schema.decodeUnknownSync(StartingMaintenance)(await readBoundedJSON(`${paths.collectorProcessFile}.maintenance.json`))
+  if (!maintenance.token) throw refused("metadata", "This Collector does not have an owned update handoff.")
+  // A PID is diagnostic only. The OS-held updater lifetime must still exclude
+  // a fresh owner while this child establishes its new admission proof.
+  const release = await acquireUpdateWorker(paths.atapeHome)
+  if (release) {
+    release()
+    throw refused("metadata", "The update handoff no longer has an owning updater.")
+  }
+  const control = createUpdateControl(paths.atapeHome)
+  if (!(await control.recoveryPending())) throw refused("metadata", "No independent update handoff admits this Collector.")
+  const runtime = await control.handoffRuntime()
+  if (!runtime || runtime.captureStateContract !== managedStateContract) {
+    throw refused("metadata", "The update handoff does not preserve this Collector's capture contract.")
+  }
+  await control.assertRuntimeAdmission({ version: runtime.version, captureStateContract: managedStateContract })
+  const entry = await realpath(await resolveRuntimeEntry(paths.atapeHome, runtime.bootstrapEntry))
+  const manifest = Schema.decodeUnknownSync(Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String,
+    atapeRuntime: Schema.Struct({ updateControlProtocol: Schema.Literal(updateControlProtocol),
+      stateContract: Schema.Literal(managedStateContract) })
+  }))(await readBoundedJSON(join(dirname(dirname(entry)), "package.json")))
+  if (manifest.version !== runtime.version) throw refused("metadata", "The update handoff selected a different Collector generation.")
+  const key = createHash("sha256").update(JSON.stringify([process.execPath, entry])).update(await readFile(entry)).digest("hex")
+  if (record.runtimeKey !== key) throw refused("metadata", "This Collector does not own the admitted update runtime.")
+}
 const requireStopped = async (paths: NodeClientPaths) => {
   if (await exists(join(updateDirectory(paths.atapeHome), "pending.json")) || await exists(`${paths.collectorProcessFile}.maintenance.json`))
     throw refused("pending", "An unfinished update or Collector maintenance prevents the manual state upgrade.")
@@ -145,11 +178,14 @@ export const recordV2CollectorAdmission = Effect.fn("ManualStateUpgrade.recordCo
     if (state.legacy || state.ledger?.phase === "pending") throw refused("metadata", "Complete the explicit manual state upgrade before starting this Collector.")
     const record = Schema.decodeUnknownSync(ProcessRecord)(await readBoundedJSON(paths.collectorProcessFile))
     if (record.pid !== process.pid || record.token !== token || !token) throw refused("running", "This Collector admission does not own the current process record.")
-    if (!state.ready && (await exists(join(updateDirectory(paths.atapeHome), "pending.json")) || await exists(`${paths.collectorProcessFile}.maintenance.json`))) {
-      const pending = Schema.Struct({ next: Schema.Unknown, previous: Schema.optionalKey(Schema.Unknown) })
-      const value = Schema.decodeUnknownSync(pending)(await readBoundedJSON(join(updateDirectory(paths.atapeHome), "pending.json")))
-      decodeRuntimeSelection(value.next)
-      if (value.previous !== undefined) decodeRuntimeSelection(value.previous)
+    const controlPending = await createUpdateControl(paths.atapeHome).recoveryPending()
+    if (!state.ready && (controlPending || await exists(join(updateDirectory(paths.atapeHome), "pending.json")) || await exists(`${paths.collectorProcessFile}.maintenance.json`))) {
+      const value = await optional(() => readBoundedJSON(join(updateDirectory(paths.atapeHome), "pending.json")))
+      if (value !== undefined) {
+        const pending = Schema.decodeUnknownSync(Schema.Struct({ next: Schema.Unknown, previous: Schema.optionalKey(Schema.Unknown) }))(value)
+        decodeRuntimeSelection(pending.next)
+        if (pending.previous !== undefined) decodeRuntimeSelection(pending.previous)
+      } else await validateControlHandoff(paths, record)
     }
     await privateDirectory(state.home)
     await atomicJSON(admissionFile(state.home), { protocol: "atape.v2-collector-admission.v1", contract: managedStateContract,
