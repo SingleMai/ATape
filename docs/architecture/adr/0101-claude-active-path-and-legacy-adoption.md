@@ -3,6 +3,9 @@
 - Status: Accepted decision; implementation and verification belong to the Claude guide
 - Date: 2026-10-09
 
+Amended by [ADR-0102](0102-claude-background-subagents.md), which admits proved
+direct background launches through the same complete-source Interface.
+
 ## Context
 
 The Claude legacy collect Interface can append new versions but cannot remove an

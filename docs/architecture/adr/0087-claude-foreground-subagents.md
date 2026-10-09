@@ -3,6 +3,9 @@
 - Status: Accepted scope; implementation and acceptance are recorded in the feature guide
 - Date: 2026-10-08
 
+Amended by [ADR-0102](0102-claude-background-subagents.md), which adds proved
+direct background launches without changing foreground ownership requirements.
+
 Later amendment: [ADR-0101](0101-claude-active-path-and-legacy-adoption.md) replaces
 Claude's legacy writer with explicit sourceCapture v2 adoption and base-bound
 retention. This record describes the earlier additive increment; the current

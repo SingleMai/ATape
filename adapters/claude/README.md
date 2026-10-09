@@ -18,7 +18,8 @@ The Project must already be configured and authenticated.
 
 [ADR-0101](../../docs/architecture/adr/0101-claude-active-path-and-legacy-adoption.md)
 defines Active Path publication and explicit legacy adoption; [ADR-0097](../../docs/architecture/adr/0097-claude-compaction-continuity.md)
-defines the shared compaction reducer. The [current guide](../../docs/adapters/claude.md)
+defines the shared compaction reducer. [ADR-0102](../../docs/architecture/adr/0102-claude-background-subagents.md)
+adds direct background children. The [current guide](../../docs/adapters/claude.md)
 owns actual behavior and verification; retained native evidence records the scope
 of the earlier implementation.
 
@@ -34,10 +35,13 @@ Rewind withdraws abandoned Canonical Events, usage and child membership when the
 complete target activates. Eligible physical records remain Raw under the user's
 policy. Manual and automatic compaction share one continuity reducer without a
 round/tool/file count. Recorded thinking, tools, latest original API usage and
-proved completed direct foreground children use the shared reader. A missing
+proved completed direct foreground children and launch-owned direct background
+children use the shared reader. Background child appends are captured independently
+of root-byte changes. Typed completion notifications remain Raw-only; actual
+assistant acknowledgements and later user turns remain conversation. A missing
 captured child can retain prior stored history with a diagnostic while the root
 advances. Raw-enabled capture also archives available historical child sources
-proved by completed root receipts outside the selected path.
+proved by admitted root receipts outside the selected path.
 
 Discovery uses `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an absolute
 alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects an absolute
@@ -56,7 +60,7 @@ Source records fit 16 MiB including LF; text fragments fit 256 KiB. Full-source,
 page, Thread, record, target and deadline bounds remain explicit. Each physical
 Raw record reaches the Host intact before redaction. A single redacted record
 exceeding the existing 3 MiB packed Raw object produces an explicit Raw limit gap.
-Nested/background child histories, cross-file adoption, child forks and spill
+Nested child histories, cross-file adoption, child forks and spill
 collection remain outside the supported profile.
 
 The [current guide](../../docs/adapters/claude.md) owns complete behavior, bounds,
