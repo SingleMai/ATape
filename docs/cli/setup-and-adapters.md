@@ -79,6 +79,11 @@ Review the Instance, account, Team, Project, global tools and historical import
 before confirming capture and starting sync. Subsequent Projects reuse the global
 tools. No Teams means Web onboarding, then Refresh; the directory remains selected.
 
+The setup review also explains that automatic updates are on by default for
+ATape and installed official npm integrations. Settings → Turn off automatic
+updates saves a machine-local preference; Turn on automatic updates enables them
+again. This does not change which tools or Projects may be captured.
+
 The initial wait is bounded to 15 seconds. Waiting for a first conversation,
 syncing, queued history, up to date, partial coverage and failure are distinct
 outcomes. Use `r` or leave the console open for updates. Project details provide
@@ -222,8 +227,129 @@ Projects and checkpoints, and do not start stopped sync. There is no bulk update
 command. Old slots can be reviewed under [cleanup](#adapter-installation-cleanup).
 
 ## Upgrade the CLI and Adapters
+
+### Automatic updates
+
+Automatic updates are enabled by default. Settings shows the current preference
+and offers Turn off automatic updates or Turn on automatic updates. The setting
+applies to this local `ATAPE_HOME`, across its Projects and Instances. Disabling
+updates prevents new automatic tasks, and a preparing worker checks the
+preference again before activation. An activation already underway completes its
+bounded handoff. Installed versions, tools, Projects and collection progress
+remain available. Recovery of an already-persisted interrupted handoff still runs
+with automatic updates turned off; recovery does not authorize a new upgrade.
+
+The supported automatic path is a macOS/Linux npm-global CLI installation using
+the official npm registry. It updates the CLI/Collector and already-installed
+official registry Adapters to one stable release version. It never installs or
+enables an additional tool, changes a Project's destination, or replaces custom,
+local, archive or URL sources. Those sources keep their explicit maintenance
+path below. Development builds and other package managers are not adopted.
+An eligible official installation with an unknown or prerelease version skips
+the whole automatic bundle, as does a CLI or eligible Adapter ahead of the
+completed release. Automatic updates never downgrade a package to force alignment.
+The worker checks the actual npm bootstrap's stable version during preparation
+and again before selection, together with its executable digest. An older copied
+worker cannot select a release below a newer installation already on disk.
+
+Opening the CLI or a running Collector can trigger a due background check.
+Successful checks schedule the next attempt after 24 hours plus 0–6 hours of
+jitter. Failures start with a one-hour exponential backoff, capped at 24 hours
+before jitter. Opening the CLI does not force a network request when the
+persisted schedule is not due. The
+schedule check is local and does not start npm or query release metadata before
+the check is due. A transient npm ownership-probe failure is retried on a later
+trigger instead of marking a long-running Collector permanently unsupported. The final
+GitHub Release identifies a completed version; the worker confirms that the CLI
+and all official Adapters are available at that exact npm version, then prepares
+only the eligible Adapters already installed. An incomplete publication, offline check or failed
+preparation leaves the current version usable.
+
+The prepared CLI package must declare `atapeRuntime.protocol` as
+`atape.runtime.v1` and `atapeRuntime.stateContract` as
+`atape.client.v3-capture.v1`. A missing or different contract rejects automatic
+activation; it does not migrate configuration, checkpoints or capture journals.
+
+One independent, short-lived updater prepares an isolated version directory and
+Adapter slots while collection continues. It then obtains exclusive maintenance
+ownership, requests Collector cancellation and bounds the entire stop handoff.
+The Collector has five seconds to exit after SIGTERM and at most two more seconds
+after SIGKILL; process identity and exit checks share the monotonic deadline.
+It never waits for all historical
+capture to finish. If the old owned process cannot be confirmed stopped, the
+version is not switched. Activation atomically selects the prepared CLI/Adapter
+generation, then restarts only sync the user still wants running. Stop sync in
+Settings also cancels an update's restart intent.
+
+Update ownership, whole-handoff ownership and the short Collector process lock
+use OS-held exclusion. Process exit, including SIGKILL, releases ownership;
+remaining SQLite coordination files are not evidence of a live owner. A retained
+maintenance PID is diagnostic only, so PID reuse cannot block recovery. The short
+process lock remains separate from handoff ownership so user Stop can cancel
+restart intent during maintenance.
+
+The activation budget is 45 seconds, including ownership, process locks, stop,
+local validation and restart; recovery gets a separate 30-second budget. A process
+lock wait is at most ten seconds, and stop/readiness limits are shortened by the
+remaining budget. These workflow and subprocess deadlines cannot forcibly cancel
+an OS filesystem call that stalls; such a call must finish before the deadline is
+rechecked.
+Preparation is tied to the Adapter installations and selected generation it
+inspected. If either changes before activation, the candidate is discarded.
+Ordinary settings and Project edits are preserved. Recovery does
+not overwrite a later deliberate selection.
+
+The npm-global installation remains the bootstrap entry. `releases/current.json`
+selects the managed CLI and its prepared official Adapter slots. The underlying
+configuration retains Project/account settings and the original installation
+records; a deliberate package/source replacement takes precedence over the
+corresponding managed Adapter selection. Adapter slots continue using the
+existing current/in-use lease and cleanup rules.
+An already-open console keeps its executable until reopened; new CLI launches
+and the restarted Collector use the selected version.
+
+The new runtime checks local readiness and resumes from existing checkpoints and
+account-bound journals. The local readiness deadline is ten seconds; it validates
+selected configuration and enabled Adapter package/entry capabilities without
+waiting for network access or a new conversation. A failed startup can restore
+the retained version only
+when the local-state contract remains compatible. Retained files protect the old
+installation from interrupted npm preparation; they cannot reverse incompatible
+state changes. Reopen the CLI or allow a later trigger to reconcile interrupted
+maintenance. Installing a version is not proof of successful conversation sync.
+
+There is no OS boot/login supervisor in this increment. A machine with neither
+CLI nor Collector running cannot check or recover until ATape next runs. Automatic
+release-directory cleanup is also outside this increment. Automatic updates do
+not upload local logs or introduce remote maintenance commands. See
+[ADR-0100](../architecture/adr/0100-managed-automatic-updates.md) for the release,
+compatibility and recovery decision.
+
+The implementation was verified locally on macOS with CLI/Application behavior
+tests, Collector/Server E2E, all six official Adapter tarballs, and the installed
+CLI's independent-worker and terminal checks. Release metadata and npm acquisition
+in update fault tests use controlled external Adapters. These checks do not establish
+publication, an upgrade against the production registry, Linux acceptance, or
+recovery from a real machine power loss.
+
+Adapter preflight checks package identity, entry containment and Git capabilities
+before executing imports in an isolated child process. The whole import batch has
+a ten-second budget and at most one additional second for forced termination.
+The child supervisor keeps foreign imports in a terminable thread and also exits
+if its owning updater dies. Import success requires a confirmed factory export;
+preflight never calls that factory or collects history. Timers left by a successful
+import are discarded. Package leases and update ownership remain held until the
+child exits on normal completion, timeout or cancellation. A failed preflight
+leaves the old Collector running without closing admission or switching versions.
+This process boundary contains hangs and process exits; it does not sandbox an
+Adapter's filesystem or network access.
+
+### Explicit maintenance and external replacement
+
 Open ATape → Tools and updates to inspect current/latest versions and apply each
-available update. Startup also offers Upgrade and continue or Skip. Version lookup
+available update. With automatic updates enabled, startup launches due maintenance
+without a blocking Upgrade/Skip choice. With automatic updates disabled, startup
+retains Upgrade and continue or Skip. Version lookup
 is bounded and cached; offline lookup does not block entering the console. Check
 again bypasses the successful-result cache. A failed update offers retry.
 
@@ -232,6 +358,19 @@ installed version, and restarts the application after terminal teardown. Previou
 running sync resumes with its settings; stopped sync stays stopped. Development
 builds and other package managers receive guidance instead of an inferred target.
 If sync cannot resume, use Resume sync and continue or return with sync stopped.
+This explicit CLI operation retains the original npm replacement path; it is not
+the unified CLI/Adapter version-directory transaction used by automatic updates.
+Before replacing the bootstrap, the internal upgrade preserves the effective
+Adapter installation records in the underlying configuration. Their currently
+selected versions remain selected even if npm fails or the bootstrap digest
+changes. Built-in manual and automatic updates share one `ATAPE_HOME` update lock
+across saving those records, installing and handing off the Collector. A second
+manual operation targeting the same npm installation also takes its OS-held
+installation lock and rechecks the actual stable version before replacing it;
+a stale update plan cannot install an older version. Busy operations can be retried; an independent Resume sync
+retry retains its recovery receipt when ownership is busy. Neither lock relies
+on the continued existence of a PID or a removable lock file. Explicit Adapter
+maintenance remains separate.
 
 Managed collection records the executable identity it started with. Opening ATape,
 installing or updating an integration, or selecting Start sync refreshes a running
@@ -243,7 +382,16 @@ cannot receive a new installation layout. An unchanged Host picks up Adapter-onl
 updates on its next cycle without a restart.
 
 A direct npm/tarball replacement does not itself run ATape lifecycle management.
-Reopen ATape to complete the handoff. Older CLIs without this detection require
+The managed selection records the bootstrap executable's digest. Replacing its
+bytes invalidates that selection while retaining the pointer as local evidence;
+the newly installed bootstrap and original configuration source records take
+precedence. An external npm command does not preserve the managed Adapter overlay
+into those records as the internal upgrade does. Replacing a shared npm bootstrap
+from a different `ATAPE_HOME` has this same effect on other homes; their
+preferences and managed selections remain independent. Reopen ATape to complete the
+Collector handoff and inspect current
+Adapter versions in Tools. The next eligible automatic check can prepare a new
+aligned generation. Older CLIs without this detection require
 Stop sync in Settings before replacement, then Start sync after reopening.
 Verify the installed version in Tools, update integrations there as needed, and
 inspect Project sync results. Installing a version is not proof of successful
@@ -319,6 +467,15 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 - Git attribution evidence: beside the Collector state file, in `<state-file>.git-attribution/`
 - Background logs: `~/.atape/logs/collector.log`
 - Adapter packages: `~/.atape/adapters/`
+- Managed CLI version directories: `~/.atape/releases/`
+- Managed runtime selection: `~/.atape/releases/current.json`
+- Update schedule, preparation and recovery metadata: `~/.atape/updates/`
+
+Managed update metadata includes `updates/state.json` for the check/retry schedule,
+`updates/pending.json` for an interrupted activation and `updates/retained.json`
+for the preceding managed selection. Keep these with `releases/current.json`
+and retained CLI/Adapter files during recovery; deleting pointers is not a
+supported repair for capture state.
 
 `ATAPE_HOME` relocates the whole layout. Individual `ATAPE_CONFIG_FILE`, `ATAPE_COLLECTOR_STATE_FILE`, `ATAPE_COLLECTOR_PROCESS_FILE`, `ATAPE_COLLECTOR_STATUS_FILE`, `ATAPE_COLLECTOR_LOG_FILE`, and `ATAPE_ADAPTER_DIRECTORY` overrides remain available for development. Credentials use opaque per-Instance filenames, owner-only directories/files, no-follow reads, compare-and-swap updates, and fsynced atomic replacement. Local filesystem paths remain client state and are not part of server Project, Canonical, Raw, or Search payloads.
 
@@ -381,7 +538,9 @@ plugin registry, runtime or package boundary was introduced. See
 [ADR-0079](../architecture/adr/0079-cli-module-boundaries.md).
 
 The parser accepts only the application launch, help/version, session options and
-the token-bound internal Collector entry. Removed business commands, unknown options,
+token-bound internal Collector/updater entries. The updater also verifies its
+owned worker-copy path; it is not a public operation or remote command Interface.
+Removed business commands, unknown options,
 duplicate flags and extra positionals fail with exit status 2. There are no aliases
 or hidden compatibility handlers. See [ADR-0081](../architecture/adr/0081-single-interactive-cli-entry.md).
 

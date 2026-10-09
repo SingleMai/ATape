@@ -14,15 +14,19 @@ import {
 } from "@atape/domain"
 import { execFile, spawn } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
-import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
+import { performance } from "node:perf_hooks"
 import { Effect, Layer, Option, Schema } from "effect"
+import { acquireProcessLock } from "./processLock.ts"
 
-type NodeCollectorDaemonPaths = {
+export type NodeCollectorDaemonPaths = {
   readonly collectorProcessFile: string
   readonly collectorStatusFile: string
   readonly collectorLogFile: string
 }
+type CollectorEntry = string | (() => Promise<string>)
+const resolveCollectorEntry = (entry: CollectorEntry) => typeof entry === "string" ? Promise.resolve(entry) : entry()
 
 const ProcessFileVersion = 1 as const
 const CollectorProcessRecord = Schema.Struct({
@@ -38,9 +42,192 @@ const CollectorProcessRecord = Schema.Struct({
 })
 type CollectorProcessRecord = typeof CollectorProcessRecord.Type
 
+const CollectorMaintenance = Schema.Struct({
+  version: Schema.Literal(1),
+  token: Schema.String,
+  ownerPid: Schema.optionalKey(Schema.Number),
+  generation: Schema.Number,
+  phase: Schema.Literals(["pausing", "activating", "starting", "failed"]),
+  resume: Schema.optionalKey(Schema.Struct({ intervalMs: Schema.Number, concurrency: Schema.Number }))
+})
+type CollectorMaintenance = typeof CollectorMaintenance.Type
+const maintenanceFile = (processFile: string) => `${processFile}.maintenance.json`
+
+// The worker and collection admission use this Interface rather than interpreting
+// the durable gate. A failed or crashed maintenance remains closed until recovery.
+export const isCollectorMaintenancePending = async (processFile: string): Promise<boolean> =>
+  (await readMaintenance(processFile)) !== undefined
+
+// A spawned child can run before its parent publishes the process record. Wait
+// briefly without taking the parent's launch lock, then admit only that child.
+export const admitCollectorProcess = (processFile: string, token: string): Effect.Effect<void, CollectorDaemonProcessError> =>
+  Effect.gen(function*() {
+    const rejected = () => new CollectorDaemonProcessError({ reason: "identity",
+      message: "This Collector entry is reserved for the owning ATape process." })
+    if (!token) return yield* Effect.fail(rejected())
+    const deadline = performance.now() + 2_000
+    while (performance.now() < deadline) {
+      const record = yield* Effect.tryPromise({ try: () => readProcessRecord(processFile),
+        catch: cause => cause instanceof CollectorDaemonProcessError ? cause : rejected() })
+      if (record?.token === token && record.pid === process.pid) return
+      yield* Effect.sleep(Math.min(25, Math.max(0, deadline - performance.now())))
+    }
+    return yield* Effect.fail(rejected())
+  })
+
+export const withCollectorMaintenance = async <A>(
+  paths: NodeCollectorDaemonPaths,
+  resolveEntry: () => Promise<string>,
+  environment: NodeJS.ProcessEnv,
+  activate: (deadline: number) => Promise<A>,
+  options: { readonly recover?: (cause: unknown, deadline: number) => Promise<void>; readonly readyTimeoutMs?: number;
+    readonly activationTimeoutMs?: number; readonly recoveryTimeoutMs?: number } = {}
+): Promise<A> => {
+  if (process.platform === "win32") throw unsupportedManagedProcessPlatform()
+  const deadline = performance.now() + (options.activationTimeoutMs ?? 45_000)
+  // Ownership spans the whole handoff, while the short process lock remains
+  // available between transitions so an explicit user Stop can cancel restart.
+  const release = await acquireProcessLock(`${paths.collectorProcessFile}.maintenance.lock.sqlite`)
+  if (!release) throw new CollectorDaemonProcessError({ reason: "identity", message: "Another ATape updater owns Collector maintenance." })
+  try { return await performCollectorMaintenance(paths, resolveEntry, environment, activate, options, deadline) }
+  finally { release() }
+}
+
+const performCollectorMaintenance = async <A>(
+  paths: NodeCollectorDaemonPaths,
+  resolveEntry: () => Promise<string>,
+  environment: NodeJS.ProcessEnv,
+  activate: (deadline: number) => Promise<A>,
+  options: { readonly recover?: (cause: unknown, deadline: number) => Promise<void>; readonly readyTimeoutMs?: number;
+    readonly activationTimeoutMs?: number; readonly recoveryTimeoutMs?: number },
+  activationDeadline: number
+): Promise<A> => {
+  let deadline = activationDeadline
+  const remaining = () => {
+    const milliseconds = deadline - performance.now()
+    if (milliseconds <= 0) throw new CollectorDaemonProcessError({ reason: "start", message: "Collector maintenance deadline expired." })
+    return milliseconds
+  }
+  const lock = <B>(work: () => Promise<B>) => withProcessLockPromise(paths.collectorProcessFile, async () => {
+    remaining()
+    return work()
+  }, Math.min(10_000, remaining()))
+  const token = randomUUID()
+  const claim = await lock(async () => {
+    const previous = await readMaintenance(paths.collectorProcessFile)
+    const running = await readProcessRecord(paths.collectorProcessFile)
+    const resume = previous === undefined
+      ? running && (running.restartPending || await isOwnedProcess(running, deadline))
+        ? { intervalMs: running.intervalMs, concurrency: running.concurrency } : undefined
+      : previous.resume
+    const gate: CollectorMaintenance = { version: 1, token, ownerPid: process.pid,
+      generation: previous?.generation ?? 0, phase: "pausing", ...(resume ? { resume } : {}) }
+    await writeMaintenance(paths.collectorProcessFile, gate)
+    return { gate }
+  })
+
+  const mutateGate = (change: (gate: CollectorMaintenance) => CollectorMaintenance) =>
+    lock(async () => {
+      const gate = await ownedMaintenance(paths.collectorProcessFile, token)
+      await writeMaintenance(paths.collectorProcessFile, change(gate))
+      remaining()
+    })
+  const stopCurrent = () => lock(async () => {
+    await ownedMaintenance(paths.collectorProcessFile, token)
+    const record = await readProcessRecord(paths.collectorProcessFile)
+    if (record) await stopOwnedProcess(paths.collectorProcessFile, record, true, deadline)
+    else await rm(paths.collectorProcessFile, { force: true })
+  })
+  const resume = async () => {
+    const readyFile = `${maintenanceFile(paths.collectorProcessFile)}.${token}.ready`
+    const readyToken = randomUUID()
+    const readyDeadline = Math.min(deadline, performance.now() + (options.readyTimeoutMs ?? 10_000))
+    const checkReadinessDeadline = () => {
+      remaining()
+      if (performance.now() >= readyDeadline) throw new CollectorDaemonProcessError({ reason: "start",
+        message: "The updated Collector did not become locally ready." })
+    }
+    let launched: CollectorProcessRecord | undefined
+    try {
+      await lock(async () => {
+        const gate = await ownedMaintenance(paths.collectorProcessFile, token)
+        if (gate.generation !== claim.gate.generation || !gate.resume) return
+        const entry = await resolveEntry()
+        checkReadinessDeadline()
+        const runtimeKey = await executableKey(entry)
+        checkReadinessDeadline()
+        await writeMaintenance(paths.collectorProcessFile, { ...gate, phase: "starting" })
+        checkReadinessDeadline()
+        await launchProcess(paths, entry, { ...environment,
+          ATAPE_COLLECTOR_READY_FILE: readyFile, ATAPE_COLLECTOR_READY_TOKEN: readyToken
+        }, gate.resume, runtimeKey, readyDeadline)
+        launched = await readProcessRecord(paths.collectorProcessFile)
+      })
+      if (launched) {
+        while (performance.now() < readyDeadline) {
+          const gate = await ownedMaintenance(paths.collectorProcessFile, token)
+          // User Stop wins even while the new runtime is preparing readiness.
+          if (gate.generation !== claim.gate.generation || !gate.resume) return
+          const ready = await readFile(readyFile, "utf8").then(value => JSON.parse(value) as unknown).catch(() => undefined)
+          let owned: boolean
+          try { owned = await isOwnedProcess(launched, readyDeadline) } catch (cause) {
+            if (performance.now() >= readyDeadline) break
+            throw cause
+          }
+          if (!owned) break
+          if (typeof ready === "object" && ready !== null && "token" in ready && "pid" in ready &&
+            ready.token === readyToken && ready.pid === launched.pid) return
+          await delay(Math.min(50, Math.max(0, readyDeadline - performance.now())))
+        }
+        throw new CollectorDaemonProcessError({ reason: "start", message: "The updated Collector did not become locally ready." })
+      }
+    } finally { await rm(readyFile, { force: true }) }
+  }
+  const release = () => lock(async () => {
+    await ownedMaintenance(paths.collectorProcessFile, token)
+    await rm(maintenanceFile(paths.collectorProcessFile), { force: true })
+    await syncDirectory(dirname(paths.collectorProcessFile))
+  })
+  const markFailed = () => withProcessLockPromise(paths.collectorProcessFile, async () => {
+    const { ownerPid: _, ...gate } = await ownedMaintenance(paths.collectorProcessFile, token)
+    await writeMaintenance(paths.collectorProcessFile, { ...gate, phase: "failed" })
+  })
+  let stopped = false
+  try {
+    await stopCurrent()
+    stopped = true
+    remaining()
+    await mutateGate(gate => ({ ...gate, phase: "activating" }))
+    const result = await activate(deadline)
+    remaining()
+    await resume()
+    remaining()
+    await release()
+    return result
+  } catch (cause) {
+    deadline = performance.now() + (options.recoveryTimeoutMs ?? 30_000)
+    try {
+      if (stopped) await stopCurrent()
+      remaining()
+      if (stopped && options.recover) {
+        await options.recover(cause, deadline)
+        remaining()
+        await resume()
+        remaining()
+        await release()
+      } else await markFailed()
+    } catch (recoveryCause) {
+      await markFailed().catch(() => {})
+      throw new CollectorDaemonProcessError({ reason: "start",
+        message: `Collector maintenance needs recovery: ${recoveryCause instanceof Error ? recoveryCause.message : String(recoveryCause)}` })
+    }
+    throw cause
+  }
+}
+
 export const makeNodeCollectorDaemonLayer = (
   paths: NodeCollectorDaemonPaths,
-  entryFile: string,
+  entryFile: CollectorEntry,
   environment: NodeJS.ProcessEnv = process.env
 ) => Layer.merge(
   makeCollectorDaemonProcessLayer(paths, entryFile, environment),
@@ -64,7 +251,7 @@ export const makeCollectorRunStatusLayer = (statusFile: string) => Layer.succeed
 
 const makeCollectorDaemonProcessLayer = (
   paths: NodeCollectorDaemonPaths,
-  entryFile: string,
+  entryFile: CollectorEntry,
   environment: NodeJS.ProcessEnv
 ) => Layer.succeed(
   CollectorDaemonProcess,
@@ -78,28 +265,31 @@ const makeCollectorDaemonProcessLayer = (
 
 const processStart = (
   paths: NodeCollectorDaemonPaths,
-  entryFile: string,
+  entryFile: CollectorEntry,
   environment: NodeJS.ProcessEnv,
   options: ResolvedCollectorDaemonOptions
 ) => {
   if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
   return withProcessLock(paths.collectorProcessFile, async () => {
+    await rejectMaintenance(paths.collectorProcessFile)
     const existing = await readProcessRecord(paths.collectorProcessFile)
-    const runtimeKey = await executableKey(entryFile)
+    const entry = await resolveCollectorEntry(entryFile)
+    const runtimeKey = await executableKey(entry)
     if (existing !== undefined && await isOwnedProcess(existing)) {
       if (!existing.restartPending && existing.runtimeKey === runtimeKey) return { ...presentProcess(existing), created: false }
-      return restartProcess(paths, entryFile, environment, existing, runtimeKey)
+      return restartProcess(paths, entry, environment, existing, runtimeKey)
     }
-    if (existing?.restartPending) return restartProcess(paths, entryFile, environment, existing, runtimeKey)
+    if (existing?.restartPending) return restartProcess(paths, entry, environment, existing, runtimeKey)
     if (existing !== undefined) await rm(paths.collectorProcessFile, { force: true })
-    return launchProcess(paths, entryFile, environment, options, runtimeKey)
+    return launchProcess(paths, entry, environment, options, runtimeKey)
   }).pipe(Effect.uninterruptible)
 }
 
-const processRefresh = (paths: NodeCollectorDaemonPaths, entryFile: string, environment: NodeJS.ProcessEnv) => {
+const processRefresh = (paths: NodeCollectorDaemonPaths, entryFile: CollectorEntry, environment: NodeJS.ProcessEnv) => {
   // No managed daemon exists on Windows; Adapter maintenance remains available.
   if (process.platform === "win32") return Effect.succeed(false)
   return withProcessLock(paths.collectorProcessFile, async () => {
+    await rejectMaintenance(paths.collectorProcessFile)
     const existing = await readProcessRecord(paths.collectorProcessFile)
     if (existing === undefined) return false
     if (!existing.restartPending && !(await isOwnedProcess(existing))) {
@@ -108,9 +298,10 @@ const processRefresh = (paths: NodeCollectorDaemonPaths, entryFile: string, envi
     }
     // Read the replacement before stopping; an unreadable installation must
     // not terminate a working Collector. Legacy metadata requires one restart.
-    const runtimeKey = await executableKey(entryFile)
+    const entry = await resolveCollectorEntry(entryFile)
+    const runtimeKey = await executableKey(entry)
     if (!existing.restartPending && existing.runtimeKey === runtimeKey) return false
-    await restartProcess(paths, entryFile, environment, existing, runtimeKey)
+    await restartProcess(paths, entry, environment, existing, runtimeKey)
     return true
   }).pipe(Effect.uninterruptible)
 }
@@ -124,10 +315,14 @@ const restartProcess = async (
   const pending = { ...existing, restartPending: true }
   await writeProcessRecord(paths.collectorProcessFile, pending)
   try {
-    if (await isOwnedProcess(existing)) await stopOwnedProcess(paths.collectorProcessFile, existing, false)
+    await stopOwnedProcess(paths.collectorProcessFile, existing, false)
     return await launchProcess(paths, entryFile, environment, existing, runtimeKey)
   } catch (cause) {
-    await writeProcessRecord(paths.collectorProcessFile, pending)
+    // launchProcess publishes the replacement before confirming ownership. Do
+    // not overwrite an unconfirmed child's identity with the exited old PID.
+    const current = await readProcessRecord(paths.collectorProcessFile)
+    await writeProcessRecord(paths.collectorProcessFile,
+      current && current.token !== existing.token ? { ...current, restartPending: true } : pending)
     throw cause
   }
 }
@@ -140,7 +335,8 @@ const executableKey = async (entryFile: string) => {
 
 const launchProcess = async (
   paths: NodeCollectorDaemonPaths, entryFile: string, environment: NodeJS.ProcessEnv,
-  options: ResolvedCollectorDaemonOptions, runtimeKey: string
+  options: ResolvedCollectorDaemonOptions, runtimeKey: string,
+  deadline = performance.now() + 2_000
 ) => {
   await mkdir(dirname(paths.collectorProcessFile), { recursive: true, mode: 0o700 })
   await mkdir(dirname(paths.collectorLogFile), { recursive: true, mode: 0o700 })
@@ -148,6 +344,8 @@ const launchProcess = async (
   const log = await open(paths.collectorLogFile, "a", 0o600)
   let child
   try {
+    if (performance.now() >= deadline) throw new CollectorDaemonProcessError({ reason: "start",
+      message: "The Collector startup deadline expired before launch." })
     child = spawn(process.execPath, [
       resolve(entryFile),
       "__collector-daemon",
@@ -176,12 +374,25 @@ const launchProcess = async (
     concurrency: options.concurrency,
     logFile: paths.collectorLogFile
   }
-  await writeProcessRecord(paths.collectorProcessFile, record)
-  for (let attempt = 0; attempt < 40; attempt++) {
-    if (await isOwnedProcess(record)) return { ...presentProcess(record), created: true }
-    await delay(50)
+  try { await writeProcessRecord(paths.collectorProcessFile, record) } catch (cause) {
+    // Before metadata exists, only the spawning ChildProcess owns this PID.
+    // Do not leave a child running which later Stop cannot discover.
+    child.kill("SIGKILL")
+    await new Promise<void>(resolve => {
+      if (child.exitCode !== null || child.signalCode !== null) { resolve(); return }
+      const finish = () => { clearTimeout(timer); child.removeListener("exit", finish); child.removeListener("error", finish); resolve() }
+      const timer = setTimeout(finish, Math.max(0, Math.min(2_000, deadline - performance.now())))
+      child.once("exit", finish)
+      child.once("error", finish)
+    })
+    throw cause
   }
-  await rm(paths.collectorProcessFile, { force: true })
+  while (performance.now() < deadline) {
+    if (await isOwnedProcess(record, deadline)) return { ...presentProcess(record), created: true }
+    await delay(Math.min(50, Math.max(0, deadline - performance.now())))
+  }
+  // An unconfirmed startup may still own a process. Preserve its identity so
+  // recovery must terminate it before launching a replacement.
   throw new CollectorDaemonProcessError({
     reason: "start",
     message: `The Collector process exited during startup. Inspect ${paths.collectorLogFile}.`
@@ -191,31 +402,28 @@ const launchProcess = async (
 const processStop = (processFile: string) => {
   if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
   return withProcessLock(processFile, async () => {
+    const gate = await readMaintenance(processFile)
+    if (gate) {
+      const { resume: _, ...stopped } = gate
+      await writeMaintenance(processFile, { ...stopped, generation: gate.generation + 1 })
+    }
     const record = await readProcessRecord(processFile)
     if (record === undefined) return false
-    if (!(await isOwnedProcess(record))) {
-      await rm(processFile, { force: true })
-      return false
-    }
     return stopOwnedProcess(processFile, record)
-  }).pipe(Effect.uninterruptible)
+  }, 10_000).pipe(Effect.uninterruptible)
 }
 
-const stopOwnedProcess = async (processFile: string, record: CollectorProcessRecord, clear = true) => {
-  process.kill(record.pid, "SIGTERM")
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (!(await isOwnedProcess(record))) {
-      if (clear) await rm(processFile, { force: true })
-      return true
-    }
-    await delay(50)
+const stopOwnedProcess = async (processFile: string, record: CollectorProcessRecord, clear = true, maintenanceDeadline = Infinity) => {
+  const started = performance.now(), gracefulDeadline = Math.min(started + 5_000, maintenanceDeadline),
+    deadline = Math.min(started + 7_000, maintenanceDeadline)
+  if (!await signalOwnedProcess(record, "SIGTERM", gracefulDeadline)) {
+    if (clear) await rm(processFile, { force: true })
+    return false
   }
-  if (await isOwnedProcess(record)) process.kill(record.pid, "SIGKILL")
-  for (let attempt = 0; attempt < 40; attempt++) {
-    if (!(await isOwnedProcess(record))) break
-    await delay(50)
+  if (!await waitForExit(record, gracefulDeadline)) {
+    await signalOwnedProcess(record, "SIGKILL", deadline)
   }
-  if (await isOwnedProcess(record)) {
+  if (!await waitForExit(record, deadline)) {
     throw new CollectorDaemonProcessError({ reason: "stop", message: "The managed Collector did not stop." })
   }
   if (clear) await rm(processFile, { force: true })
@@ -276,41 +484,31 @@ const writeProcessRecord = async (processFile: string, record: CollectorProcessR
 
 const withProcessLock = <A>(
   processFile: string,
-  use: () => Promise<A>
+  use: () => Promise<A>,
+  waitMs = 0
 ): Effect.Effect<A, CollectorDaemonProcessError> => Effect.tryPromise({
-  try: async () => {
-    await mkdir(dirname(processFile), { recursive: true, mode: 0o700 })
-    const lockPath = `${processFile}.lock`
-    let lock
-    try {
-      lock = await open(lockPath, "wx", 0o600)
-    } catch (cause) {
-      if (hasCode(cause, "EEXIST") && await staleProcessLock(lockPath)) {
-        await rm(lockPath, { force: true })
-        lock = await open(lockPath, "wx", 0o600)
-      } else {
-        throw cause
-      }
-    }
-    try {
-      await lock.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
-      return await use()
-    } finally {
-      await lock.close().catch(() => undefined)
-      await rm(lockPath, { force: true }).catch(() => undefined)
-    }
-  },
-  catch: (cause) => cause instanceof CollectorDaemonProcessError
-    ? cause
-    : new CollectorDaemonProcessError({
-        reason: "io",
-        message: hasCode(cause, "EEXIST")
-          ? "Another ATape command is changing the Collector process."
-          : errorMessage("Could not manage the Collector process", cause)
-      })
+  try: () => withProcessLockPromise(processFile, use, waitMs),
+  catch: (cause) => cause instanceof CollectorDaemonProcessError ? cause : new CollectorDaemonProcessError({
+    reason: "io", message: errorMessage("Could not manage the Collector process", cause)
+  })
 })
 
-const isOwnedProcess = async (record: CollectorProcessRecord) => {
+const withProcessLockPromise = async <A>(processFile: string, use: () => Promise<A>, waitMs = 0): Promise<A> => {
+  try {
+    // Legacy .lock metadata may be empty or name a reused PID after a crash.
+    // It is deliberately not read, reclaimed, or removed by the OS-lock protocol.
+    const release = await acquireProcessLock(`${processFile}.lock.sqlite`, waitMs)
+    if (!release) throw new CollectorDaemonProcessError({ reason: "io", message: "Another ATape command is changing the Collector process." })
+    try { return await use() } finally { release() }
+  } catch (cause) {
+    throw cause instanceof CollectorDaemonProcessError ? cause : new CollectorDaemonProcessError({
+        reason: "io",
+        message: errorMessage("Could not manage the Collector process", cause)
+      })
+  }
+}
+
+const isOwnedProcess = async (record: CollectorProcessRecord, deadline?: number) => {
   try {
     process.kill(record.pid, 0)
   } catch (cause) {
@@ -318,19 +516,76 @@ const isOwnedProcess = async (record: CollectorProcessRecord) => {
     if (!hasCode(cause, "EPERM")) throw cause
   }
   try {
-    const command = await execFileText("ps", ["-p", String(record.pid), "-o", "command="])
+    const remaining = deadline === undefined ? 2_000 : Math.min(2_000, Math.ceil(deadline - performance.now()))
+    if (remaining <= 0) throw new Error("Process confirmation deadline expired")
+    const command = await execFileText("ps", ["-p", String(record.pid), "-o", "command="], remaining)
     return command.includes("__collector-daemon") && command.includes(record.token)
   } catch {
-    return false
+    if (!processExists(record.pid)) return false
+    throw new CollectorDaemonProcessError({ reason: "identity", message: "Could not confirm ownership of the Collector process." })
   }
 }
 
-const staleProcessLock = async (lockPath: string) => {
-  try {
-    return Date.now() - (await stat(lockPath)).mtimeMs > 30_000
-  } catch (cause) {
-    return hasCode(cause, "ENOENT")
+const processExists = (pid: number) => {
+  try { process.kill(pid, 0); return true } catch (cause) { return !hasCode(cause, "ESRCH") }
+}
+
+const signalOwnedProcess = async (record: CollectorProcessRecord, signal: NodeJS.Signals, deadline: number) => {
+  if (!await isOwnedProcess(record, deadline)) return false
+  if (performance.now() >= deadline) throw new CollectorDaemonProcessError({ reason: "stop",
+    message: "The Collector signal deadline expired before ownership was confirmed." })
+  try { process.kill(record.pid, signal) } catch (cause) { if (!hasCode(cause, "ESRCH")) throw cause }
+  return true
+}
+
+const waitForExit = async (record: CollectorProcessRecord, deadline: number) => {
+  while (performance.now() < deadline) {
+    try { if (!await isOwnedProcess(record, deadline)) return true } catch (cause) {
+      if (performance.now() >= deadline) return !processExists(record.pid)
+      throw cause
+    }
+    await delay(Math.min(50, Math.max(0, deadline - performance.now())))
   }
+  return !processExists(record.pid)
+}
+
+const readMaintenance = async (processFile: string): Promise<CollectorMaintenance | undefined> => {
+  try {
+    const gate = Schema.decodeUnknownSync(CollectorMaintenance)(JSON.parse(await readFile(maintenanceFile(processFile), "utf8")))
+    if (!Number.isSafeInteger(gate.generation) || gate.generation < 0 || gate.ownerPid !== undefined &&
+      (!Number.isSafeInteger(gate.ownerPid) || gate.ownerPid <= 0)) throw new Error("Invalid maintenance identity")
+    return gate
+  } catch (cause) {
+    if (hasCode(cause, "ENOENT")) return undefined
+    throw new CollectorDaemonProcessError({ reason: "identity", message: "Collector maintenance state is invalid; recovery is required." })
+  }
+}
+
+const ownedMaintenance = async (processFile: string, token: string) => {
+  const gate = await readMaintenance(processFile)
+  if (!gate || gate.token !== token) throw new CollectorDaemonProcessError({ reason: "identity", message: "Collector maintenance ownership changed." })
+  return gate
+}
+
+const rejectMaintenance = async (processFile: string) => {
+  if (await isCollectorMaintenancePending(processFile)) throw new CollectorDaemonProcessError({
+    reason: "start", message: "Collector maintenance is pending. Finish or recover the update before starting sync."
+  })
+}
+
+const writeMaintenance = async (processFile: string, gate: CollectorMaintenance) => {
+  const file = maintenanceFile(processFile), temporary = `${file}.${randomUUID()}.tmp`
+  try {
+    const handle = await open(temporary, "wx", 0o600)
+    try { await handle.writeFile(`${JSON.stringify(gate)}\n`); await handle.sync() } finally { await handle.close() }
+    await rename(temporary, file)
+    await syncDirectory(dirname(file))
+  } finally { await rm(temporary, { force: true }) }
+}
+
+const syncDirectory = async (path: string) => {
+  const directory = await open(path, "r")
+  try { await directory.sync() } finally { await directory.close() }
 }
 
 const readRunState = (statusFile: string): Effect.Effect<CollectorRunState, CollectorRunStatusError> =>
@@ -424,8 +679,8 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
   }
 }
 
-const execFileText = (file: string, args: ReadonlyArray<string>) => new Promise<string>((resolveText, reject) => {
-  execFile(file, [...args], { encoding: "utf8", timeout: 2_000, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+const execFileText = (file: string, args: ReadonlyArray<string>, timeout = 2_000) => new Promise<string>((resolveText, reject) => {
+  execFile(file, [...args], { encoding: "utf8", timeout, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, stdout) => {
     if (error) reject(error)
     else resolveText(stdout)
   })

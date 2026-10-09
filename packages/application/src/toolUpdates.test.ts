@@ -21,7 +21,7 @@ const fixture = () => {
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(structuredClone(config)).pipe(
       Effect.tap(result => Effect.sync(() => { if (result.config) config = result.config })), Effect.map(result => result.value)
     ) })),
-    Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({ latest: cached => Effect.sync(() => {
+    Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({ acquireOwnership: () => Effect.die("No CLI update ownership during tool inspection"), latest: cached => Effect.sync(() => {
       checks.push({ name: "cli", cached }); return "0.4.4"
     }), install: () => Effect.die("No CLI installation during tool inspection") })),
     Layer.succeed(AdapterReleases, AdapterReleases.of({ latest: (name, cached) => Effect.suspend(() => {

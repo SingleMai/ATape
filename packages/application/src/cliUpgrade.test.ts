@@ -5,13 +5,20 @@ import { checkCLIUpgrade, CLIUpgradeError, CLIUpgradePlatform, upgradeCLI, resum
 
 const fixture = (version = "0.4.2", running = true) => {
   let failInstall = false, failResume = false, installs = 0, stops = 0, stale = false
+  let owned = false, acquisitions = 0, releases = 0
+  let installWait: Promise<void> | undefined, startWait: Promise<void> | undefined
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
   const layer = Layer.mergeAll(
     Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
+      acquireOwnership: () => Effect.acquireRelease(Effect.suspend(() => {
+        if (owned) return Effect.fail(new CLIUpgradeError({ reason: "installation", message: "Another update owns maintenance" }))
+        return Effect.sync(() => { owned = true; acquisitions++ })
+      }), () => Effect.sync(() => { owned = false; releases++ })),
       latest: () => Effect.succeed(version),
       install: () => Effect.suspend(() => {
         installs++
-        return failInstall ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "offline" })) : Effect.void
+        return failInstall ? Effect.fail(new CLIUpgradeError({ reason: "install", message: "offline" }))
+          : installWait ? Effect.promise(() => installWait!) : Effect.void
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
@@ -20,13 +27,23 @@ const fixture = (version = "0.4.2", running = true) => {
       stop: () => Effect.sync(() => { stops++; running = false; return true }),
       start: options => Effect.suspend(() => {
         starts.push(options)
-        if (!failResume) running = true
-        return failResume ? Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "failed" }))
-          : Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
+        return (startWait ? Effect.promise(() => startWait!) : Effect.void).pipe(Effect.flatMap(() => {
+          if (!failResume) running = true
+          return failResume ? Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "failed" }))
+            : Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
+        }))
       })
     }))
   )
-  return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) => Effect.runPromise(effect.pipe(Effect.provide(layer))),
+  const hold = (kind: "install" | "start") => {
+    let release!: () => void
+    const wait = new Promise<void>(resolve => { release = resolve })
+    if (kind === "install") installWait = wait
+    else startWait = wait
+    return release
+  }
+  return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) => Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
+    ownership: () => ({ owned, acquisitions, releases }), hold,
     stale: () => { stale = true }, installs: () => installs, stops: () => stops, starts, running: () => running, failInstall: () => { failInstall = true }, failResume: (value = true) => { failResume = value } }
 }
 
@@ -37,6 +54,7 @@ describe("CLI upgrade Module", () => {
     expect(client.installs()).toBe(1)
     expect(client.stops()).toBe(1)
     expect(client.starts).toEqual([{ intervalMs: 45_000, concurrency: 2 }])
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
     const stopped = fixture("0.4.2", false)
     expect((await stopped.run(upgradeCLI("0.4.1"))).resumed).toBe(false)
     expect(stopped.stops()).toBe(0)
@@ -66,6 +84,7 @@ describe("CLI upgrade Module", () => {
     client.failInstall()
     await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "install" })
     expect(client.stops()).toBe(0)
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
     const resume = fixture()
     resume.failResume()
     await expect(resume.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "resume", message: expect.stringContaining("0.4.2 is installed") })
@@ -76,6 +95,7 @@ describe("CLI upgrade Module", () => {
     expect(await fixture("0.5.0-beta.1").run(checkCLIUpgrade("0.4.1"))).toBeUndefined()
     expect(await fixture().run(checkCLIUpgrade("development"))).toBeUndefined()
     const offline = Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
+      acquireOwnership: () => Effect.die("Startup lookup cannot acquire update ownership"),
       latest: () => Effect.fail(new CLIUpgradeError({ reason: "check", message: "offline" })), install: () => Effect.void
     }))
     expect(await Effect.runPromise(checkCLIUpgrade("0.4.1").pipe(Effect.provide(offline)))).toBeUndefined()
@@ -93,5 +113,46 @@ describe("CLI upgrade Module", () => {
     expect(client.installs()).toBe(1)
     expect(client.running()).toBe(true)
     expect(client.starts).toEqual(Array(3).fill({ intervalMs: 45_000, concurrency: 2 }))
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 3, releases: 3 })
+  })
+  it("releases update ownership when installation is cancelled before handoff", async () => {
+    const client = fixture(), finish = client.hold("install"), cancellation = new AbortController()
+    const pending = client.run(upgradeCLI("0.4.1"), cancellation.signal)
+    try {
+      await expect.poll(client.installs).toBe(1)
+      await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "installation" })
+      cancellation.abort()
+      await expect(pending).rejects.toBeDefined()
+      expect(client.stops()).toBe(0)
+      expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
+    } finally { finish(); cancellation.abort(); await pending.catch(() => {}) }
+  })
+  it("keeps ownership until an installed update finishes handoff after cancellation", async () => {
+    const client = fixture(), finish = client.hold("start"), cancellation = new AbortController()
+    let settled = false
+    const pending = client.run(upgradeCLI("0.4.1"), cancellation.signal).finally(() => { settled = true })
+    try {
+      await expect.poll(() => client.starts.length).toBe(1)
+      cancellation.abort()
+      await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "installation" })
+      expect(settled).toBe(false)
+      expect(client.ownership().owned).toBe(true)
+      finish()
+      await pending.catch(() => {})
+      expect(client.running()).toBe(true)
+      expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
+    } finally { finish(); cancellation.abort(); await pending.catch(() => {}) }
+  })
+  it("retains a recovery receipt when another update prevents resumption", async () => {
+    const client = fixture("0.4.2", false), finish = client.hold("start")
+    const recovery = { version: "0.4.2", intervalMs: 45_000, concurrency: 2 }
+    const pending = client.run(resumeCLIUpgrade(recovery))
+    try {
+      await expect.poll(() => client.starts.length).toBe(1)
+      await expect(client.run(resumeCLIUpgrade(recovery))).rejects.toMatchObject({ reason: "resume", recovery })
+    } finally { finish() }
+    await expect(pending).resolves.toMatchObject({ updated: true, resumed: true })
+    expect(client.installs()).toBe(0)
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
   })
 })

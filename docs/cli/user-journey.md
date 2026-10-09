@@ -55,7 +55,10 @@ identity applies only outside Git.
    With no Teams, retain progress across Web onboarding and Refresh.
 5. One review shows repository, account/Instance, Team, global tools and the
    import of existing history plus continuing sync. `Connect and sync` performs
-   the confirmed connection. Editing a value returns to the same review.
+   the confirmed connection. It also states that automatic updates are on by
+   default for ATape and official npm integrations and can be turned off in
+   Settings. A saved off preference is shown instead when applicable. Editing a
+   value returns to the same review.
 6. Open the Project status immediately after connection, with bounded waiting
    for first sync. Do not add a success page requiring another Continue action.
 
@@ -66,8 +69,30 @@ without repeating setup or resetting progress.
 
 ## Daily use
 
-Before opening the welcome or Project list, ATape checks for a
-newer stable CLI. Results are cached for twelve hours; startup network access
+Automatic updates default to on for this local installation. Settings displays
+the preference and provides Turn off automatic updates or Turn on automatic
+updates. Saving affects this `ATAPE_HOME` across its Projects and Instances,
+without changing capture permission or tool selection. An omitted preference
+uses the default; a saved choice survives later launches.
+
+Opening ATape or the already-running Collector can trigger a due independent
+update worker. Successful checks schedule the next attempt after 24 hours plus
+0–6 hours of jitter; failures start with a one-hour exponential backoff capped at
+24 hours before jitter. The completed stable GitHub Release selects one version for the
+CLI/Collector and installed official registry Adapters. Preparation keeps the
+old version running; activation pauses new collection and uses a bounded
+cancellation/termination handoff rather than waiting for history to finish.
+It preserves schedule, checkpoints and account-bound journals and resumes only
+sync the user still wants running. Stop in Settings wins over maintenance restart
+intent. The setup guide owns [support and recovery limits](setup-and-adapters.md#automatic-updates).
+An unknown, prerelease or already-ahead eligible installation prevents an
+automatic bundle downgrade. Adapter installation or selected-generation changes
+during preparation invalidate the candidate; rollback preserves a later selection.
+The open console adopts the selected executable on its next launch.
+
+With automatic updates on, startup enters the welcome or Project list without a
+blocking upgrade choice. With automatic updates off, ATape checks for a newer
+stable CLI before entering. Results are cached for twelve hours; startup network access
 has a 1.5-second timeout. Offline failures proceed normally. When an update is
 available, the user must choose `Upgrade and continue` or `Skip` before entering.
 Skip applies only to this session. Escape exits. Successful upgrades restore the
@@ -80,7 +105,17 @@ installation. After installation is verified, it resumes the current home's
 previously running sync with its existing settings. Stopped sync stays stopped;
 Projects, sign-in and checkpoints remain intact. Equal/newer installed versions
 are a no-op. Other package managers and development builds receive guidance
-instead of an inferred installation target. Adapter upgrades remain separate.
+instead of an inferred installation target. This explicit CLI operation retains
+the original in-place npm update and restart path; Adapter upgrades remain
+separate. Automatic updates use the unified version-directory transaction.
+The internal manual CLI upgrade first preserves the currently effective Adapter
+installation records in configuration, so replacing the bootstrap does not reset
+those selections even when npm fails.
+External npm replacement that changes the bootstrap executable invalidates its
+managed selection. The new bootstrap and original Adapter source records take
+precedence without that preservation step; Tools shows the resulting versions,
+and a later due automatic check
+can align them again. Identical executable bytes do not force a new selection.
 
 `atape` opens the Project list after initial setup. A configured installation
 with no Projects shows an empty list with `Add project`, rather than restarting
@@ -94,7 +129,7 @@ The home screen exposes these global actions:
 | --- | --- |
 | Add project | Connect a repository or ordinary folder to a destination |
 | Tools and updates | Choose conversations to sync, inspect versions and update ATape or its integrations |
-| Settings | Accounts, server addresses and global background sync controls |
+| Settings | Accounts, server addresses, automatic updates and global background sync controls |
 
 The Project list shows names and sync outcomes. Since tool selection is global,
 do not repeat an identical tool list in every row. Show enabled tools once in
@@ -225,7 +260,7 @@ remain outside this increment.
 
 ## Updating without memorizing package commands
 
-Tools and updates checks the CLI and installed official Codex/Claude integrations
+Tools and updates checks the CLI and installed official integrations
 in parallel. Each package has its own twelve-hour successful-result cache.
 Check again bypasses those caches. Offline checks retain current versions and
 show latest unavailable, without blocking tool configuration or navigation.
@@ -249,10 +284,14 @@ and cache behavior with CLI upgrades. A unified page was chosen over per-tool
 settings pages to keep version maintenance in one global location. Integration maintenance provides original-source refresh for custom packages,
 trusted package/path installation and preview/confirmed cleanup.
 
-Limits: no unattended or bulk integration updates; npm installation is not an
-atomic rollback transaction. Cancellation waits for npm termination before the
-configuration lock is released. Next increment: validate the published journey
-on actual existing installations before considering broader update automation.
+Explicit package maintenance remains available alongside the managed automatic
+path. npm preparation itself is not an atomic rollback transaction; managed
+automatic updates prepare separate version directories before selection and keep
+the previous compatible generation for recovery. Cancellation waits for owned
+subprocess termination before releasing maintenance ownership. Broader package
+manager adoption, automatic boot/login recovery, release-directory garbage
+collection and log recall remain outside this increment. Published-installation
+acceptance still requires candidate-specific evidence.
 
 Local verification for the single-entry change (2026-09-13): CLI/Application/Web
 unit suites and typechecks, installed CLI PTY/package acceptance, Codex/Claude Go

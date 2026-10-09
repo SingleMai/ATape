@@ -2,6 +2,10 @@
 
 Status: Accepted; included in the v0.4.4 release candidate.
 
+Managed version directories and automatic CLI/official Adapter updates are
+amended by [ADR-0100](0100-managed-automatic-updates.md). This record retains the
+original in-place npm upgrade decision and its delivery scope.
+
 ## Decision
 
 The CLI Upgrade Module exposes `checkCLIUpgrade(current)` and

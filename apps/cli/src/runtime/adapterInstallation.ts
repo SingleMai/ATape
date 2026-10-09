@@ -103,7 +103,8 @@ const inUse = async (root: string) => {
 
 // Permanent retirement plus a second lease check closes concurrent admission.
 // Never remove the marker: a later invocation resumes interrupted deletion.
-export const pruneAdapterSlots = (directory: string, input: { readonly apply: boolean; readonly keep: number }) => Effect.gen(function*() {
+export const pruneAdapterSlots = (directory: string, input: { readonly apply: boolean; readonly keep: number },
+  protectedSlots: () => Promise<ReadonlyArray<string>> = async () => []) => Effect.gen(function*() {
   const store = yield* ClientConfigStore
   const slotsDirectory = join(directory, "slots")
   const entries = yield* io("slots", async () => {
@@ -118,6 +119,7 @@ export const pruneAdapterSlots = (directory: string, input: { readonly apply: bo
   })
   const selected = yield* store.transact(config => io("slots", async () => {
     const current = new Set(config.adapters.flatMap(adapter => adapter.packageSlot === undefined ? [] : [adapter.packageSlot]))
+    for (const slot of await protectedSlots()) current.add(slot)
     const retained = new Map<string, number>()
     const slots: Array<AdapterPruneSlot> = [], deletions: Array<string> = []
     let more = false

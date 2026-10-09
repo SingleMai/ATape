@@ -1,7 +1,7 @@
 import { emptyClientConfig, AdapterProtocolVersion, type ClientConfig, type CollectorCheckpoint, type CollectorRunState } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { AdapterPackages, ClientConfigStore, ProjectLocator, inspectClient, installAdapter, setupProject } from "./clientManagement.ts"
+import { AdapterPackages, ClientConfigStore, ProjectLocator, inspectClient, installAdapter, setupProject, setAutomaticUpdates } from "./clientManagement.ts"
 import { CollectorDaemonProcess, CollectorRunStatusStore } from "./collectorDaemon.ts"
 import { CollectorStateStore } from "./collector.ts"
 import { ProjectSetupGateway, type SetupRemoteProject } from "./projectSetup.ts"
@@ -92,6 +92,15 @@ const input = { instanceOrigin: "https://atape.net", path: "/work/payments" }
 const progress = () => Effect.void
 
 describe("CLI experience application Interface", () => {
+  it("reports the effective automatic update preference in the console and setup review", async () => {
+    const client = fixture()
+    expect((await client.run(inspectCLIExperience())).automaticUpdatesEnabled).toBe(true)
+    expect((await client.run(prepareGuidedSetup(input))).automaticUpdatesEnabled).toBe(true)
+    await client.run(setAutomaticUpdates(false))
+    expect((await client.run(inspectCLIExperience())).automaticUpdatesEnabled).toBe(false)
+    expect((await client.run(prepareGuidedSetup(input))).automaticUpdatesEnabled).toBe(false)
+    expect(client.starts()).toBe(0)
+  })
   it.each(["codex", "opencode"])("configures %s tools once, connects subsequent Projects with the same selection and rejects scoped overrides", async sourceId => {
     const client = fixture()
     expect((await client.run(inspectTools())).configured).toBe(false)

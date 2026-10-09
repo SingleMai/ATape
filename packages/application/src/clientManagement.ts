@@ -133,6 +133,18 @@ export type ClientSnapshot = Omit<ClientConfig, "projects"> & { readonly project
 export const effectiveClientConfig = (config: ClientConfig): ClientSnapshot =>
   ({ ...config, projects: config.projects.map(project => ({ ...project, adapterIds: config.enabledAdapterIds })) })
 
+export const automaticUpdatesEnabled = (config: Pick<ClientConfig, "autoUpdateEnabled">): boolean =>
+  config.autoUpdateEnabled !== false
+
+export const setAutomaticUpdates = Effect.fn("Client.setAutomaticUpdates")(function*(enabled: boolean) {
+  const store = yield* ClientConfigStore
+  return yield* store.transact<boolean, never, never>(config => Effect.succeed(
+    config.autoUpdateEnabled === enabled
+      ? { value: enabled }
+      : { value: enabled, config: { ...config, autoUpdateEnabled: enabled } }
+  ))
+})
+
 // A reviewed selection is an optimistic concurrency check, never a Project override.
 export const validateProjectToolSelection = (config: ClientConfig, ids?: ReadonlyArray<string>) =>
   ids !== undefined && !sameStrings([...ids].sort(), [...config.enabledAdapterIds].sort())

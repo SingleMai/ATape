@@ -8,6 +8,7 @@ export type ParsedCLI =
   | { readonly kind: "__collector-daemon"; readonly options: {
     readonly daemonToken: string; readonly intervalMs?: number; readonly concurrency?: number
   } }
+  | { readonly kind: "__automatic-update"; readonly options: { readonly updateToken: string } }
 
 export class CLIInputError extends Error {}
 
@@ -15,9 +16,10 @@ export class CLIInputError extends Error {}
 // business operations or falls back to a second presentation.
 export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
   const internal = args[0] === "__collector-daemon"
+  const updater = args[0] === "__automatic-update"
   const { values, positionals, tokens } = parseArgs({
     args: [...args], allowPositionals: true, strict: true, tokens: true,
-    options: internal ? {
+    options: updater ? { "update-token": { type: "string" } } : internal ? {
       "daemon-token": { type: "string" }, interval: { type: "string" }, concurrency: { type: "string" }
     } : {
       help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
@@ -30,6 +32,11 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
     if (token.kind !== "option") continue
     if (seen.has(token.name) || typeof token.value === "string" && token.value.trim() === "") fail()
     seen.add(token.name)
+  }
+  if (updater) {
+    if (positionals.length !== 1 || typeof values["update-token"] !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(values["update-token"])) return fail()
+    return { kind: "__automatic-update", options: { updateToken: values["update-token"] } }
   }
   if (internal) {
     if (positionals.length !== 1 || typeof values["daemon-token"] !== "string") return fail()

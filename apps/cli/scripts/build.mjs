@@ -12,7 +12,7 @@ await rm(outputDirectory, { recursive: true, force: true })
 await mkdir(outputDirectory, { recursive: true })
 await build({
   absWorkingDir: packageRoot,
-  entryPoints: ["src/main.ts"],
+  entryPoints: ["src/entry.ts"],
   outfile: outputFile,
   bundle: true,
   platform: "node",

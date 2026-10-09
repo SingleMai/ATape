@@ -1,4 +1,4 @@
-import { AdapterPackageError, AdapterPackages, type InstalledAdapterPackage } from "@atape/application"
+import { AdapterPackageError, AdapterPackages, officialSources, type InstalledAdapterPackage } from "@atape/application"
 import { AdapterManifest as AdapterManifestSchema } from "@atape/domain"
 import { open, opendir, readFile, realpath, stat, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -9,11 +9,12 @@ import { downloadAdapterPackage, inspectLocalAdapterPackage, type AdapterPackage
 
 export const makeAdapterPackagesLayer = (
   adapterDirectory: string,
-  fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch
+  fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch,
+  protectedSlots: () => Promise<ReadonlyArray<string>> = async () => []
 ) => Layer.succeed(
   AdapterPackages,
   AdapterPackages.of({
-    prune: input => pruneAdapterSlots(adapterDirectory, input),
+    prune: input => pruneAdapterSlots(adapterDirectory, input, protectedSlots),
     install: (packageSpec) => installAdapterPackage(adapterDirectory, packageSpec, fetchAdapterPackage)
   })
 )
@@ -49,6 +50,8 @@ const installAcquiredAdapterPackage = (
       await writeFile(join(slot.root, "package.json"), `${JSON.stringify({ private: true }, null, 2)}\n`, { mode: 0o600, flag: "wx" })
       await executeOwnedProcess("npm", [
         "install", "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund", "--install-links",
+        ...(source.upgradeSpec === packageName && officialSources.some(item => item.packageName === packageName)
+          ? ["--registry=https://registry.npmjs.org/", "--@atape:registry=https://registry.npmjs.org/"] : []),
         "--prefix", slot.root, source.installSpec
       ], process.env, cancellation.signal, 120_000)
     })()
@@ -118,7 +121,7 @@ const syncDirectory = async (path: string) => {
   try { await directory.sync() } finally { await directory.close() }
 }
 
-const syncPackageTree = async (path: string): Promise<void> => {
+export const syncPackageTree = async (path: string): Promise<void> => {
   const directory = await opendir(path)
   for await (const entry of directory) {
     const child = join(path, entry.name)

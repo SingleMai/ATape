@@ -1,9 +1,9 @@
 import { decideProjectSetup, describeClientFailure,
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, refreshManagedCollector, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
-  experienceOnboardingURL, inspectCLIExperience, inspectClient, inspectTools, planToolChange, applyToolChange,
+  experienceOnboardingURL, inspectCLIExperience, inspectClient, automaticUpdatesEnabled, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
-  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, installAdapter, upgradeAdapters, pruneAdapterPackages,
+  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, setAutomaticUpdates, installAdapter, upgradeAdapters, pruneAdapterPackages,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
 } from "@atape/application"
 import type { AdapterSourceFailure, LocalProject } from "@atape/domain"
@@ -215,7 +215,10 @@ export class ExperiencePresenter {
   start() {
     if (this.started) return
     this.started = true
-    this.work(t("cli.presenter.checkingUpdates", "Checking for updates"), refreshManagedCollector().pipe(Effect.andThen(checkCLIUpgrade(this.options.version))), version => {
+    this.work(t("cli.presenter.checkingUpdates", "Checking for updates"), refreshManagedCollector().pipe(
+      Effect.andThen(inspectClient()),
+      Effect.flatMap(config => automaticUpdatesEnabled(config) ? Effect.succeed(undefined) : checkCLIUpgrade(this.options.version))
+    ), version => {
       if (version) this.offerUpgrade(version)
       else this.openExperience()
     }, undefined, () => this.close())
@@ -420,7 +423,10 @@ export class ExperiencePresenter {
         : [t("cli.review.directory", "Directory: {path}", { path: plan.project.local.path })]),
       t("cli.review.tools", "Tools: {tools} · global selection", { tools: ids.map(toolLabel).join(", ") }),
       t("cli.review.import", "Import existing conversations and continuously sync future conversations."),
-      t("cli.review.background", "Background sync continues after you exit.")
+      t("cli.review.background", "Background sync continues after you exit."),
+      plan.automaticUpdatesEnabled
+        ? t("cli.review.automaticUpdatesOn", "Automatic updates are on by default for ATape and official npm integrations. Turn off in Settings.")
+        : t("cli.review.automaticUpdatesOff", "Automatic updates are off. Turn on in Settings.")
     ]
     this.show({ kind: "menu", title: t("cli.review.title", "Review and connect"), details, options: [
       { value: "confirm", label: t("cli.review.connectAndSync", "Connect and sync") },
@@ -748,12 +754,20 @@ export class ExperiencePresenter {
   private settings() {
     this.work(t("cli.settings.reading", "Reading settings"), inspectCLIExperience(), snapshot => this.show({ kind: "menu", title: t("cli.console.settings", "Settings"),
       details: [t("cli.settings.server", "Server: {origin}", { origin: this.instanceOrigin }),
+        snapshot.automaticUpdatesEnabled
+          ? t("cli.settings.automaticUpdatesOn", "Automatic updates: on · ATape and official npm integrations")
+          : t("cli.settings.automaticUpdatesOff", "Automatic updates: off"),
         snapshot.collector.running ? t("cli.settings.syncRunning", "Background sync is running. Exiting keeps it running.") : t("cli.settings.syncStopped", "Background sync is stopped.")],
       options: [{ value: "accounts", label: t("cli.settings.accounts", "Accounts") },
+        { value: "automatic-updates", label: snapshot.automaticUpdatesEnabled
+          ? t("cli.settings.disableAutomaticUpdates", "Turn off automatic updates")
+          : t("cli.settings.enableAutomaticUpdates", "Turn on automatic updates") },
         { value: "language", label: t("cli.settings.language", "Language") }, { value: "server", label: t("cli.settings.changeServer", "Change server") },
         { value: snapshot.collector.running ? "stop" : "start", label: snapshot.collector.running
           ? t("cli.settings.stopAll", "Stop sync for all projects") : t("cli.console.startSync", "Start sync") }]
-    }, value => value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
+    }, value => value === "automatic-updates"
+      ? this.work(t("cli.settings.savingAutomaticUpdates", "Saving automatic updates"), setAutomaticUpdates(!snapshot.automaticUpdatesEnabled), () => this.settings(), undefined, () => this.settings())
+      : value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())
       : this.consoleAction(String(value)), () => this.list()))
   }
   private language() {

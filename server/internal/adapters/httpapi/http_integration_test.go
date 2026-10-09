@@ -37,9 +37,10 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	}
 	configureHTTPDockerHost(t)
 	// Five installed Adapter contracts run sequentially with this shared fixture.
-	// Their successful CI run now takes about five minutes before the final Search
-	// checks. Keep those checks and runner variation inside a bounded fixture lifetime.
-	timeout := 12 * time.Minute
+	// Their successful CI run can exceed twelve minutes before the final Search
+	// checks. Keep those checks and runner variation inside a bounded fixture lifetime,
+	// below the contract runner's twenty-minute process deadline.
+	timeout := 15 * time.Minute
 	if os.Getenv("ATAPE_CODEBUDDY_REVIEW_FILE") != "" {
 		// The optional browser review owns a further bounded three-minute pause.
 		timeout += 3 * time.Minute

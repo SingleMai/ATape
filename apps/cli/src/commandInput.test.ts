@@ -16,11 +16,17 @@ describe("single CLI entry", () => {
     ["__collector-daemon", "--daemon-token", "token", "--interval", "1"],
     ["__collector-daemon", "--daemon-token", "token", "--concurrency", "9"],
     ["__collector-daemon", "--daemon-token", "token", "--interval", "1e2"],
-    ["__collector-daemon", "--daemon-token", "token", "extra"]])("rejects unsupported arguments %j", (...args) => {
+    ["__collector-daemon", "--daemon-token", "token", "extra"],
+    ["__automatic-update"], ["__automatic-update", "--update-token", "token"],
+    ["__automatic-update", "--update-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "extra"]])("rejects unsupported arguments %j", (...args) => {
     expect(() => parseCLI(args)).toThrow()
   })
   it("retains only the process owner's internal Collector invocation", () => {
     expect(parseCLI(["__collector-daemon", "--daemon-token", "owner", "--interval", "30", "--concurrency", "4"]))
       .toEqual({ kind: "__collector-daemon", options: { daemonToken: "owner", intervalMs: 30000, concurrency: 4 } })
+  })
+  it("decodes the independent updater's internal invocation", () => {
+    expect(parseCLI(["__automatic-update", "--update-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]))
+      .toEqual({ kind: "__automatic-update", options: { updateToken: "e859003d-90b4-44f6-ae5a-c14aa3c8ede7" } })
   })
 })

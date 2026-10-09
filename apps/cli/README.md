@@ -23,12 +23,24 @@ Checksummed `.tgz` files attached to each GitHub Release provide the equivalent 
 
 ## Upgrade
 
+Automatic updates are on by default for supported macOS/Linux npm-global
+installations. Settings offers Turn off automatic updates or Turn on automatic
+updates. A running Collector or opening the CLI can trigger an approximately
+daily background check. The independent updater prepares the CLI and installed
+official registry Adapters at one completed release version, then switches their
+version directories through a bounded Collector stop/restart. Custom, local,
+archive and URL installations keep their chosen source.
+
 Open `atape` → Tools and updates and select the available update.
 
-The interactive console also offers available updates. The built-in upgrade
+With automatic updates on, startup enters the console without an upgrade prompt.
+When off, startup retains Upgrade and continue or Skip. The explicit CLI upgrade
 resumes previously running sync and preserves supported local state; Adapter
-updates are separate. See the [upgrade procedure](../../docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters)
+maintenance remains separate. This manual operation uses the original in-place
+npm path; automatic updates use isolated version directories. See the [upgrade procedure](../../docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters)
 for manual package replacement, pinned Adapter sources and failed-resume recovery.
+Automatic updates preserve user-stopped sync and recover only within compatible
+local-state contracts. They do not add reboot supervision or upload local logs.
 
 ## First Project
 
@@ -86,7 +98,7 @@ pnpm test:release
 pnpm pack:release
 ```
 
-The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it through the installed executable. Source fixtures only prepare inert test integrations and clean up on failure. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification exercises the release Adapter artifacts through the source Node Host, including the independently bundled Codex, Claude, OpenCode and CodeBuddy Adapters and package replacement recovery. `release/SHA256SUMS` covers all five artifacts.
+The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it through the installed executable. Source fixtures prepare inert test integrations and dispatch a real packaged independent updater against controlled GitHub/npm Adapters. The update check verifies one CLI/Adapter generation, unchanged raw configuration/bootstrap files, worker exit and bootstrap delegation without updating the user's installation. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification exercises the independently bundled Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok Adapters through the source Node Host and package replacement recovery. `release/SHA256SUMS` covers all seven artifacts.
 
 OpenCode reads local v1 SQLite history. Its accepted source/version/platform scope,
 source discovery, bounded defaults and Server prerequisite are documented in the

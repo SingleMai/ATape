@@ -8,7 +8,7 @@ export const restartInstalledCLI = (entry: string, args: string[], environment: 
     // Ink removes its listeners but may leave an in-flight stdin read. The old
     // process stays alive while the child runs and must relinquish input first.
     process.stdin.pause()
-    const child = spawn(process.execPath, [entry, ...args], { env: environment, stdio: "inherit", signal })
+    const child = spawn(process.execPath, [environment.ATAPE_BOOTSTRAP_ENTRY ?? entry, ...args], { env: environment, stdio: "inherit", signal })
     const interrupt = () => { child.kill("SIGINT") }
     const terminate = () => { child.kill("SIGTERM") }
     process.on("SIGINT", interrupt)

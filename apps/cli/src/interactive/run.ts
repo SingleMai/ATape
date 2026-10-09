@@ -6,10 +6,15 @@ import { makeNodeClientLayer, defaultNodeClientPaths } from "../runtime/clientLa
 import { ExperiencePresenter } from "./presenter.ts"
 import { ExperienceView } from "./view.ts"
 import { cliVersion } from "../version.ts"
+import { kickAutomaticUpdates } from "@atape/application"
 import { restartInstalledCLI } from "../runtime/restartCLI.ts"
 
 export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonly kind: "interactive" }>) => {
   const runtime = ManagedRuntime.make(makeNodeClientLayer(defaultNodeClientPaths()))
+  const maintenanceLifetime = new AbortController()
+  const maintenance = runtime.runPromise(Effect.forever(kickAutomaticUpdates().pipe(Effect.andThen(Effect.sleep(30_000)))), {
+    signal: maintenanceLifetime.signal
+  }).catch(() => undefined)
   let renderer: ReturnType<typeof render> | undefined
   let restart = false
   const presenter = new ExperiencePresenter((effect, signal) => runtime.runPromise(effect, { signal }), requested => {
@@ -34,6 +39,8 @@ export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonl
     renderer?.cleanup()
     process.removeListener("SIGINT", stop)
     process.removeListener("SIGTERM", stop)
+    maintenanceLifetime.abort()
+    await maintenance
     await runtime.dispose()
   }
   if (restart) process.exitCode = await Effect.runPromise(restartInstalledCLI(process.argv[1]!, process.argv.slice(2), process.env))

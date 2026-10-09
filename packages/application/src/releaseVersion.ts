@@ -1,4 +1,4 @@
-export const stableVersion = (value: string) => /^\d+\.\d+\.\d+$/.test(value) && value.length < 40 &&
+export const stableVersion = (value: string) => /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value) && value.length < 40 &&
   value.split(".").every(part => Number.isSafeInteger(Number(part)))
 
 export const newer = (candidate: string, current: string) => {

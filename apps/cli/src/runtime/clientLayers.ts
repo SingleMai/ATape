@@ -4,7 +4,6 @@ import { hostname, platform, arch } from "node:os"
 import { Effect, Layer } from "effect"
 import type { AdapterPackageFetch } from "./adapterPackageSource.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
-import { makeConfigStoreLayer, readClientConfig } from "./clientConfig.ts"
 import { makeProjectLocatorLayer } from "./projectLocator.ts"
 import { makeAdapterPackagesLayer } from "./adapterPackages.ts"
 import { makeNodeCollectorLayer } from "./collectorLayers.ts"
@@ -17,6 +16,8 @@ import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
 import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
 import { makeAdapterReleasesLayer } from "./adapterReleases.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
+import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
+import { makeSelectedConfigStoreLayer, readSelectedClientConfig, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
 
 // Existing Node caller Interface; implementations live at their own Seams.
 export { defaultNodeClientPaths, type NodeClientPaths } from "./clientPaths.ts"
@@ -39,7 +40,7 @@ export const makeNodeClientLayer = (
     fetchAuthentication,
     environment.ATAPE_DEVELOPMENT_ALLOW_HTTP === "true",
     Effect.gen(function*() {
-      const config = yield* readClientConfig(paths.configFile).pipe(
+      const config = yield* readSelectedClientConfig(paths).pipe(
         Effect.catch(() => Effect.succeed(undefined))
       )
       return { name: hostname(), platform: `${platform()} ${arch()}`, version: cliVersion,
@@ -60,19 +61,23 @@ export const makeNodeClientLayer = (
   const collector = makeNodeCollectorLayer(paths, environment).pipe(
     Layer.provide(Layer.mergeAll(authenticatedHTTP, gitAttribution, locator))
   )
+  const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage, () => protectedRuntimeSlots(paths.atapeHome))
+  const bootstrapEntry = environment.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1] ?? ""
   return Layer.mergeAll(
     authentication,
     authenticatedHTTP,
-    makeDeviceMonitoringLayer(paths.atapeHome, readClientConfig(paths.configFile), globalThis.fetch,
+    makeDeviceMonitoringLayer(paths.atapeHome, readSelectedClientConfig(paths), globalThis.fetch,
       CollectorRunStatusStore.use(store => store.read()).pipe(Effect.provide(makeCollectorRunStatusLayer(paths.collectorStatusFile)))).pipe(Layer.provide(authenticatedHTTP)),
-    makeConfigStoreLayer(paths.configFile),
+    makeSelectedConfigStoreLayer(paths),
     makeCLISetupPlatformLayer(paths, environment),
-    makeCLIUpgradePlatformLayer(paths.atapeHome, process.argv[1] ?? "", environment),
+    makeCLIUpgradePlatformLayer(paths.atapeHome, bootstrapEntry, environment),
     makeAdapterReleasesLayer(paths.atapeHome),
     locator,
-    makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage),
+    packages,
+    makeAutomaticUpdatePlatformLayer(paths, bootstrapEntry, cliVersion, environment).pipe(Layer.provide(packages)),
     projectSetup,
     collector,
-    makeNodeCollectorDaemonLayer(paths, process.argv[1] ?? "", environment)
+    makeNodeCollectorDaemonLayer(paths, async () => resolveRuntimeEntry(paths.atapeHome,
+      await selectedBootstrap(paths.atapeHome, bootstrapEntry)), { ...environment, ATAPE_BOOTSTRAP_ENTRY: bootstrapEntry })
   )
 }

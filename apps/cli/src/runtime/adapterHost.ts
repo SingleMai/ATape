@@ -1,21 +1,53 @@
 import { AdapterRuntimeError, AdapterRuntimes, GitSourceAttribution, GitAttributionError, ProjectLocator, type HostedAdapter } from "@atape/application"
 import { AdapterCollectionPage as AdapterCollectionPageSchema, AdapterManifest as AdapterManifestSchema,
   AdapterProtocolVersion, GitAttributionVersion, GitSource,
-  type AdapterManifest, type AtapeAdapterModule, type AtapeAdapterRuntime } from "@atape/domain"
+  type AdapterInstallation, type AdapterManifest, type AtapeAdapterModule, type AtapeAdapterRuntime } from "@atape/domain"
 import { readFile, realpath, stat } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect, Layer, Schema } from "effect"
 import { hostSourceCapture, isSourceCaptureRuntime } from "./sourceCaptureRuntime.ts"
 import { adapterPackageRoot, leaseAdapterInstallation } from "./adapterInstallation.ts"
+import { readBoundedJSON } from "./runtimeSelection.ts"
 
-export const makeAdapterRuntimeLayer = (adapterDirectory: string) => Layer.effect(
+// Resolve and validate metadata in the owner; foreign import runs separately
+// so a blocking Adapter cannot prevent cancellation of update preparation.
+export const resolveAdapterReadinessEntry = (directory: string, adapter: AdapterInstallation, git: boolean): Effect.Effect<string, Error> =>
+  Effect.tryPromise({ try: async () => {
+    if (!/^(@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/.test(adapter.packageName)) {
+      throw new Error(`Installed Adapter ${adapter.adapterId} has an invalid package name.`)
+    }
+    const root = await realpath(adapterPackageRoot(directory, adapter))
+    const value = await readBoundedJSON(join(root, "package.json"))
+    if (typeof value !== "object" || value === null || !("name" in value) || !("version" in value) || !("atapeAdapter" in value)) {
+      throw new Error(`Installed Adapter ${adapter.adapterId} has invalid package metadata.`)
+    }
+    const manifest = Schema.decodeUnknownSync(AdapterManifestSchema)(value.atapeAdapter)
+    if (value.name !== adapter.packageName || value.version !== adapter.version || !adapter.version.trim() ||
+      manifest.adapterId !== adapter.adapterId || !manifest.adapterId.trim() || !manifest.displayName.trim() ||
+      manifest.harnesses.length === 0 || manifest.harnesses.some(harness => !harness.trim())) {
+      throw new Error(`Installed Adapter ${adapter.adapterId} does not match its selected package identity.`)
+    }
+    if (git && manifest.gitAttribution !== GitAttributionVersion) {
+      throw new Error(`Installed Adapter ${adapter.adapterId} does not support Git attribution.`)
+    }
+    if (!manifest.entry.startsWith("./")) throw new Error(`Installed Adapter ${adapter.adapterId} has an invalid entry.`)
+    const entry = await realpath(resolve(root, manifest.entry)), within = relative(root, entry)
+    if (within === ".." || within.startsWith(`..${sep}`) || isAbsolute(within) || !(await stat(entry)).isFile()) {
+      throw new Error(`Installed Adapter ${adapter.adapterId} entry leaves its package.`)
+    }
+    return pathToFileURL(entry).href
+  }, catch: cause => cause instanceof Error ? cause : new Error(String(cause)) })
+
+export const makeAdapterRuntimeLayer = (adapterDirectory: string, admission?: Effect.Effect<void, AdapterRuntimeError>) => Layer.effect(
   AdapterRuntimes,
   Effect.gen(function*() {
     const attribution = yield* GitSourceAttribution
     const locator = yield* ProjectLocator
+    const acquireInstallation = (adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1]) =>
+      (admission ?? Effect.void).pipe(Effect.andThen(leaseAdapterInstallation(adapterDirectory, adapter)))
     return AdapterRuntimes.of({
-      open: (project, adapter) => leaseAdapterInstallation(adapterDirectory, adapter).pipe(
+      open: (project, adapter) => acquireInstallation(adapter).pipe(
         Effect.mapError(cause => runtimeFailure(adapter.adapterId, "load", true, cause.message)),
         Effect.andThen(Effect.acquireRelease(
         loadAdapterRuntime(adapterDirectory, project, adapter, attribution, locator),

@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, Schema, type Scope } from "effect"
 import { CollectorDaemonProcess, refreshManagedCollector } from "./collectorDaemonProcess.ts"
 import { stableVersion, newer } from "./releaseVersion.ts"
 
@@ -12,6 +12,9 @@ export class CLIUpgradeError extends Schema.TaggedError<CLIUpgradeError>()("CLIU
 
 // npm distribution and local installation ownership form the external Seam.
 export class CLIUpgradePlatform extends Context.Service<CLIUpgradePlatform, {
+  // Hold this resource across installation and Collector handoff. Version
+  // lookups are read-only and need no ownership.
+  acquireOwnership(): Effect.Effect<void, CLIUpgradeError, Scope.Scope>
   latest(cached: boolean): Effect.Effect<string, CLIUpgradeError>
   install(version: string): Effect.Effect<void, CLIUpgradeError>
 }>()("atape/application/CLIUpgradePlatform") {}
@@ -32,6 +35,7 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   const platform = yield* CLIUpgradePlatform
   const version = yield* platform.latest(false)
   if (!stableVersion(version)) return yield* new CLIUpgradeError({ reason: "check", message: "npm returned an invalid ATape version. Try again later." })
+  yield* platform.acquireOwnership()
   if (!newer(version, current)) return { version: current, updated: false, resumed: yield* refreshManagedCollector() }
   const process = yield* CollectorDaemonProcess
   const running = yield* process.inspect()
@@ -40,14 +44,21 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   if (running) {
     // Once installation succeeds, finish the bounded stop/start handoff even if
     // Ctrl+C arrives, so cancellation cannot strand a previously running sync.
-    return yield* resumeCLIUpgrade({ version, intervalMs: running.intervalMs, concurrency: running.concurrency })
+    return yield* resumeOwnedCLIUpgrade({ version, intervalMs: running.intervalMs, concurrency: running.concurrency })
   }
   return { version, updated: true, resumed: Boolean(running) }
-})
+}, Effect.scoped)
 
 // The recovery receipt retains the pre-upgrade intent across failed stop/start
 // attempts. Retrying it never queries npm or reinstalls the CLI.
 export const resumeCLIUpgrade = Effect.fn("CLIUpgrade.resume")(function*(recovery: typeof CLIUpgradeRecovery.Type) {
+  yield* (yield* CLIUpgradePlatform).acquireOwnership().pipe(Effect.mapError(error => new CLIUpgradeError({
+    reason: "resume", recovery, message: `ATape ${recovery.version} is installed, but sync could not resume. ${error.message}`
+  })))
+  return yield* resumeOwnedCLIUpgrade(recovery)
+}, Effect.scoped)
+
+const resumeOwnedCLIUpgrade = (recovery: typeof CLIUpgradeRecovery.Type) => Effect.gen(function*() {
   const process = yield* CollectorDaemonProcess
   yield* process.stop().pipe(
     Effect.andThen(process.start({ intervalMs: recovery.intervalMs, concurrency: recovery.concurrency })),

@@ -14,7 +14,7 @@ integration checks require Docker.
 | Area | Responsibility and entry points |
 | --- | --- |
 | [apps/web/src](../apps/web/src/) | `view` renders, `presenters` bind intents and ViewModels, `runtime` provides Browser Adapters and Layers |
-| [apps/cli/src](../apps/cli/src/) | `main.ts` composes the executable; `commandInput.ts` decodes command input; `commands.ts` and `interactive` present the CLI; `runtime` owns Node Adapters |
+| [apps/cli/src](../apps/cli/src/) | `entry.ts` validates the bootstrap launch and delegates to the selected managed version; `main.ts` composes the executable and owned Collector/updater entries; `commandInput.ts` decodes command input; `commands.ts` and `interactive` present the CLI; `runtime` owns Node Adapters |
 | [packages/application](../packages/application/) | Effect Modules for client management, collection, capture, publication, recovery and reader workflows |
 | [packages/domain](../packages/domain/) | Shared domain types, Schemas and pure rules |
 | [packages/adapter-catalog](../packages/adapter-catalog/) | Shared official-tool metadata |

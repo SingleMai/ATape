@@ -3,6 +3,7 @@ import { ClientConfig as ClientConfigSchema, emptyClientConfig, type ClientConfi
 import { randomUUID } from "node:crypto"
 import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises"
 import { dirname } from "node:path"
+import { performance } from "node:perf_hooks"
 import { Effect, Layer, Schema } from "effect"
 
 export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
@@ -17,42 +18,55 @@ export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
             ? Effect.succeed(result.value)
             : writeClientConfig(configFile, result.config).pipe(Effect.as(result.value)))
         ),
-        (lock) => Effect.promise(async () => {
-          await lock.close().catch(() => undefined)
-          await rm(lock.path, { force: true }).catch(() => undefined)
-        })
+        (lock) => Effect.promise(() => releaseConfigLock(lock))
       )
   })
 )
 
-const acquireConfigLock = (configFile: string) => Effect.tryPromise({
-  try: async () => {
-    await mkdir(dirname(configFile), { recursive: true, mode: 0o700 })
-    const lockPath = `${configFile}.lock`
-    const deadline = Date.now() + 5_000
-    while (true) {
+// The runtime selector shares this exact exclusion boundary with every config
+// transaction. Its native handoff can hold the lock without running Effect.
+export const withClientConfigFileLock = async <A>(configFile: string, work: () => Promise<A>, waitMs = 5_000): Promise<A> => {
+  const lock = await acquireConfigFileLock(configFile, waitMs)
+  try { return await work() } finally { await releaseConfigLock(lock) }
+}
+
+const acquireConfigFileLock = async (configFile: string, waitMs = 5_000) => {
+  if (!Number.isFinite(waitMs) || waitMs < 0) throw new Error("The client config lock wait must be finite and nonnegative.")
+  await mkdir(dirname(configFile), { recursive: true, mode: 0o700 })
+  const lockPath = `${configFile}.lock`
+  const deadline = performance.now() + waitMs
+  while (true) {
+    try {
+      const handle = await open(lockPath, "wx", 0o600)
       try {
-        const handle = await open(lockPath, "wx", 0o600)
-        try {
-          await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
-          await handle.sync()
-          return { path: lockPath, close: () => handle.close() }
-        } catch (cause) {
-          await handle.close().catch(() => undefined)
-          await rm(lockPath, { force: true }).catch(() => undefined)
-          throw cause
-        }
+        await handle.writeFile(`${JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() })}\n`)
+        await handle.sync()
+        return { path: lockPath, close: () => handle.close() }
       } catch (cause) {
-        if (!hasCode(cause, "EEXIST")) throw cause
-        if (await staleConfigLock(lockPath)) {
-          await rm(lockPath, { force: true })
-          continue
-        }
-        if (Date.now() >= deadline) throw cause
-        await new Promise((done) => setTimeout(done, 50))
+        await handle.close().catch(() => undefined)
+        await rm(lockPath, { force: true }).catch(() => undefined)
+        throw cause
       }
+    } catch (cause) {
+      if (!hasCode(cause, "EEXIST")) throw cause
+      if (performance.now() >= deadline) throw cause
+      if (await staleConfigLock(lockPath)) {
+        await rm(lockPath, { force: true })
+        continue
+      }
+      if (performance.now() >= deadline) throw cause
+      await new Promise((done) => setTimeout(done, Math.min(50, Math.max(0, deadline - performance.now()))))
     }
-  },
+  }
+}
+
+const releaseConfigLock = async (lock: { readonly path: string; readonly close: () => Promise<void> }) => {
+  await lock.close().catch(() => undefined)
+  await rm(lock.path, { force: true }).catch(() => undefined)
+}
+
+const acquireConfigLock = (configFile: string) => Effect.tryPromise({
+  try: () => acquireConfigFileLock(configFile),
   catch: (cause) => new ClientConfigStoreError({
     reason: "io",
     message: hasCode(cause, "EEXIST")
