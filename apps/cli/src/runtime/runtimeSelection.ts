@@ -9,7 +9,7 @@ import type { NodeClientPaths } from "./clientPaths.ts"
 
 // This contract deliberately excludes migrations. A release changing it cannot
 // participate in automatic activation or retained-version rollback.
-export const managedStateContract = "atape.client.v3-capture.v1"
+export const managedStateContract = "atape.client.v3-capture.v2"
 const StableVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
 export const RuntimeSelection = Schema.Struct({
   protocol: Schema.Literal("atape.runtime.v1"),
@@ -20,6 +20,7 @@ export const RuntimeSelection = Schema.Struct({
   adapters: Schema.Array(Schema.Struct({ before: AdapterInstallation, after: AdapterInstallation }))
 })
 export type RuntimeSelection = typeof RuntimeSelection.Type
+const LegacyRuntimeSelection = Schema.Struct({ ...RuntimeSelection.fields, stateContract: Schema.Literal("atape.client.v3-capture.v1") })
 export const runtimeSelectionFile = (home: string) => join(home, "releases", "current.json")
 export const runtimeEntry = (home: string, version: string) => join(home, "releases", version, "node_modules", "@atape", "cli", "dist", "atape.js")
 export const updateDirectory = (home: string) => join(home, "updates")
@@ -37,8 +38,7 @@ export const readBoundedJSON = async (path: string, limit = 256 * 1024): Promise
 }
 export const missing = (cause: unknown) => typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT"
 
-export const decodeRuntimeSelection = (value: unknown): RuntimeSelection => {
-  const selected = Schema.decodeUnknownSync(RuntimeSelection)(value)
+const validateSelection = <A extends Omit<RuntimeSelection, "stateContract"> & { readonly stateContract: string }>(selected: A): A => {
   if (selected.version.length >= 40 || !selected.version.split(".").every(part => Number.isSafeInteger(Number(part))) || !isAbsolute(selected.bootstrapEntry)) {
     throw new Error("Invalid managed runtime identity.")
   }
@@ -53,6 +53,13 @@ export const decodeRuntimeSelection = (value: unknown): RuntimeSelection => {
   }
   return selected
 }
+export const decodeRuntimeSelection = (value: unknown): RuntimeSelection =>
+  validateSelection(Schema.decodeUnknownSync(RuntimeSelection)(value))
+
+// Only the explicit manual transition and read-only public launcher may decode
+// this historical shape. Runtime resolution still requires the current contract.
+export const decodeLegacyRuntimeSelection = (value: unknown) =>
+  validateSelection(Schema.decodeUnknownSync(LegacyRuntimeSelection)(value))
 
 export const readRuntimeSelection = async (home: string): Promise<RuntimeSelection | undefined> => {
   try {
@@ -119,7 +126,7 @@ const sameAdapter = (left: AdapterInstallation, right: AdapterInstallation) =>
 
 // The pointer selects package metadata, not user settings. A deliberate local
 // package/source replacement invalidates the corresponding overlay immediately.
-export const applyRuntimeSelection = (config: ClientConfig, selected?: RuntimeSelection): ClientConfig => selected === undefined ? config : ({
+export const applyRuntimeSelection = (config: ClientConfig, selected?: Pick<RuntimeSelection, "adapters">): ClientConfig => selected === undefined ? config : ({
   ...config,
   adapters: config.adapters.map(adapter => {
     const replacement = selected.adapters.find(item => sameAdapter(item.before, adapter))

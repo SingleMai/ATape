@@ -22,7 +22,7 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory) {
   const root = await realpath(fixtureDirectory)
   const manifest = await json(join(donorPackage, "package.json"))
   assert.equal(manifest.atapeRuntime?.protocol, "atape.runtime.v1")
-  assert.equal(manifest.atapeRuntime?.stateContract, "atape.client.v3-capture.v1")
+  assert.equal(manifest.atapeRuntime?.stateContract, "atape.client.v3-capture.v2")
   const version = manifest.version
   const [major, minor, patch] = version.split(".").map(Number)
   const previous = patch > 0 ? `${major}.${minor}.${patch - 1}` : minor > 0 ? `${major}.${minor - 1}.0` : `${major - 1}.0.0`
@@ -50,9 +50,11 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory) {
   await writeFile(join(adapter, "index.js"), healthyAdapter)
   const originalAdapter = { adapterId: "codex", packageName: "@atape/adapter-codex", version: previous,
     upgradeSpec: "@atape/adapter-codex", displayName: "Fixture Codex", installedAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }
-  const legacyAdapter = join(home, "adapters", "node_modules", "@atape", "adapter-codex")
-  await cp(adapter, legacyAdapter, { recursive: true })
-  await writeFile(join(legacyAdapter, "package.json"), JSON.stringify({ ...await json(join(adapter, "package.json")), version: previous }))
+  // This earlier Adapter descriptor uses the test implementation above. It is
+  // an update-planning fixture, never historical 0.5.3 compatibility evidence.
+  const existingAdapter = join(home, "adapters", "node_modules", "@atape", "adapter-codex")
+  await cp(adapter, existingAdapter, { recursive: true })
+  await writeFile(join(existingAdapter, "package.json"), JSON.stringify({ ...await json(join(adapter, "package.json")), version: previous }))
   const configFile = join(home, "config", "client.json")
   await mkdir(dirname(configFile), { recursive: true })
   const raw = { version: 3, projects: [], adapters: [originalAdapter], toolsConfigured: true, enabledAdapterIds: ["codex"], autoStartEnabled: false }
@@ -170,6 +172,8 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
       (await readdir(join(home, "updates", "workers")).catch(() => [])).length === 0,
       async () => `Detached update did not complete. Dispatcher: ${dispatched.stdout}\n${dispatched.stderr}\n${await readFile(join(home, "logs", "collector.log"), "utf8").catch(() => "no worker log")}`)
     const current = await json(currentFile)
+    assert.equal(current.stateContract, manifest.atapeRuntime.stateContract)
+    assert.equal((await json(join(home, "updates", "retained.json"))).stateContract, manifest.atapeRuntime.stateContract)
     assert.equal(current.version, version)
     assert.equal(current.bootstrapEntry, bootstrap)
     assert.equal(current.bootstrapIdentity, beforeDigest)
@@ -200,7 +204,7 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
     assert.equal(delegated.stdout.trim(), `ATape ${version}`)
     const selectedEntry = join(selectedPackage, "dist", "atape.js")
     assert.ok((await entries()).some(item => item.entry === selectedEntry), "npm bootstrap did not delegate to the selected packaged CLI")
-    process.stdout.write("Verified packaged independent automatic update worker, bounded Adapter preflight and healthy retry, exact release alignment and bootstrap delegation\n")
+    process.stdout.write("Verified packaged v2 independent automatic update worker, bounded test Adapter preflight and healthy retry, exact release alignment and bootstrap delegation (same-contract fixture; not historical compatibility)\n")
   } finally {
     for (const worker of await workerEntries()) {
       try { process.kill(worker.pid, "SIGKILL") } catch (cause) { if (cause.code !== "ESRCH") throw cause }

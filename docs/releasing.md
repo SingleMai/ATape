@@ -186,7 +186,15 @@ records the selected update Interface and recovery obligations.
 
 The CLI package declares its managed-runtime compatibility in `atapeRuntime`:
 `protocol: "atape.runtime.v1"` and
-`stateContract: "atape.client.v3-capture.v1"`. A client validates these exact
+`stateContract: "atape.client.v3-capture.v2"`. A client validates these exact
 values and the installed executable version before activation. Do not retain
 the marker across an incompatible state-format change merely to make unattended
 installation pass; design and verify migration/recovery first.
+
+0.5.4 is the first v2 release. The published 0.5.3 updater must reject it before
+candidate execution or maintenance; release evidence must not describe this as
+a successful unattended upgrade. Its explicit stopped manual transition and
+forward journal recovery are defined in
+[ADR-0104](architecture/adr/0104-capture-v2-state-upgrade.md). Verify the old reader
+with genuine historical source or published bytes, and verify missing Server
+v2 capabilities leave the source's journal and legacy checkpoint unchanged.
