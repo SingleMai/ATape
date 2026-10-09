@@ -1,5 +1,5 @@
 import { officialSources } from "@atape/adapter-catalog"
-import type { AdapterInstallation } from "@atape/domain"
+import { decodeReleaseBundle, releaseBundleFingerprint, type AdapterInstallation, type ReleaseBundle } from "@atape/domain"
 import { Clock, Context, Effect, Random, Schema, type Scope } from "effect"
 import { automaticUpdatesEnabled, inspectClient } from "./clientManagement.ts"
 import { newer, stableVersion } from "./releaseVersion.ts"
@@ -10,7 +10,7 @@ export class AutomaticUpdateError extends Schema.TaggedError<AutomaticUpdateErro
 }) {}
 
 export type PreparedAutomaticUpdate = {
-  readonly version: string
+  readonly bundle: ReleaseBundle
   readonly key: string
 }
 
@@ -20,8 +20,8 @@ export class AutomaticUpdatePlatform extends Context.Service<AutomaticUpdatePlat
   recoveryPending(): Effect.Effect<boolean, AutomaticUpdateError>
   supported(): Effect.Effect<boolean, AutomaticUpdateError>
   schedule(): Effect.Effect<{ readonly nextCheckAt: number; readonly failures: number }, AutomaticUpdateError>
-  target(): Effect.Effect<string, AutomaticUpdateError>
-  prepare(version: string, adapters: ReadonlyArray<AdapterInstallation>): Effect.Effect<PreparedAutomaticUpdate, AutomaticUpdateError, Scope.Scope>
+  target(): Effect.Effect<ReleaseBundle, AutomaticUpdateError>
+  prepare(bundle: ReleaseBundle, adapters: ReadonlyArray<AdapterInstallation>): Effect.Effect<PreparedAutomaticUpdate, AutomaticUpdateError, Scope.Scope>
   activate(prepared: PreparedAutomaticUpdate, automatic: boolean): Effect.Effect<void, AutomaticUpdateError>
   record(input: { readonly nextCheckAt: number; readonly failures: number; readonly version?: string; readonly failure?: string }): Effect.Effect<void, AutomaticUpdateError>
   launch(): Effect.Effect<void, AutomaticUpdateError>
@@ -67,8 +67,11 @@ export const runAutomaticUpdates = Effect.fn("AutomaticUpdates.run")((current: s
     }
     failures = schedule.failures
     if (!force && now < schedule.nextCheckAt) return { updated: false }
-    const version = yield* platform.target()
-    if (!stableVersion(version)) return yield* new AutomaticUpdateError({ reason: "release", message: "The automatic update release is invalid." })
+    const bundle = yield* platform.target().pipe(Effect.flatMap(value => Effect.try({
+      try: () => decodeReleaseBundle(value),
+      catch: () => new AutomaticUpdateError({ reason: "release", message: "The automatic update release bundle is invalid." })
+    })))
+    const version = bundle.version, fingerprint = releaseBundleFingerprint(bundle)
     const adapters = config.adapters.filter(adapter => adapter.upgradeSpec === adapter.packageName &&
       officialSources.some(source => source.id === adapter.adapterId && source.packageName === adapter.packageName))
     let updated = false
@@ -76,8 +79,10 @@ export const runAutomaticUpdates = Effect.fn("AutomaticUpdates.run")((current: s
     // attempt ineligible rather than silently producing a mixed bundle.
     if (!newer(current, version) && !adapters.some(adapter => !stableVersion(adapter.version) || newer(adapter.version, version)) &&
       (newer(version, current) || adapters.some(adapter => adapter.version !== version))) {
-      const prepared = yield* platform.prepare(version, adapters)
-      if (prepared.version !== version || prepared.key.length === 0) {
+      const prepared = yield* platform.prepare(bundle, adapters)
+      const matches = yield* Effect.try({ try: () => releaseBundleFingerprint(decodeReleaseBundle(prepared.bundle)) === fingerprint,
+        catch: () => new AutomaticUpdateError({ reason: "prepare", message: "The prepared update bundle is invalid." }) })
+      if (!matches || prepared.key.length === 0) {
         return yield* new AutomaticUpdateError({ reason: "prepare", message: "The prepared update differs from the selected release." })
       }
       const latest = yield* readSettings

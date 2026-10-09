@@ -6,7 +6,8 @@ on:
       - "v*.*.*"
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: atape-release-publication
+  queue: max
   cancel-in-progress: false
 
 permissions:
@@ -127,25 +128,16 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish public npm packages
+      - name: Publish, verify public bytes and advertise the complete release
         run: node scripts/publish-npm-release.mjs
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Create the GitHub Release
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          release/atape-cli-*.tgz
-          release/atape-adapter-codex-*.tgz
-          release/atape-adapter-claude-*.tgz
-          release/atape-adapter-opencode-*.tgz
-          release/atape-adapter-codebuddy-*.tgz
-          release/atape-adapter-kimi-*.tgz
-          release/atape-adapter-grok-*.tgz
-          release/SHA256SUMS
-          --verify-tag
-          --generate-notes
-          --notes-file "docs/releases/$GITHUB_REF_NAME.md"
-          --title "ATape $GITHUB_REF_NAME"
-        env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Retain public publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-publication-${{ github.ref_name }}
+          path: release/publication.json
+          if-no-files-found: error
+          retention-days: 30

@@ -13,7 +13,7 @@ import {
 } from "./cliExperience.ts"
 
 const date = "2026-09-08T00:00:00Z"
-const fixture = () => {
+const fixture = (runtimeReleaseVersion = "1.0.0") => {
   let config: ClientConfig = emptyClientConfig()
   let userId = "user-1"
   let failInstall = false
@@ -23,7 +23,9 @@ const fixture = () => {
   let runState: CollectorRunState = { version: 1, jobs: [] }
   let checkpoint: CollectorCheckpoint | undefined
   let onInstall: (() => void) | undefined
+  let onPackageInstall: (() => void) | undefined
   let failRegistration = false
+  let gitSupported = true
   const loginRegistrations: boolean[] = []
   const packages: string[] = []
   const projects: SetupRemoteProject[] = []
@@ -41,14 +43,16 @@ const fixture = () => {
     ) })),
     Layer.succeed(ProjectLocator, ProjectLocator.of({ locate: path => Effect.succeed({ path, name: "Payments", type: "directory" }) })),
     Layer.succeed(CLISetupPlatform, CLISetupPlatform.of({
+      runtimeReleaseVersion,
       detectSources: () => Effect.succeed(["codex"]), suggestDirectories: () => Effect.succeed([]),
-      supportsGit: () => Effect.succeed(true), creationKey: () => Effect.succeed("stable-request")
+      supportsGit: () => Effect.sync(() => gitSupported), creationKey: () => Effect.succeed("stable-request")
     })),
     Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"), install: spec => Effect.sleep(10).pipe(Effect.andThen(Effect.sync(() => {
       packages.push(spec)
       if (failInstall) throw new Error("offline")
-      const id = spec.includes("opencode") ? "opencode" : spec.includes("claude") ? "claude" : "codex"
-      return { packageName: `@atape/adapter-${id}`, upgradeSpec: spec, version: "1.0.0", manifest: {
+      onPackageInstall?.()
+      const id = ["claude", "opencode", "codebuddy", "kimi", "grok"].find(id => spec.includes(id)) ?? "codex"
+      return { packageName: `@atape/adapter-${id}`, upgradeSpec: spec.startsWith("@atape/") ? `@atape/adapter-${id}` : spec, version: "1.0.0", manifest: {
         protocolVersion: AdapterProtocolVersion, adapterId: id, displayName: id, entry: "./index.js", harnesses: [id]
       } }
     }))) })),
@@ -99,14 +103,50 @@ const fixture = () => {
     record: (state: CollectorRunState, progress?: CollectorCheckpoint) => { runState = state; checkpoint = progress },
     packages, keys, creations: () => creations, starts: () => starts,
     loginRegistrations, failRegistration: () => { failRegistration = true },
+    supportsGit: (value: boolean) => { gitSupported = value },
     edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) },
-    remoteProjects: projects, duringInstall: (callback: () => void) => { onInstall = callback }
+    remoteProjects: projects, duringInstall: (callback: () => void) => { onInstall = callback },
+    duringPackageInstall: (callback: () => void) => { onPackageInstall = callback }
   }
 }
 const input = { instanceOrigin: "https://atape.net", path: "/work/payments" }
 const progress = () => Effect.void
 
 describe("CLI experience application Interface", () => {
+  it("aligns an existing official reader before adding a new tool", async () => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    client.edit(config => ({ ...config, autoUpdateEnabled: false,
+      adapters: config.adapters.map(adapter => ({ ...adapter, version: "0.9.0" })) }))
+    await client.run(applyToolChange(await client.run(planToolChange(["codex", "claude"]))))
+    expect(client.packages).toEqual(["@atape/adapter-codex@1.0.0", "@atape/adapter-claude@1.0.0", "@atape/adapter-codex@1.0.0"])
+    expect(client.config().adapters.every(adapter => adapter.version === "1.0.0")).toBe(true)
+    expect(client.config().autoUpdateEnabled).toBe(false)
+    expect(client.starts()).toBe(0)
+  })
+
+  it.each(["npm", "local"])("repairs Git capability using the %s reader's allowed source", async source => {
+    const client = fixture()
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    await client.run(completeGuidedSetup({ plan: await client.run(prepareGuidedSetup(input)), teamId: "team-1", sourceIds: ["codex"], progress }))
+    client.edit(config => ({ ...config, projects: config.projects.map(project => ({ ...project, type: "git", repositoryIdentity: "github.com/acme/payments" })),
+      adapters: config.adapters.map(adapter => ({ ...adapter, upgradeSpec: source === "local" ? "file:/local/codex" : adapter.packageName })) }))
+    client.supportsGit(false)
+    client.duringPackageInstall(() => client.supportsGit(true))
+    await client.run(applyToolChange(await client.run(planToolChange(["codex"]))))
+    expect(client.packages).toEqual(["@atape/adapter-codex@1.0.0", source === "local" ? "file:/local/codex" : "@atape/adapter-codex@1.0.0"])
+    expect(client.config().adapters[0]?.upgradeSpec).toBe(source === "local" ? "file:/local/codex" : "@atape/adapter-codex")
+    expect(client.starts()).toBe(1)
+  })
+
+  it("refuses implicit official setup in development before requesting any package", async () => {
+    const client = fixture("development")
+    await expect(client.run(applyToolChange(await client.run(planToolChange(["codex"]))))).rejects.toMatchObject({ reason: "upgrade" })
+    expect(client.packages).toEqual([])
+    expect(client.config()).toEqual(emptyClientConfig())
+    expect(client.starts()).toBe(0)
+  })
+
   it.each([true, false])("initializes login startup with the effective preference %s and preserves an explicit opt-out", async enabled => {
     const client = fixture()
     if (!enabled) await client.run(setLoginStartup(false))
@@ -143,7 +183,7 @@ describe("CLI experience application Interface", () => {
     expect((await client.run(prepareGuidedSetup(input))).automaticUpdatesEnabled).toBe(false)
     expect(client.starts()).toBe(0)
   })
-  it.each(["codex", "opencode"])("configures %s tools once, connects subsequent Projects with the same selection and rejects scoped overrides", async sourceId => {
+  it.each(["codex", "claude", "codebuddy", "kimi", "opencode", "grok"])("configures %s tools once at the exact runtime release and reuses the global selection", async sourceId => {
     const client = fixture()
     expect((await client.run(inspectTools())).configured).toBe(false)
     const tools = await client.run(planToolChange([sourceId]))
@@ -156,7 +196,7 @@ describe("CLI experience application Interface", () => {
     const { adapterIds, ...identity } = first
     const second = await client.run(setupProject({ ...identity, path: "/work/second", projectId: "second", name: "Second" }))
     expect(second.project.adapterIds).toEqual([sourceId])
-    expect(client.packages).toEqual([`@atape/adapter-${sourceId}`])
+    expect(client.packages).toEqual([`@atape/adapter-${sourceId}@1.0.0`])
     expect((await client.run(inspectCLIExperience())).projects).toHaveLength(2)
     await expect(client.run(setupProject({ ...identity, path: "/work/third", projectId: "third", expectedToolIds: [] }))).rejects.toMatchObject({ reason: "conflict" })
     expect(client.config().projects.every(project => !("adapterIds" in project))).toBe(true)
@@ -240,7 +280,7 @@ describe("CLI experience application Interface", () => {
     expect(client.starts()).toBe(0)
     await client.run(applyToolChange(await client.run(planToolChange(["claude"]))))
     const project = await client.run(completeGuidedSetup({ plan: await client.run(prepareGuidedSetup(input)), teamId: "team-1", sourceIds: ["claude"], progress }))
-    expect(client.packages).toEqual(["@atape/adapter-claude"])
+    expect(client.packages).toEqual(["@atape/adapter-claude@1.0.0"])
     expect(project.adapterIds).toEqual(["claude"])
     expect(client.keys).toEqual(["stable-request"])
     expect(client.starts()).toBe(1)
@@ -255,7 +295,7 @@ describe("CLI experience application Interface", () => {
     expect(resumed.existingDirectory?.id).toBe(project.id)
     await client.run(completeGuidedSetup({ plan: resumed, teamId: "team-1", sourceIds: ["codex"], progress }))
     expect(client.creations()).toBe(1)
-    expect(client.packages).toEqual(["@atape/adapter-codex"])
+    expect(client.packages).toEqual(["@atape/adapter-codex@1.0.0"])
     await client.run(removeExperienceProject(project))
     expect(client.config().projects).toEqual([])
     expect(client.creations()).toBe(1)
@@ -283,7 +323,7 @@ describe("CLI experience application Interface", () => {
     await expect(client.run(startExperienceCollector())).rejects.toMatchObject({ reason: "changed" })
     await expect(client.run(applyToolChange(await client.run(planToolChange(["claude"]))))).rejects.toMatchObject({ reason: "changed" })
     await expect(client.run(completeGuidedSetup({ plan, teamId: "team-1", sourceIds: ["claude"], progress }))).rejects.toMatchObject({ reason: "changed" })
-    expect(client.packages).toEqual(["@atape/adapter-codex"])
+    expect(client.packages).toEqual(["@atape/adapter-codex@1.0.0"])
     expect(client.starts()).toBe(1)
     expect(client.config().projects[0]?.userId).toBe("user-1")
   })
@@ -407,11 +447,11 @@ describe("CLI experience application Interface", () => {
     const registrations = structuredClone(client.config().projects)
     client.edit(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, upgradeSpec: "file:/old/codex" })) }))
     await client.run(updateSyncReader("codex", project))
-    expect(client.packages).toEqual(["@atape/adapter-codex", "@atape/adapter-codex@latest"])
+    expect(client.packages).toEqual(["@atape/adapter-codex@1.0.0", "file:/old/codex"])
     expect(client.starts()).toBe(1)
     expect(client.config().enabledAdapterIds).toEqual(["codex"])
     expect(client.config().projects).toEqual(registrations)
-    expect(client.config().adapters[0]?.upgradeSpec).toBe("@atape/adapter-codex@latest")
+    expect(client.config().adapters[0]?.upgradeSpec).toBe("file:/old/codex")
     expect((await client.run(inspectCLIExperience())).projects[0]?.state).toBe("failed")
     await client.run(stopExperienceCollector())
     client.edit(config => ({ ...config, adapters: [] }))

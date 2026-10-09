@@ -1,8 +1,9 @@
-import { CLIUpgradePlatform, CollectorDaemonProcess, resumeCLIUpgrade, upgradeCLI } from "@atape/application"
-import { emptyClientConfig, type AdapterInstallation, type ClientConfig } from "@atape/domain"
+import { AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradePlatform, CollectorDaemonProcess, resumeCLIUpgrade, upgradeCLI } from "@atape/application"
+import { emptyClientConfig, releaseBundleSection, releasePackageNames, updateCatalogTag, type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { createHash, randomUUID } from "node:crypto"
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { gzipSync } from "node:zlib"
+import { chmod, mkdir, mkdtemp, readFile, readlink, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -15,9 +16,25 @@ import { acquireProcessLock } from "./processLock.ts"
 import { spawn } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
+const bytes = (version: string) => {
+  const payload = Buffer.from(JSON.stringify({ name: "@atape/cli", version, atapeRuntime: { protocol: "atape.runtime.v1",
+    stateContract: managedStateContract, updateControlProtocol, releaseCatalogProtocol: "atape.update-catalog.v1" } }))
+  const header = Buffer.alloc(512)
+  header.write("package/package.json"); header.write("0000644\0", 100); header.write("0000000\0", 108); header.write("0000000\0", 116)
+  header.write(payload.length.toString(8).padStart(11, "0") + "\0", 124); header.write("00000000000\0", 136)
+  header.fill(32, 148, 156); header[156] = 48
+  header.write([...header].reduce((sum, byte) => sum + byte, 0).toString(8).padStart(6, "0") + "\0 ", 148)
+  return gzipSync(Buffer.concat([header, payload, Buffer.alloc((512 - payload.length % 512) % 512 + 1024)]))
+}
+const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-bundle.v1", version,
+  captureStateContract: managedStateContract, updateControlProtocol,
+  packages: releasePackageNames.map(name => ({ name, integrity: `sha512-${createHash("sha512").update(bytes(version)).digest("base64")}`,
+    tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) })
+const catalog = (version: string) => ({ tag_name: updateCatalogTag, prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z",
+  body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: 1, bundles: [bundle(version)] }) })
 const roots: string[] = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
-const fixture = async (fetchMetadata: typeof fetch, failInstall = false, ignoreTermination = false) => {
+const fixture = async (fetchMetadata: typeof fetch, failInstall = false, ignoreTermination = false, partialFailure = false, invalidVerification = false) => {
   const root = await mkdtemp(join(tmpdir(), "atape-upgrade-")); roots.push(root)
   const prefix = join(root, "prefix"), modules = join(prefix, "lib/node_modules")
   const entry = join(modules, "@atape/cli/dist/atape.js")
@@ -41,11 +58,24 @@ else if (args[0] === "install") {
     return;
   }
   if (process.env.UPGRADE_TEST_FAIL === "true") process.exit(1);
-  const version = args.find(arg => arg.startsWith("@atape/cli@")).slice("@atape/cli@".length);
+  if (process.env.UPGRADE_TEST_PARTIAL_FAILURE === "true" && !fs.existsSync(process.env.UPGRADE_TEST_CALLS + ".failed")) {
+    fs.rmSync(process.env.UPGRADE_TEST_ENTRY);
+    fs.rmSync(process.env.UPGRADE_TEST_MANIFEST);
+    fs.rmSync(process.env.UPGRADE_TEST_BIN, { force: true });
+    fs.writeFileSync(process.env.UPGRADE_TEST_CALLS + ".failed", "true");
+    process.exit(1);
+  }
+  const archive = args.find(arg => arg.endsWith(".tgz"));
+  const tar = require("node:zlib").gunzipSync(fs.readFileSync(archive));
+  const size = parseInt(tar.subarray(124, 136).toString().replace(/\\0/g, "").trim(), 8);
+  const candidate = JSON.parse(tar.subarray(512, 512 + size).toString());
+  const version = candidate.version;
+  fs.writeFileSync(process.env.UPGRADE_TEST_CALLS + ".archive", fs.readFileSync(archive));
   const manifest = JSON.parse(fs.readFileSync(process.env.UPGRADE_TEST_MANIFEST, "utf8"));
-  if (manifest.atapeRuntime) {
-    manifest.version = version;
-    fs.writeFileSync(process.env.UPGRADE_TEST_MANIFEST, JSON.stringify(manifest));
+  fs.writeFileSync(process.env.UPGRADE_TEST_MANIFEST, JSON.stringify(candidate));
+  if (process.env.UPGRADE_TEST_INVALID_VERIFICATION === "true") {
+    fs.writeFileSync(process.env.UPGRADE_TEST_ENTRY, 'console.log("ATape incorrect")');
+  } else if (manifest.atapeRuntime) {
     fs.writeFileSync(process.env.UPGRADE_TEST_ENTRY, 'if (process.env.ATAPE_RUNTIME_DIRECT !== "1") throw new Error("Generic verification would read the stale control identity"); console.log("ATape ' + version + '")');
   } else fs.writeFileSync(process.env.UPGRADE_TEST_ENTRY, 'console.log("ATape ' + version + '")');
 } else process.exit(1);
@@ -54,21 +84,37 @@ else if (args[0] === "install") {
   const environment = { ...process.env, PATH: `${bin}:${process.env.PATH}`, UPGRADE_TEST_PREFIX: prefix,
     ATAPE_CONFIG_FILE: join(root, "override-config", "client.json"),
     UPGRADE_TEST_FAIL: String(failInstall),
+    UPGRADE_TEST_PARTIAL_FAILURE: String(partialFailure),
+    UPGRADE_TEST_INVALID_VERIFICATION: String(invalidVerification),
+    UPGRADE_TEST_BIN: join(prefix, "bin", "atape"),
     UPGRADE_TEST_IGNORE_TERMINATION: String(ignoreTermination),
     UPGRADE_TEST_MANIFEST: join(dirname(dirname(entry)), "package.json"),
     UPGRADE_TEST_MODULES: modules, UPGRADE_TEST_CALLS: join(root, "calls.json"), UPGRADE_TEST_ENTRY: entry }
-  const run = <A, E>(effect: Effect.Effect<A, E, CLIUpgradePlatform>, path = entry, signal?: AbortSignal) => Effect.runPromise(effect.pipe(
-    Effect.provide(makeCLIUpgradePlatformLayer(root, path, environment, fetchMetadata))), signal ? { signal } : undefined)
+  const transport: typeof fetch = async (url, init) => {
+    const address = String(url), match = address.match(/\/v(\d+\.\d+\.\d+)$/)
+    if (match) return Response.json({ tag_name: `v${match[1]}`, body: releaseBundleSection(bundle(match[1]!)), prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z" })
+    const archive = address.match(/-(\d+\.\d+\.\d+)\.tgz$/)
+    if (archive) return new Response(bytes(archive[1]!))
+    return fetchMetadata(url, init)
+  }
+  const supporting = Layer.mergeAll(
+    Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(emptyClientConfig()).pipe(Effect.map(result => result.value)) })),
+    Layer.succeed(AutomaticUpdatePlatform, AutomaticUpdatePlatform.of({
+      recoveryPending: () => Effect.die("Unconfigured fixture cannot recover"), supported: () => Effect.die("Unexpected probe"), schedule: () => Effect.die("Unexpected schedule"),
+      target: () => Effect.die("Unexpected target"), prepare: () => Effect.die("Unconfigured fixture cannot prepare"), activate: () => Effect.die("Unconfigured fixture cannot activate"), record: () => Effect.die("Unexpected record"), launch: () => Effect.die("Unexpected launch")
+    })))
+  const run = <A, E>(effect: Effect.Effect<A, E, CLIUpgradePlatform | ClientConfigStore | AutomaticUpdatePlatform>, path = entry, signal?: AbortSignal) => Effect.runPromise(effect.pipe(
+    Effect.provide(Layer.merge(supporting, makeCLIUpgradePlatformLayer(root, path, environment, transport, "0.4.1")))), signal ? { signal } : undefined)
   return { root, entry, modules, prefix, run, environment, paths: defaultNodeClientPaths({ ...environment, ATAPE_HOME: root }) }
 }
 const latest = (cached = true) => Effect.gen(function*() { return yield* (yield* CLIUpgradePlatform).latest(cached) })
 const install = (version: string) => Effect.scoped(Effect.gen(function*() {
   const platform = yield* CLIUpgradePlatform
   yield* platform.acquireOwnership()
-  yield* platform.install(version)
+  yield* platform.install(bundle(version))
 }))
-const managedFixture = async (failInstall = false, floor = false) => {
-  const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.5.6" }), failInstall)
+const managedFixture = async (failInstall = false, floor = false, partialFailure = false, invalidVerification = false) => {
+  const client = await fixture(async () => Response.json(catalog("0.5.6")), failInstall, false, partialFailure, invalidVerification)
   const manifest = { name: "@atape/cli", version: "0.5.4", atapeRuntime: {
     protocol: "atape.runtime.v1", stateContract: managedStateContract, updateControlProtocol
   } }
@@ -98,6 +144,53 @@ const managedFixture = async (failInstall = false, floor = false) => {
 }
 
 describe("Node CLI upgrade Adapter", () => {
+  it.each(["partial npm failure", "direct verification failure"])("restores the runnable global identity and original bin link after %s, retaining managed runtime and Stop intent for retry", async failure => {
+    const client = await managedFixture(false, true, failure === "partial npm failure", failure === "direct verification failure")
+    await mkdir(dirname(client.environment.UPGRADE_TEST_BIN), { recursive: true })
+    const linkTarget = "../lib/node_modules/@atape/cli/dist/atape.js"
+    await symlink(linkTarget, client.environment.UPGRADE_TEST_BIN)
+    const intentFile = `${client.paths.collectorProcessFile}.desired.json`
+    await atomicJSON(intentFile, { version: 1, wanted: false })
+    const originalEntry = await readFile(client.entry), originalManifest = await readFile(client.environment.UPGRADE_TEST_MANIFEST)
+    const pointer = await readFile(client.pointer), ledger = await readFile(client.ledger), stop = await readFile(intentFile)
+    await expect(client.run(install("0.5.6"))).rejects.toMatchObject({ reason: "install" })
+    expect(await readFile(client.entry)).toEqual(originalEntry)
+    expect(await readFile(client.environment.UPGRADE_TEST_MANIFEST)).toEqual(originalManifest)
+    expect(await readlink(client.environment.UPGRADE_TEST_BIN)).toBe(linkTarget)
+    expect(await readFile(client.pointer)).toEqual(pointer)
+    expect(await readFile(client.ledger)).toEqual(ledger)
+    expect(await readFile(intentFile)).toEqual(stop)
+    expect((await Effect.runPromise(readSelectedClientConfig(client.paths))).adapters).toEqual([client.selected])
+    expect(await client.control.recoveryPending()).toBe(false)
+    expect(await readdir(join(client.root, "cache", "release-discovery", "artifacts"))).toEqual([])
+    expect(await client.run(CLIUpgradePlatform.use(platform => platform.installedVersion()))).toBe("0.5.4")
+    client.environment.UPGRADE_TEST_INVALID_VERIFICATION = "false"
+    await client.run(install("0.5.6"))
+    expect(await client.run(CLIUpgradePlatform.use(platform => platform.installedVersion()))).toBe("0.5.6")
+    expect((await client.control.readSelection())?.version).toBe("0.5.6")
+    expect((await Effect.runPromise(readSelectedClientConfig(client.paths))).adapters).toEqual([client.selected])
+    expect(await readFile(intentFile)).toEqual(stop)
+    expect(await readdir(join(client.root, "cache", "release-discovery", "artifacts"))).toEqual([])
+  })
+
+  it("restores the old command entry when rebind rejects an immutable generation before changing durable control", async () => {
+    const client = await managedFixture(), conflicting = runtimeEntry(client.root, "0.5.6")
+    await mkdir(dirname(conflicting), { recursive: true })
+    await writeFile(conflicting, 'console.log("ATape 0.5.6"); // different immutable bytes')
+    await atomicJSON(join(dirname(dirname(conflicting)), "package.json"), { name: "@atape/cli", version: "0.5.6",
+      atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract, updateControlProtocol } })
+    const originalEntry = await readFile(client.entry), originalManifest = await readFile(client.environment.UPGRADE_TEST_MANIFEST)
+    const pointer = await readFile(client.pointer), ledger = await readFile(client.ledger)
+    await expect(client.run(install("0.5.6"))).rejects.toMatchObject({ reason: "install" })
+    expect(await readFile(client.entry)).toEqual(originalEntry)
+    expect(await readFile(client.environment.UPGRADE_TEST_MANIFEST)).toEqual(originalManifest)
+    expect(await readFile(client.pointer)).toEqual(pointer)
+    expect(await readFile(client.ledger)).toEqual(ledger)
+    expect(await client.control.recoveryPending()).toBe(false)
+    expect((await Effect.runPromise(readSelectedClientConfig(client.paths))).adapters).toEqual([client.selected])
+    expect(await readdir(join(client.root, "cache", "release-discovery", "artifacts"))).toEqual([])
+  })
+
   it.each([false, true])("preserves independent slots and control compatibility across manual npm replacement (failure=%s)", async failure => {
     const client = await managedFixture(failure, true)
     const pointer = await readFile(client.pointer, "utf8"), ledger = await readFile(client.ledger, "utf8")
@@ -137,7 +230,7 @@ describe("Node CLI upgrade Adapter", () => {
   })
 
   it("excludes manual replacement while automatic maintenance owns this home", async () => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }))
+    const client = await fixture(async () => Response.json(catalog("0.4.2")))
     const release = await acquireUpdateWorker(client.root)
     expect(release).toBeDefined()
     try {
@@ -149,7 +242,7 @@ describe("Node CLI upgrade Adapter", () => {
     expect(await readFile(client.entry, "utf8")).toContain("0.4.2")
   })
   it.each([false, true])("retains shared ownership through Collector handoff (recovery=%s)", async recovery => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }))
+    const client = await fixture(async () => Response.json(catalog("0.4.2")))
     let finish!: () => void, starting = false
     const wait = new Promise<void>(resolve => { finish = resolve })
     const process = Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
@@ -172,23 +265,20 @@ describe("Node CLI upgrade Adapter", () => {
     const released = await acquireUpdateWorker(client.root)
     expect(released).toBeDefined(); released?.()
   })
-  it("caches successful checks, bypasses cache for explicit upgrade and recovers from corrupt cache", async () => {
+  it("shares complete cached bundle discovery and fails closed on corrupt reader-floor state", async () => {
     let calls = 0
     const client = await fixture(async (url, options) => {
-      calls++; expect(String(url)).toBe("https://registry.npmjs.org/@atape%2fcli/latest")
+      calls++; expect(String(url)).toBe(`https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`)
       expect(options?.signal).toBeDefined()
-      return Response.json({ name: "@atape/cli", version: "0.4.2" })
+      return Response.json(catalog("0.4.2"))
     })
-    expect(await client.run(latest())).toBe("0.4.2")
-    expect(await client.run(latest())).toBe("0.4.2")
+    expect(await client.run(latest())).toEqual(bundle("0.4.2"))
+    expect(await client.run(latest())).toEqual(bundle("0.4.2"))
     expect(calls).toBe(1)
     await client.run(latest(false)); expect(calls).toBe(2)
-    await writeFile(join(client.root, "cache/cli-update.json"), JSON.stringify({ version: "0.4.1", checkedAt: Date.now() - 11 * 60 * 60 * 1000 }))
-    expect(await client.run(latest())).toBe("0.4.1"); expect(calls).toBe(2)
-    await writeFile(join(client.root, "cache/cli-update.json"), "corrupt")
-    await client.run(latest()); expect(calls).toBe(3)
-    await writeFile(join(client.root, "cache/cli-update.json"), JSON.stringify({ version: "0.4.1", checkedAt: Date.now() - 12 * 60 * 60 * 1000 - 1 }))
-    await client.run(latest()); expect(calls).toBe(4)
+    await writeFile(join(client.root, "cache/release-discovery/catalog.json"), "corrupt")
+    await expect(client.run(latest())).rejects.toMatchObject({ reason: "check" })
+    expect(calls).toBe(2)
   })
   it("rejects registry failures and oversized or foreign metadata", async () => {
     for (const response of [new Response("offline", { status: 503 }), Response.json({ name: "other", version: "0.4.2" }), new Response("x".repeat(262145))]) {
@@ -197,10 +287,11 @@ describe("Node CLI upgrade Adapter", () => {
     }
   })
   it("updates only the active npm global installation, pins the release, verifies it and releases its lock", async () => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }))
+    const client = await fixture(async () => Response.json(catalog("0.4.2")))
     await client.run(install("0.4.2"))
     const args = JSON.parse(await readFile(join(client.root, "calls.json"), "utf8"))
-    expect(args).toContain("@atape/cli@0.4.2")
+    expect(args.find((arg: string) => arg.endsWith(".tgz"))).toContain("/cache/release-discovery/artifacts/.lease-")
+    expect(await readFile(join(client.root, "calls.json.archive"))).toEqual(bytes("0.4.2"))
     expect(args).toContain("--ignore-scripts")
     expect(args).toContain("--@atape:registry=https://registry.npmjs.org/")
     expect(args[args.indexOf("--prefix") + 1]).toBe(client.prefix)
@@ -211,7 +302,7 @@ describe("Node CLI upgrade Adapter", () => {
     await expect(client.run(install("latest;echo bad"))).rejects.toMatchObject({ reason: "install" })
   })
   it.each([false, true])("preserves selected Adapter slots and user settings before manual npm replacement (failure=%s)", async failInstall => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.3" }), failInstall)
+    const client = await fixture(async () => Response.json(catalog("0.4.3")), failInstall)
     const original: AdapterInstallation = { adapterId: "codex", packageName: "@atape/adapter-codex",
       packageSlot: randomUUID(), version: "0.4.1", upgradeSpec: "@atape/adapter-codex", displayName: "Codex",
       installedAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }
@@ -235,7 +326,7 @@ describe("Node CLI upgrade Adapter", () => {
     await expect(readFile(join(client.root, "config", "client.json"))).rejects.toMatchObject({ code: "ENOENT" })
   })
   it("excludes an npm-root owner and ignores legacy markers, then releases ownership after npm fails", async () => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }), true)
+    const client = await fixture(async () => Response.json(catalog("0.4.2")), true)
     const lock = join(client.modules, ".atape-upgrade.lock.sqlite"), legacy = join(client.modules, ".atape-upgrade.lock")
     await writeFile(legacy, "interrupted old installer")
     const owner = await acquireProcessLock(lock)
@@ -253,7 +344,7 @@ describe("Node CLI upgrade Adapter", () => {
     expect(released).toBeDefined(); released?.()
   })
   it("retries after the npm-root owner is killed without removing its coordination file", async () => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }))
+    const client = await fixture(async () => Response.json(catalog("0.4.2")))
     const lock = join(client.modules, ".atape-upgrade.lock.sqlite"), marker = join(client.root, "owner-ready")
     const module = fileURLToPath(new URL("./processLock.ts", import.meta.url))
     const child = spawn(process.execPath, ["--input-type=module", "-e", `
@@ -277,7 +368,7 @@ setInterval(() => {}, 1000);
     } finally { child.kill("SIGKILL"); await exited }
   })
   it.each(["0.4.3", "unknown", "0.4.3-beta.1"])("rejects a stale manual plan against actual installed version %s", async actual => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }))
+    const client = await fixture(async () => Response.json(catalog("0.4.2")))
     await writeFile(join(dirname(dirname(client.entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version: actual }))
     await writeFile(client.entry, `console.log("ATape ${actual}")`)
     const process = Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
@@ -299,7 +390,7 @@ setInterval(() => {}, 1000);
     await expect(client.run(latest())).rejects.toMatchObject({ reason: "check" })
   })
   it("holds the lock until a cancelled installer exits, forcibly terminates it, and awaits cleanup", async () => {
-    const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }), false, true)
+    const client = await fixture(async () => Response.json(catalog("0.4.2")), false, true)
     const cancellation = new AbortController()
     let settled = false, pid: number | undefined
     const pending = client.run(install("0.4.2"), client.entry, cancellation.signal)

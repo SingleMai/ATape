@@ -14,7 +14,9 @@ import { makeAuthenticatedHTTPClientLayer } from "./authenticatedHTTPClient.ts"
 import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
 import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
-import { makeAdapterReleasesLayer } from "./adapterReleases.ts"
+import { createReleaseDiscovery } from "./releaseDiscovery.ts"
+import { managedStateContract } from "./runtimeSelection.ts"
+import { updateControlProtocol } from "./updateControl.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
 import { makeLoginStartupPlatformLayer } from "./loginStartup.ts"
@@ -63,7 +65,9 @@ export const makeNodeClientLayer = (
   const collector = makeNodeCollectorLayer(paths, environment).pipe(
     Layer.provide(Layer.mergeAll(authenticatedHTTP, gitAttribution, locator))
   )
-  const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage, () => protectedRuntimeSlots(paths.atapeHome))
+  const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: cliVersion,
+    captureStateContract: managedStateContract, updateControlProtocol, fetchMetadata: fetchAdapterPackage })
+  const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage, () => protectedRuntimeSlots(paths.atapeHome), discovery)
   const bootstrapEntry = environment.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1] ?? ""
   return Layer.mergeAll(
     authentication,
@@ -72,10 +76,9 @@ export const makeNodeClientLayer = (
       CollectorRunStatusStore.use(store => store.read()).pipe(Effect.provide(makeCollectorRunStatusLayer(paths.collectorStatusFile)))).pipe(Layer.provide(authenticatedHTTP)),
     makeSelectedConfigStoreLayer(paths),
     makeRedactionSettingsLayer(paths, environment),
-    makeCLISetupPlatformLayer(paths, environment),
-    makeCLIUpgradePlatformLayer(paths.atapeHome, bootstrapEntry, environment),
+    makeCLISetupPlatformLayer(paths, environment, cliVersion),
+    makeCLIUpgradePlatformLayer(paths.atapeHome, bootstrapEntry, environment, globalThis.fetch, cliVersion),
     makeLoginStartupPlatformLayer(paths, bootstrapEntry, environment),
-    makeAdapterReleasesLayer(paths.atapeHome),
     locator,
     packages,
     makeAutomaticUpdatePlatformLayer(paths, bootstrapEntry, cliVersion, environment).pipe(Layer.provide(packages)),

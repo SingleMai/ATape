@@ -113,7 +113,6 @@
   "cli.presenter.checkingUpdates": "Checking for updates",
   "cli.presenter.continueStopped": "Continue with sync stopped",
   "cli.presenter.findingProject": "Finding your Project",
-  "cli.presenter.installLatest": "Install latest published {tool} integration and continue",
   "cli.presenter.integrationUpdated": "{label} integration updated. Running sync will use it on its next attempt.",
   "cli.presenter.opening": "Opening ATape",
   "cli.presenter.readingProjects": "Reading local Projects",
@@ -305,7 +304,6 @@
   "cli.tools.applySummary": "Tools: {tools} · {projects} connected projects",
   "cli.tools.applyTiming": "Changes apply to later cycles; an in-flight upload may finish.",
   "cli.tools.applyTitle": "Apply tools to all projects?",
-  "cli.tools.cacheNotice": "Latest versions are cached for 12 hours.",
   "cli.tools.checkAgain": "Check again",
   "cli.tools.checkingVersions": "Checking tool versions",
   "cli.tools.chooseTools": "Choose tools to sync",
@@ -375,5 +373,10 @@
   "cli.welcome.step5": "Read conversations and manage your Team in the Web app.",
   "cli.welcome.subtitle": "Choose your tools once, then connect the projects you want to sync.",
   "cli.welcome.tagline": "Your conversations, together.",
-  "cli.welcome.title": "Welcome to ATape"
+  "cli.welcome.title": "Welcome to ATape",
+  "cli.presenter.installMatching": "Install {tool} integration for this ATape version and continue",
+  "cli.tools.commandEntryBehind": " · command entry {current} → {version}",
+  "cli.tools.matchingVersion": " · for ATape {version}{older}",
+  "cli.tools.bundleNotice": "CLI releases are cached for 12 hours. Official integrations match the running ATape version.",
+  "cli.tools.refreshCommandEntry": "Refresh ATape command entry to {version}"
 }

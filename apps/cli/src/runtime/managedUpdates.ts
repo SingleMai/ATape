@@ -1,6 +1,6 @@
 import { AdapterPackages, AutomaticUpdateError, AutomaticUpdatePlatform, automaticUpdatesEnabled,
   isNewerReleaseVersion, isStableReleaseVersion, officialSources } from "@atape/application"
-import { AdapterInstallation, ClientConfig, emptyClientConfig } from "@atape/domain"
+import { AdapterInstallation, ClientConfig, emptyClientConfig, ReleaseBundle, decodeReleaseBundle, releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
 import { copyFile, lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import { dirname, join } from "node:path"
@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from "node:util"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Schema } from "effect"
 import type { NodeClientPaths } from "./clientPaths.ts"
-import { completedReleaseVersion, verifyPublishedRelease } from "./completedRelease.ts"
+import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { withCollectorMaintenance, isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import { syncPackageTree } from "./adapterPackages.ts"
@@ -27,7 +27,7 @@ import { RuntimeSelection, atomicJSON, decodeRuntimeSelection, managedStateContr
 const Schedule = Schema.Struct({ nextCheckAt: Schema.Number, failures: Schema.Number,
   version: Schema.optionalKey(Schema.String), failure: Schema.optionalKey(Schema.String) })
 const Pending = Schema.Struct({ next: RuntimeSelection, previous: Schema.optionalKey(RuntimeSelection) })
-const Prepared = Schema.Struct({ selection: RuntimeSelection, baseline: Schema.Array(AdapterInstallation),
+const Prepared = Schema.Struct({ bundle: ReleaseBundle, selection: RuntimeSelection, baseline: Schema.Array(AdapterInstallation),
   baselineSelection: Schema.optionalKey(Schema.Union([RuntimeSelection, UpdateRuntimeSelection])),
   controlEligible: Schema.optionalKey(Schema.Boolean), enabledAdapterIds: Schema.Array(Schema.String), hasGit: Schema.Boolean })
 const pendingFile = (home: string) => join(updateDirectory(home), "pending.json")
@@ -127,6 +127,8 @@ export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray
 
 export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFile: string, currentVersion: string,
   environment: NodeJS.ProcessEnv = process.env, fetchMetadata: typeof fetch = globalThis.fetch) => {
+  const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: currentVersion,
+    captureStateContract: managedStateContract, updateControlProtocol, fetchMetadata })
   let ownership: Promise<string | undefined> | undefined
   const bootstrap = () => {
     // Deduplicate concurrent probes only. npm/path failures and changes in
@@ -151,9 +153,11 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       recoveryPending: () => nodeEffect("state", () => needsUpdateRecovery(paths)),
       supported: () => nodeEffect("unsupported", async () => (await bootstrap()) !== undefined),
       schedule: () => nodeEffect("state", async () => (await readOptional(scheduleFile(paths.atapeHome), Schema.decodeUnknownSync(Schedule))) ?? { nextCheckAt: 0, failures: 0 }),
-      target: () => nodeEffect("release", signal => completedReleaseVersion(signal, fetchMetadata)),
+      target: () => nodeEffect("release", signal => discovery.latest({ cached: false, signal })),
       record: input => nodeEffect("state", () => atomicJSON(scheduleFile(paths.atapeHome), input)),
-      prepare: (version, adapters) => Effect.gen(function*() {
+      prepare: (bundle, adapters) => Effect.gen(function*() {
+        const requested = yield* nodeEffect("release", async () => decodeReleaseBundle(bundle))
+        const version = requested.version
         yield* nodeEffect("state", async () => {
           await assertNoPendingManualStateUpgrade(paths)
           if (await needsUpdateRecovery(paths)) throw new Error("Interrupted update work must recover before preparing another release.")
@@ -168,7 +172,6 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           requireForwardUpdate(version, installed.version, "prepare")
           return installed
         })
-        yield* nodeEffect("release", signal => verifyPublishedRelease(version, ["@atape/cli", ...officialSources.map(source => source.packageName)], signal, fetchMetadata))
         const snapshot = yield* nodeEffect("state", () => withClientConfigFileLock(paths.configFile, async () => {
           const raw = await rawConfig(paths)
           const selection = await readEffectiveRuntimeSelection(paths.atapeHome)
@@ -179,9 +182,20 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           if (!sameInstallations(eligible, adapters)) throw new Error("Adapter installations changed after update planning.")
           return { config: raw, selection }
         }))
+        const selectedBundle = yield* nodeEffect("release", async signal => {
+          const advertised = await discovery.exact({ version, signal })
+          if (releaseBundleFingerprint(requested) !== releaseBundleFingerprint(advertised)) {
+            throw new Error("The selected immutable release bundle changed before preparation.")
+          }
+          return advertised
+        })
         const baseline = snapshot.config
         yield* nodeEffect("prepare", signal => prepareBootstrapSnapshot(paths, original, environment, signal))
-        yield* nodeEffect("prepare", signal => prepareCLI(paths, version, environment, signal))
+        yield* nodeEffect("prepare", async signal => {
+          const artifact = await discovery.acquireArtifact(selectedBundle, "@atape/cli", signal)
+          try { await prepareCLI(paths, selectedBundle, artifact.path, environment, signal) }
+          finally { await artifact.release() }
+        })
         const replacements: Selection["adapters"][number][] = []
         for (const adapter of adapters) {
           const installed = yield* packages.install(`${adapter.packageName}@${version}`).pipe(
@@ -214,22 +228,27 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           return targetCapable && await controlCapable(bridge)
         })
         yield* nodeEffect("prepare", () => atomicJSON(join(updateDirectory(paths.atapeHome), `${key}.prepared.json`), {
-          selection: decodeRuntimeSelection(selection), baseline: baseline.adapters,
+          bundle: selectedBundle, selection: decodeRuntimeSelection(selection), baseline: baseline.adapters,
           ...(snapshot.selection ? { baselineSelection: snapshot.selection } : {}),
           ...(controlEligible ? { controlEligible: true } : {}),
           enabledAdapterIds: baseline.enabledAdapterIds, hasGit: baseline.projects.some(project => project.type === "git")
         }))
-        return { version, key }
+        return { bundle: selectedBundle, key }
       }),
-      activate: (prepared, automatic) => nodeEffect("handoff", async () => {
+      activate: (prepared, automatic) => nodeEffect("handoff", async signal => {
         await assertNoPendingManualStateUpgrade(paths)
         if (!/^[0-9a-f-]{36}$/.test(prepared.key)) throw new Error("Invalid prepared update key.")
         const candidate = Schema.decodeUnknownSync(Prepared)(await readBoundedJSON(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`)))
-        if (candidate.selection.version !== prepared.version) throw new Error("Prepared update version changed.")
+        const requested = decodeReleaseBundle(prepared.bundle)
+        if (candidate.selection.version !== requested.version ||
+          releaseBundleFingerprint(candidate.bundle) !== releaseBundleFingerprint(requested)) {
+          throw new Error("Prepared immutable release bundle changed.")
+        }
+        await validateCLI(join(paths.atapeHome, "releases", requested.version), requested.version, environment, signal, requested)
         const original = await bootstrap()
         if (!original) throw new Error("The bootstrap installation changed.")
         const installedBootstrap = await bootstrapSelection(original)
-        requireForwardUpdate(prepared.version, installedBootstrap.version, "handoff")
+        requireForwardUpdate(prepared.bundle.version, installedBootstrap.version, "handoff")
         if (installedBootstrap.bootstrapIdentity !== candidate.selection.bootstrapIdentity) {
           throw new Error("The npm bootstrap was replaced while preparing the update.")
         }
@@ -265,11 +284,11 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
             if (JSON.stringify([...config.enabledAdapterIds].sort()) !== JSON.stringify([...candidate.enabledAdapterIds].sort()) ||
               config.projects.some(project => project.type === "git") !== candidate.hasGit) throw new Error("Collection scope changed before activation.")
             const installed = await bootstrapSelection(original)
-            requireForwardUpdate(prepared.version, installed.version, "handoff")
+            requireForwardUpdate(prepared.bundle.version, installed.version, "handoff")
             if (installed.bootstrapIdentity !== candidate.selection.bootstrapIdentity) {
               throw new Error("The npm bootstrap was replaced while preparing the update.")
             }
-            const targetCapable = await controlCapable(runtimeEntry(paths.atapeHome, prepared.version))
+            const targetCapable = await controlCapable(runtimeEntry(paths.atapeHome, prepared.bundle.version))
             const bridgeCapable = await controlCapable(await resolveRuntimeEntry(paths.atapeHome, original))
             if (Boolean(control) !== (targetCapable && bridgeCapable) ||
               candidate.baselineSelection?.protocol === updateControlProtocol && !control) {
@@ -365,6 +384,11 @@ const prepareBootstrapSnapshot = async (paths: NodeClientPaths, original: string
   const destination = join(paths.atapeHome, "releases", selection.version)
   if (await lstat(destination).then(() => true, cause => { if (missing(cause)) return false; throw cause })) {
     await validateCLI(destination, selection.version, environment, signal)
+    const retained = join(destination, "node_modules", "@atape", "cli")
+    if (!(await readFile(join(retained, "dist", "atape.js"))).equals(await readFile(original)) ||
+      !(await readFile(join(retained, "package.json"))).equals(await readFile(join(dirname(dirname(original)), "package.json")))) {
+      throw new Error("The retained bootstrap generation conflicts with the actual npm bootstrap bytes.")
+    }
     return
   }
   const staging = join(paths.atapeHome, "releases", `.bootstrap-${randomUUID()}`)
@@ -381,19 +405,26 @@ const prepareBootstrapSnapshot = async (paths: NodeClientPaths, original: string
   } finally { await rm(staging, { recursive: true, force: true }) }
 }
 
-const prepareCLI = async (paths: NodeClientPaths, version: string, environment: NodeJS.ProcessEnv, signal: AbortSignal) => {
+const prepareCLI = async (paths: NodeClientPaths, bundle: ReleaseBundle, artifact: string, environment: NodeJS.ProcessEnv, signal: AbortSignal) => {
+  const version = bundle.version
   const destination = join(paths.atapeHome, "releases", version)
-  if (await lstat(destination).then(() => true, cause => { if (missing(cause)) return false; throw cause })) {
-    await validateCLI(destination, version, environment, signal)
-    return
-  }
   const staging = join(paths.atapeHome, "releases", `.${version}-${randomUUID()}`)
   await mkdir(staging, { recursive: true, mode: 0o700 })
   try {
     await writeFile(join(staging, "package.json"), JSON.stringify({ private: true }), { mode: 0o600, flag: "wx" })
     await executeOwnedProcess("npm", ["install", "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund", "--engine-strict",
-      "--registry=https://registry.npmjs.org/", "--@atape:registry=https://registry.npmjs.org/", "--prefix", staging, `@atape/cli@${version}`], environment, signal, 180_000)
-    await validateCLI(staging, version, environment, signal)
+      "--registry=https://registry.npmjs.org/", "--@atape:registry=https://registry.npmjs.org/", "--prefix", staging, artifact], environment, signal, 180_000)
+    await validateCLI(staging, version, environment, signal, bundle)
+    if (await lstat(destination).then(() => true, cause => { if (missing(cause)) return false; throw cause })) {
+      await validateCLI(destination, version, environment, signal, bundle)
+      const root = (directory: string) => join(directory, "node_modules", "@atape", "cli")
+      for (const file of ["package.json", join("dist", "atape.js")]) {
+        if (!(await readFile(join(root(staging), file))).equals(await readFile(join(root(destination), file)))) {
+          throw new Error("The existing immutable generation conflicts with the verified release archive.")
+        }
+      }
+      return
+    }
     await syncPackageTree(staging)
     await rename(staging, destination)
     const directory = await open(dirname(destination), "r")
@@ -401,12 +432,13 @@ const prepareCLI = async (paths: NodeClientPaths, version: string, environment: 
   } finally { await rm(staging, { recursive: true, force: true }) }
 }
 
-const validateCLI = async (directory: string, version: string, environment: NodeJS.ProcessEnv, signal: AbortSignal) => {
+const validateCLI = async (directory: string, version: string, environment: NodeJS.ProcessEnv, signal: AbortSignal, bundle?: ReleaseBundle) => {
   const root = join(directory, "node_modules", "@atape", "cli")
   const manifest = await readBoundedJSON(join(root, "package.json")) as Record<string, unknown>
-  const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown } | undefined
+  const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown } | undefined
   if (manifest.name !== "@atape/cli" || manifest.version !== version ||
-    contract?.protocol !== "atape.runtime.v1" || contract.stateContract !== managedStateContract) {
+    contract?.protocol !== "atape.runtime.v1" || contract.stateContract !== managedStateContract ||
+    bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || contract.releaseCatalogProtocol !== updateCatalogProtocol)) {
     throw new Error("The selected CLI does not support compatible managed state.")
   }
   const output = await executeOwnedProcess(process.execPath, [join(root, "dist", "atape.js"), "--version"],

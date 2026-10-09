@@ -6,6 +6,7 @@ import {
 } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
+import { CLISetupPlatform } from "./cliSetupPlatform.ts"
 import {
   AdapterPackages,
   ClientConfigStore,
@@ -33,13 +34,16 @@ const setupInput = (overrides: Partial<Parameters<typeof setupProject>[0]> = {})
   ...overrides
 })
 
-const fixture = (fixedUpgradeSpec?: string) => {
+const fixture = (fixedUpgradeSpec?: string, runtimeReleaseVersion = "1.0.0", packageName = "@atape/adapter-codex") => {
   let config: ClientConfig = emptyClientConfig()
   let version = "1.0.0"
   let failRefresh = false, refreshes = 0
   let duringInstall: ((current: ClientConfig) => ClientConfig) | undefined
   const packageRequests: Array<string> = []
   const layer = Layer.mergeAll(
+    Layer.succeed(CLISetupPlatform, CLISetupPlatform.of({ runtimeReleaseVersion,
+      detectSources: () => Effect.die("Unexpected detection"), suggestDirectories: () => Effect.die("Unexpected browsing"),
+      supportsGit: () => Effect.die("Unexpected Git inspection"), creationKey: () => Effect.die("Unexpected setup key") })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       resume: () => Effect.die("Unexpected resume"),
       pause: () => Effect.die("Unexpected pause"),
@@ -69,8 +73,8 @@ const fixture = (fixedUpgradeSpec?: string) => {
         packageRequests.push(packageSpec)
         if (duringInstall) { const change = duringInstall; duringInstall = undefined; config = change(config) }
         return {
-          packageName: "@atape/adapter-codex",
-          upgradeSpec: fixedUpgradeSpec ?? "@atape/adapter-codex",
+          packageName,
+          upgradeSpec: fixedUpgradeSpec ?? packageName,
           version,
           manifest: {
             protocolVersion: AdapterProtocolVersion,
@@ -85,14 +89,50 @@ const fixture = (fixedUpgradeSpec?: string) => {
       })), Effect.map((installed) => ({ ...installed, version })))
     }))
   )
-  const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore | ProjectLocator | AdapterPackages | CollectorDaemonProcess>) =>
+  const run = <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>) =>
     effect.pipe(Effect.provide(layer), Effect.runPromise)
   return { run, read: () => config, packageRequests, refreshes: () => refreshes,
+    resolveVersion: (value: string) => { version = value },
+    edit: (change: (value: ClientConfig) => ClientConfig) => { config = change(config) },
     failRefresh: () => { failRefresh = true },
     duringInstall: (change: (current: ClientConfig) => ClientConfig) => { duringInstall = change } }
 }
 
 describe("Client management Module", () => {
+  it.each(["1.0.1", "0.9.9", "development"])("rejects resolved official release %s before Host refresh or configuration activation", async version => {
+    const client = fixture()
+    client.resolveVersion(version)
+    await expect(client.run(installAdapter("@atape/adapter-codex@1.0.0"))).rejects.toMatchObject({ reason: "conflict", resource: "adapter" })
+    expect(client.refreshes()).toBe(0)
+    expect(client.read()).toEqual(emptyClientConfig())
+  })
+
+  it("refuses to downgrade an official integration ahead of the actual runtime", async () => {
+    const client = fixture()
+    await client.run(installAdapter("@atape/adapter-codex@1.0.0"))
+    client.edit(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, version: "1.1.0" })) }))
+    const before = structuredClone(client.read())
+    await expect(client.run(upgradeAdapters("codex"))).rejects.toMatchObject({ reason: "conflict" })
+    expect(client.packageRequests).toEqual(["@atape/adapter-codex@1.0.0"])
+    await expect(client.run(installAdapter("@atape/adapter-codex@1.0.0"))).rejects.toMatchObject({ reason: "conflict" })
+    expect(client.refreshes()).toBe(1)
+    expect(client.read()).toEqual(before)
+  })
+
+  it("retains custom npm and local source refresh semantics in a development runtime", async () => {
+    const custom = fixture(undefined, "development", "@custom/tool")
+    await custom.run(installAdapter("@custom/tool"))
+    expect((await custom.run(upgradeAdapters("all")))[0]?.version).toBe("1.1.0")
+    expect(custom.packageRequests).toEqual(["@custom/tool", "@custom/tool@latest"])
+    const local = fixture("file:/local/adapter", "development")
+    await local.run(installAdapter("file:/local/adapter"))
+    await local.run(upgradeAdapters("all"))
+    expect(local.packageRequests).toEqual(["file:/local/adapter", "file:/local/adapter"])
+    const official = fixture(undefined, "development")
+    await expect(official.run(installAdapter("@atape/adapter-codex@1.0.0"))).rejects.toMatchObject({ reason: "conflict" })
+    expect(official.refreshes()).toBe(0)
+    expect(official.read()).toEqual(emptyClientConfig())
+  })
   it("defaults automatic updates on and preserves tools and Projects when toggled", async () => {
     const client = fixture()
     await client.run(installAdapter("@atape/adapter-codex"))
@@ -119,10 +159,10 @@ describe("Client management Module", () => {
     const client = fixture()
     const first = (await client.run(installAdapter("@atape/adapter-codex"))).adapter
     client.duringInstall(config => ({ ...config, locale: "zh-CN", toolsConfigured: true, enabledAdapterIds: ["codex"] }))
-    const second = (await client.run(installAdapter("@atape/adapter-codex@latest", { installation: first }))).adapter
+    const second = (await client.run(installAdapter("@atape/adapter-codex@1.0.0", { installation: first }))).adapter
     expect(client.read()).toMatchObject({ locale: "zh-CN", enabledAdapterIds: ["codex"] })
     client.duringInstall(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, version: "3.0.0", updatedAt: "newer" })) }))
-    await expect(client.run(installAdapter("@atape/adapter-codex@latest", { installation: second })))
+    await expect(client.run(installAdapter("@atape/adapter-codex@1.0.0", { installation: second })))
       .rejects.toMatchObject({ reason: "conflict", resource: "adapter" })
     expect(client.read().adapters[0]).toMatchObject({ version: "3.0.0", updatedAt: "newer" })
   })
@@ -183,7 +223,8 @@ describe("Client management Module", () => {
     const upgraded = await client.run(upgradeAdapters("all"))
 
     expect(installed.adapter.version).toBe("1.0.0")
-    expect(upgraded[0]?.version).toBe("1.1.0")
+    expect(upgraded[0]?.version).toBe("1.0.0")
+    expect(client.packageRequests).toEqual(["@atape/adapter-codex@1.0.0", "@atape/adapter-codex@1.0.0"])
     expect((await client.run(inspectClient())).projects[0]?.adapterIds).toEqual([])
   })
 

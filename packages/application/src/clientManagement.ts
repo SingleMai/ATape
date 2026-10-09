@@ -7,6 +7,9 @@ import type {
   ProjectRegistration
 } from "@atape/domain"
 import { Clock, Context, Effect, Schema, type Scope } from "effect"
+import { officialSources } from "@atape/adapter-catalog"
+import { CLISetupPlatform } from "./cliSetupPlatform.ts"
+import { newer, stableVersion } from "./releaseVersion.ts"
 
 export class ClientConfigStoreError extends Schema.TaggedError<ClientConfigStoreError>()("ClientConfigStoreError", {
   reason: Schema.Literals(["io", "decode"]),
@@ -301,6 +304,17 @@ export const installAdapter = Effect.fn("Client.installAdapter")(function*(packa
   // transaction below selects it for future collection cycles.
   const installed = yield* packages.install(packageSpec)
   yield* validateIdentifier("adapter", installed.manifest.adapterId)
+  const official = officialSources.find(source => source.packageName === installed.packageName)
+  if (official && installed.upgradeSpec === installed.packageName) {
+    const version = (yield* CLISetupPlatform).runtimeReleaseVersion
+    const previous = before.adapters.find(adapter => adapter.adapterId === official.id)
+    if (!stableVersion(version) || installed.manifest.adapterId !== official.id || installed.version !== version ||
+      previous?.packageName === official.packageName && previous.upgradeSpec === previous.packageName &&
+      (!stableVersion(previous.version) || newer(previous.version, version))) {
+      return yield* new ClientManagementError({ reason: "conflict", resource: "adapter",
+        message: "Official integrations must match the running ATape release. Reopen the current CLI or upgrade ATape and its integrations together in Tools and updates. Development builds require a local or custom integration source." })
+    }
+  }
   // An old Host must understand the new installation layout before activation.
   yield* refreshManagedCollector()
   return yield* store.transact<AdapterInstallResult, ClientManagementError | AdapterPackageError, never>((config) => Effect.gen(function*() {
@@ -363,10 +377,16 @@ export const upgradeAdapters = Effect.fn("Client.upgradeAdapters")(function*(tar
         reason: "not_found", resource: "adapter", message: `Adapter ${adapterId} is no longer installed.`
       })
     }
+    const official = current.upgradeSpec === current.packageName && officialSources.some(source =>
+      source.id === current.adapterId && source.packageName === current.packageName)
+    const version = official ? (yield* CLISetupPlatform).runtimeReleaseVersion : undefined
+    if (version !== undefined && (!stableVersion(version) || !stableVersion(current.version) || newer(current.version, version))) {
+      return yield* new ClientManagementError({ reason: "conflict", resource: "adapter",
+        message: "Reopen the current CLI or upgrade ATape and its integrations together before refreshing this official integration." })
+    }
     const packageSpec = current.upgradeSpec === current.packageName
-      ? `${current.packageName}@latest`
-      : current.upgradeSpec
-    upgraded.push((yield* installAdapter(packageSpec, { installation: current })).adapter)
+      ? `${current.packageName}@${version ?? "latest"}` : current.upgradeSpec
+    upgraded.push((yield* installAdapter(packageSpec, { installation: current, ...(version ? { version } : {}) })).adapter)
   }
   return upgraded
 })

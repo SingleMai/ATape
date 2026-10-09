@@ -220,12 +220,17 @@ Each installation prepares an independent package slot and activates it atomical
 Failed validation or cancellation keeps the current version usable. Running jobs
 retain their existing files; later cycles load the selected version. Directories
 are copied at installation. Refresh from original source picks up local edits,
-fetches the same HTTPS URL again, or resolves `latest` for registry installations.
+fetches the same HTTPS URL again, or resolves `latest` for custom registry installations.
+Official registry installations instead target the exact running CLI version.
 Pinned archive/URL sources remain pinned; install a new source to change them.
 Concurrent changes to the same installation reject stale activation.
 
 Official release updates appear directly in Tools and updates. Use published …
-explicitly switches an official file/URL installation to the reviewed npm release.
+explicitly switches an official file/URL installation to the running CLI version.
+Initialization, adding a tool and Git repair use that same exact version. A
+resolved official registry package with another version is rejected before Host
+refresh or configuration commit; a newer installed official Adapter is never
+downgraded. Development builds require explicit local, URL or custom sources.
 Custom packages stay on their original source. Updates preserve capture selection,
 Projects and checkpoints, and do not start stopped sync. There is no bulk update
 command. Old slots can be reviewed under [cleanup](#adapter-installation-cleanup).
@@ -263,11 +268,30 @@ before jitter. Opening the CLI does not force a network request when the
 persisted schedule is not due. The
 schedule check is local and does not start npm or query release metadata before
 the check is due. A transient npm ownership-probe failure is retried on a later
-trigger instead of marking a long-running Collector permanently unsupported. The final
-GitHub Release identifies a completed version; the worker confirms that the CLI
-and all official Adapters are available at that exact npm version, then prepares
-only the eligible Adapters already installed. An incomplete publication, offline check or failed
-preparation leaves the current version usable.
+trigger instead of marking a long-running Collector permanently unsupported.
+
+The fixed GitHub prerelease tag `atape-update-catalog-v1` advertises the latest
+compatible complete bundle for this capture/control pair. Its monotonic revision
+and per-family version floor are persisted; regressions, same-version changed
+bytes, unknown protocols and corrupt durable state are rejected. A versioned
+Release retains the immutable `atape.release-bundle.v1` descriptor, including all
+the seven required package names, canonical npm tarball URLs and SHA-512 integrity.
+The v1 reader accepts up to 32 unique `@atape/*` packages, allowing future official
+Adapters without blocking older clients. Added packages remain part of the
+immutable descriptor; discovery does not install an unconfigured Adapter.
+Automatic and manual discovery share this Module. Individual npm `latest` tags
+do not select a managed upgrade.
+
+The worker prepares only eligible already-installed Adapters. Every official
+archive is downloaded with bounded size/time and its SHA-512 is checked before
+npm receives the local file. An existing version directory must match the newly
+verified executable and manifest bytes before reuse. Download leases outlive npm
+termination, including cancellation. Incomplete publication, offline checks and
+failed preparation leave the current version usable. Cached optional lookups
+can use the last valid catalog offline; explicit checks report transport failure.
+An exact lookup for the running CLI can derive a bundle from all seven exact npm
+manifests while its first version descriptor propagates. This fallback never
+advertises another upgrade target.
 
 The prepared CLI package must declare `atapeRuntime.protocol` as
 `atape.runtime.v1` and `atapeRuntime.stateContract` as
@@ -278,7 +302,9 @@ when offered 0.5.4. This first v2 release requires the explicit manual transitio
 below; later compatible v2 releases retain automatic updates and rollback.
 
 Capable packages additionally declare `atapeRuntime.updateControlProtocol` as
-`atape.update-control.v1`. This control protocol is independent of the capture
+`atape.update-control.v1`. Catalog candidates also declare
+`atapeRuntime.releaseCatalogProtocol` as `atape.update-catalog.v1`; both actual
+capabilities are checked before preparation and again before activation. This control protocol is independent of the capture
 contract. After a capable bridge is installed, subsequent capable updates select
 `updates/runtime.json` and retain durable recovery intent in
 `updates/control.json`. The legacy `releases/current.json` remains a genuine v2
@@ -353,8 +379,10 @@ not upload local logs or introduce remote maintenance commands. See
 compatibility and recovery decision, amended by
 [ADR-0107](../architecture/adr/0107-independent-update-control.md).
 
-Persistent version-aware discovery and an update wakeup independent of collection
-are subsequent increments. Published 0.5.3 and 0.5.4 both use the same GitHub
+Version-aware discovery is implemented by
+[ADR-0108](../architecture/adr/0108-compatible-release-bundle-discovery.md).
+An update wakeup independent of collection, cross-contract migration and
+persistent failed-bundle isolation remain subsequent increments. Published 0.5.3 and 0.5.4 both use the same GitHub
 `latest` and immutable npm package, but require different manifest contracts;
 one bridge package cannot serve both. A temporary release window cannot cover
 indefinitely offline installations. The 0.5.3 manual boundary below remains.
@@ -416,8 +444,15 @@ installed version, and restarts the application after terminal teardown. Previou
 running sync resumes with its settings; stopped sync stays stopped. Development
 builds and other package managers receive guidance instead of an inferred target.
 If sync cannot resume, use Resume sync and continue or return with sync stopped.
-This explicit CLI operation retains the original npm replacement path; it is not
-the unified CLI/Adapter version-directory transaction used by automatic updates.
+The explicit CLI operation prepares and activates the complete CLI/official
+Adapter bundle through the same coordinator used by automatic updates, with
+manual policy. It then refreshes the global npm command entry from the same
+verified CLI archive under the same update ownership. Before tool initialization
+there are no active Adapters to align, so only the verified entry is installed.
+If entry refresh fails after runtime activation, the error identifies the selected
+runtime; reopening or retrying checks the actual command-entry version even when
+the managed runtime already equals the target. Tools retains an explicit entry
+refresh action in that case.
 Before replacing the bootstrap, the internal upgrade preserves the effective
 Adapter installation records in the underlying configuration. Their currently
 selected versions remain selected even if npm fails or the bootstrap digest
@@ -434,8 +469,13 @@ With independent control active, the built-in update verifies the new bootstrap
 directly, creates its immutable recovery copy and durably binds that identity.
 It preserves the capture contract and reader floor. If the process dies between
 npm replacement and binding, a later owned startup detects the changed identity
-and completes forward recovery. npm's in-place replacement itself is not atomic;
-an incomplete or unsupported replacement requires a valid same-contract package.
+and completes forward recovery. A reported npm/direct-verification failure restores the original bundled command
+entry, manifest and bin link within a separate 15-second budget when the durable
+control/pointer has not changed; the selected runtime and Adapter overlay stay
+intact. Once rebinding durably advances control, recovery proceeds forward.
+npm's in-place replacement itself is not atomic. Power loss or SIGKILL before
+restoration can leave an incomplete global entry requiring a valid same-contract
+npm replacement; automatic version-directory activation does not replace it.
 
 Managed collection records the executable identity it started with. Opening ATape,
 installing or updating an integration, or selecting Start sync refreshes a running

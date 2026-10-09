@@ -1,5 +1,5 @@
 import { CollectorDeviceGateway } from "@atape/application"
-import { emptyClientConfig, type ClientConfig } from "@atape/domain"
+import { emptyClientConfig, releasePackageNames, updateCatalogTag, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -18,8 +18,13 @@ it.each(["codex", "opencode"])("scopes %s device jobs to account and instance, r
     enabledAdapterIds: [adapterId], adapters: [{ adapterId: adapterId, packageName: `@atape/adapter-${adapterId}`, displayName: "Codex", upgradeSpec: `@atape/adapter-${adapterId}`, version: "0.4.4", installedAt: project.createdAt, updatedAt: project.createdAt }] }
   const layer = makeDeviceMonitoringLayer(home, Effect.succeed(config), (async input => {
     checks++
-    const name = decodeURIComponent(new URL(String(input)).pathname.slice(1).replace(/\/latest$/, ""))
-    return Response.json({ name, version: "0.4.5" })
+    expect(String(input)).toBe(`https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`)
+    const version = "0.4.5"
+    return Response.json({ tag_name: updateCatalogTag, prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z", body: JSON.stringify({
+      protocol: "atape.update-catalog.v1", revision: 1, bundles: [{ protocol: "atape.release-bundle.v1", version,
+        captureStateContract: "atape.client.v3-capture.v2", updateControlProtocol: "atape.update-control.v1", packages: releasePackageNames.map(name => ({ name,
+          integrity: `sha512-${Buffer.alloc(64).toString("base64")}`, tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) }]
+    }) })
   }) as typeof fetch, Effect.succeed({ version: 1, jobs: [{ projectId: "one", adapterId: adapterId, lastAttemptAt: project.createdAt, lastSuccessAt: project.createdAt }] })).pipe(
     Layer.provide(Layer.succeed(AuthenticatedHTTPClient, { request: request => Effect.sync(() => { requests.push(request); return { status: 200 } }) }))
   )
@@ -29,7 +34,7 @@ it.each(["codex", "opencode"])("scopes %s device jobs to account and instance, r
       yield* gateway.publish({ phase: "waiting", jobsTruncated: false, jobs: [{ projectId: "one", projectName: "Project one", adapterId: adapterId, state: "failed", reason: "transport", hasMore: false }] })
       yield* gateway.publish({ phase: "waiting", jobsTruncated: false, jobs: [] })
     }).pipe(Effect.provide(layer), Effect.runPromise)
-    expect(checks).toBe(2)
+    expect(checks).toBe(1)
     expect(requests).toHaveLength(4)
     const first = requests.find(request => request.expectedUserId === "user-one")!
     expect(first.deviceReport?.sync.jobs).toEqual([expect.objectContaining({ projectId: "one", state: "failed", lastSuccessAt: project.createdAt })])

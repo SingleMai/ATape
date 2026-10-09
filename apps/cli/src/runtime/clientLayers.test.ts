@@ -1,5 +1,6 @@
 import {
   CollectorDaemonProcess,
+  type CLISetupPlatform,
   inspectClient,
   installAdapter,
   upgradeAdapters,
@@ -47,7 +48,7 @@ const fixture = async (fetchAdapterPackage: typeof fetch = globalThis.fetch) => 
   const run = <A, E>(effect: Effect.Effect<
     A,
     E,
-    CollectorDaemonProcess | ClientConfigStore | ProjectLocator | AdapterPackages
+    CollectorDaemonProcess | ClientConfigStore | ProjectLocator | AdapterPackages | CLISetupPlatform
   >, signal?: AbortSignal) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined)
   return { root, paths, run }
@@ -84,7 +85,7 @@ setInterval(() => {}, 1000);
     vi.stubEnv("PATH", `${bin}:${process.env.PATH}`)
     const cancellation = new AbortController()
     let settled = false, pid: number | undefined
-    const pending = client.run(installAdapter("@atape/adapter-codex@0.4.4"), cancellation.signal)
+    const pending = client.run(installAdapter("@custom/reader@0.4.4"), cancellation.signal)
       .then(() => "success", () => "cancelled").finally(() => { settled = true })
     try {
       const marker = join(client.root, "pid")

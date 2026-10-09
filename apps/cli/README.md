@@ -27,7 +27,8 @@ Automatic updates are on by default for supported macOS/Linux npm-global
 installations. Settings offers Turn off automatic updates or Turn on automatic
 updates. A running Collector or opening the CLI can trigger an approximately
 daily background check. The independent updater prepares the CLI and installed
-official registry Adapters at one completed release version, then switches their
+official registry Adapters from one complete compatible catalog bundle, checks
+the downloaded tarball bytes, then switches their
 version directories through a bounded Collector stop/restart. Custom, local,
 archive and URL installations keep their chosen source.
 
@@ -35,9 +36,11 @@ Open `atape` → Tools and updates and select the available update.
 
 With automatic updates on, startup enters the console without an upgrade prompt.
 When off, startup retains Upgrade and continue or Skip. The explicit CLI upgrade
-resumes previously running sync and preserves supported local state; Adapter
-maintenance remains separate. This manual operation uses the original in-place
-npm path; automatic updates use isolated version directories. See the [upgrade procedure](../../docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters)
+aligns the CLI and official Adapters through that same version-directory
+coordinator, then refreshes the global npm command entry. Previously running sync
+resumes and stopped sync stays stopped. A failed entry refresh remains retryable
+when the runtime already advanced. Standalone official Adapter maintenance and
+initialization target the exact running CLI version. See the [upgrade procedure](../../docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters)
 for manual package replacement, pinned Adapter sources and failed-resume recovery.
 Automatic updates preserve user-stopped sync and recover only within compatible
 local-state contracts. Login startup can resume sync after login; local logs are

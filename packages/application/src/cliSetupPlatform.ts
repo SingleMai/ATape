@@ -18,6 +18,7 @@ export type DirectorySuggestion = {
 // Local filesystem/package inspection is a real Adapter Seam. It never reads
 // conversation bodies. Creation keys survive interruption before local commit.
 export class CLISetupPlatform extends Context.Service<CLISetupPlatform, {
+  readonly runtimeReleaseVersion: string
   detectSources(): Effect.Effect<ReadonlyArray<string>, CLIExperienceError>
   suggestDirectories(input: string, query?: string): Effect.Effect<ReadonlyArray<DirectorySuggestion>, CLIExperienceError>
   supportsGit(adapter: AdapterInstallation): Effect.Effect<boolean, CLIExperienceError>

@@ -4,13 +4,17 @@ import { hostname, platform, arch } from "node:os"
 import { Effect, Layer, Semaphore } from "effect"
 import { cliVersion } from "../version.ts"
 import { AuthenticatedHTTPClient } from "./authenticatedHTTPClient.ts"
-import { latestPublishedVersion } from "./publishedVersions.ts"
+import { createReleaseDiscovery } from "./releaseDiscovery.ts"
+import { managedStateContract } from "./runtimeSelection.ts"
+import { updateControlProtocol } from "./updateControl.ts"
 
 export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<ClientConfig, unknown>,
   fetchReleases: typeof globalThis.fetch = globalThis.fetch,
   readStatus: Effect.Effect<CollectorRunState, unknown> = Effect.succeed(emptyCollectorRunState())) => Layer.effect(CollectorDeviceGateway, Effect.gen(function*() {
   const http = yield* AuthenticatedHTTPClient
   const lock = yield* Semaphore.make(1)
+  const discovery = createReleaseDiscovery({ home, runtimeVersion: cliVersion, captureStateContract: managedStateContract,
+    updateControlProtocol, fetchMetadata: fetchReleases })
   let versions: Record<string, string> = {}
   let checkedAt: string | undefined
   let nextCheck = 0
@@ -22,11 +26,10 @@ export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<Cl
       versions = yield* Effect.tryPromise({ try: async (signal) => {
         const packages = ["@atape/cli", ...local.adapters.map(a => a.packageName)
           .filter(name => officialSources.some(source => source.packageName === name))]
-        const entries = await Promise.all([...new Set(packages)].map(async name => {
-          try { return [name, await latestPublishedVersion(home, name, true, signal, fetchReleases)] as const }
-          catch { return [name, undefined] as const }
-        }))
-        return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry[1] !== undefined))
+        try {
+          const bundle = await discovery.latest({ cached: true, signal: AbortSignal.any([signal, AbortSignal.timeout(1_500)]) })
+          return Object.fromEntries([...new Set(packages)].map(name => [name, bundle.version]))
+        } catch { return {} }
       }, catch: () => new Error("Version check unavailable") })
       checkedAt = new Date().toISOString()
     }
