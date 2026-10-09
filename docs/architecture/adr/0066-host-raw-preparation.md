@@ -2,7 +2,7 @@
 
 - Status: Accepted implementation detail of ADR-0059 and ADR-0062
 - Date: 2026-09-10
-- Shared redaction and policy-bound Raw reuse amended by [ADR-0104](0104-client-redaction-policy.md).
+- Shared redaction and policy-bound Raw reuse amended by [ADR-0105](0105-client-redaction-policy.md).
 
 The Host can prepare Canonical replacements, and the journal can track independent
 Raw obligations. Source callers still need a bounded operation that turns actual

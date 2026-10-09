@@ -66,7 +66,7 @@ test("enforces Web and localization ownership without rejecting presenter bindin
   for (const message of ["Web views", "Web cannot import Node", "Browser Adapters", "Shared localization"]) assert.ok(errors.some(e => e.includes(message)), message)
 })
 
-test("confines the ADR-0104 pure regex dependency to the redaction Implementation", () => {
+test("confines the ADR-0105 pure regex dependency to the redaction Implementation", () => {
   assert.deepEqual(fixture({
     "packages/application/src/redaction/engine.ts": `import { RE2JS } from 're2js'; export const compile = RE2JS.compile;`,
     "packages/application/src/index.ts": `export { compile } from './redaction/engine.ts';`

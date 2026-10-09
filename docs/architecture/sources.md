@@ -47,4 +47,4 @@ policy recovery boundary. Required license text ships in the
 [CLI notice](../../apps/cli/THIRD_PARTY_NOTICES.md), with the catalog's notice also
 retained in source. RE2JS implements non-backtracking regular expression matching;
 it is a private implementation dependency under
-[ADR-0104](adr/0104-client-redaction-policy.md).
+[ADR-0105](adr/0105-client-redaction-policy.md).

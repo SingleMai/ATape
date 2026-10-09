@@ -1,4 +1,4 @@
-# ADR-0104: Shared client redaction and policy-bound capture
+# ADR-0105: Shared client redaction and policy-bound capture
 
 - Status: Accepted
 - Date: 2026-10-09
