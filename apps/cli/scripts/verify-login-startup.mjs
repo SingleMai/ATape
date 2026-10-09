@@ -50,6 +50,16 @@ export async function verifyLoginStartup(donorPackage, fixtureDirectory) {
   await cp(donorPackage, bootstrapPackage, { recursive: true })
   await writeFile(join(root, "controlled-manager.json"), JSON.stringify({ registered: false }))
   const commandPreload = join(root, "controlled-native.mjs")
+  const sourceLimits = JSON.stringify({
+    source: { rowBytes: 1_048_576, pageBytes: 4_194_304, pageRows: 100, records: 10_000, threads: 20, durationMs: 120_000 },
+    projection: { events: 10_000, usage: 10_000, pageItems: 100, pageBytes: 4_194_304 },
+    journal: { unitBytes: 5_242_880, targetBytes: 134_217_728, pendingBytes: 268_435_456,
+      unitsPerTarget: 4096, recordsPerTarget: 100_000, metadataEntries: 1_000_000 },
+    raw: { objectBytes: 3_145_728, wireBytes: 5_242_880, targetBytes: 100_663_296, units: 4096 },
+    comparison: { records: 10_000, durationMs: 120_000 },
+    recovery: { sources: 20, captures: 20, operations: 64, reclaimUnits: 32, sourceMs: 15_000 },
+    sourceWorkMs: 240_000, cycleMs: 600_000
+  })
   // The packaged Collector also reconciles startup. Replace its OS command
   // Adapter through Node's external child_process binding, including absolute
   // /bin/launchctl. A PATH wrapper alone cannot intercept that absolute path.
@@ -103,7 +113,8 @@ syncBuiltinESMExports();\n`)
     PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`,
     HOME: userHome, TMPDIR: root, ATAPE_HOME: home, ATAPE_LANG: "en", LANG: "en_US.UTF-8",
     XDG_CONFIG_HOME: join(root, "xdg-config"), XDG_DATA_HOME: join(root, "xdg-data"), XDG_STATE_HOME: join(root, "xdg-state"),
-    ATAPE_BOOTSTRAP_ENTRY: bootstrap, ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_REDACT_VALUES: "[]",
+    ATAPE_BOOTSTRAP_ENTRY: bootstrap, ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_SOURCE_COLLECTION_LIMITS: sourceLimits,
+    ATAPE_REDACT_VALUES: "[]",
     NODE_OPTIONS: `--import=${pathToFileURL(commandPreload).href}`,
     ATAPE_CODEX_HOME: join(root, "absent-codex"), ATAPE_CLAUDE_HOME: join(root, "absent-claude"),
     ATAPE_CODEBUDDY_HOME: join(root, "absent-codebuddy"), ATAPE_KIMI_HOME: join(root, "absent-kimi"),
@@ -174,7 +185,14 @@ syncBuiltinESMExports();\n`)
   const sourceFixture = fileURLToPath(new URL("../src/runtime/fixtures/login-startup.ts", import.meta.url))
   const fixture = async operation => JSON.parse((await command(sourceFixture, [operation])).stdout)
   const login = async token => {
-    const result = await command(launcher, ["__login-start", "--startup-token", token])
+    const registered = await json(metadataFile)
+    // Match the native descriptor's environment and working directory. The
+    // preload is the only test addition; private context must be restored by
+    // admission rather than inherited from the fixture's interactive shell.
+    const result = await execute(process.execPath, [launcher, "__login-start", "--startup-token", token], {
+      cwd: registered.home, env: { ...registered.environment, NODE_OPTIONS: environment.NODE_OPTIONS },
+      encoding: "utf8", timeout: 30_000, maxBuffer: 4 * 1024 * 1024
+    })
     assert.equal(result.stdout, "", "Headless login unexpectedly printed terminal output")
     assert.doesNotMatch(result.stderr, /\x1b|Sign in|Open:|Code:|Welcome to ATape|interactive.*terminal/)
     return result
@@ -187,7 +205,7 @@ syncBuiltinESMExports();\n`)
       entry: "./index.js", harnesses: ["login-smoke"], rawCapturePolicy: "atape.raw-capture.v1"
     }
   }))
-  await writeFile(join(adapterPackage, "index.js"), `import { appendFile } from "node:fs/promises";\nexport const createAtapeAdapter = async () => ({ collect: async () => {\n  await appendFile(${JSON.stringify(collected)}, JSON.stringify({ pid: process.pid }) + "\\n");\n  return { protocolVersion: "atape.adapter.v1alpha1", nextCursor: null, hasMore: false, observations: [] };\n} });\n`)
+  await writeFile(join(adapterPackage, "index.js"), `import { appendFile } from "node:fs/promises";\nexport const createAtapeAdapter = async () => ({ collect: async () => {\n  await appendFile(${JSON.stringify(collected)}, JSON.stringify({ pid: process.pid, sourceLimits: process.env.ATAPE_SOURCE_COLLECTION_LIMITS, redactValues: process.env.ATAPE_REDACT_VALUES, allowHttp: process.env.ATAPE_DEVELOPMENT_ALLOW_HTTP }) + "\\n");\n  return { protocolVersion: "atape.adapter.v1alpha1", nextCursor: null, hasMore: false, observations: [] };\n} });\n`)
   await mkdir(dirname(configFile), { recursive: true })
   const at = "2026-10-09T00:00:00Z"
   await writeFile(configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: ["login-smoke"],
@@ -209,12 +227,18 @@ syncBuiltinESMExports();\n`)
     assert.equal(metadata.enabled, true)
     assert.equal(metadata.environment.NODE_OPTIONS, undefined)
     assert.equal(metadata.privateEnvironment.NODE_OPTIONS, undefined)
+    assert.equal(metadata.environment.ATAPE_DEVELOPMENT_ALLOW_HTTP, "true")
+    assert.equal(metadata.environment.ATAPE_SOURCE_COLLECTION_LIMITS, sourceLimits)
+    assert.equal(metadata.environment.ATAPE_REDACT_VALUES, undefined)
+    assert.equal(metadata.privateEnvironment.ATAPE_REDACT_VALUES, "[]")
     assert.equal((await fixture("inspect")).enabled, true)
     assert.ok(metadata.file.startsWith(`${root}/`), "Native descriptor escaped the isolated fixture")
     if (process.platform === "darwin") {
       await execute("/usr/bin/plutil", ["-lint", "--", metadata.file], { timeout: 2_000 })
       const parsed = JSON.parse((await execute("/usr/bin/plutil", ["-convert", "json", "-o", "-", "--", metadata.file], { timeout: 2_000 })).stdout)
       assert.deepEqual(parsed.ProgramArguments, [await realpath(process.execPath), launcher, "__login-start", "--startup-token", metadata.token])
+      assert.deepEqual(parsed.EnvironmentVariables, metadata.environment)
+      assert.equal(parsed.WorkingDirectory, metadata.home)
     }
     await assert.rejects(login(randomUUID()), cause => cause.code === 1 && /registered ATape installation/.test(cause.stderr))
     assert.equal(await exists(processFile), false)
@@ -260,6 +284,9 @@ syncBuiltinESMExports();\n`)
     collectorPid = resumed.pid
     assert.equal(resumed.intervalMs, 23_000)
     assert.equal(resumed.concurrency, 2)
+    await waitFor("the OS-environment login Collector's successful collection with restored private context", async () =>
+      (await readFile(collected, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line))
+        .some(item => item.pid === collectorPid && item.sourceLimits === sourceLimits && item.redactValues === "[]" && item.allowHttp === "true"))
     await waitFor("the selected Collector executable to enter", async () =>
       (await readFile(runtimeTrace, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line))
         .some(item => item.entry === selectedEntry && item.pid === collectorPid && item.args[0] === "__collector-daemon"))
@@ -334,6 +361,7 @@ syncBuiltinESMExports();\n`)
     assert.equal(createHash("sha256").update(await readFile(bootstrap)).digest("hex"), bootstrapHash, "Login modified npm's bootstrap")
     await writeFile(join(root, "login-startup-acceptance.json"), `${JSON.stringify({
       version: manifest.version, platform: process.platform, nativeCommands: "controlled", headlessEntry: true,
+      nativeDescriptorEnvironment: true, restoredPrivateContext: true, sourceAdmissionPreserved: true,
       defaultOn: true, repeatLoginSingleCollector: true, detachedCollectorProcessGroup: true,
       disabledQueuedLoginInert: true, durableStop: true, selectedRuntime: true, preservedSchedule: true,
       ...(legacyTarball ? { legacyPublishedBootstrap: { version: "0.5.3", sha256: createHash("sha256").update(await readFile(legacyTarball)).digest("hex") },

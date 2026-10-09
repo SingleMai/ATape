@@ -104,8 +104,9 @@ const main = async () => {
         yield* admitCollectorProcess(defaultNodeClientPaths().collectorProcessFile, command.options.daemonToken)
         yield* Effect.forkScoped(Effect.forever(reconcileLoginStartup().pipe(
           Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
-          Effect.andThen(kickAutomaticUpdates()), Effect.andThen(Effect.sleep(30_000))
+          Effect.andThen(Effect.sleep(300_000))
         )))
+        yield* Effect.forkScoped(Effect.forever(kickAutomaticUpdates().pipe(Effect.andThen(Effect.sleep(30_000)))))
         yield* prepareCollectorReadiness(defaultNodeClientPaths(), process.env)
         yield* runCommand(command)
       }))

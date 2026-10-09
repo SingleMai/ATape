@@ -472,6 +472,9 @@ service. Windows, other package managers and source development builds are
 unsupported. Settings reports missing/unavailable registration rather than
 claiming the saved on preference is installed. Reopen ATape in a normal login
 session or choose Retry login startup registration to repair it.
+The console and Collector also reconcile registration at launch and every five
+minutes while running. The local automatic-update schedule check keeps its
+separate thirty-second trigger; native registration does not delay it.
 
 The short login coordinator validates its private registration and current
 preference, recovers pending automatic-update maintenance, and resumes only
@@ -503,7 +506,8 @@ older. The coordinator delegates to a selected release only when it declares the
 login startup capability. A rollback to a release lacking that capability makes
 startup inert; its older Stop operation cannot maintain the new intent contract.
 Return to a capable release and inspect Settings to repair startup. Private metadata keeps required provider paths, explicit
-`ATAPE_REDACT_VALUES` and proxy/CA context; it does not copy the whole shell
+`ATAPE_REDACT_VALUES` and proxy/CA context. Explicit loopback HTTP development
+permission and source-collection limit overrides also survive login; it does not copy the whole shell
 environment, account credentials or conversation bodies. Explicit empty values
 clear retained context. Removing Node/npm externally can break the absolute
 paths; reopen ATape after repairing that installation. Mixed concurrent old/new

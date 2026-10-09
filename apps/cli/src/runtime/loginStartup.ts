@@ -28,6 +28,7 @@ const tokenPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0
 const privateNames = ["ATAPE_REDACT_VALUES", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
   "http_proxy", "https_proxy", "all_proxy", "no_proxy", "NODE_EXTRA_CA_CERTS"] as const
 const publicNames = ["LANG", "LC_ALL", "TZ", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME",
+  "ATAPE_DEVELOPMENT_ALLOW_HTTP", "ATAPE_SOURCE_COLLECTION_LIMITS",
   "ATAPE_CODEX_HOME", "ATAPE_CLAUDE_HOME", "ATAPE_OPENCODE_HOME", "ATAPE_CODEBUDDY_HOME",
   "ATAPE_KIMI_HOME", "ATAPE_GROK_HOME", "ATAPE_CLAUDE_SESSION_FILE", "OPENCODE_DB"] as const
 const Metadata = Schema.Struct({
@@ -276,7 +277,11 @@ export const admitLoginStartup = async (paths: NodeClientPaths, token: string, e
     // current configuration and its off preference.
     const config = Schema.decodeUnknownSync(ClientConfig)(await readBoundedJSON(metadata.environment.ATAPE_CONFIG_FILE!, 4 * 1024 * 1024))
     if (!config.toolsConfigured || config.autoStartEnabled === false) return undefined
-    return { ...environment, ...metadata.environment, ...metadata.privateEnvironment, ATAPE_BOOTSTRAP_ENTRY: metadata.bootstrap }
+    const admitted: NodeJS.ProcessEnv = { ...environment, ...metadata.environment, ...metadata.privateEnvironment, ATAPE_BOOTSTRAP_ENTRY: metadata.bootstrap }
+    // Empty clears the retained JSON override and restores ordinary admission
+    // defaults. Passing an empty string to the Collector would be invalid JSON.
+    if (admitted.ATAPE_SOURCE_COLLECTION_LIMITS === "") delete admitted.ATAPE_SOURCE_COLLECTION_LIMITS
+    return admitted
   } catch (cause) {
     if (missing(cause)) return undefined
     if (cause instanceof LoginStartupError) throw cause

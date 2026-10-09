@@ -12,9 +12,13 @@ import { restartInstalledCLI } from "../runtime/restartCLI.ts"
 export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonly kind: "interactive" }>) => {
   const runtime = ManagedRuntime.make(makeNodeClientLayer(defaultNodeClientPaths()))
   const maintenanceLifetime = new AbortController()
-  const maintenance = runtime.runPromise(Effect.forever(reconcileLoginStartup().pipe(
-    Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
-    Effect.andThen(kickAutomaticUpdates()), Effect.andThen(Effect.sleep(30_000)))), {
+  const maintenance = runtime.runPromise(Effect.scoped(Effect.gen(function*() {
+    yield* Effect.forkScoped(Effect.forever(reconcileLoginStartup().pipe(
+      Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
+      Effect.andThen(Effect.sleep(300_000))
+    )))
+    yield* Effect.forever(kickAutomaticUpdates().pipe(Effect.andThen(Effect.sleep(30_000))))
+  })), {
     signal: maintenanceLifetime.signal
   }).catch(() => undefined)
   let renderer: ReturnType<typeof render> | undefined

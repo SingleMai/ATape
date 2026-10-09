@@ -31,6 +31,7 @@ const fixture = async (platform: "darwin" | "linux" = "darwin", suffix = "") => 
   await atomicJSON(paths.configFile, { ...emptyClientConfig(), toolsConfigured: true })
   const environment: NodeJS.ProcessEnv = { HOME: userHome, PATH: `relative-dropped:.:${dirname(process.execPath)}:/usr/bin:/bin`,
     XDG_CONFIG_HOME: xdg, ATAPE_HOME: home, ATAPE_CODEX_HOME: join(root, "codex"),
+    ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_SOURCE_COLLECTION_LIMITS: '{"maxSourceBytes":1048576}',
     ATAPE_REDACT_VALUES: '["private-login-redaction"]', HTTPS_PROXY: "http://private-proxy-user:private-proxy-pass@proxy.test:8080",
     NODE_EXTRA_CA_CERTS: join(root, "custom-ca.pem"), NPM_TOKEN: "never-persist-token", NODE_OPTIONS: "never-persist-node-options" }
   const calls: { file: string; args: string[]; env: NodeJS.ProcessEnv; timeout: number }[] = []
@@ -165,6 +166,7 @@ describe("native login startup Adapter", () => {
     const admitted = await admitLoginStartup(client.paths, metadata.token, metadata.launcher, { LOGIN_SESSION: "retained" })
     expect(admitted).toMatchObject({ LOGIN_SESSION: "retained", ATAPE_REDACT_VALUES: client.environment.ATAPE_REDACT_VALUES,
       HTTPS_PROXY: client.environment.HTTPS_PROXY, NODE_EXTRA_CA_CERTS: client.environment.NODE_EXTRA_CA_CERTS,
+      ATAPE_DEVELOPMENT_ALLOW_HTTP: "true", ATAPE_SOURCE_COLLECTION_LIMITS: client.environment.ATAPE_SOURCE_COLLECTION_LIMITS,
       ATAPE_HOME: client.home, ATAPE_BOOTSTRAP_ENTRY: client.entry, ATAPE_CODEX_HOME: client.environment.ATAPE_CODEX_HOME })
     expect(admitted?.NPM_TOKEN).toBeUndefined(); expect(admitted?.NODE_OPTIONS).toBeUndefined()
     expect(admitted?.PATH?.split(":")).not.toContain(".")
@@ -214,15 +216,20 @@ describe("native login startup Adapter", () => {
     await client.run(reconcile(true)); const original = await client.metadata()
     const next = { ...client.environment }
     delete next.ATAPE_REDACT_VALUES; delete next.HTTPS_PROXY; delete next.NODE_EXTRA_CA_CERTS; delete next.ATAPE_CODEX_HOME; delete next.XDG_CONFIG_HOME
+    delete next.ATAPE_DEVELOPMENT_ALLOW_HTTP; delete next.ATAPE_SOURCE_COLLECTION_LIMITS
     await client.run(reconcile(true), next)
     const admitted = await admitLoginStartup(client.paths, original.token, client.entry, {})
     expect(admitted?.ATAPE_REDACT_VALUES).toBe(client.environment.ATAPE_REDACT_VALUES)
     expect(admitted?.HTTPS_PROXY).toBe(client.environment.HTTPS_PROXY)
     expect(admitted?.ATAPE_CODEX_HOME).toBe(client.environment.ATAPE_CODEX_HOME)
     expect(admitted?.XDG_CONFIG_HOME).toBe(client.environment.XDG_CONFIG_HOME)
+    expect(admitted?.ATAPE_DEVELOPMENT_ALLOW_HTTP).toBe("true")
+    expect(admitted?.ATAPE_SOURCE_COLLECTION_LIMITS).toBe(client.environment.ATAPE_SOURCE_COLLECTION_LIMITS)
     expect(client.state.starts).toBe(1)
-    await client.run(reconcile(true), { ...next, HTTPS_PROXY: "" })
-    expect((await admitLoginStartup(client.paths, original.token, client.entry, {}))?.HTTPS_PROXY).toBe("")
+    await client.run(reconcile(true), { ...next, HTTPS_PROXY: "", ATAPE_SOURCE_COLLECTION_LIMITS: "" })
+    const cleared = await admitLoginStartup(client.paths, original.token, client.entry, { ATAPE_SOURCE_COLLECTION_LIMITS: "stale queued override" })
+    expect(cleared?.HTTPS_PROXY).toBe("")
+    expect(cleared?.ATAPE_SOURCE_COLLECTION_LIMITS).toBeUndefined()
   })
   it("copies a capable managed runtime over an old npm bootstrap and becomes inert across a pre-feature rollback", async () => {
     const client = await fixture("linux")
