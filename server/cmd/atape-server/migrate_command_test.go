@@ -56,7 +56,7 @@ func TestMigrateCommandPostgres(t *testing.T) {
 		}
 	}
 	var version int
-	if err := pool.QueryRow(ctx, "SELECT max(version) FROM atape_schema_migrations").Scan(&version); err != nil || version != 22 {
+	if err := pool.QueryRow(ctx, "SELECT max(version) FROM atape_schema_migrations").Scan(&version); err != nil || version != 23 {
 		t.Fatalf("migration version %d: %v", version, err)
 	}
 	// A blocked database operation must respect the operator's deadline and

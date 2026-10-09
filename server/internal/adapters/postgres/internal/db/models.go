@@ -56,6 +56,8 @@ type CanonicalPublicationAttempt struct {
 	TargetJson          *string
 	ActivationJson      *string
 	PublishedObservedAt pgtype.Timestamptz
+	DerivedParts        int32
+	RetentionCursor     string
 }
 
 type CanonicalPublicationReservation struct {
@@ -65,16 +67,19 @@ type CanonicalPublicationReservation struct {
 }
 
 type CanonicalPublicationSource struct {
-	SessionID        string
-	SourceKey        string
-	ProjectID        string
-	CapturedByUserID pgtype.UUID
-	InstallationID   string
-	AdapterID        string
-	SourceSessionID  string
-	OriginKey        string
-	WriterFence      int64
-	CurrentHead      *string
+	SessionID           string
+	SourceKey           string
+	ProjectID           string
+	CapturedByUserID    pgtype.UUID
+	InstallationID      string
+	AdapterID           string
+	SourceSessionID     string
+	OriginKey           string
+	WriterFence         int64
+	CurrentHead         *string
+	LegacyAdopted       bool
+	RevisionFloor       int64
+	BaselineThreadsJson *string
 }
 
 type CanonicalThread struct {

@@ -536,6 +536,10 @@ WHERE action = 'captured_session.delete'
 	}
 	assertProblemEnvelope(t, reingestResponse, "resource_state_conflict")
 
+	t.Run("legacy publication adoption", func(t *testing.T) {
+		assertHTTPLegacyPublicationAdoption(t, handler, project.ID, token.Credential, sessionCookie, session.CSRFToken)
+	})
+
 	ambiguous := httptest.NewRequest(http.MethodGet, "/api/v1/workspace", nil)
 	ambiguous.AddCookie(sessionCookie)
 	ambiguous.Header.Set("Authorization", "Bearer "+token.Credential)

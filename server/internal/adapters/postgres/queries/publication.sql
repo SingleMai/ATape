@@ -55,7 +55,7 @@ UPDATE canonical_publication_attempts SET retained_bytes=retained_bytes+$2,part_
 
 -- name: ListPublicationParts :many
 SELECT ordinal,digest,byte_count FROM canonical_publication_parts
-WHERE attempt_id=$1 AND ordinal>sqlc.arg(after_ordinal) ORDER BY ordinal LIMIT sqlc.arg(page_limit);
+WHERE attempt_id=$1 AND NOT derived AND ordinal>sqlc.arg(after_ordinal) ORDER BY ordinal LIMIT sqlc.arg(page_limit);
 
 -- name: SealPublicationAttempt :exec
 UPDATE canonical_publication_attempts SET state='sealed',seal_json=$2 WHERE id=$1;
@@ -70,7 +70,7 @@ RETURNING lease_until;
 UPDATE canonical_publication_attempts SET state='rejected' WHERE id=$1;
 
 -- name: PublicationReclaimParts :many
-SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count FROM canonical_publication_parts p
+SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count,p.derived FROM canonical_publication_parts p
 JOIN canonical_publication_attempts a ON a.id=p.attempt_id
 JOIN canonical_publication_reservations r ON r.id=a.id
 JOIN canonical_publication_sources s ON s.session_id=a.session_id
@@ -84,7 +84,8 @@ ORDER BY p.attempt_id,p.ordinal LIMIT sqlc.arg(page_limit);
 DELETE FROM canonical_publication_parts WHERE attempt_id=$1 AND ordinal=$2;
 
 -- name: SubtractPublicationBytes :exec
-UPDATE canonical_publication_attempts SET retained_bytes=retained_bytes-$2,part_count=part_count-1 WHERE id=$1;
+UPDATE canonical_publication_attempts SET retained_bytes=retained_bytes-$2,part_count=part_count-CASE WHEN sqlc.arg(derived)::boolean THEN 0 ELSE 1 END,
+ derived_parts=derived_parts-CASE WHEN sqlc.arg(derived)::boolean THEN 1 ELSE 0 END WHERE id=$1;
 
 -- name: DeleteExpiredPublicationReservations :many
 DELETE FROM canonical_publication_reservations WHERE id IN (
@@ -92,7 +93,7 @@ DELETE FROM canonical_publication_reservations WHERE id IN (
  JOIN canonical_publication_sources s ON s.session_id=r.session_id
  LEFT JOIN canonical_publication_attempts a ON a.id=r.id
  WHERE s.captured_by_user_id=$1 AND r.expires_at<=clock_timestamp()
- AND (a.id IS NULL OR (a.part_count=0 AND a.state<>'activated'))
+ AND (a.id IS NULL OR (a.part_count=0 AND a.derived_parts=0 AND a.state<>'activated'))
  ORDER BY r.id LIMIT sqlc.arg(page_limit)
 ) RETURNING id;
 
@@ -178,3 +179,43 @@ WHERE attempt_id=$1 AND kind='event' AND thread_id=$2
  AND (source_order,event_index,record_id)>=(sqlc.arg(after_order)::bigint,sqlc.arg(after_index)::bigint,sqlc.arg(after_id)::text)
  AND (sqlc.arg(include_anchor)::boolean OR record_id<>sqlc.arg(after_id)::text)
 ORDER BY source_order,event_index,record_id LIMIT sqlc.arg(page_limit);
+
+-- name: AdoptPublicationSource :exec
+UPDATE canonical_publication_sources SET legacy_adopted=true,revision_floor=$2,baseline_threads_json=$3 WHERE session_id=$1;
+
+-- name: LegacyRevisionFloor :one
+SELECT GREATEST(
+ (SELECT cs.revision FROM canonical_sessions cs WHERE cs.id=$1),
+ coalesce((SELECT revision FROM canonical_threads WHERE session_id=$1 ORDER BY revision DESC LIMIT 1),0),
+ coalesce((SELECT revision FROM canonical_events WHERE session_id=$1 ORDER BY revision DESC LIMIT 1),0),
+ coalesce((SELECT projection_revision FROM canonical_events WHERE session_id=$1 ORDER BY projection_revision DESC LIMIT 1),0),
+ coalesce((SELECT revision FROM canonical_usage WHERE session_id=$1 ORDER BY revision DESC LIMIT 1),0)
+)::bigint AS revision_floor;
+
+-- name: InsertDerivedPublicationPart :exec
+INSERT INTO canonical_publication_parts(attempt_id,ordinal,digest,byte_count,validated_body,format_version,derived)
+VALUES($1,$2,$3,$4,$5,1,true);
+
+-- name: AdvancePublicationRetention :exec
+UPDATE canonical_publication_attempts SET derived_parts=derived_parts+sqlc.arg(parts),
+ retained_bytes=retained_bytes+sqlc.arg(bytes),retention_cursor=sqlc.arg(cursor),state=sqlc.arg(state)
+WHERE id=sqlc.arg(id);
+
+-- name: BaselineThreadEvent :one
+SELECT * FROM canonical_events WHERE session_id=$1 AND thread_id=$2
+ AND id>sqlc.arg(after_id)::text ORDER BY id LIMIT 1;
+
+-- name: BaselineThreadUsage :one
+SELECT * FROM canonical_usage WHERE session_id=$1 AND thread_id=$2
+ AND source_key>sqlc.arg(after_key)::text ORDER BY source_key LIMIT 1;
+
+-- name: BaselineParentEdges :many
+SELECT id,thread_id,child_thread_id FROM visible_canonical_events WHERE session_id=$1 AND child_thread_id=$2 ORDER BY id LIMIT 2;
+
+-- name: GetPublicationMemberLocation :one
+SELECT part_ordinal,entry_index,thread_id FROM canonical_publication_members WHERE attempt_id=$1 AND kind=$2 AND record_id=$3;
+
+-- name: NextPublicationBaselineMember :one
+SELECT record_id,source_key,part_ordinal,entry_index FROM canonical_publication_members
+WHERE attempt_id=$1 AND kind=$2 AND thread_id=$3 AND source_key>sqlc.arg(after_key)::text
+ORDER BY source_key LIMIT 1;

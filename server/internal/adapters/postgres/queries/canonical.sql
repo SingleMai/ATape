@@ -196,7 +196,7 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        s.status, s.capture_status, s.updated_at, s.reported_event_count,
        s.captured_by_user_id,
        GREATEST(
-           CASE WHEN EXISTS(SELECT 1 FROM canonical_publication_sources ps WHERE ps.session_id=s.id) THEN 0 ELSE s.reported_event_count END,
+           CASE WHEN EXISTS(SELECT 1 FROM canonical_publication_sources ps WHERE ps.session_id=s.id AND ps.current_head IS NOT NULL) THEN 0 ELSE s.reported_event_count END,
            CASE WHEN ps.current_head IS NOT NULL THEN
             (SELECT count(*) FROM canonical_publication_members m WHERE m.attempt_id=ps.current_head::uuid AND m.kind='event')
            ELSE (SELECT COUNT(*) FROM canonical_events e WHERE e.session_id = s.id) END

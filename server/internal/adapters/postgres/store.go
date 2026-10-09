@@ -57,12 +57,18 @@ func (s *Store) ApplyBatch(
 		return canonical.ApplyResult{}, conflict(batch.Session.ID, "server capture scope is inconsistent")
 	}
 
-	// Both write paths use the same authenticated source identity and Session
-	// lock. A reserved publication source cannot fall back to visible upserts.
-	if _, modeErr := queries.GetPublicationSource(ctx, batch.Session.ID); modeErr == nil {
-		return canonical.ApplyResult{}, conflict(batch.Session.ID, "Session uses publication mode")
-	} else if !errors.Is(modeErr, pgx.ErrNoRows) {
+	publicationMode, modeErr := queries.GetPublicationSource(ctx, batch.Session.ID)
+	if modeErr != nil && !errors.Is(modeErr, pgx.ErrNoRows) {
 		return canonical.ApplyResult{}, persist("read Session write mode", modeErr)
+	}
+	if modeErr == nil {
+		session, e := queries.GetSessionForUpdate(ctx, batch.Session.ID)
+		if e == nil && session.RecordState != "active" {
+			return canonical.ApplyResult{}, &canonical.ProjectStateError{State: "session_deleted"}
+		}
+		if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+			return canonical.ApplyResult{}, persist("read publication Session lifecycle", e)
+		}
 	}
 
 	if receipt, err := queries.GetBatchReceipt(ctx, batch.Key); err == nil {
@@ -80,6 +86,12 @@ func (s *Store) ApplyBatch(
 		}, nil
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return canonical.ApplyResult{}, persist("read batch receipt", err)
+	}
+
+	// Exact acknowledged legacy receipts remain replayable, but no new legacy
+	// mutation can cross the durable source fence.
+	if modeErr == nil {
+		return canonical.ApplyResult{}, conflict(publicationMode.SessionID, "Session uses publication mode")
 	}
 
 	result := canonical.ApplyResult{SessionID: batch.Session.ID}

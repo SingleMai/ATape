@@ -1,6 +1,7 @@
 package sourceidentity
 
 import (
+	"fmt"
 	"regexp"
 	"testing"
 )
@@ -36,5 +37,26 @@ func TestRawChunkIdentityIsObjectScoped(t *testing.T) {
 	}
 	if got := RawChunkID("r_object-a", "source-chunk-b"); got == want {
 		t.Fatal("different source chunk identifiers collided within a Raw object")
+	}
+}
+
+func TestSourceThreadIDRequiresExactAuthenticatedScope(t *testing.T) {
+	encode := func(parts ...string) string {
+		value := ""
+		for _, part := range parts {
+			value += fmt.Sprintf("%d:%s", len(part), part)
+		}
+		return value
+	}
+	scope := encode("project", "user", "installation", "adapter", "source-session")
+	session := SessionSourceKey("project", "user", "installation", "adapter", "source-session")
+	thread := encode(scope, "thread", "子线程:123")
+	if got, ok := SourceThreadID(session, thread); !ok || got != "子线程:123" {
+		t.Fatalf("source identity lost: %q %t", got, ok)
+	}
+	for _, invalid := range []string{encode(encode("project", "other-user", "installation", "adapter", "source-session"), "thread", "child"), encode(scope, "event", "child"), encode(scope, "thread", ""), thread + "junk", "9999999999999999999999999999:x", "1:x-1:"} {
+		if value, ok := SourceThreadID(session, invalid); ok {
+			t.Fatalf("accepted %q as %q", invalid, value)
+		}
 	}
 }

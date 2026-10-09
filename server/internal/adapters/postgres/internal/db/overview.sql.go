@@ -32,6 +32,7 @@ WITH selected_parts AS MATERIALIZED (
  SELECT e.id,e.session_id,e.author,e.occurred_at,e.source_order,e.event_index,(t.parent_thread_id IS NULL)::boolean AS root
  FROM canonical_events e JOIN canonical_threads t ON t.session_id=e.session_id AND t.id=e.thread_id
  WHERE e.session_id=ANY($5::text[]) AND e.kind='message'
+ AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources selected WHERE selected.session_id=e.session_id AND selected.current_head IS NOT NULL)
  AND e.occurred_at>=$6::timestamptz AND e.occurred_at<$7::timestamptz
  UNION ALL
  SELECT m.event_id,source.session_id,m.author,m.occurred_at,m.source_order,m.event_index,m.root
@@ -144,6 +145,7 @@ func (q *Queries) OverviewMembers(ctx context.Context, teamID string) ([]Overvie
 const overviewModels = `-- name: OverviewModels :many
 SELECT DISTINCT model FROM (
  SELECT u.model FROM canonical_usage u JOIN canonical_sessions s ON s.id=u.session_id
+ AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources selected WHERE selected.session_id=s.id AND selected.current_head IS NOT NULL)
  JOIN canonical_projects p ON p.id=s.project_id
  WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
  AND u.occurred_at>=$2::timestamptz AND u.occurred_at<$3::timestamptz
@@ -210,6 +212,7 @@ WITH selected_members AS MATERIALIZED (
 SELECT e.id,CASE WHEN e.author=s.actor_name THEN left(e.text,1500) ELSE right(e.text,1500) END::text AS text
 FROM canonical_events e JOIN canonical_sessions s ON s.id=e.session_id
 WHERE e.id=ANY($2::text[]) AND e.session_id=ANY($1::text[])
+ AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources selected WHERE selected.session_id=e.session_id AND selected.current_head IS NOT NULL)
 UNION ALL
 SELECT m.record_id AS id,
 CASE WHEN p.body->'Events'->m.entry_index->>'Author'=m.actor_name
@@ -363,7 +366,8 @@ func (q *Queries) OverviewTeam(ctx context.Context, arg OverviewTeamParams) (Ove
 const overviewUnknownTimes = `-- name: OverviewUnknownTimes :one
 SELECT count(DISTINCT session_id)::bigint FROM (
  SELECT e.session_id FROM canonical_events e
- JOIN canonical_sessions s ON s.id=e.session_id JOIN canonical_projects p ON p.id=s.project_id
+ JOIN canonical_sessions s ON s.id=e.session_id
+ AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources selected WHERE selected.session_id=s.id AND selected.current_head IS NOT NULL) JOIN canonical_projects p ON p.id=s.project_id
  WHERE p.team_id=$1 AND p.state<>'deleted' AND s.record_state='active'
  AND e.kind='message' AND e.occurred_at<'2000-01-01'::timestamptz
  UNION ALL
@@ -400,7 +404,8 @@ WITH selected_parts AS MATERIALIZED (
  WHERE source.session_id=ANY($5::text[]) AND p.overview_version IS DISTINCT FROM 1
 ), usage AS (
  SELECT session_id,thread_id,occurred_at,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens
- FROM canonical_usage WHERE session_id=ANY($5::text[])
+ FROM canonical_usage legacy WHERE session_id=ANY($5::text[])
+ AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources selected WHERE selected.session_id=legacy.session_id AND selected.current_head IS NOT NULL)
  UNION ALL
  SELECT source.session_id,u.thread_id,u.occurred_at,u.model,u.input_tokens,u.output_tokens,u.cache_read_tokens,u.cache_write_tokens
  FROM canonical_publication_sources source JOIN overview_publication_usage u ON u.attempt_id=source.current_head::uuid

@@ -24,6 +24,7 @@ sql:
       - "internal/adapters/postgres/migrations/000020_overview_publication_facts.sql"
       - "internal/adapters/postgres/migrations/000021_overview_native_covering_indexes.sql"
       - "internal/adapters/postgres/migrations/000022_message_body_search.sql"
+      - "internal/adapters/postgres/migrations/000023_publication_legacy_adoption.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
