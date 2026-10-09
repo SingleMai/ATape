@@ -5,6 +5,10 @@
 
 ## Context
 
+Amendment: [ADR-0096](0096-claude-repeated-dual-read-auto-files.md) later selects
+the separately acquired planned dual continuation and two historical files.
+The single-Read decision and its recorded native scope below remain unchanged.
+
 [ADR-0091](0091-claude-read-turn-automatic-replay.md) selects first-slug
 single/exact-two Read replay. A new isolated Claude Code 2.1.263 root Session
 performs two consecutive single-Read automatic rounds and an ordinary resume.

@@ -366,10 +366,31 @@ cursor/source consistency rather than authenticate arbitrary cursor forgery.
 Unsupported complete files/answers retain the caller's input ACK. No cursor
 field, round counter or public Interface changes are needed.
 
+[ADR-0096](../architecture/adr/0096-claude-repeated-dual-read-auto-files.md)
+adds the sampled two planned dual-Read rounds: first results B/A, one ordinary
+external user/reminder/single-text assistant bridge, then second results A/B.
+The second eight originals/copies retain the first slug and new B/S retain
+their current six P-through-A identities. The historical proof validates both
+complete turns, the first answer pair, the ordinary bridge and its selected
+API identities. The new user must follow the ordinary assistant; arbitrary
+intervening turns cannot authorize this profile.
+
+Two post-summary files reproduce the complete first-round receipts in Read
+call order A/B, independently of the old B/A result arrival order. Each commits
+independently as Raw-only. The existing pending state reconstructs B/S plus
+zero, one or two files from authenticated source bytes; the real answer requires
+the complete sequence and follows the second file. First-file EOF remains
+pending, and Event progress cannot skip the second required file. Current and
+historical literal paths are distinct; filenames and whole stored content objects
+must match their historical receipts, including unknown values. The Adapter
+does not reread referenced files. Old acknowledged Events, usage and Raw identity
+survive ordinary upgrades through the same public collection Interface.
+
 The older single/two-Read corpora each establish one first-slug round and two
 ordinary resumes. The new planned reverse corpus establishes its first-slug
-round and one ordinary resume after a complete public ACK. Repeated two-Read, further rounds/multiple
-reinjected files, same-path changes, tool-only layouts without P,
+round and one ordinary resume after a complete public ACK; the repeated dual
+corpus continues that actual Session. Further rounds, other result-order
+combinations or ordinary bridges, additional reinjected files, same-path changes, tool-only layouts without P,
 other/more/error/async/interleaved calls, children and Active Path replacement
 remain outside these profiles. Manual file reinjection keeps its separate
 profile above; text replay retains its proved repeated-slug scope.
@@ -411,14 +432,18 @@ fragmentation rules. The existing text proof's 256 KiB policies are unchanged.
 Both groups must fit the fresh requested source-page capacity even with Raw off;
 remaining-space exhaustion defers the whole group. Proof still costs
 O(committed prefix) I/O/hash and does not create an atomic filesystem snapshot.
-The two-round single-Read file witness retains at most 64 complete physical LF
+The two-round single/planned-dual Read file witness retains at most 64 complete physical LF
 frames within 4 MiB. Selected original/copy/control/first-round answer frames and the
-single reinjected file each fit 64 KiB including LF. These additional historical
+single or two reinjected files each fit 64 KiB including LF; the selected dual
+ordinary bridge has the same frame policy. These additional historical
 proof limits do not expand the existing automatic group limits or ordinary
 parsing. Oversized earlier unrelated history may fall out of the witness window;
 selected history beyond it is unsupported. Serialized retention is not an RSS
 bound, and the same-handle prefix proof is not an atomic snapshot.
-The second replay group and its file each require proof of their proposed
+These frame caps apply after a complete LF record is classified. A partial
+incoming prior-file line retains ordinary 16 MiB scanning until it completes;
+its whole selected frame must then fit 64 KiB.
+The second replay group and each file require proof of their proposed
 committed prefix before ACK. Appending B/S or the file must still leave the
 complete witness inside that window; otherwise the Adapter preserves the
 preceding recoverable ACK.
@@ -891,8 +916,8 @@ One later ordinary native process ran only after the unchanged first round
 received a complete public Adapter ACK. That gate used an offline initial
 candidate; the ledger identifies its source and bundle separately from final
 acceptance. Final source totals are fourteen Events, five persisted API IDs
-and 190122/77 controlled counters. No second dual round ran, and the absent
-summary API usage remains unaccounted for.
+and 190122/77 controlled counters. Those four snapshots stop before the second
+dual round acquired below; absent summary API usage remains unaccounted for.
 
 All 812 Claude Adapter tests passed on the final Implementation, including
 71 new public Interface cases. They verify fresh reverse capture, complete
@@ -941,6 +966,71 @@ the installed bundle SHA-256 is
 These are local implementation and integration checks; exact final-head PR
 gates, publication and manual Server deployment have separate evidence.
 
+The repeated planned dual increment resumes that same native Session after a
+complete public ACK of its 46-LF ordinary source on merged main
+`ffd17ee024461ee19f80933e22ad0ce043520497`. The gate has fourteen unique Events,
+five persisted API IDs, 190122/77 controlled counters and all 28,697 Raw bytes
+with zero pending Canonical/Raw. One subsequent native process produced a
+74-LF source with eight existing-slug originals/copies, one new automatic B/S,
+two historical files in call order A/B and a real two-block answer. R1 results
+are B/A and R2 results are A/B; each result binds its own call and actual disk
+receipt. The complete source logically contains twenty-two Events, seven
+persisted API IDs and 380163/117 counters. The two summary API usage identities
+are absent from JSONL and are not fabricated from model-response counters.
+Original controls, actual argv/environment, exact source prefix, full request/SSE
+hashes and declared fixture path substitutions are recorded in the
+[new native fixture](../../adapters/claude/fixtures/native-repeated-dual-read-2.1.263/README.md).
+The old factory's actual blocked input remains at LF58 with twenty Events,
+six API IDs, 380122/94 counters and 36,174 contiguous Raw bytes. The candidate
+must resume that input rather than reconstruct a summary/file checkpoint the
+old Implementation never acknowledged.
+
+A separate ordinary native resume ran only after the frozen initial candidate
+completely ACKed R2's 51,063 original source bytes. It added one external user,
+token reminder and single-text assistant, with no new Read or compact boundary.
+The unchanged binary produced an 80-LF, 54,083-byte strict extension; its public
+ACK has twenty-four unique Events, eight persisted API IDs and 380192/130
+counters with full Raw and zero pending. This gate identifies its initial
+source/bundle independently of final acceptance; it does not establish a third
+automatic round.
+
+All 904 Claude Adapter tests passed on the frozen final Implementation: the
+previous 812 plus 25 dual workflow, 52 source-proof and 15 historical-bound
+cases. They cover both independent file ACKs, pending EOF/partials, genuine
+Event-only deferred usage and answer fragments, unknown-value equality,
+ordinary bridge/control faults, selected API identities, repair, Raw policy
+and requested capacity. The exact 64-LF historical window succeeds; adding
+frames that would evict its first selected original rejects the prospective
+S/first-file/second-file ACK while retaining the preceding resumable input.
+Selected bridge/file frames pass at 64 KiB including LF and reject at one byte
+more; unrelated earlier source metadata exceeding 4 MiB remains admissible.
+
+Independent acceptance resumed fourteen distinct genuine previous-main opaque
+inputs from `ffd17ee024461ee19f80933e22ad0ce043520497`, including first-round
+summary/answer progress, Event-only inputs, ordinary EOF, the second round's
+pending first result and its actual blocked LF58 input. Every input completes
+R2 at twenty-two Events/seven API IDs/380163/117 without replaying old Events,
+moving copied usage to a new source revision or replacing Raw identity. Twenty
+independent sequence/cursor/capacity and genuine Event-only checks passed on
+the same source/bundle. These use the previous Git Implementation and explicitly
+substituted controlled literal CWD, rather than a historical published binary.
+
+The installed Claude package passed its prior scenarios plus three native
+snapshots, 24 derived LF cuts, thirteen partial slots, fourteen independently
+advanced Raw receipts and twenty capacity cases. Raw-off capture followed by
+Raw-on backfill preserves all twenty-four final Events and eight API identities.
+Claude/CLI typechecks, four Collector/Server E2E tests, documentation and
+architecture checks passed. The required non-skipped authenticated HTTP/Docker
+PostgreSQL contract passed 169 independently restarted installed managed-daemon
+runs: the prior 151 plus twelve second-round/ordinary stages and six idle polls.
+Reader prefixes, both rounds' own-call anchors and result order, message-only
+Search, actual persisted usage, exact contiguous Raw, policy/backfill and
+source-deletion retention passed. The usage query includes both actual native
+acquisition dates. Final source SHA-256 is
+`640f7c11a57b957b63b854ae1b10e41844d65d8ead6ec0608bc9df923d0e5b85`;
+the installed bundle SHA-256 is
+`d540f752884bbe77464a00f7a3001fb903f97c507ef569f6ea9e66d8d727fa94`.
+
 CLI `test:cli-package` passed for the foreground increment; the manual increment's
 local evidence uses installed tarballs rather than a rerun of that terminal suite.
 Provider-specific browser staging and upgrades from historical published binaries
@@ -954,8 +1044,7 @@ Tool-result batches outside the exact two-Read layouts, automatic compaction
 outside the exact text and Read-turn replay groups, and manual file reinjection
 outside the selected two-file control chain need additional native profiles;
 none enables them through generic duplicate or parent relaxation.
-The next completeness increment is to acquire later-round dual-Read evidence
-after a complete first-round public ACK before admitting repeated automatic
-compaction. Further rounds with multiple prior files, larger
-automatic receipts, single/no-plan manual layouts and Active Path adoption remain
-separate work.
+The next completeness increment needs new native evidence for further automatic
+rounds or a new manual Read profile before extending admission. Additional prior
+files, larger automatic receipts, single/no-plan manual layouts and Active Path
+adoption remain separate work.

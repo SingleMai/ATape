@@ -46,6 +46,7 @@ const autoReadFixture = new URL("../../../../../adapters/claude/fixtures/native-
 const manualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-read-reinjection-2.1.263/", import.meta.url)
 const repeatedAutoReadFixture = new URL("../../../../../adapters/claude/fixtures/native-repeated-auto-read-2.1.263/", import.meta.url)
 const reversedReadPairFixture = new URL("../../../../../adapters/claude/fixtures/native-reversed-read-pair-2.1.263/", import.meta.url)
+const repeatedDualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-repeated-dual-read-2.1.263/", import.meta.url)
 const largeManualReadFixture = new URL("../../../../../adapters/claude/fixtures/native-manual-large-read-reinjection-2.1.263/", import.meta.url)
 const compactSnapshot = (name: string) => readFileSync(new URL(`${name}.jsonl`, compactFixture), "utf8")
   .replaceAll("/fixture/native-manual-compact", workspace)
@@ -65,6 +66,13 @@ const repeatedAutoReadSnapshot = (phase: string) => readFileSync(new URL(`${phas
   .replaceAll("/fixture/native-repeated-auto-read/workspace", workspace)
 const reversedReadPairSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, reversedReadPairFixture), "utf8")
   .replaceAll("/fixture/native-reversed-read-pair/workspace", workspace)
+const repeatedDualReadSnapshot = (phase: string) => readFileSync(new URL(`${phase}.jsonl`, repeatedDualReadFixture), "utf8")
+  .replaceAll("/fixture/native-repeated-dual-read/workspace", workspace)
+  // Both corpora are the same native source. Preserve the already captured
+  // literal transcript-reference origin when appending the later snapshot.
+  .replaceAll("/fixture/native-repeated-dual-read/config", "/fixture/native-reversed-read-pair/config")
+  .replaceAll("/fixture/native-repeated-dual-read/home", "/fixture/native-reversed-read-pair/home")
+  .replaceAll("-fixture-native-repeated-dual-read-workspace", "-fixture-native-reversed-read-pair-workspace")
 const autoReadCases = (JSON.parse(readFileSync(new URL("provenance.json", autoReadFixture), "utf8")) as {
   cases: ReadonlyArray<{ id: string; profile: string; lines: { plan: number; calls: ReadonlyArray<number>; results: ReadonlyArray<number>; A: number; S: number; F0: number } }>
 }).cases
@@ -188,6 +196,17 @@ if (reversedReadPairStage) {
     "result-b": 25, "result-a": 26, originals: 27, summary: 37, "final-a": 38 }
   const next = cuts[slot] === undefined ? source : completeLinePrefix(source, cuts[slot])
   assert.ok(next.startsWith(readFileSync(reversedReadPairFile, "utf8")), "Reversed Read pair changed its native prefix")
+  writeFileSync(reversedReadPairFile, next)
+}
+const repeatedDualReadStage = /^repeated-dual-read-(plan|call-a|call-b|result-a|result-b|originals|summary|file-a|files|final-a|final|ordinary-resume)$/.exec(input.phase)
+if (repeatedDualReadStage) {
+  const slot = repeatedDualReadStage[1]!
+  const source = repeatedDualReadSnapshot(slot === "ordinary-resume" ? slot : "r2")
+  const cuts: Record<string, number> = { plan: 54, "call-a": 55, "call-b": 56,
+    "result-a": 57, "result-b": 58, originals: 59, summary: 69, "file-a": 70,
+    files: 71, "final-a": 72 }
+  const next = cuts[slot] === undefined ? source : completeLinePrefix(source, cuts[slot])
+  assert.ok(next.startsWith(readFileSync(reversedReadPairFile, "utf8")), "Repeated dual Read changed its acknowledged native prefix")
   writeFileSync(reversedReadPairFile, next)
 }
 // This native manual source continues the existing text-plan Read-pair Session.

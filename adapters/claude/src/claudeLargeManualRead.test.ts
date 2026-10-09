@@ -240,6 +240,7 @@ it.each([38, 45])("enforces fresh capacity and whole-group deferral for selected
   expect(events(tail.pages)).toHaveLength(4); expectRaw([...old.pages, deferred, ...rest.pages, ...tail.pages], source)
 })
 
+// Small group budgets backfill the large source through hundreds of restarted exact retries.
 it.each([38, 45])("resumes independently acknowledged Raw prefixes inside the proved group after %i with the old parser input", async count => {
   const source = snapshots[5]!, committed = prefix(source, count), throughGroup = prefix(source, count + 2)
   await writeFile(file, committed); const initial = await drain(null, false)
@@ -268,7 +269,7 @@ it.each([38, 45])("resumes independently acknowledged Raw prefixes inside the pr
   await appendFile(file, source.slice(throughGroup.length)); const rest = await drain(next, true, { eventsPerObservation: 1 })
   expect(events(rest.pages)).toHaveLength(4); expectRaw([...accepted, ...rest.pages], source)
   expect(latestUsage([...initial.pages, ...rest.pages])).toEqual({ records: 6, input: 188, output: 90 })
-})
+}, 30_000)
 
 it("backfills complete larger receipts after Raw capture was off without replaying messages or usage", async () => {
   const off = await drain(null, false, { eventsPerObservation: 1 })

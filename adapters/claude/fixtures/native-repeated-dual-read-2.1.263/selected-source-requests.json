@@ -1,0 +1,634 @@
+{
+  "kind": "selected actual model-message evidence; excludes SDK system and tool schema",
+  "sourceRequests": {
+    "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/requests.json",
+    "bytes": 38255,
+    "sha256": "feccccaa14e9366977cafa791a645f48c7535c354867ea64f60033c121276a3a"
+  },
+  "selection": "Actual model messages only. The long summary instruction uses exact prefix/suffix excerpts plus full-text hash; these are selected evidence, not replacement requests. Declared path substitutions apply.",
+  "requests": [
+    {
+      "index": 1,
+      "phase": "r2",
+      "method": "HEAD",
+      "url": "/api/hello",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "fakeAuthenticationVerified": false,
+      "route": null,
+      "response": {
+        "status": 404,
+        "kind": "native-bootstrap"
+      },
+      "selectedModelMessages": []
+    },
+    {
+      "index": 2,
+      "phase": "r2",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawBytes": 6523,
+      "rawSha256": "bb496e9a168736e10c2c37f158c8a3456ebb0e1a9c7e45d886731b1f8fd46785",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "toolcalls",
+        "round": 2,
+        "decision": {
+          "beforeState": "new",
+          "summaryInstructionMatched": false,
+          "latestExactExternalPrompt": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks.",
+          "lastDirectUserTextSha256": "3284da4b39cb515ea00dab08429996bf1cb48c0fb49b973dd10e2d149e6fb229",
+          "lastUserResultIds": [],
+          "historyToolIds": [
+            "call_82f63bfe_dual_r1_read_a",
+            "call_82f63bfe_dual_r1_read_b"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_dual_r1_read_b",
+            "call_82f63bfe_dual_r1_read_a"
+          ],
+          "afterState": "calls-sent"
+        }
+      },
+      "response": {
+        "id": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_PLAN: Read the fresh round2 files."
+          },
+          {
+            "type": "tool_use",
+            "id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-dual-read/workspace/r2-a.txt"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-dual-read/workspace/r2-b.txt"
+            }
+          }
+        ],
+        "stop": "tool_use",
+        "usage": {
+          "input_tokens": 190000,
+          "output_tokens": 17,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        "sseBytes": 1862,
+        "sseSha256": "2009a704310fb279932cc7206f70b7824c3da5c062c8f4171c585cdab55801d0"
+      },
+      "selectedModelMessages": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-09.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n\n"
+            },
+            {
+              "type": "text",
+              "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_DUAL_R1_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-dual-read/config/projects/-fixture-native-repeated-dual-read-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEAT_DUAL_R1_PLAN: Read the fresh round files."
+            },
+            {
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_a",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r1-a.txt"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_b",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r1-b.txt"
+              }
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "call_82f63bfe_dual_r1_read_b",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n2\t"
+            },
+            {
+              "tool_use_id": "call_82f63bfe_dual_r1_read_a",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 3,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEAT_DUAL_R1_FINAL_A: amber lynx 204."
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REPEAT_DUAL_R1_FINAL_B: violet crane 619."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 4,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REVERSED_READ_82f63bfe_dual_ORDINARY: Confirm amber lynx204 and violet crane619 after the completed first tool round."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 5,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REVERSED_READ_DUAL_ORDINARY: amber lynx204 and violet crane619."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 6,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "phase": "r2",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawBytes": 13029,
+      "rawSha256": "83af2a14a85c2a3c51606ab7eee8e1bf4870a98b7814e13673cc8157cbdf692d",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "summary",
+        "round": 2,
+        "decision": {
+          "beforeState": "calls-sent",
+          "summaryInstructionMatched": true,
+          "latestExactExternalPrompt": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks.",
+          "lastDirectUserTextSha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+          "lastUserResultIds": [],
+          "historyToolIds": [
+            "call_82f63bfe_dual_r1_read_a",
+            "call_82f63bfe_dual_r1_read_b"
+          ],
+          "historyResultIds": [
+            "call_82f63bfe_dual_r1_read_b",
+            "call_82f63bfe_dual_r1_read_a"
+          ],
+          "afterState": "summary-sent"
+        }
+      },
+      "response": {
+        "id": "msg_atape_repeated_dual_4a0ecd53_r2_summary",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_SUMMARY: Controlled synthetic seed cobalt heron482, completed prior reads amber lynx204 and violet crane619. Preserve the current round2 tool task and resume with the native retained context."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 51,
+          "output_tokens": 19,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        "sseBytes": 1057,
+        "sseSha256": "3f6ca67f87109232ce6a9f7c83f61973987acb7faaed12799a2f6866c1753480"
+      },
+      "selectedModelMessages": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-09.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n\n"
+            },
+            {
+              "type": "text",
+              "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEAT_DUAL_R1_SUMMARY: Controlled synthetic seed cobalt heron 482. Preserve the current tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-dual-read/config/projects/-fixture-native-repeated-dual-read-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEAT_DUAL_R1_PLAN: Read the fresh round files."
+            },
+            {
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_a",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r1-a.txt"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_b",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r1-b.txt"
+              }
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "call_82f63bfe_dual_r1_read_b",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n2\t"
+            },
+            {
+              "tool_use_id": "call_82f63bfe_dual_r1_read_a",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 3,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEAT_DUAL_R1_FINAL_A: amber lynx 204."
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REPEAT_DUAL_R1_FINAL_B: violet crane 619."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 4,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REVERSED_READ_82f63bfe_dual_ORDINARY: Confirm amber lynx204 and violet crane619 after the completed first tool round."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 5,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REVERSED_READ_DUAL_ORDINARY: amber lynx204 and violet crane619.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 6,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks.\n"
+            },
+            {
+              "type": "text-excerpts",
+              "originalUtf8Bytes": 6369,
+              "originalSha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+              "prefix": "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.\n- You already have all the context you need in the conversation above.\n- Tool calls will be REJECTED and will waste your only turn — you will fail the task.\n- Your entire response must be plain text: an <analysis> block followed by a <summary> block.\n\nYour task is to create a detailed summary of the conversation so far, paying close attention to the u",
+              "suffix": "ctions provided in the included context. If so, remember to follow these instructions when creating the above summary. Examples of instructions include:\n<example>\n## Compact Instructions\nWhen summarizing the conversation focus on typescript code changes and also remember the mistakes you made and how you fixed them.\n</example>\n\n<example>\n# Summary instructions\nWhen you are using compact - please focus on test output and code changes. Include file reads verbatim.\n</example>\n\n\nREMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "phase": "r2",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawBytes": 6439,
+      "rawSha256": "2869e2f8c965e1f0a9950151801db0410da7e412a0892e4bab79dfd01bcd20b4",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "tool-final",
+        "round": 2,
+        "decision": {
+          "beforeState": "summary-sent",
+          "summaryInstructionMatched": false,
+          "lastDirectUserTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "lastUserResultIds": [
+            "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+          ],
+          "historyToolIds": [
+            "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+          ],
+          "historyResultIds": [
+            "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+          ],
+          "afterState": "final-sent"
+        }
+      },
+      "response": {
+        "id": "msg_atape_repeated_dual_4a0ecd53_r2_tool_final",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_A: amber lynx204."
+          },
+          {
+            "type": "text",
+            "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_B: violet crane619."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 41,
+          "output_tokens": 23,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        "sseBytes": 1254,
+        "sseSha256": "bcbb5fa039e44619484d1989dc6bc8324d790286a860de7df3ed9e7e426394c7"
+      },
+      "selectedModelMessages": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-09.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n\n"
+            },
+            {
+              "type": "text",
+              "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEATED_DUAL_4a0ecd53_R2_SUMMARY: Controlled synthetic seed cobalt heron482, completed prior reads amber lynx204 and violet crane619. Preserve the current round2 tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-dual-read/config/projects/-fixture-native-repeated-dual-read-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_PLAN: Read the fresh round2 files."
+            },
+            {
+              "type": "tool_use",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r2-a.txt"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r2-b.txt"
+              }
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R2_A: amber lynx 204.\n2\t"
+            },
+            {
+              "tool_use_id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R2_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>\n\n<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-repeated-dual-read/workspace/r1-a.txt\"}\n</system-reminder>\n\n<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n2\t\n</system-reminder>\n\n<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-repeated-dual-read/workspace/r1-b.txt\"}\n</system-reminder>\n\n<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n2\t\n</system-reminder>",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "phase": "ordinary-resume",
+      "method": "HEAD",
+      "url": "/api/hello",
+      "rawBytes": 0,
+      "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "authority": "ordinary-resume",
+      "fakeAuthenticationVerified": false,
+      "route": null,
+      "response": {
+        "status": 404,
+        "kind": "native-bootstrap"
+      },
+      "selectedModelMessages": []
+    },
+    {
+      "index": 2,
+      "phase": "ordinary-resume",
+      "method": "POST",
+      "url": "/v1/messages?beta=true",
+      "rawBytes": 6920,
+      "rawSha256": "c57b2249a86429a9f0ea4aa7abf4f6115fb1ecfff2a26476436f4c4f78fdb19a",
+      "authority": "ordinary-resume",
+      "fakeAuthenticationVerified": true,
+      "route": {
+        "kind": "ordinary",
+        "decision": {
+          "beforeState": "new",
+          "afterState": "ordinary-sent",
+          "latestExactExternalPrompt": "ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: Confirm the completed two Read rounds and prior file context without tools.",
+          "lastDirectUserTextSha256": "97c75a6c4aaa789f37e14b70da94e7f35246537048bb861ce4f6a1e42052a7c8",
+          "historicalToolIds": [
+            "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+          ]
+        }
+      },
+      "response": {
+        "id": "msg_atape_repeated_dual_f9b20e67_ordinary",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: both Read rounds completed with amber lynx204 and violet crane619."
+          }
+        ],
+        "stop": "end_turn",
+        "usage": {
+          "input_tokens": 29,
+          "output_tokens": 13,
+          "cache_creation_input_tokens": 0,
+          "cache_read_input_tokens": 0
+        },
+        "sseBytes": 937,
+        "sseSha256": "80d1ceb5a551a4d64a4216a69cfa359175971342c0f97077c226b7b438996435"
+      },
+      "selectedModelMessages": [
+        {
+          "sourceMessageIndex": 0,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-09.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n\n"
+            },
+            {
+              "type": "text",
+              "text": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nATAPE_REPEATED_DUAL_4a0ecd53_R2_SUMMARY: Controlled synthetic seed cobalt heron482, completed prior reads amber lynx204 and violet crane619. Preserve the current round2 tool task and resume with the native retained context.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /fixture/native-repeated-dual-read/config/projects/-fixture-native-repeated-dual-read-workspace/979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 1,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_PLAN: Read the fresh round2 files."
+            },
+            {
+              "type": "tool_use",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r2-a.txt"
+              }
+            },
+            {
+              "type": "tool_use",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+              "name": "Read",
+              "input": {
+                "file_path": "/fixture/native-repeated-dual-read/workspace/r2-b.txt"
+              }
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 2,
+          "role": "user",
+          "content": [
+            {
+              "tool_use_id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R2_A: amber lynx 204.\n2\t"
+            },
+            {
+              "tool_use_id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+              "type": "tool_result",
+              "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R2_B: violet crane 619.\n2\n\n<system-reminder>\n<total_tokens>14810025 tokens left</total_tokens>\n</system-reminder>\n\n<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-repeated-dual-read/workspace/r1-a.txt\"}\n</system-reminder>\n\n<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n2\t\n</system-reminder>\n\n<system-reminder>\nCalled the Read tool with the following input: {\"file_path\":\"/fixture/native-repeated-dual-read/workspace/r1-b.txt\"}\n</system-reminder>\n\n<system-reminder>\nResult of calling the Read tool:\n1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n2\t\n</system-reminder>"
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 3,
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_A: amber lynx204."
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_B: violet crane619."
+            }
+          ]
+        },
+        {
+          "sourceMessageIndex": 4,
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "<system-reminder>\n<total_tokens>15000000 tokens left</total_tokens>\n</system-reminder>\n"
+            },
+            {
+              "type": "text",
+              "text": "ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: Confirm the completed two Read rounds and prior file context without tools.",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "additionalSourceRequests": {
+    "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/requests.json",
+    "bytes": 10710,
+    "sha256": "29f0c347c75b8fd4fae20ddb9ea6c9df02204bd5a9d7e87d6aa1c7ec5e1b7eae"
+  }
+}

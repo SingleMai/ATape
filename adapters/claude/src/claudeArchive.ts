@@ -317,8 +317,10 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       state = { ...state, readPair: await reverseReadPair(handle, at, hash.copy().digest("hex"), root, [...seen], calls, request.signal) }
       adoptedPair = true
     }
-    if (state.autoText && state.lastUuid !== state.autoText.summaryUuid)
-      await repeatedReadWitness(handle, at, hash.copy().digest("hex"), root, [...seen], calls, "file", request.signal, state.autoText)
+    const pendingRead = state.autoText ? await repeatedReadWitness(handle, at, hash.copy().digest("hex"), root, [...seen], calls,
+      state.lastUuid === state.autoText.summaryUuid ? "summary" : "file", request.signal, state.autoText) : undefined
+    if (pendingRead && pendingRead.committedFiles < pendingRead.files.length && state.eventSkip !== 0)
+      fail("cursor", "Claude automatic file sequence contains uncommitted answer progress.")
     const generation = digest(Buffer.from(JSON.stringify(delegated ? [sessionId, origin, root.uuid, delegated.child.agentId] : [sessionId, origin, root.uuid])))
     const sourceObjectId = `${delegated ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
     const events: AdapterEvent[] = []
@@ -354,13 +356,13 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         fail("unsupported", "Claude record does not belong to its selected Thread.")
       if (state.autoText) {
         const fileCommitted = state.lastUuid !== state.autoText.summaryUuid
-        const witness = await repeatedReadWitness(handle, at, hash.copy().digest("hex"), root, [...seen], calls,
-          fileCommitted ? "file" : "summary", request.signal, state.autoText)
+        const witness = pendingRead
+        const requiresFile = witness && witness.committedFiles < witness.files.length
         if (record.type === "attachment") {
-          if (fileCommitted || !witness) fail("unsupported", "Claude automatic replay has no supported prior file continuation.")
+          if (!witness || !requiresFile) fail("unsupported", "Claude automatic replay has no supported prior file continuation.")
           if (state.eventSkip !== 0) fail("cursor", "Claude automatic file checkpoint contains uncommitted Event progress.")
           if (line.content.length > MaxWitnessRecordBytes) fail("limit", "A Claude automatic prior-file record exceeds 64 KiB.")
-          verifyRepeatedReadFile(record, root, witness, state.autoText.summaryUuid, [...seen])
+          verifyRepeatedReadFile(record, root, witness, state.lastUuid, [...seen])
           // The added frame must still fit the proof needed after a restart.
           // Validate the proposed prefix before publishing its opaque ACK.
           await repeatedReadWitness(handle, line.end, hash.copy().update(line.content).digest("hex"), root,
@@ -370,7 +372,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
           hash.update(line.content); rawBytes += line.content.length; at = line.end; hasMore = at < before.size
           break
         }
-        if (witness && !fileCommitted) fail("unsupported", "Claude repeated Read requires its proved prior-file attachment.")
+        if (requiresFile) fail("unsupported", "Claude repeated Read requires its proved prior-file sequence.")
         if (witness && (witness.apiIds.includes(string(object(record.message)?.id) ?? "") || object(record.message)?.stop_reason !== "end_turn"))
           fail("unsupported", "Claude repeated Read requires a fresh completed answer API response.")
         verifyAutoTextAnswer(record, root, state.autoText, state.lastUuid)
@@ -986,10 +988,10 @@ async function readAutoGroup(handle: Awaited<ReturnType<typeof open>>, first: { 
   const copies = toolCount ? originals : originals.slice(1), retained = toolCount ? originals.slice(2) : originals
   const u = toolCount ? originals[0]! : originals[1]!, slug = copy.slug, groupLimit = toolCount ? MaxReadReplayGroupBytes : MaxAutoGroupBytes
   const absent = originals.every(record => !Object.hasOwn(record, "slug"))
-  if (!autoId(slug) || !Object.hasOwn(copy, "slug") || toolCount === 8 && !absent || !absent && !originals.every(record => record.slug === slug))
+  if (!autoId(slug) || !Object.hasOwn(copy, "slug") || !absent && !originals.every(record => record.slug === slug))
     fail("unsupported", "Claude automatic replay has conflicting slug evidence.")
-  if (toolCount === 6 && !absent)
-    await repeatedReadWitness(handle, committed, expectedDigest, root, seen, calls, "originals", signal)
+  if (toolCount && !absent)
+    await repeatedReadWitness(handle, committed, expectedDigest, root, seen, calls, "originals", signal, undefined, toolCount)
   verifyAutoCopy(copy, copies[0]!, root, slug, absent)
   const contents = [first.content], known = new Set(seen)
   let stage: AutoText | undefined
@@ -1005,7 +1007,7 @@ async function readAutoGroup(handle: Awaited<ReturnType<typeof open>>, first: { 
       if (!stage) fail("unsupported", "Claude automatic replay has no boundary.")
       verifyAutoSummary(record, root, stage)
       contents.push(line.content)
-      return { contents, end: line.end, stage, ...(toolCount === 6 && !absent ? { requiresFile: true } : {}) }
+      return { contents, end: line.end, stage, ...(toolCount && !absent ? { requiresFile: true } : {}) }
     }
     contents.push(line.content)
   }
@@ -1014,14 +1016,17 @@ async function readAutoGroup(handle: Awaited<ReturnType<typeof open>>, first: { 
   return undefined
 }
 
-type RepeatedReadWitness = { readonly receipt: RecordValue; readonly filePath: string; readonly slug: string; readonly apiIds: ReadonlyArray<string> }
+type RepeatedReadWitness = {
+  readonly files: ReadonlyArray<{ readonly receipt: RecordValue; readonly filePath: string }>
+  readonly committedFiles: number; readonly slug: string; readonly apiIds: ReadonlyArray<string>
+}
 
-/** Classification only: keep old text/dual/first-slug answers out of the larger
+/** Classification only: keep old text/first-slug answers out of the larger
  * historical proof. A selected existing-slug candidate never falls back after
  * its authenticated proof fails. The existing prefix/stat concurrency limits
  * apply to this bounded peek; it cannot authorize a file on its own. */
-async function existingSingleRead(handle: Awaited<ReturnType<typeof open>>, committed: number, stage: AutoText,
-  signal: AbortSignal): Promise<boolean> {
+async function existingReadTurn(handle: Awaited<ReturnType<typeof open>>, committed: number, stage: AutoText,
+  signal: AbortSignal, files: number): Promise<6 | 8 | undefined> {
   const peek = async (count: number) => {
     const bytes = Buffer.alloc(Math.min(committed, count * MaxWitnessRecordBytes)), offset = committed - bytes.length
     for (let at = 0; at < bytes.length;) {
@@ -1040,31 +1045,22 @@ async function existingSingleRead(handle: Awaited<ReturnType<typeof open>>, comm
     }
     return frames
   }
-  const controls = await peek(2)
+  const controls = await peek(2 + files)
   if (controls[0]!.uuid !== stage.boundaryUuid || controls[1]!.uuid !== stage.summaryUuid)
-    fail("unsupported", "Claude automatic single Read checkpoint does not match its source.")
+    fail("unsupported", "Claude automatic Read checkpoint does not match its source.")
   const retained = object(object(controls[0]!.compactMetadata)?.preservedMessages)?.uuids
-  if (!Array.isArray(retained) || retained.length !== 4) return false
-  const frames = await peek(14)
-  if (frames.slice(0, 6).every(record => !Object.hasOwn(record, "slug"))) return false
-  if (!frames.slice(0, 6).every(record => Object.hasOwn(record, "slug") && record.slug === stage.slug))
+  const count = Array.isArray(retained) && retained.length === 4 ? 6 : Array.isArray(retained) && retained.length === 6 ? 8 : undefined
+  if (!count) return undefined
+  const frames = await peek(2 * count + 2 + files)
+  if (frames.slice(0, count).every(record => !Object.hasOwn(record, "slug"))) return undefined
+  if (!frames.slice(0, count).every(record => Object.hasOwn(record, "slug") && record.slug === stage.slug))
     fail("unsupported", "Claude repeated Read originals have conflicting slug evidence.")
-  return true
+  return count
 }
 
-/** Reconstruct the sampled two consecutive single-Read rounds from the same
- * bytes being hashed. Only selected frames are decoded/capped; unrelated large
- * prehistory can fall outside the bounded physical window. No history lookup
- * by file name or remembered tool ID can replace this ordered witness. */
-async function repeatedReadWitness(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
-  root: RecordValue, seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>,
-  mode: "originals" | "summary" | "file", signal: AbortSignal, active?: AutoText): Promise<RepeatedReadWitness | undefined> {
-  if (mode === "summary" && (!active || !await existingSingleRead(handle, committed, active, signal))) return undefined
-  if (seen.length <= (mode === "originals" ? 6 : mode === "summary" ? 8 : 9) + 10)
-    fail("unsupported", "Claude repeated Read has no first completed added-slug round.")
+async function repeatedReadFrames(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string, signal: AbortSignal) {
   const { tail, ends, tailStart } = await committedTail(handle, committed, expectedDigest, MaxRepeatedReadTailRecords, signal, MaxRepeatedReadTailBytes)
-  const last = ends.length - 2, currentSize = mode === "originals" ? 6 : mode === "summary" ? 14 : 15
-  const currentStart = last - currentSize + 1, parsed = new Map<number, RecordValue>()
+  const parsed = new Map<number, RecordValue>()
   const frame = (index: number): RecordValue => {
     const cached = parsed.get(index)
     if (cached) return cached
@@ -1076,6 +1072,27 @@ async function repeatedReadWitness(handle: Awaited<ReturnType<typeof open>>, com
     catch { fail("unsupported", "Claude repeated Read witness has an unsupported physical record.") }
     parsed.set(index, record); return record
   }
+  return { frame, last: ends.length - 2 }
+}
+
+/** Reconstruct only a selected single/dual historical profile from the bytes
+ * being hashed. Unrelated large prehistory stays outside the decoded witness;
+ * no lookup by file name or remembered tool ID can replace its ordered proof. */
+async function repeatedReadWitness(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>,
+  mode: "originals" | "summary" | "file", signal: AbortSignal, active?: AutoText, originalCount: 6 | 8 = 6): Promise<RepeatedReadWitness | undefined> {
+  const committedFiles = mode === "file" && active ? seen.length - seen.indexOf(active.summaryUuid) - 1 : 0
+  const count = mode === "originals" ? originalCount : active && await existingReadTurn(handle, committed, active, signal, committedFiles)
+  if (!count) {
+    if (mode === "file") fail("unsupported", "Claude automatic file checkpoint has no selected historical witness.")
+    return undefined
+  }
+  if (count === 8) return repeatedDualReadWitness(handle, committed, expectedDigest, root, seen, calls, mode, signal, active, committedFiles)
+  if (committedFiles > 1) fail("unsupported", "Claude single Read replay has an extra prior file.")
+  if (seen.length <= (mode === "originals" ? 6 : mode === "summary" ? 8 : 9) + 10)
+    fail("unsupported", "Claude repeated Read has no first completed added-slug round.")
+  const { frame, last } = await repeatedReadFrames(handle, committed, expectedDigest, signal)
+  const currentSize = mode === "originals" ? 6 : 14 + committedFiles, currentStart = last - currentSize + 1
   const second = Array.from({ length: 6 }, (_, index) => frame(currentStart + index)), slug = second[0]!.slug
   if (!autoId(slug) || second.some(record => !Object.hasOwn(record, "slug") || record.slug !== slug))
     fail("unsupported", "Claude repeated Read requires an unchanged common existing slug.")
@@ -1114,23 +1131,99 @@ async function repeatedReadWitness(handle: Awaited<ReturnType<typeof open>>, com
   if (oldCall.filePath === newCall.filePath) fail("unsupported", "Claude repeated Read requires distinct literal file paths.")
   const apiIds = [object(firstOriginals[2]!.message)!.id, m0!.id, object(second[2]!.message)!.id] as string[]
   if (new Set(apiIds).size !== 3) fail("unsupported", "Claude repeated Read requires fresh tool-response API identities.")
-  const witness = { receipt: object(firstOriginals[4]!.toolUseResult)!, filePath: oldCall.filePath, slug, apiIds }
+  const witness = { files: [{ receipt: object(firstOriginals[4]!.toolUseResult)!, filePath: oldCall.filePath }], committedFiles, slug, apiIds }
   if (mode !== "originals") {
     const secondStage = group(second, currentStart, false, seen.slice(0, currentSeenStart + 6))
     if (!active || !equalJson(secondStage, active)) fail("unsupported", "Claude repeated Read checkpoint does not match its second group.")
-    if (mode === "file") verifyRepeatedReadFile(frame(last), root, witness, active.summaryUuid, seen.slice(0, -1))
+    if (mode === "file") verifyRepeatedReadFile(frame(last), root, witness, active.summaryUuid, seen.slice(0, -1), 0)
   }
   return witness
 }
 
-function verifyRepeatedReadFile(record: RecordValue, root: RecordValue, witness: RepeatedReadWitness, parent: unknown, known: ReadonlyArray<string>): void {
+/** The sampled dual history includes one ordinary turn between the two Read
+ * responses. Result order stays physical; historical files instead follow the
+ * first response's call indices. No global receipt lookup authorizes a file. */
+async function repeatedDualReadWitness(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
+  root: RecordValue, seen: ReadonlyArray<string>, calls: ReadonlyMap<string, { name: string; uuid: string }>,
+  mode: "originals" | "summary" | "file", signal: AbortSignal, active: AutoText | undefined, committedFiles: number): Promise<RepeatedReadWitness> {
+  if (committedFiles > 2) fail("unsupported", "Claude dual Read replay has an extra prior file.")
+  if (seen.length <= (mode === "originals" ? 8 : 10 + committedFiles) + 15)
+    fail("unsupported", "Claude repeated dual Read has no completed first round and ordinary bridge.")
+  const { frame, last } = await repeatedReadFrames(handle, committed, expectedDigest, signal)
+  const currentSize = mode === "originals" ? 8 : 18 + committedFiles, currentStart = last - currentSize + 1
+  const second = Array.from({ length: 8 }, (_, index) => frame(currentStart + index)), slug = second[0]!.slug
+  if (!autoId(slug) || second.some(record => !Object.hasOwn(record, "slug") || record.slug !== slug))
+    fail("unsupported", "Claude repeated dual Read requires an unchanged common existing slug.")
+  const gap: RecordValue[] = []
+  let bridgeEnd = currentStart - 1
+  while (frame(bridgeEnd).uuid === undefined) { gap.push(frame(bridgeEnd)); bridgeEnd-- }
+  const bridge = [frame(bridgeEnd - 2), frame(bridgeEnd - 1), frame(bridgeEnd)] as const
+  let priorFinal = bridgeEnd - 3
+  while (frame(priorFinal).uuid === undefined) { gap.push(frame(priorFinal)); priorFinal-- }
+  const firstStart = priorFinal - 19, first = Array.from({ length: 20 }, (_, index) => frame(firstStart + index))
+  const originals = first.slice(0, 8), currentSeenStart = seen.length - (mode === "originals" ? 8 : 10 + committedFiles)
+  const firstSeenStart = currentSeenStart - 15
+  const expected = [...originals, ...first.slice(16), ...bridge, ...second,
+    ...(mode === "originals" ? [] : [frame(currentStart + 16), frame(currentStart + 17)]),
+    ...Array.from({ length: committedFiles }, (_, index) => frame(currentStart + 18 + index))].map(record => record.uuid)
+  if (firstSeenStart < 1 || seen[0] !== root.uuid || !equalJson(seen.slice(firstSeenStart), expected))
+    fail("unsupported", "Claude repeated dual Read witness does not match its committed identities.")
+  verifyAutoReadTurn(originals, root, seen[firstSeenStart - 1], calls)
+  verifyAutoReadTurn(second, root, bridge[2].uuid, calls)
+  if (originals.some(record => Object.hasOwn(record, "slug")) || originals[5]!.parentUuid !== originals[4]!.uuid ||
+    second[5]!.parentUuid !== second[3]!.uuid)
+    fail("unsupported", "Claude repeated dual Read requires its sampled reverse then ordered result graphs.")
+  const group = (turn: ReadonlyArray<RecordValue>, start: number, absent: boolean, known: ReadonlyArray<string>) => {
+    for (let index = 0; index < 8; index++) verifyAutoCopy(frame(start + 8 + index), turn[index]!, root, slug, absent)
+    const stage = verifyAutoBoundary(frame(start + 16), root, turn.slice(2), turn[0]!.promptId as string, slug, new Set(known))
+    verifyAutoSummary(frame(start + 17), root, stage); return stage
+  }
+  const firstStage = group(originals, firstStart, true, seen.slice(0, firstSeenStart + 8))
+  const a0 = first[18]!, a1 = first[19]!, m0 = object(a0.message), m1 = object(a1.message)
+  verifyAutoTextAnswer(a0, root, firstStage)
+  if (!readRoot(a0, root) || !readRoot(a1, root) || !autoAssistant(a1, root, 1) || a1.parentUuid !== a0.uuid || a1.slug !== slug ||
+    a0.isApiErrorMessage !== undefined || a1.isApiErrorMessage !== undefined || m0?.id !== m1?.id || m0?.model !== m1?.model ||
+    m0?.stop_reason !== "end_turn" || m1?.stop_reason !== "end_turn")
+    fail("unsupported", "Claude repeated dual Read requires its first complete answer pair.")
+  const [u, g, a] = bridge, user = object(u.message), attachment = object(g.attachment), answer = object(a.message)
+  if (bridge.some(record => !readRoot(record, root) || record.slug !== slug || record.sourceToolAssistantUUID !== undefined ||
+    record.toolUseResult !== undefined || record.isAsync !== undefined || record.status !== undefined || record.isApiErrorMessage !== undefined) ||
+    u.type !== "user" || u.userType !== "external" || u.parentUuid !== a1.uuid || !autoId(u.promptId) ||
+    user?.role !== "user" || typeof user.content !== "string" || !user.content.length ||
+    g.type !== "attachment" || g.message !== undefined || g.parentUuid !== u.uuid || attachment?.type !== "total_tokens_reminder" ||
+    typeof attachment.text !== "string" || !attachment.text.length || !autoAssistant(a, root) || a.parentUuid !== g.uuid ||
+    a.isApiErrorMessage !== undefined || answer?.stop_reason !== "end_turn")
+    fail("unsupported", "Claude repeated dual Read has no selected ordinary continuation bridge.")
+  for (const record of gap) if (!manualBookkeeping(record, root, record.leafUuid) || record.type === "last-prompt" &&
+    (![a1.uuid, a.uuid, second[7]!.uuid].includes(record.leafUuid) ||
+      record.leafUuid === second[7]!.uuid && record.lastPrompt !== object(second[0]!.message)?.content))
+    fail("unsupported", "Claude repeated dual Read has unsupported inter-round bookkeeping.")
+  const oldCalls = originals.slice(3, 5).map(record => readCall(record, object(record.message)!, calls))
+  const newCalls = second.slice(3, 5).map(record => readCall(record, object(record.message)!, calls))
+  if (new Set([...oldCalls, ...newCalls].map(call => call.filePath)).size !== 4)
+    fail("unsupported", "Claude repeated dual Read requires distinct selected literal file paths.")
+  const apiIds = [object(originals[2]!.message)!.id, m0!.id, answer!.id, object(second[2]!.message)!.id] as string[]
+  if (new Set(apiIds).size !== 4) fail("unsupported", "Claude repeated dual Read requires fresh selected API identities.")
+  const witness: RepeatedReadWitness = { files: oldCalls.map(call => ({ filePath: call.filePath,
+    receipt: object(originals.slice(5, 7).find(record => record.parentUuid === call.uuid)!.toolUseResult)! })), committedFiles, slug, apiIds }
+  if (mode !== "originals") {
+    const secondStage = group(second, currentStart, false, seen.slice(0, currentSeenStart + 8))
+    if (!active || !equalJson(secondStage, active)) fail("unsupported", "Claude repeated dual Read checkpoint does not match its second group.")
+    for (let index = 0; index < committedFiles; index++) verifyRepeatedReadFile(frame(currentStart + 18 + index), root, witness,
+      index ? frame(currentStart + 17 + index).uuid : active.summaryUuid, seen.slice(0, seen.length - committedFiles + index), index)
+  }
+  return witness
+}
+
+function verifyRepeatedReadFile(record: RecordValue, root: RecordValue, witness: RepeatedReadWitness, parent: unknown, known: ReadonlyArray<string>, index = witness.committedFiles): void {
   const attachment = object(record.attachment)
+  const expected = witness.files[index]
   if (!readRoot(record, root) || record.type !== "attachment" || record.userType !== "external" || record.message !== undefined ||
     record.promptId !== undefined || record.sourceToolAssistantUUID !== undefined || record.toolUseResult !== undefined || record.isApiErrorMessage !== undefined ||
     record.isAsync !== undefined || record.status !== undefined ||
     record.parentUuid !== parent || record.slug !== witness.slug || known.includes(record.uuid as string) || attachment?.type !== "file" ||
-    attachment.filename !== witness.filePath || !readPath(attachment.displayPath) || attachment.isAsync !== undefined ||
-    attachment.status !== undefined || attachment.agentId !== undefined || !equalJson(attachment.content, witness.receipt))
+    !expected || attachment.filename !== expected.filePath || !readPath(attachment.displayPath) || attachment.isAsync !== undefined ||
+    attachment.status !== undefined || attachment.agentId !== undefined || !equalJson(attachment.content, expected.receipt))
     fail("unsupported", "Claude automatic prior file differs from its proved first successful Read receipt.")
 }
 
@@ -1589,7 +1682,8 @@ function decodeCursor(value: string | null): Cursor | undefined {
     const auto = c.stream?.autoText
     const autoSummaryTail = auto && c.stream!.lastUuid === auto.summaryUuid && c.stream!.seen.at(-2) === auto.boundaryUuid && c.stream!.seen.at(-1) === auto.summaryUuid
     const autoFileTail = auto && autoId(c.stream!.lastUuid) && c.stream!.lastUuid !== auto.summaryUuid &&
-      c.stream!.seen.at(-3) === auto.boundaryUuid && c.stream!.seen.at(-2) === auto.summaryUuid && c.stream!.seen.at(-1) === c.stream!.lastUuid &&
+      [1, 2].some(files => c.stream!.seen.at(-files - 2) === auto.boundaryUuid && c.stream!.seen.at(-files - 1) === auto.summaryUuid) &&
+      c.stream!.seen.at(-1) === c.stream!.lastUuid &&
       new Set(c.stream!.calls.map(call => call[0])).size === c.stream!.calls.length
     if (auto && (stage || c.projectionRevision !== 4 || c.usageVersion !== 1 || !c.observedAt || timestamp(c.observedAt) !== c.observedAt ||
       ![auto.boundaryUuid, auto.summaryUuid, auto.promptId, auto.slug].every(autoId) || auto.boundaryUuid === auto.summaryUuid ||

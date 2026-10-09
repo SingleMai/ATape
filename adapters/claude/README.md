@@ -125,7 +125,8 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   assistant usage updates one API identity at its latest revision.
 - Native root automatic Read-turn compaction on Claude Code 2.1.263: exact
   [user U, reminder G, text plan P, Read C, result R, reminder A], or its
-  successful ordered two-Read variant with C0/C1/R0/R1. The source copies all
+  successful two-Read variant with C0/C1/R0/R1, or planned C0/C1/R1/R0.
+  The source copies all
   six/eight records, while retained metadata names only P through A. Current
   committed-prefix proof checks every original and complete copy, including
   unknown fields; each copy adds only the first common slug. All copies plus
@@ -135,7 +136,12 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
   consecutive single-Read rounds additionally preserve the same existing slug
   and prove one prior-file reinjection after the second summary. Its complete
   stored receipt equals the first Read; file ACK keeps the answer pending and
-  full index-0 answer commit clears it. The two-Read profile remains first-slug.
+  full index-0 answer commit clears it. The sampled repeated planned dual profile
+  proves first-round B/A results, one ordinary U/reminder/text-answer bridge and
+  second-round A/B results. Two historical files reproduce the old receipts in
+  call order A/B and commit independently Raw-only; the answer follows the second
+  file. Both profiles derive file progress from source and the existing pending
+  state, preserving old opaque cursors without new fields or a reset.
 - Native manual root Read file reinjection on Claude Code 2.1.263: the selected
   text-plan/two-Read turn ends in two final text records, and manual compact
   preserves only that final pair. After summary/command/stdout controls, file B
@@ -154,7 +160,7 @@ Both CLI and Adapter must support `atape.git-attribution.v1` for Git capture.
 
 ## Explicit limits
 
-No tool-parent batches beyond the exact ordered successful two-Read layouts,
+No tool-parent batches beyond the exact successful two-Read layouts,
 automatic compaction beyond the exact text/Read-turn replay groups, cross-file continuation,
 manual tails outside the singleton or exact two-record text shapes, arbitrary
 copied UUID replay, child compaction,
@@ -205,16 +211,19 @@ Read-turn automatic proof retains at most eight adjacent originals in a separate
 eight/ten-record group has a 640 KiB total cap (eight records imply at most
 512 KiB). The whole group must fit fresh requested source capacity; remaining
 space exhaustion defers it. Ordinary 16 MiB Read admission does not imply its
-larger result fits this replay witness policy. The two-round single-Read profile
-adds a historical witness of at most 64 physical LF frames within 4 MiB; selected
-frames and its one prior-file frame each fit 64 KiB. It requires distinct literal
+larger result fits this replay witness policy. The two-round single/planned-dual
+Read profiles add a historical witness of at most 64 physical LF frames within
+4 MiB; selected frames, the dual ordinary bridge and each prior-file frame fit
+64 KiB. They require distinct literal
 paths and full first-receipt equality, retaining the pending answer through file
 ACK and re-proving it before the real answer. Before ACK, the second replay group
-and file must each retain the complete witness within the proposed committed
-prefix's window. Existing-slug two-Read, further
-rounds/multiple files, same-path changes, no-plan layouts and other/more/error/async
+and each file must retain the complete witness within the proposed committed
+prefix's window. Further rounds, other dual result-order/bridge combinations,
+additional files, same-path changes, no-plan layouts and other/more/error/async
 results need further profiles. Text replay retains its separate 256 KiB policies
 and repeated scope.
+Selected file limits apply to complete LF frames; an incomplete incoming file
+line retains ordinary 16 MiB scanning before classification.
 Manual Read reinjection selects only one first-slug text-plan/exact-two-successful
 Read turn, its final text pair and reverse-order two-file chain. Each selected
 original receipt R0/R1 fits 2 MiB and each selected file frame fits 1 MiB; their
@@ -340,7 +349,10 @@ synthetic content and actual native source persistence:
 - [Planned reverse Read pair](fixtures/native-reversed-read-pair-2.1.263/README.md):
   native B/A completion, its first-slug automatic replay and an ordinary resume
   after a complete public ACK, with actual older acknowledged B-result recovery;
-  repeated dual rounds remain unproved.
+  its snapshot stops before the later repeated dual increment.
+- [Repeated planned dual Read replay](fixtures/native-repeated-dual-read-2.1.263/README.md):
+  the same Session after a complete first-round/ordinary public ACK, a second
+  actual Read pair, exact same-slug replay and two prior files in call order.
 - [Manual Read file reinjection](fixtures/native-manual-read-reinjection-2.1.263/README.md):
   six native snapshots with two actual successful Reads, retained final text pair,
   reverse-order file reinjection, internal Meta/synthetic bridge and two real

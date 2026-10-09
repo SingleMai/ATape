@@ -29,7 +29,7 @@
     "test:go:fuzz": "./scripts/run-go-fuzz.sh",
     "test:go:integration": "node --test scripts/verify-opencode-contract.test.mjs && node scripts/verify-opencode-contract.mjs --all",
     "test:go:race": "cd server && go test -race ./...",
-    "test:security:dependencies": "pnpm audit --prod --audit-level high && cd server && GOTOOLCHAIN=go1.25.14 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...",
+    "test:security:dependencies": "pnpm audit --prod --audit-level high && cd server && GOTOOLCHAIN=go1.26.9 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...",
     "test:self-hosting:config": "./scripts/verify-self-hosted-config.sh",
     "test:self-hosting:restore": "./scripts/rehearse-self-hosted-restore.sh",
     "test:collector-disk": "pnpm --filter @atape/cli verify:capture-disk",
