@@ -89,6 +89,7 @@ try {
   if (adapterId === "claude") {
     await verifyClaudeForeground(adapter, context, request.limits)
     await verifyClaudeContinuity(adapter, context, request.limits)
+    await verifyClaudeUnlinkedDelegation(adapter, context, request.limits)
   }
   const installedManifest = JSON.parse(await readFile(join(installDirectory, "node_modules", "@atape", `adapter-${adapterId}`, "package.json"), "utf8"))
   assert.equal(installedManifest.dependencies, undefined, "Adapter must be self-contained")
@@ -194,6 +195,105 @@ async function collectInstalled(adapter, context, cursor, rawProgress, limits, r
     return await runtime.collect({ protocolVersion: context.protocolVersion, cursor, limits,
       rawProgress, ...(rawCaptureEnabled === undefined ? {} : { rawCaptureEnabled }), signal: AbortSignal.timeout(5_000) })
   } finally { await runtime.close?.() }
+}
+
+// Generated receipt mutations establish current-Thread continuity. They do not
+// claim native background/nested child acquisition or admit those child files.
+async function verifyClaudeUnlinkedDelegation(adapter, context, limits) {
+  const fixture = join(packageRoot, "fixtures", "native-foreground-child-2.1.263")
+  const { sessionId, agentId, fixtureCwd } = JSON.parse(await readFile(join(fixture, "provenance.json"), "utf8"))
+  const parse = source => source.replaceAll(fixtureCwd, projectDirectory).trimEnd().split("\n").map(JSON.parse)
+  const encode = rows => rows.map(row => JSON.stringify(row) + "\n").join("")
+  const rootRows = parse(await readFile(join(fixture, `${sessionId}.jsonl`), "utf8"))
+  const childRows = parse(await readFile(join(fixture, sessionId, "subagents", `agent-${agentId}.jsonl`), "utf8"))
+  const cases = ["async", "noncompleted", "error", "missing-proof", "unsafe-agent", "nested"]
+  for (const name of cases) {
+    const directory = join(temporaryRoot, `unlinked-${name}`), file = join(directory, `${sessionId}.jsonl`)
+    const childFile = join(directory, sessionId, "subagents", `agent-${agentId}.jsonl`)
+    await mkdir(join(directory, sessionId, "subagents"), { recursive: true })
+    const root = structuredClone(rootRows), child = structuredClone(childRows)
+    const receipt = root.find(row => row.toolUseResult?.agentId)
+    if (name === "async") Object.assign(receipt.toolUseResult, { status: "async_launched", isAsync: true })
+    if (name === "noncompleted") receipt.toolUseResult.status = "interrupted"
+    if (name === "error") receipt.message.content[0].is_error = true
+    if (name === "missing-proof") delete receipt.sourceToolAssistantUUID
+    if (name === "unsafe-agent") receipt.toolUseResult.agentId = "../outside"
+    if (name === "nested") {
+      const originalCall = child.find(row => row.type === "assistant" && row.message.content[0]?.type === "tool_use")
+      const originalReply = child.findLast(row => row.type === "assistant")
+      const originalReceipt = child.find(row => row.type === "user" && Array.isArray(row.message.content))
+      const call = { ...structuredClone(originalCall), uuid: "installed-nested-call", parentUuid: originalReply.uuid,
+        timestamp: "2026-10-09T01:00:00Z", message: { ...originalCall.message, id: "installed-nested-api-call",
+          content: [{ type: "tool_use", id: "installed-nested-tool", name: "Agent", input: { prompt: "generated nested request" } }] } }
+      const result = { ...structuredClone(originalReceipt), uuid: "installed-nested-result", parentUuid: call.uuid,
+        timestamp: "2026-10-09T01:00:01Z", sourceToolAssistantUUID: call.uuid,
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "installed-nested-tool", content: "generated nested result" }] },
+        toolUseResult: { agentId: "installed-grandchild", status: "completed" } }
+      const reply = { ...structuredClone(originalReply), uuid: "installed-nested-reply", parentUuid: result.uuid,
+        timestamp: "2026-10-09T01:00:02Z", message: { ...originalReply.message, id: "installed-nested-api-reply",
+          content: [{ type: "text", text: "INSTALLED_NESTED_CONTINUATION" }] } }
+      child.push(call, result, reply)
+    }
+    const rootSource = encode(root), childSource = encode(child)
+    await writeFile(file, rootSource); await writeFile(childFile, childSource)
+    await writeFile(join(directory, sessionId, "subagents", "agent-installed-grandchild.jsonl"), "must never be read\n")
+    process.env.ATAPE_CLAUDE_SESSION_FILE = file
+    const state = { cursor: null, receipts: new Map(), events: [], usage: new Map(), raw: new Map(), threads: new Set() }
+    const drain = async enabled => {
+      const budgets = { ...limits, eventsPerObservation: 1, ...(enabled ? { rawSegmentBytes: 8192, rawBytesPerObservation: 8192 } : {}) }
+      for (let index = 0; index < 100; index++) {
+        const collect = () => collectInstalled(adapter, context, state.cursor, [...state.receipts.values()], budgets, enabled)
+        const page = await collect()
+        assert.deepEqual(await collect(), page, `${name}: exact retry after reopening`)
+        for (const observation of page.observations) {
+          assert.equal(observation.session.sourceSessionId, sessionId)
+          for (const thread of observation.threads) {
+            assert.ok(thread.sourceThreadId === "root" || name === "nested" && thread.sourceThreadId === `claude-agent:${agentId}`)
+            state.threads.add(thread.sourceThreadId)
+          }
+          state.events.push(...observation.events)
+          for (const sample of observation.usage ?? []) state.usage.set(`${sample.sourceThreadId}:${sample.sourceUsageId}`, sample)
+          for (const raw of observation.rawSegments) {
+            const prior = state.raw.get(raw.sourceObjectId) ?? { source: "", generation: raw.sourceGeneration, name: raw.sourceName }
+            assert.equal(raw.sourceGeneration, prior.generation)
+            assert.equal(raw.sourceOffset, Buffer.byteLength(prior.source))
+            prior.source += raw.content; state.raw.set(raw.sourceObjectId, prior)
+            state.receipts.set(raw.sourceObjectId, { sourceSessionId: sessionId, sourceObjectId: raw.sourceObjectId,
+              sourceGeneration: raw.sourceGeneration, sourceOffset: Buffer.byteLength(prior.source), finalized: raw.final })
+          }
+        }
+        state.cursor = page.nextCursor
+        if (!page.observations.length && !page.hasMore) {
+          assert.deepEqual(page.sourceFailures, [{ source: name === "nested" ? childFile : file, reason: "unsupported" }])
+          assert.equal(page.progress.pendingCanonicalSessions, 0)
+          assert.equal(page.progress.pendingRawBytes, 0)
+          return
+        }
+      }
+      assert.fail(`${name}: current Thread capture did not converge`)
+    }
+    await drain(false)
+    const events = structuredClone(state.events), usage = structuredClone([...state.usage.values()])
+    assert.equal(state.raw.size, 0)
+    assert.deepEqual([...state.threads].sort(), name === "nested" ? ["root", `claude-agent:${agentId}`].sort() : ["root"])
+    assert.equal(state.events.length, name === "nested" ? 11 : 4)
+    assert.equal(new Set(state.events.map(event => `${event.sourceThreadId}:${event.sourceEventId}`)).size, state.events.length)
+    assert.equal(state.events.filter(event => event.childSourceThreadId).length, name === "nested" ? 1 : 0)
+    assert.ok(state.events.some(event => event.update.content?.text === "ATAPE_ROOT_FINAL: delegated read reviewed."))
+    if (name === "nested") assert.ok(state.events.some(event => event.sourceThreadId === `claude-agent:${agentId}` &&
+      event.update.content?.text === "INSTALLED_NESTED_CONTINUATION"))
+    assert.equal(state.usage.size, name === "nested" ? 6 : 2)
+    assert.equal(usage.reduce((sum, sample) => sum + sample.inputTokens, 0), name === "nested" ? 102 : 34)
+    assert.equal(usage.reduce((sum, sample) => sum + sample.outputTokens, 0), name === "nested" ? 54 : 18)
+    await drain(true)
+    assert.deepEqual(state.events, events); assert.deepEqual([...state.usage.values()], usage)
+    assert.equal(state.raw.size, name === "nested" ? 2 : 1)
+    assert.equal([...state.raw.values()].find(raw => raw.name === `${sessionId}.jsonl`).source, rootSource)
+    if (name === "nested") assert.equal([...state.raw.values()].find(raw => raw.name === `agent-${agentId}.jsonl`).source, childSource)
+    assert.ok(state.events.every(event => state.raw.has(event.rawRef.sourceObjectId)))
+  }
+  process.env.ATAPE_CLAUDE_SESSION_FILE = ""
+  process.stdout.write("Verified installed Claude current Thread continuity: 6 generated unlinked cases, cold retry, idle diagnostics and Raw off/backfill\n")
 }
 
 // The installed artifact follows the same source rule for every compaction.

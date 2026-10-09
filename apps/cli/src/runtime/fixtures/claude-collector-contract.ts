@@ -251,6 +251,63 @@ if (input.phase === "unsupported") {
     logicalParentUuid: "controlled-stale-parent", compactMetadata: { ...boundary.compactMetadata, trigger: "auto" } }) + "\n")
 }
 if (input.phase === "repair") writeFileSync(compactFile, readFileSync(join(input.home, "retained.jsonl")))
+// These are generated relationship mutations, not additional native lifecycle
+// evidence. Their current Thread records retain the native ordinary schemas.
+const generatedDelegation = (slot: "async" | "running" | "error" | "nested") => {
+  const nested = slot === "nested", file = nested ? childFile : rootFile
+  const source = readFileSync(file, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
+  const last = rows.findLast(row => typeof row.uuid === "string")
+  const template = rows.find(row => row.type === "assistant" && row.message.content.some((block: { type: string }) => block.type === "tool_use"))
+  const receiptTemplate = JSON.parse(readFileSync(rootFile, "utf8").trimEnd().split("\n")
+    .find(line => JSON.parse(line).toolUseResult?.agentId === agentId)!)
+  const proposedAgent = `generated_unlinked_${slot}`, callId = `call_generated_unlinked_${slot}`
+  const callUuid = `generated-unlinked-${slot}-call`, receiptUuid = `generated-unlinked-${slot}-receipt`
+  const call = { ...template, uuid: callUuid, parentUuid: last.uuid, timestamp: "2026-10-08T12:00:00Z",
+    message: { ...template.message, id: `msg_generated_unlinked_${slot}_call`, content: [{ type: "tool_use", id: callId,
+      name: slot === "running" ? "Task" : "Agent", input: { description: "Generated unproved child",
+        prompt: `ATAPE_UNLINKED_TOOL_${slot}: preserve current Thread`, run_in_background: slot === "async" } }] } }
+  const receipt = { ...receiptTemplate, uuid: receiptUuid, parentUuid: callUuid, sourceToolAssistantUUID: callUuid,
+    timestamp: "2026-10-08T12:00:01Z", isSidechain: nested,
+    ...(nested ? { agentId } : {}), message: { role: "user", content: [{ type: "tool_result", tool_use_id: callId,
+      content: `ATAPE_UNLINKED_TOOL_${slot}: generated result`, ...(slot === "error" ? { is_error: true } : {}) }] },
+    toolUseResult: { status: slot === "async" ? "async_launched" : slot === "running" ? "running" : "completed",
+      isAsync: slot === "async", agentId: proposedAgent } }
+  const reply = { ...template, uuid: `generated-unlinked-${slot}-reply`, parentUuid: receiptUuid,
+    timestamp: "2026-10-08T12:00:02Z", message: { ...template.message, id: `msg_generated_unlinked_${slot}_reply`,
+      stop_reason: "end_turn", content: [{ type: "text", text: `ATAPE_CURRENT_THREAD_${slot}: ordinary capture continues.` }] } }
+  const unproved = readFileSync(new URL(`${familyId}/subagents/agent-${agentId}.jsonl`, familyFixture), "utf8")
+    .replaceAll("/fixture/native-foreground-child", workspace).replaceAll(agentId, proposedAgent)
+    .replaceAll("ATAPE_CHILD_FINAL", `ATAPE_UNPROVED_HISTORY_${slot}`)
+  writeFileSync(join(dirname(childFile), `agent-${proposedAgent}.jsonl`), unproved)
+  return { file, source, call: JSON.stringify(call) + "\n", tail: JSON.stringify(receipt) + "\n" + JSON.stringify(reply) + "\n" }
+}
+const rootDelegation = /^unlinked-root-(async|running|error)$/.exec(input.phase)
+if (rootDelegation) {
+  const generated = generatedDelegation(rootDelegation[1] as "async" | "running" | "error")
+  writeFileSync(generated.file, generated.source + generated.call + generated.tail)
+}
+if (input.phase === "unlinked-nested-call") {
+  const generated = generatedDelegation("nested")
+  writeFileSync(generated.file, generated.source + generated.call)
+  writeFileSync(join(input.home, "generated-nested-tail.jsonl"), generated.tail)
+}
+if (input.phase === "unlinked-nested-partial") {
+  const source = readFileSync(childFile, "utf8"), tail = readFileSync(join(input.home, "generated-nested-tail.jsonl"), "utf8")
+  writeFileSync(join(input.home, "generated-nested-before.jsonl"), source)
+  writeFileSync(childFile, source + tail.slice(0, tail.indexOf("\n") - 1))
+}
+if (input.phase === "unlinked-nested-complete") {
+  writeFileSync(childFile, readFileSync(join(input.home, "generated-nested-before.jsonl"), "utf8") +
+    readFileSync(join(input.home, "generated-nested-tail.jsonl"), "utf8"))
+}
+if (input.phase === "unlinked-root-resume") {
+  const source = readFileSync(rootFile, "utf8"), rows = source.trimEnd().split("\n").map(line => JSON.parse(line))
+  const template = rows.find(row => row.type === "assistant"), last = rows.findLast(row => typeof row.uuid === "string")
+  writeFileSync(rootFile, source + JSON.stringify({ ...template, uuid: "generated-unlinked-root-resume",
+    parentUuid: last.uuid, timestamp: "2026-10-08T12:01:00Z", message: { ...template.message,
+      id: "msg_generated_unlinked_root_resume", stop_reason: "end_turn",
+      content: [{ type: "text", text: "ATAPE_CURRENT_THREAD_root_resume: both unlinked diagnostics remain visible." }] } }) + "\n")
+}
 if (input.phase === "delete") rmSync(join(sourceHome, "projects"), { recursive: true })
 
 const layer = Layer.merge(makeNodeClientLayer(paths, environment), makeNodeCollectorDaemonLayer(paths, binary, environment))
@@ -274,7 +331,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
         assert.equal(status.collectorFailure, undefined)
         const current = status.jobs.find(job => job.adapterId === adapterId && job.projectId === input.projectId)
         if (status.lastCycleCompletedAt && status.lastCycleCompletedAt !== before && current && !current.hasMore) {
-          assert.equal(current.state, input.phase === "unsupported" ? "partial" : "healthy", JSON.stringify(current))
+          assert.equal(current.state, input.phase === "unsupported" || input.phase.startsWith("unlinked-") ? "partial" : "healthy", JSON.stringify(current))
           return current
         }
         yield* Effect.sleep(100)

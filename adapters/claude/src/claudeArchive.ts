@@ -81,6 +81,7 @@ class SourceDiagnostics {
   private readonly failures: AdapterSourceFailure[] = []
   private truncated = false
   add(source: string, reason: AdapterSourceFailure["reason"]) {
+    if (this.failures.some(failure => failure.source === source && failure.reason === reason)) return
     if (this.failures.length < MaxSourceFailures) this.failures.push({ source, reason })
     else this.truncated = true
   }
@@ -207,6 +208,12 @@ const childFile = (file: string, sessionId: string, agentId: string) => {
   if (!/^[A-Za-z0-9_-]{1,500}$/.test(sessionId)) fail("unsupported", "Claude family identity is not a safe source path component.")
   return join(dirname(file), sessionId, "subagents", `agent-${agentId}.jsonl`)
 }
+async function validateChildDirectories(file: string): Promise<void> {
+  for (const directory of [dirname(dirname(file)), dirname(file)]) {
+    const details = await lstat(directory)
+    if (!details.isDirectory() || details.isSymbolicLink()) fail("unsupported", "Claude subagent directories must not be symlinks.")
+  }
+}
 const familyThreads = (children: ReadonlyArray<Child>) => [
   { sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" as const },
   ...children.map(child => ({ sourceThreadId: childThreadId(child.agentId), parentSourceThreadId: "root", revision: 1,
@@ -215,7 +222,7 @@ const familyThreads = (children: ReadonlyArray<Child>) => [
 
 async function collectFamily(archive: Archive, candidate: Candidate, previous: Cursor | undefined, request: AdapterCollectRequest,
   diagnostics: SourceDiagnostics): Promise<AdapterCollectionPage> {
-  const page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous) : null })
+  const page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous) : null }, diagnostics)
   const publish = (page: AdapterCollectionPage, checkpoint: Cursor): AdapterCollectionPage => {
     const observation = page.observations[0]!
     const children = checkpoint.children ?? []
@@ -232,24 +239,29 @@ async function collectFamily(archive: Archive, candidate: Candidate, previous: C
     return { ...page, nextCursor: JSON.stringify(next), hasMore: page.hasMore || children.some(child => !child.checkpoint),
       observations: [captured] }
   }
-  if (page.observations.length) return publish(page, decodeCursor(page.nextCursor)!)
+  if (page.observations.length) {
+    const checkpoint = decodeCursor(page.nextCursor)!
+    await restoreCapturedChildDiagnostics(candidate.file, checkpoint, request.signal, diagnostics)
+    return publish(page, checkpoint)
+  }
   if (!previous?.children?.length) return page
   const root = await readHeader(candidate.file, request.signal)
   if (!root) fail("changed", "The captured Claude root disappeared.")
   const children = previous.children, pivot = children.findIndex(child => child.agentId === previous.childAfter)
+  const visitedChildren = new Set<string>()
   for (const child of [...children.slice(pivot + 1), ...children.slice(0, pivot + 1)]) {
     const file = childFile(candidate.file, candidate.sessionId, child.agentId)
+    visitedChildren.add(child.agentId)
     try {
-      for (const directory of [dirname(dirname(file)), dirname(file)]) {
-        const details = await lstat(directory)
-        if (!details.isDirectory() || details.isSymbolicLink()) fail("unsupported", "Claude subagent directories must not be symlinks.")
-      }
-      const selected = await collectSession(archive, file, { ...request, cursor: child.checkpoint ? JSON.stringify(child.checkpoint) : null },
+      await validateChildDirectories(file)
+      const selected = await collectSession(archive, file, { ...request, cursor: child.checkpoint ? JSON.stringify(child.checkpoint) : null }, diagnostics,
         { child, root, children })
       if (!selected.observations.length) continue
       const checkpoint = decodeCursor(selected.nextCursor)!
-      return publish({ ...selected, hasMore: selected.hasMore || children.length > 1 }, { ...previous, childAfter: child.agentId,
-        children: children.map(value => value === child ? { ...value, checkpoint } : value) })
+      const next = { ...previous, childAfter: child.agentId,
+        children: children.map(value => value === child ? { ...value, checkpoint } : value) }
+      await restoreCapturedChildDiagnostics(candidate.file, next, request.signal, diagnostics, visitedChildren)
+      return publish({ ...selected, hasMore: selected.hasMore || children.length > 1 }, next)
     } catch (cause) {
       if (child.checkpoint && object(cause)?.code === "ENOENT") continue // Deleting captured sources does not delete history.
       diagnostics.capture(file, cause, request.signal)
@@ -258,7 +270,49 @@ async function collectFamily(archive: Archive, candidate: Candidate, previous: C
   return page
 }
 
-async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest,
+/** A root page must not hide already committed child diagnostics. Inspect only
+ * authenticated captured prefixes, never a proposed child or pending suffix. */
+async function restoreCapturedChildDiagnostics(rootFile: string, family: Cursor, signal: AbortSignal,
+  diagnostics: SourceDiagnostics, visited: ReadonlySet<string> = new Set()): Promise<void> {
+  const children = family.children ?? []
+  for (const child of children) {
+    const checkpoint = child.checkpoint
+    if (!checkpoint || visited.has(child.agentId)) continue
+    signal.throwIfAborted()
+    const file = childFile(rootFile, family.sessionId, child.agentId)
+    try {
+      await validateChildDirectories(file)
+      const root = await readHeader(file, signal)
+      if (!root || root.type !== "user" || root.parentUuid !== null || root.isMeta === true ||
+        typeof root.cwd !== "string" || typeof root.sessionId !== "string")
+        fail("changed", "The captured Claude prefix changed or was truncated.")
+      if (root.isSidechain !== true || root.agentId !== child.agentId || root.sessionId !== family.sessionId || root.cwd !== family.origin)
+        fail("unsupported", "Claude subagent identity or original CWD does not match its proven parent.")
+      if (root.sessionId !== checkpoint.sessionId || root.cwd !== checkpoint.origin)
+        fail("changed", "Claude session identity or original CWD changed.")
+      const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const before = await handle.stat()
+        if (!before.isFile()) fail("format", "Claude source is not a regular file.")
+        if (before.size < checkpoint.bytes) fail("changed", "The captured Claude prefix changed or was truncated.")
+        let unlinked = false
+        await restoreNormalization(handle, checkpoint.bytes, checkpoint.digest, root, checkpoint.stream, signal, (record, calls) => {
+          const relationship = bindChild(record, calls, true, children, family.sessionId)
+          unlinked ||= relationship.unlinked
+        })
+        const after = await handle.stat()
+        if (after.size < before.size || after.ino !== before.ino || after.size === before.size && after.mtimeMs !== before.mtimeMs)
+          fail("changed", "Claude source changed during reading.")
+        if (unlinked) diagnostics.add(file, "unsupported")
+      } finally { await handle.close() }
+    } catch (cause) {
+      if (object(cause)?.code === "ENOENT") continue
+      diagnostics.capture(file, cause, signal)
+    }
+  }
+}
+
+async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest, diagnostics: SourceDiagnostics,
   delegated?: { readonly child: Child; readonly root: RecordValue; readonly children: ReadonlyArray<Child> }): Promise<AdapterCollectionPage> {
   const cursor = decodeCursor(request.cursor)
   const root = await readHeader(file, request.signal)
@@ -297,22 +351,30 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
     // Normalization and Event projection are independent versions. Validate
     // already-normalized source facts before the existing projection/usage
     // backfill path starts again at byte zero.
+    const children = new Map((cursor?.children ?? []).map(child => [child.agentId, child]))
+    let restoredUnlinked = false
+    const restoreRelationships = (record: RecordValue, calls: ReadonlyMap<string, { name: string; uuid: string }>) => {
+      const relationship = bindChild(record, calls, delegated !== undefined, delegated?.children ?? [...children.values()], sessionId)
+      restoredUnlinked ||= relationship.unlinked
+    }
     if (cursor?.normalizationVersion === 1 && !resume)
-      await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, request.signal)
+      await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, request.signal, restoreRelationships)
     let at = resume ? cursor!.bytes : 0
     if (!resume) hash = createHash("sha256")
     let state: NonNullable<Cursor["stream"]> = resume ?? { lastUuid: null, seen: [], calls: [], order: 0, eventSkip: 0, title: rootTitle(root) }
     const seen = new Set(state.seen)
-    const children = new Map((cursor?.children ?? []).map(child => [child.agentId, child]))
     // Family headers are repeated on root and child pages. Reserve their actual
     // encoded size as well as the Session and array-envelope headroom.
     const payloadLimit = (family: ReadonlyArray<Child>) => request.limits.canonicalBytesPerObservation - 8192
       - Buffer.byteLength(JSON.stringify(familyThreads(family)))
     let canonicalLimit = payloadLimit(delegated?.children ?? [...children.values()])
     let calls = new Map(state.calls.map(([id, name, uuid]) => [id, { name, uuid }]))
-    const normalization = await restoreNormalization(handle, at, hash.copy().digest("hex"), root, resume, request.signal)
+    const normalization = await restoreNormalization(handle, at, hash.copy().digest("hex"), root, resume, request.signal, restoreRelationships)
     if (cursor?.normalizationVersion === 1 && !equalJson(state.continuation, normalization.continuation))
       fail("cursor", "Claude checkpoint continuation does not match its committed source.")
+    // Report only after the complete restored prefix has authenticated. These
+    // source-derived diagnostics remain visible on idle scans after restart.
+    if (restoredUnlinked) diagnostics.add(file, "unsupported")
     const adoptedNormalization = !!resume && cursor?.normalizationVersion !== 1
     const { compaction: _legacyManual, autoText: _legacyAuto, readPair: _legacyPair, continuation: _oldContinuation, ...normalizedState } = state
     state = { ...normalizedState, ...(normalization.continuation ? { continuation: normalization.continuation } : {}) }
@@ -363,17 +425,14 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
       const nextCalls = new Map(calls)
       const projected = transition.rawOnly ? { events: [] as AdapterEvent[], partial: true }
         : projectRecord(record, state.order, line.end, sourceObjectId, nextCalls)
-      const child = transition.rawOnly ? undefined : bindChild(record, nextCalls, delegated !== undefined)
+      const relationship = transition.rawOnly ? undefined
+        : bindChild(record, nextCalls, delegated !== undefined, delegated?.children ?? [...children.values()], sessionId)
+      const child = relationship?.child
       if (child) {
         childFile(file, sessionId, child.agentId) // Validate before publishing the relation.
-        const pinned = children.get(child.agentId)
-        if (pinned && (pinned.toolCallId !== child.toolCallId || pinned.toolUuid !== child.toolUuid) ||
-          [...children.values()].some(value => value.toolCallId === child.toolCallId && value.agentId !== child.agentId))
-          fail("unsupported", "Claude subagent has conflicting parent evidence.")
         // The native foreground receipt is one tool-result Event. Commit its
         // relation only with that complete record's captured prefix, never when
         // a full page defers the receipt to the next request.
-        if (projected.events.length !== 1) fail("unsupported", "Claude subagent receipt requires a single native tool result.")
         projected.events = projected.events.map(event => "toolCallId" in event.update && event.update.toolCallId === child.toolCallId
           ? { ...event, childSourceThreadId: childThreadId(child.agentId) } : event)
       }
@@ -407,6 +466,7 @@ async function collectSession(archive: Archive, file: string, request: AdapterCo
         if (first && "content" in first.update && first.update.content.type === "text") state = { ...state, title: first.update.content.text.replace(/\s+/g, " ").trim().slice(0, 80) }
       }
       commitNormalizedRecord(normalization, record, recordRef(at, line.content), transition)
+      if (relationship?.unlinked) diagnostics.add(file, "unsupported")
       if (typeof record.uuid === "string") seen.add(record.uuid)
       if (child && !children.has(child.agentId)) { children.set(child.agentId, child); canonicalLimit = recordLimit }
       calls = nextCalls
@@ -689,7 +749,8 @@ function commitNormalizedRecord(context: Normalization, record: RecordValue, ref
 /** Cold recovery rebuilds only source facts, never old Events or usage. All
  * index references come from the bytes included in the verified prefix hash. */
 async function restoreNormalization(handle: Awaited<ReturnType<typeof open>>, committed: number, expectedDigest: string,
-  root: RecordValue, state: NonNullable<Cursor["stream"]> | undefined, signal: AbortSignal): Promise<Normalization> {
+  root: RecordValue, state: NonNullable<Cursor["stream"]> | undefined, signal: AbortSignal,
+  onOrdinaryRecord?: (record: RecordValue, calls: ReadonlyMap<string, SourceCall>) => void): Promise<Normalization> {
   const context: Normalization = { records: new Map(), calls: new Map(), leaf: null, order: 0, continuation: undefined, response: undefined }
   const hash = createHash("sha256")
   let at = 0
@@ -702,6 +763,7 @@ async function restoreNormalization(handle: Awaited<ReturnType<typeof open>>, co
         fail("changed", "Claude original identity changed during collection.")
       const action = await normalizeSourceRecord(handle, record, root, context, signal)
       commitNormalizedRecord(context, record, recordRef(at, line.content), action)
+      if (!action.rawOnly) onOrdinaryRecord?.(record, context.calls)
     }
     at = line.end
   }
@@ -732,23 +794,45 @@ async function restoreNormalization(handle: Awaited<ReturnType<typeof open>>, co
   return context
 }
 
-function bindChild(record: RecordValue, calls: Map<string, { name: string; uuid: string }>, delegated: boolean): Child | undefined {
+type ChildBinding = { readonly child?: Child; readonly unlinked: boolean }
+const userCommandText = (text: string) => /^<(?:command-name|local-command|bash-input)/.test(text.trimStart())
+/** The foreground relation needs one projected result Event. Unknown Raw-only
+ * blocks do not add Events; real text or another result does. */
+function singleResultEvent(record: RecordValue): boolean {
+  const message = object(record.message), content = message?.content
+  return record.type === "user" && record.isMeta !== true && message?.role === "user" && Array.isArray(content) &&
+    toolResults(record).length === 1 && !content.some(value => {
+      const block = object(value)
+      return block?.type === "text" && typeof block.text === "string" && block.text.length > 0 && !userCommandText(block.text)
+    })
+}
+
+/** Source identity and ordinary call correlation have already been checked.
+ * A valid current-Thread record can carry an unproved child relationship. */
+function bindChild(record: RecordValue, calls: ReadonlyMap<string, { name: string; uuid: string }>, delegated: boolean,
+  children: ReadonlyArray<Child>, sessionId: string): ChildBinding {
   const content = object(record.message)?.content
-  if (delegated && Array.isArray(content) && content.some(value => {
-    const block = object(value)
-    return block?.type === "tool_use" && ["Agent", "Task"].includes(string(block.name) ?? "")
-  })) fail("unsupported", "Nested Claude subagents require a wider native profile.")
   const result = object(record.toolUseResult), agentId = string(result?.agentId)
-  if (!agentId) return undefined
-  if (!Array.isArray(content)) fail("unsupported", "Claude subagent result has no proven tool call.")
-  const links = content.map(object).filter(block => block?.type === "tool_result" && typeof block.tool_use_id === "string" &&
+  const links = (Array.isArray(content) ? content : []).map(object).filter(block => block?.type === "tool_result" && typeof block.tool_use_id === "string" &&
     ["Agent", "Task"].includes(calls.get(block.tool_use_id)?.name ?? ""))
-  if (links.length !== 1) fail("unsupported", "Claude subagent result has no unique parent tool call.")
+  if (!links.length) return { unlinked: false }
+  // Check every declared Agent edge before the soft eligibility decision.
+  // Nested call IDs have their own namespace; their reuse cannot contradict a
+  // root call, but claiming an already root-owned Agent would reparent it.
+  const pinned = agentId === undefined ? undefined : children.find(child => child.agentId === agentId)
+  if (pinned && (delegated || links.some(block => block!.tool_use_id !== pinned.toolCallId ||
+    calls.get(block!.tool_use_id as string)!.uuid !== pinned.toolUuid) ||
+    record.sourceToolAssistantUUID !== undefined && record.sourceToolAssistantUUID !== pinned.toolUuid) ||
+    !delegated && agentId !== undefined && links.some(block => children.some(child =>
+      child.toolCallId === block!.tool_use_id && child.agentId !== agentId)))
+    fail("unsupported", "Claude subagent has conflicting parent evidence.")
+  if (links.length !== 1 || delegated || !agentId || !/^[A-Za-z0-9_-]{1,128}$/.test(agentId) ||
+    !/^[A-Za-z0-9_-]{1,500}$/.test(sessionId) || !singleResultEvent(record)) return { unlinked: true }
   const block = links[0]!, toolCallId = block.tool_use_id as string, call = calls.get(toolCallId)!
-  if (delegated || result?.status !== "completed" || result.isAsync === true || block.is_error === true || record.sourceToolAssistantUUID !== call.uuid)
-    fail("unsupported", "Claude subagent requires a completed foreground result with explicit parent evidence.")
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(agentId)) fail("format", "Claude subagent identity is invalid.")
-  return { agentId, toolCallId, toolUuid: call.uuid }
+  if (result?.status !== "completed" || result.isAsync !== undefined && result.isAsync !== false ||
+    record.isAsync !== undefined && record.isAsync !== false || block.is_error !== undefined && block.is_error !== false ||
+    record.sourceToolAssistantUUID !== call.uuid) return { unlinked: true }
+  return { child: { agentId, toolCallId, toolUuid: call.uuid }, unlinked: false }
 }
 
 function projectUsage(record: RecordValue, revision: number): AdapterUsage | undefined {
@@ -839,7 +923,7 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
       let fidelity: AdapterEvent["fidelity"] = "native"
       if (block?.type === "text" && typeof block.text === "string" && block.text.length > 0) {
         // Source command envelopes need a provider mapping, not fake user prose.
-        if (record.type === "user" && /^<(?:command-name|local-command|bash-input)/.test(block.text.trimStart())) { partial = true; continue }
+        if (record.type === "user" && userCommandText(block.text)) { partial = true; continue }
         update = { sessionUpdate: record.type === "user" ? "user_message_chunk" : "agent_message_chunk", content: { type: "text", text: block.text } }
       } else if (block?.type === "tool_use" && record.type === "assistant" && typeof block.id === "string" && typeof block.name === "string") {
         if (calls.has(block.id)) fail("unsupported", "Claude tool IDs are ambiguous in this session.")

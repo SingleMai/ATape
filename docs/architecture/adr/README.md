@@ -123,6 +123,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0095](0095-claude-reversed-read-pair-results.md) | Claude planned Read-pair results in reverse order |
 | [0096](0096-claude-repeated-dual-read-auto-files.md) | Repeated Claude planned Read-pair automatic replay and prior files |
 | [0097](0097-claude-compaction-continuity.md) | Claude compaction continuity through source identity |
+| [0098](0098-claude-current-thread-continuity.md) | Claude current Thread continuity around unlinked delegation |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old
