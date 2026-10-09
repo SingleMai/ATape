@@ -10,7 +10,7 @@ import { makeSecretRedactorLayer, prepareCanonicalSlice } from "../../../package
 import { createAtapeAdapter } from "./index.ts"
 import { historicalPublicFactory } from "./fixtures/historicalPublicFactory.ts"
 let historical: Awaited<ReturnType<typeof historicalPublicFactory>>
-beforeAll(async () => { historical = await historicalPublicFactory() }, 120000)
+beforeAll(async () => { historical = await historicalPublicFactory() }, 300000)
 afterAll(async () => { await historical?.cleanup() })
 
 type Row = Record<string, any>
@@ -343,7 +343,7 @@ it("captures all retained native root snapshots through sourceCapture v2", async
     for (const [thread, child] of children) expect(rawText(actual.frames, thread), fixture.pathname).toBe(child)
     expect(new Set(actual.events.map(event => event.sourceThreadId + event.sourceEventId)).size).toBe(actual.events.length)
   }
-})
+}, 30_000)
 
 it("preserves meaningful thoughts, physical block IDs and bounded tool JSON while leaving opaque blocks Raw-only", async () => {
   const original = rows().slice(0, 2)

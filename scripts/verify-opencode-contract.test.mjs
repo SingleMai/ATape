@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { requiredTest, verifyOpenCodeResult, verifyAllProviderResults } from "./verify-opencode-contract.mjs"
+import "./freeze-claude-legacy.test.mjs"
 
 test("OpenCode acceptance requires the actual named subtest to pass", () => {
   const event = { Test: requiredTest, Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi" }

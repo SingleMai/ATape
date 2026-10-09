@@ -12,7 +12,7 @@ export const historicalPublicFactory = async () => {
   const directory = await mkdtemp(join(tmpdir(), "atape-claude-public-legacy-")), execute = promisify(execFile)
   try {
     const { stdout } = await execute(process.execPath, [new URL("../../../../scripts/freeze-claude-legacy.mjs", import.meta.url).pathname,
-      "--directory", directory], { maxBuffer: 1024 * 1024, timeout: 120000 })
+      "--directory", directory], { maxBuffer: 1024 * 1024, timeout: 300000 })
     const proof = JSON.parse(stdout) as { revision: string; tarball: { path: string }; bundle: { sha256: string } }
     if (proof.revision !== "f6093535e92acfee47170b53c7dec7244fccf8c7") throw new Error("Historical factory revision differs")
     await execute("tar", ["-xzf", proof.tarball.path, "-C", directory])

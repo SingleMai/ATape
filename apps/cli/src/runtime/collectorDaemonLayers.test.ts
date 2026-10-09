@@ -593,7 +593,8 @@ setInterval(() => {}, 1000);
       let restored = false
       await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
         () => f.replace("cannot-become-ready", { ready: false }), {
-          readyTimeoutMs: 250,
+          // The readiness budget also applies when the previous child restarts.
+          readyTimeoutMs: 5_000,
           recover: async () => { restored = true; await f.replace("restored") }
         })).rejects.toMatchObject({ reason: "start", message: "The updated Collector did not become locally ready." })
       expect(restored).toBe(true)
@@ -602,7 +603,7 @@ setInterval(() => {}, 1000);
       expect(current).toMatchObject({ intervalMs: 60000, concurrency: 3 })
       await f.started("restored", current!.pid)
     } finally { await f.run(f.daemon.stop()) }
-  })
+  }, 30_000)
 
   it("caps readiness at the remaining activation budget and uses a separate recovery budget", async () => {
     const f = await fixture()

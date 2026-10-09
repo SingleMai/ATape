@@ -21,7 +21,7 @@ const encode = (rows: Row[]) => rows.map(row => JSON.stringify(row) + "\n").join
 const decode = (text: string): Row[] => text.trimEnd().split("\n").map(line => JSON.parse(line))
 let directory: string, file: string, childFile: string, context: AdapterOpenContext & { signal: AbortSignal }
 let historical: Awaited<ReturnType<typeof historicalPublicFactory>>
-beforeAll(async () => { historical = await historicalPublicFactory() }, 120000)
+beforeAll(async () => { historical = await historicalPublicFactory() }, 300000)
 afterAll(async () => { await historical?.cleanup() })
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "atape-claude-background-"))

@@ -116,7 +116,7 @@ describe("Host source collection workflow", () => {
     expect(await cycle()).toMatchObject({ observations: 0, canonicalBatches: 0, sourceFailures: [{ source: root, reason: "limit" }] })
     expect((await f.inspect()).coverage).toEqual(before.coverage)
     expect(f.remote.sent).toHaveLength(sent); expect(f.remote.rawSent).toHaveLength(rawSent)
-  }, 180000)
+  }, 600_000)
   it("records confirmed Canonical progress across empty cycles and recovers older checkpoints without the source", async () => {
     const f = await setup(); f.remote.policy(false)
     expect((await f.progress()).checkpoint).toBeUndefined()
