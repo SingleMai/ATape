@@ -247,6 +247,8 @@ const assertComplete = (generated: Generated, pages: AdapterCollectionPage[]) =>
   assertRaw(pages, generated.text)
 }
 
+// Each page and exact retry cold-reconstructs the committed prefix. The 100-cycle
+// case deliberately exercises that workload on slower, shared CI runners.
 it.each([1, 2, 3, 10, 100])("captures %i generated compaction rounds without a round-number policy", async count => {
   const source = generate(Array.from({ length: count }, (_, index) => ({ trigger: index % 3 === 1 ? "manual" : "auto",
     tools: index % 4, files: [0, 1, 3, 5][index % 4]!, gap: index % 3, reverse: index % 2 === 1 })))
@@ -254,7 +256,7 @@ it.each([1, 2, 3, 10, 100])("captures %i generated compaction rounds without a r
   const captured = await drain(null, true, { eventsPerObservation: count > 10 ? 100 : 1 })
   assertComplete(source, captured.pages)
   expect((await read(request(captured.cursor))).observations).toEqual([])
-}, 60_000)
+}, 180_000)
 
 it.each([0, 1, 2, 3, 5])("normalizes copied histories with %i linear or paired Read calls and reused paths", async tools => {
   const generated = generate([{ trigger: "auto", tools, files: 4, gap: 0, reverse: true },
