@@ -701,6 +701,194 @@ func assertClaudeRewindCollectorContract(t *testing.T, modules Modules, pool *pg
 	if compactIdle.Observations != 0 || compactIdle.RawChunks != 0 || len(compactIdle.SourceFailures) != 0 || len(compactIdle.Pending) != 0 || read(compactSession, "root", 6).Head != compactAfter.Head {
 		t.Fatal("native compaction continuation did not settle idle")
 	}
+	// Direct background lifecycle uses literal LF prefixes of one retained native
+	// capture. Missing files and the final rewind are explicit test mutations.
+	const backgroundSource = "2a7f13b3-532e-40ec-a959-41210525d00f"
+	const backgroundAgent = "a8722069f7a6392c3"
+	backgroundRootFile := filepath.Join(directory, backgroundSource+".jsonl")
+	backgroundChildFile := filepath.Join(directory, backgroundSource, "subagents", "agent-"+backgroundAgent+".jsonl")
+	setRaw(false)
+	backgroundRunning := run("background-running")
+	if backgroundRunning.Observations != 1 || backgroundRunning.RawChunks != 0 || len(backgroundRunning.SourceFailures) != 0 || len(backgroundRunning.Pending) != 0 {
+		t.Fatalf("background launch/running did not publish Raw-off: %+v", backgroundRunning)
+	}
+	// The Adapter reports its authenticated physical path. Resolve while the
+	// fixture exists so macOS /var and /private/var aliases do not weaken the
+	// later exact missing-child diagnostic assertion.
+	backgroundChildSource, err := filepath.EvalSymlinks(backgroundChildFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodeResponse(t, send("GET", "/api/v1/projects/"+project.ID+"/memory", "", 200), &memory)
+	backgroundSession := ""
+	for _, session := range append(memory.Active, memory.Trail...) {
+		if strings.HasPrefix(session.Title, "ATAPE_BG_90fceeec_LAUNCH") {
+			backgroundSession = session.ID
+		}
+	}
+	if backgroundSession == "" {
+		t.Fatal("installed background Session missing")
+	}
+	backgroundRoot := read(backgroundSession, "root", 4)
+	if backgroundRoot.Events[2].ChildThread == nil || backgroundRoot.Events[2].Tool == nil || backgroundRoot.Events[2].Tool.ToolCallID != "call_bg_90fceeec_agent" {
+		t.Fatal("background launch receipt lost its proved child relationship/tool")
+	}
+	backgroundThread := backgroundRoot.Events[2].ChildThread.ID
+	backgroundLaunchID := backgroundRoot.Events[2].ID
+	backgroundChild := read(backgroundSession, backgroundThread, 3)
+	if len(backgroundChild.ThreadPath) != 2 || backgroundChild.ThreadPath[0].ID != "root" || backgroundChild.Events[1].Tool == nil || backgroundChild.Events[1].Tool.ToolCallID != "call_bg_90fceeec_child_read" || backgroundChild.Events[2].Kind != "tool_result" {
+		t.Fatal("running background child lost native parent path/Read tool")
+	}
+	assertMemoryCount(backgroundSession, 7, 1)
+	usage(backgroundSession, 3, 93, 51)
+	if len(manifest(backgroundSession)) != 0 {
+		t.Fatal("Raw-off background launch archived source bodies")
+	}
+	storedBackgroundEvents := func(thread string) []canonical.EventRecord {
+		t.Helper()
+		value, found, err := store.ConversationPage(t.Context(), principal, backgroundSession, thread, canonical.ConversationPageRequest{Limit: 100})
+		if err != nil || !found {
+			t.Fatal("background Canonical snapshot missing", err)
+		}
+		return value.Events
+	}
+	runningRootEvents := storedBackgroundEvents("root")
+	runningChildEvents := storedBackgroundEvents(backgroundThread)
+	assertFreshBackgroundEvents := func(label string, before, after []canonical.EventRecord) {
+		t.Helper()
+		if len(before) != len(after) {
+			t.Fatalf("background %s Events before=%d after=%d", label, len(before), len(after))
+		}
+		// Explicit Events belong to a fresh publication observation. Their native
+		// content, source/projection versions and Raw references remain stable;
+		// Server capture provenance advances independently of those versions.
+		stable := append([]canonical.EventRecord(nil), after...)
+		for n, previous := range before {
+			current := after[n]
+			if !current.ObservedAt.After(previous.ObservedAt) || !current.ReceivedAt.After(previous.ReceivedAt) || current.IngestSeq <= previous.IngestSeq {
+				t.Fatalf("background %s Event=%s did not advance all three fresh observation fields", label, previous.ID)
+			}
+			stable[n].ObservedAt, stable[n].ReceivedAt, stable[n].IngestSeq = previous.ObservedAt, previous.ReceivedAt, previous.IngestSeq
+		}
+		if !canonicalcontract.EqualEvents(before, stable) {
+			t.Fatalf("background %s changed native content, versions, identity, order or Raw references", label)
+		}
+	}
+	beforeChildOnly, err := os.ReadFile(backgroundRootFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childOnly := run("background-child-only")
+	afterChildOnly, err := os.ReadFile(backgroundRootFile)
+	if err != nil || !bytes.Equal(beforeChildOnly, afterChildOnly) || childOnly.Observations != 1 || childOnly.RawChunks != 0 || len(childOnly.SourceFailures) != 0 {
+		t.Fatalf("root-unchanged background child append failed: %+v %v", childOnly, err)
+	}
+	assertFreshBackgroundEvents("child-only root", runningRootEvents, storedBackgroundEvents("root"))
+	completedChildEvents := storedBackgroundEvents(backgroundThread)
+	if len(completedChildEvents) != 4 {
+		t.Fatal("child-only append lost the final child Event")
+	}
+	assertFreshBackgroundEvents("child-only child-prefix", runningChildEvents, completedChildEvents[:3])
+	backgroundChild = read(backgroundSession, backgroundThread, 4)
+	if backgroundChild.Events[3].Text != "ATAPE_BG_CHILD_FINAL_90fceeec: cobalt heron 482 read once." {
+		t.Fatal("root-unchanged background child final reply missing")
+	}
+	assertMemoryCount(backgroundSession, 8, 1)
+	usage(backgroundSession, 4, 124, 68)
+	retainedBackground := run("background-retained-progress")
+	if retainedBackground.Observations != 1 || retainedBackground.RawChunks != 0 || len(retainedBackground.SourceFailures) != 1 || retainedBackground.SourceFailures[0].Source != backgroundChildSource || retainedBackground.SourceFailures[0].Reason != "io" {
+		t.Fatalf("missing background child blocked native root progress: %+v", retainedBackground)
+	}
+	retainedRoot := read(backgroundSession, "root", 8)
+	if retainedRoot.Events[2].ID != backgroundLaunchID || retainedRoot.Events[2].ChildThread == nil || retainedRoot.Events[2].ChildThread.ID != backgroundThread || retainedRoot.Events[7].Text != "ATAPE_BG_PARENT_DURING_FINAL_90fceeec: amber lynx 204 read while child running." {
+		t.Fatal("root progress changed launch anchor or lost later ordinary reply")
+	}
+	if !canonicalcontract.EqualEvents(storedBackgroundEvents(backgroundThread), completedChildEvents) || !reflect.DeepEqual(read(backgroundSession, backgroundThread, 4).Events, backgroundChild.Events) {
+		t.Fatal("background retention changed inherited Event versions/provenance/Raw refs")
+	}
+	assertMemoryCount(backgroundSession, 12, 1)
+	usage(backgroundSession, 6, 186, 102)
+	retainedBackgroundIdle := run("background-retained-idle")
+	if retainedBackgroundIdle.Observations != 0 || retainedBackgroundIdle.RawChunks != 0 || !reflect.DeepEqual(retainedBackgroundIdle.SourceFailures, retainedBackground.SourceFailures) || read(backgroundSession, "root", 8).Head != retainedRoot.Head {
+		t.Fatalf("background retention/diagnostic did not survive idle restart: %+v", retainedBackgroundIdle)
+	}
+	backgroundCompleted := run("background-completed")
+	if backgroundCompleted.Observations != 1 || backgroundCompleted.RawChunks != 0 || len(backgroundCompleted.SourceFailures) != 0 || len(backgroundCompleted.Pending) != 0 {
+		t.Fatalf("native background completion/followup failed: %+v", backgroundCompleted)
+	}
+	finalBackgroundRoot := read(backgroundSession, "root", 11)
+	finalBackgroundChild := read(backgroundSession, backgroundThread, 4)
+	if finalBackgroundRoot.Events[2].ID != backgroundLaunchID || finalBackgroundRoot.Events[2].ChildThread == nil || finalBackgroundRoot.Events[2].ChildThread.ID != backgroundThread || finalBackgroundRoot.Events[8].Text != "ATAPE_BG_NOTIFICATION_ACK_90fceeec: child completion received." || finalBackgroundRoot.Events[10].Text != "ATAPE_BG_PARENT_AFTER_FINAL_90fceeec: background completion acknowledged; parent continues." {
+		t.Fatal("completion changed original background relationship or blocked parent continuation")
+	}
+	for n, event := range finalBackgroundChild.Events {
+		if event.ID != backgroundChild.Events[n].ID || event.Text != backgroundChild.Events[n].Text {
+			t.Fatal("background completion moved stable child Reader anchors")
+		}
+	}
+	assertMemoryCount(backgroundSession, 15, 1)
+	usage(backgroundSession, 8, 248, 136)
+	for _, term := range []string{"task-notification", "task-id", "output-file", "ATAPE_BG_CHILD_DISK_90fceeec", "ATAPE_BG_PARENT_DISK_90fceeec"} {
+		if len(search(term).Results) != 0 {
+			t.Fatalf("background control/tool data became Search content: %s", term)
+		}
+		for _, event := range finalBackgroundRoot.Events {
+			if strings.Contains(event.Text, term) {
+				t.Fatalf("background control/tool data became Reader message: %s", term)
+			}
+		}
+	}
+	for _, expected := range []struct{ term, thread, event string }{
+		{"ATAPE_BG_CHILD_FINAL_90fceeec: cobalt heron 482", backgroundThread, finalBackgroundChild.Events[3].ID},
+		{"ATAPE_BG_PARENT_AFTER_FINAL_90fceeec", "root", finalBackgroundRoot.Events[10].ID},
+	} {
+		found := search(expected.term)
+		if len(found.Results) != 1 || found.Results[0].SessionID != backgroundSession || found.Results[0].ThreadID != expected.thread || found.Results[0].EventID != expected.event {
+			t.Fatalf("background Reader/Search anchor missing: %s", expected.term)
+		}
+	}
+	beforeBackfillRoot, beforeBackfillChild := storedBackgroundEvents("root"), storedBackgroundEvents(backgroundThread)
+	setRaw(true)
+	backgroundBackfill := run("background-raw-backfill")
+	if backgroundBackfill.RawChunks == 0 || len(backgroundBackfill.SourceFailures) != 0 {
+		t.Fatalf("background Raw backfill failed: %+v", backgroundBackfill)
+	}
+	backgroundFiles := map[string]string{"root": backgroundRootFile, "claude-agent:" + backgroundAgent: backgroundChildFile}
+	assertPhysicalRaw(backgroundSession, backgroundFiles)
+	backgroundObjects, backgroundRaw := manifest(backgroundSession), map[string]string{}
+	for _, object := range backgroundObjects {
+		backgroundRaw[object.ObjectID] = content(object)
+	}
+	if !canonicalcontract.EqualEvents(storedBackgroundEvents("root"), beforeBackfillRoot) || !canonicalcontract.EqualEvents(storedBackgroundEvents(backgroundThread), beforeBackfillChild) {
+		t.Fatal("Raw-only background backfill changed Canonical versions/provenance/Raw refs")
+	}
+	usage(backgroundSession, 8, 248, 136)
+	setRaw(false)
+	run("background-rewind")
+	rewoundBackground := read(backgroundSession, "root", 1)
+	if rewoundBackground.Events[0].ID != backgroundRoot.Events[0].ID || rewoundBackground.Events[0].ChildThread != nil {
+		t.Fatal("rewind before launch changed original user anchor or retained guessed child")
+	}
+	send("GET", "/api/v1/sessions/"+backgroundSession+"?thread="+url.QueryEscape(backgroundThread), "", 404)
+	assertMemoryCount(backgroundSession, 1, 0)
+	usage(backgroundSession, 0, 0, 0)
+	for _, term := range []string{"ATAPE_BG_CHILD_FINAL_90fceeec", "ATAPE_BG_PARENT_AFTER_FINAL_90fceeec", "ATAPE_BG_NOTIFICATION_ACK_90fceeec"} {
+		if len(search(term).Results) != 0 {
+			t.Fatalf("background rewind retained abandoned Search membership: %s", term)
+		}
+	}
+	backgroundIdle := run("background-rewind-idle")
+	if backgroundIdle.Observations != 0 || backgroundIdle.RawChunks != 0 || len(backgroundIdle.SourceFailures) != 0 || len(backgroundIdle.Pending) != 0 || read(backgroundSession, "root", 1).Head != rewoundBackground.Head {
+		t.Fatalf("background rewind did not remain idle: %+v", backgroundIdle)
+	}
+	if !reflect.DeepEqual(manifest(backgroundSession), backgroundObjects) {
+		t.Fatal("background rewind changed existing Raw ownership/generation")
+	}
+	for _, object := range backgroundObjects {
+		if content(object) != backgroundRaw[object.ObjectID] {
+			t.Fatal("background rewind invalidated available historical Raw content links")
+		}
+	}
 	faults.Lock()
 	leaked, redacted := wireLeak, redactedThought
 	faults.Unlock()
@@ -717,8 +905,8 @@ func assertClaudeRewindCollectorContract(t *testing.T, modules Modules, pool *pg
 			}
 		}
 	}
-	if runs != 18 {
-		t.Fatalf("installed rewind stages=%d want=18", runs)
+	if runs != 26 {
+		t.Fatalf("installed rewind/background stages=%d want=26", runs)
 	}
 	t.Logf("Claude rewind installed contract PASS: %d independently restarted stages; genuine legacy SHA256=%s; no skips", runs, hex.EncodeToString(legacyHash[:]))
 }

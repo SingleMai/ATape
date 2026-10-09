@@ -3,6 +3,9 @@
 - Status: Accepted decision; implementation and verification belong to the Claude guide
 - Date: 2026-10-09
 
+Amended by [ADR-0102](0102-claude-background-subagents.md): proved direct
+background launches are admitted; other unproved delegation retains this policy.
+
 ## Context
 
 The foreground family in [ADR-0087](0087-claude-foreground-subagents.md) admits

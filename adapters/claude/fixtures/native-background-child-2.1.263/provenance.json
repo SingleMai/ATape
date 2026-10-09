@@ -1,0 +1,987 @@
+{
+  "schemaVersion": 1,
+  "status": "Controlled native source evidence; implementation acceptance is recorded in the owning Claude guide.",
+  "nativeVersion": "2.1.263",
+  "sessionId": "2a7f13b3-532e-40ec-a959-41210525d00f",
+  "agentId": "a8722069f7a6392c3",
+  "fixtureCwd": "/fixture/native-background-child/workspace",
+  "pathSubstitutions": [
+    {
+      "original": "/private/tmp/claude-501/-private-var-folders-xw-9981n9gn1tdb6t730q926xcc0000gn-T-atape-claude-background-native-91r8fj4v-workspace",
+      "replacement": "/fixture/native-background-child/output"
+    },
+    {
+      "original": "-private-var-folders-xw-9981n9gn1tdb6t730q926xcc0000gn-T-atape-claude-background-native-91r8fj4v-workspace",
+      "replacement": "-fixture-native-background-child-workspace"
+    },
+    {
+      "original": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.91r8fj4v/workspace",
+      "replacement": "/fixture/native-background-child/workspace"
+    },
+    {
+      "original": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.91r8fj4v/config",
+      "replacement": "/fixture/native-background-child/config"
+    },
+    {
+      "original": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.91r8fj4v/home",
+      "replacement": "/fixture/native-background-child/home"
+    },
+    {
+      "original": "/private/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.91r8fj4v",
+      "replacement": "/fixture/native-background-child/capture"
+    },
+    {
+      "original": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.91r8fj4v",
+      "replacement": "/fixture/native-background-child/capture"
+    }
+  ],
+  "acquisition": {
+    "binarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+    "harnessSha256": "876e50eb751e72cf9395449c0ac2f1ac8fe0c96f04ee5d8dced7158d544dff60",
+    "sessionId": "2a7f13b3-532e-40ec-a959-41210525d00f",
+    "nonce": "90fceeec",
+    "argv": [
+      "--restricted",
+      "--safe-mode",
+      "--tools",
+      "Agent,Read,TaskOutput",
+      "--allowedTools",
+      "Agent",
+      "Read",
+      "TaskOutput",
+      "--permission-mode",
+      "manual",
+      "--permission-prompts",
+      "none",
+      "--strict-mcp-config",
+      "--mcp-config",
+      "{\"mcpServers\":{}}",
+      "--disable-slash-commands",
+      "--no-chrome",
+      "--model",
+      "claude-sonnet-4-6",
+      "--effort",
+      "low",
+      "--system-prompt",
+      "Controlled synthetic persistence fixture. Follow deterministic tool requests.",
+      "--session-id",
+      "2a7f13b3-532e-40ec-a959-41210525d00f",
+      "--print",
+      "--verbose",
+      "--input-format",
+      "stream-json",
+      "--output-format",
+      "stream-json"
+    ],
+    "limits": {
+      "nativeTermMs": 45000,
+      "nativeKillMs": 50000,
+      "overallMs": 60000,
+      "HTTP": 24,
+      "model": 12,
+      "count": 8
+    },
+    "startedAt": "2026-10-09T11:39:20.323Z",
+    "actualEnvironment": {
+      "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+      "HOME": "/fixture/native-background-child/home",
+      "LANG": "en_US.UTF-8",
+      "TMPDIR": "/fixture/native-background-child/capture",
+      "CLAUDE_CONFIG_DIR": "/fixture/native-background-child/config",
+      "ANTHROPIC_BASE_URL": "http://127.0.0.1:52393",
+      "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+      "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+      "CLAUDE_CODE_FORK_SUBAGENT": "0",
+      "DISABLE_AUTOUPDATER": "1"
+    },
+    "fakeKeyOnly": true,
+    "backgroundDisableEnvironmentVariable": "absent",
+    "exit": 0,
+    "signal": null,
+    "finishedAt": "2026-10-09T11:39:20.883Z",
+    "afterBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9"
+  },
+  "setupAttempt": {
+    "artifactDirectory": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.8vgd213g",
+    "reason": "First model request was rejected by an overly strict harness text-block matcher before any response SSE or Agent call. A fresh isolated capture replaced this setup attempt; no JSONL was reused."
+  },
+  "sources": {
+    "root.jsonl": {
+      "original": {
+        "bytes": 21269,
+        "sha256": "a3b75bb8f213f122484e414a59f90cd3abd2d8c34bfba3a2f5a4041c4a631adc",
+        "completeLFLines": 28,
+        "endsInLF": true
+      },
+      "sanitized": {
+        "bytes": 19625,
+        "sha256": "6fdedc021da50b1f2633c349cce6193348f95d62629efb84f0b8519b6c961231",
+        "completeLFLines": 28,
+        "endsInLF": true
+      },
+      "pathOnly": true
+    },
+    "child.jsonl": {
+      "original": {
+        "bytes": 6588,
+        "sha256": "b42344e21e57608dcc1bb64742469b7bf8449365b387b4637ee6708064f8bddf",
+        "completeLFLines": 6,
+        "endsInLF": true
+      },
+      "sanitized": {
+        "bytes": 6140,
+        "sha256": "16adf8c4b15e78840bb94952d3a328f32e08e22d5cc8e1dc98fb2008d3a62fc9",
+        "completeLFLines": 6,
+        "endsInLF": true
+      },
+      "pathOnly": true
+    },
+    "child.meta.json": {
+      "original": {
+        "bytes": 133,
+        "sha256": "00cb31d5b245a1dabf4e1f9e5b891c93c7254546802166786259127d8cc8d75b",
+        "completeLFLines": 0,
+        "endsInLF": false
+      },
+      "sanitized": {
+        "bytes": 133,
+        "sha256": "00cb31d5b245a1dabf4e1f9e5b891c93c7254546802166786259127d8cc8d75b",
+        "completeLFLines": 0,
+        "endsInLF": false
+      },
+      "pathOnly": true
+    },
+    "observed-running-root.jsonl": {
+      "original": {
+        "bytes": 9394,
+        "sha256": "321490226b1859392f9de41f79bd3fce539dc5eb05940a69848b9748c06ad2a6",
+        "completeLFLines": 11,
+        "endsInLF": true
+      },
+      "sanitized": {
+        "bytes": 8764,
+        "sha256": "3b1fab59445a725d9c825744aab251f39a39a6974ceac2a1b8094357a7bc30b6",
+        "completeLFLines": 11,
+        "endsInLF": true
+      },
+      "pathOnly": true
+    },
+    "observed-running-child.jsonl": {
+      "original": {
+        "bytes": 5413,
+        "sha256": "1b4c73fe52011b4d2d0abc0dd75c6c80e451ca1bc926a0623ae39071d16a0d81",
+        "completeLFLines": 5,
+        "endsInLF": true
+      },
+      "sanitized": {
+        "bytes": 5029,
+        "sha256": "b46968bec095483fdf21d0f06f86c7f43c72e40ed04aa4d7517b18a6fd8ef142",
+        "completeLFLines": 5,
+        "endsInLF": true
+      },
+      "pathOnly": true
+    },
+    "observed-completed-root.jsonl": {
+      "original": {
+        "bytes": 15606,
+        "sha256": "ec2500fdad524bc19e5d071f59676d4bdf1cce4e33204ef023d1944c48b2222b",
+        "completeLFLines": 19,
+        "endsInLF": true
+      },
+      "sanitized": {
+        "bytes": 14373,
+        "sha256": "bce03996e7dce4b42e265cd007b0a2bff77f642b76bc32eddffc0a90afc52ed9",
+        "completeLFLines": 19,
+        "endsInLF": true
+      },
+      "pathOnly": true
+    }
+  },
+  "call": {
+    "toolCallId": "call_bg_90fceeec_agent",
+    "assistantUuid": "ccaad47f-ae4a-4474-a8ca-8061c30e55e9",
+    "receiptUuid": "9246bcd6-cef7-4be1-82be-41d467f92cde",
+    "assistantLine": 7,
+    "receiptLine": 8,
+    "launchMetadata": {
+      "isAsync": true,
+      "status": "async_launched",
+      "agentId": "a8722069f7a6392c3",
+      "description": "Controlled direct background read",
+      "resolvedModel": "claude-sonnet-4-6",
+      "prompt": "ATAPE_BG_90fceeec_CHILD: Read child.txt once, then reply ATAPE_BG_CHILD_FINAL_90fceeec.",
+      "outputFile": "/fixture/native-background-child/output/2a7f13b3-532e-40ec-a959-41210525d00f/tasks/a8722069f7a6392c3.output",
+      "canReadOutputFile": true
+    }
+  },
+  "childIdentity": {
+    "uuid": "0f02e938-d3c6-405b-bcfd-b19dbd747bcc",
+    "parentUuid": null,
+    "sessionId": "2a7f13b3-532e-40ec-a959-41210525d00f",
+    "cwd": "/fixture/native-background-child/workspace",
+    "agentId": "a8722069f7a6392c3",
+    "isSidechain": true
+  },
+  "childMetadata": {
+    "agentType": "general-purpose",
+    "description": "Controlled direct background read",
+    "toolUseId": "call_bg_90fceeec_agent",
+    "spawnDepth": 1
+  },
+  "notification": {
+    "line": 21,
+    "queueEnqueueLine": 19,
+    "queueDequeueLine": 20,
+    "uuid": "19598c61-e7bb-4f7e-9024-71a8c6cc0004",
+    "parentUuid": "b1492058-7ff5-4f66-a8f1-6b8ad0530b8d",
+    "origin": {
+      "kind": "task-notification"
+    },
+    "queueSkipAttachments": true,
+    "taskId": "a8722069f7a6392c3",
+    "toolUseId": "call_bg_90fceeec_agent",
+    "status": "completed",
+    "queueContentEqualsUserContent": true,
+    "hasSecondToolResult": false,
+    "outputFileEqualsLaunchMetadata": true
+  },
+  "outputFile": {
+    "path": "/fixture/native-background-child/output/2a7f13b3-532e-40ec-a959-41210525d00f/tasks/a8722069f7a6392c3.output",
+    "isSymlinkObserved": true,
+    "targetIsAuthenticatedChildFile": true,
+    "targetBytesEqualChild": true,
+    "notAnAdapterDiscoveryPath": true
+  },
+  "observedSnapshots": [
+    {
+      "label": "running",
+      "root": "observed-running-root.jsonl",
+      "child": "observed-running-child.jsonl",
+      "observedSourceRead": "Parent own Read result model request was present while child final response was withheld. Root source flush lag means root has 11 LF while that request already includes later root conversation."
+    },
+    {
+      "label": "child-completed",
+      "root": "observed-completed-root.jsonl",
+      "child": "child.jsonl",
+      "observedSourceRead": "Child final persisted; root includes queued completion notification but not yet UUID notification user."
+    },
+    {
+      "label": "final",
+      "root": "root.jsonl",
+      "child": "child.jsonl"
+    }
+  ],
+  "derivedStages": [
+    {
+      "label": "launch",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 8,
+        "bytes": 6987,
+        "sha256": "6138d197dc422477d7fe6a1e0c8f9013b548fd59f92861a8412de9229591e6c4",
+        "completeLFLines": 8,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 1,
+        "bytes": 530,
+        "sha256": "42a20a829c2bce3b811852bab622ae1afa3ec00d3d83f84a2fdd57c3f6c42140",
+        "completeLFLines": 1,
+        "endsInLF": true
+      }
+    },
+    {
+      "label": "parent-first-reply",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 10,
+        "bytes": 8526,
+        "sha256": "482ff5d84b5eb841ad5434d705360fe2f0d86eec2b012cdf75155707febdad98",
+        "completeLFLines": 10,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 3,
+        "bytes": 2379,
+        "sha256": "cfa524f423251c4b566df312795eedd261dbd05c73f5dc1ca775af6ade75a6d0",
+        "completeLFLines": 3,
+        "endsInLF": true
+      }
+    },
+    {
+      "label": "running",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 18,
+        "bytes": 13458,
+        "sha256": "0829ddf39896a9e1adafa960b3a4b74c0fc8a48a43c71e0dc8b20f463fac6728",
+        "completeLFLines": 18,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 5,
+        "bytes": 5029,
+        "sha256": "b46968bec095483fdf21d0f06f86c7f43c72e40ed04aa4d7517b18a6fd8ef142",
+        "completeLFLines": 5,
+        "endsInLF": true
+      }
+    },
+    {
+      "label": "child-completed-root-unchanged",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 18,
+        "bytes": 13458,
+        "sha256": "0829ddf39896a9e1adafa960b3a4b74c0fc8a48a43c71e0dc8b20f463fac6728",
+        "completeLFLines": 18,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 6,
+        "bytes": 6140,
+        "sha256": "16adf8c4b15e78840bb94952d3a328f32e08e22d5cc8e1dc98fb2008d3a62fc9",
+        "completeLFLines": 6,
+        "endsInLF": true
+      }
+    },
+    {
+      "label": "notification",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 21,
+        "bytes": 15837,
+        "sha256": "31913456c02cf9d201602dd70cd0f4e79343ff70e5c22143104619339cbc77c8",
+        "completeLFLines": 21,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 6,
+        "bytes": 6140,
+        "sha256": "16adf8c4b15e78840bb94952d3a328f32e08e22d5cc8e1dc98fb2008d3a62fc9",
+        "completeLFLines": 6,
+        "endsInLF": true
+      }
+    },
+    {
+      "label": "notification-ack",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 23,
+        "bytes": 17126,
+        "sha256": "3cfeb03ae78d83441d30c86284e2bb0387fa64a87ab8cdbaf98d5cb6b73e3bdc",
+        "completeLFLines": 23,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 6,
+        "bytes": 6140,
+        "sha256": "16adf8c4b15e78840bb94952d3a328f32e08e22d5cc8e1dc98fb2008d3a62fc9",
+        "completeLFLines": 6,
+        "endsInLF": true
+      }
+    },
+    {
+      "label": "continued",
+      "derived": true,
+      "description": "Complete-LF prefixes of immutable native source; replay cut, not an additional simultaneous native observation or invocation.",
+      "root": {
+        "line": 28,
+        "bytes": 19625,
+        "sha256": "6fdedc021da50b1f2633c349cce6193348f95d62629efb84f0b8519b6c961231",
+        "completeLFLines": 28,
+        "endsInLF": true
+      },
+      "child": {
+        "line": 6,
+        "bytes": 6140,
+        "sha256": "16adf8c4b15e78840bb94952d3a328f32e08e22d5cc8e1dc98fb2008d3a62fc9",
+        "completeLFLines": 6,
+        "endsInLF": true
+      }
+    }
+  ],
+  "rootRecordLedger": [
+    {
+      "line": 1,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 2,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 3,
+      "uuid": "4d4171a5-3651-447f-acc4-57edeb8a80ba",
+      "parentUuid": null,
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 4,
+      "uuid": "c221e3f6-7e92-4d9e-adbd-46a99e8ef91a",
+      "parentUuid": "4d4171a5-3651-447f-acc4-57edeb8a80ba",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 5,
+      "uuid": "5bf52305-530b-4822-a1ad-e1402fce761d",
+      "parentUuid": "c221e3f6-7e92-4d9e-adbd-46a99e8ef91a",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 6,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "atis-latch",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 7,
+      "uuid": "ccaad47f-ae4a-4474-a8ca-8061c30e55e9",
+      "parentUuid": "5bf52305-530b-4822-a1ad-e1402fce761d",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_2",
+      "toolUseIds": [
+        "call_bg_90fceeec_agent"
+      ]
+    },
+    {
+      "line": 8,
+      "uuid": "9246bcd6-cef7-4be1-82be-41d467f92cde",
+      "parentUuid": "ccaad47f-ae4a-4474-a8ca-8061c30e55e9",
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": [
+        "call_bg_90fceeec_agent"
+      ]
+    },
+    {
+      "line": 9,
+      "uuid": "39f1450b-0db2-4ce0-85bd-5a0704ed26b2",
+      "parentUuid": "9246bcd6-cef7-4be1-82be-41d467f92cde",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 10,
+      "uuid": "c01ff8a7-7c1e-4db9-a489-a3c093b29e28",
+      "parentUuid": "39f1450b-0db2-4ce0-85bd-5a0704ed26b2",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_4",
+      "toolUseIds": []
+    },
+    {
+      "line": 11,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 12,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 13,
+      "uuid": "33cbc822-d476-4633-855d-22329d16bd78",
+      "parentUuid": "c01ff8a7-7c1e-4db9-a489-a3c093b29e28",
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 14,
+      "uuid": "f3a113ad-66ea-40ef-970f-c80106351851",
+      "parentUuid": "33cbc822-d476-4633-855d-22329d16bd78",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 15,
+      "uuid": "6ac95057-5d77-4283-af87-89d2ff448165",
+      "parentUuid": "f3a113ad-66ea-40ef-970f-c80106351851",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_6",
+      "toolUseIds": [
+        "call_bg_90fceeec_parent_read"
+      ]
+    },
+    {
+      "line": 16,
+      "uuid": "c208a166-7dbd-4c2c-b94d-7c27c9be4a37",
+      "parentUuid": "6ac95057-5d77-4283-af87-89d2ff448165",
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": [
+        "call_bg_90fceeec_parent_read"
+      ]
+    },
+    {
+      "line": 17,
+      "uuid": "461b3497-414d-4dcf-a647-1b083e54d731",
+      "parentUuid": "c208a166-7dbd-4c2c-b94d-7c27c9be4a37",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 18,
+      "uuid": "b1492058-7ff5-4f66-a8f1-6b8ad0530b8d",
+      "parentUuid": "461b3497-414d-4dcf-a647-1b083e54d731",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_7",
+      "toolUseIds": []
+    },
+    {
+      "line": 19,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 20,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 21,
+      "uuid": "19598c61-e7bb-4f7e-9024-71a8c6cc0004",
+      "parentUuid": "b1492058-7ff5-4f66-a8f1-6b8ad0530b8d",
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 22,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 23,
+      "uuid": "4bc8992b-8442-4f2b-bd48-f144f8add7ec",
+      "parentUuid": "19598c61-e7bb-4f7e-9024-71a8c6cc0004",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_8",
+      "toolUseIds": []
+    },
+    {
+      "line": 24,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "queue-operation",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 25,
+      "uuid": "f79e124d-ec31-40f2-8a61-8d933217e364",
+      "parentUuid": "4bc8992b-8442-4f2b-bd48-f144f8add7ec",
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 26,
+      "uuid": "2ce030ba-e5ae-4d72-acbf-36f23e61dcf5",
+      "parentUuid": "f79e124d-ec31-40f2-8a61-8d933217e364",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 27,
+      "uuid": "0061f9db-e720-4c1e-96f3-561053091a0f",
+      "parentUuid": "2ce030ba-e5ae-4d72-acbf-36f23e61dcf5",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_9",
+      "toolUseIds": []
+    },
+    {
+      "line": 28,
+      "uuid": null,
+      "parentUuid": null,
+      "type": "last-prompt",
+      "apiId": null,
+      "toolUseIds": []
+    }
+  ],
+  "childRecordLedger": [
+    {
+      "line": 1,
+      "uuid": "0f02e938-d3c6-405b-bcfd-b19dbd747bcc",
+      "parentUuid": null,
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 2,
+      "uuid": "fdef5005-07bc-4bc7-9508-09703b051088",
+      "parentUuid": "0f02e938-d3c6-405b-bcfd-b19dbd747bcc",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_3",
+      "toolUseIds": [
+        "call_bg_90fceeec_child_read"
+      ]
+    },
+    {
+      "line": 3,
+      "uuid": "85b34eea-e2e5-4398-a46a-588e8e87fe84",
+      "parentUuid": "fdef5005-07bc-4bc7-9508-09703b051088",
+      "type": "user",
+      "apiId": null,
+      "toolUseIds": [
+        "call_bg_90fceeec_child_read"
+      ]
+    },
+    {
+      "line": 4,
+      "uuid": "3d10a99c-afdc-4044-8312-92055051aecc",
+      "parentUuid": "85b34eea-e2e5-4398-a46a-588e8e87fe84",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 5,
+      "uuid": "bc429297-8d21-477c-b58b-a474ae73462c",
+      "parentUuid": "3d10a99c-afdc-4044-8312-92055051aecc",
+      "type": "attachment",
+      "apiId": null,
+      "toolUseIds": []
+    },
+    {
+      "line": 6,
+      "uuid": "769137e2-369f-481c-9d68-210fe99afca2",
+      "parentUuid": "bc429297-8d21-477c-b58b-a474ae73462c",
+      "type": "assistant",
+      "apiId": "msg_atape_bg_90fceeec_5",
+      "toolUseIds": []
+    }
+  ],
+  "latestUsageByApiId": {
+    "msg_atape_bg_90fceeec_2": {
+      "thread": "root",
+      "line": 7,
+      "sourceRecordUuid": "ccaad47f-ae4a-4474-a8ca-8061c30e55e9",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_4": {
+      "thread": "root",
+      "line": 10,
+      "sourceRecordUuid": "c01ff8a7-7c1e-4db9-a489-a3c093b29e28",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_6": {
+      "thread": "root",
+      "line": 15,
+      "sourceRecordUuid": "6ac95057-5d77-4283-af87-89d2ff448165",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_7": {
+      "thread": "root",
+      "line": 18,
+      "sourceRecordUuid": "b1492058-7ff5-4f66-a8f1-6b8ad0530b8d",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_8": {
+      "thread": "root",
+      "line": 23,
+      "sourceRecordUuid": "4bc8992b-8442-4f2b-bd48-f144f8add7ec",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_9": {
+      "thread": "root",
+      "line": 27,
+      "sourceRecordUuid": "0061f9db-e720-4c1e-96f3-561053091a0f",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_3": {
+      "thread": "child",
+      "line": 2,
+      "sourceRecordUuid": "fdef5005-07bc-4bc7-9508-09703b051088",
+      "inputTokens": 31,
+      "outputTokens": 17
+    },
+    "msg_atape_bg_90fceeec_5": {
+      "thread": "child",
+      "line": 6,
+      "sourceRecordUuid": "769137e2-369f-481c-9d68-210fe99afca2",
+      "inputTokens": 31,
+      "outputTokens": 17
+    }
+  },
+  "persistedActualUsage": {
+    "sourceApiIds": 8,
+    "inputTokens": 248,
+    "outputTokens": 136,
+    "rootSourceApiIds": 6,
+    "childSourceApiIds": 2,
+    "notificationSubagentTokensAreNotAdditionalUsage": true
+  },
+  "sourceMessageRecords": {
+    "root": 12,
+    "child": 4,
+    "warning": "Source record counts are not a claim that internal task-notification content belongs in Canonical/Search."
+  },
+  "diskReadEvidence": {
+    "child": {
+      "file": "/fixture/native-background-child/workspace/child.txt",
+      "bytes": 48,
+      "sha256": "ab8c505ac814fead9c2babba4850ae55f1d2cbc7c8dd43239fa8b0f63e698ed2",
+      "toolCallId": "call_bg_90fceeec_child_read",
+      "callLine": 2,
+      "receiptLine": 3,
+      "sourceToolAssistantUUID": "fdef5005-07bc-4bc7-9508-09703b051088",
+      "recordedReceiptBody": "Native numbered tool_result text; this child record has no toolUseResult field.",
+      "numberedToolResultEqualsExpectedDiskRendering": true
+    },
+    "parent": {
+      "file": "/fixture/native-background-child/workspace/parent.txt",
+      "bytes": 47,
+      "sha256": "74f00f031fda4c80228b699071183ae5f9b980b01f17a2e79379c005ec93bb74",
+      "toolCallId": "call_bg_90fceeec_parent_read",
+      "callLine": 15,
+      "receiptLine": 16,
+      "toolUseResultFileContentEqualsDisk": true
+    }
+  },
+  "wire": [
+    {
+      "index": 1,
+      "method": "HEAD",
+      "path": "/api/hello",
+      "kind": "bootstrap",
+      "request": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "fakeAuthenticationVerified": null
+    },
+    {
+      "index": 2,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "parent-launch",
+      "request": {
+        "bytes": 16078,
+        "sha256": "57488a0fc8eb316acfda3a76b745e5ed000f9c5b8da02a840d1e95f9b9ed166b"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 1101,
+        "sha256": "bb65be6d09575528303ca804480d6bfae1ec2ecf3b085e96002c195277952e8c"
+      }
+    },
+    {
+      "index": 3,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "child-initial-held",
+      "request": {
+        "bytes": 15716,
+        "sha256": "687ccec16117a682027e081e1a79039210e90f9bd69d6318b29f2e8534c7bbe3"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 1018,
+        "sha256": "71ae5ac0e6e0c01a7167d85df883419fc8161365edb4e46753518c12620eb48e"
+      }
+    },
+    {
+      "index": 4,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "parent-after-launch",
+      "request": {
+        "bytes": 17788,
+        "sha256": "85689b08b12d030ba6a735487b1058b6b73b4ae671d77c9988916d39cd7bcd57"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 896,
+        "sha256": "2a7383d7fdec9af9332bc7b3740bbeabc55c6736116f29b97e4f7c78b3e35e35"
+      }
+    },
+    {
+      "index": 5,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "child-after-read-held",
+      "request": {
+        "bytes": 18006,
+        "sha256": "693c5d21e639f2f64d88e33ea2e4bc866379fe6e332a6c7604c4bb58ac83e16b"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 872,
+        "sha256": "580589321393b240d1cff7ee92cc2ed8d64abcd166c2360424265a1763b3426d"
+      }
+    },
+    {
+      "index": 6,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "parent-during",
+      "request": {
+        "bytes": 18185,
+        "sha256": "464ceaed32e30b19a1e9e8cd56f5a397205deeef1e051333e74cc17f426038f5"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 1020,
+        "sha256": "861edf967a1b360f1457dd6803491b96ff2677d440635fca63fd4d2bcfadbd04"
+      }
+    },
+    {
+      "index": 7,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "parent-after-during-read",
+      "request": {
+        "bytes": 18683,
+        "sha256": "76e89c5fd5f6950924d5be5bb9f84480d7cd9671872fc9cf8c42a6cbd9669241"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 893,
+        "sha256": "edcb1c30a642d0df9bdfad9ee2236f2c13dd4f72cff75b4facea2c4cc54f6034"
+      }
+    },
+    {
+      "index": 8,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "parent-native-completion-notification",
+      "request": {
+        "bytes": 20271,
+        "sha256": "68ec64e3411564765eff9a851c67cd3139949fd6c393ec3584da83df566f6637"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 876,
+        "sha256": "afbb9a8b596ed19202f6394d7efd45cdd73456e69ff864a2219ad83b4a2e42ff"
+      }
+    },
+    {
+      "index": 9,
+      "method": "POST",
+      "path": "/v1/messages?beta=true",
+      "kind": "parent-after-completion",
+      "request": {
+        "bytes": 20625,
+        "sha256": "2b8146d41645f4a4f6102969cb9b99b010241bb4ff3f4fb644ae1d0a637af3f8"
+      },
+      "fakeAuthenticationVerified": true,
+      "responseSSE": {
+        "bytes": 905,
+        "sha256": "d8d4c595d82938bb1b1500f3822f4f77b97a3d9c340e229b22291d46feab4ca6"
+      }
+    }
+  ],
+  "selectedSourceRequests": {
+    "file": "selected-source-requests.json",
+    "bytes": 31342,
+    "sha256": "4cfb74e39692a2d07470b03a53b0515e30a034a502bdb09a20f580c73c3e8844",
+    "completeLFLines": 734,
+    "endsInLF": true,
+    "omissions": "SDK system prompts, complete tool schemas and unrelated reminders/fields; complete original request/SSE hashes retained in wire ledger."
+  },
+  "limitsAndEvidenceBoundaries": [
+    "One successful direct background Agent in one isolated stream-json native process, no nested/fork or multiple-child source evidence.",
+    "No native error/cancellation or deleted-child-file scenario was acquired; later missing/unreadable/changed files must be explicit generated caller tests.",
+    "Background completion may repeat for the same task-id according to the native notification note; this sample contains one completion only.",
+    "All eight model responses were deterministic loopback SSE with a fake key, so recorded usage is controlled source metadata and does not establish real provider billing.",
+    "One HEAD /api/hello bootstrap returned 404 without authentication; all eight POST model requests passed fake authentication. No token-count route was used.",
+    "No operating-system egress firewall was asserted. The harness allowed only the declared loopback routes and strict empty MCP configuration.",
+    "Original JSONL was never reserialized. Fixture source changes are literal path substitutions only.",
+    "Early observations contained only the child meta file because native source writes were buffered; complete-LF replay stages are explicitly derived rather than claimed simultaneous observations."
+  ],
+  "sourceEvidenceDirectory": "/var/folders/xw/9981n9gn1tdb6t730q926xcc0000gn/T/atape-claude-background-native.91r8fj4v",
+  "wireResponseWritePolicy": "Harness awaited each complete SSE file write before writing response headers/body.",
+  "sourceSnapshotLedger": {
+    "file": "snapshots.json",
+    "originalBytes": 7602,
+    "originalSha256": "53f1a51d7c54b2e1f91c98cdcb07cd7b10c4c1dc1d5502573f355c6289ebed6a",
+    "observations": 8
+  },
+  "fullInvocationAuthority": {
+    "file": "authority.json",
+    "bytes": 2870,
+    "sha256": "7ef3a5febc890f8fe1570d9c87d50191c3dc309539c30bf9919fa87d785392d7"
+  },
+  "finalResultAuthority": {
+    "file": "result.json",
+    "bytes": 3100,
+    "sha256": "cf06ec683548b704bfa72e74aec08fb285aced8af456686ae0e39d7f0b4e6414"
+  },
+  "actualConfigAfter": [
+    {
+      "file": ".claude.json",
+      "bytes": 423,
+      "sha256": "a5ee528dba7bfb2b08fb125affc39f0f9577a125ad0a1853664a19eb2a0af2b8"
+    },
+    {
+      "file": "projects/-private-var-folders-xw-9981n9gn1tdb6t730q926xcc0000gn-T-atape-claude-background-native-91r8fj4v-workspace/2a7f13b3-532e-40ec-a959-41210525d00f.jsonl",
+      "bytes": 21269,
+      "sha256": "a3b75bb8f213f122484e414a59f90cd3abd2d8c34bfba3a2f5a4041c4a631adc"
+    },
+    {
+      "file": "projects/-private-var-folders-xw-9981n9gn1tdb6t730q926xcc0000gn-T-atape-claude-background-native-91r8fj4v-workspace/2a7f13b3-532e-40ec-a959-41210525d00f/subagents/agent-a8722069f7a6392c3.meta.json",
+      "bytes": 133,
+      "sha256": "00cb31d5b245a1dabf4e1f9e5b891c93c7254546802166786259127d8cc8d75b"
+    },
+    {
+      "file": "projects/-private-var-folders-xw-9981n9gn1tdb6t730q926xcc0000gn-T-atape-claude-background-native-91r8fj4v-workspace/2a7f13b3-532e-40ec-a959-41210525d00f/subagents/agent-a8722069f7a6392c3.jsonl",
+      "bytes": 6588,
+      "sha256": "b42344e21e57608dcc1bb64742469b7bf8449365b387b4637ee6708064f8bddf"
+    },
+    {
+      "file": "backups/.claude.json.backup.1791545960442",
+      "bytes": 84,
+      "sha256": "a058250f2d5c31b84dfc80f66e3c224d084392b81e9247fcafbbe04a5cd06064"
+    }
+  ]
+}
