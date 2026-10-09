@@ -89,8 +89,17 @@ trusted package/path installation, original-source refresh and confirmed cleanup
 
 `--help` and `--version` work without a terminal. `--lang` changes the session
 language; `--no-browser` displays sign-in links without opening a browser.
-Business subcommands, JSON output and foreground collection are removed. CI,
-pipes, Windows and `TERM=dumb` fail with plain guidance and exit status 2.
+Business subcommands, collection JSON output and foreground collection are removed.
+Interactive launch in CI, pipes, Windows and `TERM=dumb` fails with plain guidance
+and exit status 2. The local inspection command works with redirected output:
+
+```sh
+atape redaction-test sample.jsonl
+```
+
+It applies built-in and custom rules, writes masked content to stdout and safe
+rule counts to stderr, and creates no capture state. See
+[client redaction](../../docs/cli/redaction.md) for configuration and recovery limits.
 Follow [first-sync verification](../../docs/cli/setup-and-adapters.md#confirm-the-first-sync)
 and [troubleshooting](../../docs/cli/setup-and-adapters.md#troubleshooting) for recovery.
 

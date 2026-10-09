@@ -536,6 +536,8 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 
 - Credentials: `~/.atape/credentials/`
 - Configuration: `~/.atape/config/client.json`
+- Redaction rules: `~/.atape/config/redaction.json`
+- Redaction identity and binding: `<collector-state-file>.redaction-key` and its `.json` binding
 - Collector checkpoints, process metadata, and status: `~/.atape/state/`
 - Account-bound Source capture journals: below `~/.atape/state/collector.json.captures/`, with `collector.json.capture-installation.json` binding metadata
 - Git attribution evidence: beside the Collector state file, in `<state-file>.git-attribution/`
@@ -556,9 +558,9 @@ supported repair for capture state.
 `ATAPE_HOME` relocates the whole layout. Individual `ATAPE_CONFIG_FILE`, `ATAPE_COLLECTOR_STATE_FILE`, `ATAPE_COLLECTOR_PROCESS_FILE`, `ATAPE_COLLECTOR_STATUS_FILE`, `ATAPE_COLLECTOR_LOG_FILE`, and `ATAPE_ADAPTER_DIRECTORY` overrides remain available for development. Credentials use opaque per-Instance filenames, owner-only directories/files, no-follow reads, compare-and-swap updates, and fsynced atomic replacement. Local filesystem paths remain client state and are not part of server Project, Canonical, Raw, or Search payloads.
 
 The JSON checkpoint file stores installation identity, opaque progress and Raw
-receipts, never conversation bodies. Codex/Claude replay through an unadvanced
-cursor after a failed upload. OpenCode instead retains only bounded, final masked
-pending content in the separate account-bound capture journal. Preserve its binding
+receipts, never conversation bodies. Legacy paged Adapters replay through an
+unadvanced cursor after a failed upload. Source capture retains only bounded, final
+masked pending content in the separate account-bound capture journal. Preserve its binding
 and files with Collector state; deleting them is not a supported reset. Resolved
 payloads are reclaimed while identity and receipt evidence remains.
 
@@ -568,7 +570,12 @@ state; losing it can make history unattributable when its original checkout is
 gone and the provider did not record a remote. Saved remotes are matched against
 the server again during collection.
 
-The redactor covers common credentials and environment values whose names end in `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`, `DATABASE_URL`, or `DSN`. Add exact values with a JSON array in `ATAPE_REDACT_VALUES`. Identity fields are stable and are not rewritten, so Adapter authors must never place secrets in IDs.
+The shared Redaction Module applies built-in credentials, environment literals and
+persisted custom RE2 value/field rules to Canonical, Raw and source diagnostics.
+Use `atape redaction-test <file>` to inspect a local sample without sign-in or
+upload. Preserve the redaction key/binding with Collector state. Rules reload at
+each job boundary; uncertain old-policy delivery can pause instead of resending
+old bytes. See [client redaction](redaction.md) for configuration, limits and recovery.
 
 The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md), [OpenCode](../adapters/opencode.md), [CodeBuddy](../adapters/codebuddy.md), [Kimi](../adapters/kimi.md) and [Grok](../adapters/grok.md) guides.
 
@@ -614,8 +621,9 @@ checkpoint persistence and legacy transport each have a cohesive Implementation;
 plugin registry, runtime or package boundary was introduced. See
 [ADR-0079](../architecture/adr/0079-cli-module-boundaries.md).
 
-The parser accepts only the application launch, help/version, session options and
-token-bound internal Collector/updater/login entries. The login entry validates
+The parser accepts the application launch, help/version, session options, the
+local-only `redaction-test` inspection command and token-bound internal
+Collector/updater/login entries. The login entry validates
 its owned coordinator or selected executable and private registration; the updater verifies its
 owned worker-copy path; it is not a public operation or remote command Interface.
 Removed business commands, unknown options,

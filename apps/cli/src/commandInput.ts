@@ -2,9 +2,17 @@ import { parseArgs } from "node:util"
 import { t } from "./i18n/index.ts"
 
 type Global = { readonly lang?: string }
+export type RedactionTestFormat = "text" | "json" | "jsonl"
+export type RedactionTestOptions = Global & {
+  readonly file: string
+  readonly format?: RedactionTestFormat
+  readonly config?: string
+}
 export type ParsedCLI =
   | { readonly kind: "interactive"; readonly options: Global & { readonly noBrowser?: boolean } }
   | { readonly kind: "help" | "version"; readonly options: Global }
+  | { readonly kind: "redaction-help"; readonly options: Global }
+  | { readonly kind: "redaction-test"; readonly options: RedactionTestOptions }
   | { readonly kind: "__collector-daemon"; readonly options: {
     readonly daemonToken: string; readonly intervalMs?: number; readonly concurrency?: number
   } }
@@ -13,27 +21,45 @@ export type ParsedCLI =
 
 export class CLIInputError extends Error {}
 
-// Only the process owner uses the daemon branch. Public input never exposes
-// business operations or falls back to a second presentation.
+// The local redaction test is a public noninteractive utility. Internal process
+// entries remain reserved for their owners; management uses the guided entry.
 export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
   const internal = args[0] === "__collector-daemon"
   const updater = args[0] === "__automatic-update"
   const login = args[0] === "__login-start"
-  const { values, positionals, tokens } = parseArgs({
+  const redaction = args[0] === "redaction-test"
+  const fail = (): never => { throw new CLIInputError(t("cli.error.input", "Unsupported arguments. Run atape to manage projects, tools and settings, or atape --help.")) }
+  let parsed: ReturnType<typeof parseArgs>
+  try { parsed = parseArgs({
     args: [...args], allowPositionals: true, strict: true, tokens: true,
-    options: login ? { "startup-token": { type: "string" } } : updater ? { "update-token": { type: "string" } } : internal ? {
+    options: redaction ? {
+      help: { type: "boolean", short: "h" }, lang: { type: "string" },
+      config: { type: "string" }, format: { type: "string" }
+    } : login ? { "startup-token": { type: "string" } } : updater ? { "update-token": { type: "string" } } : internal ? {
       "daemon-token": { type: "string" }, interval: { type: "string" }, concurrency: { type: "string" }
     } : {
       help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
       lang: { type: "string" }, "no-browser": { type: "boolean" }
     }
-  })
-  const fail = (): never => { throw new CLIInputError(t("cli.error.input", "Unsupported arguments. Run atape to manage projects, tools and settings, or atape --help.")) }
+  }) } catch { return fail() }
+  const { values, positionals, tokens } = parsed
   const seen = new Set<string>()
-  for (const token of tokens) {
+  for (const token of tokens ?? []) {
     if (token.kind !== "option") continue
     if (seen.has(token.name) || typeof token.value === "string" && token.value.trim() === "") fail()
     seen.add(token.name)
+  }
+  if (redaction) {
+    const options: Global = typeof values.lang === "string" ? { lang: values.lang } : {}
+    if (values.help) {
+      if (positionals.length !== 1 || values.config !== undefined || values.format !== undefined) return fail()
+      return { kind: "redaction-help", options }
+    }
+    if (positionals.length !== 2 || positionals[1]!.trim() === "" ||
+      values.format !== undefined && !["text", "json", "jsonl"].includes(String(values.format))) return fail()
+    return { kind: "redaction-test", options: { ...options, file: positionals[1]!,
+      ...(typeof values.config === "string" ? { config: values.config } : {}),
+      ...(values.format === undefined ? {} : { format: values.format as RedactionTestFormat }) } }
   }
   if (login) {
     if (positionals.length !== 1 || typeof values["startup-token"] !== "string" ||

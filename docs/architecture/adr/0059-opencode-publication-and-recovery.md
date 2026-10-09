@@ -2,6 +2,7 @@
 
 - Status: Accepted design; implementation and native evidence recorded in the OpenCode guide
 - Date: 2026-09-10
+- Shared redaction and policy-change delivery admission amended by [ADR-0104](0104-client-redaction-policy.md).
 - Decision: [OpenCode identity, Raw and mutable-history contract](https://github.com/SingleMai/ATape/issues/113)
 
 Follow-up: the [OpenCode guide](../../adapters/opencode.md) records delivered

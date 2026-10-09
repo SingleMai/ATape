@@ -356,7 +356,9 @@ export const CollectorRawObjectProgress = Schema.Struct({
   sourceOffset: Schema.Number,
   serverGeneration: Schema.Number,
   serverOffset: Schema.Number,
-  finalized: Schema.Boolean
+  finalized: Schema.Boolean,
+  /** Policy that produced the last completely acknowledged source segment. */
+  policyId: Schema.optionalKey(Schema.String)
 })
 export type CollectorRawObjectProgress = typeof CollectorRawObjectProgress.Type
 
@@ -372,6 +374,10 @@ export const CollectorCheckpoint = Schema.Struct({
   rawObjects: Schema.Array(CollectorRawObjectProgress),
   /** Historical confirmed publication; discovery or local preparation is insufficient. */
   canonicalPublished: Schema.optionalKey(Schema.Boolean),
+  /** Immutable policy of the most recent paged content attempt. */
+  policyId: Schema.optionalKey(Schema.String),
+  /** Persisted before content I/O; absence on old checkpoints proves nothing. */
+  deliveryPending: Schema.optionalKey(Schema.Boolean),
   updatedAt: Schema.String
 })
 export type CollectorCheckpoint = typeof CollectorCheckpoint.Type

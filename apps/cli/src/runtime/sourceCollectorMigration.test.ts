@@ -1,5 +1,5 @@
 import { CaptureJournals, CollectorStateStore, SourceCaptureCollector, makeSourceCaptureCollectorLayer, makeSecretRedactorLayer,
-  AdapterRuntimeError, type HostedAdapter } from "@atape/application"
+  AdapterRuntimeError, SecretRedactor, type HostedAdapter } from "@atape/application"
 import { SourceCaptureVersion2, PublicationTargetProfile2, type AdapterInstallation, type LocalProject, type CollectorCheckpoint } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
@@ -14,7 +14,7 @@ import { sourceCollectionLimits as limits } from "./fixtures/source-collection-t
 // Generated v2 test Adapter over the controlled OpenCode-format source. These
 // tests exercise the public Host workflow, not native Claude rewind evidence.
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
-const setup = async (options: { readonly largeBaseline?: boolean; readonly rootOnly?: boolean } = {}) => {
+const setup = async (options: { readonly largeBaseline?: boolean; readonly rootOnly?: boolean; readonly diagnosticSource?: string } = {}) => {
   const native = await nativePreparationSource()
   const projected = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const view = yield* native.source(false), events = [], usage = []
@@ -37,7 +37,7 @@ const setup = async (options: { readonly largeBaseline?: boolean; readonly rootO
   const base = Layer.mergeAll(makeCaptureJournalsLayer(stateFile), makeCollectorStateLayer(stateFile), remote.remote, remote.rawRemote,
     makeSecretRedactorLayer(["SENSITIVE_TEST_TOKEN"]))
   const layer = Layer.merge(base, makeSourceCaptureCollectorLayer(limits).pipe(Layer.provide(base)))
-  const run = <A, E>(work: Effect.Effect<A, E, SourceCaptureCollector | CollectorStateStore | CaptureJournals>) => Effect.runPromise(work.pipe(Effect.provide(layer)))
+  const run = <A, E>(work: Effect.Effect<A, E, SourceCaptureCollector | CollectorStateStore | CaptureJournals | SecretRedactor>) => Effect.runPromise(work.pipe(Effect.provide(layer)))
   const calls: Array<{ operation: string; legacy?: string; prior?: string; threads?: number }> = []
   let missing = false, invalid = false, checkpoint = "physical-prefix-1", retained: string[] = [], diagnostics = false
   let mutateOpen: { at: number; checkpoint: string } | undefined
@@ -68,7 +68,7 @@ const setup = async (options: { readonly largeBaseline?: boolean; readonly rootO
           let eventIndex = 0
           return { ...view, threads, sourceCheckpoint: checkpoint, session: { ...view.session, reportedEventCount: included },
             target: { ...view.target, threads: threads.length, events: included, usage: projected.usage.filter(sample => !excluded.has(sample.sourceThreadId)).length, retainedThreadIds: retained },
-            sourceFailures: diagnostics ? [{ source: "controlled-child", reason: "unsupported" as const }] : [], sourceFailuresTruncated: false,
+            sourceFailures: diagnostics ? [{ source: options.diagnosticSource ?? "controlled-child", reason: "unsupported" as const }] : [], sourceFailuresTruncated: false,
             read: () => view.read().pipe(Effect.map(page => ({ ...page, frames: page.frames.map(frame => ({ ...frame,
               events: frame.events.filter(event => !excluded.has(event.sourceThreadId)).map(event => {
                 const { childSourceThreadId: child, ...rest } = event
@@ -110,6 +110,16 @@ const setup = async (options: { readonly largeBaseline?: boolean; readonly rootO
 }
 
 describe("explicit legacy source migration through the Host Interface", () => {
+  it("masks v2 source diagnostics before both local freezing and idle reporting", async () => {
+    const f = await setup({ diagnosticSource: "/source/SENSITIVE_TEST_TOKEN/child.jsonl" }); f.remote.policy(false); f.diagnostics()
+    const first = await f.cycle()
+    expect(first.sourceFailures).toEqual([{ source: "/source/[REDACTED]/child.jsonl", reason: "unsupported" }])
+    expect(first.redactions).toBeGreaterThan(0)
+    const metadata = (await f.inspect()).metadata!
+    expect(metadata).not.toContain("SENSITIVE_TEST_TOKEN")
+    expect(JSON.parse(metadata).sourceFailures).toEqual(first.sourceFailures)
+    expect((await f.cycle()).sourceFailures).toEqual(first.sourceFailures)
+  }, 15000)
   it("authenticates before adoption, freezes all acknowledged metadata and seeds versions above the Server floor", async () => {
     const f = await setup(); f.remote.policy(false)
     const raw = [{ sourceSessionId: f.native.metadata.origin.sourceId, sourceObjectId: "legacy-owned-object", sourceName: "old.jsonl", mediaType: "application/jsonl",

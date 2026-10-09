@@ -35,3 +35,16 @@ The official documentation describes the Codex CLI product but does not establis
 - OpenTelemetry Go: <https://opentelemetry.io/docs/languages/go/>
 
 Google Wire is intentionally not selected because its upstream repository was archived in August 2025 and is no longer maintained.
+
+## Redaction
+
+- Confab catalog/reference: <https://github.com/ConfabulousDev/confab/tree/8082a7ab8d3195ae8fb93545508be49bc4c8f5b7/pkg/redactor>
+- Confab license: MIT, copyright 2025 Confab Contributors.
+- RE2JS 2.8.6: <https://github.com/le0pard/re2js>, MIT, copyright 2023 Oleksii Vasyliev.
+
+ATape adapts Confab's credential catalog and implements its own shared content and
+policy recovery boundary. Required license text ships in the
+[CLI notice](../../apps/cli/THIRD_PARTY_NOTICES.md), with the catalog's notice also
+retained in source. RE2JS implements non-backtracking regular expression matching;
+it is a private implementation dependency under
+[ADR-0104](adr/0104-client-redaction-policy.md).

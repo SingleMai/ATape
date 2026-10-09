@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -36,7 +36,8 @@ const environment = {
   ATAPE_CODEBUDDY_HOME: join(temporaryRoot, "missing-codebuddy"),
   ATAPE_KIMI_HOME: join(temporaryRoot, "missing-kimi"),
   OPENCODE_DB: join(temporaryRoot, "missing-opencode.db"),
-  ATAPE_REDACT_VALUES: "[]"
+  ATAPE_REDACT_VALUES: "[]",
+  ATAPE_REDACTION_CONFIG_FILE: undefined
 }
 let fixtureServer
 
@@ -53,7 +54,7 @@ try {
   const manifest = packed[0]
   assert.deepEqual(
     manifest.files.map((file) => file.path).sort(),
-    ["LICENSE", "README.md", "dist/atape.js", "package.json"]
+    ["LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "dist/atape.js", "package.json"]
   )
   assert.ok(manifest.size < 1024 * 1024, `CLI tarball is unexpectedly large: ${manifest.size} bytes`)
 
@@ -61,6 +62,10 @@ try {
   await run("npm", [
     "install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installDirectory, tarball
   ], temporaryRoot)
+  const notices = await readFile(join(installDirectory, "node_modules", "@atape", "cli", "THIRD_PARTY_NOTICES.md"), "utf8")
+  assert.match(notices, /Confab Contributors/)
+  assert.match(notices, /RE2JS/)
+  await verifyLocalRedaction()
   const help = (await atape(["--help"])).stdout
   assert.match(help, /^ATape CLI/m)
   assert.match(help, /projects, tools and settings/)
@@ -237,4 +242,44 @@ async function run(file, arguments_, cwd, env = process.env) {
       : ""
     throw new Error(`${file} ${arguments_.join(" ")} failed${detail}`, { cause })
   }
+}
+
+async function verifyLocalRedaction() {
+  const home = join(temporaryRoot, "redaction-home")
+  const sample = join(temporaryRoot, "redaction-sample.jsonl")
+  const configuration = join(temporaryRoot, "redaction-rules.json")
+  let requests = 0
+  const server = createServer((_, response) => { requests++; response.end() })
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  assert.ok(address && typeof address !== "string")
+  const env = { ...environment, ATAPE_HOME: home, ATAPE_INSTANCE_URL: `http://127.0.0.1:${address.port}` }
+  const invoke = args => execute(binary, ["redaction-test", ...args], { cwd: temporaryRoot, env, encoding: "utf8", timeout: 30_000 })
+  try {
+    await writeFile(sample, '{"message":"keep ticket=private-alpha","password":"x"}\n')
+    await writeFile(configuration, JSON.stringify({ patterns: [{ name: "Installed custom rule", pattern: "ticket=(private-[a-z]+)", type: "local", capture_group: 1 }] }))
+    const tested = await invoke([sample, "--config", configuration])
+    assert.deepEqual(JSON.parse(tested.stdout), { message: "keep ticket=[REDACTED:LOCAL]", password: "[REDACTED]" })
+    assert.match(tested.stderr, /Redaction test: \d+ mask operation\(s\)/)
+    assert.match(tested.stderr, /custom:0 \(local\): 1/)
+    await assert.rejects(stat(home), { code: "ENOENT" })
+    await mkdir(join(home, "releases"), { recursive: true })
+    await writeFile(join(home, "releases", "current.json"), "malformed managed selection")
+    const again = await invoke([sample, "--config", configuration])
+    assert.equal(again.stdout, tested.stdout)
+    assert.equal(await readFile(join(home, "releases", "current.json"), "utf8"), "malformed managed selection")
+    await writeFile(configuration, '{"patterns":[{"name":"Invalid custom rule","pattern":"regex-secret(","type":"local"}]}')
+    await assert.rejects(invoke([sample, "--config", configuration]), error => {
+      assert.equal(error.code, 1)
+      assert.equal(error.stdout, "")
+      assert.match(error.stderr, /Local redaction test failed/)
+      assert.doesNotMatch(error.stderr, /private-alpha|regex-secret|Installed custom rule|redaction-rules/)
+      return true
+    })
+    const help = await invoke(["--help"])
+    assert.match(help.stdout, /same redaction policy/)
+    assert.equal(help.stderr, "")
+    assert.equal(requests, 0)
+    process.stdout.write("Verified installed local redaction command without network or capture state changes.\n")
+  } finally { await closeServer(server) }
 }

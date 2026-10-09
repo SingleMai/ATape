@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-09-05
+- Redaction and policy-bound legacy recovery amended by [ADR-0104](0104-client-redaction-policy.md).
 - Collection priority and Raw transport sizing amended by [ADR-0022](0022-canonical-priority-and-larger-raw-chunks.md)
 - The no-payload-spool constraint has a scoped OpenCode exception in [ADR-0058](0058-opencode-sqlite-and-bounded-capture.md), detailed in [ADR-0059](0059-opencode-publication-and-recovery.md). The [OpenCode guide](../../adapters/opencode.md) records its implemented scope; legacy Adapters retain this paged runtime.
 

@@ -273,8 +273,8 @@ describe("Collector Module", () => {
     const page = collectionPage(), observation = page.observations[0]!, segment = observation.rawSegments[0]!
     const capture = fixture({
       page: { ...page, observations: [{ ...observation, rawSegments: [
-        { ...segment, content: "first\n", final: false },
-        { ...segment, sourceOffset: 6, content: "last\n", final: true }
+        { ...segment, mediaType: "text/plain", content: "first\n", final: false },
+        { ...segment, mediaType: "text/plain", sourceOffset: 6, content: "last\n", final: true }
       ] }] },
       rawFailureAtServerOffset: 6,
       rawFailure: new CollectionTransportError({ operation: "raw", reason: "raw_disabled", retryable: false, message: "disabled" })
@@ -325,8 +325,8 @@ describe("Collector Module", () => {
       const secondStarted = yield* Deferred.make<void>()
       const page = collectionPage()
       const segment = page.observations[0]!.rawSegments[0]!
-      const a = { ...segment, sourceObjectId: "a", content: "first\n" }
-      const b = { ...segment, sourceObjectId: "b", content: "other\n" }
+      const a = { ...segment, mediaType: "text/plain", sourceObjectId: "a", content: "first\n" }
+      const b = { ...segment, mediaType: "text/plain", sourceObjectId: "b", content: "other\n" }
       const capture = fixture({ page: { ...page, observations: [{ ...page.observations[0]!,
         rawSegments: [a, { ...a, sourceOffset: 6, content: "second\n", final: true }, b] }] },
         rawGate: submission => submission.sourceObjectId === "a" && submission.serverOffset === 0

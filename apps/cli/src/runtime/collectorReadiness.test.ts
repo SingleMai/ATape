@@ -1,6 +1,6 @@
 import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, type ClientConfig } from "@atape/domain"
 import { Effect } from "effect"
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -8,7 +8,7 @@ import { adapterPackageRoot, prepareAdapterSlot, trackAdapterSlot } from "./adap
 import { isCollectorMaintenancePending, withCollectorMaintenance } from "./collectorDaemonLayers.ts"
 import { prepareCollectorReadiness, validateCollectorAdapters } from "./collectorReadiness.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { atomicJSON, managedStateContract, runtimeSelectionFile } from "./runtimeSelection.ts"
+import { atomicJSON, managedStateContract, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -68,6 +68,8 @@ describe("local Collector readiness", () => {
     await f.saveConfig({ ...f.config, toolsConfigured: false, projects: [], enabledAdapterIds: [] })
     await Effect.runPromise(prepareCollectorReadiness(f.paths, {}))
     await expect(readFile(f.readyFile)).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(lstat(updateDirectory(f.paths.atapeHome))).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(readFile(f.paths.collectorStateFile)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it("rejects incomplete marker configuration", async () => {
@@ -225,5 +227,50 @@ export function createAtapeAdapter() {}
       await maintenance
       if (!cancel) { await ready; expect(completed).toBe(true) }
     } finally { cancellation.abort(); release(); await maintenance; await ready.catch(() => {}) }
+  })
+
+  it.each([false, true])("keeps collection behind a pending update after the maintenance gate clears, with cancellation=%s", async cancel => {
+    const f = await fixture(), pending = join(updateDirectory(f.paths.atapeHome), "pending.json")
+    await mkdir(dirname(pending), { recursive: true })
+    // Presence is the commit barrier. Readiness must not parse or rewrite the
+    // older updater's journal, even if an interrupted write left invalid JSON.
+    const journal = "unfinished older update transaction"
+    await writeFile(pending, journal)
+    expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(false)
+    const cancellation = new AbortController()
+    let providerOpened = false
+    const ready = Effect.runPromise(prepareCollectorReadiness(f.paths, f.environment).pipe(
+      Effect.andThen(Effect.sync(() => { providerOpened = true }))
+    ), { signal: cancellation.signal })
+    void ready.catch(() => {})
+    try {
+      await expect.poll(async () => JSON.parse(await readFile(f.readyFile, "utf8"))).toEqual({ token: f.token, pid: process.pid })
+      await Effect.runPromise(Effect.sleep(100))
+      expect(providerOpened).toBe(false)
+      expect(await readFile(pending, "utf8")).toBe(journal)
+      await expect(readFile(f.paths.collectorStateFile)).rejects.toMatchObject({ code: "ENOENT" })
+      if (cancel) {
+        cancellation.abort()
+        await expect(ready).rejects.toThrow()
+        expect(providerOpened).toBe(false)
+        expect(await readFile(pending, "utf8")).toBe(journal)
+      } else {
+        await rm(pending)
+        await ready
+        expect(providerOpened).toBe(true)
+      }
+    } finally { cancellation.abort(); await ready.catch(() => {}) }
+  })
+
+  it("fails closed without collection state when pending update inspection has an unknown I/O error", async () => {
+    const f = await fixture()
+    await writeFile(updateDirectory(f.paths.atapeHome), "not a directory")
+    let providerOpened = false
+    await expect(Effect.runPromise(prepareCollectorReadiness(f.paths, f.environment).pipe(
+      Effect.andThen(Effect.sync(() => { providerOpened = true }))
+    ))).rejects.toThrow("Could not inspect the ATape update transaction. Collection remains paused.")
+    expect(providerOpened).toBe(false)
+    expect(JSON.parse(await readFile(f.readyFile, "utf8"))).toEqual({ token: f.token, pid: process.pid })
+    await expect(readFile(f.paths.collectorStateFile)).rejects.toMatchObject({ code: "ENOENT" })
   })
 })

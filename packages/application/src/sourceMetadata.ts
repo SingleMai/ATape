@@ -2,6 +2,7 @@ import { Effect, Schema } from "effect"
 import { AdapterSourceFailure, SourceCapturePriorThread, SourceCaptureCheckpoint } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { PublicationPreparationError, type PublicationDraftView } from "./canonicalSourceProjection.ts"
+import { SecretRedactor } from "./collectorContracts.ts"
 
 const Metadata = Schema.Struct({
   threads: Schema.Array(SourceCapturePriorThread).check(Schema.isMaxLength(1000)),
@@ -23,6 +24,16 @@ export const currentSourceMetadata = (owner: CaptureOwner) => Effect.gen(functio
   const journal = yield* CaptureJournal, coverage = yield* journal.coverage(owner)
   return yield* decodeSourceMetadata(yield* journal.sourceMetadata(owner, coverage.canonicalCaptureId))
 })
-export const sourceMetadataJson = (view: PublicationDraftView<unknown, unknown>, threads: Metadata["threads"]) => JSON.stringify({ threads,
-  ...(view.sourceCheckpoint === undefined ? {} : { sourceCheckpoint: view.sourceCheckpoint, retainedThreadIds: view.target.retainedThreadIds ?? [],
-    sourceFailures: view.sourceFailures ?? [], sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }) })
+/** Diagnostics are local content too. Mask before freezing metadata as well as
+ * before rendering a report; receipt recovery never rewrites frozen metadata. */
+export const maskSourceFailures = (failures: ReadonlyArray<typeof AdapterSourceFailure.Type>) => Effect.gen(function*() {
+  const redactor = yield* SecretRedactor
+  return failures.map(failure => ({ ...failure,
+    source: (redactor.redactDiagnostic?.(failure.source) ?? redactor.redact(failure.source)).value.slice(0, 4096) }))
+})
+export const sourceMetadataJson = (view: PublicationDraftView<unknown, unknown>, threads: Metadata["threads"]) => Effect.gen(function*() {
+  const sourceFailures = yield* maskSourceFailures(view.sourceFailures ?? [])
+  return JSON.stringify({ threads,
+    ...(view.sourceCheckpoint === undefined ? {} : { sourceCheckpoint: view.sourceCheckpoint, retainedThreadIds: view.target.retainedThreadIds ?? [],
+      sourceFailures, sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }) })
+})

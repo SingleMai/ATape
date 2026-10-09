@@ -151,6 +151,8 @@ describe("Host source collection workflow", () => {
     expect((await f.progress()).checkpoint?.canonicalPublished).not.toBe(true)
     expect((await f.inspect()).coverage.canonicalCaptureId).toBeNull()
   })
+  // Exercise 25 complete SQLite FULL-sync capture/publication cycles under one admission.
+  // Each cycle performs durable I/O; allow for filesystem contention in the full CLI suite.
   it("automatically retires superseded native memberships and sustains rewrites under unchanged admission", async () => {
     const f = await setup(), bounded = { ...limits, journal: { ...limits.journal, metadataEntries: 500 } }
     let previous: Awaited<ReturnType<typeof f.inspect>> | undefined
@@ -166,7 +168,7 @@ describe("Host source collection workflow", () => {
       previous = current
     }
     expect(await f.cycle(f.host, bounded)).toMatchObject({ observations: 0, sourceFailures: [] })
-  }, 15000)
+  }, 60_000)
   it("publishes a native family, skips unchanged content, and archives a Raw-only edit without replacing Canonical", async () => {
     const f = await setup()
     const first = await f.cycle()

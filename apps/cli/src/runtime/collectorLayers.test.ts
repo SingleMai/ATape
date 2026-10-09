@@ -49,6 +49,7 @@ const fixture = async () => {
   const layer = makeNodeClientLayer(paths, {
     ...process.env,
     ATAPE_DEVELOPMENT_ALLOW_HTTP: "true",
+    ATAPE_REDACTION_CONFIG_FILE: undefined,
     ATAPE_REDACT_VALUES: JSON.stringify(["ultrasecretvalue"])
   })
   const run = <A, E>(effect: Effect.Effect<A, E,
@@ -377,10 +378,20 @@ describe("Node Collector Layers", () => {
     expect(rejected.failures).toMatchObject([{ reason: "unauthenticated", retryable: false }])
     expect(remote.canonical).toHaveLength(phase === "policy" ? 0 : 1)
     expect(remote.raw).toEqual([])
-    expect((await client.run(CollectorStateStore.use(store => store.snapshot(remote.url, "user-1", "payments", "collector-fixture")))).checkpoint).toBeUndefined()
+    // The durable policy intent records uncertainty before a content request;
+    // it acknowledges no cursor or source bytes under the changed account.
+    const pending = (await client.run(CollectorStateStore.use(store => store.snapshot(remote.url, "user-1", "payments", "collector-fixture")))).checkpoint
+    expect(pending).toMatchObject({ revision: 1, cursor: null, rawObjects: [], deliveryPending: true,
+      policyId: expect.stringMatching(/^redaction_v1_[0-9a-f]{64}$/) })
+    expect(pending).not.toHaveProperty("canonicalPublished")
+    expect((await client.run(CollectorStateStore.use(store => store.snapshot(remote.url, "other-user", "payments", "collector-fixture")))).checkpoint).toBeUndefined()
     await authorize(client, remote.url)
     expect((await client.run(runCollectionCycle())).failures).toEqual([])
     expect(remote.raw).toHaveLength(1)
+    const recovered = (await client.run(CollectorStateStore.use(store => store.snapshot(remote.url, "user-1", "payments", "collector-fixture")))).checkpoint
+    expect(recovered).toMatchObject({ cursor: "cursor-1", deliveryPending: false, canonicalPublished: true, policyId: pending?.policyId,
+      rawObjects: [{ policyId: pending?.policyId, sourceOffset: Buffer.byteLength('{"value":"ultrasecretvalue"}\n'),
+        serverOffset: Buffer.byteLength('{"value":"[REDACTED]"}\n') }] })
   }, 20_000)
 
   it("retains confirmed history across a fresh runtime and an idle Raw-off cycle", async () => {
@@ -435,8 +446,10 @@ describe("Node Collector Layers", () => {
     remote.authorizations.splice(0)
     await writeFile(join(project, "adapter-calls.jsonl"), "")
     const first = await client.run(runCollectionCycle())
+    const confirmedState = await readFile(client.paths.collectorStateFile, "utf8")
     const second = await client.run(runCollectionCycle())
-    const state = JSON.parse(await readFile(client.paths.collectorStateFile, "utf8")) as {
+    expect(await readFile(client.paths.collectorStateFile, "utf8")).toBe(confirmedState)
+    const state = JSON.parse(confirmedState) as {
       installationId: string
       checkpoints: Array<CollectorCheckpoint>
     }
@@ -458,8 +471,10 @@ describe("Node Collector Layers", () => {
     expect(remote.canonical[0]).not.toHaveProperty("project")
     expect(remote.canonical[0]?.source).not.toHaveProperty("userId")
     expect(remote.canonical[0]).not.toHaveProperty("teamId")
+    const policyId = state.checkpoints[0]?.policyId
+    expect(policyId).toMatch(/^redaction_v1_[0-9a-f]{64}$/)
     expect(remote.raw[0]).toMatchObject({
-      sourceChunkId: "g1-o0",
+      sourceChunkId: `g1-o0-p${policyId}`,
       sourceObjectId: "transcript",
       installationId: state.installationId
     })
@@ -477,7 +492,10 @@ describe("Node Collector Layers", () => {
     expect((remote.canonical[0]?.events as Array<Record<string, unknown>>)[0]?.rawRef)
       .toEqual({ type: "object", sourceObjectId: "transcript", fragment: "#line:1" })
     expect(state.installationId).toMatch(/^i_/)
-    expect(state.checkpoints).toEqual([expect.objectContaining({ revision: 2, cursor: "cursor-1" })])
+    // Two rejected attempts retain uncertainty, then success persists its
+    // intent, genuine Raw receipt and completed cursor under the same policy.
+    expect(state.checkpoints).toEqual([expect.objectContaining({ revision: 5, cursor: "cursor-1", deliveryPending: false,
+      canonicalPublished: true, policyId, rawObjects: [expect.objectContaining({ policyId })] })])
     expect(adapterCalls[0]).toMatchObject({ cursor: null, rawProgress: [] })
     expect(adapterCalls[0]).not.toHaveProperty("user")
     expect(adapterContext).toMatchObject({
@@ -542,7 +560,7 @@ describe("Node Collector Layers", () => {
     expect(remote.canonical).toHaveLength(1)
     remote.setMatchStatus(200)
     expect((await client.run(runCollectionCycle())).failures).toEqual([])
-  })
+  }, 30_000)
 
   it("rejects a stale compare-and-set checkpoint", async () => {
     const client = await fixture()
@@ -614,7 +632,7 @@ describe("Node Collector Layers", () => {
       serverOffset: Buffer.byteLength(content),
       finalized: true
     })
-  })
+  }, 30_000)
 })
 
 const accountProject = (path: string, instanceOrigin: string) => ({ path, instanceOrigin, userId: "user-1",

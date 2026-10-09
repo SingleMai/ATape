@@ -264,6 +264,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     } finally { await f.daemonRun(f.daemon.stop()) }
   })
 
+  // Multiple generations each launch npm and Adapter preflight processes.
   it("selects the latest generation after repeated updates while retaining the original raw baseline", async () => {
     const f = await fixture()
     await f.activate(await f.prepare("0.5.3"))
@@ -271,7 +272,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect((await readRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
     expect((await f.selected()).adapters.map(adapter => adapter.version)).toEqual(["0.5.4", "0.5.4"])
     expect(await f.raw()).toEqual(f.config)
-  })
+  }, 30_000)
 
   it("rejects an older prepared selection after another generation activates against the same raw baseline", async () => {
     const f = await fixture()
@@ -285,7 +286,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect((await f.selected()).adapters.map(adapter => adapter.version)).toEqual(["0.5.5", "0.5.5"])
     expect(await f.raw()).toEqual(f.config)
     expect(await needsUpdateRecovery(f.paths)).toBe(false)
-  })
+  }, 30_000)
 
   it("rechecks automatic-update policy after preparation", async () => {
     const f = await fixture(), prepared = await f.prepare()

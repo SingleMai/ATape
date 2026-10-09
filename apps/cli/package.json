@@ -38,6 +38,7 @@
   "files": [
     "dist/atape.js",
     "README.md",
+    "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
   "scripts": {
