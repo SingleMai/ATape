@@ -334,12 +334,12 @@ export type LegacyAdapterRuntime = {
   readonly close?: () => unknown | PromiseLike<unknown>
 }
 
-export type SourceAdapterRuntime = {
-  readonly sourceCapture: SourceCaptureRuntime
+export type SourceAdapterRuntime<Capture extends SourceCaptureRuntime = import("./sourceCapture.ts").SourceCaptureRuntimeV1> = {
+  readonly sourceCapture: Capture
   readonly close: () => unknown | PromiseLike<unknown>
 }
 
-export type AtapeAdapterRuntime = LegacyAdapterRuntime | SourceAdapterRuntime
+export type AtapeAdapterRuntime = LegacyAdapterRuntime | SourceAdapterRuntime<SourceCaptureRuntime>
 
 export type AtapeAdapterModule = {
   readonly createAtapeAdapter: (

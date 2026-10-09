@@ -150,9 +150,11 @@ const loadAdapterRuntime = (
       adapter.adapterId, "load", false, errorMessage(`Could not create Adapter ${adapter.adapterId}`, cause)
     )
   }).pipe(Effect.onError(() => Effect.sync(() => lifetime.abort())))
-  if (typeof foreign !== "object" || foreign === null || (manifest.sourceCapture === undefined
+  if (manifest.legacyMigration !== undefined && manifest.sourceCapture !== "atape.source-capture.v2" || typeof foreign !== "object" || foreign === null || (manifest.sourceCapture === undefined
     ? !("collect" in foreign) || typeof foreign.collect !== "function" || "sourceCapture" in foreign
-    : !("sourceCapture" in foreign) || !isSourceCaptureRuntime(foreign.sourceCapture) || typeof foreign.close !== "function" || "collect" in foreign)) {
+    : !("sourceCapture" in foreign) || !isSourceCaptureRuntime(foreign.sourceCapture) || foreign.sourceCapture.protocolVersion !== manifest.sourceCapture ||
+      (manifest.legacyMigration !== undefined) !== ("legacyMigration" in foreign.sourceCapture && typeof foreign.sourceCapture.legacyMigration === "function") ||
+      typeof foreign.close !== "function" || "collect" in foreign)) {
     lifetime.abort()
     if (typeof foreign?.close === "function") yield* Effect.tryPromise({ try: () => Promise.resolve(foreign.close?.()), catch: () => undefined }).pipe(Effect.catch(() => Effect.void))
     return yield* runtimeFailure(

@@ -1,10 +1,11 @@
-import type { AcpSessionUpdate, AdapterCollectRequest, AdapterCollectionPage, AdapterEvent, AdapterObservation, AdapterOpenContext, AdapterUsage } from "@atape/domain"
+import type { AcpSessionUpdate, AdapterEvent, AdapterOpenContext, AdapterUsage,
+  SourceCaptureFrame, SourceCaptureLimits, SourceDiscoveryPage, SourceOpenRequestV2, SourceCaptureViewV2, SourceLegacyMigrationRequest } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
-import { createHash, type Hash } from "node:crypto"
+import { createHash } from "node:crypto"
 import { constants } from "node:fs"
-import { lstat, open, readdir, realpath, stat } from "node:fs/promises"
-import { deflateRawSync, inflateRawSync } from "node:zlib"
+import { lstat, open, readdir, realpath } from "node:fs/promises"
+import { inflateRawSync } from "node:zlib"
 import { homedir } from "node:os"
 import { claudeHome } from "@atape/adapter-catalog/node"
 import { dirname, isAbsolute, join, relative, sep } from "node:path"
@@ -22,17 +23,14 @@ const CompactionSchema = Schema.Struct({
   phase: Schema.Literals(["summary", "caveat", "command", "stdout", "resume"]),
   promptId: Schema.optionalKey(Schema.String)
 })
-type Compaction = typeof CompactionSchema.Type
 const AutoTextSchema = Schema.Struct({
   v: Schema.Literal(1), boundaryUuid: Schema.String, summaryUuid: Schema.String,
   promptId: Schema.String, slug: Schema.String
 })
-type AutoText = typeof AutoTextSchema.Type
 const ReadPairSchema = Schema.Struct({
   v: Schema.Literal(1), firstResultUuid: Schema.String, secondCallUuid: Schema.String,
   secondToolId: Schema.String, secondFilePath: Schema.String, promptId: Schema.String
 })
-type ReadPair = typeof ReadPairSchema.Type
 const ContinuationSchema = Schema.Struct({
   phase: Schema.Literals(["copies", "summary", "resume"]),
   boundaryUuid: Schema.optionalKey(Schema.String), summaryUuid: Schema.optionalKey(Schema.String),
@@ -74,7 +72,7 @@ const DiscoveryCursorSchema = Schema.Struct({
 })
 type DiscoveryCursor = typeof DiscoveryCursorSchema.Type
 type RecordValue = Record<string, unknown>
-type Archive = { readonly context: AdapterOpenContext; readonly file: string | undefined; readonly projects: string; readonly project: string; inventory?: Candidate[]; hashCache?: { file: string; stamp: string; bytes: number; digest: string; hash: Hash } }
+type Archive = { readonly context: AdapterOpenContext; readonly file: string | undefined; readonly projects: string; readonly project: string }
 type Candidate = { readonly file: string; readonly sessionId: string }
 
 // Diagnostics do not acknowledge source bytes and are rebuilt on every scan.
@@ -94,9 +92,8 @@ class SourceDiagnostics {
       this.add(source, "io")
     } else throw cause // Configuration, cursor errors and defects are job failures.
   }
-  attach(page: AdapterCollectionPage): AdapterCollectionPage {
-    return { ...page, ...(this.failures.length ? { sourceFailures: this.failures } : {}),
-      ...(this.truncated ? { sourceFailuresTruncated: true } : {}) }
+  snapshot() {
+    return { sourceFailures: this.failures, sourceFailuresTruncated: this.truncated }
   }
 }
 
@@ -124,90 +121,7 @@ export const openClaudeArchive = (context: AdapterOpenContext): Effect.Effect<Ar
   catch: cause => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "configuration", message: "Could not open the selected Claude Project." })
 })
 
-export const collectClaudePage = (archive: Archive, request: AdapterCollectRequest): Effect.Effect<AdapterCollectionPage, ClaudeArchiveError> => Effect.tryPromise({
-  try: async () => {
-    const page = await collect(archive, request)
-    const state = decodeDiscoveryCursor(page.nextCursor)
-    const inventory = archive.inventory ?? []
-    const acknowledged = new Map(request.rawProgress.map(item => [item.sourceObjectId, item.sourceOffset]))
-    for (const observation of page.observations) for (const raw of observation.rawSegments)
-      acknowledged.set(raw.sourceObjectId, raw.sourceOffset + Buffer.byteLength(raw.content))
-    const streams = inventory.flatMap(candidate => {
-      const checkpoint = state.sessions.find(item => item.checkpoint.sessionId === candidate.sessionId)?.checkpoint
-      return [{ ...candidate, checkpoint, agentId: undefined as string | undefined }, ...(checkpoint?.children ?? []).map(child => ({
-        file: childFile(candidate.file, candidate.sessionId, child.agentId), sessionId: candidate.sessionId, checkpoint: child.checkpoint, agentId: child.agentId
-      }))]
-    })
-    let pendingRawBytes = 0, pendingCanonicalSessions = 0
-    for (let start = 0; start < streams.length; start += 8) {
-      const sizes = await Promise.all(streams.slice(start, start + 8).map(async candidate => {
-        try { return { candidate, size: (await stat(candidate.file)).size } }
-        catch { return { candidate, size: undefined } }
-      }))
-      for (const { candidate, size } of sizes) {
-        if (size === undefined) continue
-        const checkpoint = candidate.checkpoint, first = checkpoint?.stream?.seen[0]
-        const generation = checkpoint && first ? digest(Buffer.from(JSON.stringify(candidate.agentId
-          ? [candidate.sessionId, checkpoint.origin, first, candidate.agentId] : [candidate.sessionId, checkpoint.origin, first]))) : undefined
-        const sourceObjectId = `${candidate.agentId ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
-        if (request.rawCaptureEnabled !== false) pendingRawBytes += Math.max(0, size - (acknowledged.get(sourceObjectId) ?? 0))
-        if (!checkpoint?.stream || checkpoint.projectionRevision !== ProjectionRevision || checkpoint.usageVersion !== 1 || !checkpoint.observedAt ||
-          checkpoint.bytes < size || checkpoint.stream.eventSkip > 0 ||
-          checkpoint.stream.continuation && checkpoint.stream.continuation.phase !== "resume" ||
-          !checkpoint.normalizationVersion && (checkpoint.stream.compaction && checkpoint.stream.compaction.phase !== "resume" ||
-            checkpoint.stream.autoText || checkpoint.stream.readPair)) pendingCanonicalSessions++
-      }
-    }
-    return { ...page, progress: { sourceFiles: streams.length, pendingRawBytes, pendingCanonicalSessions,
-      phase: !page.hasMore ? "idle" as const : page.observations.some(o => o.events.length) ? "canonical" as const : "raw" as const } }
-  },
-  catch: cause => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "io", message: "Could not read the selected Claude session." })
-})
-
-async function collect(archive: Archive, request: AdapterCollectRequest): Promise<AdapterCollectionPage> {
-  request.signal.throwIfAborted()
-  const state = decodeDiscoveryCursor(request.cursor)
-  const diagnostics = new SourceDiagnostics()
-  // The supported cursor schema owns recovery compatibility, not the package
-  // version. Unknown schemas and changed captured prefixes still fail closed.
-  const selected = archive.file ? await readHeader(archive.file, request.signal) : undefined
-  const candidates = archive.file
-    ? [{ file: archive.file, sessionId: string(selected?.sessionId) ?? "" }]
-    : await discover(archive, state, request.signal, diagnostics)
-  archive.inventory = candidates
-  // Resume after the last publication so a busy Session cannot monopolize pages.
-  const pivot = candidates.findIndex(c => c.sessionId === state.after)
-  const ordered = [...candidates.slice(pivot + 1), ...candidates.slice(0, pivot + 1)]
-  for (const candidate of ordered) {
-    request.signal.throwIfAborted()
-    const previous = state.sessions.find(s => s.file === candidate.file)
-      ?? state.sessions.find(s => s.checkpoint.sessionId === candidate.sessionId)
-      ?? (archive.file && state.sessions.length === 1 && state.sessions[0]!.file === "" ? state.sessions[0] : undefined)
-    let page: AdapterCollectionPage
-    try {
-      page = await collectFamily(archive, candidate, previous?.checkpoint, request, diagnostics)
-    } catch (cause) {
-      if (archive.file && !(cause instanceof ClaudeArchiveError && cause.reason === "attribution")) throw cause // Other explicit-source errors stay fail-fast.
-      diagnostics.capture(candidate.file, cause, request.signal)
-      continue
-    }
-    if (page.observations.length === 0) continue
-    const checkpoint = decodeCursor(page.nextCursor)!
-    // Keep missing sources' checkpoints: deletion never deletes captured history
-    // and a reappearing file must still satisfy the committed prefix.
-    const sessions = state.sessions.filter(s => s !== previous)
-    sessions.push({ file: candidate.file, checkpoint })
-    sessions.sort((a, b) => a.checkpoint.sessionId.localeCompare(b.checkpoint.sessionId))
-    const nextCursor = encodeDiscoveryCursor({ v: 2, after: checkpoint.sessionId, sessions } satisfies DiscoveryCursor)
-    if (Buffer.byteLength(nextCursor) > MaxCursorBytes) fail("limit", "Claude discovery checkpoint exceeds its bounded metadata capacity; no session progress was discarded.")
-    return diagnostics.attach({ ...page, nextCursor, hasMore: page.hasMore || !archive.file && candidates.length > 1 })
-  }
-  return diagnostics.attach(empty(request.cursor))
-}
-
 const childThreadId = (agentId: string) => `claude-agent:${agentId}`
-const currentStream = (cursor: Cursor | undefined) =>
-  cursor?.projectionRevision === ProjectionRevision && cursor.usageVersion === 1 && cursor.observedAt ? cursor.stream : undefined
 const childFile = (file: string, sessionId: string, agentId: string) => {
   if (!/^[A-Za-z0-9_-]{1,500}$/.test(sessionId)) fail("unsupported", "Claude family identity is not a safe source path component.")
   return join(dirname(file), sessionId, "subagents", `agent-${agentId}.jsonl`)
@@ -218,305 +132,6 @@ async function validateChildDirectories(file: string): Promise<void> {
     if (!details.isDirectory() || details.isSymbolicLink()) fail("unsupported", "Claude subagent directories must not be symlinks.")
   }
 }
-const familyThreads = (children: ReadonlyArray<Child>) => [
-  { sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" as const },
-  ...children.map(child => ({ sourceThreadId: childThreadId(child.agentId), parentSourceThreadId: "root", revision: 1,
-    label: `Agent ${child.agentId}`, summary: "", captureStatus: "partial" as const }))
-]
-
-async function collectFamily(archive: Archive, candidate: Candidate, previous: Cursor | undefined, request: AdapterCollectRequest,
-  diagnostics: SourceDiagnostics): Promise<AdapterCollectionPage> {
-  const page = await collectSession(archive, candidate.file, { ...request, cursor: previous ? JSON.stringify(previous) : null }, diagnostics)
-  const publish = (page: AdapterCollectionPage, checkpoint: Cursor): AdapterCollectionPage => {
-    const observation = page.observations[0]!
-    const children = checkpoint.children ?? []
-    const revision = children.length ? Math.max(previous?.familyRevision ?? (previous ? previous.bytes * 2 + 3 : 0), observation.session.revision) + 1
-      : observation.session.revision
-    if (!Number.isSafeInteger(revision)) fail("limit", "Claude family revision exceeds its safe capacity.")
-    if (children.length + 1 > request.limits.threadsPerObservation) fail("limit", "Claude family exceeds the requested Thread limit.")
-    const updatedAt = [previous?.familyObservedAt, checkpoint.observedAt, observation.session.updatedAt].filter((at): at is string => at !== undefined).sort().at(-1)!
-    const next = { ...checkpoint, ...(children.length ? { familyRevision: revision, familyObservedAt: updatedAt } : {}) }
-    const captured = { ...observation, observationId: `claude-${digest(Buffer.from(JSON.stringify([observation.observationId, next])))}`,
-      session: { ...observation.session, revision, updatedAt, title: checkpoint.stream?.title || observation.session.title }, threads: familyThreads(children) }
-    if (Buffer.byteLength(JSON.stringify({ ...captured, rawSegments: [] })) > request.limits.canonicalBytesPerObservation)
-      fail("limit", "Claude family metadata exceeds the requested Canonical page limit.")
-    return { ...page, nextCursor: JSON.stringify(next), hasMore: page.hasMore || children.some(child => !currentStream(child.checkpoint)),
-      observations: [captured] }
-  }
-  if (page.observations.length) {
-    const checkpoint = decodeCursor(page.nextCursor)!
-    await restoreCapturedChildDiagnostics(candidate.file, checkpoint, request.signal, diagnostics)
-    return publish(page, checkpoint)
-  }
-  if (!previous?.children?.length) return page
-  const root = await readHeader(candidate.file, request.signal)
-  if (!root) fail("changed", "The captured Claude root disappeared.")
-  const children = previous.children, pivot = children.findIndex(child => child.agentId === previous.childAfter)
-  const visitedChildren = new Set<string>()
-  for (const child of [...children.slice(pivot + 1), ...children.slice(0, pivot + 1)]) {
-    const file = childFile(candidate.file, candidate.sessionId, child.agentId)
-    visitedChildren.add(child.agentId)
-    try {
-      await validateChildDirectories(file)
-      const selected = await collectSession(archive, file, { ...request, cursor: child.checkpoint ? JSON.stringify(child.checkpoint) : null }, diagnostics,
-        { child, root, children })
-      if (!selected.observations.length) continue
-      const checkpoint = decodeCursor(selected.nextCursor)!
-      const next = { ...previous, childAfter: child.agentId,
-        children: children.map(value => value === child ? { ...value, checkpoint } : value) }
-      await restoreCapturedChildDiagnostics(candidate.file, next, request.signal, diagnostics, visitedChildren)
-      return publish({ ...selected, hasMore: selected.hasMore || children.length > 1 }, next)
-    } catch (cause) {
-      if (child.checkpoint && object(cause)?.code === "ENOENT") continue // Deleting captured sources does not delete history.
-      diagnostics.capture(file, cause, request.signal)
-    }
-  }
-  return page
-}
-
-/** A root page must not hide already committed child diagnostics. Inspect only
- * authenticated captured prefixes, never a proposed child or pending suffix. */
-async function restoreCapturedChildDiagnostics(rootFile: string, family: Cursor, signal: AbortSignal,
-  diagnostics: SourceDiagnostics, visited: ReadonlySet<string> = new Set()): Promise<void> {
-  const children = family.children ?? []
-  for (const child of children) {
-    const checkpoint = child.checkpoint
-    if (!checkpoint || visited.has(child.agentId)) continue
-    signal.throwIfAborted()
-    const file = childFile(rootFile, family.sessionId, child.agentId)
-    try {
-      await validateChildDirectories(file)
-      const root = await readHeader(file, signal)
-      if (!root || root.type !== "user" || root.parentUuid !== null || root.isMeta === true ||
-        typeof root.cwd !== "string" || typeof root.sessionId !== "string")
-        fail("changed", "The captured Claude prefix changed or was truncated.")
-      if (root.isSidechain !== true || root.agentId !== child.agentId || root.sessionId !== family.sessionId || root.cwd !== family.origin)
-        fail("unsupported", "Claude subagent identity or original CWD does not match its proven parent.")
-      if (root.sessionId !== checkpoint.sessionId || root.cwd !== checkpoint.origin)
-        fail("changed", "Claude session identity or original CWD changed.")
-      const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
-      try {
-        const before = await handle.stat()
-        if (!before.isFile()) fail("format", "Claude source is not a regular file.")
-        if (before.size < checkpoint.bytes) fail("changed", "The captured Claude prefix changed or was truncated.")
-        let unlinked = false
-        await restoreNormalization(handle, checkpoint.bytes, checkpoint.digest, root, checkpoint.stream, signal, (record, calls) => {
-          const relationship = bindChild(record, calls, true, children, family.sessionId)
-          unlinked ||= relationship.unlinked
-        })
-        const after = await handle.stat()
-        if (after.size < before.size || after.ino !== before.ino || after.size === before.size && after.mtimeMs !== before.mtimeMs)
-          fail("changed", "Claude source changed during reading.")
-        if (unlinked) diagnostics.add(file, "unsupported")
-      } finally { await handle.close() }
-    } catch (cause) {
-      if (object(cause)?.code === "ENOENT") continue
-      diagnostics.capture(file, cause, signal)
-    }
-  }
-}
-
-async function collectSession(archive: Archive, file: string, request: AdapterCollectRequest, diagnostics: SourceDiagnostics,
-  delegated?: { readonly child: Child; readonly root: RecordValue; readonly children: ReadonlyArray<Child> }): Promise<AdapterCollectionPage> {
-  const cursor = decodeCursor(request.cursor)
-  const root = await readHeader(file, request.signal)
-  if (!root || root.type !== "user" || root.parentUuid !== null || root.isMeta === true || typeof root.cwd !== "string" || typeof root.sessionId !== "string") {
-    if (cursor) fail("changed", "The captured Claude prefix changed or was truncated.")
-    fail("unsupported", "Claude session has no supported original user root and CWD.")
-  }
-  const sessionId = root.sessionId as string, origin = root.cwd as string
-  if (delegated && (root.isSidechain !== true || root.agentId !== delegated.child.agentId || sessionId !== delegated.root.sessionId || origin !== delegated.root.cwd)) {
-    fail("unsupported", "Claude subagent identity or original CWD does not match its proven parent.")
-  }
-  if (cursor && (cursor.sessionId !== sessionId || cursor.origin !== origin)) fail("changed", "Claude session identity or original CWD changed.")
-  if (!delegated && !await belongsToProject(archive, root, request.signal)) return empty(request.cursor)
-  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
-  try {
-    const before = await handle.stat()
-    if (!before.isFile()) fail("format", "Claude source is not a regular file.")
-    if (cursor && before.size < cursor.bytes) fail("changed", "The captured Claude prefix changed or was truncated.")
-    const stamp = `${before.dev}:${before.ino}:${before.size}:${before.mtimeMs}:${before.ctimeMs}`
-    let hash = createHash("sha256")
-    if (cursor) {
-      const cached = archive.hashCache
-      if (cached?.file === file && cached.stamp === stamp && cached.bytes === cursor.bytes && cached.digest === cursor.digest) hash = cached.hash.copy()
-      else {
-        const block = Buffer.alloc(256 * 1024)
-        for (let at = 0; at < cursor.bytes;) {
-          request.signal.throwIfAborted()
-          const read = await handle.read(block, 0, Math.min(block.length, cursor.bytes - at), at)
-          if (!read.bytesRead) fail("changed", "The captured Claude prefix changed or was truncated.")
-          hash.update(block.subarray(0, read.bytesRead)); at += read.bytesRead
-        }
-        if (hash.copy().digest("hex") !== cursor.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
-      }
-    }
-    const resume = currentStream(cursor)
-    const generation = digest(Buffer.from(JSON.stringify(delegated ? [sessionId, origin, root.uuid, delegated.child.agentId] : [sessionId, origin, root.uuid])))
-    const sourceObjectId = `${delegated ? "claude-agent-rollout" : "claude-rollout"}-${generation}`
-    // Normalization and Event projection are independent versions. Validate
-    // already-normalized source facts before the existing projection/usage
-    // backfill path starts again at byte zero.
-    const children = new Map((cursor?.children ?? []).map(child => [child.agentId, child]))
-    let restoredUnlinked = false
-    const restoreRelationships = (record: RecordValue, calls: ReadonlyMap<string, { name: string; uuid: string }>) => {
-      const relationship = bindChild(record, calls, delegated !== undefined, delegated?.children ?? [...children.values()], sessionId)
-      restoredUnlinked ||= relationship.unlinked
-    }
-    if (cursor && !resume) {
-      const previous = await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, request.signal, restoreRelationships)
-      if (cursor.normalizationVersion === 1 && !equalJson(cursor.stream?.continuation, previous.continuation))
-        fail("cursor", "Claude checkpoint continuation does not match its committed source.")
-      await validatePendingProjection(handle, before.size, cursor, root, previous, sourceObjectId, request.signal,
-        delegated !== undefined, delegated?.children ?? [...children.values()])
-    }
-    let at = resume ? cursor!.bytes : 0
-    if (!resume) hash = createHash("sha256")
-    let state: NonNullable<Cursor["stream"]> = resume ?? { lastUuid: null, seen: [], calls: [], order: 0, eventSkip: 0, title: rootTitle(root) }
-    const seen = new Set(state.seen)
-    // Family headers are repeated on root and child pages. Reserve their actual
-    // encoded size as well as the Session and array-envelope headroom.
-    const payloadLimit = (family: ReadonlyArray<Child>) => request.limits.canonicalBytesPerObservation - 8192
-      - Buffer.byteLength(JSON.stringify(familyThreads(family)))
-    let canonicalLimit = payloadLimit(delegated?.children ?? [...children.values()])
-    let calls = new Map(state.calls.map(([id, name, uuid]) => [id, { name, uuid }]))
-    const normalization = await restoreNormalization(handle, at, hash.copy().digest("hex"), root, resume, request.signal, restoreRelationships)
-    if (cursor?.normalizationVersion === 1 && !equalJson(state.continuation, normalization.continuation))
-      fail("cursor", "Claude checkpoint continuation does not match its committed source.")
-    // Report only after the complete restored prefix has authenticated. These
-    // source-derived diagnostics remain visible on idle scans after restart.
-    if (restoredUnlinked) diagnostics.add(file, "unsupported")
-    const adoptedNormalization = !!resume && cursor?.normalizationVersion !== 1
-    const { compaction: _legacyManual, autoText: _legacyAuto, readPair: _legacyPair, continuation: _oldContinuation, ...normalizedState } = state
-    state = { ...normalizedState, ...(normalization.continuation ? { continuation: normalization.continuation } : {}) }
-    const events: AdapterEvent[] = []
-    const usage = new Map<string, AdapterUsage>()
-    const rawProgress = request.rawProgress.find(p => p.sourceSessionId === sessionId && p.sourceObjectId === sourceObjectId && p.sourceGeneration === generation)
-    const acknowledged = rawProgress?.sourceOffset ?? 0
-    let rawBytes = 0, eventBytes = 0, partial = false, hasMore = false, approvedPendingRecord = false
-    for await (const line of readRecords(handle, at, before.size, request.signal)) {
-      if (line.content.length + rawBytes > Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation)) {
-        if (rawBytes === 0 && events.length === 0) fail("limit", "A Claude JSONL record exceeds the requested Raw page limit.")
-        hasMore = true; break
-      }
-      if (line.content.toString("utf8").trim() === "") {
-        if (state.eventSkip !== 0) fail("cursor", "Claude checkpoint has no complete pending conversation record.")
-        hash.update(line.content); rawBytes += line.content.length; at = line.end
-        continue
-      }
-      let record: RecordValue
-      try { record = decodeRecord(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(line.content))) }
-      catch { fail("format", "Claude source contains a malformed complete JSONL record.") }
-      if (record.sessionId !== undefined && record.sessionId !== sessionId) fail("unsupported", "Mixed Claude session identities are not supported.")
-      const conversation = record.type === "user" || record.type === "assistant"
-      const identified = record.uuid !== undefined || conversation
-      const wrongThread = delegated ? identified && (record.isSidechain !== true || record.agentId !== delegated.child.agentId)
-        : record.isSidechain === true || identified && (record.isSidechain !== undefined && record.isSidechain !== false || record.agentId !== undefined)
-      if (wrongThread)
-        fail("unsupported", "Claude record does not belong to its selected Thread.")
-      const transition = await normalizeSourceRecord(handle, record, root, normalization, request.signal)
-      if (!transition.rawOnly) approvedPendingRecord = true
-      if (state.eventSkip !== 0) {
-        if (transition.rawOnly || timestamp(record.timestamp) !== cursor?.observedAt)
-          fail("cursor", "Claude checkpoint has no admitted pending conversation record.")
-        approvedPendingRecord = true
-      }
-      // Events and usage share the same admitted conversation identity. Native
-      // UUID-less bookkeeping stays Raw-only; it cannot stand in for a turn.
-      if (conversation && (typeof record.uuid !== "string" || !record.uuid.trim() || record.uuid.length > 500 || record.uuid.includes("\0")))
-        fail("unsupported", "Claude conversation record has no valid UUID.")
-      // Attribution selects the original identity before this handle is opened.
-      // Compare that identity with the actual first committed UUID record; its
-      // bytes subsequently participate in the current-prefix proof as usual.
-      if (typeof record.uuid === "string" && seen.size === 0 && (record.uuid !== root.uuid || record.type !== "user" ||
-        record.parentUuid !== null || record.isMeta === true || record.sessionId !== sessionId || record.cwd !== origin))
-        fail("changed", "Claude original identity changed during collection.")
-      const nextCalls = new Map(calls)
-      const projected = transition.rawOnly ? { events: [] as AdapterEvent[], partial: true }
-        : projectRecord(record, state.order, line.end, sourceObjectId, nextCalls)
-      const relationship = transition.rawOnly ? undefined
-        : bindChild(record, nextCalls, delegated !== undefined, delegated?.children ?? [...children.values()], sessionId)
-      const child = relationship?.child
-      if (child) {
-        childFile(file, sessionId, child.agentId) // Validate before publishing the relation.
-        // The native foreground receipt is one tool-result Event. Commit its
-        // relation only with that complete record's captured prefix, never when
-        // a full page defers the receipt to the next request.
-        projected.events = projected.events.map(event => "toolCallId" in event.update && event.update.toolCallId === child.toolCallId
-          ? { ...event, childSourceThreadId: childThreadId(child.agentId) } : event)
-      }
-      if (delegated) projected.events = projected.events.map(event => ({ ...event, sourceThreadId: childThreadId(delegated.child.agentId) }))
-      // A new receipt needs room for its proposed header before any Event is
-      // admitted. A deferred record must leave the pinned family unchanged.
-      const recordLimit = child && !children.has(child.agentId) ? payloadLimit([...children.values(), child]) : canonicalLimit
-      partial ||= projected.partial
-      let skip = state.eventSkip
-      if (skip > projected.events.length) fail("cursor", "Claude record checkpoint exceeds its event count.")
-      while (skip < projected.events.length) {
-        const event = projected.events[skip]!
-        const size = Buffer.byteLength(JSON.stringify(event))
-        if (size > recordLimit) fail("limit", "A Claude event exceeds the Canonical observation limit.")
-        if (events.length === request.limits.eventsPerObservation || eventBytes + size > recordLimit) break
-        events.push(event); eventBytes += size; skip++
-      }
-      if (skip < projected.events.length) { state = { ...state, eventSkip: skip }; hasMore = true; break }
-      const originalSample = transition.rawOnly ? undefined : projectUsage(record, line.end)
-      const sample = originalSample && delegated ? { ...originalSample, sourceThreadId: childThreadId(delegated.child.agentId) } : originalSample
-      if (sample) {
-        const bytes = Buffer.byteLength(JSON.stringify(sample))
-        if (bytes > recordLimit) fail("limit", "A Claude usage sample exceeds the Canonical observation limit.")
-        if (usage.size >= request.limits.eventsPerObservation || eventBytes + bytes > recordLimit) {
-          state = { ...state, eventSkip: skip }; hasMore = true; break
-        }
-        usage.set(sample.sourceUsageId, sample); eventBytes += bytes
-      }
-      if (!state.title) {
-        const first = projected.events.find(e => e.update.sessionUpdate === "user_message_chunk")
-        if (first && "content" in first.update && first.update.content.type === "text") state = { ...state, title: first.update.content.text.replace(/\s+/g, " ").trim().slice(0, 80) }
-      }
-      commitNormalizedRecord(normalization, record, recordRef(at, line.content), transition)
-      if (relationship?.unlinked) diagnostics.add(file, "unsupported")
-      if (typeof record.uuid === "string") seen.add(record.uuid)
-      if (child && !children.has(child.agentId)) { children.set(child.agentId, child); canonicalLimit = recordLimit }
-      calls = nextCalls
-      const { continuation: _previousContinuation, ...committedState } = state
-      state = { ...committedState, ...(normalization.continuation ? { continuation: normalization.continuation } : {}),
-        lastUuid: normalization.leaf, order: normalization.order, eventSkip: 0 }
-      hash.update(line.content); rawBytes += line.content.length; at = line.end
-      if (transition.copy || transition.kind !== "ordinary" || events.length === request.limits.eventsPerObservation) {
-        hasMore = at < before.size; break
-      }
-    }
-    if (state.eventSkip !== 0 && !approvedPendingRecord)
-      fail("cursor", "Claude checkpoint has no complete pending conversation record.")
-    if (!adoptedNormalization && events.length === 0 && rawBytes === 0 && (request.rawCaptureEnabled === false || acknowledged >= at)) return empty(request.cursor)
-    const capturedRaw = request.rawCaptureEnabled === false || acknowledged >= at ? undefined
-      : await readRawPrefix(handle, acknowledged, at, Math.min(request.limits.rawSegmentBytes, request.limits.rawBytesPerObservation), request.signal)
-    hasMore ||= capturedRaw !== undefined && acknowledged + Buffer.byteLength(capturedRaw) < at
-    const after = await handle.stat()
-    if (after.size < before.size || after.ino !== before.ino || after.size === before.size && after.mtimeMs !== before.mtimeMs) fail("changed", "Claude source changed during reading.")
-    const prefixDigest = hash.copy().digest("hex")
-    archive.hashCache = { file, stamp, bytes: at, digest: prefixDigest, hash: hash.copy() }
-    const observedAt = events.at(-1)?.occurredAt ?? cursor?.observedAt ?? timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
-    const next: Cursor = { v: 1, sessionId, origin, bytes: at, digest: prefixDigest, projectionRevision: ProjectionRevision, usageVersion: 1, normalizationVersion: 1, observedAt,
-      publication: (cursor?.publication ?? 0) + 1,
-      ...(!delegated && children.size ? { children: [...children.values()], ...(cursor?.childAfter ? { childAfter: cursor.childAfter } : {}) } : {}),
-      stream: { ...state, seen: [...seen], calls: [...calls].map(([id, call]) => [id, call.name, call.uuid]) } }
-    // Thinking can advance updatedAt at the same captured bytes as projection 4.
-    // Its Session snapshot needs a newer revision even though Event bytes stay fixed.
-    const revision = Math.max(at, events.at(-1)?.revision ?? 1) * 2 + 4
-    return { protocolVersion: request.protocolVersion, nextCursor: JSON.stringify(next), hasMore,
-      observations: [{ observationId: `claude-${digest(Buffer.from(JSON.stringify([next, events.map(e => e.sourceEventId)])))}`, observedAt,
-        session: { sourceSessionId: sessionId, revision, title: state.title || "Untitled Claude conversation", summary: "Claude Code conversation", insight: "",
-          actor: { name: "User", harness: "Claude Code" }, branch: string((delegated?.root ?? root).gitBranch) ?? "", status: "active", captureStatus: "partial", updatedAt: observedAt, reportedEventCount: 0 },
-        threads: [{ sourceThreadId: "root", revision: 1, label: "Main", summary: "", captureStatus: "partial" }], events,
-        usage: [...usage.values()],
-        rawSegments: capturedRaw !== undefined ? [{ sourceObjectId, sourceGeneration: generation, sourceOffset: acknowledged,
-          sourceName: delegated ? `agent-${delegated.child.agentId}.jsonl` : `${sessionId}.jsonl`, mediaType: "application/x-ndjson", content: capturedRaw, final: false }] : []
-      }] }
-  } finally { await handle.close() }
-}
-
 const autoId = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 500 && !value.includes("\0")
 const readPath = (value: unknown): value is string => typeof value === "string" && value.length > 0 && !value.includes("\0") && Buffer.byteLength(value) <= 64 * 1024
 
@@ -895,24 +510,6 @@ function projectUsage(record: RecordValue, revision: number): AdapterUsage | und
     ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }) }
 }
 
-async function readRawPrefix(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, limit: number, signal: AbortSignal): Promise<string> {
-  const bytes = Buffer.alloc(Math.min(end - start, limit))
-  let count = 0
-  while (count < bytes.length) {
-    signal.throwIfAborted()
-    const read = await handle.read(bytes, count, bytes.length - count, start + count)
-    if (!read.bytesRead) fail("changed", "Claude Raw source was truncated during reading.")
-    count += read.bytesRead
-  }
-  // A transport boundary can bisect a UTF-8 code point. Leave its bytes for
-  // the next Raw page without changing the independent Canonical checkpoint.
-  for (let trim = 0; trim <= 3 && count - trim > 0; trim++) {
-    try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, count - trim)) }
-    catch { /* try the preceding complete code point */ }
-  }
-  return fail("format", "Claude Raw source contains invalid UTF-8.")
-}
-
 async function* readRecords(handle: Awaited<ReturnType<typeof open>>, start: number, end: number, signal: AbortSignal, recordLimit = MaxRecordBytes) {
   let at = start, pending = Buffer.alloc(0), lineStart = start
   while (at < end) {
@@ -1010,13 +607,6 @@ function splitText(text: string): string[] {
   return chunks
 }
 
-function encodeDiscoveryCursor(state: DiscoveryCursor): string {
-  const json = JSON.stringify(state)
-  if (Buffer.byteLength(json) > MaxDecodedCursorBytes) fail("limit", "Claude checkpoint exceeds its bounded decoded metadata capacity.")
-  return Buffer.byteLength(json) <= 16000 ? json : "z3:" + deflateRawSync(Buffer.from(json)).toString("base64url")
-}
-
-const empty = (cursor: string | null): AdapterCollectionPage => ({ protocolVersion: "atape.adapter.v1alpha1", nextCursor: cursor, hasMore: false, observations: [] })
 function decodeDiscoveryCursor(value: string | null): DiscoveryCursor {
   if (value === null) return { v: 2, after: "", sessions: [] }
   try {
@@ -1113,7 +703,7 @@ function decodeCursor(value: string | null): Cursor | undefined {
   } catch { return fail("cursor", "Claude checkpoint is invalid; it was not reset.") }
 }
 
-async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortSignal, diagnostics: SourceDiagnostics): Promise<Candidate[]> {
+async function discover(archive: Archive, signal: AbortSignal, diagnostics: SourceDiagnostics): Promise<Candidate[]> {
   let projects: string
   try { projects = await realpath(archive.projects) }
   catch (cause) { if (object(cause)?.code === "ENOENT") return []; throw cause }
@@ -1138,22 +728,15 @@ async function discover(archive: Archive, state: DiscoveryCursor, signal: AbortS
       signal.throwIfAborted()
       if (!entry.name.endsWith(".jsonl")) continue
       const file = join(directory, entry.name)
-      const known = state.sessions.find(s => s.file === file)
-      if (!entry.isFile()) {
-        if (known) diagnostics.add(file, "changed")
-        continue
-      }
+      if (!entry.isFile()) continue
       try {
-        let sessionId = known?.checkpoint.sessionId
-        if (!sessionId) {
-          // Unattributable headers produce local diagnostics, never uploads.
-          const header = await readHeader(file, signal)
-          if (!header || typeof header.sessionId !== "string" || !header.sessionId || typeof header.cwd !== "string" || !isAbsolute(header.cwd)) {
-            diagnostics.add(file, "format"); continue
-          }
-          if (!await belongsToProject(archive, header, signal)) continue
-          sessionId = header.sessionId
+        // Unattributable headers produce local diagnostics, never uploads.
+        const header = await readHeader(file, signal)
+        if (!header || typeof header.sessionId !== "string" || !header.sessionId || typeof header.cwd !== "string" || !isAbsolute(header.cwd)) {
+          diagnostics.add(file, "format"); continue
         }
+        if (!await belongsToProject(archive, header, signal)) continue
+        const sessionId = header.sessionId
         ids.set(sessionId, (ids.get(sessionId) ?? 0) + 1)
         candidates.push({ file, sessionId })
       } catch (cause) {
@@ -1206,3 +789,364 @@ async function belongsToProject(archive: Archive, root: RecordValue, signal: Abo
 }
 const toolKind = (name: string): "read" | "edit" | "execute" | "search" | "other" =>
   name === "Read" ? "read" : ["Write", "Edit", "MultiEdit"].includes(name) ? "edit" : name === "Bash" ? "execute" : ["Grep", "Glob"].includes(name) ? "search" : "other"
+
+// The legacy cursor remains a migration input, not a second publication writer.
+// These private indexes contain locators and source facts, never transcript bodies.
+type SourceProof = { threadId: string; bytes: number; digest: string; rootUuid: string }
+type CaptureCheckpoint = { v: 1; sessionId: string; origin: string; rootUuid: string; streams: SourceProof[] }
+type CaptureNode = { ref: RecordRef; predecessor: string | null; rawOnly: boolean; kind: ControlKind; child?: Child; unlinked: boolean }
+type CaptureStream = {
+  file: string; threadId: string; root: RecordValue; refs: RecordRef[]; nodes: Map<string, CaptureNode>; selected: Set<number>
+  latestUsage: Map<string, number>; children: Child[]; proof: SourceProof; events: number; usage: number; observedAt: string
+}
+const captureProfile = "claude.jsonl.active-path.1"
+const emptyNormalization = (): Normalization => ({ records: new Map(), calls: new Map(), leaf: null, order: 0, continuation: undefined, response: undefined })
+const captureFailure = (cause: unknown) => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "io", message: "Could not read the selected Claude source view." })
+function captureCheckpoint(value: string | undefined): CaptureCheckpoint | undefined {
+  if (value === undefined) return undefined
+  try {
+    if (Buffer.byteLength(value) > MaxCursorBytes) throw new Error()
+    const c = JSON.parse(value) as CaptureCheckpoint
+    if (c.v !== 1 || !autoId(c.sessionId) || !autoId(c.rootUuid) || !isAbsolute(c.origin) || !Array.isArray(c.streams) || c.streams.length > 1000 ||
+      !c.streams.some(stream => stream.threadId === "root" && stream.rootUuid === c.rootUuid && stream.bytes > 0) ||
+      new Set(c.streams.map(stream => stream.threadId)).size !== c.streams.length || c.streams.some(stream => !autoId(stream.threadId) || !autoId(stream.rootUuid) ||
+        stream.threadId !== "root" && !/^claude-agent:[A-Za-z0-9_-]{1,128}$/.test(stream.threadId) ||
+        !Number.isSafeInteger(stream.bytes) || stream.bytes < 0 || !/^[a-f0-9]{64}$/.test(stream.digest))) throw new Error()
+    return c
+  } catch { return fail("cursor", "Claude source checkpoint is invalid; it was not reset.") }
+}
+function sourceOrigin(root: RecordValue) {
+  if (root.type !== "user" || root.parentUuid !== null || root.isMeta === true || !autoId(root.uuid) || !autoId(root.sessionId) || typeof root.cwd !== "string" || !isAbsolute(root.cwd))
+    fail("unsupported", "Claude source has no trustworthy original user root.")
+  return { sourceId: root.sessionId as string, originKey: root.uuid as string, cwd: root.cwd as string }
+}
+async function sourceCandidates(archive: Archive, signal: AbortSignal, diagnostics: SourceDiagnostics): Promise<Candidate[]> {
+  const candidates = archive.file ? [{ file: archive.file, sessionId: string((await readHeader(archive.file, signal))?.sessionId) ?? "" }]
+    : await discover(archive, signal, diagnostics)
+  return candidates
+}
+export const discoverClaudeSources = (archive: Archive, request: { cursor: string | null; limits: SourceCaptureLimits; signal: AbortSignal }): Effect.Effect<SourceDiscoveryPage, ClaudeArchiveError> => Effect.tryPromise({
+  try: async () => {
+    const diagnostics = new SourceDiagnostics(), candidates = await sourceCandidates(archive, request.signal, diagnostics)
+    const sources: SourceDiscoveryPage["sources"][number][] = []
+    for (const candidate of candidates.sort((a, b) => a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0)) {
+      if (request.cursor !== null && candidate.sessionId <= request.cursor) continue
+      try { const root = await readHeader(candidate.file, request.signal); if (!root) fail("format", "Claude source has no complete original record."); sources.push(sourceOrigin(root)) }
+      catch (cause) { diagnostics.capture(candidate.file, cause, request.signal) }
+      if (sources.length === request.limits.pageRows) break
+    }
+    const last = sources.at(-1)?.sourceId, done = last === undefined || !candidates.some(candidate => candidate.sessionId > last)
+    return { sources, cursor: done ? null : last!, done, ...diagnostics.snapshot() }
+  }, catch: captureFailure
+})
+export const migrateClaudeSources = (request: SourceLegacyMigrationRequest): Effect.Effect<SourceDiscoveryPage, ClaudeArchiveError> => Effect.try({
+  try: () => {
+    const state = decodeDiscoveryCursor(request.checkpointCursor), sources = state.sessions.map(({ checkpoint }) => {
+      const first = checkpoint.stream?.seen[0]
+      if (!autoId(first) || !autoId(checkpoint.sessionId) || !isAbsolute(checkpoint.origin)) fail("cursor", "Claude legacy checkpoint has no proven creation Origin.")
+      return { sourceId: checkpoint.sessionId, originKey: first, cwd: checkpoint.origin }
+    }).sort((a, b) => a.sourceId < b.sourceId ? -1 : a.sourceId > b.sourceId ? 1 : 0)
+    const unique = new Set(sources.map(source => source.sourceId))
+    if (unique.size !== sources.length) fail("cursor", "Claude legacy checkpoint repeats a source identity.")
+    const page = sources.filter(source => request.cursor === null || source.sourceId > request.cursor).slice(0, request.limits.pageRows)
+    const last = page.at(-1)?.sourceId, done = last === undefined || !sources.some(source => source.sourceId > last)
+    return { sources: page, cursor: done ? null : last!, done, sourceFailures: [], sourceFailuresTruncated: false }
+  }, catch: captureFailure
+})
+async function authenticateSource(handle: Awaited<ReturnType<typeof open>>, proof: SourceProof, size: number, signal: AbortSignal): Promise<void> {
+  if (size < proof.bytes) fail("changed", "The captured Claude prefix changed or was truncated.")
+  const hash = createHash("sha256"), block = Buffer.alloc(256 * 1024)
+  for (let at = 0; at < proof.bytes;) {
+    signal.throwIfAborted()
+    const read = await handle.read(block, 0, Math.min(block.length, proof.bytes - at), at)
+    if (!read.bytesRead) fail("changed", "The captured Claude prefix changed or was truncated.")
+    hash.update(block.subarray(0, read.bytesRead)); at += read.bytesRead
+  }
+  if (hash.digest("hex") !== proof.digest) fail("changed", "The captured Claude prefix changed or was truncated.")
+}
+async function validateLegacyStream(handle: Awaited<ReturnType<typeof open>>, size: number, root: RecordValue, cursor: Cursor | undefined,
+  delegated: boolean, pins: ReadonlyArray<Child>, signal: AbortSignal): Promise<void> {
+  if (!cursor) return
+  if (cursor.sessionId !== root.sessionId || cursor.origin !== root.cwd || cursor.stream?.seen[0] !== root.uuid)
+    fail("changed", "Claude legacy creation Origin changed.")
+  const previous = await restoreNormalization(handle, cursor.bytes, cursor.digest, root, cursor.stream, signal,
+    (record, calls) => { bindChild(record, calls, delegated, pins, cursor.sessionId) })
+  if (cursor.normalizationVersion === 1 && !equalJson(cursor.stream?.continuation, previous.continuation))
+    fail("cursor", "Claude checkpoint continuation does not match its committed source.")
+  await validatePendingProjection(handle, size, cursor, root, previous, "migration-validation", signal, delegated, pins)
+}
+async function indexCaptureStream(file: string, rootIdentity: RecordValue | undefined, threadId: string, limits: SourceCaptureLimits,
+  signal: AbortSignal, diagnostics: SourceDiagnostics, pins: Map<string, Child>, proof: SourceProof | undefined,
+  legacy: Cursor | undefined, check: () => void): Promise<CaptureStream> {
+  const root = await readHeader(file, signal)
+  if (!root) fail("format", "Claude source has no complete original record.")
+  sourceOrigin(root)
+  const delegated = rootIdentity !== undefined
+  if (delegated ? root.isSidechain !== true || root.agentId !== threadId.slice("claude-agent:".length) || root.sessionId !== rootIdentity.sessionId || root.cwd !== rootIdentity.cwd
+    : root.isSidechain !== undefined && root.isSidechain !== false || root.agentId !== undefined)
+    fail("unsupported", "Claude source does not belong to its proved Thread.")
+  if (proof && proof.rootUuid !== root.uuid) fail("changed", "Claude Thread creation identity changed.")
+  const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const before = await handle.stat()
+    if (!before.isFile()) fail("format", "Claude source is not a regular file.")
+    if (proof) await authenticateSource(handle, proof, before.size, signal)
+    await validateLegacyStream(handle, before.size, root, legacy, delegated, [...pins.values()], signal)
+    const nodes = new Map<string, CaptureNode>(), refs: RecordRef[] = [], originals = new Map<string, RecordRef>(), hash = createHash("sha256")
+    let context = emptyNormalization(), bytes = 0, explicitEmpty = false
+    const restore = async (leaf: string | null) => {
+      const chain: CaptureNode[] = [], visited = new Set<string>()
+      for (let uuid = leaf; uuid !== null;) {
+        const node = nodes.get(uuid)
+        if (!node || visited.has(uuid)) fail("unsupported", "Claude selected leaf has no complete source ancestry.")
+        visited.add(uuid); chain.push(node); uuid = node.predecessor
+      }
+      const restored = emptyNormalization()
+      for (const node of chain.reverse()) {
+        check(); const record = await indexedRecord(handle, node.ref, signal)
+        const action = await normalizeSourceRecord(handle, record, root, restored, signal)
+        commitNormalizedRecord(restored, record, node.ref, action)
+      }
+      return restored
+    }
+    for await (const line of readRecords(handle, 0, before.size, signal, limits.rowBytes)) {
+      check(); if (refs.length === limits.records) fail("limit", "Claude source exceeds its record admission.")
+      const ref = recordRef(bytes, line.content); refs.push(ref); hash.update(line.content); bytes = line.end
+      if (!line.content.toString("utf8").trim()) continue
+      const record = parseSourceRecord(line.content), uuid = string(record.uuid)
+      if (record.sessionId !== undefined && record.sessionId !== root.sessionId) fail("unsupported", "Mixed Claude Session identities are not supported.")
+      if (record.type === "last-prompt") {
+        if (!sourceBookkeeping(record, root) || record.explicit !== undefined && typeof record.explicit !== "boolean" || record.rewound !== undefined && typeof record.rewound !== "boolean")
+          fail("unsupported", "Claude leaf selector contains conflicting source evidence.")
+        const leaf = record.leafUuid
+        if (record.explicit === true) {
+          if (leaf !== null && (!autoId(leaf) || !nodes.has(leaf))) fail("unsupported", "Claude leaf selector names an unknown source entry.")
+          if (delegated) fail("unsupported", "Claude child leaf replacement is not admitted.")
+          context = await restore(leaf === null ? null : leaf as string); explicitEmpty = leaf === null
+        }
+        // Ordinary last-prompt bookkeeping can precede its named UUID during
+        // compaction. Only an explicit selector changes the active source path.
+        continue
+      }
+      if (uuid && originals.has(uuid)) {
+        if (!context.records.has(uuid)) fail("unsupported", "Claude replay cannot resurrect an abandoned sibling path.")
+        const action = await normalizeSourceRecord(handle, record, root, context, signal)
+        if (!action.copy) fail("unsupported", "Claude source UUID is ambiguous.")
+        commitNormalizedRecord(context, record, ref, action); originals.set(uuid, ref); continue
+      }
+      const genuineUser = record.type === "user" && record.isMeta !== true && toolResults(record).length === 0 && record.isCompactSummary === undefined && record.isVisibleInTranscriptOnly === undefined
+      if (genuineUser && record.parentUuid !== context.leaf) {
+        if (delegated || !autoId(record.parentUuid) || !nodes.has(record.parentUuid)) fail("unsupported", "Claude branch has no known original anchor.")
+        context = await restore(record.parentUuid)
+      }
+      if (genuineUser && record.parentUuid === null && nodes.size > 0 && !explicitEmpty)
+        fail("unsupported", "Claude new root has no explicit empty rewind.")
+      const predecessor = context.leaf, action = await normalizeSourceRecord(handle, record, root, context, signal)
+      if (!uuid) { commitNormalizedRecord(context, record, ref, action); continue }
+      if (nodes.size === 0 && (uuid !== root.uuid || record.sessionId !== root.sessionId || record.cwd !== root.cwd))
+        fail("changed", "Claude original identity changed while opening its view.")
+      const calls = new Map(context.calls), projected = action.rawOnly ? undefined : projectRecord(record, context.order, ref.end, "source-view", calls)
+      const relationship = action.rawOnly ? { unlinked: false } : bindChild(record, calls, delegated, [...pins.values()], root.sessionId as string)
+      if (relationship.child) { childFile(file, root.sessionId as string, relationship.child.agentId); pins.set(relationship.child.agentId, relationship.child) }
+      // Projection is validated even for a branch later abandoned by this view.
+      void projected
+      nodes.set(uuid, { ref, predecessor, rawOnly: action.rawOnly, kind: action.kind, ...relationship })
+      originals.set(uuid, ref); commitNormalizedRecord(context, record, ref, action); explicitEmpty = false
+    }
+    const selected = new Set<number>(), latestUsage = new Map<string, number>(), children: Child[] = [], chain: CaptureNode[] = []
+    for (let uuid = context.leaf; uuid !== null;) { const node = nodes.get(uuid)!; chain.push(node); uuid = node.predecessor }
+    let eventCount = 0, observedAt = timestamp(root.timestamp) ?? new Date(before.mtimeMs).toISOString()
+    const calls = new Map<string, { name: string; uuid: string }>()
+    for (const node of chain.reverse()) {
+      check(); selected.add(node.ref.start)
+      if (node.unlinked) diagnostics.add(file, "unsupported")
+      if (node.child) children.push(node.child)
+      if (node.rawOnly) continue
+      const record = await indexedRecord(handle, node.ref, signal), projected = projectRecord(record, 0, node.ref.end, "source-view", calls)
+      eventCount += projected.events.length
+      if (projected.events.length) observedAt = projected.events.at(-1)!.occurredAt
+      const usage = projectUsage(record, node.ref.end)
+      if (usage) latestUsage.set(usage.sourceUsageId, node.ref.start)
+    }
+    const after = await handle.stat()
+    if (after.ino !== before.ino || after.size < before.size || after.size === before.size && after.mtimeMs !== before.mtimeMs)
+      fail("changed", "Claude source changed while planning its view.")
+    return { file, root, threadId, refs, nodes, selected, latestUsage, children, events: eventCount, usage: latestUsage.size, observedAt,
+      proof: { threadId, bytes, digest: hash.digest("hex"), rootUuid: root.uuid as string } }
+  } finally { await handle.close() }
+}
+
+/** One complete source view. The Host owns redaction, versions, Raw packing and
+ * publication. Provider branch selection and source integrity stay here. */
+export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2): Effect.Effect<SourceCaptureViewV2, ClaudeArchiveError> => Effect.tryPromise({
+  try: async () => {
+    let readSignal: AbortSignal | undefined
+    const started = performance.now(), check = () => {
+      request.signal.throwIfAborted()
+      readSignal?.throwIfAborted()
+      if (performance.now() - started >= request.limits.durationMs) fail("limit", "Claude source view exceeded its deadline.")
+    }
+    const diagnostics = new SourceDiagnostics(), candidates = await sourceCandidates(archive, request.signal, diagnostics)
+    const candidate = candidates.find(candidate => candidate.sessionId === request.sourceId)
+    if (!candidate) fail("io", "The selected Claude source is unavailable or ambiguous.")
+    const previous = captureCheckpoint(request.priorCheckpoint)
+    const legacy = request.legacyCheckpoint === undefined ? undefined : decodeDiscoveryCursor(request.legacyCheckpoint).sessions.find(item => item.checkpoint.sessionId === request.sourceId)?.checkpoint
+    if (request.legacyCheckpoint !== undefined && !legacy) fail("cursor", "The selected source is absent from its Claude legacy checkpoint.")
+    const pins = new Map((legacy?.children ?? []).map(child => [child.agentId, child]))
+    const root = await indexCaptureStream(candidate.file, undefined, "root", request.limits, request.signal, diagnostics, pins,
+      previous?.streams.find(stream => stream.threadId === "root"), legacy, check)
+    const origin = sourceOrigin(root.root)
+    if (previous && (previous.sessionId !== origin.sourceId || previous.rootUuid !== origin.originKey || previous.origin !== origin.cwd))
+      fail("changed", "Claude source creation Origin changed.")
+    const streams = [root], attemptedChildren = new Set<string>(), retainedThreadIds: string[] = [], threads: SourceCaptureViewV2["threads"][number][] = [
+      { sourceThreadId: "root", label: "Main", summary: "", captureStatus: "partial" }
+    ]
+    for (const child of root.children) {
+      check()
+      if (attemptedChildren.has(child.agentId)) continue
+      attemptedChildren.add(child.agentId)
+      if (threads.length === request.limits.threads) fail("limit", "Claude family exceeds its Thread admission.")
+      const threadId = childThreadId(child.agentId), file = childFile(candidate.file, origin.sourceId, child.agentId)
+      const prior = request.priorThreads.find(thread => thread.sourceThreadId === threadId)
+      const fallback = { sourceThreadId: threadId, parentSourceThreadId: "root", label: `Agent ${child.agentId}`, summary: "", captureStatus: "partial" as const }
+      if (prior && prior.parentSourceThreadId !== "root") fail("unsupported", "Claude retained child has conflicting parent metadata.")
+      try {
+        await validateChildDirectories(file)
+        const remaining = request.limits.records - streams.reduce((count, stream) => count + stream.refs.length, 0)
+        if (remaining < 1) fail("limit", "Claude family exceeds its complete source record admission.")
+        const selected = await indexCaptureStream(file, root.root, threadId, { ...request.limits, records: remaining }, request.signal, diagnostics, pins,
+          previous?.streams.find(stream => stream.threadId === threadId), legacy?.children?.find(value => value.agentId === child.agentId)?.checkpoint, check)
+        streams.push(selected); threads.push(fallback)
+      } catch (cause) {
+        diagnostics.capture(file, cause, request.signal)
+        if (prior) { retainedThreadIds.push(threadId); threads.push(prior) }
+      }
+    }
+    if (request.rawEnabled) for (const node of root.nodes.values()) {
+      const child = node.child
+      if (!child || attemptedChildren.has(child.agentId)) continue
+      attemptedChildren.add(child.agentId); check()
+      const threadId = childThreadId(child.agentId), file = childFile(candidate.file, origin.sourceId, child.agentId)
+      try {
+        await validateChildDirectories(file)
+        const remaining = request.limits.records - streams.reduce((count, stream) => count + stream.refs.length, 0)
+        if (remaining < 1) fail("limit", "Claude family exceeds its complete source record admission.")
+        const historical = await indexCaptureStream(file, root.root, threadId, { ...request.limits, records: remaining }, request.signal, diagnostics, pins,
+          previous?.streams.find(stream => stream.threadId === threadId), legacy?.children?.find(value => value.agentId === child.agentId)?.checkpoint, check)
+        // An abandoned receipt still proves its physical child source for Raw
+        // backfill. It grants no current Thread, link, Event or usage membership.
+        streams.push({ ...historical, selected: new Set(), latestUsage: new Map(), events: 0, usage: 0 })
+      } catch (cause) { diagnostics.capture(file, cause, request.signal) }
+    }
+    const linkedThreads = new Set(threads.map(thread => thread.sourceThreadId))
+    const eventCount = streams.reduce((count, stream) => count + stream.events, 0), usageCount = streams.reduce((count, stream) => count + stream.usage, 0)
+    if (eventCount > request.projection.events || usageCount > request.projection.usage) fail("limit", "Claude complete projection exceeds its admission.")
+    const proofs = new Map((previous?.streams ?? []).map(proof => [proof.threadId, proof]))
+    // Preserve proofs for formerly captured children even when their receipt is
+    // outside this selected path. Reappearance does not legitimize changed bytes.
+    for (const stream of streams) proofs.set(stream.threadId, stream.proof)
+    for (const child of legacy?.children ?? []) if (child.checkpoint?.stream?.seen[0] && !proofs.has(childThreadId(child.agentId))) proofs.set(childThreadId(child.agentId), {
+      threadId: childThreadId(child.agentId), bytes: child.checkpoint.bytes, digest: child.checkpoint.digest, rootUuid: child.checkpoint.stream.seen[0]
+    })
+    if (proofs.size > 1000) fail("limit", "Claude source proof exceeds its Thread capacity.")
+    const sourceCheckpoint = JSON.stringify({ v: 1, sessionId: origin.sourceId, origin: origin.cwd, rootUuid: origin.originKey, streams: [...proofs.values()] } satisfies CaptureCheckpoint)
+    if (Buffer.byteLength(sourceCheckpoint) > MaxCursorBytes) fail("limit", "Claude source checkpoint exceeds its metadata capacity.")
+    const observedAt = streams.filter(stream => linkedThreads.has(stream.threadId)).map(stream => stream.observedAt).sort().at(-1)!
+    const header = { profile: captureProfile, origin, sourceCheckpoint,
+      session: { sourceSessionId: origin.sourceId, title: rootTitle(root.root), summary: "Claude Code conversation", insight: "",
+        actor: { name: "User", harness: "Claude Code" }, branch: string(root.root.gitBranch) ?? "", status: "active" as const,
+        captureStatus: "partial" as const, updatedAt: observedAt, reportedEventCount: eventCount },
+      threads, target: { events: eventCount, usage: usageCount, threads: threads.length, retainedThreadIds },
+      ...diagnostics.snapshot() }
+    if (Buffer.byteLength(JSON.stringify(header)) > request.projection.pageBytes) fail("limit", "Claude source metadata exceeds its page admission.")
+    let disposed = false, failed = false, streamIndex = 0, refIndex = 0, order = 0, emittedUsage = 0, frameCount = 0
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    let calls = new Map<string, { name: string; uuid: string }>()
+    let pending: { frames: SourceCaptureFrame[]; at: number } | undefined
+    const close = async () => { disposed = true; const current = handle; handle = undefined; if (current) await current.close() }
+    const byStart = streams.map(stream => new Map([...stream.nodes.values()].map(node => [node.ref.start, node])))
+    const envelope = Buffer.byteLength(JSON.stringify({ frames: [], done: false }))
+    const makeFrames = async (stream: CaptureStream, ref: RecordRef): Promise<SourceCaptureFrame[]> => {
+      const bytes = Buffer.alloc(ref.end - ref.start)
+      for (let at = 0; at < bytes.length;) {
+        check(); const read = await handle!.read(bytes, at, bytes.length - at, ref.start + at)
+        if (!read.bytesRead) fail("changed", "Claude source was truncated while reading its view.")
+        at += read.bytesRead
+      }
+      if (digest(bytes) !== ref.digest) fail("changed", "Claude source changed while reading its view.")
+      const node = byStart[streamIndex]!.get(ref.start)
+      let events: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
+      if (node && stream.selected.has(ref.start) && !node.rawOnly) {
+        const record = parseSourceRecord(bytes), projected = projectRecord(record, 0, ref.end, "source-view", calls)
+        events = projected.events.map(event => {
+          const { revision: _revision, projectionRevision: _projection, rawRef: _raw, ...draft } = event
+          return { ...draft, sourceThreadId: stream.threadId, sourceOrder: order, eventIndex: order++, orderFidelity: "derived" as const,
+            ...(node.child && linkedThreads.has(childThreadId(node.child.agentId)) ? { childSourceThreadId: childThreadId(node.child.agentId) } : {}) }
+        })
+        const sample = projectUsage(record, ref.end)
+        if (sample && stream.latestUsage.get(sample.sourceUsageId) === ref.start) {
+          const { revision: _revision, ...draft } = sample
+          usage = [{ ...draft, sourceThreadId: stream.threadId }]; emittedUsage++
+        }
+      }
+      const frames: SourceCaptureFrame[] = []
+      let atEvent = 0, atUsage = 0, part = 0
+      const physicalKey = `claude_${digest(Buffer.from(JSON.stringify([stream.threadId, ref.start, ref.end, 0])))}`
+      do {
+        // Give the Host the complete physical record before redaction. Splitting
+        // unmasked strings could hide a credential across transport boundaries.
+        const raw = request.rawEnabled ? { format: part === 0 ? "claude.jsonl.v1" : "claude.record-reference.v1", sourceThreadId: stream.threadId,
+          sourceName: stream.threadId === "root" ? `${origin.sourceId}.jsonl` : `agent-${stream.threadId.slice("claude-agent:".length)}.jsonl`,
+          recordStart: ref.start, recordEnd: ref.end, ...(part === 0 ? { jsonl: new TextDecoder("utf-8", { fatal: true }).decode(bytes) } : { recordKey: physicalKey }) } : undefined
+        const frameEvents: SourceCaptureFrame["events"][number][] = [], frameUsage: SourceCaptureFrame["usage"][number][] = []
+        const frame: SourceCaptureFrame = { recordKey: `claude_${digest(Buffer.from(JSON.stringify([stream.threadId, ref.start, ref.end, part])))}`,
+          events: frameEvents, usage: frameUsage, ...(raw === undefined ? {} : { raw }) }
+        const fits = () => { check(); return Buffer.byteLength(JSON.stringify(frame)) + envelope <= request.projection.pageBytes }
+        if (!fits()) fail("limit", "Claude Raw fragment exceeds its page admission.")
+        while (atEvent < events.length && frame.events.length < 500) {
+          frameEvents.push(events[atEvent]!); if (!fits()) { frameEvents.pop(); break } atEvent++
+        }
+        while (atUsage < usage.length && frame.usage.length < 500) {
+          frameUsage.push(usage[atUsage]!); if (!fits()) { frameUsage.pop(); break } atUsage++
+        }
+        if (part > 0 && !frame.events.length && !frame.usage.length && (atEvent < events.length || atUsage < usage.length))
+          fail("limit", "Claude projected record cannot fit its page admission.")
+        frames.push(frame); part++
+      } while (atEvent < events.length || atUsage < usage.length)
+      return frames
+    }
+    return { ...header, close,
+      read: async signal => {
+        try {
+          if (disposed || failed) fail("unsupported", "A closed or failed Claude source view must be abandoned.")
+          readSignal = signal; signal.throwIfAborted(); check()
+          const frames: SourceCaptureFrame[] = []; let bytes = envelope
+          while (frames.length < request.projection.pageItems) {
+            if (!pending) {
+              const stream = streams[streamIndex]
+              if (!stream) break
+              if (!handle) {
+                handle = await open(stream.file, constants.O_RDONLY | constants.O_NOFOLLOW)
+                await authenticateSource(handle, stream.proof, (await handle.stat()).size, signal)
+              }
+              const ref = stream.refs[refIndex]
+              if (!ref) {
+                await authenticateSource(handle, stream.proof, (await handle.stat()).size, signal)
+                await handle.close(); handle = undefined; streamIndex++; refIndex = 0; calls = new Map(); continue
+              }
+              pending = { frames: await makeFrames(stream, ref), at: 0 }; refIndex++
+            }
+            const frame = pending.frames[pending.at]!, size = Buffer.byteLength(JSON.stringify(frame)) + (frames.length ? 1 : 0)
+            if (bytes + size > request.projection.pageBytes) break
+            if (++frameCount > request.limits.records) fail("limit", "Claude source frames exceed their record admission.")
+            frames.push(frame); bytes += size; pending.at++
+            if (pending.at === pending.frames.length) pending = undefined
+          }
+          const done = streamIndex === streams.length && pending === undefined
+          if (done && (order !== eventCount || emittedUsage !== usageCount)) fail("format", "Claude source projection passes disagree.")
+          return { frames, done }
+        } catch (cause) { failed = true; await close(); throw captureFailure(cause) }
+      }
+    }
+  }, catch: captureFailure
+})

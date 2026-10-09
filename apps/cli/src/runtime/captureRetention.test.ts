@@ -8,6 +8,7 @@ import { CaptureJournal, type CaptureRecordInput, type CaptureOwner, type Captur
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCaptureJournalLayer } from "./captureJournal.ts"
+import { downgradeJournalToV7 } from "./fixtures/capture-journal-legacy.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -75,6 +76,7 @@ describe("Capture observation retention", () => {
       yield* prepare(j, "old"); yield* prepare(j, "current", { changed: "new" })
     }))
     const old = new DatabaseSync(f.path)
+    downgradeJournalToV7(old)
     old.exec("DROP INDEX obsolete_capture_records; ALTER TABLE captures DROP COLUMN records_retired; ALTER TABLE captures DROP COLUMN retained_records; PRAGMA user_version=6"); old.close()
     await expect(f.run(CaptureJournal, 1, { ...binding, userId: "other" })).rejects.toMatchObject({ reason: "binding" })
     const unchanged = new DatabaseSync(f.path)

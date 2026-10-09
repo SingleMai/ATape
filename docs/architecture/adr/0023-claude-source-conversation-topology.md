@@ -1,5 +1,10 @@
 # ADR-0023: Claude Source Conversation Topology
 
+Current implementation scope is recorded in the [Claude guide](../../adapters/claude.md).
+[ADR-0101](0101-claude-active-path-and-legacy-adoption.md) implements current-path
+replacement and explicit legacy adoption; broader topology decisions below are
+not a claim that all relationships or cross-file continuations are captured.
+
 - Status: Accepted design; see ADR-0029 for the implemented subset
 - Date: 2026-09-07
 

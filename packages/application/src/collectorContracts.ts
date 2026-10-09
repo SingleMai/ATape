@@ -1,5 +1,5 @@
 import type {
-  SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage, GitSource, GitSourceDecision,
+  SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage, SourceCapturePriorThread, GitSource, GitSourceDecision,
   AdapterCollectionPage, AdapterCollectionProgress, AdapterCollectionLimitValues, AdapterInstallation,
   CanonicalApplyReceipt, CollectorCheckpoint, LocalProject, RawAppendReceipt
 } from "@atape/domain"
@@ -82,8 +82,12 @@ export type HostedCollectRequest = {
 }
 
 export type HostedSourceCapture = {
+  readonly protocolVersion?: "atape.source-capture.v1" | "atape.source-capture.v2"
+  readonly legacyMigration?: (request: { readonly checkpointCursor: string; readonly cursor: string | null; readonly limits: SourceCaptureLimits }) =>
+    Effect.Effect<SourceDiscoveryPage, AdapterRuntimeError>
   readonly discover: (request: { readonly cursor: string | null; readonly limits: SourceCaptureLimits }) => Effect.Effect<SourceDiscoveryPage, AdapterRuntimeError>
-  readonly open: (request: { readonly sourceId: string; readonly rawEnabled: boolean; readonly limits: SourceCaptureLimits; readonly projection: SourceProjectionLimits }) =>
+  readonly open: (request: { readonly sourceId: string; readonly rawEnabled: boolean; readonly limits: SourceCaptureLimits; readonly projection: SourceProjectionLimits;
+    readonly priorThreads?: ReadonlyArray<SourceCapturePriorThread>; readonly priorCheckpoint?: string; readonly legacyCheckpoint?: string }) =>
     Effect.Effect<PublicationDraftView<AdapterRuntimeError>, AdapterRuntimeError, Scope.Scope>
 }
 export type HostedAdapter = {

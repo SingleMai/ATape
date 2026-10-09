@@ -415,6 +415,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		assertKimiCollectorContract(t, handler, modules, pool)
 	})
 	t.Run("native Claude Collector", func(t *testing.T) {
+		assertClaudeRewindCollectorContract(t, modules, pool)
+	})
+	t.Run("legacy Claude Collector", func(t *testing.T) {
 		assertClaudeCollectorContract(t, handler, modules, pool)
 	})
 	t.Run("native OpenCode Collector", func(t *testing.T) {

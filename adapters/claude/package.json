@@ -49,6 +49,8 @@
     "protocolVersion": "atape.adapter.v1alpha1",
     "gitAttribution": "atape.git-attribution.v1",
     "rawCapturePolicy": "atape.raw-capture.v1",
+    "sourceCapture": "atape.source-capture.v2",
+    "legacyMigration": "atape.legacy-migration.v1",
     "adapterId": "claude",
     "displayName": "Claude Code",
     "entry": "./dist/index.js",

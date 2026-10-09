@@ -16,135 +16,54 @@ Adapter tarballs plus `SHA256SUMS` to `release/`; install the CLI, then choose t
 Claude tarball in Integration maintenance. These commands do not publish or deploy.
 The Project must already be configured and authenticated.
 
-[ADR-0097](../../docs/architecture/adr/0097-claude-compaction-continuity.md) defines
-generic compaction continuity and recovery. The [current guide](../../docs/adapters/claude.md)
+[ADR-0101](../../docs/architecture/adr/0101-claude-active-path-and-legacy-adoption.md)
+defines Active Path publication and explicit legacy adoption; [ADR-0097](../../docs/architecture/adr/0097-claude-compaction-continuity.md)
+defines the shared compaction reducer. The [current guide](../../docs/adapters/claude.md)
 owns actual behavior and verification; retained native evidence records the scope
 of the earlier implementation.
 
-## Sources and attribution
+## Capture behavior
 
-Discovery reads `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an
-absolute alternate Claude configuration directory; `ATAPE_CLAUDE_SESSION_FILE`
-selects an absolute root file for diagnostics. The first UUID record's original
-CWD determines Project attribution, including linked worktrees and independent
-Git clones through `atape.git-attribution.v1`. Later CWD changes and encoded
-directory names do not reassign a Session. Symlinked files/directories are not
-traversed. An unavailable origin without retained evidence is diagnosed locally.
+The factory exposes only `atape.source-capture.v2`, with explicit
+`atape.legacy-migration.v1` support for acknowledged earlier checkpoints. A compatible
+Host and publication-enabled Server with v2 targets and legacy adoption are required.
+Older Hosts reject this manifest instead of treating it as legacy capture.
 
-## Supported now
+The Adapter selects the current root path from validated native graph/leaf evidence.
+Rewind withdraws abandoned Canonical Events, usage and child membership when the
+complete target activates. Eligible physical records remain Raw under the user's
+policy. Manual and automatic compaction share one continuity reducer without a
+round/tool/file count. Recorded thinking, tools, latest original API usage and
+proved completed direct foreground children use the shared reader. A missing
+captured child can retain prior stored history with a diagnostic while the root
+advances. Raw-enabled capture also archives available historical child sources
+proved by completed root receipts outside the selected path.
 
-The Implementation replaces per-round templates with one source-identity
-normalizer behind the existing paged collect Interface:
+Discovery uses `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an absolute
+alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects an absolute
+root file for diagnostics. The first UUID record's original CWD establishes Project
+attribution, including Git worktrees and independent clones. Symlinks are not followed.
 
-- Actual user/assistant text, tool calls and own-call results retain source UUID /
-  physical block-slot Event anchors. An open response batch authorizes its own
-  result edges; historical known parents cannot authorize stale branches.
-- Manual and automatic compaction use declared boundary/summary relationships.
-  Identical UUID copies preserve the whole decoded original, including unknown
-  fields, with only an absent slug addition or an unchanged existing slug.
-  Copies, summaries, file context and admitted command/synthetic controls stay
-  Raw-only. No round count, tool count, ordinary-gap shape or predicted file count
-  governs continuation. Each subsequent genuine record resumes ordinary projection.
-- Split assistant records update one real API usage identity at its latest
-  original revision; replay adds no usage revision. Source compaction counters
-  and synthetic responses do not become billable usage. Missing native summary
-  API records mean that request's actual usage is unavailable.
-- Complete source records and reducer state survive EOF, partial appends, small
-  pages, fresh runtimes and exact retries. Canonical and Raw receipts remain
-  independent, including Raw-off capture followed by retained-source backfill.
-- A correlated completed foreground Agent/Task receipt can admit its direct
-  child at `<sessionId>/subagents/agent-<agentId>.jsonl`. Exact tool/assistant IDs,
-  Agent ID, root Session/CWD and child sidechain ownership must agree. The child
-  becomes `claude-agent:<agentId>` under root with separate Canonical/Raw progress.
-  The same compaction rule applies within an admitted child Thread.
-  `.meta.json` is not read and finding a child file alone is not admission.
-- Valid current Thread records continue around background, noncompleted, error
-  or nested Agent/Task receipts. Unproved receipts report an `unsupported`
-  diagnostic without creating a child link/Thread or reading its proposed file.
-  Pending calls alone do not warn. Diagnostics survive idle restart through
-  authenticated prefix reconstruction and deduplicate per source/reason. Pinned
-  ownership conflicts and invalid source/graph evidence still stop that source.
+Preserve the complete CLI state directory on upgrade. Explicit migration validates
+old prefixes and opaque state before adopting the same Session. Legacy Reader,
+Search and Overview remain selected until complete activation; existing Raw access
+survives. Frozen new delivery can recover without source files. Lost source bytes
+still prevent fresh projection or backfill.
 
-Shared Input/Output details are collapsed and escaped, with Host redaction before
-network requests. Nonempty recorded assistant thinking appears in the shared
-Reader's Activity. The Adapter emits UTF-8 fragments with one ACP `messageId`
-per physical block; the Reader displays each Canonical fragment. Empty or
-whitespace-only thinking is skipped. Blank fragments remain Raw-only with original
-part indices; remaining fragments retain exact text and carry partial fidelity
-if a blank part was omitted. Signatures, opaque redacted thinking and unknown content remain
-Raw-only when captured. Missing reasoning cannot be recovered. Tool-bearing
-projection retains partial fidelity. Search covers actual message bodies and
-excludes thinking and tool summaries/full values. Root, Thread and Raw identities
-stay stable through supported upgrades and source deletion.
+## Limits and verification
 
-## Explicit limits
+Source records fit 16 MiB including LF; text fragments fit 256 KiB. Full-source,
+page, Thread, record, target and deadline bounds remain explicit. Each physical
+Raw record reaches the Host intact before redaction. A single redacted record
+exceeding the existing 3 MiB packed Raw object produces an explicit Raw limit gap.
+Nested/background child histories, cross-file adoption, child forks and spill
+collection remain outside the supported profile.
 
-Source records fit 16 MiB including LF; text fragments fit 256 KiB. Requested
-Canonical/Raw budgets still apply per record, including family headers and usage.
-Insufficient remaining capacity defers a record; impossible fresh capacity fails
-with a typed limit. Shared tool values retain at most 64 KiB, depth 32 and 10,000
-nodes; larger values require captured Raw. These are separate policies.
-
-Discovery checks up to 256 records / 64 MiB for original identity and admits at most
-10,000 directory entries. Opaque metadata cursors compress above 16,000 bytes,
-with 1 MiB encoded / 16 MiB decoded bounds. There is no historical 64-LF window or
-whole-replay observation requirement in the Implementation. Resource limits still
-bound large archives. Cold prefix reconstruction is O(committed source) I/O/hash,
-is cancellable and does not establish an atomic snapshot or an RSS guarantee.
-
-Duplicate identities with different decoded data, mixed Thread/Session ownership,
-changed/truncated captured prefixes and invalid control/parent links fail.
-Malformed cursor state is never reset silently. Fork/rewind/Active Path replacement,
-cross-file ownership, nested/background children, child forks and spill
-collection remain separate work. The native corpus comes from Claude Code 2.1.263;
-it does not promise compatibility with every version or source shape.
-
-## Partial collection and recovery
-
-Project → Sync details shows bounded, redacted local source diagnostics. Healthy
-Sessions continue; failed Sessions retain progress and retry. Unlinked delegation
-diagnostics permit the proved current Thread to advance while its child capture
-remains partial. Up to 32 diagnostics
-are reported with a truncation flag. Duplicate source Session identities are
-isolated. Repair malformed data or restore its exact captured prefix; deleting
-checkpoints cannot repair source semantics. Global capacity/corrupt cursor/Host
-failures still fail the job.
-
-Preserve the complete CLI state directory and upgrade through Tools and updates.
-Private normalization version 1 is separate from Event projection 5. Valid older
-single-file/discovery/z3 opaque checkpoints authenticate committed source context,
-then reproject once to add previously omitted thinking. Projection-4 Event IDs
-and byte revisions remain stable at the higher projection revision; usage and Raw
-identity remain unchanged. Each admitted child upgrades independently. Old
-partial pages are validated against their old visible Events before reset.
-Projection 2 and 3 retain their existing accepted fallback; historical snapshot
-revisions/Raw IDs are not claimed to match incremental capture identities.
-Independent Raw receipts can be ahead of the supplied parser input. Unknown
-schemas and inconsistent old state fail explicitly. See
-[recovery](../../docs/adapters/claude.md#recovery-and-upgrades).
-
-An unsupported tail can block requested Raw backfill of an older prefix. Existing
-receipts remain valid; enabling Raw does not bypass that conflict. Legacy
-concurrent-writer and lost-checkpoint limits remain; use one Collector and retain
-its state. The receiving Server must accept `atape.acp-centered.v2` before a CLI
-emitting bounded tool details is used. Package publication and Server deployment
-require their own authorization.
-
-## Source evidence and verification
-
-The [fixture ledgers](../../docs/adapters/claude.md#verification-and-remaining-work)
-record controlled native foreground, manual, text-auto, tool replay, reverse-result,
-repeated Read and larger-file source facts. Their round counts validate reusable
-rules rather than define supported feature counts. Paths are substituted; some
-older runs inherited HOME without recording it. Generated repeated sequences are
-behavior tests, not additional native invocations. Mock counters are not billing.
-
-Public-factory and installed-package checks cover repeatable compaction and
-current Thread continuation around unlinked delegation, with independent Raw
-backfill. This candidate passes 65 genuine previous-main opaque upgrades; the
-earlier compaction increment recorded its own 505-input upgrade evidence. The
-guide records current source/bundle hashes and passed authenticated Collector
-acceptance for 197 independently restarted managed-daemon stages with Reader, usage,
-Search and Raw assertions. Native acquisition alone does not establish
-publication, deployment, browser staging or compatibility with every historical
-published package. All earlier checks retain their recorded scope.
+The [current guide](../../docs/adapters/claude.md) owns complete behavior, bounds,
+recovery, remaining work and native fixture ledgers. Current tests use the shipped
+sourceCapture factory and installed authenticated HTTP/PostgreSQL collection;
+genuine previous-main artifacts separately establish migration compatibility.
+The native corpus records Claude Code 2.1.263 source facts with controlled mock
+responses, not real provider billing or a promise for every Claude version.
+Package publication, Server deployment and production database migration are
+separate actions.

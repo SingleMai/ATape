@@ -1,7 +1,8 @@
 import { requiredTest as grokRequiredTest, verifyGrokResult } from "./verify-grok-contract.mjs"
 import { requiredTest as kimiRequiredTest, verifyKimiResult } from "./verify-kimi-contract.mjs"
 import { requiredTest as codeBuddyRequiredTest, verifyCodeBuddyResult } from "./verify-codebuddy-contract.mjs"
-import { requiredTest as claudeRequiredTest, verifyClaudeResult } from "./verify-claude-contract.mjs"
+import { requiredTests as claudeRequiredTests, verifyClaudeResult } from "./verify-claude-contract.mjs"
+import { freezeClaudeLegacy } from "./freeze-claude-legacy.mjs"
 import { spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
@@ -29,12 +30,14 @@ async function run() {
   const packages = args.includes("--all")
     ? ["./internal/adapters/postgres", "./internal/adapters/httpapi", "./internal/authentication", "./internal/authcutover", "./internal/team"]
     : ["./internal/adapters/httpapi", "-run", "^TestHTTPAuthenticationAndAuthorizationContract$/^native_OpenCode_Collector$"]
+  const historical = args.includes("--all") ? await freezeClaudeLegacy() : undefined
+  if (historical) console.log(`Frozen genuine Claude legacy ${historical.metadata.revision} tarball sha256=${historical.metadata.tarball.sha256}`)
   // The combined installed-provider corpus and optional three-minute Web review
   // need a process deadline longer than the parent HTTP contract. Individual
   // source, command and recovery deadlines still bound each operation.
   const child = spawn("go", ["test", ...packages, "-count=1", "-json", "-timeout=20m"], {
     cwd: fileURLToPath(new URL("../server", import.meta.url)),
-    env: { ...process.env, ATAPE_INTEGRATION_TESTS: "1", TESTCONTAINERS_RYUK_DISABLED: "true" },
+    env: { ...process.env, ...(historical === undefined ? {} : { ATAPE_CLAUDE_LEGACY_TARBALL: historical.tarball }), ATAPE_INTEGRATION_TESTS: "1", TESTCONTAINERS_RYUK_DISABLED: "true" },
     stdio: ["ignore", "pipe", "inherit"]
   })
   const events = []
@@ -44,7 +47,7 @@ async function run() {
     try {
       const event = JSON.parse(line)
       if (event.Output) process.stdout.write(event.Output)
-      if ([requiredTest, claudeRequiredTest, codeBuddyRequiredTest, kimiRequiredTest, grokRequiredTest].includes(event.Test)) events.push(event)
+      if ([requiredTest, ...claudeRequiredTests, codeBuddyRequiredTest, kimiRequiredTest, grokRequiredTest].includes(event.Test)) events.push(event)
     } catch { malformed = true; process.stderr.write(`${line}\n`) }
   })
   const interrupt = () => child.kill("SIGINT")
@@ -61,6 +64,7 @@ async function run() {
   } finally {
     lines.close()
     process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", terminate)
+    await historical?.cleanup()
   }
 }
 

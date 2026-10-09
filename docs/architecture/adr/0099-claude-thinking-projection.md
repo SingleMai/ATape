@@ -3,6 +3,11 @@
 - Status: Accepted decision; implementation and verification belong to the Claude guide
 - Date: 2026-10-09
 
+Later amendment: [ADR-0101](0101-claude-active-path-and-legacy-adoption.md) carries
+the same recorded-thinking projection into Claude's sourceCapture v2 writer.
+Legacy checkpoint validation remains explicit; current delivery versions are
+allocated by the Host above the adopted Server baseline.
+
 ## Context
 
 The shared ACP Interface, Canonical projection, redaction and Reader already

@@ -1,6 +1,6 @@
 import { Context, Effect, Schema } from "effect"
 import {
-  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities,
+  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile2,
   PublicationManifest, PublicationProtocol, PublicationScope, RawAuthority, RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority,
   type RawPublicationReceipt,
   type PublicationPart, type PublicationReservation
@@ -18,6 +18,7 @@ export class PublicationError extends Schema.TaggedError<PublicationError>()("Pu
 export class PublicationTransport extends Context.Service<PublicationTransport, {
   capabilities(binding: PublicationBinding): Effect.Effect<PublicationCapabilities, PublicationError>
   reserve(binding: PublicationBinding, scope: PublicationScope): Effect.Effect<typeof PublicationReservation.Type, PublicationError>
+  adoptLegacy(binding: PublicationBinding, scope: PublicationScope): Effect.Effect<PublicationLegacyAdoption, PublicationError>
   begin(binding: PublicationBinding, input: PublicationBegin): Effect.Effect<PublicationAttempt, PublicationError>
   status(binding: PublicationBinding, id: string): Effect.Effect<PublicationAttempt, PublicationError>
   put(binding: PublicationBinding, id: string, part: PublicationPart, bytes: Uint8Array): Effect.Effect<PublicationPart, PublicationError>
@@ -30,6 +31,7 @@ export class PublicationTransport extends Context.Service<PublicationTransport, 
 
 const Intent = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), binding: PublicationBinding,
   scope: PublicationScope, sessionId: Schema.String, begin: PublicationBegin, capabilities: PublicationCapabilities,
+  adoption: Schema.optionalKey(Schema.Struct({ revisionFloor: PublicationLegacyAdoption.fields.revisionFloor })),
   rawAuthority: Schema.optionalKey(RawAuthority) })
 const Seal = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), fence: PublicationAttempt.fields.fence, manifest: PublicationManifest })
 type Intent = typeof Intent.Type
@@ -61,6 +63,7 @@ const checkAttempt = (intent: Intent, attempt: PublicationAttempt, seal?: Seal) 
   if ((attempt.state === "activated") !== (attempt.activation !== null) ||
     (["sealed", "validating", "validated", "activated"].includes(attempt.state) && attempt.seal === null) ||
     (attempt.seal !== null && attempt.validatedParts > attempt.seal.parts) ||
+    (["validated", "activated"].includes(attempt.state) && attempt.seal !== null && attempt.validatedParts !== attempt.seal.parts) ||
     (attempt.state === "open" && attempt.validatedParts !== 0))
     return yield* failure("invalid_response", "Publication attempt has inconsistent state.")
   return attempt
@@ -78,7 +81,7 @@ const checkActivation = (intent: Intent, seal: Seal, receipt: PublicationActivat
  * never completed with newly read source pages after a restart.
  */
 export const beginPublicationCapture = (owner: CaptureClaim, input: {
-  readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean; readonly rawAuthority?: RawAuthority; readonly trackRecords?: boolean
+  readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean; readonly rawAuthority?: RawAuthority; readonly trackRecords?: boolean; readonly adoptLegacy?: boolean
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal, remote = yield* PublicationTransport
   // Check the owner before consuming remote reservation quota.
@@ -87,16 +90,23 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   const scope = yield* decode(PublicationScope, { ...owner.scope, installationId: binding.installationId })
   const rawAuthority = input.rawEnabled ? yield* decode(RawAuthority, input.rawAuthority) : undefined
   const capabilities = yield* remote.capabilities(binding)
-  const reservation = yield* remote.reserve(binding, scope)
+  if (input.adoptLegacy && (input.baseHead !== "" || capabilities.legacyAdoption !== true || !capabilities.targetProfiles?.includes(PublicationTargetProfile2)))
+    return yield* failure("unavailable", "Explicit legacy adoption requires a compatible Server and an initial publication head.")
+  const adoption = input.adoptLegacy ? yield* decode(PublicationLegacyAdoption, yield* remote.adoptLegacy(binding, scope)) : undefined
+  if (adoption !== undefined) yield* journal.adoptBaseline(owner, { revisionFloor: adoption.revisionFloor,
+    metadataJson: JSON.stringify({ threads: adoption.baselineThreads }) })
+  const reservation = adoption ?? (yield* remote.reserve(binding, scope))
   const begin = yield* decode(PublicationBegin, { reservationId: reservation.id, captureId: input.captureId,
     baseHead: input.baseHead, transformVersion: input.transformVersion })
   const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities,
+    ...(adoption === undefined ? {} : { adoption: { revisionFloor: adoption.revisionFloor } }),
     ...(rawAuthority === undefined ? {} : { rawAuthority }) }
   yield* journal.reserve(owner, { id: input.captureId, expectedCheckpoint: owner.checkpoint,
     beginJson: JSON.stringify(intent), rawEnabled: input.rawEnabled, trackRecords: input.trackRecords ?? false })
   const attempt = yield* checkAttempt(intent, yield* remote.begin(binding, begin))
   if (attempt.state !== "open") return yield* failure("conflict", "A new capture requires an open publication attempt.")
-  return { sessionId: attempt.sessionId, attemptId: attempt.id, limits: capabilities.limits }
+  return { sessionId: attempt.sessionId, attemptId: attempt.id, limits: capabilities.limits,
+    ...(adoption === undefined ? {} : { adoption }) }
 })
 
 /** Checked local preparation context. This reads metadata only and does no HTTP.
@@ -245,8 +255,14 @@ export const deliverPublicationCapture = (owner: CaptureOwner, id: string, maxOp
       }
     } else if (attempt.state === "sealed" || attempt.state === "validating") {
       const previous = attempt.validatedParts
+      const previousRetained = attempt.retainedParts ?? 0
       attempt = yield* checkAttempt(intent, yield* remote.validate(binding, attemptId), seal)
-      if (attempt.state !== "activated" && (attempt.validatedParts <= previous || attempt.validatedParts > seal.manifest.parts))
+      if (attempt.state !== "validating" && attempt.state !== "validated" && attempt.state !== "activated")
+        return yield* failure("invalid_response", "Publication validation returned an invalid state transition.")
+      const retained = attempt.retainedParts ?? 0
+      const finished = attempt.state === "validated" && previous === seal.manifest.parts
+      if (attempt.validatedParts < previous || retained < previousRetained || attempt.validatedParts > seal.manifest.parts ||
+        attempt.state !== "activated" && !finished && attempt.validatedParts === previous && retained === previousRetained)
         return yield* failure("invalid_response", "Publication validation did not make bounded progress.")
     } else if (attempt.state === "validated") {
       const receipt = yield* activateLocally(yield* remote.activate(binding, attemptId))

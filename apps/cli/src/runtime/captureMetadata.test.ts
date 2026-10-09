@@ -7,6 +7,7 @@ import { CaptureJournal, CaptureJournalError } from "@atape/application"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCaptureJournalLayer } from "./captureJournal.ts"
+import { downgradeJournalToV7 } from "./fixtures/capture-journal-legacy.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -27,6 +28,7 @@ const fixture = async () => {
 }
 
 const removeAccounting = (db: DatabaseSync) => {
+  downgradeJournalToV7(db)
   db.exec("DROP INDEX obsolete_capture_records; ALTER TABLE captures DROP COLUMN records_retired; ALTER TABLE captures DROP COLUMN retained_records")
   for (const table of ["scopes", "captures", "units", "source_record_versions", "capture_records"]) {
     db.exec(`DROP TRIGGER metadata_${table}_insert; DROP TRIGGER metadata_${table}_delete`)
@@ -118,7 +120,7 @@ describe("Account journal metadata admission", () => {
       yield* j.settle(owner,"old",{ _tag: "AbandonUnsealed" })
       expect(yield* j.reclaim(owner,"old")).toBe(1)
     }),1)
-    const upgraded = new DatabaseSync(f.path); expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(7); upgraded.close()
+    const upgraded = new DatabaseSync(f.path); expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(8); upgraded.close()
   })
 
   it("allows only one process to consume the last account-wide metadata slot", async () => {

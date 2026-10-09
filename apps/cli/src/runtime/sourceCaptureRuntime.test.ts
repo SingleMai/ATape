@@ -1,5 +1,5 @@
 import { AdapterRuntimes, SourceCaptureCollector, makeSourceCaptureCollectorLayer, runCollectionCycle } from "@atape/application"
-import { AdapterProtocolVersion, SourceCaptureVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage } from "@atape/domain"
+import { AdapterProtocolVersion, SourceCaptureVersion, SourceCaptureVersion2, LegacyMigrationVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage, type SourceCaptureViewV2 } from "@atape/domain"
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
@@ -67,6 +67,11 @@ describe("Host source runtime capability", () => {
     await expect(Effect.runPromise(hosted.discover({ cursor: null, limits }))).rejects.toMatchObject({
       reason: "contract", sourceFailureReason: reason === "unsupported" ? "format" : reason
     })
+  })
+  it("preserves v2 unsupported source diagnostics", async () => {
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion2,
+      discover: () => { throw { reason: "unsupported" } }, open: () => { throw { reason: "unsupported" } } }, new AbortController().signal)
+    await expect(Effect.runPromise(hosted.discover({ cursor: null, limits }))).rejects.toMatchObject({ reason: "contract", sourceFailureReason: "unsupported" })
   })
   it("opens the actual OpenCode package Interface and closes native views with the caller Scope", async () => {
     const f = await fixture()
@@ -151,6 +156,48 @@ describe("Host source runtime capability", () => {
     const undeclared = { ...f.manifest, atapeAdapter: { ...f.manifest.atapeAdapter, sourceCapture: undefined } }
     await writeFile(join(f.packageRoot, "package.json"), JSON.stringify(undeclared))
     await expect(f.run(Effect.scoped(f.open))).rejects.toMatchObject({ reason: "contract" })
+  })
+  it("rejects mismatched v2 and legacy-migration manifest capabilities before collection", async () => {
+    const f = await fixture()
+    for (const declared of [{ sourceCapture: SourceCaptureVersion2 }, { sourceCapture: SourceCaptureVersion, legacyMigration: LegacyMigrationVersion }]) {
+      await writeFile(join(f.packageRoot, "package.json"), JSON.stringify({ ...f.manifest, atapeAdapter: { ...f.manifest.atapeAdapter, ...declared } }))
+      await expect(f.run(Effect.scoped(f.open))).rejects.toMatchObject({ reason: "contract" })
+    }
+  })
+  it("bounds and validates offline migration pages without consulting source discovery", async () => {
+    let calls = 0, discovers = 0
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion2,
+      discover: () => { discovers++; throw new Error("offline migration cannot discover") }, open: () => { throw new Error("offline migration cannot open") },
+      legacyMigration: request => { calls++; return { sources: [], cursor: request.cursor, done: false, sourceFailures: [], sourceFailuresTruncated: false } }
+    }, new AbortController().signal)
+    await expect(Effect.runPromise(hosted.legacyMigration!({ checkpointCursor: "opaque", cursor: "same", limits }))).rejects.toMatchObject({ reason: "contract" })
+    await expect(Effect.runPromise(hosted.legacyMigration!({ checkpointCursor: "界".repeat(400000), cursor: null, limits }))).rejects.toMatchObject({ reason: "contract" })
+    expect(calls).toBe(1); expect(discovers).toBe(0)
+  })
+  it("passes v2 opaque checkpoints and authenticated Thread metadata and keeps diagnostics", async () => {
+    let received: unknown
+    const view: SourceCaptureViewV2 = { profile: "fixture-v2", origin: { sourceId: "root", originKey: "origin", cwd: "/fixture" },
+      session: { sourceSessionId: "root", title: "Root", summary: "", insight: "", actor: { name: "Fixture", harness: "Fixture" }, branch: "", status: "idle",
+        captureStatus: "complete", reportedEventCount: 0, updatedAt: "2026-09-10T00:00:00Z" },
+      threads: [{ sourceThreadId: "root", label: "Root", summary: "", captureStatus: "complete" }],
+      sourceCheckpoint: "opaque-current", target: { threads: 1, events: 0, usage: 0, retainedThreadIds: [] },
+      sourceFailures: [{ source: "child.jsonl", reason: "unsupported" }], sourceFailuresTruncated: false,
+      read: () => ({ frames: [], done: true }), close: () => undefined }
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion2, discover: () => undefined,
+      open: request => { received = request; return view } }, new AbortController().signal)
+    const priorThreads = [...view.threads, ...Array.from({ length: 20 }, (_, index) => ({ sourceThreadId: `old-child-${index}`,
+      parentSourceThreadId: "root", label: "Prior child", summary: "", captureStatus: "complete" as const }))]
+    const header = await Effect.runPromise(Effect.scoped(hosted.open({ sourceId: "root", rawEnabled: false, limits, projection,
+      priorThreads, priorCheckpoint: "opaque-prior", legacyCheckpoint: "opaque-legacy" })))
+    expect(received).toMatchObject({ priorThreads, priorCheckpoint: "opaque-prior", legacyCheckpoint: "opaque-legacy" })
+    expect(header).toMatchObject({ sourceCheckpoint: "opaque-current", target: { retainedThreadIds: [] }, sourceFailures: [{ source: "child.jsonl", reason: "unsupported" }] })
+    for (const invalid of [{ ...view, sourceCheckpoint: "界".repeat(400000) }, { ...view, target: { events: 0, usage: 0, threads: 1 } },
+      { ...view, sourceFailures: undefined }, { ...view, sourceCheckpoint: undefined }]) {
+      const malformed = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion2, discover: () => undefined,
+        open: () => invalid as SourceCaptureViewV2 }, new AbortController().signal)
+      await expect(Effect.runPromise(Effect.scoped(malformed.open({ sourceId: "root", rawEnabled: false,
+        limits: { ...limits, pageBytes: 32 * 1024 * 1024 }, projection: { ...projection, pageBytes: 32 * 1024 * 1024 } })))).rejects.toMatchObject({ reason: "contract" })
+    }
   })
   it.each(["invalid", 1, true])("returns a typed contract error for primitive runtime %s", async value => {
     const f = await fixture()

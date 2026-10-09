@@ -7,6 +7,7 @@ import { CaptureJournal, CaptureJournalError, type CaptureOwner } from "@atape/a
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCaptureJournalLayer } from "./captureJournal.ts"
+import { downgradeJournalToV7 } from "./fixtures/capture-journal-legacy.ts"
 
 const temporary: string[] = []
 afterEach(async () => { await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -33,6 +34,7 @@ const fill = (journal: CaptureJournal["Service"], owner: CaptureOwner) => Effect
 })
 
 const downgradeToV5 = (db: DatabaseSync) => {
+  downgradeJournalToV7(db)
   db.exec("DROP INDEX obsolete_capture_records; ALTER TABLE captures DROP COLUMN records_retired; ALTER TABLE captures DROP COLUMN retained_records")
   for (const table of ["scopes", "captures", "units", "source_record_versions", "capture_records"]) {
     db.exec(`DROP TRIGGER metadata_${table}_insert; DROP TRIGGER metadata_${table}_delete`)
@@ -74,7 +76,7 @@ describe("Capture journal Interface", () => {
       expect(yield* j.unactivated(current)).toBeNull()
     }))
     const upgraded = new DatabaseSync(path)
-    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(7); upgraded.close()
+    expect(upgraded.prepare("PRAGMA user_version").get()?.user_version).toBe(8); upgraded.close()
   })
   it("verifies binding before upgrading v3 and preserves its independent Raw obligations", async () => {
     const path = await setup()

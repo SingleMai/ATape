@@ -22,6 +22,7 @@ mode selection, retries, deadlines, leases, quota serialization and cleanup.
 | Operation | Guarantee |
 | --- | --- |
 | Reserve | Authorize current Project access and capture ownership; bind immutable Origin and publication mode; return a server-generated reservation with finite expiry. |
+| AdoptLegacy | Explicitly adopt the same owned legacy source, preserve existing reads and Raw, fence legacy writes and return a reservation, revision floor and prior Thread metadata. |
 | Begin | Consume the reserved identity with immutable capture ID, base head and transform version; allocate one writer fence. An identical retry returns the original fence and never renews its lease. |
 | Put | Accept one bounded numbered part with its verified SHA-256. A repeated identity must carry the same digest and byte count. No upload can replace a sealed part. |
 | Seal | Verify the complete contiguous numbered set and manifest digest through metadata pages; retain its immutable manifest. Sealed means transport-complete, not semantically validated or visible. |
@@ -75,6 +76,21 @@ comparing headers; Session, topology, target counts and capture provenance must
 remain consistent across parts. A target can contain at most 100 Threads and
 500 Events plus 500 Usage records per part. Cross-part duplicate membership and
 incomplete declared counts fail validation.
+
+The advertised `atape.publication-target.v2` profile additionally declares
+`retainedThreadIds`. These are nonroot Threads inherited from the attempt's exact
+base membership, including the legacy baseline on first adoption. Each retained
+Thread must still have the same proved parent receipt in the freshly projected
+root. Missing, contradictory, cross-source or root retention fails validation.
+Inherited Events, Usage and Raw references retain their exact stored versions.
+Fresh Event/Usage counts describe uploaded content honestly; complete visible
+counts include the resulting inherited membership. Thread headers remain complete.
+
+After validating wire parts, Validate copies retained membership in bounded
+derived units. These private units do not alter wire ordinals, manifest digests
+or immutable Put receipts. Status reports `retainedParts` separately; a validation
+call may advance this counter while `validatedParts` remains unchanged. Only a
+fully derived target becomes validated. Reclamation accounts for both unit kinds.
 
 `Validate` advances one part per call: `sealed` → `validating` → `validated`.
 Its transaction replaces the wire body with fixed `canonical.WriteBatch` JSON
@@ -151,8 +167,14 @@ claim the whole capture time; empty targets have no indexing obligation.
 An account-scoped transaction lock serializes quota changes across independent
 connections. A source lock shared with legacy ingestion enforces the write-mode
 boundary. Authorization uses the existing Project and captured-Session lifecycle
-policy, including receipt replay. New reservations cannot adopt a legacy Session,
-and the legacy batch path cannot mutate a reserved publication source.
+policy, including receipt replay. Ordinary reservations cannot adopt a legacy
+Session; only explicit AdoptLegacy can do so after verifying immutable scope and
+ownership. It preserves legacy Reader/Search/Overview selection until first head
+activation, while fencing legacy writes. Adoption returns a revision floor above
+all legacy Event/projection/Usage versions and bounded prior Thread metadata;
+the Host allocates new versions above that floor. Existing Raw ownership,
+receipts and links remain readable. The legacy batch path cannot mutate a reserved
+or adopted publication source.
 
 Put, Seal, Validate and Activate storage work is followed by an authority check inside the same
 transaction; expiry before that check rolls back both content and accounting.
@@ -223,6 +245,7 @@ implicitly retries or performs multiple validation steps.
 | --- | --- |
 | `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. |
 | `POST /reservations` | Project, installation, Adapter, source Session and Origin; finite server reservation. |
+| `POST /adopt-legacy` | Same scope; explicitly fenced legacy adoption with reservation, `revisionFloor` and `baselineThreads`. |
 | `POST /attempts` | Reservation ID, capture ID, base head, transform version; immutable attempt. |
 | `PUT /attempts/{id}/parts/{ordinal}?sha256=…` | Exact frozen `CanonicalPart` JSON bytes, at most the configured part limit (hard ceiling 4 MiB); original part receipt. |
 | `POST /attempts/{id}/seal` | Manifest `{parts, bytes, sha256}`; sealed attempt. |

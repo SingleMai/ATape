@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import type { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, SourceCaptureFrame } from "@atape/domain"
+import type { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, AdapterSourceFailure, SourceCaptureFrame } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { prepareCanonicalSlice } from "./collectorPreparation.ts"
 import { projectCanonicalSubmission } from "./canonicalProjection.ts"
@@ -9,11 +9,14 @@ export type PublicationDraftView<E = never, R = never> = {
   readonly origin: { readonly sourceId: string; readonly originKey: string }
   readonly session: Omit<AdapterSession, "revision">
   readonly threads: ReadonlyArray<Omit<AdapterThread, "revision">>
-  readonly target: { readonly events: number; readonly usage: number; readonly threads: number }
+  readonly target: { readonly events: number; readonly usage: number; readonly threads: number; readonly retainedThreadIds?: ReadonlyArray<string> }
+  readonly sourceCheckpoint?: string
+  readonly sourceFailures?: ReadonlyArray<AdapterSourceFailure>
+  readonly sourceFailuresTruncated?: boolean
   readonly read: () => Effect.Effect<{ readonly frames: ReadonlyArray<PublicationDraftFrame>; readonly done: boolean }, E, R>
 }
 export class PublicationPreparationError extends Schema.TaggedError<PublicationPreparationError>()("PublicationPreparationError", {
-  reason: Schema.Literals(["invalid", "binding", "capacity", "unsupported"]), message: Schema.String
+  reason: Schema.Literals(["invalid", "binding", "capacity", "unsupported", "conflict"]), message: Schema.String
 }) {}
 const fail = (reason: PublicationPreparationError["reason"], message: string) => new PublicationPreparationError({ reason, message })
 export const encodeSource = (value: unknown) => new TextEncoder().encode(JSON.stringify(value))
@@ -43,6 +46,10 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
   if (!view.profile || view.profile.length > 500 || !positive(view.target.events) || !positive(view.target.usage) ||
     !positive(view.target.threads, 1) || view.target.threads !== view.threads.length || view.session.reportedEventCount !== view.target.events)
     return yield* fail("invalid", "Source target counts are inconsistent.")
+  const retained = new Set(view.target.retainedThreadIds ?? [])
+  if (retained.size !== (view.target.retainedThreadIds?.length ?? 0) || retained.size > 1000 ||
+    [...retained].some(id => !view.threads.some(thread => thread.sourceThreadId === id && thread.parentSourceThreadId !== undefined)))
+    return yield* fail("invalid", "Retained Threads must be unique nonroot headers in the complete target.")
   const profile = `${PublicationPreparationVersion}:${input.transformVersion}:${view.profile}`
   if (profile.length > 500) return yield* fail("invalid", "Capture projection profile exceeds its bound.")
   const placeholder = { _tag: "unavailable", reason: "Raw capture disabled" } as const
@@ -70,6 +77,7 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
     ))).observation
     const events = [], usage = []
     for (const event of ready.events) {
+      if (retained.has(event.sourceThreadId)) return yield* fail("invalid", "Retained Thread cannot also contain explicit Events.")
       if (event.eventIndex !== eventCount || event.sourceOrder <= lastSourceOrder || ++eventCount > view.target.events)
         return yield* fail("invalid", "Source Event order or target count is inconsistent.")
       lastSourceOrder = event.sourceOrder
@@ -78,6 +86,7 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
         fingerprint: yield* sourceFingerprint({ ...semantic, revision: undefined, projectionRevision: undefined, rawRef: undefined }) })
     }
     for (const sample of ready.usage ?? []) {
+      if (retained.has(sample.sourceThreadId)) return yield* fail("invalid", "Retained Thread cannot also contain explicit usage.")
       if (++usageCount > view.target.usage) return yield* fail("invalid", "Source usage exceeds the declared target.")
       usage.push({ value: sample, key: yield* sourceFingerprint([sample.sourceThreadId, sample.sourceUsageId]),
         fingerprint: yield* sourceFingerprint({ ...sample, revision: undefined }) })

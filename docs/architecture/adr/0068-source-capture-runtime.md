@@ -3,6 +3,11 @@
 - Status: Accepted implementation detail of ADR-0059
 - Date: 2026-09-10
 
+Later amendment: [ADR-0101](0101-claude-active-path-and-legacy-adoption.md) adds
+sourceCapture v2 for Claude with explicit migration and retained child metadata.
+The v1 Interface described here remains valid for its existing Adapters; current
+scheduling and delivery behavior is recorded in the feature guides.
+
 The scoped OpenCode reader and Host preparation Modules need a real package
 boundary. Treating their draft frames as legacy observation pages would transfer
 revision assignment and upload policy back to the Adapter, and could silently

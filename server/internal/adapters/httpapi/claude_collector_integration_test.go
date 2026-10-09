@@ -74,7 +74,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()
-		command := exec.CommandContext(ctx, "npm", "pack", "--json", "--pack-destination", artifacts)
+		command := exec.CommandContext(ctx, "npm", "pack", "--ignore-scripts", "--json", "--pack-destination", artifacts)
 		command.Dir = filepath.Join(repository, directory)
 		var stderr bytes.Buffer
 		command.Stderr = &stderr
@@ -88,7 +88,11 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		}
 		return filepath.Join(artifacts, packed[0].Filename)
 	}
-	tarball, cliTarball := pack("adapters/claude"), pack("apps/cli")
+	tarball, cliTarball := os.Getenv("ATAPE_CLAUDE_LEGACY_TARBALL"), pack("apps/cli")
+	info, err := os.Stat(tarball)
+	if !filepath.IsAbs(tarball) || err != nil || !info.Mode().IsRegular() {
+		t.Fatal("legacy Claude contract requires ATAPE_CLAUDE_LEGACY_TARBALL from scripts/freeze-claude-legacy.mjs (genuine f609353 sources)")
+	}
 	// Optional, explicitly supplied genuine previous artifact. This is not built
 	// by relabelling the current package or mutating a current private cursor.
 	previousTarball := os.Getenv("ATAPE_CLAUDE_PREVIOUS_TARBALL")

@@ -42,7 +42,7 @@ regression when appropriate.
 | Web behavior | `pnpm --filter @atape/web typecheck`, `pnpm --filter @atape/web test`, and affected `test:browser` scenarios |
 | CLI commands or terminal behavior | `pnpm --filter @atape/cli typecheck`, `pnpm --filter @atape/cli test`, `pnpm test:cli-package` for the installed executable |
 | Adapter projection or package/runtime contract | Affected Adapter `typecheck` and `test`; `pnpm test:adapter-package` for installed artifacts |
-| Collector / Server delivery | `pnpm test:e2e` for Codex/Claude; `pnpm test:claude-contract`, `pnpm test:opencode-contract`, `pnpm test:codebuddy-contract`, `pnpm test:kimi-contract` and `pnpm test:grok-contract` for installed Adapters over authenticated HTTP/PostgreSQL |
+| Collector / Server delivery | `pnpm test:e2e` for Codex against the demo Server; `pnpm test:claude-contract`, `pnpm test:opencode-contract`, `pnpm test:codebuddy-contract`, `pnpm test:kimi-contract` and `pnpm test:grok-contract` for installed Adapters over authenticated HTTP/PostgreSQL. Claude requires both current sourceCapture and genuine previous-main legacy contracts; the runner freezes that artifact automatically. |
 | Go Module | From `server/`, `go test ./internal/<module>/...`; use `pnpm test:go:integration` for persistence and authenticated boundaries, and race/fuzz checks when affected |
 | SQL migration or query | `pnpm generate:sqlc`, inspect generated changes, and run affected PostgreSQL integration checks |
 | Compose or backup/restore | `pnpm test:self-hosting:config`; `pnpm test:self-hosting:restore` for paired recovery in isolated containers/volumes |

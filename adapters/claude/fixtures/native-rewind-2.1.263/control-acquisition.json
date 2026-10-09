@@ -1,0 +1,66 @@
+{
+  "scriptSha256": "69a6febb482ca77930bd2ad1f2d09d5c0a443ce2734edb81403d02660eb948f9",
+  "session": "739c7fd0-4b82-46e6-b77a-ca836df2294d",
+  "first": "3464449b-ab71-4871-911a-6f859ff76975",
+  "second": "ae90f97e-870c-4f28-8e23-41dc66f56284",
+  "binaryHash": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "args": [
+    "--restricted",
+    "--safe-mode",
+    "--tools",
+    "",
+    "--permission-mode",
+    "manual",
+    "--permission-prompts",
+    "none",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--disable-slash-commands",
+    "--no-chrome",
+    "--model",
+    "claude-sonnet-4-6",
+    "--effort",
+    "low",
+    "--system-prompt",
+    "Controlled synthetic rewind persistence fixture.",
+    "--session-id",
+    "739c7fd0-4b82-46e6-b77a-ca836df2294d",
+    "--print",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose"
+  ],
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/atape/fixture/acquisition/home",
+    "LANG": "en_US.UTF-8",
+    "TMPDIR": "/atape/fixture/acquisition",
+    "CLAUDE_CONFIG_DIR": "/atape/fixture/acquisition/config",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:55702",
+    "ANTHROPIC_API_KEY": "<synthetic-loopback-key>",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "CLAUDE_CODE_FORK_SUBAGENT": "0",
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "exit": 0,
+  "signal": null,
+  "control": {
+    "type": "control_response",
+    "response": {
+      "subtype": "success",
+      "request_id": "rewind",
+      "response": {
+        "rewound": true,
+        "targetMessageUuid": "ae90f97e-870c-4f28-8e23-41dc66f56284",
+        "prefillText": "ATAPE_CONTROL_DISCARDED",
+        "precedingAssistantUuid": "ead0574f-4587-4f3a-9afb-74be103976ef"
+      }
+    }
+  }
+}

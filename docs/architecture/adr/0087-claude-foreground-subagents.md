@@ -3,6 +3,11 @@
 - Status: Accepted scope; implementation and acceptance are recorded in the feature guide
 - Date: 2026-10-08
 
+Later amendment: [ADR-0101](0101-claude-active-path-and-legacy-adoption.md) replaces
+Claude's legacy writer with explicit sourceCapture v2 adoption and base-bound
+retention. This record describes the earlier additive increment; the current
+[Claude guide](../../adapters/claude.md) owns supported behavior.
+
 ## Context
 
 [ADR-0023](0023-claude-source-conversation-topology.md) describes the broader Claude

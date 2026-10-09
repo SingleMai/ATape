@@ -13,6 +13,7 @@ export type CaptureScope = {
 }
 export type CaptureOwner = { readonly scope: CaptureScope; readonly epoch: number }
 export type CaptureBinding = { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
+export type CaptureLegacyMigration = { readonly checkpointJson: string; readonly checkpointDigest: string }
 export type CaptureJournalLimits = {
   readonly unitBytes: number; readonly targetBytes: number; readonly pendingBytes: number
   readonly unitsPerTarget: number; readonly recordsPerTarget?: number
@@ -113,8 +114,17 @@ export class CaptureJournals extends Context.Service<CaptureJournals, {
 
 export class CaptureJournal extends Context.Service<CaptureJournal, {
   readonly binding: CaptureBinding
+  /** Immutable, account/installation-bound checkpoints selected by the Collector's CAS marker. */
+  legacyMigration(projectId: string, adapterId: string, checkpointDigest: string): Effect.Effect<CaptureLegacyMigration | null, CaptureJournalError>
+  freezeLegacyMigration(projectId: string, adapterId: string, input: CaptureLegacyMigration): Effect.Effect<CaptureLegacyMigration, CaptureJournalError>
   /** A new owner fences every earlier owner for this source, including reads/GC. */
   claim(scope: CaptureScope): Effect.Effect<CaptureClaim, CaptureJournalError>
+  recordFloor(owner: CaptureOwner): Effect.Effect<number, CaptureJournalError>
+  /** Freeze the authenticated Server baseline before allocating new versions. */
+  adoptBaseline(owner: CaptureOwner, input: { readonly revisionFloor: number; readonly metadataJson: string }): Effect.Effect<void, CaptureJournalError>
+  /** null selects the first adoption baseline, otherwise a frozen capture header. */
+  sourceMetadata(owner: CaptureOwner, id: string | null): Effect.Effect<string | null, CaptureJournalError>
+  setSourceMetadata(owner: CaptureOwner, id: string, metadataJson: string): Effect.Effect<void, CaptureJournalError>
   /** Known local scopes remain recoverable after the provider deletes a source. */
   sources(projectId: string, adapterId: string, page: { readonly afterSessionId?: string; readonly limit?: number }): Effect.Effect<ReadonlyArray<CaptureScope>, CaptureJournalError>
   reserve(owner: CaptureOwner, capture: CaptureReservation): Effect.Effect<void, CaptureJournalError>
