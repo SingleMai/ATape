@@ -45,6 +45,9 @@ is needed. Provider knowledge remains in each Adapter.
   pins an immutable effective policy for each job. Filesystem/configuration,
   cryptographic initialization and local test I/O use Effect; deterministic
   matching and traversal remain ordinary calculations.
+  Automatic literal discovery excludes only the two reserved, completed local
+  Collector-ready/update-worker handshake nonces. Their per-restart randomness
+  must not change policy identity; explicit literal configuration still wins.
 - Effective identity includes engine/catalog semantics, normalized configuration
   and resolved literals. Persist and transmit only an opaque keyed policy identity,
   never source literals or an unkeyed digest of guessable secrets. Comparison,
@@ -65,7 +68,9 @@ is needed. Provider knowledge remains in each Adapter.
 - Managed activation must commit its update journal before a newly ready Collector
   starts any job. Previously, clearing maintenance before deleting the pending
   journal allowed a crash to select the preceding runtime after new policy state
-  had been written. A state-contract bump would reject the existing updater's
+  had been written. [ADR-0104](0104-capture-v2-state-upgrade.md) already establishes
+  the manual v1-to-v2 transition; the same window matters for subsequent compatible
+  v2 updates. Another state-contract bump would reject the existing updater's
   compatibility admission and require a separate upgrade bridge. Instead, the new
   Collector writes readiness first, then waits for both maintenance and pending
   activation to finish and syncs the existing update directory before admission.

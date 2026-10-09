@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { CLIInputError } from "../commandInput.ts"
 import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtimeLauncher.ts"
 import { managedStateContract, runtimeEntry, runtimeSelectionFile, selectRuntime } from "./runtimeSelection.ts"
+import { acquireUpdateWorker } from "./updateOwnership.ts"
 
 const temporaryDirectories: string[] = []
 afterEach(async () => {
@@ -54,6 +55,20 @@ describe("managed executable bootstrap delegation", () => {
     const client = await fixture()
     await selectRuntime(client.home, undefined)
     expect(await delegateManagedRuntime(client.bootstrap, ["--version"], client.environment)).toBeUndefined()
+  })
+
+  it.each(["--help", "--version"])("keeps %s read-only and on the newly installed CLI with v1 metadata and an old updater lock", async flag => {
+    const client = await fixture()
+    const current = runtimeSelectionFile(client.home)
+    const pointer = { ...JSON.parse(await readFile(current, "utf8")), stateContract: "atape.client.v3-capture.v1" }
+    await writeFile(current, JSON.stringify(pointer))
+    const release = await acquireUpdateWorker(client.home)
+    try {
+      expect(await delegateManagedRuntime(client.bootstrap, [flag], client.environment)).toBeUndefined()
+      expect(JSON.parse(await readFile(current, "utf8"))).toEqual(pointer)
+      await expect(readFile(client.output)).rejects.toMatchObject({ code: "ENOENT" })
+      await expect(readFile(join(client.home, "updates", "manual-state-upgrade.json"))).rejects.toMatchObject({ code: "ENOENT" })
+    } finally { release?.() }
   })
 
   it("delegates admitted login startup only to a runtime declaring the protocol", async () => {

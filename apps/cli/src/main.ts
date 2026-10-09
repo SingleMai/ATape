@@ -17,6 +17,7 @@ import { admitCollectorProcess } from "./runtime/collectorDaemonLayers.ts"
 import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtime/runtimeLauncher.ts"
 import { admitLoginStartup, withLoginStartupRecovery } from "./runtime/loginStartup.ts"
 import { cliVersion } from "./version.ts"
+import { assertManualStateUpgradeReady, prepareManualStateUpgrade, recordV2CollectorAdmission } from "./runtime/manualStateUpgrade.ts"
 
 const main = async () => {
   let command
@@ -60,6 +61,7 @@ const main = async () => {
 
   if (requestsGuidedExperience(command) && supportsInteractiveExperience()) {
     const paths = defaultNodeClientPaths()
+    await Effect.runPromise(prepareManualStateUpgrade(paths))
     if (await needsUpdateRecovery(paths)) {
       const release = await acquireUpdateWorker(paths.atapeHome)
       if (release) {
@@ -88,6 +90,7 @@ const main = async () => {
       const admitted = await admitLoginStartup(defaultNodeClientPaths(), command.options.startupToken, process.argv[1]!, process.env)
       if (admitted === undefined) return
       const paths = defaultNodeClientPaths(admitted)
+      await Effect.runPromise(assertManualStateUpgradeReady(paths))
       const delegated = await delegateAdmittedLoginStartup(process.argv[1]!, process.argv.slice(2), admitted)
       if (delegated !== undefined) { process.exitCode = delegated; return }
       let completed = false
@@ -124,6 +127,7 @@ const main = async () => {
     const program = command.kind === "__collector-daemon"
       ? Effect.scoped(Effect.gen(function*() {
         yield* admitCollectorProcess(defaultNodeClientPaths().collectorProcessFile, command.options.daemonToken)
+        yield* recordV2CollectorAdmission(defaultNodeClientPaths(), command.options.daemonToken)
         yield* Effect.forkScoped(Effect.forever(reconcileLoginStartup().pipe(
           Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
           Effect.andThen(Effect.sleep(300_000))

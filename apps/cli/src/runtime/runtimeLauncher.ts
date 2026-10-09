@@ -6,7 +6,7 @@ import { Schema } from "effect"
 import { parseCLI } from "../commandInput.ts"
 import { supportsInteractiveExperience } from "../interactiveEligibility.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { readBoundedJSON, readRuntimeSelection, resolveRuntimeEntry } from "./runtimeSelection.ts"
+import { decodeLegacyRuntimeSelection, missing, readBoundedJSON, readRuntimeSelection, resolveRuntimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
 
 // The npm executable remains a stable bootstrap. This Composition Root helper
 // delegates only validated public launches, before constructing the old runtime.
@@ -20,6 +20,15 @@ export const delegateManagedRuntime = async (
     command.kind !== "interactive" && command.kind !== "help" && command.kind !== "version" ||
     command.kind === "interactive" && !supportsInteractiveExperience(environment)) return undefined
   const home = defaultNodeClientPaths(environment).atapeHome
+  if (command.kind === "help" || command.kind === "version") {
+    try {
+      const value = await readBoundedJSON(runtimeSelectionFile(home))
+      if (typeof value === "object" && value !== null && "stateContract" in value && value.stateContract === "atape.client.v3-capture.v1") {
+        decodeLegacyRuntimeSelection(value)
+        return undefined
+      }
+    } catch (cause) { if (!missing(cause)) throw cause }
+  }
   const selected = await readRuntimeSelection(home)
   if (!selected) return undefined
   const entry = await resolveRuntimeEntry(home, selected.bootstrapEntry)

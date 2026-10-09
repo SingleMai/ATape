@@ -175,7 +175,7 @@ describe("managed runtime selection through persisted configuration Interfaces",
   it.each([
     { version: "../../outside" }, { version: "1.2" }, { version: "01.2.3" }, { version: "9007199254740992.2.3" },
     { bootstrapEntry: "relative/bootstrap.js" }, { protocol: "atape.runtime.v2" },
-    { stateContract: "incompatible-state" }, { bootstrapIdentity: "invalid" }
+    { stateContract: "incompatible-state" }, { stateContract: "atape.client.v3-capture.v1" }, { bootstrapIdentity: "invalid" }
   ])("refuses invalid persisted selection metadata without silently using bootstrap: %j", async change => {
     const client = await fixture()
     const selected = await client.generation("1.2.2")

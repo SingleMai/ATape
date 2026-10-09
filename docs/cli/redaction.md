@@ -59,6 +59,10 @@ a rule. There is no global/default-disable switch or project override.
 
 Environment discovery uses names ending in `KEY`, `TOKEN`, `SECRET`, `PASSWORD`,
 `PASSWD`, `CREDENTIAL`, `DATABASE_URL` or `DSN`, and values of 8–4096 characters.
+The reserved `ATAPE_COLLECTOR_READY_TOKEN` and `ATAPE_UPDATE_WORKER_TOKEN` local
+handshake nonces are excluded from automatic discovery so managed restarts do not
+change policy identity. Other `ATAPE_*` secrets remain eligible; explicitly listing
+either nonce in `ATAPE_REDACT_VALUES` still masks it.
 Explicit values use a JSON string array in `ATAPE_REDACT_VALUES`; comma-separated
 values remain supported. Explicit values outside that length range or non-string
 array entries are errors. Duplicates are removed. Resolved values are never

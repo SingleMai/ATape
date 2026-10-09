@@ -129,6 +129,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0101](0101-claude-active-path-and-legacy-adoption.md) | Claude Active Path and explicit legacy adoption |
 | [0102](0102-claude-background-subagents.md) | Claude direct background subagents |
 | [0103](0103-login-startup.md) | User login startup and durable sync intent |
+| [0104](0104-capture-v2-state-upgrade.md) | Capture v2 state contract and explicit manual upgrade |
 | [0105](0105-client-redaction-policy.md) | Shared client redaction and policy-bound capture |
 
 

@@ -15,11 +15,14 @@ const failure = (reason: RedactionPolicyLoadError["reason"], message: string) =>
 const code = (cause: unknown, value: string) => typeof cause === "object" && cause !== null && "code" in cause && cause.code === value
 const ConfigBytes = 128 * 1024
 const Binding = "atape.redaction-key.v1"
+// These reserved nonces have completed their local handshake before collection.
+// Including them would change the effective policy on every managed restart.
+const handshakeNonces = new Set(["ATAPE_COLLECTOR_READY_TOKEN", "ATAPE_UPDATE_WORKER_TOKEN"])
 
 /** Resolves exact values without logging names or values. Ambient discovery keeps
  * its existing length admission; explicitly supplied values are validated. */
 export const environmentSecretValues = (environment: NodeJS.ProcessEnv): ReadonlyArray<string> => {
-  const values = Object.entries(environment).filter(([name, value]) => name !== "ATAPE_REDACT_VALUES" && value !== undefined &&
+  const values = Object.entries(environment).filter(([name, value]) => name !== "ATAPE_REDACT_VALUES" && !handshakeNonces.has(name) && value !== undefined &&
     /(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|DATABASE_URL|DSN)$/i.test(name) && value.length >= 8 && value.length <= 4096)
     .map(([, value]) => value!)
   const configured = environment.ATAPE_REDACT_VALUES

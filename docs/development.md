@@ -53,6 +53,12 @@ Web browser tests, Codex/Claude E2E and Go unit suites. It does not include ever
 release or PostgreSQL check. `pnpm test:go:integration` also runs installed
 Claude, OpenCode, CodeBuddy, Kimi and Grok contracts; its name is narrower than its coverage.
 
+Genuine historical Claude and capture-journal fixtures install their pinned
+revision's dependency lock in an isolated temporary workspace and verify source
+and toolchain provenance. They never borrow current dependencies. Installation
+tries the local package cache first; a cache miss requires registry access. The
+historical fixture's success is separate from current-runtime acceptance.
+
 `pnpm check:docs` parses Markdown links and headings, checks local file/anchor
 targets, concrete pnpm script names and documentation/ADR index coverage. It
 checks links in historical documents while preserving their old command examples.

@@ -1,12 +1,12 @@
 {
   "name": "@atape/cli",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "CLI and background Collector for ATape shared agent conversation history",
   "license": "MIT",
   "type": "module",
   "atapeRuntime": {
     "protocol": "atape.runtime.v1",
-    "stateContract": "atape.client.v3-capture.v1",
+    "stateContract": "atape.client.v3-capture.v2",
     "loginStartupProtocol": "atape.login-startup.v1"
   },
   "repository": {

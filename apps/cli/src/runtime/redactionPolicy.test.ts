@@ -60,6 +60,24 @@ describe("Node redaction policy snapshots", () => {
     }
   })
 
+  it("keeps policy identity stable across managed handshakes while honoring user secrets and explicit literals", async () => {
+    const f = await fixture()
+    const secrets = { APP_TOKEN: "application-user-value", ATAPE_API_KEY: "atape-user-value" }
+    const nonces = { ATAPE_COLLECTOR_READY_TOKEN: "collector-handshake-alpha", ATAPE_UPDATE_WORKER_TOKEN: "updater-handshake-alpha" }
+    const baseline = await f.load(secrets)
+    const first = await f.load({ ...secrets, ...nonces })
+    const restarted = await f.load({ ...secrets, ATAPE_COLLECTOR_READY_TOKEN: "collector-handshake-beta", ATAPE_UPDATE_WORKER_TOKEN: "updater-handshake-beta" })
+    expect(first.policyId).toBe(baseline.policyId)
+    expect(restarted.policyId).toBe(baseline.policyId)
+    expect((await Effect.runPromise(restarted.prepareText("application-user-value atape-user-value"))).value).toBe("[REDACTED] [REDACTED]")
+    const explicit = await f.load({ ...secrets, ...nonces, ATAPE_REDACT_VALUES: JSON.stringify(Object.values(nonces)) })
+    expect(explicit.policyId).not.toBe(baseline.policyId)
+    expect((await Effect.runPromise(explicit.prepareText(Object.values(nonces).join(" ")))).value).toBe("[REDACTED] [REDACTED]")
+    const aliased = await f.load({ ...secrets, ...nonces, APP_SECRET: nonces.ATAPE_COLLECTOR_READY_TOKEN })
+    expect(aliased.policyId).not.toBe(baseline.policyId)
+    expect((await Effect.runPromise(aliased.prepareText(nonces.ATAPE_COLLECTOR_READY_TOKEN))).value).toBe("[REDACTED]")
+  })
+
   it("tests the effective global policy without creating an installation or reading its identity", async () => {
     const f = await fixture()
     const policy = await Effect.runPromise(loadNodeRedactionPolicy({ mode: "test", atapeHome: f.home, environment: {} }))

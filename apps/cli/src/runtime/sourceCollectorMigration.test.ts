@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { dirname } from "node:path"
 import { createHash } from "node:crypto"
-import { rm } from "node:fs/promises"
+import { readFile, readdir, rm } from "node:fs/promises"
 import { makeCaptureJournalsLayer } from "./captureBootstrap.ts"
 import { makeCollectorStateLayer } from "./collectorLayers.ts"
 import { fixture, nativePreparationSource, directories, timestamp } from "./fixtures/publication-test-support.ts"
@@ -14,7 +14,7 @@ import { sourceCollectionLimits as limits } from "./fixtures/source-collection-t
 // Generated v2 test Adapter over the controlled OpenCode-format source. These
 // tests exercise the public Host workflow, not native Claude rewind evidence.
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
-const setup = async (options: { readonly largeBaseline?: boolean; readonly rootOnly?: boolean; readonly diagnosticSource?: string } = {}) => {
+const setup = async (options: { readonly largeBaseline?: boolean; readonly rootOnly?: boolean; readonly diagnosticSource?: string; readonly serverV2?: boolean } = {}) => {
   const native = await nativePreparationSource()
   const projected = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
     const view = yield* native.source(false), events = [], usage = []
@@ -22,7 +22,7 @@ const setup = async (options: { readonly largeBaseline?: boolean; readonly rootO
     return { events, usage }
   })))
   const floor = 900
-  const remote = await fixture(16384, {}, { v2: true, adoption: {
+  const remote = await fixture(16384, {}, { v2: options.serverV2 ?? true, adoption: {
     revisionFloor: floor, baselineThreads: options.largeBaseline ? [
       { ...native.metadata.threads.find(thread => thread.parentSourceThreadId === undefined)!, revision: floor },
       ...Array.from({ length: 20 }, (_, index) => ({ sourceThreadId: `old-child-${index}`, parentSourceThreadId: native.metadata.session.sourceSessionId,
@@ -103,7 +103,7 @@ const setup = async (options: { readonly largeBaseline?: boolean; readonly rootO
       metadata: yield* journal.sourceMetadata(owner, id), pending: yield* journal.pending(owner),
       events: id === null ? [] : yield* journal.records(owner, id, { kind: "event" }) }
   })))
-  return { native, remote, host, calls, cycle, legacy, progress, inspect, run, project, adapter,
+  return { native, remote, host, calls, cycle, legacy, progress, inspect, run, project, adapter, stateFile,
     mutateNextRawOpen: (next: string) => { mutateOpen = { at: calls.filter(call => call.operation === "open").length + 2, checkpoint: next } },
     missing: () => { missing = true }, invalid: () => { invalid = true }, checkpoint: (next: string) => { checkpoint = next },
     diagnostics: (enabled = true) => { diagnostics = enabled }, retained: (ids: string[]) => { retained = ids } }
@@ -120,6 +120,19 @@ describe("explicit legacy source migration through the Host Interface", () => {
     expect(JSON.parse(metadata).sourceFailures).toEqual(first.sourceFailures)
     expect((await f.cycle()).sourceFailures).toEqual(first.sourceFailures)
   }, 15000)
+  it("preserves the legacy checkpoint and leaves the account journal unopened when the Server lacks v2 capabilities", async () => {
+    const f = await setup({ serverV2: false })
+    const old = await f.legacy()
+    const before = await readFile(f.stateFile)
+    const filesBefore = (await readdir(dirname(f.stateFile))).sort()
+    await expect(f.cycle()).rejects.toMatchObject({ _tag: "AdapterRuntimeError", reason: "contract", sourceFailureReason: "unsupported" })
+    expect(await readFile(f.stateFile)).toEqual(before)
+    expect((await readdir(dirname(f.stateFile))).sort()).toEqual(filesBefore)
+    expect((await f.progress()).checkpoint).toEqual(old.old)
+    expect(f.remote.adoptions()).toBe(0)
+    expect(f.remote.reservations()).toBe(0)
+    expect(f.calls).toEqual([])
+  })
   it("authenticates before adoption, freezes all acknowledged metadata and seeds versions above the Server floor", async () => {
     const f = await setup(); f.remote.policy(false)
     const raw = [{ sourceSessionId: f.native.metadata.origin.sourceId, sourceObjectId: "legacy-owned-object", sourceName: "old.jsonl", mediaType: "application/jsonl",

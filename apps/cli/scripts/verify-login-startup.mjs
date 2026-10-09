@@ -29,6 +29,8 @@ export async function verifyLoginStartup(donorPackage, fixtureDirectory) {
   await mkdir(fixtureDirectory, { recursive: true, mode: 0o700 })
   const root = await realpath(fixtureDirectory)
   const manifest = await json(join(donorPackage, "package.json"))
+  assert.equal(manifest.atapeRuntime?.protocol, "atape.runtime.v1")
+  assert.equal(manifest.atapeRuntime?.stateContract, "atape.client.v3-capture.v2")
   assert.equal(manifest.atapeRuntime?.loginStartupProtocol, "atape.login-startup.v1")
   const home = join(root, "atape home 空格%$")
   const userHome = join(root, "user")
@@ -126,19 +128,6 @@ syncBuiltinESMExports();\n`)
     npm_config_userconfig: join(root, "npm-user.conf"), npm_config_globalconfig: join(root, "npm-global.conf"),
     LOGIN_FIXTURE_ROOT: root, LOGIN_FIXTURE_GLOBAL_ROOT: globalRoot
   }
-  const legacyTarball = process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL
-  if (legacyTarball) {
-    const legacyInstall = join(root, "legacy-install")
-    await execute("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", legacyInstall, legacyTarball], {
-      cwd: root, env: { ...environment, PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin` },
-      encoding: "utf8", timeout: 120_000, maxBuffer: 4 * 1024 * 1024
-    })
-    const legacyPackage = join(legacyInstall, "node_modules", "@atape", "cli")
-    const legacyManifest = await json(join(legacyPackage, "package.json"))
-    assert.equal(legacyManifest.version, "0.5.3", "The optional compatibility fixture must be the actual published 0.5.3 CLI")
-    assert.equal(legacyManifest.atapeRuntime?.loginStartupProtocol, undefined, "The optional fixture already supports login startup")
-    await cp(legacyPackage, bootstrapPackage, { recursive: true, force: true })
-  }
   const bootstrapHash = createHash("sha256").update(await readFile(bootstrap)).digest("hex")
   const selectedPackage = join(home, "releases", manifest.version, "node_modules", "@atape", "cli")
   const selectedEntry = join(selectedPackage, "dist", "atape.js")
@@ -148,13 +137,10 @@ syncBuiltinESMExports();\n`)
     const traceStatement = `import { appendFileSync as loginFixtureTrace } from "node:fs";\nloginFixtureTrace(${JSON.stringify(runtimeTrace)}, JSON.stringify({ entry: process.argv[1], pid: process.pid, args: process.argv.slice(2) }) + "\\n");\n`
     await writeFile(selectedEntry, selectedSource.replace(/^(#![^\n]*\n)?/, match => `${match}${traceStatement}`))
     await writeFile(join(home, "releases", "current.json"), JSON.stringify({
-      protocol: "atape.runtime.v1", stateContract: "atape.client.v3-capture.v1", version: manifest.version,
+      protocol: manifest.atapeRuntime.protocol, stateContract: manifest.atapeRuntime.stateContract, version: manifest.version,
       bootstrapEntry: await realpath(bootstrap), bootstrapIdentity: bootstrapHash, adapters: []
     }))
   }
-  // An existing published bootstrap cannot parse __login-start. Registration
-  // must use the selected new bundle's stable launcher without replacing npm.
-  if (legacyTarball) await selectInstalledRuntime()
   const requests = []
   const server = createServer(async (request, response) => {
     for await (const _ of request) { /* drain the bounded local request */ }
@@ -273,7 +259,7 @@ syncBuiltinESMExports();\n`)
 
     // A managed selection is a real copied installed bundle, with a disposable
     // trace statement to prove which runtime admitted login and collection.
-    if (!legacyTarball) await selectInstalledRuntime()
+    await selectInstalledRuntime()
     await login(metadata.token)
     await waitFor("login to resume the selected installed Collector", async () => {
       if (!(await exists(processFile))) return false
@@ -322,53 +308,17 @@ syncBuiltinESMExports();\n`)
     assert.deepEqual(await json(desiredFile), { version: 1, wanted: false })
     await login((await json(metadataFile)).token)
     assert.equal(await exists(processFile), false, "Login revived explicitly stopped collection")
-    if (legacyTarball) {
-      const legacyStop = fileURLToPath(new URL("verify-legacy-stop.py", import.meta.url))
-      const stopFromLegacyUI = async entry => {
-        await mkdir(join(home, "cache"), { recursive: true })
-        await writeFile(join(home, "cache", "cli-update.json"), JSON.stringify({ checkedAt: Date.now(), version: "0.5.3" }))
-        await execute("python3", [legacyStop, entry], {
-          // Retain the actual old UI while it controls the currently selected
-          // new Collector, as an already-open pre-update console would do.
-          cwd: root, env: { ...environment, ATAPE_RUNTIME_DIRECT: "1" }, encoding: "utf8", timeout: 60_000, maxBuffer: 4 * 1024 * 1024
-        })
-      }
-      const currentStarted = await fixture("start")
-      collectorPid = currentStarted.pid
-      await stopFromLegacyUI(bootstrap)
-      await waitFor("legacy Stop of the selected current Collector", () => !processExists(collectorPid))
-      assert.equal(await exists(processFile), false)
-      assert.equal((await json(desiredFile)).wanted, true, "The legacy UI unexpectedly implemented new durable Stop")
-      await login((await json(metadataFile)).token)
-      assert.equal(await exists(processFile), false, "Login revived a current Collector stopped by an older open UI")
-
-      // Exercise the actual older TUI's Stop, which predates durable desired
-      // state. Rollback must keep the new coordinator inert rather than revive
-      // that stopped Collector from the newer sidecar's stale wanted=true.
-      await cp(join(root, "legacy-install", "node_modules", "@atape", "cli"), selectedPackage, { recursive: true, force: true })
-      assert.equal((await fixture("inspect")).state, "unsupported")
-      const legacyStarted = await fixture("start")
-      collectorPid = legacyStarted.pid
-      await stopFromLegacyUI(selectedEntry)
-      await waitFor("the published legacy TUI Stop", () => !processExists(collectorPid))
-      assert.equal(await exists(processFile), false)
-      assert.equal((await json(desiredFile)).wanted, true, "The legacy fixture did not exercise pre-intent Stop behavior")
-      await login((await json(metadataFile)).token)
-      assert.equal(await exists(processFile), false, "Rollback login revived collection stopped by the legacy TUI")
-    }
     assert.equal(await exists(browserTrace), false, "Headless login invoked a browser/npm/native manager")
     assert.equal(requests.some(request => /auth\/cli\/device-grants|auth\/cli\/token/.test(request)), false, "Login requested interactive authorization")
     assert.equal(createHash("sha256").update(await readFile(bootstrap)).digest("hex"), bootstrapHash, "Login modified npm's bootstrap")
     await writeFile(join(root, "login-startup-acceptance.json"), `${JSON.stringify({
-      version: manifest.version, platform: process.platform, nativeCommands: "controlled", headlessEntry: true,
+      version: manifest.version, stateContract: manifest.atapeRuntime.stateContract, platform: process.platform, nativeCommands: "controlled", headlessEntry: true,
       nativeDescriptorEnvironment: true, restoredPrivateContext: true, sourceAdmissionPreserved: true,
       defaultOn: true, repeatLoginSingleCollector: true, detachedCollectorProcessGroup: true,
       disabledQueuedLoginInert: true, durableStop: true, selectedRuntime: true, preservedSchedule: true,
-      ...(legacyTarball ? { legacyPublishedBootstrap: { version: "0.5.3", sha256: createHash("sha256").update(await readFile(legacyTarball)).digest("hex") },
-        legacyTuiStopCurrentCollector: true, legacyTuiStopAfterRollback: true } : {}),
       realLoginEventVerified: false, linuxCollectorCgroupVerified: false
     }, null, 2)}\n`)
-    process.stdout.write(`Verified installed headless login, default-on preference, repeat ownership, durable Stop, disabled queued entries, selected runtime and preserved schedule using controlled native commands${legacyTarball ? "; retained published 0.5.3 npm bootstrap compatibility and real legacy TUI Stop against current and rolled-back Collectors" : ""}.\n`)
+    process.stdout.write("Verified installed v2 headless login, default-on preference, repeat ownership, durable Stop, disabled queued entries, selected runtime and preserved schedule using controlled native commands.\n")
   } finally {
     await fixture("stop").catch(() => undefined)
     const lastRecord = await json(processFile).catch(() => undefined)
