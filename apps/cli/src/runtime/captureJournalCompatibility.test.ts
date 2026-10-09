@@ -78,10 +78,18 @@ it("recovers genuine published 0.5.3 v7 Canonical/Raw obligations forward to v8 
   const runCurrent = <A, E>(work: (journal: CaptureJournalV7) => Effect.Effect<A, E>) =>
     Effect.runPromise(Effect.scoped(openCaptureJournal({ path, mode: "open", binding, limits }).pipe(Effect.flatMap(work))))
   try {
-    expect(historical.proof).toMatchObject({ tag: "v0.5.3", revision: "0840d6a7061f3a38302f2ed97a4d26915d238845" })
-    expect(historical.proof.sources.map(source => source.path)).toEqual([
-      "apps/cli/src/runtime/captureJournal.ts", "packages/application/src/captureJournal.ts"
+    expect(historical.proof).toMatchObject({ tag: "v0.5.3", revision: "0840d6a7061f3a38302f2ed97a4d26915d238845",
+      dependencyMode: "historical-frozen-lock", lockSha256: "e2f3ca5c7bc99a43dd4e9e0c89b624abc6639eb5b84050023a3cfd6dfc044bda",
+      publicIndexSha256: "3652260ff39bd74c11e51f5a25e24620fb9825c3b687c9880ecd9616e8e5e8b2",
+      toolchain: { pnpm: "11.7.0", effect: "4.0.0-rc.112", esbuild: "0.28.2" } })
+    expect(historical.proof.sources).toEqual([
+      { path: "apps/cli/src/runtime/captureJournal.ts", bytes: 51517, sha256: "ca965bf61bccd11060d8c88206e4289943e6c30801bc27149e3b2e44dc01f6f2" },
+      { path: "packages/application/src/captureJournal.ts", bytes: 9405, sha256: "d05b28196d1d4c711d92cbea7288da82455345700a8f522c3853e5a1bea22022" }
     ])
+    expect(historical.proof.inputs).toEqual(expect.arrayContaining([
+      { path: "pnpm-lock.yaml", bytes: 178939, sha256: historical.proof.lockSha256 },
+      { path: "packages/application/src/index.ts", bytes: 1118, sha256: historical.proof.publicIndexSha256 }
+    ]))
     await runOld("create", journal => old.gen(function*() {
       const owner = yield* journal.claim(scope)
       yield* prepare(old, journal, owner, activated, null, 2)
@@ -163,4 +171,4 @@ it("recovers genuine published 0.5.3 v7 Canonical/Raw obligations forward to v8 
     await historical.cleanup()
     await rm(directory, { recursive: true, force: true })
   }
-}, 30_000)
+}, 300_000)

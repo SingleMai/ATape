@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { requiredTest, requiredLegacyTest, requiredTests, verifyClaudeResult } from "./verify-claude-contract.mjs"
+import "./freeze-claude-legacy.test.mjs"
 
 test("Claude acceptance requires its actual non-skipped PostgreSQL subtest", () => {
   const event = { Test: requiredTest, Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi" }

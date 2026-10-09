@@ -10,11 +10,11 @@ import { preparePublicationCanonical, prepareRawObservation } from "./publicatio
 import { validateRawPreparationLimits } from "./rawPreparation.ts"
 import { canonicalSourceProjection, sourceFingerprint } from "./canonicalSourceProjection.ts"
 import { currentSourceMetadata, decodeSourceMetadata } from "./sourceMetadata.ts"
+import { redactionTransformVersion } from "./collectorRedactionPolicy.ts"
 
 const count = (maximum: number, minimum = 1) => Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
 const identity = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500), Schema.isPattern(/^[^\u0000]+$/))
 const Protocol = "atape.source-collector.v1"
-const Transform = "atape.host-redaction.v1"
 export const SourceCollectionLimits = Schema.Struct({
   source: SourceCaptureLimits, projection: SourceProjectionLimits,
   sourceV2: Schema.optionalKey(SourceCaptureLimits), projectionV2: Schema.optionalKey(SourceProjectionLimits),
@@ -51,7 +51,7 @@ type SourceHost = Extract<HostedAdapter, { sourceCapture: unknown }>
  * attribute and compare fresh sources before creating another durable capture. */
 export class SourceCaptureCollector extends Context.Service<SourceCaptureCollector, {
   collect(project: LocalProject, adapter: AdapterInstallation, host: SourceHost, snapshot: CollectorStateSnapshot):
-    Effect.Effect<AdapterCollectionReport, AdapterRuntimeError | CollectorStateError>
+    Effect.Effect<AdapterCollectionReport, AdapterRuntimeError | CollectorStateError, SecretRedactor>
 }>()("atape/application/SourceCaptureCollector") {}
 
 const configuredFailure = (message: string) => new CollectorConfigurationError({ reason: "limits", message })
@@ -67,8 +67,10 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
   if (limits.cycleMs < 3 * limits.recovery.sourceMs || limits.cycleMs < 2 * limits.sourceWorkMs)
     return yield* configuredFailure("The cycle deadline must leave room to advance beyond a timed-out source.")
   const journals = yield* CaptureJournals, states = yield* CollectorStateStore
-  const publication = yield* PublicationTransport, raw = yield* RawPublicationTransport, redactor = yield* SecretRedactor
+  const publication = yield* PublicationTransport, raw = yield* RawPublicationTransport
   return SourceCaptureCollector.of({ collect: (project, adapter, host, snapshot) => Effect.scoped(Effect.gen(function*() {
+    const redactor = yield* SecretRedactor
+    const transform = redactionTransformVersion(redactor.policyId)
     // SourceCapture v2 can migrate both the account journal and a legacy cursor.
     // Check the remote prerequisite before either local irreversible transition.
     if (host.sourceCapture.protocolVersion === SourceCaptureVersion2) {
@@ -103,9 +105,12 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
     const sourceDiagnostics = new Map<string, { readonly failures: ReadonlyArray<AdapterSourceFailure>; readonly truncated: boolean }>()
     let truncated = false
     const diagnostic = (source: string, reason: AdapterSourceFailure["reason"]) => {
-      if (failures.has(source)) return
+      const masked = redactor.redactDiagnostic?.(source) ?? redactor.redact(source)
+      redactions += masked.replacements
+      const safeSource = masked.value.slice(0, 4096)
+      if (failures.has(safeSource)) return
       if (failures.size === 32) { truncated = true; return }
-      failures.set(source, { source, reason })
+      failures.set(safeSource, { source: safeSource, reason })
     }
     const commit = () => Effect.gen(function*() {
       // Recovery of already frozen source work precedes migration judgment and
@@ -114,7 +119,8 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
       yield* states.commit({ instanceOrigin: project.instanceOrigin, userId: project.userId, projectId: project.id, adapterId: adapter.adapterId,
         expectedRevision: revision, checkpoint: { instanceOrigin: project.instanceOrigin, userId: project.userId, projectId: project.id,
           projectCreatedAt: project.createdAt, adapterId: adapter.adapterId, adapterVersion: adapter.version, revision: revision + 1,
-          cursor: JSON.stringify(cursor), rawObjects: [], canonicalPublished, updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString() } })
+          cursor: JSON.stringify(cursor), rawObjects: [], canonicalPublished,
+          ...(redactor.policyId === undefined ? {} : { policyId: redactor.policyId }), updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString() } })
       revision++
     })
     const recover = (owner: CaptureOwner, capture: CaptureSummary) => Effect.gen(function*() {
@@ -153,7 +159,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         if (error._tag === "CaptureJournalError" || error._tag === "CollectorStateError" || error.reason === "unauthenticated") return Effect.fail(error)
         diagnostic(source, error instanceof AdapterRuntimeError && error.sourceFailureReason !== undefined ? error.sourceFailureReason :
           error.reason === "capacity" || error.reason === "limit" ? "limit" : error.reason === "binding" ? "attribution" :
-          error.reason === "unsupported" ? "unsupported" :
+          error.reason === "unsupported" || error.reason === "policy" ? "unsupported" :
           error.reason === "invalid" || error.reason === "contract" ? "format" : "io")
         return Effect.succeed(undefined)
       }))
@@ -258,7 +264,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         if (adopting) yield* Effect.scoped(Effect.gen(function*() {
           const view = yield* open(false)
           const projection = yield* canonicalSourceProjection(owner, view, { adapterVersion: adapter.version, observedAt,
-            transformVersion: Transform, captureId: "legacy-adoption-validation" })
+            transformVersion: transform, captureId: "legacy-adoption-validation" })
           for (;;) {
             const page = yield* view.read()
             yield* projection.page(page)
@@ -267,7 +273,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
           }
           yield* projection.finish()
         }))
-        const comparison = yield* comparePublicationSource(owner, { adapterVersion: adapter.version, observedAt, transformVersion: Transform,
+        const comparison = yield* comparePublicationSource(owner, { adapterVersion: adapter.version, observedAt, transformVersion: transform,
           limits: limits.comparison, source: open(), ...(policy.enabled ? { raw: { authority: policy.authority, limits: limits.raw } } : {}) })
         if ("sourceFailures" in comparison) {
           sourceDiagnostics.set(source.sourceId, { failures: comparison.sourceFailures ?? [], truncated: comparison.sourceFailuresTruncated ?? false })
@@ -275,7 +281,7 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         if (comparison.canonical === "unchanged" && comparison.raw !== "required") return
         const id = yield* Effect.sync(() => globalThis.crypto.randomUUID())
         if (comparison.canonical === "changed") {
-          const begun = yield* beginPublicationCapture(owner, { captureId: id, baseHead: baseline?.receipt.head ?? "", transformVersion: Transform,
+          const begun = yield* beginPublicationCapture(owner, { captureId: id, baseHead: baseline?.receipt.head ?? "", transformVersion: transform,
             rawEnabled: policy.enabled, trackRecords: true, ...(adopting ? { adoptLegacy: true } : {}),
             ...(policy.enabled ? { rawAuthority: policy.authority } : {}) })
           // Adoption persists the authenticated baseline before reserve. The
@@ -331,7 +337,14 @@ export const makeSourceCaptureCollectorLayer = (configuration: unknown) => Layer
         durationMs: (yield* Clock.currentTimeMillis) - started } satisfies AdapterCollectionReport
     })
     return yield* work.pipe(Effect.provideService(CaptureJournal, journal), Effect.provideService(PublicationTransport, publication),
-      Effect.provideService(RawPublicationTransport, raw), Effect.provideService(SecretRedactor, { redact: value => {
+      Effect.provideService(RawPublicationTransport, raw), Effect.provideService(SecretRedactor, { ...redactor,
+        ...(redactor.policy === undefined ? {} : { policy: { ...redactor.policy,
+          prepareCanonical: observation => redactor.policy!.prepareCanonical(observation).pipe(Effect.tap(result => Effect.sync(() => { redactions += result.replacements }))),
+          prepareRaw: value => { const result = redactor.policy!.prepareRaw(value); if ("row" in result) redactions += result.replacements; return result }
+        } }),
+        ...(redactor.redactDiagnostic === undefined ? {} : { redactDiagnostic: value => {
+          const result = redactor.redactDiagnostic!(value); redactions += result.replacements; return result
+        } }), redact: value => {
         const result = redactor.redact(value); redactions += result.replacements; return result
       } }))
   })).pipe(Effect.timeoutOrElse({ duration: limits.cycleMs, orElse: () => Effect.fail(new AdapterRuntimeError({ adapterId: adapter.adapterId,

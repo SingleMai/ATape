@@ -5,6 +5,7 @@ import type {
 } from "@atape/domain"
 import { AdapterObservation, AdapterProtocolVersion, AdapterSourceFailure } from "@atape/domain"
 import { Context, Effect, Schema, Scope } from "effect"
+import type { CompiledRedactionPolicy } from "./redaction.ts"
 import type { PublicationDraftView } from "./publicationPreparation.ts"
 
 export class CollectorConfigurationError extends Schema.TaggedError<CollectorConfigurationError>()("CollectorConfigurationError", {
@@ -149,6 +150,9 @@ export type RedactedText = {
 }
 
 export type SecretRedactorService = {
+  readonly policyId?: string
+  readonly policy?: CompiledRedactionPolicy
+  readonly redactDiagnostic?: (value: string) => RedactedText
   redact(value: string): RedactedText
 }
 
@@ -188,4 +192,4 @@ export type CollectionCycleReport = {
   readonly failures: ReadonlyArray<AdapterCollectionFailure>
 }
 
-export type CollectionJobError = CollectorStateError | AdapterRuntimeError | CollectionContractError | CollectionTransportError
+export type CollectionJobError = CollectorConfigurationError | CollectorStateError | AdapterRuntimeError | CollectionContractError | CollectionTransportError

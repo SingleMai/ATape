@@ -1,7 +1,8 @@
 import { Effect, Schema } from "effect"
 import { RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority, type AdapterRawReference, type RawAuthority } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
-import { SecretRedactor, type SecretRedactorService } from "./collectorContracts.ts"
+import { SecretRedactor } from "./collectorContracts.ts"
+import { prepareRawRedaction } from "./redaction.ts"
 import { captureRawAuthority } from "./publicationDelivery.ts"
 
 export type RawPreparationLimits = {
@@ -28,89 +29,13 @@ export const validateRawPreparationLimits = (limits: RawPreparationLimits) => Ef
     if (!Number.isSafeInteger(value) || value < 1 || value > maximum) return yield* fail("Raw preparation needs explicit bounded admission.")
   if (limits.targetBytes < limits.wireBytes) return yield* fail("Raw target admission is smaller than its wire unit admission.")
 })
-class Gap extends Error {
-  readonly reason: "limit" | "redaction"
-  constructor(reason: "limit" | "redaction") { super("Raw row cannot be safely archived."); this.reason = reason }
-}
-
-/** Mask actual JSON values, including nested JSON TEXT. Strings retain their native
- * encoding when no masking occurs. Only the returned masked value may be persisted. */
-const maskRow = (redactor: SecretRedactorService, input: unknown): { row: unknown } | { gap: "limit" | "redaction" } => {
-  let nodes = 0, bytes = 0
-  const charge = (text: string) => {
-    bytes += new TextEncoder().encode(text).byteLength
-    if (bytes > 32 * 1024 * 1024) throw new Gap("limit")
-  }
-  // JSON.parse discards earlier duplicate members before a reviver runs. Scan
-  // valid JSON tokens first, comparing decoded keys, so no hidden earlier value
-  // can survive in an unchanged native JSON TEXT string.
-  const checkMembers = (text: string, depth: number) => {
-    const stack: Array<{ keys: Set<string> | null; key: boolean }> = []
-    const tokens = /"(?:\\[\s\S]|[^"\\])*"|[{}\[\],:]|[^\s{}\[\],:]+/g
-    for (const token of text.matchAll(tokens)) {
-      if (++nodes > 100_000) throw new Gap("limit")
-      const value = token[0], current = stack[stack.length - 1]
-      if (value === "{" || value === "[") {
-        if (stack.length + depth >= 32) throw new Gap("limit")
-        stack.push({ keys: value === "{" ? new Set() : null, key: true })
-      } else if (value === "}" || value === "]") stack.pop()
-      else if (value === "," && current) current.key = true
-      else if (value.startsWith('"') && current?.keys && current.key) {
-        const key = JSON.parse(value) as string
-        if (current.keys.has(key)) throw new Gap("redaction")
-        current.keys.add(key); current.key = false
-      }
-    }
-  }
-  const walk = (value: unknown, depth: number): { value: unknown; changed: boolean } => {
-    if (++nodes > 100_000 || depth > 32) throw new Gap("limit")
-    if (value === null || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value)) return { value, changed: false }
-    if (typeof value === "string") {
-      charge(value)
-      let text = value, changed = false
-      if (/^[\s]*[\[{"]/.test(text)) {
-        let parsed: unknown, valid = false
-        try { parsed = JSON.parse(text); valid = true } catch { /* ordinary source text */ }
-        if (valid) {
-          checkMembers(text, depth)
-          const nested = walk(parsed, depth + 1)
-          if (nested.changed) { text = JSON.stringify(nested.value); changed = true }
-        }
-      }
-      const masked = redactor.redact(text)
-      return { value: masked.value, changed: changed || masked.value !== value }
-    }
-    if (typeof value !== "object" || value === null || !Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
-      throw new Gap("redaction")
-    const result: Record<string, unknown> | unknown[] = Array.isArray(value) ? [] : Object.create(null)
-    let changed = false
-    for (const [key, child] of Object.entries(value)) {
-      charge(key)
-      const maskedKey = Array.isArray(value) ? key : redactor.redact(key).value
-      if (Object.hasOwn(result, maskedKey)) throw new Gap("redaction")
-      const nested = walk(child, depth + 1)
-      Object.defineProperty(result, maskedKey, { value: nested.value, enumerable: true, configurable: true, writable: true })
-      changed ||= maskedKey !== key || nested.changed
-    }
-    // The shared policy also recognizes credentials by their surrounding key.
-    const serialized = JSON.stringify(result), masked = redactor.redact(serialized).value
-    if (serialized !== masked) {
-      try { return { value: JSON.parse(masked), changed: true } } catch { throw new Gap("redaction") }
-    }
-    return { value: result, changed }
-  }
-  try {
-    if (input === null || typeof input !== "object" || Array.isArray(input)) throw new Gap("redaction")
-    return { row: walk(input, 0).value }
-  } catch (cause) { return { gap: cause instanceof Gap ? cause.reason : "redaction" } }
-}
-
 /** Shared masked Raw identity for preparation and read-only comparison. */
 export const rawSourceRecord = (recordKey: string, raw: unknown) => Effect.gen(function*() {
   if (typeof recordKey !== "string" || !recordKey || recordKey.includes("\0") || new TextEncoder().encode(recordKey).byteLength > 500 || raw === undefined)
     return yield* fail("Raw-enabled source omitted a bounded record identity or archive row.")
   const redactor = yield* SecretRedactor
-  const masked = maskRow(redactor, raw)
+  const result = prepareRawRedaction(redactor, raw)
+  const masked = "gap" in result ? { gap: result.gap } : { row: result.row }
   return { key: yield* hash(recordKey), masked, fingerprint: yield* hash(masked) }
 })
 export const rawProjectionProfile = (profile: string) => `${Version}:${profile}`

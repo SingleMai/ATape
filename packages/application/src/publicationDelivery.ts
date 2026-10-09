@@ -7,6 +7,7 @@ import {
 } from "@atape/domain"
 import { RawPublicationError, RawPublicationTransport } from "./rawPublicationTransport.ts"
 import { CaptureJournal, type CaptureClaim, type CaptureOwner, type CaptureSummary, type CaptureRecordManifest } from "./captureJournal.ts"
+import { admitRedactionTransform, currentRedactionTransform } from "./collectorRedactionPolicy.ts"
 
 export class PublicationError extends Schema.TaggedError<PublicationError>()("PublicationError", {
   reason: Schema.Literals(["invalid", "binding", "invalid_response", "unauthenticated", "network", "unknown", "expired", "superseded", "conflict", "capacity", "unavailable"]),
@@ -84,6 +85,7 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   readonly captureId: string; readonly baseHead: string; readonly transformVersion: string; readonly rawEnabled: boolean; readonly rawAuthority?: RawAuthority; readonly trackRecords?: boolean; readonly adoptLegacy?: boolean
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal, remote = yield* PublicationTransport
+  yield* admitRedactionTransform(input.transformVersion)
   // Check the owner before consuming remote reservation quota.
   yield* journal.pending(owner, undefined, 1)
   const binding = journal.binding
@@ -115,6 +117,7 @@ export const publicationPreparationContext = (owner: CaptureOwner, id: string) =
   const journal = yield* CaptureJournal
   const { capture, units } = yield* journal.inspect(owner, id, { kind: "canonical", limit: 1 })
   const intent = yield* boundIntent(journal, owner, capture)
+  yield* admitRedactionTransform(intent.begin.transformVersion)
   if (capture.state !== "preparing" || !capture.trackRecords) return yield* failure("conflict", "Source preparation requires a tracked unsealed capture.")
   if (units.length > 0 || (yield* journal.records(owner, id, { kind: "session", limit: 1 })).length > 0)
     return yield* failure("conflict", "An interrupted source preparation must be abandoned before opening a fresh source.")
@@ -215,6 +218,8 @@ export const deliverPublicationCapture = (owner: CaptureOwner, id: string, maxOp
   const binding = journal.binding, attemptId = intent.begin.reservationId
   let operations = 1
   let attempt = yield* checkAttempt(intent, yield* remote.status(binding, attemptId), seal)
+  const currentTransform = yield* currentRedactionTransform
+  const policyChanged = currentTransform !== undefined && intent.begin.transformVersion !== currentTransform
   while (true) {
     if (attempt.activation !== null) {
       const receipt = yield* activateLocally(attempt.activation)
@@ -224,7 +229,17 @@ export const deliverPublicationCapture = (owner: CaptureOwner, id: string, maxOp
       yield* journal.settle(owner, id, { _tag: "Rejected", receiptJson: JSON.stringify(attempt) })
       return { state: "abandoned", operations } as PublicationDeliveryResult
     }
+    if (currentTransform === undefined) yield* admitRedactionTransform(intent.begin.transformVersion)
     if (operations >= maxOperations) return { state: "pending", operations } as PublicationDeliveryResult
+    if (policyChanged) {
+      // A timeout or unknown status is never a rejection. No old-policy part or
+      // activation request is allowed while obtaining the terminal remote proof.
+      operations++
+      attempt = yield* checkAttempt(intent, yield* remote.reject(binding, attemptId), seal)
+      if (attempt.activation === null && attempt.state !== "rejected")
+        return yield* failure("invalid_response", "Policy reconciliation did not prove rejection or an actual activation.")
+      continue
+    }
     if (attempt.state === "expired" || attempt.state === "superseded") {
       operations++
       attempt = yield* checkAttempt(intent, yield* remote.reject(binding, attemptId), seal)
@@ -297,6 +312,7 @@ export const rawObservationPreparationContext = (owner: CaptureOwner, id: string
   const journal = yield* CaptureJournal
   const { capture, units } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
   const intent = yield* boundObservation(journal, owner, capture)
+  yield* admitRedactionTransform(intent.canonical.intent.begin.transformVersion)
   if (capture.state !== "preparing" || !capture.trackRecords || units.length > 0 ||
     (yield* journal.records(owner, id, { kind: "raw", limit: 1 })).length > 0)
     return yield* failure("conflict", "Raw source preparation requires a fresh tracked observation; interrupted preparation must be abandoned.")
@@ -338,6 +354,7 @@ export const beginRawObservation = (owner: CaptureClaim, input: {
   const intent = yield* boundIntent(journal, owner, capture)
   if (capture.seal === null || capture.activationReceipt === null || owner.checkpoint === null)
     return yield* failure("invalid", "A fresh Raw observation requires existing Canonical activation and coverage.")
+  yield* admitRedactionTransform(intent.begin.transformVersion)
   const seal = yield* parse(Seal, capture.seal.manifestJson)
   const saved = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
   const policy = yield* raw.policy(journal.binding, owner.scope.projectId)
@@ -398,7 +415,7 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
     return yield* rawFailure("invalid", "Raw recovery needs an explicit operation budget between 3 and 64.")
   const journal = yield* CaptureJournal, remote = yield* RawPublicationTransport
   const { capture } = yield* journal.inspect(owner, id, { kind: "raw", limit: 1 })
-  let activation: PublicationActivation, rawAuthority: RawAuthority | undefined
+  let activation: PublicationActivation, rawAuthority: RawAuthority | undefined, transformVersion: string
   if (capture.purpose === "raw-observation") {
     const observation = yield* boundObservation(journal, owner, capture)
     if (capture.state === "preparing") {
@@ -412,6 +429,7 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
       return yield* rawFailure("invalid", "Raw observation seal changed its unit set or Canonical coverage.")
     activation = observation.canonical.receipt
     rawAuthority = observation.rawAuthority
+    transformVersion = observation.canonical.intent.begin.transformVersion
     // This settlement records the original proof; the Raw purpose prevents any
     // Canonical checkpoint advancement, even after process restart.
     yield* journal.settle(owner, id, { _tag: "Activated", receiptJson: JSON.stringify(activation) })
@@ -422,6 +440,7 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
     const seal = yield* parse(Seal, capture.seal.manifestJson)
     activation = yield* checkActivation(intent, seal, yield* parse(PublicationActivation, capture.activationReceipt))
     rawAuthority = intent.rawAuthority
+    transformVersion = intent.begin.transformVersion
   }
   if (capture.state === "completed") return { state: "completed", operations: 0 } satisfies RawPublicationDeliveryResult
   if (!capture.rawEnabled || rawAuthority === undefined)
@@ -430,6 +449,9 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
   let operations = 0, cancelReason = capture.rawCancelReason
   const startCancellation = (reason: string) => journal.settle(owner, id, { _tag: "RawCancellationStarted", reason }).pipe(
     Effect.tap(() => Effect.sync(() => { cancelReason = reason })))
+  const currentTransform = yield* currentRedactionTransform
+  if (cancelReason === null && currentTransform !== undefined && transformVersion !== currentTransform)
+    yield* startCancellation("Redaction policy changed")
   if (cancelReason === null) {
     operations++
     const policy = yield* remote.policy(binding, owner.scope.projectId)
@@ -474,6 +496,7 @@ export const deliverPublicationRaw = (owner: CaptureOwner, id: string, maxOperat
       yield* journal.settle(owner, id, { _tag: "RawUnitCanceled", ordinal: unit.ordinal })
       continue
     }
+    yield* admitRedactionTransform(transformVersion)
     if (operations >= maxOperations) return { state: "pending", operations } satisfies RawPublicationDeliveryResult
     operations++
     const appended = yield* remote.append(binding, bytes).pipe(Effect.catchIf(

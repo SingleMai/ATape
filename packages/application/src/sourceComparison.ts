@@ -4,7 +4,8 @@ import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./capt
 import { canonicalSourceProjection, validateCanonicalSourceMetadata, sourceFingerprint, type PublicationDraftView } from "./canonicalSourceProjection.ts"
 import { captureRawAuthority, sourceComparisonContext } from "./publicationDelivery.ts"
 import { rawSourceRecord, rawProjectionProfile, rawAdmissionFingerprint, validateRawPreparationLimits, type RawPreparationLimits } from "./rawPreparation.ts"
-import { decodeSourceMetadata } from "./sourceMetadata.ts"
+import { decodeSourceMetadata, maskSourceFailures } from "./sourceMetadata.ts"
+import { admitRedactionTransform } from "./collectorRedactionPolicy.ts"
 
 export class SourceComparisonError extends Schema.TaggedError<SourceComparisonError>()("SourceComparisonError", {
   reason: Schema.Literals(["invalid", "capacity", "deadline", "conflict"]), message: Schema.String
@@ -29,6 +30,7 @@ export const comparePublicationSource = <E, R>(owner: CaptureOwner, input: {
   readonly source: Effect.Effect<PublicationDraftView<E, R>, E, R | Scope.Scope>
 }) => Effect.gen(function*() {
   yield* validateCanonicalSourceMetadata(owner, input.adapterVersion)
+  yield* admitRedactionTransform(input.transformVersion)
   if (!Number.isSafeInteger(input.limits.records) || input.limits.records < 1 || input.limits.records > 1_000_000 ||
     !Number.isSafeInteger(input.limits.durationMs) || input.limits.durationMs < 1 || input.limits.durationMs > 300_000)
     return yield* fail("invalid", "Source comparison requires explicit record and duration admission.")
@@ -43,12 +45,12 @@ export const comparePublicationSource = <E, R>(owner: CaptureOwner, input: {
     if (baseline === null) return changed
     const view = yield* input.source
     const prior = view.sourceCheckpoint === undefined ? { threads: [] } : yield* decodeSourceMetadata(yield* journal.sourceMetadata(owner, baseline.capture.id))
-    const diagnostics = view.sourceCheckpoint === undefined ? {} : { sourceFailures: view.sourceFailures ?? [], sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }
+    const diagnostics = view.sourceCheckpoint === undefined ? {} : { sourceFailures: yield* maskSourceFailures(view.sourceFailures ?? []), sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }
     const changedView = { ...changed, ...diagnostics }
     // The complete physical prefix is acknowledged only by a sealed/activated
     // target. Even Raw-only controls require durable source authentication.
     if (view.sourceCheckpoint !== undefined && prior.sourceCheckpoint !== view.sourceCheckpoint) return changedView
-    if (view.sourceCheckpoint !== undefined && (JSON.stringify(prior.sourceFailures ?? []) !== JSON.stringify(view.sourceFailures ?? []) ||
+    if (view.sourceCheckpoint !== undefined && (JSON.stringify(prior.sourceFailures ?? []) !== JSON.stringify(diagnostics.sourceFailures ?? []) ||
       (prior.sourceFailuresTruncated ?? false) !== (view.sourceFailuresTruncated ?? false))) return changedView
     const projection = yield* canonicalSourceProjection(owner, view, { ...input, captureId: "source-comparison" })
     const expected = baseline.capture.seal!.records!.canonical!

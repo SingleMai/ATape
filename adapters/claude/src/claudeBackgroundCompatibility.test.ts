@@ -17,7 +17,7 @@ const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 
 const childId = `claude-agent:${proof.agentId}`, notificationId = `${proof.notification.uuid}:0`, launchId = `${proof.call.receiptUuid}:0`
 let historical: Awaited<ReturnType<typeof historicalSourceCaptureFactory>>
 let directory: string, file: string, childFile: string, context: AdapterOpenContext & { signal: AbortSignal }
-beforeAll(async () => { historical = await historicalSourceCaptureFactory() }, 120000)
+beforeAll(async () => { historical = await historicalSourceCaptureFactory() }, 300000)
 afterAll(async () => { await historical?.cleanup() })
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "atape-claude-background-upgrade-")); file = join(directory, `${proof.sessionId}.jsonl`)
@@ -54,6 +54,19 @@ const raw = (frames: SourceCaptureFrame[], threadId: string) => frames.flatMap(f
 }).join("")
 const prior = (value: Awaited<ReturnType<typeof capture>>): Partial<SourceOpenRequestV2> => ({
   priorCheckpoint: value.header.sourceCheckpoint, priorThreads: value.header.threads
+})
+
+it("uses the genuine a525 source and independently installed historical dependency lock", () => {
+  expect(historical.proof.revision).toBe("a525090395ebddc7e05a0b97ab87cb91e655a11a")
+  expect(historical.proof.dependencyMode).toBe("historical-frozen-lock")
+  expect(historical.proof.lockSha256).toBe("e2f3ca5c7bc99a43dd4e9e0c89b624abc6639eb5b84050023a3cfd6dfc044bda")
+  expect(historical.proof.sources.find(source => source.path === "pnpm-lock.yaml")?.sha256).toBe(historical.proof.lockSha256)
+  expect(historical.proof.sources.map(source => source.path)).toEqual(expect.arrayContaining([
+    "package.json", "pnpm-workspace.yaml", "adapters/claude/package.json", "adapters/claude/src/index.ts",
+    "adapters/claude/src/claudeArchive.ts", "packages/domain/package.json", "packages/domain/src/index.ts"
+  ]))
+  expect(historical.proof.toolchain).toMatchObject({ pnpm: "11.7.0", esbuild: "0.28.2", effect: "4.0.0-rc.112" })
+  expect(historical.proof.bundle.sha256).toMatch(/^[a-f0-9]{64}$/)
 })
 
 it.each([false, true])("upgrades genuine a525 v2 background capture on identical bytes (old Raw %s)", async oldRaw => {

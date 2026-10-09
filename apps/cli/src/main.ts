@@ -5,7 +5,8 @@ import { kickAutomaticUpdates, reconcileLoginStartup, runAutomaticUpdates, runLo
 import { rm, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { parseCLI } from "./commandInput.ts"
-import { runCommand } from "./commands.ts"
+import { runCommand, writeInformationalCommand, writeRedactionHelp, writeRedactionTestFailure, writeRedactionTestResult } from "./commands.ts"
+import { testLocalRedactionFile } from "./runtime/redactionTest.ts"
 import { defaultNodeClientPaths, makeNodeClientLayer, readClientConfigLocale } from "./runtime/clientLayers.ts"
 import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
 import { initializeCliI18n, resolveCliLocale, t } from "./i18n/index.ts"
@@ -28,6 +29,22 @@ const main = async () => {
     return
   }
 
+  if (command.kind === "redaction-test" || command.kind === "redaction-help") {
+    initializeCliI18n(resolveCliLocale({
+      ...(command.options.lang === undefined ? {} : { flag: command.options.lang }), environment: process.env
+    }))
+    try {
+      const program = command.kind === "redaction-help" ? writeRedactionHelp :
+        testLocalRedactionFile(command.options).pipe(Effect.flatMap(writeRedactionTestResult))
+      await Effect.runPromise(program.pipe(Effect.catch(writeRedactionTestFailure)))
+    } catch {
+      // File/config/parser errors may contain source data or a secret pathname.
+      // The public error deliberately reports neither the input nor the cause.
+      await Effect.runPromise(writeRedactionTestFailure(undefined))
+    }
+    return
+  }
+
   const configLocale = await Effect.runPromise(
     readClientConfigLocale(defaultNodeClientPaths().configFile)
   ).catch(() => undefined)
@@ -36,6 +53,11 @@ const main = async () => {
     environment: process.env,
     ...(configLocale === undefined ? {} : { config: configLocale })
   }))
+
+  if (command.kind === "help" || command.kind === "version") {
+    await Effect.runPromise(writeInformationalCommand(command))
+    return
+  }
 
   if (requestsGuidedExperience(command) && supportsInteractiveExperience()) {
     const paths = defaultNodeClientPaths()

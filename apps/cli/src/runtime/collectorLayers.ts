@@ -1,4 +1,6 @@
-import { makeSecretRedactorLayer, makeSourceCaptureCollectorLayer, defaultSourceCollectionLimits, CollectorConfigurationError, AdapterRuntimeError } from "@atape/application"
+import { makeSecretRedactorLayer, makeSourceCaptureCollectorLayer, defaultSourceCollectionLimits, CollectorConfigurationError, AdapterRuntimeError,
+  CollectorRedactionPolicies, secretRedactorForPolicy } from "@atape/application"
+import { dirname } from "node:path"
 import { Effect, Layer } from "effect"
 import { makeCaptureJournalsLayer } from "./captureBootstrap.ts"
 import { makePublicationTransportLayer } from "./publicationTransport.ts"
@@ -7,12 +9,15 @@ import { makeCollectorStateLayer } from "./collectorState.ts"
 import { makeAdapterRuntimeLayer } from "./adapterHost.ts"
 import { makeCollectorTransportLayer } from "./collectorTransport.ts"
 import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
+import { loadNodeRedactionPolicy } from "./redactionPolicy.ts"
 
 export { makeCollectorStateLayer, withCollectorInstallation } from "./collectorState.ts"
 export { makeAdapterRuntimeLayer } from "./adapterHost.ts"
 export { makeCollectorTransportLayer } from "./collectorTransport.ts"
+export { environmentSecretValues } from "./redactionPolicy.ts"
 
 export type NodeCollectorPaths = {
+  readonly atapeHome?: string
   readonly collectorStateFile: string
   readonly adapterDirectory: string
   readonly collectorProcessFile?: string
@@ -24,7 +29,15 @@ export const makeNodeCollectorLayer = (
 ) => {
   const states = makeCollectorStateLayer(paths.collectorStateFile)
   const journals = makeCaptureJournalsLayer(paths.collectorStateFile)
-  const redactor = makeSecretRedactorLayer(environmentSecretValues(environment))
+  // The compatibility requirement is inert with respect to disk/configuration.
+  // Every production job replaces it with a freshly loaded immutable snapshot.
+  const redactor = makeSecretRedactorLayer()
+  const policies = Layer.succeed(CollectorRedactionPolicies, CollectorRedactionPolicies.of({
+    snapshot: () => loadNodeRedactionPolicy({ mode: "collector", stateFile: paths.collectorStateFile,
+      atapeHome: paths.atapeHome ?? environment.ATAPE_HOME ?? dirname(paths.collectorStateFile), environment }).pipe(
+      Effect.map(secretRedactorForPolicy), Effect.mapError(() => new CollectorConfigurationError({ reason: "limits",
+        message: "The local redaction policy or its private identity is invalid. Fix the configuration or restore the existing redaction key with Collector state." })))
+  }))
   const configured = environment.ATAPE_SOURCE_COLLECTION_LIMITS
   const admission = configured === undefined ? Effect.succeed(defaultSourceCollectionLimits) : Effect.try({
     try: () => {
@@ -42,26 +55,5 @@ export const makeNodeCollectorLayer = (
     },
     catch: () => new AdapterRuntimeError({ reason: "load", adapterId: "host", retryable: true, message: "Collector admission is paused for an ATape update." })
   })
-  return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory, jobAdmission), makeCollectorTransportLayer(), redactor, sources)
-}
-
-export const environmentSecretValues = (environment: NodeJS.ProcessEnv) => {
-  const values = Object.entries(environment)
-    .filter(([name, value]) => value !== undefined && name !== "ATAPE_REDACT_VALUES" &&
-      /(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|DATABASE_URL|DSN)$/i.test(name))
-    .map(([, value]) => value as string)
-  const configured = environment.ATAPE_REDACT_VALUES
-  if (configured) {
-    try {
-      const parsed = JSON.parse(configured) as unknown
-      if (Array.isArray(parsed)) {
-        values.push(...parsed.filter((value): value is string => typeof value === "string"))
-      } else {
-        values.push(configured)
-      }
-    } catch {
-      values.push(...configured.split(",").map((value) => value.trim()).filter(Boolean))
-    }
-  }
-  return values
+  return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory, jobAdmission), makeCollectorTransportLayer(), redactor, policies, sources)
 }

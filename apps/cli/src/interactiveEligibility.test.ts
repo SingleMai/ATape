@@ -7,7 +7,7 @@ describe("interactive entry selection", () => {
     for (const args of [[], ["--no-browser"], ["--lang", "zh-CN"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(true)
     }
-    for (const args of [["--help"], ["--version"], ["__collector-daemon", "--daemon-token", "test-token"]]) {
+    for (const args of [["--help"], ["--version"], ["redaction-test", "file.jsonl"], ["redaction-test", "--help"], ["__collector-daemon", "--daemon-token", "test-token"]]) {
       expect(requestsGuidedExperience(parseCLI(args))).toBe(false)
     }
   })

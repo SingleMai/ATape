@@ -3,7 +3,7 @@ import { Clock, Effect } from "effect"
 import { recordCollectorProgress, withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { ClientConfigStore, inspectClient } from "./clientManagement.ts"
 import { collectAdapter } from "./collectionJob.ts"
-import { CollectorConfigurationError, CollectionTransportError, AdapterRuntimeError, CollectorStateError,
+import { CollectorConfigurationError, CollectionTransportError, AdapterRuntimeError, CollectorStateError, SecretRedactor,
   type AdapterCollectionReport, type AdapterCollectionFailure, type CollectionCycleReport,
   type CollectionJobError } from "./collectorContracts.ts"
 
@@ -115,6 +115,7 @@ const prepareCycle = (options: CollectionCycleOptions): Effect.Effect<
 })
 
 const collectPreparedCycle = (input: PreparedCycle) => Effect.gen(function*() {
+  const redactor = yield* SecretRedactor
   const results = yield* Effect.forEach(input.jobs, ({ project, adapter }) =>
     collectAdapter(project, adapter).pipe(
       Effect.match({
@@ -123,7 +124,7 @@ const collectPreparedCycle = (input: PreparedCycle) => Effect.gen(function*() {
           adapterId: adapter.adapterId,
           reason: collectionFailureReason(error),
           retryable: isRetryable(error),
-          message: error.message
+          message: (redactor.redactDiagnostic?.(error.message) ?? redactor.redact(error.message)).value
         }),
         onSuccess: (report) => report
       })
@@ -138,7 +139,8 @@ const collectPreparedCycle = (input: PreparedCycle) => Effect.gen(function*() {
 })
 
 const isRetryable = (error: CollectionJobError) =>
-  error instanceof CollectionTransportError ? error.retryable
+  error instanceof CollectorConfigurationError ? false
+    : error instanceof CollectionTransportError ? error.retryable
     : error instanceof AdapterRuntimeError ? error.retryable
       : error instanceof CollectorStateError ? error.reason === "io" || error.reason === "conflict"
         : false

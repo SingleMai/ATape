@@ -3,7 +3,7 @@ import type { AdapterCollectionProgress, AdapterInstallation, AdapterRawSegment,
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, AdapterSourceFailure,
   MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
 import { Clock, Effect, Random, Semaphore } from "effect"
-import { CollectorStateStore, CollectorTransport, CollectionContractError, CollectionTransportError,
+import { CollectorStateStore, CollectorTransport, CollectionContractError, CollectionTransportError, AdapterRuntimeError,
   type CollectorStateSnapshot, type CollectorStateError, type CollectorTransportService,
   type HostedAdapter, type HostedCollectRequest, SecretRedactor } from "./collectorContracts.ts"
 import { validatePage, prepareCollectedObservation, contractFailure } from "./collectorPreparation.ts"
@@ -18,6 +18,20 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
   let checkpoint = snapshot.checkpoint?.projectCreatedAt === project.createdAt
     ? snapshot.checkpoint
     : undefined
+  const policyId = redactor.policyId
+  const policyPause = (message: string) => new AdapterRuntimeError({ adapterId: adapter.adapterId, reason: "collect",
+    sourceFailureReason: "unsupported", retryable: false, message: `Redaction policy transition is paused: ${message}` })
+  if (policyId === undefined && (checkpoint?.policyId !== undefined || checkpoint?.rawObjects.some(item => item.policyId !== undefined)))
+    return yield* policyPause("policy-aware progress requires a current compiled policy; an unversioned redactor cannot resume content delivery.")
+  if (checkpoint?.policyId !== undefined && checkpoint.deliveryPending === undefined)
+    return yield* policyPause("policy-aware legacy progress lacks its delivery outcome marker; acknowledged completion cannot be inferred.")
+  if (policyId !== undefined && checkpoint?.deliveryPending === true && checkpoint.policyId !== policyId)
+    return yield* policyPause("a legacy content attempt under another policy has an unknown outcome. This Adapter has no receipt reconciliation capability; its checkpoint and Raw progress were preserved.")
+  let deliveryPending = checkpoint?.deliveryPending === true
+  const unresolvedPriorDelivery = deliveryPending
+  const pendingRawChunks = new Set<string>()
+  if (unresolvedPriorDelivery && !rawCaptureEnabled)
+    return yield* policyPause("Raw capture is disabled while a legacy delivery outcome is unknown. Closing Raw is not a receipt; the checkpoint and Raw progress were preserved.")
   let canonicalPublished = checkpoint?.canonicalPublished === true
   let cursor = checkpoint?.cursor ?? null
   let expectedRevision = snapshot.checkpoint?.revision ?? 0
@@ -50,6 +64,7 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
       cursor: checkpointCursor,
       rawObjects: nextRawObjects,
       ...(canonicalPublished ? { canonicalPublished: true } : {}),
+      ...(policyId === undefined ? {} : { policyId, deliveryPending }),
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString()
     }
     yield* states.commit({
@@ -88,9 +103,31 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
       const key = JSON.stringify(failure)
       if (sourceFailures.has(key)) continue
       if (sourceFailures.size === MaxSourceFailures) { sourceFailuresTruncated = true; continue }
-      const masked = redactor.redact(failure.source)
+      const masked = redactor.redactDiagnostic?.(failure.source) ?? redactor.redact(failure.source)
       redactions += masked.replacements
       sourceFailures.set(key, { ...failure, source: masked.value.slice(0, 4096) })
+    }
+
+    if (policyId !== undefined) {
+      if (deliveryPending && page.observations.length === 0)
+        return yield* policyPause("pending legacy content cannot currently be reconstructed from its source; an empty page is not a receipt.")
+      // An old mapping authenticates its committed source extent, but not the
+      // absence of a later accepted chunk. Do not relabel it by changing only
+      // the checkpoint's global policy identity.
+      if (rawCaptureEnabled) for (const observation of page.observations) for (const segment of observation.rawSegments) {
+        const existing = rawObjects.find(item => item.sourceSessionId === observation.session.sourceSessionId && item.sourceObjectId === segment.sourceObjectId)
+        const sourceEnd = segment.sourceOffset + utf8Bytes(segment.content)
+        const alreadyCommitted = existing?.sourceGeneration === segment.sourceGeneration &&
+          (segment.sourceOffset < existing.sourceOffset || existing.finalized && sourceEnd === existing.sourceOffset)
+        if (existing !== undefined && existing.policyId === undefined && existing.sourceGeneration === segment.sourceGeneration && !alreadyCommitted)
+          return yield* policyPause("an unversioned legacy Raw object may have unacknowledged chunks beyond its saved offset. No bytes were replayed under a guessed policy or generation.")
+      }
+      if (page.observations.length > 0) {
+        // Save uncertainty before the first content request, including the first
+        // Raw object for which no acknowledged mapping exists yet.
+        deliveryPending = true
+        yield* commitCheckpoint(cursor, rawObjects, checkpoint?.adapterVersion ?? adapter.version)
+      }
     }
 
     for (const observation of page.observations) {
@@ -125,13 +162,18 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
         redacted: redacted.observation,
         serverSessionId: canonical.sessionId,
         rawObjects,
+        pendingRawChunks,
+        ...(policyId === undefined ? {} : { policyId }),
         persist: (nextRawObjects) => commitCheckpoint(
           cursor,
           nextRawObjects,
           checkpoint?.adapterVersion ?? adapter.version
         )
-      }).pipe(Effect.catch(error => {
+      }).pipe(Effect.catch((error): Effect.Effect<{ rawObjects: Array<CollectorRawObjectProgress>; chunks: number; bytes: number },
+        CollectionContractError | CollectionTransportError | CollectorStateError | AdapterRuntimeError> => {
         if (!(error instanceof CollectionTransportError) || error.reason !== "raw_disabled") return Effect.fail(error)
+        if (unresolvedPriorDelivery || pendingRawChunks.size > 0)
+          return Effect.fail(policyPause("Raw was disabled after an uncertain legacy content request. Disabling capture is not a receipt; the pending checkpoint and Raw progress were preserved."))
         rawCaptureEnabled = false
         if (progress) progress = { ...progress, rawCaptureEnabled: false, pendingRawBytes: 0 }
         return Effect.succeed({ rawObjects: [...(checkpoint?.rawObjects ?? rawObjects)], chunks: 0, bytes: 0 })
@@ -142,8 +184,9 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
       observations++
     }
 
+    deliveryPending = false
     const needsCommit = page.observations.length > 0 || page.nextCursor !== cursor ||
-      checkpoint?.adapterVersion !== adapter.version
+      checkpoint?.adapterVersion !== adapter.version || policyId !== undefined && checkpoint?.policyId !== policyId
     if (needsCommit) {
       yield* commitCheckpoint(page.nextCursor, rawObjects, adapter.version)
     }
@@ -178,6 +221,8 @@ type RawSegmentsInput = {
   readonly redacted: AdapterObservation
   readonly serverSessionId: string
   readonly rawObjects: ReadonlyArray<CollectorRawObjectProgress>
+  readonly policyId?: string
+  readonly pendingRawChunks: Set<string>
   readonly persist: (
     rawObjects: ReadonlyArray<CollectorRawObjectProgress>
   ) => Effect.Effect<void, CollectorStateError>
@@ -252,7 +297,12 @@ const appendRawObjectSegments = (input: RawSegmentsInput) => Effect.gen(function
     for (let chunkIndex = 0; chunkIndex < transportChunks.length; chunkIndex++) {
       const content = transportChunks[chunkIndex] ?? ""
       const final = segment.final && chunkIndex === transportChunks.length - 1
-      const receipt = yield* retryTransport(input.transport.appendRaw({
+      const sourceChunkId = `g${progress.serverGeneration}-o${serverOffset}${input.policyId === undefined ? "" : `-p${input.policyId}`}`
+      const pendingKey = JSON.stringify([input.redacted.session.sourceSessionId, segment.sourceObjectId, sourceChunkId])
+      const receipt = yield* retryTransport(Effect.suspend(() => {
+        const alreadyUncertain = input.pendingRawChunks.has(pendingKey)
+        input.pendingRawChunks.add(pendingKey)
+        return input.transport.appendRaw({
         instanceOrigin: input.instanceOrigin,
         userId: input.userId,
         installationId: input.installationId,
@@ -260,7 +310,7 @@ const appendRawObjectSegments = (input: RawSegmentsInput) => Effect.gen(function
         adapterVersion: input.adapter.version,
         serverSessionId: input.serverSessionId,
         observedAt: input.redacted.observedAt,
-        sourceChunkId: `g${progress.serverGeneration}-o${serverOffset}`,
+        sourceChunkId,
         sourceObjectId: segment.sourceObjectId,
         sourceName: segment.sourceName,
         mediaType: segment.mediaType,
@@ -268,6 +318,9 @@ const appendRawObjectSegments = (input: RawSegmentsInput) => Effect.gen(function
         final,
         serverGeneration: progress.serverGeneration,
         serverOffset
+        }).pipe(Effect.tapError(error => Effect.sync(() => {
+          if (error.reason === "raw_disabled" && !alreadyUncertain) input.pendingRawChunks.delete(pendingKey)
+        })))
       }))
       chunks++
       const expectedServerOffset = serverOffset + utf8Bytes(content)
@@ -281,6 +334,7 @@ const appendRawObjectSegments = (input: RawSegmentsInput) => Effect.gen(function
           message: `Raw receipt for ${segment.sourceObjectId} does not match the submitted append position.`
         })
       }
+      input.pendingRawChunks.delete(pendingKey)
       bytes += utf8Bytes(content)
       serverOffset = expectedServerOffset
     }
@@ -293,7 +347,8 @@ const appendRawObjectSegments = (input: RawSegmentsInput) => Effect.gen(function
       sourceOffset: sourceEnd,
       serverGeneration: progress.serverGeneration,
       serverOffset,
-      finalized: segment.final
+      finalized: segment.final,
+      ...(input.policyId === undefined ? {} : { policyId: input.policyId })
     }
     rawObjects = existingIndex < 0
       ? [...rawObjects, next]

@@ -4,7 +4,7 @@ import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./capt
 import { canonicalMaterializationBound, projectCanonicalSubmission } from "./canonicalProjection.ts"
 import { publicationPreparationContext, rawObservationPreparationContext, sealPublicationCapture, sealRawObservation } from "./publicationDelivery.ts"
 import { createRawPreparation, validateRawPreparationLimits, type RawPreparationLimits } from "./rawPreparation.ts"
-import { decodeSourceMetadata, sourceMetadataJson } from "./sourceMetadata.ts"
+import { decodeSourceMetadata, sourceMetadataJson, maskSourceFailures } from "./sourceMetadata.ts"
 export type { RawPreparationLimits } from "./rawPreparation.ts"
 
 import { canonicalSourceProjection, validateCanonicalSourceMetadata, PublicationPreparationError, PublicationPreparationVersion, sourceFingerprint as hash, encodeSource as encode,
@@ -37,7 +37,7 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
     const { profile, placeholder, masked } = projection
     if (view.sourceCheckpoint !== undefined && !context.intent.capabilities.targetProfiles?.includes(PublicationTargetProfile2))
       return yield* fail("unsupported", "This source requires complete-target v2 support from the Server.")
-    if (view.sourceCheckpoint !== undefined) yield* journal.setSourceMetadata(owner, captureId, sourceMetadataJson(view, masked.threads))
+    if (view.sourceCheckpoint !== undefined) yield* journal.setSourceMetadata(owner, captureId, yield* sourceMetadataJson(view, masked.threads))
     const version = (kind: CaptureRecordKey["kind"], key: string, fingerprint: string, rawReference: AdapterRawReference = placeholder) => Effect.gen(function*() {
       return yield* journal.record(owner, captureId, { kind, key, fingerprint, projectionVersion: profile,
         ...(kind === "event" ? { rawReference } : {}) })
@@ -108,7 +108,7 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
     if (events.length > 0 || usage.length > 0 || ordinal === 0) yield* flush()
     const archive = raw ? yield* raw.finish() : undefined
     return { units: ordinal, bytes: totalBytes, materializedBytes, raw: archive,
-      sourceFailures: view.sourceFailures ?? [], sourceFailuresTruncated: view.sourceFailuresTruncated ?? false,
+      sourceFailures: yield* maskSourceFailures(view.sourceFailures ?? []), sourceFailuresTruncated: view.sourceFailuresTruncated ?? false,
       records: { canonical: counts,
         ...(archive === undefined ? {} : { raw: { records: archive.records, scopeComplete: true, admission: archive.admission } }) } }
   }))

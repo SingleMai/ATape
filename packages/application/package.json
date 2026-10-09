@@ -11,9 +11,10 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@atape/adapter-catalog": "workspace:*",
     "@atape/domain": "workspace:*",
     "effect": "catalog:",
-    "@atape/adapter-catalog": "workspace:*"
+    "re2js": "2.8.6"
   },
   "devDependencies": {
     "typescript": "catalog:build",

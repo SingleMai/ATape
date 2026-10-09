@@ -231,8 +231,10 @@ global startup; changing account isolation is outside this UX increment.
 
 ## Single entry and maintenance
 
-Run `atape` for every user operation. Only help/version and session language/no-browser
-flags remain public. Removed subcommands are rejected without compatibility aliases.
+Run `atape` for operational navigation. Help/version and session language/no-browser
+flags remain public. The local-only `atape redaction-test` command tests privacy
+rules without starting the console or sync; see [client redaction](redaction.md).
+Removed business subcommands are rejected without compatibility aliases.
 Settings → Language persists the choice for future launches; a launch flag or
 ATAPE_LANG takes precedence. Tools → Integration maintenance installs trusted
 package/path sources with confirmation, refreshes an installed source and previews

@@ -1,15 +1,35 @@
 import type { ClientConfig } from "@atape/domain"
-import { isAbsolute } from "node:path"
+import { lstat, open } from "node:fs/promises"
+import { isAbsolute, join } from "node:path"
 import { Effect } from "effect"
 import { resolveAdapterReadinessEntry } from "./adapterHost.ts"
 import { validateAdapterImports } from "./adapterPreflight.ts"
 import { leaseAdapterInstallation } from "./adapterInstallation.ts"
 import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
-import { atomicJSON, readSelectedClientConfig } from "./runtimeSelection.ts"
+import { atomicJSON, missing, readSelectedClientConfig, updateDirectory } from "./runtimeSelection.ts"
 
 const failure = (cause: unknown) => cause instanceof Error ? cause : new Error(String(cause))
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: failure })
+const updateTransactionPending = async (home: string): Promise<boolean> => {
+  try { await lstat(join(updateDirectory(home), "pending.json")); return true }
+  catch (cause) {
+    if (missing(cause)) return false
+    throw new Error("Could not inspect the ATape update transaction. Collection remains paused.")
+  }
+}
+const syncExistingUpdateDirectory = async (home: string): Promise<void> => {
+  try {
+    const directory = await open(updateDirectory(home), "r").catch(cause => {
+      if (missing(cause)) return undefined
+      throw cause
+    })
+    if (directory === undefined) return
+    try { await directory.sync() } finally { await directory.close() }
+  } catch {
+    throw new Error("Could not make the ATape update transaction durable. Collection remains paused.")
+  }
+}
 
 // Readiness proves local executable/configuration compatibility before admission.
 // It never opens a provider runtime, collects history, or requires the Instance.
@@ -30,11 +50,17 @@ export const prepareCollectorReadiness = (
     yield* validateCollectorAdapters(paths, config)
     yield* io(() => atomicJSON(readyFile, { token, pid: process.pid }))
   }
-  // Ordinary launches retain the Collector's established validation behavior.
-  // Both ordinary and maintenance launches wait here before any collection.
-  while (yield* io(() => isCollectorMaintenancePending(paths.collectorProcessFile))) {
+  // Report readiness before waiting so an older updater can complete handoff.
+  // Its pending journal outlives the maintenance gate: no job may write newer
+  // state while that transaction can still restore the previous executable.
+  while (yield* io(async () => await isCollectorMaintenancePending(paths.collectorProcessFile) ||
+    await updateTransactionPending(paths.atapeHome))) {
     yield* Effect.sleep(50)
   }
+  // Older updaters remove pending.json without syncing its directory. Make
+  // that absence durable before newer jobs write policy-bound state, including
+  // when removal preceded this process's first check. Never create the directory.
+  yield* io(() => syncExistingUpdateDirectory(paths.atapeHome))
 }))
 
 export const validateCollectorAdapters = (paths: NodeClientPaths, config: ClientConfig): Effect.Effect<void, Error> =>

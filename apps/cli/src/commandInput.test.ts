@@ -23,6 +23,23 @@ describe("single CLI entry", () => {
     ["__automatic-update", "--update-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "extra"]])("rejects unsupported arguments %j", (...args) => {
     expect(() => parseCLI(args)).toThrow()
   })
+  it("decodes the local redaction test without exposing other business commands", () => {
+    expect(parseCLI(["redaction-test", "sample.ndjson"])).toEqual({ kind: "redaction-test", options: { file: "sample.ndjson" } })
+    expect(parseCLI(["redaction-test", "sample", "--format", "text", "--config", "/tmp/rules.json", "--lang", "zh-CN"]))
+      .toEqual({ kind: "redaction-test", options: { file: "sample", format: "text", config: "/tmp/rules.json", lang: "zh-CN" } })
+    expect(parseCLI(["redaction-test", "--help"])).toEqual({ kind: "redaction-help", options: {} })
+    expect(parseCLI(["redaction-test", "--", "--sample.txt"])).toEqual({ kind: "redaction-test", options: { file: "--sample.txt" } })
+  })
+  it.each([
+    ["redaction-test"], ["redaction-test", "a", "b"], ["redaction-test", ""],
+    ["redaction-test", "a", "--format", "xml"], ["redaction-test", "a", "--format", "text", "--format", "json"],
+    ["redaction-test", "a", "--config", ""], ["redaction-test", "a", "--no-browser"],
+    ["redaction-test", "--help", "a"], ["redaction-test", "--help", "--config", "a"],
+    ["redaction-test", "a", "--password=private-value"]
+  ])("rejects invalid local test arguments safely %j", (...args) => {
+    expect(() => parseCLI(args)).toThrow("Unsupported arguments")
+    expect(() => parseCLI(args)).not.toThrow("private-value")
+  })
   it("retains only the process owner's internal Collector invocation", () => {
     expect(parseCLI(["__collector-daemon", "--daemon-token", "owner", "--interval", "30", "--concurrency", "4"]))
       .toEqual({ kind: "__collector-daemon", options: { daemonToken: "owner", intervalMs: 30000, concurrency: 4 } })

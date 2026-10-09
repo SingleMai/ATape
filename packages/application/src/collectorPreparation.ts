@@ -2,15 +2,12 @@ import type { AcpContentBlock, AcpSessionUpdate, AdapterCollectionPage } from "@
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, AdapterSourceFailure,
   MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
-import { CollectionContractError, SecretRedactor, type SecretRedactorService, type RedactedText } from "./collectorContracts.ts"
+import { CollectionContractError, SecretRedactor } from "./collectorContracts.ts"
+import { legacySecretRedactor, prepareCanonicalRedaction } from "./redaction.ts"
 
-export const makeSecretRedactorLayer = (secretValues: ReadonlyArray<string> = []) => {
-  const values = [...new Set(secretValues.filter((value) => value.length >= 8 && value.length <= 4_096))]
-    .sort((left, right) => right.length - left.length)
-  return Layer.succeed(SecretRedactor, SecretRedactor.of({
-    redact: (input) => redactText(input, values)
-  }))
-}
+/** Compatibility for existing callers; production supplies a keyed compiled policy. */
+export const makeSecretRedactorLayer = (secretValues: ReadonlyArray<string> = []) =>
+  Layer.succeed(SecretRedactor, legacySecretRedactor(secretValues))
 
 export const validatePage = (
   adapterId: string,
@@ -142,7 +139,9 @@ export const prepareCanonicalSlice = (adapterId: string, input: unknown) => Effe
   const page = (value: AdapterObservation) => ({ protocolVersion: AdapterProtocolVersion, nextCursor: "prepared", hasMore: false, observations: [value] })
   if (observation.rawSegments.length !== 0) return yield* contractFailure(adapterId, "must prepare Raw through its independent capture path.")
   yield* validatePage(adapterId, null, page(observation))
-  const result = redactObservation(redactor, observation)
+  const prepared = yield* prepareCanonicalRedaction(redactor, observation).pipe(
+    Effect.mapError(() => new CollectionContractError({ adapterId, message: "Content cannot be safely redacted within its bounds." })))
+  const result = { observation: prepared.value, replacements: prepared.replacements }
   yield* validatePage(adapterId, null, page(result.observation))
   return result
 })
@@ -150,102 +149,19 @@ export const prepareCanonicalSlice = (adapterId: string, input: unknown) => Effe
 /** Mask a validated legacy observation and enforce limits on the emitted values. */
 export const prepareCollectedObservation = (adapterId: string, observation: AdapterObservation) => Effect.gen(function*() {
   const redactor = yield* SecretRedactor
-  const result = redactObservation(redactor, observation)
+  const prepared = yield* prepareCanonicalRedaction(redactor, observation).pipe(
+    Effect.mapError(() => new CollectionContractError({ adapterId, message: "Content cannot be safely redacted within its bounds." })))
+  const result = { observation: prepared.value, replacements: prepared.replacements }
   if (!result.observation.events.every(event => validAcpUpdate(event.update))) {
     return yield* contractFailure(adapterId, "contains tool or content values exceeding limits after redaction.")
   }
   return result
 })
 
-const redactObservation = (redactor: SecretRedactorService, observation: AdapterObservation) => {
-  let replacements = 0
-  const redact = (value: string) => {
-    const result = redactor.redact(value)
-    replacements += result.replacements
-    return result.value
-  }
-  const events = observation.events.map((event) => {
-    const before = replacements
-    const update = redactAcpUpdate(event.update, redact)
-    const rawRef = event.rawRef._tag === "object"
-      ? {
-          ...event.rawRef,
-          ...(event.rawRef.fragment === undefined ? {} : { fragment: redact(event.rawRef.fragment) })
-        }
-      : { ...event.rawRef, reason: redact(event.rawRef.reason) }
-    return {
-      ...event,
-      update,
-      rawRef,
-      fidelity: replacements > before ? "redacted" as const : event.fidelity
-    }
-  })
-  const redacted: AdapterObservation = {
-    ...observation,
-    session: {
-      ...observation.session,
-      title: redact(observation.session.title),
-      summary: redact(observation.session.summary),
-      insight: redact(observation.session.insight),
-      actor: {
-        name: redact(observation.session.actor.name),
-        harness: redact(observation.session.actor.harness)
-      },
-      branch: redact(observation.session.branch)
-    },
-    threads: observation.threads.map((thread) => ({
-      ...thread,
-      label: redact(thread.label),
-      summary: redact(thread.summary)
-    })),
-    events,
-    ...(observation.usage === undefined ? {} : { usage: observation.usage.map(sample => ({ ...sample, model: redact(sample.model) })) }),
-    rawSegments: observation.rawSegments.map((segment) => ({
-      ...segment,
-      sourceName: redact(segment.sourceName),
-      content: redact(segment.content)
-    }))
-  }
-  return { observation: redacted, replacements }
-}
-
-const redactText = (input: string, secretValues: ReadonlyArray<string>): RedactedText => {
-  let value = input
-  let replacements = 0
-  const replace = (pattern: RegExp, replacement: string | ((...values: Array<string>) => string)) => {
-    value = value.replace(pattern, (...args: Array<string>) => {
-      replacements++
-      return typeof replacement === "string" ? replacement : replacement(...args)
-    })
-  }
-  replace(/\b(Bearer)\s+[A-Za-z0-9._~+/=-]{8,}/gi, (_match, label: string) => `${label} [REDACTED]`)
-  replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\b/g, "[REDACTED]")
-  replace(
-    /(["']?)(\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret|password|passwd)\b)\1(\s*[:=]\s*)(["']?)[^\s,"'}]{8,}\4/gi,
-    (_match, keyQuote: string, key: string, separator: string, valueQuote: string) =>
-      `${keyQuote}${key}${keyQuote}${separator}${valueQuote}[REDACTED]${valueQuote}`
-  )
-  replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]")
-  for (const secret of secretValues) {
-    replace(new RegExp(escapeRegExp(secret), "g"), "[REDACTED]")
-  }
-  return { value, replacements }
-}
-
 export const contractFailure = (adapterId: string, message: string) =>
   Effect.fail(new CollectionContractError({ adapterId, message: `Adapter ${adapterId} ${message}` }))
 
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength
-const boundedRedactedTitle = (value: string) => {
-  let bytes = 0
-  let title = ""
-  for (const character of value) {
-    bytes += utf8Bytes(character)
-    if (bytes > 500) break
-    title += character
-  }
-  return title
-}
 const positiveInteger = (value: number) => Number.isSafeInteger(value) && value >= 1
 const nonNegativeInteger = (value: number) => Number.isSafeInteger(value) && value >= 0
 const validTimestamp = (value: string) =>
@@ -255,7 +171,6 @@ const boundedIdentity = (value: string, max: number) => value.trim() !== "" && u
 const boundedText = (value: string, max: number, empty: boolean) =>
   (empty || value.trim() !== "") && utf8Bytes(value) <= max
 const supportedRawMediaType = (value: string) => /^(?:text\/|application\/(?:json|x-ndjson|[A-Za-z0-9.+-]+\+json)$)/i.test(value)
-const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 const hasThreadCycle = (threads: AdapterObservation["threads"]) => {
   const parents = new Map(threads.map((thread) => [thread.sourceThreadId, thread.parentSourceThreadId]))
@@ -270,6 +185,7 @@ const hasThreadCycle = (threads: AdapterObservation["threads"]) => {
   }
   return false
 }
+
 
 const validAcpUpdate = (update: AcpSessionUpdate) => {
   switch (update.sessionUpdate) {
@@ -305,85 +221,5 @@ const validAcpContentBlock = (content: AcpContentBlock) => {
     case "resource":
       return boundedText(content.resource.uri, 2_000, false) &&
         ("text" in content.resource ? boundedText(content.resource.text, 1 << 20, true) : true)
-  }
-}
-
-const redactAcpUpdate = (
-  update: AcpSessionUpdate,
-  redact: (value: string) => string
-): AcpSessionUpdate => {
-  switch (update.sessionUpdate) {
-    case "user_message_chunk":
-    case "agent_message_chunk":
-    case "agent_thought_chunk":
-      return { ...update, content: redactAcpContentBlock(update.content, redact) }
-    case "tool_call":
-      return { ...update, ...redactToolValues(update, redact), title: boundedRedactedTitle(redact(update.title)) }
-    case "tool_call_update":
-      return {
-        ...update,
-        ...redactToolValues(update, redact),
-        ...(typeof update.title === "string" ? { title: boundedRedactedTitle(redact(update.title)) } : {})
-      }
-  }
-}
-
-const redactToolValues = (update: Extract<AcpSessionUpdate, { toolCallId: string }>, redact: (value: string) => string) => {
-  const visit = (value: unknown): unknown => {
-    if (typeof value === "string") return redact(value)
-    if (typeof value === "number") {
-      const text = JSON.stringify(value), masked = redact(text)
-      return text === masked ? value : masked
-    }
-    if (Array.isArray(value)) return value.map(visit)
-    if (value !== null && typeof value === "object") {
-      const entries = Object.entries(value).map(([key, item]) => [redact(key), visit(item)] as const)
-      // Redacted keys may collide. Do not silently overwrite one value with another.
-      return new Set(entries.map(([key]) => key)).size === entries.length ? Object.fromEntries(entries) : "[REDACTED]"
-    }
-    return value
-  }
-  const value = (input: unknown): unknown => {
-    // Also apply contextual patterns such as {"password":"..."}. If masking
-    // breaks JSON, omit the whole value rather than leaking or coercing it.
-    const masked = redact(JSON.stringify(visit(input)))
-    try { return JSON.parse(masked) }
-    catch { return "[REDACTED]" }
-  }
-  return {
-    ...(Object.hasOwn(update, "rawInput") ? { rawInput: value(update.rawInput) } : {}),
-    ...(Object.hasOwn(update, "rawOutput") ? { rawOutput: value(update.rawOutput) } : {})
-  }
-}
-
-const redactAcpContentBlock = (
-  content: AcpContentBlock,
-  redact: (value: string) => string
-): AcpContentBlock => {
-  switch (content.type) {
-    case "text":
-      return { ...content, text: redact(content.text) }
-    case "image":
-      return {
-        ...content,
-        ...(typeof content.uri === "string" ? { uri: redact(content.uri) } : {})
-      }
-    case "audio":
-      return content
-    case "resource_link":
-      return {
-        ...content,
-        name: redact(content.name),
-        uri: redact(content.uri),
-        ...(typeof content.title === "string" ? { title: redact(content.title) } : {}),
-        ...(typeof content.description === "string" ? { description: redact(content.description) } : {})
-      }
-    case "resource":
-      return {
-        ...content,
-        resource: "text" in content.resource
-          ? { ...content.resource, uri: redact(content.resource.uri), text: redact(content.resource.text) }
-          : { ...content.resource, uri: redact(content.resource.uri) }
-      }
   }
 }

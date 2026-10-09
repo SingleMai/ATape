@@ -64,6 +64,8 @@ Feature-specific code may live together when that improves Locality. The directo
 - `domain` imports neither Effect platform packages nor presentation frameworks.
 - `ui` imports React for pure presentation only; it imports no domain, application, routing, or platform package.
 - `application` may import core Effect, domain packages and the pure Adapter catalog, but not Web views, CLI rendering, Browser implementations, or Node implementations.
+- [ADR-0105](adr/0105-client-redaction-policy.md) permits pinned pure `re2js` only
+  inside the private Redaction Implementation; the checker rejects it elsewhere.
 - Browser and Node Adapters implement requirements declared by application Modules.
 - views import ViewModel types and presenter bindings; they do not import transport clients or infrastructure Layers.
 - only runtime entry points assemble the complete Layer graph.

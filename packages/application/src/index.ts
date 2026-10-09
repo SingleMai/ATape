@@ -32,3 +32,6 @@ export * from "./rawPublicationTransport.ts"
 export * from "./sourceComparison.ts"
 
 export * from "./sourceCollector.ts"
+
+export * from "./redaction.ts"
+export * from "./collectorRedactionPolicy.ts"

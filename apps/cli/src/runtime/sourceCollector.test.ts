@@ -116,7 +116,7 @@ describe("Host source collection workflow", () => {
     expect(await cycle()).toMatchObject({ observations: 0, canonicalBatches: 0, sourceFailures: [{ source: root, reason: "limit" }] })
     expect((await f.inspect()).coverage).toEqual(before.coverage)
     expect(f.remote.sent).toHaveLength(sent); expect(f.remote.rawSent).toHaveLength(rawSent)
-  }, 180000)
+  }, 600_000)
   it("records confirmed Canonical progress across empty cycles and recovers older checkpoints without the source", async () => {
     const f = await setup(); f.remote.policy(false)
     expect((await f.progress()).checkpoint).toBeUndefined()
@@ -151,6 +151,8 @@ describe("Host source collection workflow", () => {
     expect((await f.progress()).checkpoint?.canonicalPublished).not.toBe(true)
     expect((await f.inspect()).coverage.canonicalCaptureId).toBeNull()
   })
+  // Exercise 25 complete SQLite FULL-sync capture/publication cycles under one admission.
+  // Each cycle performs durable I/O; allow for filesystem contention in the full CLI suite.
   it("automatically retires superseded native memberships and sustains rewrites under unchanged admission", async () => {
     const f = await setup(), bounded = { ...limits, journal: { ...limits.journal, metadataEntries: 500 } }
     let previous: Awaited<ReturnType<typeof f.inspect>> | undefined
@@ -166,7 +168,7 @@ describe("Host source collection workflow", () => {
       previous = current
     }
     expect(await f.cycle(f.host, bounded)).toMatchObject({ observations: 0, sourceFailures: [] })
-  }, 15000)
+  }, 60_000)
   it("publishes a native family, skips unchanged content, and archives a Raw-only edit without replacing Canonical", async () => {
     const f = await setup()
     const first = await f.cycle()

@@ -231,7 +231,8 @@ setInterval(() => {}, 1000);
     const pending = client.run(install("0.4.2"), client.entry, cancellation.signal)
       .then(() => "success", () => "cancelled").finally(() => { settled = true })
     try {
-      await expect.poll(() => readFile(`${client.entry}.pid`, "utf8").catch(() => "")).not.toBe("")
+      // Startup includes the owning npm probes before the controlled installer runs.
+      await expect.poll(() => readFile(`${client.entry}.pid`, "utf8").catch(() => ""), { timeout: 10_000 }).not.toBe("")
       pid = Number(await readFile(`${client.entry}.pid`, "utf8"))
       cancellation.abort()
       await expect.poll(() => readFile(`${client.entry}.terminated`, "utf8").catch(() => "")).toBe("true")
@@ -255,5 +256,5 @@ setInterval(() => {}, 1000);
       if (pid) { try { process.kill(pid, "SIGKILL") } catch {} }
       await pending
     }
-  })
+  }, 30_000)
 })

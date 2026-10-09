@@ -95,6 +95,8 @@ describe("managed executable bootstrap delegation", () => {
     const client = await fixture()
     await writeFile(runtimeSelectionFile(client.home), "malformed")
     expect(await delegateManagedRuntime(client.bootstrap, ["--version"], { ...client.environment, ATAPE_RUNTIME_DIRECT: "1" })).toBeUndefined()
+    expect(await delegateManagedRuntime(client.bootstrap, ["redaction-test", "sample.jsonl"], client.environment)).toBeUndefined()
+    expect(await delegateManagedRuntime(client.bootstrap, ["redaction-test", "--help"], client.environment)).toBeUndefined()
     expect(await delegateManagedRuntime(client.bootstrap, ["__collector-daemon", "--daemon-token", "test-token"], client.environment)).toBeUndefined()
     expect(await delegateManagedRuntime(client.bootstrap, ["__automatic-update", "--update-token", "00000000-0000-4000-8000-000000000000"], client.environment)).toBeUndefined()
     expect(await delegateManagedRuntime(client.bootstrap, [], { ...client.environment, CI: "true" })).toBeUndefined()

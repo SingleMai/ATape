@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-09-13
 - Current guide: [CLI setup and Adapters](../../cli/setup-and-adapters.md)
+- Amended by [ADR-0105](0105-client-redaction-policy.md): a local-only redaction
+  file test is a public inspection entry; operational navigation remains interactive.
 
 ## Alternatives and decision
 

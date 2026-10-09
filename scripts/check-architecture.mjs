@@ -121,7 +121,8 @@ function boundaryViolation(file, specifier, target) {
     if (target ? !inside(target, "packages/i18n") : !["i18next", "i18next-icu", "intl-messageformat"].includes(specifier)) return "Shared localization cannot depend on application, presentation or platform Implementations"
   }
   if (inside(file, "packages/application")) {
-    if (target ? !inside(target, "packages/application") && !inside(target, "packages/domain") && target !== "packages/adapter-catalog/src/index.ts" : specifier !== "effect") {
+    const redactionEngine = specifier === "re2js" && inside(file, "packages/application/src/redaction")
+    if (target ? !inside(target, "packages/application") && !inside(target, "packages/domain") && target !== "packages/adapter-catalog/src/index.ts" : specifier !== "effect" && !redactionEngine) {
       return "Application depends only on its own Modules, Domain, core Effect and the pure Adapter catalog"
     }
   }
