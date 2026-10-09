@@ -199,7 +199,9 @@ setInterval(() => {}, 1000);
       expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8"))).toMatchObject({ restartPending: true })
       const [first, second] = await Promise.all([f.run(f.daemon.resume()), f.run(f.daemon.resume())])
       expect(first).toMatchObject({ intervalMs: 60000, concurrency: 3 })
-      expect(second).toMatchObject({ pid: first!.pid, intervalMs: 60000, concurrency: 3, created: false })
+      expect(second).toMatchObject({ pid: first!.pid, intervalMs: 60000, concurrency: 3 })
+      // Concurrent lock acquisition has no ordering by Promise.all position.
+      expect([first!.created, second!.created].sort()).toEqual([false, true])
       expect(first!.pid).not.toBe(original.pid)
       await f.started("original", first!.pid)
       await f.run(f.daemon.stop())
