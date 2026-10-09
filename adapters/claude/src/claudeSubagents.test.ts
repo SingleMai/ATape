@@ -294,7 +294,7 @@ it("rejects conflicting agent identities for one parent tool call as a source er
   const receipt = rows.find(row => row.toolUseResult?.agentId)!, last = rows.filter(row => row.uuid).at(-1)!
   await appendFile(rootFile, JSON.stringify({ ...receipt, uuid: "conflicting-receipt", parentUuid: last.uuid,
     toolUseResult: { ...receipt.toolUseResult, agentId: "other-agent" } }) + "\n")
-  await expect(read()).rejects.toThrow("conflicting parent evidence")
+  await expect(read()).rejects.toMatchObject({ reason: "unsupported" })
 })
 
 it("pins parent evidence only after its complete receipt fits in the captured page", async () => {

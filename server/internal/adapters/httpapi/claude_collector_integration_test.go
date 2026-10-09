@@ -136,7 +136,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			var page conversation.Conversation
 			decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+sessionID+"?"+query.Encode(), ""), &page)
 			// Legacy Sessions intentionally retain full reads; the publication
-			// head/page contract is not enabled by this additive Adapter profile.
+			// head/page publication is not enabled by this Adapter contract.
 			if page.Session.ID != sessionID || page.Thread.ID != threadID {
 				t.Fatalf("Claude Reader crossed identity: session=%s want=%s thread=%s want=%s", page.Session.ID, sessionID, page.Thread.ID, threadID)
 			}
@@ -364,8 +364,8 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	manualFiles := map[string]string{compactID + ".jsonl": filepath.Join(sourceDirectory, compactID+".jsonl")}
 	beforeArchive := assertSourceRaw(compactSession, manualFiles)
 	// This third native Session retains two text records from one response.
-	// Keep its staged daemon restarts independent of the original single-tail
-	// assertions below, so broader evidence cannot weaken the first profile.
+	// Verify its staged daemon restarts independently from the single-tail
+	// source, retaining the exact same-API Event and usage identities.
 	tailFiles := map[string]string{tailID + ".jsonl": filepath.Join(sourceDirectory, tailID+".jsonl")}
 	tailHead := read(tailSession, "root", 6)
 	usage(tailSession, 3, 93, 47)
@@ -407,18 +407,18 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	tailPrevious, tailLatest := tailBefore, tailBeforeCapture
 	for _, stage := range []struct {
-		phase                 string
-		events, usage, added  int
-		input, output         int64
-		searchTerm            string
-		expectedSearchResults int
+		phase                     string
+		events, usage, added, raw int
+		input, output             int64
+		searchTerm                string
+		expectedSearchResults     int
 	}{
-		{"tail-compact", 7, 3, 0, 93, 47, "", 0},
-		{"tail-continued", 9, 4, 2, 122, 60, "ATAPE_MANUAL_TEXT_CONTINUE:", 2},
-		{"tail-continued-again", 11, 5, 2, 151, 73, "ATAPE_MANUAL_TEXT_SECONDCONTINUE:", 1},
+		{"tail-compact", 7, 3, 0, 6, 93, 47, "", 0},
+		{"tail-continued", 9, 4, 2, 2, 122, 60, "ATAPE_MANUAL_TEXT_CONTINUE:", 2},
+		{"tail-continued-again", 11, 5, 2, 1, 151, 73, "ATAPE_MANUAL_TEXT_SECONDCONTINUE:", 1},
 	} {
 		tailLatest = run(stage.phase)
-		if tailLatest.InstallationID != initial.InstallationID || tailLatest.CanonicalEvents != stage.added || tailLatest.RawChunks != 1 {
+		if tailLatest.InstallationID != initial.InstallationID || tailLatest.CanonicalEvents != stage.added || tailLatest.RawChunks != stage.raw {
 			t.Fatalf("Claude split text %s did not append the exact native increment: %+v", stage.phase, tailLatest)
 		}
 		current := read(tailSession, "root", stage.events)
@@ -460,8 +460,8 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude split text unchanged polling replayed usage or changed Raw receipts")
 	}
 	usage(tailSession, 5, 151, 73)
-	// This fourth native Session repeats the strict automatic U/G-copy profile
-	// across three appends. All cuts are complete prefixes of native snapshots;
+	// This native Session exercises the same source-control rule repeatedly.
+	// All cuts are complete prefixes of native snapshots;
 	// every run starts a fresh installed daemon and uses the same HTTP/PG path.
 	autoFiles := map[string]string{autoID + ".jsonl": filepath.Join(sourceDirectory, autoID+".jsonl")}
 	autoPrevious := read(autoSession, "root", 4)
@@ -529,13 +529,23 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		}
 		assertAutoView(prefix+"originals", events+1, count, input, output)
 		assertAutoIdle(prefix+"originals-idle", originals, 0, events+1, count, input, output)
+		for _, control := range []string{"copy-user", "copy-gap", "boundary"} {
+			phase := prefix + control
+			capture := run(phase)
+			assertAutoProgress(phase, capture, 1)
+			if capture.CanonicalEvents != 0 || capture.RawChunks != 1 {
+				t.Fatalf("Claude automatic %s duplicated Canonical or omitted complete control Raw: events=%d Raw=%d", phase, capture.CanonicalEvents, capture.RawChunks)
+			}
+			assertAutoView(phase, events+1, count, input, output)
+			assertAutoIdle(phase+"-idle", capture, 1, events+1, count, input, output)
+		}
 		summary := run(prefix + "summary")
-		assertAutoProgress(prefix+"summary", summary, 1)
+		assertAutoProgress(prefix+"summary", summary, 0)
 		if summary.CanonicalEvents != 0 || summary.RawChunks != 1 {
 			t.Fatalf("Claude automatic round %d U/G copies or B/S events=%d Raw=%d", round, summary.CanonicalEvents, summary.RawChunks)
 		}
 		assertAutoView(prefix+"summary", events+1, count, input, output)
-		assertAutoIdle(prefix+"summary-idle", summary, 1, events+1, count, input, output)
+		assertAutoIdle(prefix+"summary-idle", summary, 0, events+1, count, input, output)
 		answer := run(prefix + "answer")
 		assertAutoProgress(prefix+"answer", answer, 0)
 		if answer.CanonicalEvents != 1 || answer.RawChunks != 1 {
@@ -573,8 +583,8 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			}
 		}
 	}
-	// Retain the previous 32 source stages and add independently restarted
-	// call/result boundaries for both native exact-two Read response layouts.
+	// Native call/result boundaries use independently restarted daemons. The
+	// sampled pair sizes do not constrain the source-control reducer.
 	type readRetention struct {
 		sessionID, sourceID string
 		events, count       int
@@ -599,7 +609,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			input, output                 int64
 		}{
 			{"call0", 2, 1, 1, 0, 31, 7}, {"call1", 3, 1, 1, 0, 31, 7},
-			{"r0", 4, 1, 1, 1, 31, 7}, {"r1", 5, 1, 1, 0, 31, 7},
+			{"r0", 4, 1, 1, 0, 31, 7}, {"r1", 5, 1, 1, 0, 31, 7},
 			{"final", 6, 2, 1, 0, 72, 18}, {"resume", 8, 3, 2, 0, 101, 31},
 		}},
 		{"pair-plan-", pairPlanSession, pairPlanID, "call_manual_read_", "ATAPE_NATIVE_READ_", 4, 2, 52, 24, []struct {
@@ -608,7 +618,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			input, output                 int64
 		}{
 			{"plan", 6, 3, 2, 0, 89, 41}, {"call0", 7, 3, 1, 0, 89, 41}, {"call1", 8, 3, 1, 0, 89, 41},
-			{"r0", 9, 3, 1, 1, 89, 41}, {"r1", 10, 3, 1, 0, 89, 41},
+			{"r0", 9, 3, 1, 0, 89, 41}, {"r1", 10, 3, 1, 0, 89, 41},
 			{"final-a", 11, 4, 1, 0, 130, 64}, {"final", 12, 4, 1, 0, 130, 64},
 		}},
 	} {
@@ -740,18 +750,19 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	for _, fixtureCase := range []struct {
 		prefix, sessionID, sourceID, callPrefix, textPrefix string
 		suffixes                                            []string
+		summaryRaw                                          int
 		stages                                              []replayStage
 	}{
-		{"auto-read-single-", autoReadSingleSession, autoReadSingleID, "call_auto_single_read_", "ATAPE_AUTO_SINGLE_", []string{"a"}, []replayStage{
+		{"auto-read-single-", autoReadSingleSession, autoReadSingleID, "call_auto_single_read_", "ATAPE_AUTO_SINGLE_", []string{"a"}, 8, []replayStage{
 			{"plan", 6, 3, 2, 0, 190052, 41}, {"call0", 7, 3, 1, 0, 190052, 41}, {"r0", 8, 3, 1, 0, 190052, 41},
-			{"originals", 8, 3, 0, 0, 190052, 41}, {"summary", 8, 3, 0, 1, 190052, 41},
+			{"originals", 8, 3, 0, 0, 190052, 41}, {"summary", 8, 3, 0, 0, 190052, 41},
 			{"final-a", 9, 4, 1, 0, 190093, 64}, {"final", 10, 4, 1, 0, 190093, 64},
 			{"continue", 12, 5, 2, 0, 190122, 77}, {"secondcontinue", 14, 6, 2, 0, 190151, 90},
 		}},
-		{"auto-read-dual-", autoReadDualSession, autoReadDualID, "call_auto_read_", "ATAPE_AUTO_", []string{"a", "b"}, []replayStage{
+		{"auto-read-dual-", autoReadDualSession, autoReadDualID, "call_auto_read_", "ATAPE_AUTO_", []string{"a", "b"}, 10, []replayStage{
 			{"plan", 6, 3, 2, 0, 190052, 41}, {"call0", 7, 3, 1, 0, 190052, 41}, {"call1", 8, 3, 1, 0, 190052, 41},
-			{"r0", 9, 3, 1, 1, 190052, 41}, {"r1", 10, 3, 1, 0, 190052, 41},
-			{"originals", 10, 3, 0, 0, 190052, 41}, {"summary", 10, 3, 0, 1, 190052, 41},
+			{"r0", 9, 3, 1, 0, 190052, 41}, {"r1", 10, 3, 1, 0, 190052, 41},
+			{"originals", 10, 3, 0, 0, 190052, 41}, {"summary", 10, 3, 0, 0, 190052, 41},
 			{"final-a", 11, 4, 1, 0, 190093, 64}, {"final", 12, 4, 1, 0, 190093, 64},
 			{"continue", 14, 5, 2, 0, 190122, 77}, {"secondcontinue", 16, 6, 2, 0, 190151, 90},
 		}},
@@ -764,7 +775,11 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			phase := fixtureCase.prefix + stage.phase
 			capture := run(phase)
 			assertAutoProgress(phase, capture, stage.pending)
-			if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+			raw := 1
+			if stage.phase == "summary" {
+				raw = fixtureCase.summaryRaw
+			}
+			if capture.CanonicalEvents != stage.added || capture.RawChunks != raw {
 				t.Fatalf("Claude automatic Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
 			}
 			current := read(fixtureCase.sessionID, "root", stage.events)
@@ -851,8 +866,8 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		last := fixtureCase.stages[len(fixtureCase.stages)-1]
 		readRetained = append(readRetained, readRetention{fixtureCase.sessionID, fixtureCase.sourceID, last.events, last.count, last.input, last.output, archive, contents})
 	}
-	// Two consecutive native single-Read rounds retain the same slug. The
-	// second answer remains pending across a proved prior-file Raw-only ACK.
+	// Consecutive native single-Read compactions retain the same slug. Each
+	// complete summary and file context is independently acknowledged.
 	repeatedFiles := map[string]string{repeatedAutoReadID + ".jsonl": filepath.Join(sourceDirectory, repeatedAutoReadID+".jsonl")}
 	repeatedPrevious := read(repeatedAutoReadSession, "root", 2)
 	usage(repeatedAutoReadSession, 1, 23, 11)
@@ -866,18 +881,22 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		{"warmup", 4, 2, 2, 0, 52, 24, false},
 		{"r1-plan", 6, 3, 2, 0, 190052, 41, false}, {"r1-call", 7, 3, 1, 0, 190052, 41, false},
 		{"r1-result", 8, 3, 1, 0, 190052, 41, false}, {"r1-originals", 8, 3, 0, 0, 190052, 41, false},
-		{"r1-summary", 8, 3, 0, 1, 190052, 41, true}, {"r1-final-a", 9, 4, 1, 0, 190093, 64, false},
+		{"r1-summary", 8, 3, 0, 0, 190052, 41, true}, {"r1-final-a", 9, 4, 1, 0, 190093, 64, false},
 		{"r1-final", 10, 4, 1, 0, 190093, 64, true},
 		{"r2-plan", 12, 5, 2, 0, 380093, 81, false}, {"r2-call", 13, 5, 1, 0, 380093, 81, false},
 		{"r2-result", 14, 5, 1, 0, 380093, 81, false}, {"r2-originals", 14, 5, 0, 0, 380093, 81, false},
-		{"r2-summary", 14, 5, 0, 1, 380093, 81, true}, {"r2-file", 14, 5, 0, 1, 380093, 81, true},
+		{"r2-summary", 14, 5, 0, 0, 380093, 81, true}, {"r2-file", 14, 5, 0, 0, 380093, 81, true},
 		{"r2-final-a", 15, 6, 1, 0, 380134, 104, false}, {"r2-final", 16, 6, 1, 0, 380134, 104, true},
 		{"ordinary-resume", 18, 7, 2, 0, 380163, 117, true},
 	} {
 		phase := "repeated-auto-read-" + stage.phase
 		capture := run(phase)
 		assertAutoProgress(phase, capture, stage.pending)
-		if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+		raw := 1
+		if strings.HasSuffix(stage.phase, "summary") {
+			raw = 8
+		}
+		if capture.CanonicalEvents != stage.added || capture.RawChunks != raw {
 			t.Fatalf("Claude repeated automatic Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
 		}
 		current := read(repeatedAutoReadSession, "root", stage.events)
@@ -960,7 +979,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	repeatedFinalArchive, repeatedRaw := readRaw(repeatedAutoReadSession)
 	readRetained = append(readRetained, readRetention{repeatedAutoReadSession, repeatedAutoReadID, 18, 7, 380163, 117, repeatedFinalArchive, repeatedRaw})
 	// The native planned pair completes B before A; keep that result order
-	// through first-slug replay, pending restarts and source deletion.
+	// through first-slug replay, control restarts and source deletion.
 	reversedFiles := map[string]string{reversedReadPairID + ".jsonl": filepath.Join(sourceDirectory, reversedReadPairID+".jsonl")}
 	reversedPrevious := read(reversedReadPairSession, "root", 2)
 	usage(reversedReadPairSession, 1, 23, 11)
@@ -973,15 +992,19 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}{
 		{"warmup", 4, 2, 2, 0, 52, 24, false}, {"plan", 6, 3, 2, 0, 190052, 41, false},
 		{"call-a", 7, 3, 1, 0, 190052, 41, false}, {"call-b", 8, 3, 1, 0, 190052, 41, false},
-		{"result-b", 9, 3, 1, 1, 190052, 41, true}, {"result-a", 10, 3, 1, 0, 190052, 41, false},
-		{"originals", 10, 3, 0, 0, 190052, 41, false}, {"summary", 10, 3, 0, 1, 190052, 41, true},
+		{"result-b", 9, 3, 1, 0, 190052, 41, true}, {"result-a", 10, 3, 1, 0, 190052, 41, false},
+		{"originals", 10, 3, 0, 0, 190052, 41, false}, {"summary", 10, 3, 0, 0, 190052, 41, true},
 		{"final-a", 11, 4, 1, 0, 190093, 64, false}, {"final", 12, 4, 1, 0, 190093, 64, true},
 		{"ordinary-resume", 14, 5, 2, 0, 190122, 77, true},
 	} {
 		phase := "reversed-read-pair-" + stage.phase
 		capture := run(phase)
 		assertAutoProgress(phase, capture, stage.pending)
-		if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+		raw := 1
+		if strings.HasSuffix(stage.phase, "summary") {
+			raw = 10
+		}
+		if capture.CanonicalEvents != stage.added || capture.RawChunks != raw {
 			t.Fatalf("Claude reversed Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
 		}
 		current := read(reversedReadPairSession, "root", stage.events)
@@ -1074,17 +1097,21 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		idle                          bool
 	}{
 		{"plan", 16, 6, 2, 0, 380122, 94, false}, {"call-a", 17, 6, 1, 0, 380122, 94, false},
-		{"call-b", 18, 6, 1, 0, 380122, 94, false}, {"result-a", 19, 6, 1, 1, 380122, 94, true},
+		{"call-b", 18, 6, 1, 0, 380122, 94, false}, {"result-a", 19, 6, 1, 0, 380122, 94, true},
 		{"result-b", 20, 6, 1, 0, 380122, 94, false}, {"originals", 20, 6, 0, 0, 380122, 94, false},
-		{"summary", 20, 6, 0, 1, 380122, 94, true}, {"file-a", 20, 6, 0, 1, 380122, 94, true},
-		{"files", 20, 6, 0, 1, 380122, 94, true}, {"final-a", 21, 7, 1, 0, 380163, 117, false},
+		{"summary", 20, 6, 0, 0, 380122, 94, true}, {"file-a", 20, 6, 0, 0, 380122, 94, true},
+		{"files", 20, 6, 0, 0, 380122, 94, true}, {"final-a", 21, 7, 1, 0, 380163, 117, false},
 		{"final", 22, 7, 1, 0, 380163, 117, true},
 		{"ordinary-resume", 24, 8, 2, 0, 380192, 130, true},
 	} {
 		phase := "repeated-dual-read-" + stage.phase
 		capture := run(phase)
 		assertAutoProgress(phase, capture, stage.pending)
-		if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+		raw := 1
+		if strings.HasSuffix(stage.phase, "summary") {
+			raw = 10
+		}
+		if capture.CanonicalEvents != stage.added || capture.RawChunks != raw {
 			t.Fatalf("Claude repeated dual Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
 		}
 		current := read(reversedReadPairSession, "root", stage.events)
@@ -1171,19 +1198,17 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	reversedFinalArchive, reversedRaw := readRaw(reversedReadPairSession)
 	readRetained = append(readRetained, readRetention{reversedReadPairSession, reversedReadPairID, 24, 8, 380192, 130, reversedFinalArchive, reversedRaw})
 	// Exercise the same public Reader/Raw/usage Interfaces for small and large
-	// native file groups across independently restarted installed daemons.
+	// native file context across independently restarted installed daemons.
 	type manualReadStage struct {
 		phase                              string
 		events, count, added, pending, raw int
 		input, output                      int64
-		eligibleLine                       int
 		idle                               bool
 	}
 	verifyManualRead := func(sessionID, sourceID, phasePrefix, summaryMarker string, initialEvents int, stages []manualReadStage) {
 		manualReadFiles := map[string]string{sourceID + ".jsonl": filepath.Join(sourceDirectory, sourceID+".jsonl")}
 		manualReadPrevious := read(sessionID, "root", initialEvents)
 		manualReadArchive := assertSourceRaw(sessionID, manualReadFiles)
-		var manualReadLatest snapshot
 		for _, stage := range stages {
 			phase := phasePrefix + stage.phase
 			capture := run(phase)
@@ -1191,32 +1216,16 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			if err != nil {
 				t.Fatal(err)
 			}
-			eligible := source
-			if stage.eligibleLine > 0 {
-				end := 0
-				for line := 0; line < stage.eligibleLine; line++ {
-					newline := bytes.IndexByte(source[end:], '\n')
-					if newline < 0 {
-						t.Fatal("Claude manual Read expected complete prefix is missing")
-					}
-					end += newline + 1
-				}
-				eligible = source[:end]
-			}
-			pendingRaw := int64(len(source) - len(eligible))
 			assertProgress := func(current snapshot) {
 				t.Helper()
 				if current.InstallationID != initial.InstallationID || len(current.SourceFailures) != 0 || current.Progress == nil ||
-					current.Progress.PendingCanonicalSessions != stage.pending || current.Progress.PendingRawBytes != pendingRaw {
-					t.Fatalf("Claude manual Read %s lost progress: %+v want pending=%d Raw=%d", phase, current.Progress, stage.pending, pendingRaw)
+					current.Progress.PendingCanonicalSessions != stage.pending || current.Progress.PendingRawBytes != 0 {
+					t.Fatalf("Claude manual Read %s lost progress: %+v want pending=%d Raw=0", phase, current.Progress, stage.pending)
 				}
 			}
 			assertProgress(capture)
 			if capture.CanonicalEvents != stage.added || capture.RawChunks != stage.raw {
 				t.Fatalf("Claude manual Read %s events=%d want=%d Raw=%d want=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks, stage.raw)
-			}
-			if stage.raw == 0 && (capture.Cursor != manualReadLatest.Cursor || capture.Observations != 0 || capture.CanonicalBatches != 0 || !bytes.Equal(capture.RawObjects, manualReadLatest.RawObjects)) {
-				t.Fatalf("Claude manual Read %s acknowledged an incomplete atomic group", phase)
 			}
 			current := read(sessionID, "root", stage.events)
 			oldJSON, _ := json.Marshal(manualReadPrevious.Events)
@@ -1227,7 +1236,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			usage(sessionID, stage.count, stage.input, stage.output)
 			archive, contents := readRaw(sessionID)
 			if len(archive.Objects) != 1 || len(manualReadArchive.Objects) != 1 || archive.Objects[0].ObjectID != manualReadArchive.Objects[0].ObjectID ||
-				contents[sourceID+".jsonl"] != string(eligible) {
+				contents[sourceID+".jsonl"] != string(source) {
 				t.Fatalf("Claude manual Read %s changed Raw identity or acknowledged unproved bytes", phase)
 			}
 			for _, control := range []string{summaryMarker, "Continue from where you left off.", "No response requested.", "local-command", "command-name"} {
@@ -1248,40 +1257,40 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 				}
 				usage(sessionID, stage.count, stage.input, stage.output)
 			}
-			manualReadPrevious, manualReadLatest = current, capture
+			manualReadPrevious = current
 		}
 	}
 	verifyManualRead(pairPlanSession, pairPlanID, "manual-read-", "ATAPE_MANUAL_SUMMARY:", 12, []manualReadStage{
-		{"boundary", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"summary", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"caveat", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"command", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"stdout", 12, 4, 0, 0, 1, 130, 64, 0, true},
-		{"file-first", 12, 4, 0, 1, 0, 130, 64, 36, true},
-		{"files", 12, 4, 0, 0, 1, 130, 64, 0, true},
-		{"bookkeeping", 12, 4, 0, 0, 1, 130, 64, 0, false},
-		{"meta", 12, 4, 0, 1, 0, 130, 64, 41, true},
-		{"bridge", 12, 4, 0, 0, 1, 130, 64, 0, true},
-		{"user", 13, 4, 1, 0, 1, 130, 64, 0, false},
-		{"continue", 14, 5, 1, 0, 1, 159, 77, 0, false},
-		{"secondcontinue", 16, 6, 2, 0, 1, 188, 90, 0, true},
+		{"boundary", 12, 4, 0, 1, 1, 130, 64, false},
+		{"summary", 12, 4, 0, 0, 1, 130, 64, false},
+		{"caveat", 12, 4, 0, 0, 1, 130, 64, false},
+		{"command", 12, 4, 0, 0, 1, 130, 64, false},
+		{"stdout", 12, 4, 0, 0, 1, 130, 64, true},
+		{"file-first", 12, 4, 0, 0, 1, 130, 64, true},
+		{"files", 12, 4, 0, 0, 1, 130, 64, true},
+		{"bookkeeping", 12, 4, 0, 0, 1, 130, 64, false},
+		{"meta", 12, 4, 0, 0, 1, 130, 64, true},
+		{"bridge", 12, 4, 0, 0, 1, 130, 64, true},
+		{"user", 13, 4, 1, 0, 1, 130, 64, false},
+		{"continue", 14, 5, 1, 0, 1, 159, 77, false},
+		{"secondcontinue", 16, 6, 2, 0, 1, 188, 90, true},
 	})
 	verifyManualRead(largeManualReadSession, largeManualReadID, "large-manual-read-", "ATAPE_MANUAL_LARGE_SUMMARY:", 2, []manualReadStage{
-		{"warmup", 4, 2, 2, 0, 1, 52, 24, 0, false},
-		{"toolturn", 12, 4, 8, 0, 3, 130, 64, 0, true},
-		{"boundary", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"summary", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"caveat", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"command", 12, 4, 0, 1, 1, 130, 64, 0, false},
-		{"stdout", 12, 4, 0, 0, 1, 130, 64, 0, true},
-		{"file-first", 12, 4, 0, 1, 0, 130, 64, 38, true},
-		{"files", 12, 4, 0, 0, 1, 130, 64, 0, true},
-		{"bookkeeping", 12, 4, 0, 0, 1, 130, 64, 0, false},
-		{"meta", 12, 4, 0, 1, 0, 130, 64, 45, true},
-		{"bridge", 12, 4, 0, 0, 1, 130, 64, 0, false},
-		{"user", 13, 4, 1, 0, 1, 130, 64, 0, false},
-		{"continue", 14, 5, 1, 0, 1, 159, 77, 0, false},
-		{"secondcontinue", 16, 6, 2, 0, 1, 188, 90, 0, true},
+		{"warmup", 4, 2, 2, 0, 1, 52, 24, false},
+		{"toolturn", 12, 4, 8, 0, 1, 130, 64, true},
+		{"boundary", 12, 4, 0, 1, 1, 130, 64, false},
+		{"summary", 12, 4, 0, 0, 1, 130, 64, false},
+		{"caveat", 12, 4, 0, 0, 1, 130, 64, false},
+		{"command", 12, 4, 0, 0, 1, 130, 64, false},
+		{"stdout", 12, 4, 0, 0, 1, 130, 64, true},
+		{"file-first", 12, 4, 0, 0, 1, 130, 64, true},
+		{"files", 12, 4, 0, 0, 1, 130, 64, true},
+		{"bookkeeping", 12, 4, 0, 0, 1, 130, 64, false},
+		{"meta", 12, 4, 0, 0, 1, 130, 64, true},
+		{"bridge", 12, 4, 0, 0, 1, 130, 64, false},
+		{"user", 13, 4, 1, 0, 1, 130, 64, false},
+		{"continue", 14, 5, 1, 0, 1, 159, 77, false},
+		{"secondcontinue", 16, 6, 2, 0, 1, 188, 90, true},
 	})
 	for _, expected := range []struct {
 		term  string
@@ -1383,7 +1392,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	}
 	readRetained = append(readRetained, readRetention{largeManualReadSession, largeManualReadID, 16, 6, 188, 90, largeReadArchive, largeReadRaw})
 	compact := run("compact")
-	if compact.CanonicalEvents != 0 || compact.RawChunks != 1 {
+	if compact.CanonicalEvents != 0 || compact.RawChunks != 6 {
 		t.Fatal("Claude compact controls created conversation Events or lost Raw")
 	}
 	afterCompact := read(compactSession, "root", 4)
@@ -1398,7 +1407,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatal("Claude compaction replaced its Raw object")
 	}
 	continued := run("continued")
-	if continued.CanonicalEvents != 2 || continued.RawChunks != 1 {
+	if continued.CanonicalEvents != 2 || continued.RawChunks != 2 {
 		t.Fatal("Claude real continuation did not append two Events")
 	}
 	after := read(compactSession, "root", 6)

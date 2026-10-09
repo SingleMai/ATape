@@ -3,6 +3,14 @@
 - Status: Accepted scope; implementation and acceptance are recorded in the feature guide
 - Date: 2026-10-09
 
+## Later decision
+
+[ADR-0097](0097-claude-compaction-continuity.md) supersedes the sample-specific
+compaction admission and recovery policies with source-identity continuity.
+The original source evidence and checks below retain their recorded scope.
+The [current Claude guide](../../adapters/claude.md) owns implementation and
+acceptance of the later decision.
+
 ## Context
 
 Amendment: [ADR-0096](0096-claude-repeated-dual-read-auto-files.md) later selects

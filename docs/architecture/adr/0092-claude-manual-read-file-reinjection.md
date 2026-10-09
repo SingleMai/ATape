@@ -7,6 +7,14 @@
 larger receipt/file bounds for this same graph; the original decision below
 records the smaller initial envelope. The current guide owns implemented scope.
 
+## Later decision
+
+[ADR-0097](0097-claude-compaction-continuity.md) supersedes the sample-specific
+compaction admission and recovery policies with source-identity continuity.
+The original source evidence and checks below retain their recorded scope.
+The [current Claude guide](../../adapters/claude.md) owns implementation and
+acceptance of the later decision.
+
 ## Context
 
 [ADR-0088](0088-claude-manual-compaction-on-legacy-capture.md) admits selected

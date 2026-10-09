@@ -19,7 +19,7 @@ or its Adapter alone does not create conversations.
 | Tool | Source compatibility and limits |
 | --- | --- |
 | Codex | [Experimental rollout compatibility](../adapters/codex.md#supported-source-and-limits) |
-| Claude Code | [Supported linear JSONL history](../adapters/claude.md#sources-and-supported-history) |
+| Claude Code | [JSONL capture and compaction continuity](../adapters/claude.md#sources-and-supported-history) |
 | OpenCode | [Accepted SQLite version/platforms and Server prerequisite](../adapters/opencode.md#supported-source-and-enablement) |
 | CodeBuddy Code CLI | [Supported primary JSONL Sessions and limits](../adapters/codebuddy.md#source-mapping-and-supported-scope) |
 | Kimi Code CLI | [Native Session compatibility and limits](../adapters/kimi.md) |
