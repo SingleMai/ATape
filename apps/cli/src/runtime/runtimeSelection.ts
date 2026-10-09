@@ -1,14 +1,18 @@
 import { ClientConfigStore, ClientConfigStoreError, officialSources, type ClientConfigChange } from "@atape/application"
 import { AdapterInstallation, ClientConfig as ClientConfigSchema, type ClientConfig } from "@atape/domain"
-import { createHash, randomUUID } from "node:crypto"
-import { lstat, mkdir, open, readFile, realpath, rename, rm } from "node:fs/promises"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { createHash } from "node:crypto"
+import { lstat, open, readFile, realpath, rm } from "node:fs/promises"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { makeConfigStoreLayer, withClientConfigFileLock } from "./clientConfig.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
+import { atomicJSON, missing, readBoundedJSON, runtimeSelectionFile } from "./runtimeFiles.ts"
+import { createUpdateControl, type UpdateRuntimeSelection } from "./updateControl.ts"
 
-// This contract deliberately excludes migrations. A release changing it cannot
-// participate in automatic activation or retained-version rollback.
+export { atomicJSON, missing, readBoundedJSON, runtimeEntry, runtimeSelectionFile, updateDirectory } from "./runtimeFiles.ts"
+
+// The legacy bridge remains a genuine v2 generation. Independent update control
+// carries its capture contract separately and never relabels this bridge.
 export const managedStateContract = "atape.client.v3-capture.v2"
 const StableVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
 export const RuntimeSelection = Schema.Struct({
@@ -21,23 +25,6 @@ export const RuntimeSelection = Schema.Struct({
 })
 export type RuntimeSelection = typeof RuntimeSelection.Type
 const LegacyRuntimeSelection = Schema.Struct({ ...RuntimeSelection.fields, stateContract: Schema.Literal("atape.client.v3-capture.v1") })
-export const runtimeSelectionFile = (home: string) => join(home, "releases", "current.json")
-export const runtimeEntry = (home: string, version: string) => join(home, "releases", version, "node_modules", "@atape", "cli", "dist", "atape.js")
-export const updateDirectory = (home: string) => join(home, "updates")
-
-export const readBoundedJSON = async (path: string, limit = 256 * 1024): Promise<unknown> => {
-  const info = await lstat(path)
-  if (!info.isFile() || info.isSymbolicLink() || info.size > limit) throw new Error("Invalid managed update metadata.")
-  const handle = await open(path, "r")
-  try {
-    const bytes = Buffer.alloc(limit + 1)
-    const read = await handle.read(bytes, 0, bytes.length, 0)
-    if (read.bytesRead > limit) throw new Error("Managed update metadata exceeds its limit.")
-    return JSON.parse(bytes.subarray(0, read.bytesRead).toString("utf8")) as unknown
-  } finally { await handle.close() }
-}
-export const missing = (cause: unknown) => typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT"
-
 const validateSelection = <A extends Omit<RuntimeSelection, "stateContract"> & { readonly stateContract: string }>(selected: A): A => {
   if (selected.version.length >= 40 || !selected.version.split(".").every(part => Number.isSafeInteger(Number(part))) || !isAbsolute(selected.bootstrapEntry)) {
     throw new Error("Invalid managed runtime identity.")
@@ -73,16 +60,19 @@ export const readRuntimeSelection = async (home: string): Promise<RuntimeSelecti
   catch (cause) { if (missing(cause)) return undefined; throw cause }
 }
 
-export const atomicJSON = async (path: string, value: unknown) => {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    const file = await open(temporary, "wx", 0o600)
-    try { await file.writeFile(`${JSON.stringify(value)}\n`); await file.sync() } finally { await file.close() }
-    await rename(temporary, path)
-    const directory = await open(dirname(path), "r")
-    try { await directory.sync() } finally { await directory.close() }
-  } finally { await rm(temporary, { force: true }).catch(() => {}) }
+export type EffectiveRuntimeSelection = RuntimeSelection | UpdateRuntimeSelection
+
+// Legacy writers retain current.json as their bridge. Once independent control
+// exists, historical writers cannot replace its authority through their pointer
+// or pending journal. Actual capture waits for transaction recovery separately.
+export const readEffectiveRuntimeSelection = async (home: string): Promise<EffectiveRuntimeSelection | undefined> => {
+  const control = createUpdateControl(home)
+  const selected = await control.readSelection()
+  if (selected) {
+    await control.resolveSelectionEntry(selected, true)
+    return selected
+  }
+  return readRuntimeSelection(home)
 }
 
 export const selectRuntime = async (home: string, selection: RuntimeSelection | undefined) => {
@@ -95,8 +85,21 @@ export const selectRuntime = async (home: string, selection: RuntimeSelection | 
 }
 
 export const resolveRuntimeEntry = async (home: string, bootstrap: string): Promise<string> => {
-  const selected = await readRuntimeSelection(home)
+  const selected = await readEffectiveRuntimeSelection(home)
   if (!selected) return bootstrap
+  if (selected.protocol === "atape.update-control.v1") return createUpdateControl(home).resolveSelectionEntry(selected, true)
+  return resolveLegacySelectionEntry(home, selected)
+}
+
+// An admitted recovery coordinator may enter through a historical bootstrap's
+// genuine bridge while the independent candidate is broken. This resolver
+// selects no independent target and grants no permission to capture.
+export const resolveLegacyRuntimeEntry = async (home: string, bootstrap: string): Promise<string> => {
+  const selected = await readRuntimeSelection(home)
+  return selected ? resolveLegacySelectionEntry(home, selected) : bootstrap
+}
+
+const resolveLegacySelectionEntry = async (home: string, selected: RuntimeSelection): Promise<string> => {
   const canonicalHome = await realpath(home)
   const releases = join(canonicalHome, "releases")
   if (await realpath(releases) !== releases) throw new Error("Managed CLI releases must remain inside ATAPE_HOME.")
@@ -148,7 +151,7 @@ export const preserveSelectedInstallations = (paths: NodeClientPaths): Promise<v
     let raw: ClientConfig
     try { raw = Schema.decodeUnknownSync(ClientConfigSchema)(JSON.parse(await readFile(paths.configFile, "utf8")) as unknown) }
     catch (cause) { if (missing(cause)) return; throw cause }
-    const effective = applyRuntimeSelection(raw, await readRuntimeSelection(paths.atapeHome))
+    const effective = applyRuntimeSelection(raw, await readEffectiveRuntimeSelection(paths.atapeHome))
     if (effective.adapters.some((adapter, index) => !sameAdapter(adapter, raw.adapters[index]!))) {
       await atomicJSON(paths.configFile, { ...raw, adapters: effective.adapters })
     }
@@ -159,7 +162,7 @@ export const makeSelectedConfigStoreLayer = (paths: NodeClientPaths) => Layer.ef
     const store = yield* ClientConfigStore
     return ClientConfigStore.of({
       transact: <A, E, R>(change: (config: ClientConfig) => Effect.Effect<ClientConfigChange<A>, E, R>) => store.transact(raw =>
-        configIO(() => readRuntimeSelection(paths.atapeHome)).pipe(Effect.flatMap(selected => {
+        configIO(() => readEffectiveRuntimeSelection(paths.atapeHome)).pipe(Effect.flatMap(selected => {
           const effective = applyRuntimeSelection(raw, selected)
           return change(effective).pipe(Effect.map(result => result.config === undefined ? result : ({ ...result,
             config: { ...result.config, adapters: result.config.adapters.map(adapter => {
@@ -171,4 +174,11 @@ export const makeSelectedConfigStoreLayer = (paths: NodeClientPaths) => Layer.ef
     })
   }).pipe(Effect.provide(makeConfigStoreLayer(paths.configFile))))
 
-export const selectedBootstrap = async (home: string, entry: string) => (await readRuntimeSelection(home))?.bootstrapEntry ?? resolve(entry)
+export const selectedBootstrap = async (home: string, entry: string) => {
+  const control = createUpdateControl(home)
+  // Recovery needs bootstrap ownership before it can repair an unavailable
+  // target. Decode its binding without requiring that target to be executable.
+  if (await control.recoveryPending()) return (await control.readSelection())?.bootstrapEntry ??
+    (await readRuntimeSelection(home))?.bootstrapEntry ?? resolve(entry)
+  return (await readEffectiveRuntimeSelection(home))?.bootstrapEntry ?? resolve(entry)
+}

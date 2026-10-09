@@ -8,6 +8,7 @@ import { leaseAdapterInstallation } from "./adapterInstallation.ts"
 import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { atomicJSON, missing, readSelectedClientConfig, updateDirectory } from "./runtimeSelection.ts"
+import { createUpdateControl } from "./updateControl.ts"
 
 const failure = (cause: unknown) => cause instanceof Error ? cause : new Error(String(cause))
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: failure })
@@ -54,7 +55,8 @@ export const prepareCollectorReadiness = (
   // Its pending journal outlives the maintenance gate: no job may write newer
   // state while that transaction can still restore the previous executable.
   while (yield* io(async () => await isCollectorMaintenancePending(paths.collectorProcessFile) ||
-    await updateTransactionPending(paths.atapeHome))) {
+    await updateTransactionPending(paths.atapeHome) ||
+    await createUpdateControl(paths.atapeHome).recoveryPending())) {
     yield* Effect.sleep(50)
   }
   // Older updaters remove pending.json without syncing its directory. Make

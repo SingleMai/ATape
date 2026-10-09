@@ -1,6 +1,7 @@
 import { LoginStartupPlatform } from "@atape/application"
 import { emptyClientConfig } from "@atape/domain"
 import { execFile } from "node:child_process"
+import { createHash } from "node:crypto"
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -12,6 +13,7 @@ import { admitLoginStartup, makeLoginStartupPlatformLayer, withLoginStartupRecov
 import { atomicJSON, managedStateContract, runtimeEntry, selectRuntime } from "./runtimeSelection.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import type { executeOwnedProcess } from "./ownedProcess.ts"
+import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
 
 const roots: string[] = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
@@ -392,5 +394,49 @@ describe("native login startup Adapter", () => {
     const owner = await acquireUpdateWorker(client.home); expect(owner).toBeDefined(); owner?.()
     await expect(withLoginStartupRecovery(client.paths, client.entry, {}, async () => { throw new Error("Controlled resume failure") })).rejects.toMatchObject({ reason: "state" })
     const afterFailure = await acquireUpdateWorker(client.home); expect(afterFailure).toBeDefined(); afterFailure?.()
+  })
+
+  it("admits the private stable launcher and genuine bridge to recover a missing compatible candidate before re-admission", async () => {
+    const client = await fixture()
+    const identity = createHash("sha256").update(await readFile(client.entry)).digest("hex")
+    const generation = async (version: string): Promise<UpdateRuntimeSelection> => {
+      const entry = runtimeEntry(client.home, version)
+      await mkdir(dirname(entry), { recursive: true })
+      await writeFile(entry, `// disposable capable runtime ${version}\n`)
+      await atomicJSON(join(dirname(dirname(entry)), "package.json"), { name: "@atape/cli", version,
+        atapeRuntime: { stateContract: managedStateContract, updateControlProtocol, loginStartupProtocol: "atape.login-startup.v1" } })
+      return { protocol: updateControlProtocol, version, captureStateContract: managedStateContract,
+        bootstrapEntry: client.entry, bootstrapIdentity: identity, adapters: [] }
+    }
+    const bridge = await generation("0.5.4")
+    await selectRuntime(client.home, { protocol: "atape.runtime.v1", stateContract: managedStateContract, version: bridge.version,
+      bootstrapEntry: client.entry, bootstrapIdentity: identity, adapters: [] })
+    await client.run(reconcile(true))
+    const metadata = await client.metadata()
+    const next = await generation("0.5.5")
+    const control = createUpdateControl(client.home)
+    const ticket = await control.prepare({ next, previous: bridge })
+    await control.begin(ticket)
+    await rm(runtimeEntry(client.home, next.version))
+    const admitted = await admitLoginStartup(client.paths, metadata.token, metadata.launcher, {})
+    expect(admitted?.ATAPE_BOOTSTRAP_ENTRY).toBe(client.entry)
+    expect(await admitLoginStartup(client.paths, metadata.token, runtimeEntry(client.home, bridge.version), {})).toEqual(admitted)
+    const foreign = join(client.root, "foreign.mjs"); await writeFile(foreign, "// foreign recovery caller\n")
+    await expect(admitLoginStartup(client.paths, metadata.token, foreign, {})).rejects.toMatchObject({ reason: "identity" })
+    await atomicJSON(client.paths.configFile, { ...emptyClientConfig(), toolsConfigured: true, autoStartEnabled: false })
+    expect(await admitLoginStartup(client.paths, metadata.token, metadata.launcher, {})).toBeUndefined()
+    await atomicJSON(client.paths.configFile, { ...emptyClientConfig(), toolsConfigured: true })
+    const launcher = await readFile(metadata.launcher, "utf8")
+    await writeFile(metadata.launcher, "// altered recovery launcher\n")
+    await expect(admitLoginStartup(client.paths, metadata.token, metadata.launcher, {})).rejects.toMatchObject({ reason: "identity" })
+    await writeFile(metadata.launcher, launcher)
+    await withLoginStartupRecovery(client.paths, client.entry, admitted!, async () => {
+      expect(await acquireUpdateWorker(client.home)).toBeUndefined()
+      expect(await admitLoginStartup(client.paths, metadata.token, metadata.launcher, {})).toEqual(admitted)
+    })
+    expect(await control.recoveryPending()).toBe(false)
+    expect(await control.readSelection()).toBeUndefined()
+    expect(await admitLoginStartup(client.paths, metadata.token, metadata.launcher, {})).toEqual(admitted)
+    expect(client.state.starts).toBe(1)
   })
 })

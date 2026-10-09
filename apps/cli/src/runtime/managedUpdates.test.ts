@@ -10,8 +10,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import { adapterPackageRoot } from "./adapterInstallation.ts"
 import { isCollectorMaintenancePending, makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { acquireUpdateWorker, makeAutomaticUpdatePlatformLayer, needsUpdateRecovery, recoverPendingUpdate } from "./managedUpdates.ts"
-import { atomicJSON, managedStateContract, readRuntimeSelection, readSelectedClientConfig, resolveRuntimeEntry, runtimeEntry } from "./runtimeSelection.ts"
+import { acquireUpdateWorker, makeAutomaticUpdatePlatformLayer, needsUpdateRecovery, protectedRuntimeSlots, recoverPendingUpdate } from "./managedUpdates.ts"
+import { atomicJSON, managedStateContract, readEffectiveRuntimeSelection, readRuntimeSelection, readSelectedClientConfig, resolveRuntimeEntry, runtimeEntry } from "./runtimeSelection.ts"
+import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -27,13 +28,14 @@ else {
 }
 `
 
-const fixture = async () => {
+const fixture = async (options: { readonly control?: boolean } = {}) => {
   const root = await mkdtemp(join(tmpdir(), "atape-managed-update-")); roots.push(root)
   const paths = defaultNodeClientPaths({ ATAPE_HOME: join(root, "home") })
   const modules = join(root, "npm-global", "node_modules"), entry = join(modules, "@atape", "cli", "dist", "atape.js")
   await mkdir(dirname(entry), { recursive: true })
   await atomicJSON(join(dirname(dirname(entry)), "package.json"), { name: "@atape/cli", version: "0.5.2", type: "module",
-    atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract } })
+    atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract,
+      ...(options.control ? { updateControlProtocol } : {}) } })
   await writeFile(entry, cliSource("0.5.2"))
   const bin = join(root, "bin"), calls = join(root, "npm-calls.jsonl")
   await mkdir(bin)
@@ -50,7 +52,8 @@ else if (args[0]==="install") {
   const destination=path.join(args[args.indexOf("--prefix")+1],"node_modules","@atape","cli");
   fs.mkdirSync(path.join(destination,"dist"),{recursive:true});
   fs.writeFileSync(path.join(destination,"package.json"),JSON.stringify({name:"@atape/cli",version,type:"module",
-    atapeRuntime:{protocol:"atape.runtime.v1",stateContract:process.env.MANAGED_TEST_CONTRACT}}));
+    atapeRuntime:{protocol:"atape.runtime.v1",stateContract:process.env.MANAGED_TEST_CONTRACT,
+      updateControlProtocol:process.env.MANAGED_TEST_CONTROL}}));
   const reported=process.env.MANAGED_TEST_WRONG_VERSION || version;
   fs.writeFileSync(path.join(destination,"dist","atape.js"), (${cliSource.toString()})(reported));
 } else process.exit(2);
@@ -58,6 +61,7 @@ else if (args[0]==="install") {
   await chmod(join(bin, "npm"), 0o700)
   const environment: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}:${process.env.PATH}`, ATAPE_HOME: paths.atapeHome,
     MANAGED_TEST_CALLS: calls, MANAGED_TEST_MODULES: modules, MANAGED_TEST_CONTRACT: managedStateContract,
+    ...(options.control ? { MANAGED_TEST_CONTROL: updateControlProtocol } : {}),
     MANAGED_TEST_STARTED: join(root, "started.json") }
   const adapterSpecs: string[] = [], fetches: string[] = []
   const adapters: AdapterInstallation[] = ["codex", "claude"].map(id => ({ adapterId: id, packageName: `@atape/adapter-${id}`,
@@ -273,6 +277,154 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect((await f.selected()).adapters.map(adapter => adapter.version)).toEqual(["0.5.4", "0.5.4"])
     expect(await f.raw()).toEqual(f.config)
   }, 30_000)
+
+  it("installs one genuine capable legacy bridge before independent updates preserve that bridge", async () => {
+    const f = await fixture()
+    f.environment.MANAGED_TEST_CONTROL = updateControlProtocol
+    await f.activate(await f.prepare("0.5.3"))
+    const bridge = await readRuntimeSelection(f.paths.atapeHome)
+    expect(bridge?.version).toBe("0.5.3")
+    expect(await createUpdateControl(f.paths.atapeHome).readSelection()).toBeUndefined()
+    await f.activate(await f.prepare("0.5.4", (await f.selected()).adapters))
+    expect(await readRuntimeSelection(f.paths.atapeHome)).toEqual(bridge)
+    expect(await createUpdateControl(f.paths.atapeHome).readSelection()).toMatchObject({
+      protocol: updateControlProtocol, captureStateContract: managedStateContract, version: "0.5.4"
+    })
+    expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
+    expect((await f.selected()).adapters.map(adapter => adapter.version)).toEqual(["0.5.4", "0.5.4"])
+    expect(await f.raw()).toEqual(f.config)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    await expect(readFile(join(f.paths.atapeHome, "updates", "pending.json"))).rejects.toMatchObject({ code: "ENOENT" })
+  }, 30_000)
+
+  it("keeps the complete independent generation and its previous Adapter slots protected across repeated updates", async () => {
+    const f = await fixture({ control: true })
+    await f.activate(await f.prepare("0.5.3"))
+    const previous = (await f.selected()).adapters
+    await f.activate(await f.prepare("0.5.4", previous))
+    const current = (await f.selected()).adapters
+    expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
+    expect(await readRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
+    expect(new Set(await protectedRuntimeSlots(f.paths.atapeHome))).toEqual(new Set([
+      ...previous.map(adapter => adapter.packageSlot!), ...current.map(adapter => adapter.packageSlot!)
+    ]))
+    expect(await f.raw()).toEqual(f.config)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  }, 30_000)
+
+  it("recovers a replaced bootstrap without losing its selected Adapter slots or reviving Stop", async () => {
+    const f = await fixture({ control: true })
+    await f.activate(await f.prepare("0.5.3"))
+    const selectedAdapters = (await f.selected()).adapters
+    const saved = { ...f.config, autoUpdateEnabled: false, autoStartEnabled: false }
+    await f.save(saved)
+    // A real external replacement changes the original npm executable before
+    // a coordinator can bind it. Recovery must materialize the old overlay.
+    await writeFile(f.entry, cliSource("0.5.4"))
+    await atomicJSON(join(dirname(dirname(f.entry)), "package.json"), { name: "@atape/cli", version: "0.5.4", type: "module",
+      atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract, updateControlProtocol } })
+    expect(await needsUpdateRecovery(f.paths)).toBe(true)
+    const release = await acquireUpdateWorker(f.paths.atapeHome)
+    expect(release).toBeDefined()
+    try { await recoverPendingUpdate(f.paths, f.entry, f.environment) } finally { release!() }
+    expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
+    expect((await f.raw()).adapters).toEqual(selectedAdapters)
+    expect((await f.selected()).adapters).toEqual(selectedAdapters)
+    expect(await f.raw()).toEqual({ ...saved, adapters: selectedAdapters })
+    expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  }, 15_000)
+
+  it("keeps independent preflight outside durable recovery and rechecks auto-off without reviving Stop", async () => {
+    const f = await fixture({ control: true })
+    const prepared = await f.prepare("0.5.3")
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    expect(f.adapterSpecs).toHaveLength(2)
+    await f.save({ ...f.config, autoUpdateEnabled: false })
+    await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    expect(await createUpdateControl(f.paths.atapeHome).readSelection()).toBeUndefined()
+    expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
+    expect((await f.raw()).autoUpdateEnabled).toBe(false)
+  })
+
+  it("recovers an interrupted independent selection before preparing again even after auto-off", async () => {
+    const f = await fixture({ control: true }), prepared = await f.prepare()
+    const candidate = JSON.parse(await readFile(join(f.paths.atapeHome, "updates", `${prepared.key}.prepared.json`), "utf8")).selection
+    const next = { protocol: updateControlProtocol, captureStateContract: candidate.stateContract,
+      version: candidate.version, bootstrapEntry: candidate.bootstrapEntry, bootstrapIdentity: candidate.bootstrapIdentity,
+      adapters: candidate.adapters }
+    const control = createUpdateControl(f.paths.atapeHome)
+    // Simulate loss of the coordinator after quiescent begin while sync is Stop.
+    const ticket = await control.prepare({ next, previous: { ...next, version: "0.5.2", adapters: [] } })
+    await control.begin(ticket)
+    expect(await needsUpdateRecovery(f.paths)).toBe(true)
+    await expect(f.prepare("0.5.4", (await f.selected()).adapters)).rejects.toMatchObject({ reason: "state" })
+    await f.save({ ...f.config, autoUpdateEnabled: false })
+    await recoverPendingUpdate(f.paths, f.entry, f.environment)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    expect(await control.readSelection()).toBeUndefined()
+    expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
+    expect((await f.raw()).autoUpdateEnabled).toBe(false)
+  })
+
+  it("rolls back a failed independent readiness check while keeping its compatible legacy bridge selected", async () => {
+    const f = await fixture()
+    f.environment.MANAGED_TEST_CONTROL = updateControlProtocol
+    await f.activate(await f.prepare("0.5.3"))
+    const bridge = await readRuntimeSelection(f.paths.atapeHome)
+    const prepared = await f.prepare("0.5.4", (await f.selected()).adapters)
+    f.environment.MANAGED_TEST_FAIL_READY = "0.5.4"
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+      expect(await readRuntimeSelection(f.paths.atapeHome)).toEqual(bridge)
+      expect(await createUpdateControl(f.paths.atapeHome).readSelection()).toBeUndefined()
+      expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.3")
+      expect(await f.daemonRun(f.daemon.inspect())).toMatchObject({ intervalMs: 45000, concurrency: 2 })
+      expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  }, 30_000)
+
+  it("retains independent recovery and maintenance until a failed fallback becomes locally ready", async () => {
+    const f = await fixture({ control: true }), prepared = await f.prepare()
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.environment.MANAGED_TEST_FAIL_READY = "all"
+      await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+      expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(true)
+      expect(await createUpdateControl(f.paths.atapeHome).recoveryPending()).toBe(true)
+      await f.save({ ...f.config, autoUpdateEnabled: false })
+      delete f.environment.MANAGED_TEST_FAIL_READY
+      await recoverPendingUpdate(f.paths, f.entry, f.environment)
+      expect(await needsUpdateRecovery(f.paths)).toBe(false)
+      expect(await f.daemonRun(f.daemon.inspect())).toMatchObject({ intervalMs: 45000, concurrency: 2 })
+      expect((await f.raw()).autoUpdateEnabled).toBe(false)
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  }, 30_000)
+
+  it("rejects returning an independent installation to an incapable package without replacing its generation", async () => {
+    const f = await fixture({ control: true })
+    await f.activate(await f.prepare("0.5.3"))
+    const selected = await readEffectiveRuntimeSelection(f.paths.atapeHome)
+    delete f.environment.MANAGED_TEST_CONTROL
+    await expect(f.prepare("0.5.4", (await f.selected()).adapters)).rejects.toMatchObject({ reason: "prepare" })
+    expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toEqual(selected)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  }, 15_000)
+
+  it("rechecks the target control capability after preflight without starting a durable transaction", async () => {
+    const f = await fixture({ control: true }), prepared = await f.prepare()
+    await atomicJSON(join(dirname(dirname(runtimeEntry(f.paths.atapeHome, prepared.version))), "package.json"), {
+      name: "@atape/cli", version: prepared.version, type: "module",
+      atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract }
+    })
+    await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+    expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
+    expect(await createUpdateControl(f.paths.atapeHome).recoveryPending()).toBe(false)
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    expect(await f.raw()).toEqual(f.config)
+  })
 
   it("rejects an older prepared selection after another generation activates against the same raw baseline", async () => {
     const f = await fixture()

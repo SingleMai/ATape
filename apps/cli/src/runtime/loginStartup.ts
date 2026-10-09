@@ -11,7 +11,8 @@ import { executeOwnedProcess } from "./ownedProcess.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { needsUpdateRecovery, recoverPendingUpdate } from "./managedUpdates.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
-import { readBoundedJSON, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
+import { readBoundedJSON, resolveLegacyRuntimeEntry, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
+import { createUpdateControl } from "./updateControl.ts"
 
 // launchd/systemd are a real external Seam. Tests replace only their command
 // Adapter and platform identity, retaining the production filesystem contract.
@@ -269,9 +270,17 @@ export const admitLoginStartup = async (paths: NodeClientPaths, token: string, e
     await readLauncher(metadata, uid)
     if (!tokenPattern.test(token) || token !== metadata.token) throw failure("identity", "This login startup entry is reserved for its registered ATape installation.")
     const current = await realpath(entryFile)
-    const selected = await capableRuntime(home, metadata.bootstrap)
-    if (!selected.capable) return undefined
-    if (current !== metadata.launcher && current !== selected.entry) throw failure("identity", "The registered ATape login startup executable changed. Reopen ATape to repair it.")
+    const recovering = await createUpdateControl(home).recoveryPending()
+    if (recovering && current === metadata.launcher) {
+      // The private hashed launcher is the recovery owner, not the possibly
+      // unavailable candidate. Its bootstrap must still exist. The caller
+      // recovers under update ownership, then repeats ordinary admission.
+      await realpath(metadata.bootstrap)
+    } else {
+      const selected = await capableRuntime(home, metadata.bootstrap, recovering)
+      if (!selected.capable) return undefined
+      if (current !== metadata.launcher && current !== selected.entry) throw failure("identity", "The registered ATape login startup executable changed. Reopen ATape to repair it.")
+    }
     // A queued job may still carry the preceding config override. The private
     // registration, rather than that stale process environment, selects the
     // current configuration and its off preference.
@@ -308,8 +317,8 @@ export const withLoginStartupRecovery = async (paths: NodeClientPaths, bootstrap
   }
 }
 
-const capableRuntime = async (home: string, bootstrap: string) => {
-  const entry = await realpath(await resolveRuntimeEntry(home, bootstrap))
+const capableRuntime = async (home: string, bootstrap: string, recovering = false) => {
+  const entry = await realpath(await (recovering ? resolveLegacyRuntimeEntry : resolveRuntimeEntry)(home, bootstrap))
   const runtime = Schema.decodeUnknownSync(Schema.Struct({ name: Schema.Literal("@atape/cli"),
     atapeRuntime: Schema.optionalKey(Schema.Struct({ loginStartupProtocol: Schema.optionalKey(Schema.String) }))
   }))(await readBoundedJSON(join(dirname(dirname(entry)), "package.json")))

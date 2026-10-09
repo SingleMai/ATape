@@ -33,6 +33,7 @@ export async function verifyAutomaticUpdate(donorPackage, fixtureDirectory) {
   const beforeDigest = await digest(bootstrap)
   const home = join(root, "home")
   const currentFile = join(home, "releases", "current.json")
+  const controlSelectionFile = join(home, "updates", "runtime.json")
   const selectedPackage = join(home, "releases", version, "node_modules", "@atape", "cli")
   // Keep CLI acquisition offline while exercising validation of the exact
   // packaged CLI and a newly prepared official Adapter generation.
@@ -168,12 +169,16 @@ export const createAtapeAdapter = async () => { throw new Error("Unreachable fac
     await writeFile(join(adapter, "index.js"), healthyAdapter)
     await writeFile(join(home, "updates", "state.json"), JSON.stringify({ nextCheckAt: 0, failures: 1 }))
     const dispatched = await command(launch, [])
-    await waitFor(async () => await exists(currentFile) && await exists(join(home, "updates", "state.json")) &&
+    await waitFor(async () => await exists(controlSelectionFile) && await exists(join(home, "updates", "state.json")) &&
       (await readdir(join(home, "updates", "workers")).catch(() => [])).length === 0,
       async () => `Detached update did not complete. Dispatcher: ${dispatched.stdout}\n${dispatched.stderr}\n${await readFile(join(home, "logs", "collector.log"), "utf8").catch(() => "no worker log")}`)
-    const current = await json(currentFile)
-    assert.equal(current.stateContract, manifest.atapeRuntime.stateContract)
-    assert.equal((await json(join(home, "updates", "retained.json"))).stateContract, manifest.atapeRuntime.stateContract)
+    const current = await json(controlSelectionFile)
+    assert.equal(current.protocol, "atape.update-control.v1")
+    assert.equal(current.captureStateContract, manifest.atapeRuntime.stateContract)
+    const control = await json(join(home, "updates", "control.json"))
+    assert.equal(control.phase, "completed")
+    assert.equal(control.previous.captureStateContract, manifest.atapeRuntime.stateContract)
+    assert.equal(await exists(currentFile), false, "A capable bootstrap must not rewrite the legacy bridge pointer")
     assert.equal(current.version, version)
     assert.equal(current.bootstrapEntry, bootstrap)
     assert.equal(current.bootstrapIdentity, beforeDigest)

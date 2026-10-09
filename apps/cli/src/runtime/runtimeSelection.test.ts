@@ -9,9 +9,11 @@ import { afterEach, describe, expect, it } from "vitest"
 import { readClientConfig, withClientConfigFileLock } from "./clientConfig.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
 import {
-  makeSelectedConfigStoreLayer, managedStateContract, readRuntimeSelection, readSelectedClientConfig,
-  resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile, selectRuntime, type RuntimeSelection
+  makeSelectedConfigStoreLayer, managedStateContract, preserveSelectedInstallations, readEffectiveRuntimeSelection,
+  readRuntimeSelection, readSelectedClientConfig, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile,
+  selectedBootstrap, selectRuntime, type RuntimeSelection
 } from "./runtimeSelection.ts"
+import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
 
 const temporaryDirectories: string[] = []
 afterEach(async () => {
@@ -55,13 +57,22 @@ const fixture = async () => {
     const entry = runtimeEntry(home, version)
     await mkdir(dirname(entry), { recursive: true })
     await writeFile(entry, `console.log("ATape ${version}")`)
+    await writeFile(join(dirname(dirname(entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version,
+      atapeRuntime: { stateContract: managedStateContract } }))
     return { protocol: "atape.runtime.v1", stateContract: managedStateContract, version,
       bootstrapEntry: bootstrap, adapters: [{ before: original, after }] }
+  }
+  const controlGeneration = async (version: string, captureStateContract = managedStateContract): Promise<UpdateRuntimeSelection> => {
+    const selected = await generation(version)
+    await writeFile(join(dirname(dirname(runtimeEntry(home, version))), "package.json"), JSON.stringify({ name: "@atape/cli", version,
+      atapeRuntime: { stateContract: captureStateContract, updateControlProtocol } }))
+    return { protocol: updateControlProtocol, captureStateContract, version, bootstrapEntry: bootstrap,
+      bootstrapIdentity: createHash("sha256").update(await readFile(bootstrap)).digest("hex"), adapters: selected.adapters }
   }
   const run = <A, E>(effect: Effect.Effect<A, E, ClientConfigStore>) => Effect.runPromise(
     effect.pipe(Effect.provide(makeSelectedConfigStoreLayer(paths))))
   return {
-    home, paths, bootstrap, raw, original, custom, generation, run,
+    home, paths, bootstrap, raw, original, custom, generation, controlGeneration, run,
     effective: () => Effect.runPromise(readSelectedClientConfig(paths)),
     persisted: () => Effect.runPromise(readClientConfig(paths.configFile)),
     pointer: (value: unknown) => writeFile(runtimeSelectionFile(home), typeof value === "string" ? value : JSON.stringify(value))
@@ -280,5 +291,140 @@ describe("managed runtime selection through persisted configuration Interfaces",
     expect((await client.effective()).adapters[0]).toEqual(client.original)
     expect(JSON.parse(await readFile(runtimeSelectionFile(client.home), "utf8"))).toEqual(bound)
     expect(await client.persisted()).toEqual(client.raw)
+  })
+})
+
+describe("independent update selection through the runtime and configuration Interfaces", () => {
+  const activate = async (home: string, next: UpdateRuntimeSelection) => {
+    const control = createUpdateControl(home)
+    const ticket = await control.prepare({ next })
+    await control.begin(ticket)
+    await control.complete(ticket)
+  }
+
+  it("keeps the legacy bridge while advancing the complete effective CLI and Adapter generation", async () => {
+    const client = await fixture()
+    const bridge = await client.generation("1.2.2")
+    await selectRuntime(client.home, bridge)
+    const anchor = await readFile(runtimeSelectionFile(client.home), "utf8")
+    for (const version of ["1.2.3", "1.2.4"]) {
+      const selected = await client.controlGeneration(version)
+      await activate(client.home, selected)
+      expect(await readEffectiveRuntimeSelection(client.home)).toEqual(selected)
+      expect(await readRuntimeSelection(client.home)).toEqual(bridge)
+      expect(await readFile(runtimeSelectionFile(client.home), "utf8")).toBe(anchor)
+      expect(await resolveRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, version))
+      expect(await selectedBootstrap(client.home, runtimeEntry(client.home, version))).toBe(client.bootstrap)
+      expect((await client.run(inspectClient())).adapters).toEqual([selected.adapters[0]!.after, client.custom])
+      await client.run(setAutomaticUpdates(false))
+      expect(await client.persisted()).toEqual({ ...client.raw, autoUpdateEnabled: false })
+    }
+    // A historical writer can alter its own pointer, but cannot replace control.
+    await selectRuntime(client.home, bridge)
+    expect((await readEffectiveRuntimeSelection(client.home))!.version).toBe("1.2.4")
+    await preserveSelectedInstallations(client.paths)
+    expect((await client.persisted()).adapters).toEqual((await client.effective()).adapters)
+  })
+
+  it("treats the independent capture contract as opaque and checks the actual package declaration", async () => {
+    const client = await fixture()
+    const selected = await client.controlGeneration("2.0.0", "atape.client.future-capture.v3")
+    await activate(client.home, selected)
+    expect(await readEffectiveRuntimeSelection(client.home)).toEqual(selected)
+    expect(await resolveRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, "2.0.0"))
+  })
+
+  it("keeps independent selection authoritative when a historical writer leaves pending recovery", async () => {
+    const client = await fixture()
+    const bridge = await client.generation("1.2.2")
+    const selected = await client.controlGeneration("1.2.3")
+    await selectRuntime(client.home, bridge)
+    await activate(client.home, selected)
+    const pending = join(client.home, "updates", "pending.json")
+    await writeFile(pending, "{}")
+    expect(await readEffectiveRuntimeSelection(client.home)).toEqual(selected)
+    expect(await resolveRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, selected.version))
+    expect((await client.effective()).adapters[0]).toEqual(selected.adapters[0]!.after)
+    await rm(pending)
+    expect(await readEffectiveRuntimeSelection(client.home)).toEqual(selected)
+    expect((await client.effective()).adapters[0]).toEqual(selected.adapters[0]!.after)
+  })
+
+  it("lets the first historical transaction reach its bridge before independent control exists", async () => {
+    const client = await fixture()
+    const bridge = await client.generation("1.2.2")
+    await selectRuntime(client.home, bridge)
+    await mkdir(join(client.home, "updates"), { recursive: true })
+    await writeFile(join(client.home, "updates", "pending.json"), "{}")
+    expect(await readEffectiveRuntimeSelection(client.home)).toEqual(bridge)
+    expect(await resolveRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, bridge.version))
+    expect((await client.effective()).adapters[0]).toEqual(bridge.adapters[0]!.after)
+  })
+
+  it.each(["invalid json", { protocol: "unknown" }, { version: "../../outside" }, { bootstrapIdentity: "invalid" },
+    { captureStateContract: "" }, { adapters: [] }])("fails closed for invalid independent metadata: %j", async change => {
+    const client = await fixture()
+    const bridge = await client.generation("1.2.2")
+    const selected = await client.controlGeneration("1.2.3")
+    await selectRuntime(client.home, bridge)
+    await activate(client.home, selected)
+    const invalid = typeof change === "string" ? change : JSON.stringify({ ...selected, ...change,
+      ...("adapters" in change ? { adapters: [selected.adapters[0], selected.adapters[0]] } : {}) })
+    await writeFile(join(client.home, "updates", "runtime.json"), invalid)
+    await writeFile(join(client.home, "updates", "pending.json"), "{}")
+    await expect(readEffectiveRuntimeSelection(client.home)).rejects.toThrow()
+    await expect(client.effective()).rejects.toMatchObject({ reason: "decode" })
+    expect(await client.persisted()).toEqual(client.raw)
+  })
+
+  it.each(["capability", "contract", "version", "name"] as const)("refuses an independent package whose %s no longer matches", async changed => {
+    const client = await fixture()
+    const selected = await client.controlGeneration("1.2.3")
+    await activate(client.home, selected)
+    const manifest = { name: changed === "name" ? "@other/cli" : "@atape/cli", version: changed === "version" ? "1.2.4" : selected.version,
+      atapeRuntime: { stateContract: changed === "contract" ? "atape.other.v2" : selected.captureStateContract,
+        ...(changed === "capability" ? {} : { updateControlProtocol }) } }
+    await writeFile(join(dirname(dirname(runtimeEntry(client.home, selected.version))), "package.json"), JSON.stringify(manifest))
+    await expect(resolveRuntimeEntry(client.home, client.bootstrap)).rejects.toThrow()
+    await expect(client.effective()).rejects.toMatchObject({ reason: "decode" })
+  })
+
+  it("refuses an escaping control executable instead of falling back to the legacy bridge", async () => {
+    const client = await fixture()
+    await selectRuntime(client.home, await client.generation("1.2.2"))
+    const selected = await client.controlGeneration("1.2.3")
+    await activate(client.home, selected)
+    const entry = runtimeEntry(client.home, selected.version)
+    await rm(entry)
+    await symlink(client.bootstrap, entry)
+    await expect(resolveRuntimeEntry(client.home, client.bootstrap)).rejects.toThrow()
+    await expect(client.effective()).rejects.toMatchObject({ reason: "decode" })
+  })
+
+  it.each(["replace", "remove"] as const)("fails closed when manual npm maintenance would %s the control bootstrap", async changed => {
+    const client = await fixture()
+    await selectRuntime(client.home, await client.generation("1.2.2"))
+    const selected = await client.controlGeneration("1.2.3")
+    await activate(client.home, selected)
+    if (changed === "replace") await writeFile(client.bootstrap, "manually installed CLI")
+    else await rm(client.bootstrap)
+    await expect(readEffectiveRuntimeSelection(client.home)).rejects.toThrow()
+    await expect(resolveRuntimeEntry(client.home, client.bootstrap)).rejects.toThrow()
+    expect(await createUpdateControl(client.home).readSelection()).toEqual(selected)
+    expect(await client.persisted()).toEqual(client.raw)
+  })
+
+  it("resolves the durable bootstrap binding for pending recovery without requiring the broken candidate", async () => {
+    const client = await fixture()
+    const bridge = await client.generation("1.2.2")
+    await selectRuntime(client.home, bridge)
+    const next = await client.controlGeneration("1.2.3")
+    const control = createUpdateControl(client.home)
+    const ticket = await control.prepare({ next })
+    await control.begin(ticket)
+    await rm(runtimeEntry(client.home, next.version))
+    expect(await selectedBootstrap(client.home, "/workers/copied-update.mjs")).toBe(client.bootstrap)
+    await expect(resolveRuntimeEntry(client.home, client.bootstrap)).rejects.toThrow()
+    expect(await control.recoveryPending()).toBe(true)
   })
 })

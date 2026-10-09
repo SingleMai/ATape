@@ -6,6 +6,8 @@ Login startup is amended by [ADR-0103](0103-login-startup.md); the original
 increment's lack of OS supervision below remains its recorded scope.
 The first capture v2 release has an explicit manual boundary under
 [ADR-0104](0104-capture-v2-state-upgrade.md); the v1 marker below is historical.
+Independent control selection and forward recovery are amended by
+[ADR-0107](0107-independent-update-control.md).
 
 Date: 2026-10-09
 

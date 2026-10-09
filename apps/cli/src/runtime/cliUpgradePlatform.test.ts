@@ -8,7 +8,8 @@ import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { atomicJSON, managedStateContract, readRuntimeSelection, readSelectedClientConfig, selectRuntime, type RuntimeSelection } from "./runtimeSelection.ts"
+import { atomicJSON, managedStateContract, readRuntimeSelection, readSelectedClientConfig, runtimeEntry, selectRuntime, type RuntimeSelection } from "./runtimeSelection.ts"
+import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { spawn } from "node:child_process"
@@ -41,7 +42,12 @@ else if (args[0] === "install") {
   }
   if (process.env.UPGRADE_TEST_FAIL === "true") process.exit(1);
   const version = args.find(arg => arg.startsWith("@atape/cli@")).slice("@atape/cli@".length);
-  fs.writeFileSync(process.env.UPGRADE_TEST_ENTRY, 'console.log("ATape ' + version + '")');
+  const manifest = JSON.parse(fs.readFileSync(process.env.UPGRADE_TEST_MANIFEST, "utf8"));
+  if (manifest.atapeRuntime) {
+    manifest.version = version;
+    fs.writeFileSync(process.env.UPGRADE_TEST_MANIFEST, JSON.stringify(manifest));
+    fs.writeFileSync(process.env.UPGRADE_TEST_ENTRY, 'if (process.env.ATAPE_RUNTIME_DIRECT !== "1") throw new Error("Generic verification would read the stale control identity"); console.log("ATape ' + version + '")');
+  } else fs.writeFileSync(process.env.UPGRADE_TEST_ENTRY, 'console.log("ATape ' + version + '")');
 } else process.exit(1);
 `)
   await chmod(join(bin, "npm"), 0o755)
@@ -49,6 +55,7 @@ else if (args[0] === "install") {
     ATAPE_CONFIG_FILE: join(root, "override-config", "client.json"),
     UPGRADE_TEST_FAIL: String(failInstall),
     UPGRADE_TEST_IGNORE_TERMINATION: String(ignoreTermination),
+    UPGRADE_TEST_MANIFEST: join(dirname(dirname(entry)), "package.json"),
     UPGRADE_TEST_MODULES: modules, UPGRADE_TEST_CALLS: join(root, "calls.json"), UPGRADE_TEST_ENTRY: entry }
   const run = <A, E>(effect: Effect.Effect<A, E, CLIUpgradePlatform>, path = entry, signal?: AbortSignal) => Effect.runPromise(effect.pipe(
     Effect.provide(makeCLIUpgradePlatformLayer(root, path, environment, fetchMetadata))), signal ? { signal } : undefined)
@@ -60,8 +67,75 @@ const install = (version: string) => Effect.scoped(Effect.gen(function*() {
   yield* platform.acquireOwnership()
   yield* platform.install(version)
 }))
+const managedFixture = async (failInstall = false, floor = false) => {
+  const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.5.6" }), failInstall)
+  const manifest = { name: "@atape/cli", version: "0.5.4", atapeRuntime: {
+    protocol: "atape.runtime.v1", stateContract: managedStateContract, updateControlProtocol
+  } }
+  await atomicJSON(client.environment.UPGRADE_TEST_MANIFEST, manifest)
+  await writeFile(client.entry, 'console.log("ATape 0.5.4")')
+  const original: AdapterInstallation = { adapterId: "codex", packageName: "@atape/adapter-codex", version: "0.5.4",
+    packageSlot: randomUUID(), upgradeSpec: "@atape/adapter-codex", displayName: "Codex",
+    installedAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }
+  const selected = { ...original, version: "0.5.5", packageSlot: randomUUID(), updatedAt: "2026-10-10T00:00:00Z" }
+  const config = { ...emptyClientConfig(), locale: "zh-CN" as const, autoUpdateEnabled: false, autoStartEnabled: false,
+    toolsConfigured: true, enabledAdapterIds: ["codex"], adapters: [original] }
+  await atomicJSON(client.paths.configFile, config)
+  const entry = runtimeEntry(client.root, selected.version)
+  await mkdir(dirname(entry), { recursive: true })
+  await writeFile(entry, 'console.log("ATape 0.5.5")')
+  await atomicJSON(join(dirname(dirname(entry)), "package.json"), { ...manifest, version: selected.version })
+  const control = createUpdateControl(client.root)
+  const ticket = await control.prepare({ next: { protocol: updateControlProtocol, version: selected.version,
+    captureStateContract: managedStateContract, bootstrapEntry: client.entry,
+    bootstrapIdentity: createHash("sha256").update(await readFile(client.entry)).digest("hex"),
+    adapters: [{ before: original, after: selected }] } })
+  await control.begin(ticket)
+  if (floor) await control.fence(ticket)
+  await control.complete(ticket)
+  return { ...client, control, original, selected, config,
+    pointer: join(client.root, "updates", "runtime.json"), ledger: join(client.root, "updates", "control.json") }
+}
 
 describe("Node CLI upgrade Adapter", () => {
+  it.each([false, true])("preserves independent slots and control compatibility across manual npm replacement (failure=%s)", async failure => {
+    const client = await managedFixture(failure, true)
+    const pointer = await readFile(client.pointer, "utf8"), ledger = await readFile(client.ledger, "utf8")
+    if (failure) await expect(client.run(install("0.5.6"))).rejects.toMatchObject({ reason: "install" })
+    else await client.run(install("0.5.6"))
+    expect(JSON.parse(await readFile(client.paths.configFile, "utf8"))).toEqual({ ...client.config, adapters: [client.selected] })
+    expect((await Effect.runPromise(readSelectedClientConfig(client.paths))).adapters).toEqual([client.selected])
+    expect(await client.control.recoveryPending()).toBe(false)
+    if (failure) {
+      expect(await readFile(client.pointer, "utf8")).toBe(pointer)
+      expect(await readFile(client.ledger, "utf8")).toBe(ledger)
+      expect(await readFile(client.entry, "utf8")).toContain("0.5.4")
+    } else {
+      const selection = await client.control.readSelection()
+      expect(selection).toMatchObject({ version: "0.5.6", captureStateContract: managedStateContract, adapters: [] })
+      expect(selection?.bootstrapIdentity).toBe(createHash("sha256").update(await readFile(client.entry)).digest("hex"))
+      expect(await readFile(runtimeEntry(client.root, "0.5.6"), "utf8")).toBe(await readFile(client.entry, "utf8"))
+      expect(JSON.parse(await readFile(client.ledger, "utf8"))).toMatchObject({ phase: "completed", forwardOnly: true,
+        floor: { minimumRuntimeVersion: "0.5.6", captureStateContract: managedStateContract } })
+      await expect(client.control.assertRuntimeAdmission({ version: "0.5.5", captureStateContract: managedStateContract }))
+        .rejects.toMatchObject({ reason: "admission" })
+    }
+  })
+
+  it("refuses npm replacement before mutation when independent recovery is pending or the selected version is newer", async () => {
+    const client = await managedFixture()
+    const selected = (await client.control.readSelection())!
+    await expect(client.run(install("0.5.4"))).rejects.toMatchObject({ reason: "installation", message: expect.stringContaining("already selected") })
+    await client.control.prepare({ next: selected })
+    const pointer = await readFile(client.pointer, "utf8"), ledger = await readFile(client.ledger, "utf8")
+    await expect(client.run(install("0.5.6"))).rejects.toMatchObject({ reason: "installation", message: expect.stringContaining("must recover") })
+    await expect(readFile(join(client.root, "calls.json"))).rejects.toMatchObject({ code: "ENOENT" })
+    expect(await readFile(client.pointer, "utf8")).toBe(pointer)
+    expect(await readFile(client.ledger, "utf8")).toBe(ledger)
+    expect(JSON.parse(await readFile(client.paths.configFile, "utf8"))).toEqual(client.config)
+    expect(await readFile(client.entry, "utf8")).toContain("0.5.4")
+  })
+
   it("excludes manual replacement while automatic maintenance owns this home", async () => {
     const client = await fixture(async () => Response.json({ name: "@atape/cli", version: "0.4.2" }))
     const release = await acquireUpdateWorker(client.root)

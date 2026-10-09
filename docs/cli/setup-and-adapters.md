@@ -277,6 +277,24 @@ The published 0.5.3 worker accepts v1 only, so it keeps its current installation
 when offered 0.5.4. This first v2 release requires the explicit manual transition
 below; later compatible v2 releases retain automatic updates and rollback.
 
+Capable packages additionally declare `atapeRuntime.updateControlProtocol` as
+`atape.update-control.v1`. This control protocol is independent of the capture
+contract. After a capable bridge is installed, subsequent capable updates select
+`updates/runtime.json` and retain durable recovery intent in
+`updates/control.json`. The legacy `releases/current.json` remains a genuine v2
+bridge for an older bootstrap. A capable npm bootstrap can enter control directly.
+An active control selection takes precedence over a copied older worker's legacy
+pointer. The CLI and official Adapter slots switch as one generation.
+
+This increment still admits only same-capture-contract candidates. It adds the
+durable boundary needed for a future migration plan, not an automatic v1→v2
+migration. Before a forward-only boundary, interrupted work restores the previous
+selection; after one, recovery must use the recorded target and reader floor.
+The floor checks the exact capture contract as well as minimum runtime version.
+Recovery remains pending until the selected runtime passes local readiness, and
+collection cannot begin writing data before the coordinator durably completes
+the transaction. Invalid metadata or unavailable recovery code pauses collection.
+
 One independent, short-lived updater prepares an isolated version directory and
 Adapter slots while collection continues. It then obtains exclusive maintenance
 ownership, requests Collector cancellation and bounds the entire stop handoff.
@@ -306,8 +324,9 @@ inspected. If either changes before activation, the candidate is discarded.
 Ordinary settings and Project edits are preserved. Recovery does
 not overwrite a later deliberate selection.
 
-The npm-global installation remains the bootstrap entry. `releases/current.json`
-selects the managed CLI and its prepared official Adapter slots. The underlying
+The npm-global installation remains the bootstrap entry. The effective legacy or
+independent control pointer selects the managed CLI and its prepared official
+Adapter slots. The underlying
 configuration retains Project/account settings and the original installation
 records; a deliberate package/source replacement takes precedence over the
 corresponding managed Adapter selection. Adapter slots continue using the
@@ -331,7 +350,14 @@ Collector running cannot check or recover until ATape next runs. Automatic
 release-directory cleanup is outside this increment. Automatic updates do
 not upload local logs or introduce remote maintenance commands. See
 [ADR-0100](../architecture/adr/0100-managed-automatic-updates.md) for the release,
-compatibility and recovery decision.
+compatibility and recovery decision, amended by
+[ADR-0107](../architecture/adr/0107-independent-update-control.md).
+
+Persistent version-aware discovery and an update wakeup independent of collection
+are subsequent increments. Published 0.5.3 and 0.5.4 both use the same GitHub
+`latest` and immutable npm package, but require different manifest contracts;
+one bridge package cannot serve both. A temporary release window cannot cover
+indefinitely offline installations. The 0.5.3 manual boundary below remains.
 
 The implementation was verified locally on macOS with CLI/Application behavior
 tests, Collector/Server E2E, all six official Adapter tarballs, and the installed
@@ -404,6 +430,13 @@ retry retains its recovery receipt when ownership is busy. Neither lock relies
 on the continued existence of a PID or a removable lock file. Explicit Adapter
 maintenance remains separate.
 
+With independent control active, the built-in update verifies the new bootstrap
+directly, creates its immutable recovery copy and durably binds that identity.
+It preserves the capture contract and reader floor. If the process dies between
+npm replacement and binding, a later owned startup detects the changed identity
+and completes forward recovery. npm's in-place replacement itself is not atomic;
+an incomplete or unsupported replacement requires a valid same-contract package.
+
 Managed collection records the executable identity it started with. Opening ATape,
 installing or updating an integration, or selecting Start sync refreshes a running
 Host when the installed CLI changed, including a same-version reinstall. Legacy
@@ -414,17 +447,18 @@ cannot receive a new installation layout. An unchanged Host picks up Adapter-onl
 updates on its next cycle without a restart.
 
 A direct npm/tarball replacement does not itself run ATape lifecycle management.
-The managed selection records the bootstrap executable's digest. Replacing its
-bytes invalidates that selection while retaining the pointer as local evidence;
-the newly installed bootstrap and original configuration source records take
-precedence. Outside the explicit v1→v2 transition above, an external npm command
-does not preserve the managed Adapter overlay into those records as the internal
-upgrade does. Replacing a shared npm bootstrap
-from a different `ATAPE_HOME` has this same effect on other homes; their
-preferences and managed selections remain independent. Reopen ATape to complete the
-Collector handoff and inspect current
-Adapter versions in Tools. The next eligible automatic check can prepare a new
-aligned generation. Older CLIs without this detection require
+With independent control active, a changed bootstrap identity requires owned
+recovery before ordinary delegation. Reopening ATape or a registered login entry
+checks the actual package, exact capture contract, control capability and version,
+preserves the selected Adapter overlay, and binds a verified immutable copy.
+Recovery refuses a downgrade, incompatible contract or invalid executable.
+Help/version stay read-only and may report invalid selection until recovery runs.
+Homes sharing a global npm bootstrap recover their own preferences and selections
+independently. Legacy-only selections retain their earlier behavior: replacement
+invalidates the digest and the new bootstrap/configuration takes precedence,
+without preserving the overlay automatically. Reopen ATape to complete the
+Collector handoff and inspect Adapter versions in Tools. The next eligible
+automatic check can prepare a new aligned generation. Older CLIs without this detection require
 Stop sync in Settings before replacement, then Start sync after reopening.
 Verify the installed version in Tools, update integrations there as needed, and
 inspect Project sync results. Installing a version is not proof of successful

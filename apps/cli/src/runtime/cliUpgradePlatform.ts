@@ -8,6 +8,7 @@ import { defaultNodeClientPaths } from "./clientPaths.ts"
 import { preserveSelectedInstallations } from "./runtimeSelection.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { acquireProcessLock } from "./processLock.ts"
+import { createUpdateControl } from "./updateControl.ts"
 
 const registry = "https://registry.npmjs.org/"
 const Manifest = Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String })
@@ -62,11 +63,21 @@ export const makeCLIUpgradePlatformLayer = (
           message: "The installed ATape version is not a stable release. Update it with the package manager used to install it." })
         if (isNewerReleaseVersion(actual.version, version)) throw new CLIUpgradeError({ reason: "installation",
           message: `ATape ${actual.version} is already installed. Check versions again before applying an older release.` })
+        const control = createUpdateControl(home), selected = await control.readSelection()
+        if (await control.recoveryPending()) throw new CLIUpgradeError({ reason: "installation",
+          message: "An interrupted ATape update must recover before replacing its npm installation." })
+        if (selected && isNewerReleaseVersion(selected.version, version)) throw new CLIUpgradeError({ reason: "installation",
+          message: `ATape ${selected.version} is already selected. Check versions again before applying an older release.` })
         await preserveSelectedInstallations(defaultNodeClientPaths({ ...environment, ATAPE_HOME: home }))
         await run(["install", "--global", "--prefix", prefix, `@atape/cli@${version}`, "--ignore-scripts", "--engine-strict", "--no-audit", "--no-fund", "--registry", registry,
           `--@atape:registry=${registry}`])
-        const verified = await execute(process.execPath, [installedEntry, "--version"], environment, signal, 15_000)
+        // Once npm has replaced the bootstrap, join verification/rebinding even
+        // if the caller cancels. A killed process is repaired from the changed
+        // bootstrap by the next owned startup recovery.
+        const verified = await execute(process.execPath, [installedEntry, "--version"],
+          { ...environment, ATAPE_HOME: home, ATAPE_RUNTIME_DIRECT: "1" }, AbortSignal.timeout(15_000), 15_000)
         if (verified.trim() !== `ATape ${version}`) throw new Error("Installed version mismatch")
+        if (selected) await control.rebindBootstrap()
       } finally { release() }
     })()
     task.then(() => resume(Effect.void), cause => resume(Effect.fail(cause instanceof CLIUpgradeError ? cause : new CLIUpgradeError({ reason: "install",
