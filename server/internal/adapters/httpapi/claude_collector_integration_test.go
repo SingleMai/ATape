@@ -175,7 +175,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	usage := func(sessionID string, expected int, expectedInput, expectedOutput int64) {
 		t.Helper()
 		view, err := store.Overview(t.Context(), authentication.Principal{UserID: grant.User.ID, Method: authentication.WebAuthentication}, project.TeamID,
-			time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
+			time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC), canonical.OverviewFilter{}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -219,7 +219,7 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			}
 			cursor, offset := "", int64(0)
 			var content strings.Builder
-			for n := 0; n < 20; n++ {
+			for n := 0; n < 64; n++ {
 				query := url.Values{"generation": {"1"}, "limit": {"1"}}
 				if cursor != "" {
 					query.Set("cursor", cursor)
@@ -1065,8 +1065,111 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 			t.Fatalf("Claude reversed Read control/tool reached Search: %s", term)
 		}
 	}
+	// The second native dual round continues this same source after its ordinary
+	// turn. Each historical file has its own restartable Raw-only ACK.
+	for _, stage := range []struct {
+		phase                         string
+		events, count, added, pending int
+		input, output                 int64
+		idle                          bool
+	}{
+		{"plan", 16, 6, 2, 0, 380122, 94, false}, {"call-a", 17, 6, 1, 0, 380122, 94, false},
+		{"call-b", 18, 6, 1, 0, 380122, 94, false}, {"result-a", 19, 6, 1, 1, 380122, 94, true},
+		{"result-b", 20, 6, 1, 0, 380122, 94, false}, {"originals", 20, 6, 0, 0, 380122, 94, false},
+		{"summary", 20, 6, 0, 1, 380122, 94, true}, {"file-a", 20, 6, 0, 1, 380122, 94, true},
+		{"files", 20, 6, 0, 1, 380122, 94, true}, {"final-a", 21, 7, 1, 0, 380163, 117, false},
+		{"final", 22, 7, 1, 0, 380163, 117, true},
+		{"ordinary-resume", 24, 8, 2, 0, 380192, 130, true},
+	} {
+		phase := "repeated-dual-read-" + stage.phase
+		capture := run(phase)
+		assertAutoProgress(phase, capture, stage.pending)
+		if capture.CanonicalEvents != stage.added || capture.RawChunks != 1 {
+			t.Fatalf("Claude repeated dual Read %s events=%d want=%d Raw=%d", phase, capture.CanonicalEvents, stage.added, capture.RawChunks)
+		}
+		current := read(reversedReadPairSession, "root", stage.events)
+		oldJSON, _ := json.Marshal(reversedPrevious.Events)
+		prefixJSON, _ := json.Marshal(current.Events[:len(reversedPrevious.Events)])
+		if !bytes.Equal(oldJSON, prefixJSON) {
+			t.Fatal("Claude repeated dual Read changed acknowledged Reader Events")
+		}
+		usage(reversedReadPairSession, stage.count, stage.input, stage.output)
+		archive := assertSourceRaw(reversedReadPairSession, reversedFiles)
+		if len(archive.Objects) != 1 || archive.Objects[0].ObjectID != reversedArchive.Objects[0].ObjectID {
+			t.Fatal("Claude repeated dual Read replaced its Raw source")
+		}
+		if stage.idle {
+			idle := run(phase + "-idle")
+			assertAutoProgress(phase+"-idle", idle, stage.pending)
+			if idle.Cursor != capture.Cursor || idle.Observations != 0 || idle.CanonicalBatches != 0 || idle.RawChunks != 0 || !bytes.Equal(idle.RawObjects, capture.RawObjects) {
+				t.Fatal("Claude repeated dual Read idle advanced cursor or Raw receipts")
+			}
+			usage(reversedReadPairSession, stage.count, stage.input, stage.output)
+		}
+		reversedPrevious = current
+	}
+	r2ResultOrder := make(map[string]int)
+	for _, suffix := range []string{"a", "b"} {
+		callID := "call_atape_repeated_dual_4a0ecd53_r2_read_" + suffix
+		calls, results := 0, 0
+		for index, event := range reversedPrevious.Events {
+			if event.Tool == nil || event.Tool.ToolCallID != callID {
+				continue
+			}
+			if event.Tool.SessionUpdate == "tool_call" {
+				calls++
+				var input map[string]string
+				if json.Unmarshal(event.Tool.RawInput, &input) != nil || input["file_path"] != filepath.Join(home, "workspace", "r2-"+suffix+".txt") {
+					t.Fatal("Claude repeated dual Read changed its current literal path")
+				}
+			} else if event.Tool.SessionUpdate == "tool_call_update" {
+				results++
+				r2ResultOrder[suffix] = index
+				var output string
+				if event.Kind != "tool_result" || event.Tool.Status == nil || *event.Tool.Status != "completed" || json.Unmarshal(event.Tool.RawOutput, &output) != nil || !strings.Contains(output, "ATAPE_REPEAT_DISK_82f63bfe_dual_R2_"+strings.ToUpper(suffix)+":") {
+					t.Fatal("Claude repeated dual Read lost its own-call receipt")
+				}
+				var anchored conversation.Conversation
+				decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+reversedReadPairSession+"?thread=root&at="+url.QueryEscape(event.ID)+"&limit=2", ""), &anchored)
+				found := false
+				for _, item := range anchored.Events {
+					found = found || item.ID == event.ID && item.Kind == "tool_result" && item.Tool != nil && item.Tool.ToolCallID == callID
+				}
+				if anchored.Session.ID != reversedReadPairSession || anchored.Thread.ID != "root" || !found {
+					t.Fatal("Claude repeated dual Read anchor crossed its own call")
+				}
+			}
+		}
+		if calls != 1 || results != 1 {
+			t.Fatal("Claude repeated dual Read duplicated a current call or result")
+		}
+	}
+	if r2ResultOrder["a"] >= r2ResultOrder["b"] {
+		t.Fatal("Claude repeated dual Read changed its current result order")
+	}
+	for _, term := range []string{"ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS:", "ATAPE_REPEATED_DUAL_4a0ecd53_R2_PLAN:", "ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_A:", "ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_B:", "ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: Confirm", "ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: both"} {
+		hits := search(term)
+		if len(hits.Results) != 1 {
+			t.Fatalf("Claude repeated dual Read Search lost or duplicated %s", term)
+		}
+		hit := hits.Results[0]
+		var anchored conversation.Conversation
+		decodeResponse(t, send(http.MethodGet, "/api/v1/sessions/"+reversedReadPairSession+"?thread=root&at="+url.QueryEscape(hit.EventID)+"&limit=2", ""), &anchored)
+		found := false
+		for _, event := range anchored.Events {
+			found = found || event.ID == hit.EventID && strings.Contains(event.Text, term)
+		}
+		if hit.SessionID != reversedReadPairSession || hit.ThreadID != "root" || !found {
+			t.Fatal("Claude repeated dual Read Search anchor crossed identity")
+		}
+	}
+	for _, term := range []string{"ATAPE_REPEATED_DUAL_4a0ecd53_R2_SUMMARY:", "ATAPE_REPEAT_DISK_82f63bfe_dual_R2_", "call_atape_repeated_dual_4a0ecd53_r2_"} {
+		if len(search(term).Results) != 0 {
+			t.Fatalf("Claude repeated dual Read file/control reached Search: %s", term)
+		}
+	}
 	reversedFinalArchive, reversedRaw := readRaw(reversedReadPairSession)
-	readRetained = append(readRetained, readRetention{reversedReadPairSession, reversedReadPairID, 14, 5, 190122, 77, reversedFinalArchive, reversedRaw})
+	readRetained = append(readRetained, readRetention{reversedReadPairSession, reversedReadPairID, 24, 8, 380192, 130, reversedFinalArchive, reversedRaw})
 	// Exercise the same public Reader/Raw/usage Interfaces for small and large
 	// native file groups across independently restarted installed daemons.
 	type manualReadStage struct {

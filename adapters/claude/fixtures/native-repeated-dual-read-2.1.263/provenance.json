@@ -1,0 +1,2473 @@
+{
+  "kind": "controlled-native-Claude-repeated-planned-dual-Read-auto-replay-with-two-prior-files-source-evidence",
+  "status": "Controlled source evidence. The Claude guide owns implementation, acceptance and release status. No publication or deployment is established.",
+  "claudeVersion": "2.1.263",
+  "recordedBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "fixtureCwd": "/fixture/native-repeated-dual-read/workspace",
+  "fixtureConfig": "/fixture/native-repeated-dual-read/config",
+  "fixtureHome": "/fixture/native-repeated-dual-read/home",
+  "transformation": "Only literal isolated workspace/config/HOME and encoded-directory substitutions. Native JSONL is never reserialized; UUID/API ID/index/time/control/unknown values are preserved.",
+  "selectedSourceRequests": {
+    "file": "selected-source-requests.json",
+    "bytes": 28089,
+    "sha256": "dca84e88612d417a63bc09447ef861d917353020ef456e44dfcf846e135c437d"
+  },
+  "sourceAuthority": {
+    "captureHarness": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/capture.mjs",
+      "bytes": 22293,
+      "sha256": "be2f9f2fa6484ca9c665d0612cf510b0fe5a56b90a25af843e5780b6c4397d3b"
+    },
+    "capturePlan": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/plan.json",
+      "bytes": 4372,
+      "sha256": "d82e6b75aae218f73700224e8f8a2f91e0c53455cc6036ce059d9c22da7997e6"
+    },
+    "preflightAuthority": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/authority.json",
+      "bytes": 2946,
+      "sha256": "d782f0eaca3082500fa80ee35713bf047e916d88acd02758c0af24aeb4d86f4e"
+    },
+    "nativeInvocation": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/native-invocation.json",
+      "bytes": 4042,
+      "sha256": "959aa73973edfeea413085bb94c2de9aa8d5e0d01bf0ac84271c75f1d528bd50"
+    },
+    "nativeResult": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/native-result.json",
+      "bytes": 7094,
+      "sha256": "36961ced688b606cf126e3f174b180ee80220c301751b2a9e47d81485343867d"
+    },
+    "nativeBudgetSpent": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/native-budget-spent.json",
+      "bytes": 154,
+      "sha256": "ace2d25d902961437450160caa2b36c650279c21c8497579ac53294a3455d6d2"
+    },
+    "captureResult": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/capture-result.json",
+      "bytes": 3813,
+      "sha256": "b295b6d52632d5409c5f87d064d3162d9d4a0d5b332b52875ab159088a5f185a"
+    },
+    "requests": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/requests.json",
+      "bytes": 38255,
+      "sha256": "feccccaa14e9366977cafa791a645f48c7535c354867ea64f60033c121276a3a"
+    },
+    "cleanup": {
+      "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/cleanup.json",
+      "bytes": 172,
+      "sha256": "f2e43ebbcd6c3f1822453dde9d697c1fc5c60adcf9fd7d5dcc26632e306514fc"
+    },
+    "ordinaryHarness": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/capture.mjs",
+      "bytes": 19278,
+      "sha256": "ea82283a0387f3a1f47dd566420a92cc9cb23702f3f6ec36f4dac2f95e48bf59"
+    },
+    "ordinaryPlan": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/plan.json",
+      "bytes": 3038,
+      "sha256": "bec43edb9e05f61e729ecc6b3891e67c7a24b4362d3ea929acbb6271401a5a76"
+    },
+    "ordinaryAuthority": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/authority.json",
+      "bytes": 3046,
+      "sha256": "f24977411c2f48275284d8916c0e7bdf1768fac2824701d03527e43d343c30a4"
+    },
+    "ordinaryNativeInvocation": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/native-invocation.json",
+      "bytes": 4063,
+      "sha256": "f93ee045922ae57cd043c02484fb342b0a608eba997880a9c0826d08b33e9496"
+    },
+    "ordinaryNativeResult": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/native-result.json",
+      "bytes": 7137,
+      "sha256": "b6dd785b4da7b74f1bf0399cd3e4d538ab3300461b0e453a6fb4a1440b467e54"
+    },
+    "ordinaryRequests": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/requests.json",
+      "bytes": 10710,
+      "sha256": "29f0c347c75b8fd4fae20ddb9ea6c9df02204bd5a9d7e87d6aa1c7ec5e1b7eae"
+    },
+    "ordinaryCaptureResult": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/capture-result.json",
+      "bytes": 862,
+      "sha256": "30014bcf20537d633227215ba6b63518c6b3a4da555ac27b65bdd2fae06256bb"
+    },
+    "ordinaryCleanup": {
+      "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/cleanup.json",
+      "bytes": 172,
+      "sha256": "763c6a602972cb07f106be3e56178610613dc7c388ffbc4d088cbc7f8f599609"
+    }
+  },
+  "cases": [
+    {
+      "id": "repeated_dual_plan_read",
+      "profile": "repeated-dual-plan-read",
+      "sessionId": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+      "sourceResearchDirectory": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7",
+      "pathSubstitutions": [
+        {
+          "from": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "to": "/fixture/native-repeated-dual-read/workspace"
+        },
+        {
+          "from": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "to": "/fixture/native-repeated-dual-read/workspace"
+        },
+        {
+          "from": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/config",
+          "to": "/fixture/native-repeated-dual-read/config"
+        },
+        {
+          "from": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/config",
+          "to": "/fixture/native-repeated-dual-read/config"
+        },
+        {
+          "from": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/home",
+          "to": "/fixture/native-repeated-dual-read/home"
+        },
+        {
+          "from": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/home",
+          "to": "/fixture/native-repeated-dual-read/home"
+        },
+        {
+          "from": "-private-tmp-atape-claude-repeat-auto-formal-8CevmE-dual-1-workspace",
+          "to": "-fixture-native-repeated-dual-read-workspace"
+        }
+      ],
+      "nativeSnapshots": [
+        {
+          "phase": "before-r2",
+          "file": "before-r2.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 46,
+          "original": {
+            "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/before-native.jsonl",
+            "bytes": 28697,
+            "sha256": "26bba82b2f7b1dc099b006544714a88532017b146252c7929af10d1b95456b9f"
+          },
+          "sanitized": {
+            "bytes": 27833,
+            "sha256": "5c0f041218af90e74a7ace62a1c9a38977542055c634cfd57c3c95667a6436e3"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 14,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "msg_atape_reversed_read_82f63bfe_dual_ordinary_6"
+            ]
+          }
+        },
+        {
+          "phase": "r2",
+          "file": "r2.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 74,
+          "original": {
+            "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/r2.jsonl",
+            "bytes": 51063,
+            "sha256": "60924365fc42c75d6a438beddf4d9e76bbf957ca1795f5d39e00b4ec9335025d"
+          },
+          "sanitized": {
+            "bytes": 49407,
+            "sha256": "a78bab759e3047c65ec9812263c98422f0017b94dc453a162c35757222191272"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 22,
+            "distinctUsageCount": 7,
+            "inputTokens": 380163,
+            "outputTokens": 117,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "msg_atape_reversed_read_82f63bfe_dual_ordinary_6",
+              "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+              "msg_atape_repeated_dual_4a0ecd53_r2_tool_final"
+            ]
+          }
+        },
+        {
+          "phase": "ordinary-resume",
+          "file": "ordinary-resume.jsonl",
+          "kind": "actual native snapshot with path-only substitutions",
+          "recordCount": 80,
+          "original": {
+            "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/ordinary-resume.jsonl",
+            "bytes": 54083,
+            "sha256": "9ee0a5db92cf02b7255d0e24df61ee3367fd853e36984dd272341e155e8f90cb"
+          },
+          "sanitized": {
+            "bytes": 52355,
+            "sha256": "7d17abfe1240114cd7f75002492106cffc7ff21afe3d985cfbad8fa8d88eb04e"
+          },
+          "strictPreviousOriginalBytePrefix": true,
+          "strictPreviousSanitizedBytePrefix": true,
+          "expected": {
+            "uniqueCanonicalEventCount": 24,
+            "distinctUsageCount": 8,
+            "inputTokens": 380192,
+            "outputTokens": 130,
+            "usageSourceIds": [
+              "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+              "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+              "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+              "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+              "msg_atape_reversed_read_82f63bfe_dual_ordinary_6",
+              "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+              "msg_atape_repeated_dual_4a0ecd53_r2_tool_final",
+              "msg_atape_repeated_dual_f9b20e67_ordinary"
+            ]
+          }
+        }
+      ],
+      "priorNativeSourceReference": {
+        "fixture": "../native-reversed-read-pair-2.1.263/provenance.json",
+        "phases": [
+          "seed",
+          "warmup",
+          "r1",
+          "ordinary-resume"
+        ],
+        "lastSnapshot": "../native-reversed-read-pair-2.1.263/ordinary-resume.jsonl",
+        "equalsBeforeR2AfterDeclaredFixturePathAndEncodedComponentReplacement": true,
+        "originalNativeSourceBytes": 28697,
+        "originalNativeSourceSha256": "26bba82b2f7b1dc099b006544714a88532017b146252c7929af10d1b95456b9f"
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "lines": {
+            "user": 20,
+            "G": 21,
+            "plan": 22,
+            "calls": [
+              23,
+              24
+            ],
+            "results": [
+              25,
+              26
+            ],
+            "A": 27,
+            "copyStart": 28,
+            "copyEnd": 35,
+            "B": 36,
+            "S": 37,
+            "F0": 38,
+            "F1": 39
+          },
+          "resultCompletionOrder": [
+            "call1",
+            "call0"
+          ],
+          "retainedOriginalUuids": [
+            "466ab239-9359-414c-a61e-be6d955ae983",
+            "f8320f39-791d-441d-a181-61104b8e6ed5",
+            "d92403f4-55f8-4743-a986-3260845222b9",
+            "04391e85-ce37-4e9e-b831-9b6788960fff",
+            "913553cc-dfa9-4247-9afb-70797222490b",
+            "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+          ],
+          "replayedWholeTurnUuids": [
+            "244ea704-b43d-4f92-aed5-e5f964a12463",
+            "04293366-a6f8-4b82-8b20-ed4bb2db6e7f",
+            "466ab239-9359-414c-a61e-be6d955ae983",
+            "f8320f39-791d-441d-a181-61104b8e6ed5",
+            "d92403f4-55f8-4743-a986-3260845222b9",
+            "04391e85-ce37-4e9e-b831-9b6788960fff",
+            "913553cc-dfa9-4247-9afb-70797222490b",
+            "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+          ],
+          "slug": {
+            "value": "cryptic-gliding-brook",
+            "originalState": "absent",
+            "copyChange": "first-added-only"
+          },
+          "boundary": {
+            "line": 36,
+            "uuid": "2a2fe3ea-7fba-45a5-bf07-9952728c19df",
+            "parentUuid": null,
+            "logicalParentUuid": "53e6d261-ac09-4d34-8bad-e8797f7d86e6"
+          },
+          "summary": {
+            "line": 37,
+            "uuid": "b8ef2671-0cd5-4a4c-95cb-838ad56d4e1a",
+            "parentUuid": "2a2fe3ea-7fba-45a5-bf07-9952728c19df",
+            "isCompactSummary": true,
+            "isVisibleInTranscriptOnly": true,
+            "knownMarker": "ATAPE_REPEAT_DUAL_R1_SUMMARY:"
+          },
+          "priorEvidenceReference": {
+            "provenance": "../native-reversed-read-pair-2.1.263/provenance.json",
+            "caseId": "reversed_plan_pair",
+            "round": 1,
+            "normalization": "Replace declared fixture path prefix and encoded directory component; first-round native facts are unchanged."
+          }
+        },
+        {
+          "round": 2,
+          "lines": {
+            "user": 52,
+            "G": 53,
+            "plan": 54,
+            "calls": [
+              55,
+              56
+            ],
+            "results": [
+              57,
+              58
+            ],
+            "A": 59,
+            "copyStart": 60,
+            "copyEnd": 67,
+            "B": 68,
+            "S": 69,
+            "files": [
+              70,
+              71
+            ],
+            "F0": 72,
+            "F1": 73
+          },
+          "resultCompletionOrder": [
+            "call0",
+            "call1"
+          ],
+          "retainedOriginalUuids": [
+            "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+            "53a3ddef-b3bb-4424-8589-018547ba3890",
+            "8881938d-c599-4350-a391-b1cce2cbbe63",
+            "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+            "58593861-368f-4ba8-b2f7-77b199de259d",
+            "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121"
+          ],
+          "replayedWholeTurnUuids": [
+            "8dafe593-5f2c-473f-bd51-e573525ea3cf",
+            "fcb310ea-982b-47d9-95dc-9870b51d18eb",
+            "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+            "53a3ddef-b3bb-4424-8589-018547ba3890",
+            "8881938d-c599-4350-a391-b1cce2cbbe63",
+            "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+            "58593861-368f-4ba8-b2f7-77b199de259d",
+            "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121"
+          ],
+          "slug": {
+            "value": "cryptic-gliding-brook",
+            "originalState": "existing",
+            "copyChange": "unchanged"
+          },
+          "copyPositions": [
+            {
+              "originalLine": 52,
+              "copyLine": 60,
+              "uuid": "8dafe593-5f2c-473f-bd51-e573525ea3cf",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 53,
+              "copyLine": 61,
+              "uuid": "fcb310ea-982b-47d9-95dc-9870b51d18eb",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 54,
+              "copyLine": 62,
+              "uuid": "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 55,
+              "copyLine": 63,
+              "uuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 56,
+              "copyLine": 64,
+              "uuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 57,
+              "copyLine": 65,
+              "uuid": "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 58,
+              "copyLine": 66,
+              "uuid": "58593861-368f-4ba8-b2f7-77b199de259d",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            },
+            {
+              "originalLine": 59,
+              "copyLine": 67,
+              "uuid": "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121",
+              "wholeDecodedEqual": true,
+              "exactSerializedLFEqual": true
+            }
+          ],
+          "boundary": {
+            "uuid": "eb75b29b-9c97-4323-af34-2d9475a59d6b",
+            "parentUuid": null,
+            "logicalParentUuid": "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121",
+            "compactMetadata": {
+              "trigger": "auto",
+              "preTokens": 190113,
+              "postTokens": 509,
+              "cumulativeDroppedTokens": 379378,
+              "durationMs": 14,
+              "preservedSegment": {
+                "headUuid": "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+                "anchorUuid": "f8d7ece7-314c-4410-b1b3-f1939e865893",
+                "tailUuid": "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121"
+              },
+              "preservedMessages": {
+                "anchorUuid": "f8d7ece7-314c-4410-b1b3-f1939e865893",
+                "uuids": [
+                  "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+                  "53a3ddef-b3bb-4424-8589-018547ba3890",
+                  "8881938d-c599-4350-a391-b1cce2cbbe63",
+                  "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+                  "58593861-368f-4ba8-b2f7-77b199de259d",
+                  "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121"
+                ],
+                "allUuids": [
+                  "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+                  "53a3ddef-b3bb-4424-8589-018547ba3890",
+                  "8881938d-c599-4350-a391-b1cce2cbbe63",
+                  "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+                  "58593861-368f-4ba8-b2f7-77b199de259d",
+                  "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121"
+                ]
+              }
+            }
+          },
+          "summary": {
+            "uuid": "f8d7ece7-314c-4410-b1b3-f1939e865893",
+            "parentUuid": "eb75b29b-9c97-4323-af34-2d9475a59d6b",
+            "promptId": "576c18f0-de7e-47b3-8efc-f299a81d2c5d",
+            "isCompactSummary": true,
+            "isVisibleInTranscriptOnly": true
+          },
+          "physicalUuidGraph": [
+            {
+              "line": 52,
+              "start": 29490,
+              "end": 30141,
+              "bytes": 651,
+              "uuid": "8dafe593-5f2c-473f-bd51-e573525ea3cf",
+              "type": "user",
+              "subtype": null,
+              "parentUuid": "2b3bbb57-8b11-4400-ab49-6cceb077da41",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 53,
+              "start": 30141,
+              "end": 30668,
+              "bytes": 527,
+              "uuid": "fcb310ea-982b-47d9-95dc-9870b51d18eb",
+              "type": "attachment",
+              "subtype": null,
+              "parentUuid": "8dafe593-5f2c-473f-bd51-e573525ea3cf",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": "total_tokens_reminder",
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 54,
+              "start": 30668,
+              "end": 31804,
+              "bytes": 1136,
+              "uuid": "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+              "type": "assistant",
+              "subtype": null,
+              "parentUuid": "fcb310ea-982b-47d9-95dc-9870b51d18eb",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+              "apiBlockIndex": 0
+            },
+            {
+              "line": 55,
+              "start": 31804,
+              "end": 33027,
+              "bytes": 1223,
+              "uuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+              "type": "assistant",
+              "subtype": null,
+              "parentUuid": "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+              "apiBlockIndex": 1
+            },
+            {
+              "line": 56,
+              "start": 33027,
+              "end": 34250,
+              "bytes": 1223,
+              "uuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+              "type": "assistant",
+              "subtype": null,
+              "parentUuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+              "apiBlockIndex": 2
+            },
+            {
+              "line": 57,
+              "start": 34250,
+              "end": 35210,
+              "bytes": 960,
+              "uuid": "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+              "type": "user",
+              "subtype": null,
+              "parentUuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+              "sourceToolAssistantUUID": "53a3ddef-b3bb-4424-8589-018547ba3890",
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 58,
+              "start": 35210,
+              "end": 36174,
+              "bytes": 964,
+              "uuid": "58593861-368f-4ba8-b2f7-77b199de259d",
+              "type": "user",
+              "subtype": null,
+              "parentUuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+              "sourceToolAssistantUUID": "8881938d-c599-4350-a391-b1cce2cbbe63",
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 59,
+              "start": 36174,
+              "end": 36701,
+              "bytes": 527,
+              "uuid": "c9e9c5ba-4f39-4b4f-a86f-bda13c4d2121",
+              "type": "attachment",
+              "subtype": null,
+              "parentUuid": "58593861-368f-4ba8-b2f7-77b199de259d",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": "total_tokens_reminder",
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 68,
+              "start": 43912,
+              "end": 45294,
+              "bytes": 1382,
+              "uuid": "eb75b29b-9c97-4323-af34-2d9475a59d6b",
+              "type": "system",
+              "subtype": "compact_boundary",
+              "parentUuid": null,
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 69,
+              "start": 45294,
+              "end": 46853,
+              "bytes": 1559,
+              "uuid": "f8d7ece7-314c-4410-b1b3-f1939e865893",
+              "type": "user",
+              "subtype": null,
+              "parentUuid": "eb75b29b-9c97-4323-af34-2d9475a59d6b",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 70,
+              "start": 46853,
+              "end": 47715,
+              "bytes": 862,
+              "uuid": "6e69e777-d705-41ab-81fd-299d4afa080a",
+              "type": "attachment",
+              "subtype": null,
+              "parentUuid": "f8d7ece7-314c-4410-b1b3-f1939e865893",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": "file",
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 71,
+              "start": 47715,
+              "end": 48579,
+              "bytes": 864,
+              "uuid": "b58c2a4a-8149-46ea-a8c5-ca671cc2c01f",
+              "type": "attachment",
+              "subtype": null,
+              "parentUuid": "6e69e777-d705-41ab-81fd-299d4afa080a",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": "file",
+              "apiId": null,
+              "apiBlockIndex": null
+            },
+            {
+              "line": 72,
+              "start": 48579,
+              "end": 49701,
+              "bytes": 1122,
+              "uuid": "94643e20-55ea-4f6a-8078-83b6430dc183",
+              "type": "assistant",
+              "subtype": null,
+              "parentUuid": "b58c2a4a-8149-46ea-a8c5-ca671cc2c01f",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": "msg_atape_repeated_dual_4a0ecd53_r2_tool_final",
+              "apiBlockIndex": 0
+            },
+            {
+              "line": 73,
+              "start": 49701,
+              "end": 50825,
+              "bytes": 1124,
+              "uuid": "0d61ff8f-cd8c-4668-939c-aac214a48a12",
+              "type": "assistant",
+              "subtype": null,
+              "parentUuid": "94643e20-55ea-4f6a-8078-83b6430dc183",
+              "sourceToolAssistantUUID": null,
+              "slug": "cryptic-gliding-brook",
+              "attachmentType": null,
+              "apiId": "msg_atape_repeated_dual_4a0ecd53_r2_tool_final",
+              "apiBlockIndex": 1
+            }
+          ]
+        }
+      ],
+      "ordinaryBridge": {
+        "lines": {
+          "user": 43,
+          "G": 44,
+          "assistant": 45
+        },
+        "uuidlessBetweenFirstFinalAndSecondUser": [
+          {
+            "line": 40,
+            "type": "last-prompt"
+          },
+          {
+            "line": 41,
+            "type": "queue-operation"
+          },
+          {
+            "line": 42,
+            "type": "queue-operation"
+          },
+          {
+            "line": 46,
+            "type": "last-prompt"
+          },
+          {
+            "line": 47,
+            "type": "last-prompt"
+          },
+          {
+            "line": 48,
+            "type": "mode"
+          },
+          {
+            "line": 49,
+            "type": "atis-latch"
+          },
+          {
+            "line": 50,
+            "type": "queue-operation"
+          },
+          {
+            "line": 51,
+            "type": "queue-operation"
+          }
+        ],
+        "secondUserParentUuid": "2b3bbb57-8b11-4400-ab49-6cceb077da41",
+        "ordinaryAssistantUuid": "2b3bbb57-8b11-4400-ab49-6cceb077da41",
+        "parentEqualsOrdinaryAssistant": true
+      },
+      "derivedTestCutExpectationScope": "Counts use first UUID occurrences and latest original assistant record per API ID; copies, summaries and attachments add neither Events nor usage. Incomplete copy/B groups preserve parser and eligible Raw through A59. Expectations are caller checks, not native output or unchecked acceptance.",
+      "derivedTestCuts": [
+        {
+          "label": "r2-U",
+          "round": 2,
+          "slot": "U",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 52,
+          "original": {
+            "bytes": 30141,
+            "sha256": "c14151cb4825f0b681f682fbc442d57b243f12b397db972d1ec022ad48e3f7e8"
+          },
+          "sanitized": {
+            "bytes": 29253,
+            "sha256": "c5d4c48e63d3e2224d17cdfaf5ecbb4d0978a7fd321c08da7f45ea534f510b00"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 15,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 52,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-G",
+          "round": 2,
+          "slot": "G",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 53,
+          "original": {
+            "bytes": 30668,
+            "sha256": "a70b2219c7b5c0f2ddea1b40867d212e5751cc881f10f12cec55766329136c8b"
+          },
+          "sanitized": {
+            "bytes": 29756,
+            "sha256": "5485546cdc489c7ea6c229163563f9f74f0e98d35440e957774ca98b402e024e"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 15,
+            "distinctUsageCount": 5,
+            "inputTokens": 190122,
+            "outputTokens": 77,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 53,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-plan",
+          "round": 2,
+          "slot": "plan",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 54,
+          "original": {
+            "bytes": 31804,
+            "sha256": "ddf9585c0a03a06dbbcc0da86f2f62a2e02a1279d99c88ade2e7d6b8ab8674d0"
+          },
+          "sanitized": {
+            "bytes": 30868,
+            "sha256": "2c80c2fca9f0998c23f95df3454c9faf72ab3fd3a9c3923bd77011ec21e71a5b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 16,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 54,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-call0",
+          "round": 2,
+          "slot": "call0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 55,
+          "original": {
+            "bytes": 33027,
+            "sha256": "3b741602b0eca9a4b9f790ab8b725a12cfb81f1c9ae324538fd3dd59e389b929"
+          },
+          "sanitized": {
+            "bytes": 32051,
+            "sha256": "ff7b11fdd72f82a06a7d47270baa2751a9590a51f38b69ade5c969974e0c9619"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 17,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 55,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-call1",
+          "round": 2,
+          "slot": "call1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 56,
+          "original": {
+            "bytes": 34250,
+            "sha256": "e0e1da02881118abd10d62f9e8e89b5d6e7e01818393dcdd1951e0221a863cc2"
+          },
+          "sanitized": {
+            "bytes": 33234,
+            "sha256": "d4798a82ba462a12268071692b9df271cdc1137356854074214f1247347ab5dc"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 18,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 56,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-r0",
+          "round": 2,
+          "slot": "r0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 57,
+          "original": {
+            "bytes": 35210,
+            "sha256": "bf71d904977efec0a4a6073d037bbf983d39efbd6afd3443407cebf7fe2d237a"
+          },
+          "sanitized": {
+            "bytes": 34154,
+            "sha256": "b3028eb06f9cf073a6ceb381092a9af32524e172fde3827a2c3a353cdffd10de"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 19,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 57,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-r1",
+          "round": 2,
+          "slot": "r1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 58,
+          "original": {
+            "bytes": 36174,
+            "sha256": "eae8e50a8574a5566f1d380c7d51f957db16be0096c884147b5001d4e566cadb"
+          },
+          "sanitized": {
+            "bytes": 35078,
+            "sha256": "dac3210818a31d73d7f51437d82a538d799c207326c0a92862bf7bc06fff8ee2"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 58,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-A",
+          "round": 2,
+          "slot": "A",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 59,
+          "original": {
+            "bytes": 36701,
+            "sha256": "483e61beaeb57f1f6855473a70c3427f18392d637a59dd0b702a0187d11add06"
+          },
+          "sanitized": {
+            "bytes": 35581,
+            "sha256": "67563cf2a09b16aa0cf76950986d5071e6894da13232c7288465ef10dd06326b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-copy0",
+          "round": 2,
+          "slot": "copy0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 60,
+          "original": {
+            "bytes": 37352,
+            "sha256": "5444ba9189546c21d977b33452fdbb93ccdfb7e527917081490e8a8079fb3c34"
+          },
+          "sanitized": {
+            "bytes": 36208,
+            "sha256": "8926b64671e15591b06897b681a3f021ef31d8eefdc4dfbd899a408b631decfb"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy1",
+          "round": 2,
+          "slot": "copy1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 61,
+          "original": {
+            "bytes": 37879,
+            "sha256": "e17c03de939c8e2dcc29a7fd4055d6471cc516213b850d62407d6c0af7ac94c0"
+          },
+          "sanitized": {
+            "bytes": 36711,
+            "sha256": "145fc7f4444c5b75f6ed8589834ccd1c4900331fa18b2cdef5b8237ed8862cb8"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy2",
+          "round": 2,
+          "slot": "copy2",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 62,
+          "original": {
+            "bytes": 39015,
+            "sha256": "f9bf6e1e315ae5c549294f9738e48ad1c117354e42df764a97b0aa55ad3fc787"
+          },
+          "sanitized": {
+            "bytes": 37823,
+            "sha256": "cdc50c907e8df032d04a4396fc9fee8f6a9822a91ecbdf3e0fe4da5e63d1eb2b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy3",
+          "round": 2,
+          "slot": "copy3",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 63,
+          "original": {
+            "bytes": 40238,
+            "sha256": "c5fabb0298b5e7c922dc29d0fea31c960856ce0491c8b4e2e4774d18477dc03f"
+          },
+          "sanitized": {
+            "bytes": 39006,
+            "sha256": "ee20ac216b7f8499c2b1e63cf841c38ede1266353c1924bbbc90c0f8dcb71012"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy4",
+          "round": 2,
+          "slot": "copy4",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 64,
+          "original": {
+            "bytes": 41461,
+            "sha256": "8a90ad226e65c0c526486ded5db3d22b0fe217165cc0bb82bcc829d3bbf180b7"
+          },
+          "sanitized": {
+            "bytes": 40189,
+            "sha256": "ae417df4bf90ff36de36bc054633cf699fa86fe18795e7513d8dd5cfbf3d77bc"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy5",
+          "round": 2,
+          "slot": "copy5",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 65,
+          "original": {
+            "bytes": 42421,
+            "sha256": "f1de9cc953c5649476b8c6656f7b7593d522c48a395bda5869fba02bcc7aa621"
+          },
+          "sanitized": {
+            "bytes": 41109,
+            "sha256": "86f679a79405212ed8eb2b52d9681a45e40306ef9407edf20193231c4d6cbef8"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy6",
+          "round": 2,
+          "slot": "copy6",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 66,
+          "original": {
+            "bytes": 43385,
+            "sha256": "3c2d9a3b498de43ff22e31bffee7c3c289fa1a72b898b45b9a91e6ceb4d4916b"
+          },
+          "sanitized": {
+            "bytes": 42033,
+            "sha256": "2cd5bdf2e1f9432a8b9a79a1cb9706b686f361bacad398aba011971f2cd0844f"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-copy7",
+          "round": 2,
+          "slot": "copy7",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 67,
+          "original": {
+            "bytes": 43912,
+            "sha256": "8f37f91ebe700b3b4fe7d8ef664b1a37a01147003fbd6c59cf3f29f9f83bdecc"
+          },
+          "sanitized": {
+            "bytes": 42536,
+            "sha256": "2b493916ac820b73620f8808cca8f453eb937389148fd0aa5463b06fcb50be94"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-B",
+          "round": 2,
+          "slot": "B",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 68,
+          "original": {
+            "bytes": 45294,
+            "sha256": "4686f43adbb5be9ec98b5b1c00e0bb05fee4e7f25ebee38018129032a23df379"
+          },
+          "sanitized": {
+            "bytes": 43894,
+            "sha256": "f0e59bdb11d5e5485f261ba0c32ca9d3f27fda3a2d3578b16db250dd4e733754"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 59,
+          "incompleteAtomicReplayGroup": true
+        },
+        {
+          "label": "r2-S",
+          "round": 2,
+          "slot": "S",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 69,
+          "original": {
+            "bytes": 46853,
+            "sha256": "d88791beb81e50c86087e3f2fc375f1bf62ead3bb2271b6877dfe1b155a96fb1"
+          },
+          "sanitized": {
+            "bytes": 45389,
+            "sha256": "b1ef5a34bb2da2260d3ff5ca2ebf1c5d1b831965abfa1e3f7e9162f8237ea96b"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 69,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-file0",
+          "round": 2,
+          "slot": "file0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 70,
+          "original": {
+            "bytes": 47715,
+            "sha256": "dab4b70479ca412552914f5eb8386bf11186649be9386af890a66ed9092d2cd2"
+          },
+          "sanitized": {
+            "bytes": 46179,
+            "sha256": "a695513f550dd667f66301413ece54d13b5cc3548dbf93bcc4dd86ba2fafb5ef"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 70,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-file1",
+          "round": 2,
+          "slot": "file1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 71,
+          "original": {
+            "bytes": 48579,
+            "sha256": "624f1cbe727db62154990a1c632bc16e1147b3a9a91497e9d4117d637b840da3"
+          },
+          "sanitized": {
+            "bytes": 46971,
+            "sha256": "46ae8c05631f15ccd1f36f49d223745b0ba8e9dd73409f8267c0f107ff4935b9"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 20,
+            "distinctUsageCount": 6,
+            "inputTokens": 380122,
+            "outputTokens": 94,
+            "pendingCanonicalSessions": 1
+          },
+          "parserAndRawCommitThroughLine": 71,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-F0",
+          "round": 2,
+          "slot": "F0",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 72,
+          "original": {
+            "bytes": 49701,
+            "sha256": "0ecb2bde2ed52e47e4b7d9aff8a7c1c9de6c976b0e3e69711748404a5839a3a0"
+          },
+          "sanitized": {
+            "bytes": 48069,
+            "sha256": "47fe466069d3a495eca83cdb3bc8fd246b0ad10f084c82cdcfae0615d7095e6c"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 21,
+            "distinctUsageCount": 7,
+            "inputTokens": 380163,
+            "outputTokens": 117,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 72,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-F1",
+          "round": 2,
+          "slot": "F1",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 73,
+          "original": {
+            "bytes": 50825,
+            "sha256": "42aee91e2a953bad4eb1021380d8d5248054123ca125049bd4d80796bb5538fd"
+          },
+          "sanitized": {
+            "bytes": 49169,
+            "sha256": "3b110319b61e2c5dd3b6bfe7009db0618bc21f0f9084d674380f27a30736892e"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 22,
+            "distinctUsageCount": 7,
+            "inputTokens": 380163,
+            "outputTokens": 117,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 73,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "r2-final",
+          "round": 2,
+          "slot": "final",
+          "kind": "derived complete-LF append/paging test prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "r2.jsonl",
+          "prefixThroughLine": 74,
+          "original": {
+            "bytes": 51063,
+            "sha256": "60924365fc42c75d6a438beddf4d9e76bbf957ca1795f5d39e00b4ec9335025d"
+          },
+          "sanitized": {
+            "bytes": 49407,
+            "sha256": "a78bab759e3047c65ec9812263c98422f0017b94dc453a162c35757222191272"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 22,
+            "distinctUsageCount": 7,
+            "inputTokens": 380163,
+            "outputTokens": 117,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 74,
+          "incompleteAtomicReplayGroup": false
+        },
+        {
+          "label": "ordinary-final",
+          "slot": "ordinary-final",
+          "kind": "derived complete-LF append/paging prefix, not a new native invocation",
+          "providedAsFile": false,
+          "nativeParentSnapshot": "ordinary-resume.jsonl",
+          "prefixThroughLine": 80,
+          "original": {
+            "bytes": 54083,
+            "sha256": "9ee0a5db92cf02b7255d0e24df61ee3367fd853e36984dd272341e155e8f90cb"
+          },
+          "sanitized": {
+            "bytes": 52355,
+            "sha256": "7d17abfe1240114cd7f75002492106cffc7ff21afe3d985cfbad8fa8d88eb04e"
+          },
+          "expected": {
+            "uniqueCanonicalEventCount": 24,
+            "distinctUsageCount": 8,
+            "inputTokens": 380192,
+            "outputTokens": 130,
+            "pendingCanonicalSessions": 0
+          },
+          "parserAndRawCommitThroughLine": 80,
+          "incompleteAtomicReplayGroup": false
+        }
+      ],
+      "nativeInvocations": [
+        {
+          "kind": "actual invocation authority",
+          "phase": "r2",
+          "session": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+          "argv": [
+            "--restricted",
+            "--safe-mode",
+            "--tools",
+            "Read",
+            "--allowedTools",
+            "Read",
+            "--permission-mode",
+            "manual",
+            "--permission-prompts",
+            "none",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "{\"mcpServers\":{}}",
+            "--no-chrome",
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+            "--print",
+            "--output-format",
+            "json",
+            "--resume",
+            "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks."
+          ],
+          "actualEnv": {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/home",
+            "LANG": "en_US.UTF-8",
+            "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "CLAUDE_CONFIG_DIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/config",
+            "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:59372"
+          },
+          "cwd": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "realCwd": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "startedAt": "2026-10-09T01:38:29.750Z",
+          "finishedAt": "2026-10-09T01:38:30.445Z",
+          "exit": 0,
+          "signal": null,
+          "stdout": "{\"duration_api_ms\":58,\"stop_reason\":\"end_turn\",\"session_id\":\"979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a\",\"total_cost_usd\":0.5711610000000001,\"usage\":{\"input_tokens\":190041,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":40,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-4-6\":{\"inputTokens\":190092,\"outputTokens\":59,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.5711610000000001,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-4-6\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":4,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"ATAPE_REPEATED_DUAL_4a0ecd53_R2_FINAL_B: violet crane619.\",\"ttft_ms\":28,\"type\":\"result\",\"duration_ms\":105,\"uuid\":\"b403bb76-2464-416c-a25c-04e46789129e\",\"ttft_stream_ms\":28,\"time_to_request_ms\":23,\"first_content_frame_ms\":28,\"queued_turn_count\":0}\n",
+          "stderr": "",
+          "binarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "afterBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "harnessSha256": "be2f9f2fa6484ca9c665d0612cf510b0fe5a56b90a25af843e5780b6c4397d3b",
+          "budgets": {
+            "nativeProcesses": 1,
+            "termMs": 45000,
+            "killMs": 50000,
+            "caseMs": 90000,
+            "modelRequests": 3,
+            "countTokensRequests": 2,
+            "allRequests": 8,
+            "requestBytes": 8388608
+          },
+          "modelRequests": 3,
+          "countRequests": 0,
+          "routeState": "final-sent",
+          "strictBeforePrefix": true,
+          "noFurtherNativeResumeInvoked": true,
+          "osEgressFirewallApplied": false
+        },
+        {
+          "kind": "actual invocation authority",
+          "phase": "ordinary-resume",
+          "session": "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+          "argv": [
+            "--restricted",
+            "--safe-mode",
+            "--tools",
+            "Read",
+            "--allowedTools",
+            "Read",
+            "--permission-mode",
+            "manual",
+            "--permission-prompts",
+            "none",
+            "--strict-mcp-config",
+            "--mcp-config",
+            "{\"mcpServers\":{}}",
+            "--no-chrome",
+            "--model",
+            "claude-sonnet-4-6",
+            "--effort",
+            "low",
+            "--system-prompt",
+            "Controlled synthetic source persistence fixture. Follow deterministic tool requests.",
+            "--print",
+            "--output-format",
+            "json",
+            "--resume",
+            "979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a",
+            "ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: Confirm the completed two Read rounds and prior file context without tools."
+          ],
+          "actualEnv": {
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "HOME": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/home",
+            "LANG": "en_US.UTF-8",
+            "TMPDIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1",
+            "CLAUDE_CONFIG_DIR": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/config",
+            "ANTHROPIC_API_KEY": "atape-loopback-fake-82f63bfe-dual",
+            "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+            "DISABLE_AUTOUPDATER": "1",
+            "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20",
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:59532"
+          },
+          "cwd": "/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "realCwd": "/private/tmp/atape-claude-repeat-auto-formal.8CevmE/dual-1/workspace",
+          "startedAt": "2026-10-09T01:49:20.132Z",
+          "finishedAt": "2026-10-09T01:49:21.201Z",
+          "exit": 0,
+          "signal": null,
+          "stdout": "{\"duration_api_ms\":58,\"stop_reason\":\"end_turn\",\"session_id\":\"979aa7c7-7bdb-4a9e-8aea-7d36f8cb5f1a\",\"total_cost_usd\":0.000282,\"usage\":{\"input_tokens\":29,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":13,\"output_tokens_details\":{\"thinking_tokens\":0},\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{\"claude-sonnet-4-6\":{\"inputTokens\":29,\"outputTokens\":13,\"cacheReadInputTokens\":0,\"cacheCreationInputTokens\":0,\"webSearchRequests\":0,\"costUSD\":0.000282,\"contextWindow\":200000,\"maxOutputTokens\":32000,\"thinkingTokens\":0,\"canonicalModel\":\"claude-sonnet-4-6\",\"provider\":\"firstParty\",\"costBasis\":\"list\"}},\"permission_denials\":[],\"terminal_reason\":\"completed\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":false,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":null,\"result\":\"ATAPE_REPEATED_DUAL_f9b20e67_ORDINARY: both Read rounds completed with amber lynx204 and violet crane619.\",\"ttft_ms\":63,\"type\":\"result\",\"duration_ms\":105,\"uuid\":\"6d715dea-c0bf-4524-ab2c-21295854f315\",\"ttft_stream_ms\":62,\"time_to_request_ms\":50,\"first_content_frame_ms\":62,\"queued_turn_count\":0}\n",
+          "stderr": "",
+          "binarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "afterBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+          "harnessSha256": "ea82283a0387f3a1f47dd566420a92cc9cb23702f3f6ec36f4dac2f95e48bf59",
+          "budgets": {
+            "nativeProcesses": 1,
+            "termMs": 45000,
+            "killMs": 50000,
+            "caseMs": 90000,
+            "modelRequests": 1,
+            "countTokensRequests": 2,
+            "allRequests": 8,
+            "requestBytes": 8388608
+          },
+          "modelRequests": 1,
+          "countRequests": 0,
+          "routeState": "ordinary-sent",
+          "strictBeforePrefix": true,
+          "noFurtherNativeResumeInvoked": true,
+          "osEgressFirewallApplied": false
+        }
+      ],
+      "callReceiptEvidence": [
+        {
+          "round": 1,
+          "callLine": 23,
+          "callUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "callApiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "apiBlockIndex": 1,
+          "call": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_dual_r1_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-dual-read/workspace/r1-a.txt"
+            }
+          },
+          "resultLine": 26,
+          "resultUuid": "913553cc-dfa9-4247-9afb-70797222490b",
+          "resultParentUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "sourceToolAssistantUUID": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "sourceResultBlock": {
+            "tool_use_id": "call_82f63bfe_dual_r1_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-repeated-dual-read/workspace/r1-a.txt",
+              "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "diskBytes": 54,
+          "diskSha256": "af6b6f7fef06592fabdb5d0e9432ff4be8f8297dc7eb81b266922db44c83e5ca",
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true
+        },
+        {
+          "round": 1,
+          "callLine": 24,
+          "callUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "callApiId": "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "apiBlockIndex": 2,
+          "call": {
+            "type": "tool_use",
+            "id": "call_82f63bfe_dual_r1_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-dual-read/workspace/r1-b.txt"
+            }
+          },
+          "resultLine": 25,
+          "resultUuid": "04391e85-ce37-4e9e-b831-9b6788960fff",
+          "resultParentUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "sourceToolAssistantUUID": "d92403f4-55f8-4743-a986-3260845222b9",
+          "sourceResultBlock": {
+            "tool_use_id": "call_82f63bfe_dual_r1_read_b",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-repeated-dual-read/workspace/r1-b.txt",
+              "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "diskBytes": 56,
+          "diskSha256": "9d4d8d32b8369fad8ed44cb6f2983266afd9292cc1feb1f0b2b37be868adb07d",
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true
+        },
+        {
+          "round": 2,
+          "callLine": 55,
+          "callUuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+          "callApiId": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+          "apiBlockIndex": 1,
+          "call": {
+            "type": "tool_use",
+            "id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-dual-read/workspace/r2-a.txt"
+            }
+          },
+          "resultLine": 57,
+          "resultUuid": "562773c2-e118-425b-aaaf-7d15d0c6d8ae",
+          "resultParentUuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+          "sourceToolAssistantUUID": "53a3ddef-b3bb-4424-8589-018547ba3890",
+          "sourceResultBlock": {
+            "tool_use_id": "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R2_A: amber lynx 204.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-repeated-dual-read/workspace/r2-a.txt",
+              "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R2_A: amber lynx 204.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "diskBytes": 54,
+          "diskSha256": "9be1a5d8c7dd872a21fb87db7ae911795c89bcb7bb209bc29194ca4cf926ef0c",
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true
+        },
+        {
+          "round": 2,
+          "callLine": 56,
+          "callUuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+          "callApiId": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+          "apiBlockIndex": 2,
+          "call": {
+            "type": "tool_use",
+            "id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+            "name": "Read",
+            "input": {
+              "file_path": "/fixture/native-repeated-dual-read/workspace/r2-b.txt"
+            }
+          },
+          "resultLine": 58,
+          "resultUuid": "58593861-368f-4ba8-b2f7-77b199de259d",
+          "resultParentUuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+          "sourceToolAssistantUUID": "8881938d-c599-4350-a391-b1cce2cbbe63",
+          "sourceResultBlock": {
+            "tool_use_id": "call_atape_repeated_dual_4a0ecd53_r2_read_b",
+            "type": "tool_result",
+            "content": "1\tATAPE_REPEAT_DISK_82f63bfe_dual_R2_B: violet crane 619.\n2\t"
+          },
+          "nativeReceipt": {
+            "type": "text",
+            "file": {
+              "filePath": "/fixture/native-repeated-dual-read/workspace/r2-b.txt",
+              "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R2_B: violet crane 619.\n",
+              "numLines": 2,
+              "startLine": 1,
+              "totalLines": 2
+            }
+          },
+          "diskBytes": 56,
+          "diskSha256": "c589dc103ae8c7e310b35a47ee5bfc8dd687d1b993095905aa2a622aebd77a13",
+          "nativeReceiptContentEqualsActualDiskBytes": true,
+          "receiptOwnCallPathEqual": true
+        }
+      ],
+      "priorFileReinjection": [
+        {
+          "line": 70,
+          "uuid": "6e69e777-d705-41ab-81fd-299d4afa080a",
+          "parentUuid": "f8d7ece7-314c-4410-b1b3-f1939e865893",
+          "attachment": {
+            "type": "file",
+            "filename": "/fixture/native-repeated-dual-read/workspace/r1-a.txt",
+            "content": {
+              "type": "text",
+              "file": {
+                "filePath": "/fixture/native-repeated-dual-read/workspace/r1-a.txt",
+                "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_A: amber lynx 204.\n",
+                "numLines": 2,
+                "startLine": 1,
+                "totalLines": 2
+              }
+            },
+            "displayPath": "../../../../../fixture/native-repeated-dual-read/workspace/r1-a.txt"
+          },
+          "earlierResultLine": 26,
+          "earlierResultUuid": "913553cc-dfa9-4247-9afb-70797222490b",
+          "earlierOwnCallLine": 23,
+          "earlierOwnCallUuid": "f8320f39-791d-441d-a181-61104b8e6ed5",
+          "earlierToolId": "call_82f63bfe_dual_r1_read_a",
+          "wholeDecodedContentEqualsPriorReceipt": true,
+          "exactSerializedContentObjectEqualsPriorReceipt": true
+        },
+        {
+          "line": 71,
+          "uuid": "b58c2a4a-8149-46ea-a8c5-ca671cc2c01f",
+          "parentUuid": "6e69e777-d705-41ab-81fd-299d4afa080a",
+          "attachment": {
+            "type": "file",
+            "filename": "/fixture/native-repeated-dual-read/workspace/r1-b.txt",
+            "content": {
+              "type": "text",
+              "file": {
+                "filePath": "/fixture/native-repeated-dual-read/workspace/r1-b.txt",
+                "content": "ATAPE_REPEAT_DISK_82f63bfe_dual_R1_B: violet crane 619.\n",
+                "numLines": 2,
+                "startLine": 1,
+                "totalLines": 2
+              }
+            },
+            "displayPath": "../../../../../fixture/native-repeated-dual-read/workspace/r1-b.txt"
+          },
+          "earlierResultLine": 25,
+          "earlierResultUuid": "04391e85-ce37-4e9e-b831-9b6788960fff",
+          "earlierOwnCallLine": 24,
+          "earlierOwnCallUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "earlierToolId": "call_82f63bfe_dual_r1_read_b",
+          "wholeDecodedContentEqualsPriorReceipt": true,
+          "exactSerializedContentObjectEqualsPriorReceipt": true
+        }
+      ],
+      "requestProof": [
+        {
+          "index": 1,
+          "method": "HEAD",
+          "url": "/api/hello",
+          "rawBytes": 0,
+          "rawSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rawStoredMatchesAuthority": true,
+          "fakeAuthenticationVerified": null,
+          "route": null,
+          "toolAndResultIds": [],
+          "containsR1Summary": false,
+          "containsR2Summary": false,
+          "containsPriorReadAMarker": false,
+          "containsPriorReadBMarker": false,
+          "containsCurrentReadAMarker": false,
+          "containsCurrentReadBMarker": false
+        },
+        {
+          "index": 2,
+          "method": "POST",
+          "url": "/v1/messages?beta=true",
+          "rawBytes": 6523,
+          "rawSha256": "bb496e9a168736e10c2c37f158c8a3456ebb0e1a9c7e45d886731b1f8fd46785",
+          "rawStoredMatchesAuthority": true,
+          "fakeAuthenticationVerified": true,
+          "route": {
+            "kind": "toolcalls",
+            "round": 2,
+            "decision": {
+              "beforeState": "new",
+              "summaryInstructionMatched": false,
+              "latestExactExternalPrompt": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks.",
+              "lastDirectUserTextSha256": "3284da4b39cb515ea00dab08429996bf1cb48c0fb49b973dd10e2d149e6fb229",
+              "lastUserResultIds": [],
+              "historyToolIds": [
+                "call_82f63bfe_dual_r1_read_a",
+                "call_82f63bfe_dual_r1_read_b"
+              ],
+              "historyResultIds": [
+                "call_82f63bfe_dual_r1_read_b",
+                "call_82f63bfe_dual_r1_read_a"
+              ],
+              "afterState": "calls-sent"
+            }
+          },
+          "toolAndResultIds": [
+            {
+              "role": "assistant",
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_a"
+            },
+            {
+              "role": "assistant",
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_b"
+            },
+            {
+              "role": "user",
+              "type": "tool_result",
+              "id": "call_82f63bfe_dual_r1_read_b"
+            },
+            {
+              "role": "user",
+              "type": "tool_result",
+              "id": "call_82f63bfe_dual_r1_read_a"
+            }
+          ],
+          "containsR1Summary": true,
+          "containsR2Summary": false,
+          "containsPriorReadAMarker": true,
+          "containsPriorReadBMarker": true,
+          "containsCurrentReadAMarker": false,
+          "containsCurrentReadBMarker": false,
+          "response": {
+            "id": "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+            "stop": "tool_use",
+            "usage": {
+              "input_tokens": 190000,
+              "output_tokens": 17,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0
+            }
+          },
+          "sseBytes": 1862,
+          "sseSha256": "2009a704310fb279932cc7206f70b7824c3da5c062c8f4171c585cdab55801d0",
+          "sseStoredMatchesAuthority": true,
+          "sourceAssistantRecordsForResponse": [
+            {
+              "line": 54,
+              "uuid": "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1",
+              "index": 0
+            },
+            {
+              "line": 55,
+              "uuid": "53a3ddef-b3bb-4424-8589-018547ba3890",
+              "index": 1
+            },
+            {
+              "line": 56,
+              "uuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+              "index": 2
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "method": "POST",
+          "url": "/v1/messages?beta=true",
+          "rawBytes": 13029,
+          "rawSha256": "83af2a14a85c2a3c51606ab7eee8e1bf4870a98b7814e13673cc8157cbdf692d",
+          "rawStoredMatchesAuthority": true,
+          "fakeAuthenticationVerified": true,
+          "route": {
+            "kind": "summary",
+            "round": 2,
+            "decision": {
+              "beforeState": "calls-sent",
+              "summaryInstructionMatched": true,
+              "latestExactExternalPrompt": "ATAPE_REPEATED_DUAL_4a0ecd53_R2_TOOLS: Read r2-a.txt and r2-b.txt once, then give two text blocks.",
+              "lastDirectUserTextSha256": "63e2bfb4ded280d5057a66d8a034ef352a73960d97d955b990e78f04f0db1fb0",
+              "lastUserResultIds": [],
+              "historyToolIds": [
+                "call_82f63bfe_dual_r1_read_a",
+                "call_82f63bfe_dual_r1_read_b"
+              ],
+              "historyResultIds": [
+                "call_82f63bfe_dual_r1_read_b",
+                "call_82f63bfe_dual_r1_read_a"
+              ],
+              "afterState": "summary-sent"
+            }
+          },
+          "toolAndResultIds": [
+            {
+              "role": "assistant",
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_a"
+            },
+            {
+              "role": "assistant",
+              "type": "tool_use",
+              "id": "call_82f63bfe_dual_r1_read_b"
+            },
+            {
+              "role": "user",
+              "type": "tool_result",
+              "id": "call_82f63bfe_dual_r1_read_b"
+            },
+            {
+              "role": "user",
+              "type": "tool_result",
+              "id": "call_82f63bfe_dual_r1_read_a"
+            }
+          ],
+          "containsR1Summary": true,
+          "containsR2Summary": false,
+          "containsPriorReadAMarker": true,
+          "containsPriorReadBMarker": true,
+          "containsCurrentReadAMarker": false,
+          "containsCurrentReadBMarker": false,
+          "response": {
+            "id": "msg_atape_repeated_dual_4a0ecd53_r2_summary",
+            "stop": "end_turn",
+            "usage": {
+              "input_tokens": 51,
+              "output_tokens": 19,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0
+            }
+          },
+          "sseBytes": 1057,
+          "sseSha256": "3f6ca67f87109232ce6a9f7c83f61973987acb7faaed12799a2f6866c1753480",
+          "sseStoredMatchesAuthority": true,
+          "sourceAssistantRecordsForResponse": []
+        },
+        {
+          "index": 4,
+          "method": "POST",
+          "url": "/v1/messages?beta=true",
+          "rawBytes": 6439,
+          "rawSha256": "2869e2f8c965e1f0a9950151801db0410da7e412a0892e4bab79dfd01bcd20b4",
+          "rawStoredMatchesAuthority": true,
+          "fakeAuthenticationVerified": true,
+          "route": {
+            "kind": "tool-final",
+            "round": 2,
+            "decision": {
+              "beforeState": "summary-sent",
+              "summaryInstructionMatched": false,
+              "lastDirectUserTextSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+              "lastUserResultIds": [
+                "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+                "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+              ],
+              "historyToolIds": [
+                "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+                "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+              ],
+              "historyResultIds": [
+                "call_atape_repeated_dual_4a0ecd53_r2_read_a",
+                "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+              ],
+              "afterState": "final-sent"
+            }
+          },
+          "toolAndResultIds": [
+            {
+              "role": "assistant",
+              "type": "tool_use",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_a"
+            },
+            {
+              "role": "assistant",
+              "type": "tool_use",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+            },
+            {
+              "role": "user",
+              "type": "tool_result",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_a"
+            },
+            {
+              "role": "user",
+              "type": "tool_result",
+              "id": "call_atape_repeated_dual_4a0ecd53_r2_read_b"
+            }
+          ],
+          "containsR1Summary": false,
+          "containsR2Summary": true,
+          "containsPriorReadAMarker": true,
+          "containsPriorReadBMarker": true,
+          "containsCurrentReadAMarker": true,
+          "containsCurrentReadBMarker": true,
+          "response": {
+            "id": "msg_atape_repeated_dual_4a0ecd53_r2_tool_final",
+            "stop": "end_turn",
+            "usage": {
+              "input_tokens": 41,
+              "output_tokens": 23,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0
+            }
+          },
+          "sseBytes": 1254,
+          "sseSha256": "bcbb5fa039e44619484d1989dc6bc8324d790286a860de7df3ed9e7e426394c7",
+          "sseStoredMatchesAuthority": true,
+          "sourceAssistantRecordsForResponse": [
+            {
+              "line": 72,
+              "uuid": "94643e20-55ea-4f6a-8078-83b6430dc183",
+              "index": 0
+            },
+            {
+              "line": 73,
+              "uuid": "0d61ff8f-cd8c-4668-939c-aac214a48a12",
+              "index": 1
+            }
+          ]
+        }
+      ],
+      "eventSourceIds": [
+        "1b27d710-e8b4-4e47-a5fd-0261c7868fef:0",
+        "e606c861-234f-4c6e-b6c6-ae697ba9d9c6:0",
+        "f97395db-753b-4351-bd6a-a2e6aed2897a:0",
+        "cd39e6e9-bd5e-4aae-b11a-ffde307fc65a:0",
+        "244ea704-b43d-4f92-aed5-e5f964a12463:0",
+        "466ab239-9359-414c-a61e-be6d955ae983:0",
+        "f8320f39-791d-441d-a181-61104b8e6ed5:0",
+        "d92403f4-55f8-4743-a986-3260845222b9:0",
+        "04391e85-ce37-4e9e-b831-9b6788960fff:0",
+        "913553cc-dfa9-4247-9afb-70797222490b:0",
+        "f3055b4b-8bd7-4f9c-8d4c-0e4782d70ac5:0",
+        "af144a26-9b5d-44b4-b6e1-72e18d93179f:0",
+        "86cf6c02-6e99-40e8-9a67-f4e58e4f7af3:0",
+        "2b3bbb57-8b11-4400-ab49-6cceb077da41:0",
+        "8dafe593-5f2c-473f-bd51-e573525ea3cf:0",
+        "8023e447-9a2c-4ed3-8ebd-bff1a6b7c2d1:0",
+        "53a3ddef-b3bb-4424-8589-018547ba3890:0",
+        "8881938d-c599-4350-a391-b1cce2cbbe63:0",
+        "562773c2-e118-425b-aaaf-7d15d0c6d8ae:0",
+        "58593861-368f-4ba8-b2f7-77b199de259d:0",
+        "94643e20-55ea-4f6a-8078-83b6430dc183:0",
+        "0d61ff8f-cd8c-4668-939c-aac214a48a12:0",
+        "d79f8b54-577e-4118-9422-5f19fdd0f622:0",
+        "35684927-b31f-43c0-8ed6-42100ca86449:0"
+      ],
+      "latestUsageByApiId": {
+        "msg_atape_repeat_82f63bfe_dual_r0_seed_1": {
+          "line": 6,
+          "sourceRecordUuid": "e606c861-234f-4c6e-b6c6-ae697ba9d9c6",
+          "apiBlockIndex": 0,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 23,
+          "outputTokens": 11,
+          "usage": {
+            "input_tokens": 23,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 11,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_repeat_82f63bfe_dual_r0_warmup_2": {
+          "line": 12,
+          "sourceRecordUuid": "cd39e6e9-bd5e-4aae-b11a-ffde307fc65a",
+          "apiBlockIndex": 0,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "usage": {
+            "input_tokens": 29,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 13,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3": {
+          "line": 24,
+          "sourceRecordUuid": "d92403f4-55f8-4743-a986-3260845222b9",
+          "apiBlockIndex": 2,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 190000,
+          "outputTokens": 17,
+          "usage": {
+            "input_tokens": 190000,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 17,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5": {
+          "line": 39,
+          "sourceRecordUuid": "af144a26-9b5d-44b4-b6e1-72e18d93179f",
+          "apiBlockIndex": 1,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 41,
+          "outputTokens": 23,
+          "usage": {
+            "input_tokens": 41,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 23,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_reversed_read_82f63bfe_dual_ordinary_6": {
+          "line": 45,
+          "sourceRecordUuid": "2b3bbb57-8b11-4400-ab49-6cceb077da41",
+          "apiBlockIndex": 0,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "usage": {
+            "input_tokens": 29,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 13,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls": {
+          "line": 56,
+          "sourceRecordUuid": "8881938d-c599-4350-a391-b1cce2cbbe63",
+          "apiBlockIndex": 2,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 190000,
+          "outputTokens": 17,
+          "usage": {
+            "input_tokens": 190000,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 17,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_repeated_dual_4a0ecd53_r2_tool_final": {
+          "line": 73,
+          "sourceRecordUuid": "0d61ff8f-cd8c-4668-939c-aac214a48a12",
+          "apiBlockIndex": 1,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 41,
+          "outputTokens": 23,
+          "usage": {
+            "input_tokens": 41,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 23,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        },
+        "msg_atape_repeated_dual_f9b20e67_ordinary": {
+          "line": 79,
+          "sourceRecordUuid": "35684927-b31f-43c0-8ed6-42100ca86449",
+          "apiBlockIndex": 0,
+          "model": "claude-sonnet-4-6",
+          "inputTokens": 29,
+          "outputTokens": 13,
+          "usage": {
+            "input_tokens": 29,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 13,
+            "output_tokens_details": {
+              "thinking_tokens": 0
+            },
+            "server_tool_use": {
+              "web_search_requests": 0,
+              "web_fetch_requests": 0
+            },
+            "service_tier": "standard",
+            "cache_creation": {
+              "ephemeral_1h_input_tokens": 0,
+              "ephemeral_5m_input_tokens": 0
+            },
+            "inference_geo": "",
+            "iterations": [],
+            "speed": "standard"
+          }
+        }
+      },
+      "summarizationUsageLimit": {
+        "missingSourceApiIds": [
+          "msg_atape_repeat_82f63bfe_dual_r1_summary_4",
+          "msg_atape_repeated_dual_4a0ecd53_r2_summary"
+        ],
+        "newSummaryMockUsage": {
+          "inputTokens": 51,
+          "outputTokens": 19
+        },
+        "newSummaryResponseHasNoNativeAssistantRecord": true,
+        "newSummaryLoadedByFinalModelRequest": true,
+        "nativeStdoutModelUsageIncludesSummaryCounters": true,
+        "noUsageInventedFromSummaryTextOrCompactMetadata": true
+      },
+      "completePublicAckBeforeSecondInvocation": {
+        "kind": "actual frozen previous-main public factory gate, not constructed cursor",
+        "sourceSha256": "01485f5a8e490102cacfe924b2f48fde8c165bb34bcb6373a7e80cc937f152ca",
+        "bundleSha256": "67a56a3089a4e1936ff34eeb044d3b31167d347b6f4083876957f952a44b2576",
+        "record": {
+          "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/before-r2-public-ack.json",
+          "bytes": 110024,
+          "sha256": "a9fb59bac2ff5403a5e01e3c9acdc9750c5ecb28cb9a47bb759eb67fa871a266"
+        },
+        "totals": {
+          "events": 14,
+          "uniqueEventIds": 14,
+          "realUsageIds": 5,
+          "inputTokens": 190122,
+          "outputTokens": 77,
+          "rawBytes": 28697,
+          "rawSha256": "26bba82b2f7b1dc099b006544714a88532017b146252c7929af10d1b95456b9f",
+          "rawMatchesWholeSnapshot": true
+        },
+        "progress": {
+          "sourceFiles": 1,
+          "pendingRawBytes": 0,
+          "pendingCanonicalSessions": 0,
+          "phase": "idle"
+        },
+        "freshRuntimeEveryPageAndExactRetry": true
+      },
+      "oldImplementationAfterR2": {
+        "record": {
+          "file": "/tmp/atape-claude-repeated-dual-r2-plan.8ew1afe7/after-r2-public-ack.json",
+          "bytes": 49431,
+          "sha256": "af103e01caa94af1949f48b84d6c74d7c794fe7b603f1d831a7b8759dc3077bd"
+        },
+        "totals": {
+          "events": 20,
+          "uniqueEventIds": 20,
+          "realUsageIds": 6,
+          "inputTokens": 380122,
+          "outputTokens": 94,
+          "rawBytes": 36174,
+          "rawSha256": "eae8e50a8574a5566f1d380c7d51f957db16be0096c884147b5001d4e566cadb",
+          "rawMatchesWholeSnapshot": false
+        },
+        "failureReason": "unsupported",
+        "failureMessage": "ClaudeArchiveError: Claude automatic replay has conflicting slug evidence.",
+        "highestAcknowledgedPhysicalLine": 58,
+        "nativeSuccessIsSeparateFromPublicFullAck": true,
+        "pending": {
+          "sourceFiles": 1,
+          "pendingRawBytes": 14889,
+          "pendingCanonicalSessions": 1,
+          "phase": "canonical"
+        }
+      },
+      "finalPhysicalLineCount": 80,
+      "finalUuidRecordCount": 54,
+      "finalDistinctUuidCount": 38,
+      "finalLogicalExpected": {
+        "uniqueCanonicalEventCount": 24,
+        "distinctUsageCount": 8,
+        "inputTokens": 380192,
+        "outputTokens": 130,
+        "usageSourceIds": [
+          "msg_atape_repeat_82f63bfe_dual_r0_seed_1",
+          "msg_atape_repeat_82f63bfe_dual_r0_warmup_2",
+          "msg_atape_repeat_82f63bfe_dual_r1_toolcalls_3",
+          "msg_atape_repeat_82f63bfe_dual_r1_tool_final_5",
+          "msg_atape_reversed_read_82f63bfe_dual_ordinary_6",
+          "msg_atape_repeated_dual_4a0ecd53_r2_toolcalls",
+          "msg_atape_repeated_dual_4a0ecd53_r2_tool_final",
+          "msg_atape_repeated_dual_f9b20e67_ordinary"
+        ]
+      },
+      "rawAdvancedRecoverySlots": [
+        {
+          "round": 2,
+          "slot": "copy0",
+          "line": 60
+        },
+        {
+          "round": 2,
+          "slot": "copy1",
+          "line": 61
+        },
+        {
+          "round": 2,
+          "slot": "copy2",
+          "line": 62
+        },
+        {
+          "round": 2,
+          "slot": "copy3",
+          "line": 63
+        },
+        {
+          "round": 2,
+          "slot": "copy4",
+          "line": 64
+        },
+        {
+          "round": 2,
+          "slot": "copy5",
+          "line": 65
+        },
+        {
+          "round": 2,
+          "slot": "copy6",
+          "line": 66
+        },
+        {
+          "round": 2,
+          "slot": "copy7",
+          "line": 67
+        },
+        {
+          "round": 2,
+          "slot": "B",
+          "line": 68
+        },
+        {
+          "round": 2,
+          "slot": "S",
+          "line": 69
+        },
+        {
+          "round": 2,
+          "slot": "file0",
+          "line": 70
+        },
+        {
+          "round": 2,
+          "slot": "file1",
+          "line": 71
+        }
+      ],
+      "evidenceLimitations": [
+        "Exactly two planned dual-Read auto rounds and one ordinary U/G/A bridge are sampled; third rounds, arbitrary bridges, repeated tool-only layouts and more files are not established.",
+        "The recorded initial candidate gates establish native acquisition predicates; final implementation/integration/release acceptance belongs to the owning guide.",
+        "Actual argv/environment and unchanged binary hashes, not saved historical harness plans, establish native execution authority.",
+        "Only isolated fake credentials and loopback traffic were configured; traffic suppression is not an OS egress firewall.",
+        "The 190000 input/pct20 trigger and native stdout cost estimates are controlled, not real provider billing.",
+        "Summary counters absent from native assistant JSONL are not fabricated as persisted usage.",
+        "Full wire/SSE and process/gate records remain in temporary acquisition evidence, not repository reproduction dependencies."
+      ],
+      "completePublicAckBeforeOrdinaryInvocation": {
+        "kind": "actual genuine complete R2 gate on frozen initial candidate, not final acceptance authority",
+        "sourceSha256": "640f7c11a57b957b63b854ae1b10e41844d65d8ead6ec0608bc9df923d0e5b85",
+        "bundleSha256": "d540f752884bbe77464a00f7a3001fb903f97c507ef569f6ea9e66d8d727fa94",
+        "record": {
+          "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/before-ordinary-public-ack.json",
+          "bytes": 195647,
+          "sha256": "2785e0b820d6327d9ec09f28f08df734bfa590d0fbd6f174df4cd7fcd8d04f73"
+        },
+        "totals": {
+          "events": 22,
+          "uniqueEventIds": 22,
+          "realUsageIds": 7,
+          "inputTokens": 380163,
+          "outputTokens": 117,
+          "rawBytes": 51063,
+          "rawSha256": "60924365fc42c75d6a438beddf4d9e76bbf957ca1795f5d39e00b4ec9335025d",
+          "rawMatchesWholeSnapshot": true
+        },
+        "progress": {
+          "sourceFiles": 1,
+          "pendingRawBytes": 0,
+          "pendingCanonicalSessions": 0,
+          "phase": "idle"
+        },
+        "freshRuntimeEveryPageAndExactRetry": true
+      },
+      "ordinaryContinuation": {
+        "lines": {
+          "queues": [
+            75,
+            76
+          ],
+          "user": 77,
+          "G": 78,
+          "assistant": 79,
+          "lastPrompt": 80
+        },
+        "newBoundaryCount": 0,
+        "newToolCallCount": 0,
+        "userParentUuid": "0d61ff8f-cd8c-4668-939c-aac214a48a12",
+        "previousF1Uuid": "0d61ff8f-cd8c-4668-939c-aac214a48a12",
+        "fullPublicAck": {
+          "record": {
+            "file": "/tmp/atape-repeated-dual-ordinary-plan.nb6no_ek/after-ordinary-public-ack.json",
+            "bytes": 29910,
+            "sha256": "567d346701619c7b8633f852885dc94a32dcca87f4f28c41c5c982029ba8c9f1"
+          },
+          "totals": {
+            "events": 24,
+            "uniqueEventIds": 24,
+            "realUsageIds": 8,
+            "inputTokens": 380192,
+            "outputTokens": 130,
+            "rawBytes": 54083,
+            "rawSha256": "9ee0a5db92cf02b7255d0e24df61ee3367fd853e36984dd272341e155e8f90cb",
+            "rawMatchesWholeSnapshot": true
+          },
+          "progress": {
+            "sourceFiles": 1,
+            "pendingRawBytes": 0,
+            "pendingCanonicalSessions": 0,
+            "phase": "idle"
+          }
+        },
+        "modelRequestCount": 1,
+        "headHelloRequestCount": 1,
+        "countTokensRequestCount": 0
+      }
+    }
+  ]
+}

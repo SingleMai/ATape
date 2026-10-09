@@ -99,6 +99,9 @@ try {
     await verifyClaudeAutomaticReadReplay(adapter, context, request.limits, {
       fixtureName: "native-reversed-read-pair-2.1.263", homeName: "reversed-read-pair", reversed: true
     })
+    await verifyClaudeAutomaticReadReplay(adapter, context, request.limits, {
+      fixtureName: "native-repeated-dual-read-2.1.263", homeName: "repeated-dual-read", repeatedDual: true
+    })
     await verifyClaudeManualReadReinjection(adapter, context, request.limits)
     await verifyClaudeManualReadReinjection(adapter, context, request.limits, {
       fixtureName: "native-manual-large-read-reinjection-2.1.263",
@@ -628,7 +631,7 @@ async function verifyClaudeReadPair(adapter, context, limits) {
 }
 
 async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options = {}) {
-  const controlledProfile = options.repeated || options.reversed
+  const controlledProfile = options.repeated || options.reversed || options.repeatedDual
   const fixtureDirectory = join(packageRoot, "fixtures", options.fixtureName ?? "native-auto-read-replay-2.1.263")
   const provenance = JSON.parse(await readFile(join(fixtureDirectory, "provenance.json"), "utf8"))
   const relocate = source => source.replaceAll(JSON.stringify(provenance.fixtureCwd).slice(1, -1),
@@ -749,6 +752,87 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options
           if (selectedFile === undefined) delete process.env.ATAPE_CLAUDE_SESSION_FILE
           else process.env.ATAPE_CLAUDE_SESSION_FILE = selectedFile
         }
+      }
+      const fileWitnessCapacity = async (source, line) => {
+        const prior = prefix(source, line - 1), original = JSON.parse(source.split("\n")[line - 1])
+        const receipts = [...rawProgress.values()], durable = JSON.stringify({ cursor, receipts })
+        const selectedFile = process.env.ATAPE_CLAUDE_SESSION_FILE
+        process.env.ATAPE_CLAUDE_SESSION_FILE = sourceFile
+        try { for (const enabled of [false, true]) for (const bytes of [64 * 1024, 64 * 1024 + 1]) {
+          const record = { ...original, atapePackageCapacityProbe: "" }
+          record.atapePackageCapacityProbe = "x".repeat(bytes - Buffer.byteLength(JSON.stringify(record)) - 1)
+          const selectedSource = prior + JSON.stringify(record) + "\n"
+          assert.equal(Buffer.byteLength(selectedSource) - Buffer.byteLength(prior), bytes)
+          await writeFile(sourceFile, selectedSource)
+          const request = () => collectInstalled(adapter, context, cursor, receipts, pagedLimits, enabled)
+          if (bytes > 64 * 1024) for (let attempt = 0; attempt < 2; attempt++)
+            await assert.rejects(request, error => error.reason === "limit")
+          else {
+            const page = await request()
+            assert.deepEqual(await request(), page)
+            assert.equal(page.sourceFailures, undefined)
+            assert.equal(page.progress.pendingCanonicalSessions, 1)
+            assert.equal(page.hasMore, false)
+            assert.ok(page.observations.every(observation => observation.events.length === 0 && observation.usage.length === 0))
+            assert.equal(page.observations.flatMap(observation => observation.rawSegments).map(raw => raw.content).join(""),
+              enabled ? selectedSource.slice(prior.length) : "")
+          }
+          assert.equal(JSON.stringify({ cursor, receipts }), durable)
+          capacityCases++
+        } } finally {
+          await writeFile(sourceFile, source)
+          if (selectedFile === undefined) delete process.env.ATAPE_CLAUDE_SESSION_FILE
+          else process.env.ATAPE_CLAUDE_SESSION_FILE = selectedFile
+        }
+      }
+      const verifyRawPolicy = async source => {
+        let policyCursor = null, finished = false
+        const policyEvents = [], policyUsage = new Map()
+        for (let index = 0; index < 100; index++) {
+          const request = () => collectInstalled(adapter, context, policyCursor, [], pagedLimits, false)
+          const page = await request()
+          assert.deepEqual(await request(), page)
+          assert.equal(page.sourceFailures, undefined)
+          for (const observation of page.observations) {
+            assert.deepEqual(observation.rawSegments, [])
+            policyEvents.push(...observation.events)
+            for (const sample of observation.usage) policyUsage.set(sample.sourceUsageId, sample)
+          }
+          policyCursor = page.nextCursor
+          if (!page.hasMore) { finished = true; break }
+        }
+        assert.ok(finished, "Raw-off replay capture exceeded its page budget")
+        assert.deepEqual(policyEvents, events)
+        assert.deepEqual([...policyUsage], [...usage])
+        let receipts = [], recoveredContent = "", backfilled = false
+        for (let index = 0; index < limits.pagesPerCycle; index++) {
+          const request = () => collectInstalled(adapter, context, policyCursor, receipts, pagedLimits, true)
+          const page = await request()
+          assert.deepEqual(await request(), page)
+          assert.equal(page.sourceFailures, undefined)
+          for (const observation of page.observations) {
+            assert.deepEqual(observation.events, [])
+            assert.deepEqual(observation.usage, [])
+            for (const raw of observation.rawSegments) {
+              assert.equal(raw.sourceObjectId, sourceObjectId)
+              assert.equal(raw.sourceGeneration, sourceGeneration)
+              assert.equal(raw.sourceOffset, Buffer.byteLength(recoveredContent))
+              recoveredContent += raw.content
+              receipts = [{ sourceSessionId: fixtureCase.sessionId, sourceObjectId, sourceGeneration,
+                sourceOffset: Buffer.byteLength(recoveredContent), finalized: raw.final }]
+            }
+          }
+          policyCursor = page.nextCursor
+          if (!page.hasMore) { backfilled = true; break }
+        }
+        assert.ok(backfilled, "Raw-on replay backfill exceeded its page budget")
+        assert.equal(recoveredContent, source)
+        const idle = await collectInstalled(adapter, context, policyCursor, receipts, pagedLimits, true)
+        assert.deepEqual(await collectInstalled(adapter, context, policyCursor, receipts, pagedLimits, true), idle)
+        assert.deepEqual(idle.observations, [])
+        assert.equal(idle.nextCursor, policyCursor)
+        assert.equal(idle.progress.pendingCanonicalSessions, 0)
+        assert.equal(idle.progress.pendingRawBytes, 0)
       }
       const firstReverseCapacity = async (source, fullSource, line) => {
         const inputReceipts = [...rawProgress.values()], durable = JSON.stringify({ cursor, inputReceipts })
@@ -907,7 +991,8 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options
             assert.equal(Buffer.byteLength(recordedCut), cut.sanitized.bytes)
             assert.equal(createHash("sha256").update(recordedCut).digest("hex"), cut.sanitized.sha256)
             const round = fixtureCase.rounds.find(round => round.round === cut.round)
-            if ((round && cut.prefixThroughLine >= round.lines.copyStart && cut.prefixThroughLine <= round.lines.S) || cut.slot === "prior-file") {
+            const fileSlot = cut.slot === "prior-file" || options.repeatedDual && ["file0", "file1"].includes(cut.slot)
+            if ((round && cut.prefixThroughLine >= round.lines.copyStart && cut.prefixThroughLine <= round.lines.S) || fileSlot) {
               const line = source.split("\n")[cut.prefixThroughLine - 1]
               const partial = prefix(source, cut.prefixThroughLine - 1) + line.slice(0, Math.floor(line.length / 2))
               const committed = rawContent
@@ -916,7 +1001,7 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options
               testedPartials++
             }
             if (cut.slot === "S") recoveryLines = Array.from({ length: round.lines.S - round.lines.copyStart + 1 }, (_, index) => round.lines.copyStart + index)
-            if (cut.slot === "prior-file") recoveryLines = [cut.prefixThroughLine]
+            if (fileSlot) recoveryLines = [cut.prefixThroughLine]
             if (options.reversed && cut.slot === "resultA") {
               const line = source.split("\n")[cut.prefixThroughLine - 1]
               const partial = prefix(source, cut.prefixThroughLine - 1) + line.slice(0, Math.floor(line.length / 2))
@@ -926,6 +1011,19 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options
               await drain(firstResult.expected, partial, committed, 1, true)
               testedPartials++
             }
+            if (options.repeatedDual && cut.slot === "r1") {
+              const line = source.split("\n")[cut.prefixThroughLine - 1]
+              const partial = prefix(source, cut.prefixThroughLine - 1) + line.slice(0, Math.floor(line.length / 2))
+              const committed = rawContent
+              await appendSource(partial)
+              const firstResult = fixtureCase.derivedTestCuts.find(value => value.round === cut.round && value.slot === "r0")
+              await drain(firstResult.expected, partial, committed, 1, true)
+              testedPartials++
+            }
+            if (options.repeatedDual && ["r0", "r1"].includes(cut.slot)) {
+              recoveryLines = [cut.prefixThroughLine]
+              recoveryEventIds = [JSON.parse(source.split("\n")[cut.prefixThroughLine - 1]).uuid + ":0"]
+            }
             if (options.reversed && ["resultB", "resultA"].includes(cut.slot)) {
               recoveryLines = [cut.prefixThroughLine]
               recoveryEventIds = [JSON.parse(source.split("\n")[cut.prefixThroughLine - 1]).uuid + ":0"]
@@ -934,6 +1032,7 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options
           await appendSource(cutSource)
           if (options.reversed && cut.slot === "resultB") await firstReverseCapacity(cutSource, source, cut.prefixThroughLine)
           if (controlledProfile && recoveryLines && !recoveryEventIds) await freshRawCapacity(cutSource)
+          if (options.repeatedDual && ["file0", "file1"].includes(cut.slot)) await fileWitnessCapacity(cutSource, cut.prefixThroughLine)
           await drain(cut.expected, cutSource, prefix(source, cut.parserAndRawCommitThroughLine),
             cut.expected.pendingCanonicalSessions, cut.incompleteAtomicReplayGroup, recoveryLines, recoveryEventIds)
           testedCuts++
@@ -972,6 +1071,27 @@ async function verifyClaudeAutomaticReadReplay(adapter, context, limits, options
         assert.equal(receiptRecoveries, 17)
         assert.equal(capacityCases, 12)
         process.stdout.write("Verified native repeated automatic Read: 5 snapshots, 36 LF cuts, 17 partial slots, 17 advanced Raw receipts, 12 fresh capacity cases; 18 Events, 7 API usage IDs, 380163/117 tokens\n")
+      }
+      if (options.repeatedDual) {
+        const records = previousSource.trimEnd().split("\n").map(JSON.parse)
+        for (const relation of fixtureCase.priorFileReinjection) {
+          assert.deepEqual(records[relation.line - 1].attachment.content, records[relation.earlierResultLine - 1].toolUseResult)
+          assert.ok(!events.some(event => event.sourceEventId.startsWith(`${relation.uuid}:`)))
+        }
+        for (const round of fixtureCase.rounds) {
+          const text = records[round.lines.S - 1].message.content
+          assert.ok(rawContent.includes(JSON.stringify(text).slice(1, -1)))
+          assert.ok(!JSON.stringify([events, [...usage.values()]]).includes(JSON.stringify(text).slice(1, -1)))
+        }
+        for (const apiId of fixtureCase.summarizationUsageLimit.missingSourceApiIds) assert.ok(!usage.has(apiId))
+        await verifyRawPolicy(previousSource)
+        assert.deepEqual(fixtureCase.derivedTestCuts.filter(cut => cut.round === 2).map(cut => cut.prefixThroughLine),
+          Array.from({ length: 23 }, (_, index) => 52 + index))
+        assert.equal(testedCuts, fixtureCase.derivedTestCuts.length)
+        assert.equal(testedPartials, 13)
+        assert.equal(receiptRecoveries, 14)
+        assert.equal(capacityCases, 20)
+        process.stdout.write(`Verified native repeated planned Read pair: ${fixtureCase.nativeSnapshots.length} snapshots, ${testedCuts} LF cuts, 13 partial slots, 14 advanced Raw receipts, 20 capacity cases, Raw off/on backfill; ${events.length} Events, ${usage.size} API usage IDs, ${[...usage.values()].reduce((sum, sample) => sum + sample.inputTokens, 0)}/${[...usage.values()].reduce((sum, sample) => sum + sample.outputTokens, 0)} tokens\n`)
       }
       if (options.reversed) {
         for (const marker of fixtureCase.summarizationUsageLimit.knownSummaryMarkers) {

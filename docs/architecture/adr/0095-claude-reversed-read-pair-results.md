@@ -5,6 +5,10 @@
 
 ## Context
 
+Amendment: [ADR-0096](0096-claude-repeated-dual-read-auto-files.md) later selects
+the same Session's second planned dual round after its ordinary continuation.
+The first-round decision and evidence below retain their recorded scope.
+
 [ADR-0090](0090-claude-read-pair-result-parents.md) proves two successful root
 Read results in call order. The isolated native dual case recorded alongside
 [ADR-0094](0094-claude-repeated-single-read-auto-file.md) instead completes
