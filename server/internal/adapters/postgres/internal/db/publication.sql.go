@@ -63,6 +63,46 @@ func (q *Queries) AddPublicationBytes(ctx context.Context, arg AddPublicationByt
 	return err
 }
 
+const adoptPublicationSource = `-- name: AdoptPublicationSource :exec
+UPDATE canonical_publication_sources SET legacy_adopted=true,revision_floor=$2,baseline_threads_json=$3 WHERE session_id=$1
+`
+
+type AdoptPublicationSourceParams struct {
+	SessionID           string
+	RevisionFloor       int64
+	BaselineThreadsJson *string
+}
+
+func (q *Queries) AdoptPublicationSource(ctx context.Context, arg AdoptPublicationSourceParams) error {
+	_, err := q.db.Exec(ctx, adoptPublicationSource, arg.SessionID, arg.RevisionFloor, arg.BaselineThreadsJson)
+	return err
+}
+
+const advancePublicationRetention = `-- name: AdvancePublicationRetention :exec
+UPDATE canonical_publication_attempts SET derived_parts=derived_parts+$1,
+ retained_bytes=retained_bytes+$2,retention_cursor=$3,state=$4
+WHERE id=$5
+`
+
+type AdvancePublicationRetentionParams struct {
+	Parts  int32
+	Bytes  int64
+	Cursor string
+	State  string
+	ID     pgtype.UUID
+}
+
+func (q *Queries) AdvancePublicationRetention(ctx context.Context, arg AdvancePublicationRetentionParams) error {
+	_, err := q.db.Exec(ctx, advancePublicationRetention,
+		arg.Parts,
+		arg.Bytes,
+		arg.Cursor,
+		arg.State,
+		arg.ID,
+	)
+	return err
+}
+
 const advancePublicationValidation = `-- name: AdvancePublicationValidation :exec
 UPDATE canonical_publication_attempts SET validated_parts=validated_parts+1,
  candidate_events=candidate_events+$1,candidate_usage=candidate_usage+$2,
@@ -91,6 +131,114 @@ func (q *Queries) AdvancePublicationValidation(ctx context.Context, arg AdvanceP
 		arg.ID,
 	)
 	return err
+}
+
+const baselineParentEdges = `-- name: BaselineParentEdges :many
+SELECT id,thread_id,child_thread_id FROM visible_canonical_events WHERE session_id=$1 AND child_thread_id=$2 ORDER BY id LIMIT 2
+`
+
+type BaselineParentEdgesParams struct {
+	SessionID     string
+	ChildThreadID *string
+}
+
+type BaselineParentEdgesRow struct {
+	ID            string
+	ThreadID      string
+	ChildThreadID *string
+}
+
+func (q *Queries) BaselineParentEdges(ctx context.Context, arg BaselineParentEdgesParams) ([]BaselineParentEdgesRow, error) {
+	rows, err := q.db.Query(ctx, baselineParentEdges, arg.SessionID, arg.ChildThreadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BaselineParentEdgesRow{}
+	for rows.Next() {
+		var i BaselineParentEdgesRow
+		if err := rows.Scan(&i.ID, &i.ThreadID, &i.ChildThreadID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const baselineThreadEvent = `-- name: BaselineThreadEvent :one
+SELECT id, session_id, thread_id, source_key, revision, projection_revision, digest, source_order, event_index, order_fidelity, fidelity, raw_ref, adapter_version, schema_version, observed_at, received_at, ingest_seq, kind, author, occurred_at, text, tool_label, child_thread_id, tool_update_json FROM canonical_events WHERE session_id=$1 AND thread_id=$2
+ AND id>$3::text ORDER BY id LIMIT 1
+`
+
+type BaselineThreadEventParams struct {
+	SessionID string
+	ThreadID  string
+	AfterID   string
+}
+
+func (q *Queries) BaselineThreadEvent(ctx context.Context, arg BaselineThreadEventParams) (CanonicalEvent, error) {
+	row := q.db.QueryRow(ctx, baselineThreadEvent, arg.SessionID, arg.ThreadID, arg.AfterID)
+	var i CanonicalEvent
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.ThreadID,
+		&i.SourceKey,
+		&i.Revision,
+		&i.ProjectionRevision,
+		&i.Digest,
+		&i.SourceOrder,
+		&i.EventIndex,
+		&i.OrderFidelity,
+		&i.Fidelity,
+		&i.RawRef,
+		&i.AdapterVersion,
+		&i.SchemaVersion,
+		&i.ObservedAt,
+		&i.ReceivedAt,
+		&i.IngestSeq,
+		&i.Kind,
+		&i.Author,
+		&i.OccurredAt,
+		&i.Text,
+		&i.ToolLabel,
+		&i.ChildThreadID,
+		&i.ToolUpdateJson,
+	)
+	return i, err
+}
+
+const baselineThreadUsage = `-- name: BaselineThreadUsage :one
+SELECT source_key, session_id, thread_id, revision, digest, occurred_at, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM canonical_usage WHERE session_id=$1 AND thread_id=$2
+ AND source_key>$3::text ORDER BY source_key LIMIT 1
+`
+
+type BaselineThreadUsageParams struct {
+	SessionID string
+	ThreadID  string
+	AfterKey  string
+}
+
+func (q *Queries) BaselineThreadUsage(ctx context.Context, arg BaselineThreadUsageParams) (CanonicalUsage, error) {
+	row := q.db.QueryRow(ctx, baselineThreadUsage, arg.SessionID, arg.ThreadID, arg.AfterKey)
+	var i CanonicalUsage
+	err := row.Scan(
+		&i.SourceKey,
+		&i.SessionID,
+		&i.ThreadID,
+		&i.Revision,
+		&i.Digest,
+		&i.OccurredAt,
+		&i.Model,
+		&i.InputTokens,
+		&i.OutputTokens,
+		&i.CacheReadTokens,
+		&i.CacheWriteTokens,
+	)
+	return i, err
 }
 
 const claimPublicationProjectionChanges = `-- name: ClaimPublicationProjectionChanges :many
@@ -170,7 +318,7 @@ const createPublicationAttempt = `-- name: CreatePublicationAttempt :one
 INSERT INTO canonical_publication_attempts(id,session_id,capture_id,base_head,transform_version,fence,lease_until)
 SELECT $1,$2,$3,$4,$5,$6,LEAST($7::timestamptz,clock_timestamp()+$8::bigint*interval '1 millisecond')
 WHERE $7::timestamptz>clock_timestamp()
-RETURNING id, session_id, capture_id, base_head, transform_version, fence, lease_until, state, part_count, retained_bytes, seal_json, validated_parts, candidate_events, candidate_usage, header_digest, target_json, activation_json, published_observed_at
+RETURNING id, session_id, capture_id, base_head, transform_version, fence, lease_until, state, part_count, retained_bytes, seal_json, validated_parts, candidate_events, candidate_usage, header_digest, target_json, activation_json, published_observed_at, derived_parts, retention_cursor
 `
 
 type CreatePublicationAttemptParams struct {
@@ -215,6 +363,8 @@ func (q *Queries) CreatePublicationAttempt(ctx context.Context, arg CreatePublic
 		&i.TargetJson,
 		&i.ActivationJson,
 		&i.PublishedObservedAt,
+		&i.DerivedParts,
+		&i.RetentionCursor,
 	)
 	return i, err
 }
@@ -244,7 +394,7 @@ DELETE FROM canonical_publication_reservations WHERE id IN (
  JOIN canonical_publication_sources s ON s.session_id=r.session_id
  LEFT JOIN canonical_publication_attempts a ON a.id=r.id
  WHERE s.captured_by_user_id=$1 AND r.expires_at<=clock_timestamp()
- AND (a.id IS NULL OR (a.part_count=0 AND a.state<>'activated'))
+ AND (a.id IS NULL OR (a.part_count=0 AND a.derived_parts=0 AND a.state<>'activated'))
  ORDER BY r.id LIMIT $2
 ) RETURNING id
 `
@@ -289,7 +439,7 @@ func (q *Queries) DeletePublicationPart(ctx context.Context, arg DeletePublicati
 }
 
 const getPublicationAttempt = `-- name: GetPublicationAttempt :one
-SELECT a.id, a.session_id, a.capture_id, a.base_head, a.transform_version, a.fence, a.lease_until, a.state, a.part_count, a.retained_bytes, a.seal_json, a.validated_parts, a.candidate_events, a.candidate_usage, a.header_digest, a.target_json, a.activation_json, a.published_observed_at,r.expires_at,
+SELECT a.id, a.session_id, a.capture_id, a.base_head, a.transform_version, a.fence, a.lease_until, a.state, a.part_count, a.retained_bytes, a.seal_json, a.validated_parts, a.candidate_events, a.candidate_usage, a.header_digest, a.target_json, a.activation_json, a.published_observed_at, a.derived_parts, a.retention_cursor,r.expires_at,
  CASE WHEN a.state='activated' THEN 'activated'
  WHEN a.state='rejected' THEN 'rejected'
  WHEN a.fence<>s.writer_fence OR a.base_head IS DISTINCT FROM s.current_head THEN 'superseded'
@@ -320,6 +470,8 @@ type GetPublicationAttemptRow struct {
 	TargetJson          *string
 	ActivationJson      *string
 	PublishedObservedAt pgtype.Timestamptz
+	DerivedParts        int32
+	RetentionCursor     string
 	ExpiresAt           time.Time
 	EffectiveState      string
 }
@@ -346,6 +498,8 @@ func (q *Queries) GetPublicationAttempt(ctx context.Context, id pgtype.UUID) (Ge
 		&i.TargetJson,
 		&i.ActivationJson,
 		&i.PublishedObservedAt,
+		&i.DerivedParts,
+		&i.RetentionCursor,
 		&i.ExpiresAt,
 		&i.EffectiveState,
 	)
@@ -391,6 +545,29 @@ func (q *Queries) GetPublicationMember(ctx context.Context, arg GetPublicationMe
 	var source_key string
 	err := row.Scan(&source_key)
 	return source_key, err
+}
+
+const getPublicationMemberLocation = `-- name: GetPublicationMemberLocation :one
+SELECT part_ordinal,entry_index,thread_id FROM canonical_publication_members WHERE attempt_id=$1 AND kind=$2 AND record_id=$3
+`
+
+type GetPublicationMemberLocationParams struct {
+	AttemptID pgtype.UUID
+	Kind      string
+	RecordID  string
+}
+
+type GetPublicationMemberLocationRow struct {
+	PartOrdinal int32
+	EntryIndex  int32
+	ThreadID    string
+}
+
+func (q *Queries) GetPublicationMemberLocation(ctx context.Context, arg GetPublicationMemberLocationParams) (GetPublicationMemberLocationRow, error) {
+	row := q.db.QueryRow(ctx, getPublicationMemberLocation, arg.AttemptID, arg.Kind, arg.RecordID)
+	var i GetPublicationMemberLocationRow
+	err := row.Scan(&i.PartOrdinal, &i.EntryIndex, &i.ThreadID)
+	return i, err
 }
 
 const getPublicationPart = `-- name: GetPublicationPart :one
@@ -534,7 +711,7 @@ func (q *Queries) GetPublicationReservation(ctx context.Context, id pgtype.UUID)
 }
 
 const getPublicationSource = `-- name: GetPublicationSource :one
-SELECT session_id, source_key, project_id, captured_by_user_id, installation_id, adapter_id, source_session_id, origin_key, writer_fence, current_head FROM canonical_publication_sources WHERE session_id=$1
+SELECT session_id, source_key, project_id, captured_by_user_id, installation_id, adapter_id, source_session_id, origin_key, writer_fence, current_head, legacy_adopted, revision_floor, baseline_threads_json FROM canonical_publication_sources WHERE session_id=$1
 `
 
 func (q *Queries) GetPublicationSource(ctx context.Context, sessionID string) (CanonicalPublicationSource, error) {
@@ -551,8 +728,35 @@ func (q *Queries) GetPublicationSource(ctx context.Context, sessionID string) (C
 		&i.OriginKey,
 		&i.WriterFence,
 		&i.CurrentHead,
+		&i.LegacyAdopted,
+		&i.RevisionFloor,
+		&i.BaselineThreadsJson,
 	)
 	return i, err
+}
+
+const insertDerivedPublicationPart = `-- name: InsertDerivedPublicationPart :exec
+INSERT INTO canonical_publication_parts(attempt_id,ordinal,digest,byte_count,validated_body,format_version,derived)
+VALUES($1,$2,$3,$4,$5,1,true)
+`
+
+type InsertDerivedPublicationPartParams struct {
+	AttemptID     pgtype.UUID
+	Ordinal       int32
+	Digest        string
+	ByteCount     int64
+	ValidatedBody []byte
+}
+
+func (q *Queries) InsertDerivedPublicationPart(ctx context.Context, arg InsertDerivedPublicationPartParams) error {
+	_, err := q.db.Exec(ctx, insertDerivedPublicationPart,
+		arg.AttemptID,
+		arg.Ordinal,
+		arg.Digest,
+		arg.ByteCount,
+		arg.ValidatedBody,
+	)
+	return err
 }
 
 const insertPublicationMember = `-- name: InsertPublicationMember :exec
@@ -686,9 +890,26 @@ func (q *Queries) InsertPublicationSource(ctx context.Context, arg InsertPublica
 	return err
 }
 
+const legacyRevisionFloor = `-- name: LegacyRevisionFloor :one
+SELECT GREATEST(
+ (SELECT cs.revision FROM canonical_sessions cs WHERE cs.id=$1),
+ coalesce((SELECT revision FROM canonical_threads WHERE session_id=$1 ORDER BY revision DESC LIMIT 1),0),
+ coalesce((SELECT revision FROM canonical_events WHERE session_id=$1 ORDER BY revision DESC LIMIT 1),0),
+ coalesce((SELECT projection_revision FROM canonical_events WHERE session_id=$1 ORDER BY projection_revision DESC LIMIT 1),0),
+ coalesce((SELECT revision FROM canonical_usage WHERE session_id=$1 ORDER BY revision DESC LIMIT 1),0)
+)::bigint AS revision_floor
+`
+
+func (q *Queries) LegacyRevisionFloor(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRow(ctx, legacyRevisionFloor, id)
+	var revision_floor int64
+	err := row.Scan(&revision_floor)
+	return revision_floor, err
+}
+
 const listPublicationParts = `-- name: ListPublicationParts :many
 SELECT ordinal,digest,byte_count FROM canonical_publication_parts
-WHERE attempt_id=$1 AND ordinal>$2 ORDER BY ordinal LIMIT $3
+WHERE attempt_id=$1 AND NOT derived AND ordinal>$2 ORDER BY ordinal LIMIT $3
 `
 
 type ListPublicationPartsParams struct {
@@ -775,6 +996,43 @@ func (q *Queries) ListPublicationThreadMembers(ctx context.Context, arg ListPubl
 	return items, nil
 }
 
+const nextPublicationBaselineMember = `-- name: NextPublicationBaselineMember :one
+SELECT record_id,source_key,part_ordinal,entry_index FROM canonical_publication_members
+WHERE attempt_id=$1 AND kind=$2 AND thread_id=$3 AND source_key>$4::text
+ORDER BY source_key LIMIT 1
+`
+
+type NextPublicationBaselineMemberParams struct {
+	AttemptID pgtype.UUID
+	Kind      string
+	ThreadID  string
+	AfterKey  string
+}
+
+type NextPublicationBaselineMemberRow struct {
+	RecordID    string
+	SourceKey   string
+	PartOrdinal int32
+	EntryIndex  int32
+}
+
+func (q *Queries) NextPublicationBaselineMember(ctx context.Context, arg NextPublicationBaselineMemberParams) (NextPublicationBaselineMemberRow, error) {
+	row := q.db.QueryRow(ctx, nextPublicationBaselineMember,
+		arg.AttemptID,
+		arg.Kind,
+		arg.ThreadID,
+		arg.AfterKey,
+	)
+	var i NextPublicationBaselineMemberRow
+	err := row.Scan(
+		&i.RecordID,
+		&i.SourceKey,
+		&i.PartOrdinal,
+		&i.EntryIndex,
+	)
+	return i, err
+}
+
 const nextPublicationFence = `-- name: NextPublicationFence :one
 UPDATE canonical_publication_sources SET writer_fence=writer_fence+1
 WHERE session_id=$1 RETURNING writer_fence
@@ -788,7 +1046,7 @@ func (q *Queries) NextPublicationFence(ctx context.Context, sessionID string) (i
 }
 
 const publicationReclaimParts = `-- name: PublicationReclaimParts :many
-SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count FROM canonical_publication_parts p
+SELECT p.attempt_id,p.ordinal,p.stored_bytes AS byte_count,p.derived FROM canonical_publication_parts p
 JOIN canonical_publication_attempts a ON a.id=p.attempt_id
 JOIN canonical_publication_reservations r ON r.id=a.id
 JOIN canonical_publication_sources s ON s.session_id=a.session_id
@@ -808,6 +1066,7 @@ type PublicationReclaimPartsRow struct {
 	AttemptID pgtype.UUID
 	Ordinal   int32
 	ByteCount int64
+	Derived   bool
 }
 
 func (q *Queries) PublicationReclaimParts(ctx context.Context, arg PublicationReclaimPartsParams) ([]PublicationReclaimPartsRow, error) {
@@ -819,7 +1078,12 @@ func (q *Queries) PublicationReclaimParts(ctx context.Context, arg PublicationRe
 	items := []PublicationReclaimPartsRow{}
 	for rows.Next() {
 		var i PublicationReclaimPartsRow
-		if err := rows.Scan(&i.AttemptID, &i.Ordinal, &i.ByteCount); err != nil {
+		if err := rows.Scan(
+			&i.AttemptID,
+			&i.Ordinal,
+			&i.ByteCount,
+			&i.Derived,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -925,15 +1189,17 @@ func (q *Queries) StoreValidatedPublicationPart(ctx context.Context, arg StoreVa
 }
 
 const subtractPublicationBytes = `-- name: SubtractPublicationBytes :exec
-UPDATE canonical_publication_attempts SET retained_bytes=retained_bytes-$2,part_count=part_count-1 WHERE id=$1
+UPDATE canonical_publication_attempts SET retained_bytes=retained_bytes-$2,part_count=part_count-CASE WHEN $3::boolean THEN 0 ELSE 1 END,
+ derived_parts=derived_parts-CASE WHEN $3::boolean THEN 1 ELSE 0 END WHERE id=$1
 `
 
 type SubtractPublicationBytesParams struct {
 	ID            pgtype.UUID
 	RetainedBytes int64
+	Derived       bool
 }
 
 func (q *Queries) SubtractPublicationBytes(ctx context.Context, arg SubtractPublicationBytesParams) error {
-	_, err := q.db.Exec(ctx, subtractPublicationBytes, arg.ID, arg.RetainedBytes)
+	_, err := q.db.Exec(ctx, subtractPublicationBytes, arg.ID, arg.RetainedBytes, arg.Derived)
 	return err
 }

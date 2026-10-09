@@ -5,7 +5,11 @@ This is the engineering contract selected with ADR-0058 and ADR-0059. See the
 landed increments and remaining acceptance. OpenCode is available in ordinary
 Tools selection; collection requires a Server advertising `atape.publication.v1`.
 It extends the existing pull architecture through an explicit capability; old
-Adapters and already captured legacy Sessions keep their existing write mode.
+Adapters and already captured legacy Sessions keep their existing write mode
+unless an explicitly declared migration is used. Claude's v2 source capability
+and authenticated legacy adoption are defined in
+[ADR-0101](adr/0101-claude-active-path-and-legacy-adoption.md); ordinary publication
+reservation still cannot change a legacy Session's mode.
 
 ## Module responsibilities
 

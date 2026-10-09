@@ -17,6 +17,7 @@ import (
 type Publication interface {
 	Capabilities() publication.Capabilities
 	Reserve(context.Context, authentication.Principal, publication.Scope) (publication.Reservation, error)
+	AdoptLegacy(context.Context, authentication.Principal, publication.Scope) (publication.Adoption, error)
 	Begin(context.Context, authentication.Principal, publication.Begin) (publication.Attempt, error)
 	Put(context.Context, authentication.Principal, string, int, string, []byte) (publication.Part, error)
 	Seal(context.Context, authentication.Principal, string, publication.Manifest) (publication.Attempt, error)
@@ -109,6 +110,18 @@ func (h *Handler) publicationBegin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	value, err := h.publication.Begin(r.Context(), principalFromContext(r.Context()), input)
+	publicationResult(w, r, value, err)
+}
+
+func (h *Handler) publicationAdoptLegacy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := strictQuery(w, r); !ok {
+		return
+	}
+	var input publication.Scope
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	value, err := h.publication.AdoptLegacy(r.Context(), principalFromContext(r.Context()), input)
 	publicationResult(w, r, value, err)
 }
 func (h *Handler) publicationSeal(w http.ResponseWriter, r *http.Request) {

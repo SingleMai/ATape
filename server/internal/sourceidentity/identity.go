@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -37,4 +38,35 @@ func SessionID(projectID, userID, installationID, adapterID, sourceSessionID str
 }
 func SessionSourceKey(projectID, userID, installationID, adapterID, sourceSessionID string) string {
 	return key(key(projectID, userID, installationID, adapterID, sourceSessionID), "session")
+}
+
+// SourceThreadID recovers only the source-local Thread identity from a key
+// proven to belong to this exact authenticated Session scope.
+func SourceThreadID(sessionSourceKey, threadSourceKey string) (string, bool) {
+	session, ok := keyParts(sessionSourceKey)
+	if !ok || len(session) != 2 || session[1] != "session" {
+		return "", false
+	}
+	thread, ok := keyParts(threadSourceKey)
+	if !ok || len(thread) != 3 || thread[0] != session[0] || thread[1] != "thread" || thread[2] == "" {
+		return "", false
+	}
+	return thread[2], true
+}
+
+func keyParts(value string) ([]string, bool) {
+	var parts []string
+	for value != "" {
+		colon := strings.IndexByte(value, ':')
+		if colon < 1 {
+			return nil, false
+		}
+		size, err := strconv.Atoi(value[:colon])
+		if err != nil || size < 0 || size > len(value)-colon-1 {
+			return nil, false
+		}
+		parts = append(parts, value[colon+1:colon+1+size])
+		value = value[colon+1+size:]
+	}
+	return parts, true
 }

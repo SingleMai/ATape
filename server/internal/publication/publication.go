@@ -5,6 +5,7 @@ package publication
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"time"
@@ -33,6 +34,14 @@ type Reservation struct {
 	SessionID string    `json:"sessionId"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
+
+// Adoption permanently fences legacy writes. Its baseline contains metadata
+// only; Canonical bodies remain in the Server's bounded publication workflow.
+type Adoption struct {
+	Reservation
+	RevisionFloor   int64              `json:"revisionFloor"`
+	BaselineThreads []ingestion.Thread `json:"baselineThreads"`
+}
 type Begin struct {
 	ReservationID    string `json:"reservationId"`
 	CaptureID        string `json:"captureId"`
@@ -53,6 +62,7 @@ type Attempt struct {
 	RetainedBytes    int64       `json:"retainedBytes"`
 	Seal             *Manifest   `json:"seal"`
 	ValidatedParts   int         `json:"validatedParts"`
+	RetainedParts    int         `json:"retainedParts"`
 	CandidateEvents  int         `json:"candidateEvents"`
 	CandidateUsage   int         `json:"candidateUsage"`
 	Activation       *Activation `json:"activation"`
@@ -71,16 +81,35 @@ type Activation struct {
 	ActivatedAt      time.Time `json:"activatedAt"`
 }
 
-// CanonicalPart repeats the complete bounded Session/Thread header and declares
-// the complete target counts in every frozen transport part.
+// CanonicalPart repeats the complete bounded Session/Thread header. v2 counts
+// declare only explicit projection; inherited membership is Server-derived.
 const TargetProfile = "atape.publication-target.v1"
+const RetentionTargetProfile = "atape.publication-target.v2"
 
 type Target struct {
-	Profile string `json:"profile"`
-	Events  int    `json:"events"`
-	Usage   int    `json:"usage"`
-	Threads int    `json:"threads"`
+	Profile           string   `json:"profile"`
+	Events            int      `json:"events"`
+	Usage             int      `json:"usage"`
+	Threads           int      `json:"threads"`
+	RetainedThreadIDs []string `json:"retainedThreadIds"`
 }
+
+// Keep v1's exact field set for older strict decoders. v2 always includes its
+// retention declaration, including an honest empty array (null is invalid).
+func (t Target) MarshalJSON() ([]byte, error) {
+	var retained *[]string
+	if t.Profile == RetentionTargetProfile || t.RetainedThreadIDs != nil {
+		retained = &t.RetainedThreadIDs
+	}
+	return json.Marshal(struct {
+		Profile  string    `json:"profile"`
+		Events   int       `json:"events"`
+		Usage    int       `json:"usage"`
+		Threads  int       `json:"threads"`
+		Retained *[]string `json:"retainedThreadIds,omitempty"`
+	}{t.Profile, t.Events, t.Usage, t.Threads, retained})
+}
+
 type CanonicalPart struct {
 	Target Target          `json:"target"`
 	Batch  ingestion.Batch `json:"batch"`
@@ -153,4 +182,6 @@ type Capabilities struct {
 	Limits          Capacity `json:"limits"`
 	StatusPageSize  int      `json:"statusPageSize"`
 	ReclaimPageSize int      `json:"reclaimPageSize"`
+	TargetProfiles  []string `json:"targetProfiles"`
+	LegacyAdoption  bool     `json:"legacyAdoption"`
 }

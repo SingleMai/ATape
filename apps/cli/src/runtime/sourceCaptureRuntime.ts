@@ -1,5 +1,5 @@
 import { AdapterRuntimeError, type HostedSourceCapture } from "@atape/application"
-import { SourceCaptureHeader, SourceCapturePage, SourceDiscoveryPage, SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion,
+import { SourceCaptureHeader, SourceCaptureHeaderV2, SourceCapturePriorThread, SourceCapturePage, SourceDiscoveryPage, SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion, SourceCaptureVersion2,
   type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
 import { Effect, Schema } from "effect"
 
@@ -30,7 +30,7 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       const reason = typeof cause === "object" && cause !== null && "reason" in cause ? cause.reason : undefined
       return typeof reason === "string" && ["format", "unsupported", "attribution", "limit", "closed"].includes(reason)
         ? new AdapterRuntimeError({ adapterId, reason: "contract", retryable: false,
-          sourceFailureReason: reason === "limit" || reason === "attribution" ? reason : "format",
+          sourceFailureReason: reason === "limit" || reason === "attribution" || reason === "unsupported" && foreign.protocolVersion === SourceCaptureVersion2 ? reason : "format",
           message: `Adapter source cannot be captured (${reason}).` })
         : failure(adapterId, "collect", "Adapter source operation failed, was canceled or exceeded its deadline.")
     }
@@ -42,19 +42,35 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
   const limits = (value: SourceCaptureLimits) => Schema.decodeUnknownEffect(SourceCaptureLimits)(value).pipe(
     Effect.flatMap(value => value.pageBytes >= value.rowBytes ? Effect.succeed(value) : Effect.fail(new Error("page byte admission"))),
     Effect.mapError(() => failure(adapterId, "contract", "Source capture requires valid explicit admission.")))
+  const discovery = (value: unknown, request: { readonly cursor: string | null }, admitted: SourceCaptureLimits) => Effect.gen(function*() {
+    const page = yield* decode(SourceDiscoveryPage, value, admitted.pageBytes)
+    if (page.sources.length > admitted.pageRows || !page.done && (page.cursor === null || page.cursor === request.cursor) || page.done && page.cursor !== null)
+      return yield* failure(adapterId, "contract", "Adapter source discovery did not satisfy bounded cursor progress.")
+    return page
+  })
   return {
+    protocolVersion: foreign.protocolVersion,
+    ...(foreign.protocolVersion === SourceCaptureVersion2 && foreign.legacyMigration ? { legacyMigration: (request: Parameters<NonNullable<HostedSourceCapture["legacyMigration"]>>[0]) => Effect.gen(function*() {
+      const admitted = yield* limits(request.limits)
+      if (!request.checkpointCursor || Buffer.byteLength(request.checkpointCursor) > 1024 * 1024)
+        return yield* failure(adapterId, "contract", "Legacy migration requires a bounded original checkpoint.")
+      const value = yield* call(signal => foreign.legacyMigration!({ ...request, limits: admitted, signal }), admitted.durationMs)
+      return yield* discovery(value, request, admitted)
+    }) } : {}),
     discover: request => Effect.gen(function*() {
       const admitted = yield* limits(request.limits)
       const value = yield* call(signal => foreign.discover({ ...request, limits: admitted, signal }), admitted.durationMs)
-      const page = yield* decode(SourceDiscoveryPage, value, admitted.pageBytes)
-      if (page.sources.length > admitted.pageRows || !page.done && (page.cursor === null || page.cursor === request.cursor) || page.done && page.cursor !== null)
-        return yield* failure(adapterId, "contract", "Adapter source discovery did not satisfy bounded cursor progress.")
-      return page
+      return yield* discovery(value, request, admitted)
     }),
     open: request => Effect.gen(function*() {
       const admitted = yield* limits(request.limits)
       const projection = yield* Schema.decodeUnknownEffect(SourceProjectionLimits)(request.projection).pipe(
         Effect.mapError(() => failure(adapterId, "contract", "Source projection requires valid explicit admission.")))
+      yield* Effect.try({ try: () => bounded(request.priorThreads ?? [], 2 * 1024 * 1024), catch: () => failure(adapterId, "contract", "Prior Thread metadata exceeds its byte bound.") })
+      const priorThreads = yield* Schema.decodeUnknownEffect(Schema.Array(SourceCapturePriorThread).check(Schema.isMaxLength(1000)))(request.priorThreads ?? []).pipe(
+        Effect.mapError(() => failure(adapterId, "contract", "Source capture requires valid prior Thread metadata.")))
+      for (const checkpoint of [request.priorCheckpoint, request.legacyCheckpoint]) if (checkpoint !== undefined && (!checkpoint || Buffer.byteLength(checkpoint) > 1024 * 1024))
+        return yield* failure(adapterId, "contract", "Source checkpoint exceeds its opaque byte bound.")
       const deadline = performance.now() + admitted.durationMs
       let cleanup: Promise<unknown> | undefined
       const close = (view: SourceCaptureView) => cleanup ??= Promise.resolve().then(() => typeof view?.close === "function" ? view.close() : undefined)
@@ -62,10 +78,14 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
         try: () => invoke(() => close(view), AbortSignal.timeout(Math.min(admitted.durationMs, 5000))),
         catch: () => failure(adapterId, "close", "Adapter source view failed to close.")
       }).pipe(Effect.catch(error => Effect.logWarning(error.message)))
-      const view = yield* Effect.acquireRelease(call(signal => foreign.open({ ...request, limits: admitted, projection, signal }), admitted.durationMs, close), release)
+      const view = yield* Effect.acquireRelease(call(signal => foreign.protocolVersion === SourceCaptureVersion2
+        ? foreign.open({ ...request, priorThreads, limits: admitted, projection, signal })
+        : foreign.open({ ...request, limits: admitted, projection, signal }), admitted.durationMs, close), release)
       if (typeof view?.read !== "function" || typeof view?.close !== "function")
         return yield* failure(adapterId, "contract", "Adapter source must return a readable closeable view.")
-      const header = yield* decode(SourceCaptureHeader, view, projection.pageBytes)
+      const header = yield* decode(foreign.protocolVersion === SourceCaptureVersion2 ? SourceCaptureHeaderV2 : SourceCaptureHeader, view, projection.pageBytes)
+      if ("sourceCheckpoint" in header && Buffer.byteLength(header.sourceCheckpoint as string) > 1024 * 1024)
+        return yield* failure(adapterId, "contract", "Source checkpoint exceeds its opaque byte bound.")
       if (header.origin.sourceId !== request.sourceId || header.session.sourceSessionId !== request.sourceId ||
         header.threads.length > admitted.threads || header.target.events > projection.events || header.target.usage > projection.usage)
         return yield* failure(adapterId, "contract", "Adapter source view differs from the requested scope or admission.")
@@ -88,5 +108,5 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
 }
 
 export const isSourceCaptureRuntime = (value: unknown): value is SourceCaptureRuntime => typeof value === "object" && value !== null &&
-  "protocolVersion" in value && value.protocolVersion === SourceCaptureVersion && "discover" in value && typeof value.discover === "function" &&
+  "protocolVersion" in value && (value.protocolVersion === SourceCaptureVersion || value.protocolVersion === SourceCaptureVersion2) && "discover" in value && typeof value.discover === "function" &&
   "open" in value && typeof value.open === "function"

@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { SourceCaptureVersion } from "./client.ts"
+import { SourceCaptureVersion, SourceCaptureVersion2 } from "./client.ts"
 import { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, AdapterSourceFailure, MaxSourceFailures, GitSource } from "./collector.ts"
 
 const count = (maximum: number, minimum = 1) => Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
@@ -29,6 +29,19 @@ export const SourceCaptureHeader = Schema.Struct({
   target: Schema.Struct({ events: count(2_000_000, 0), usage: count(1_000_000, 0), threads: count(1000) })
 })
 export type SourceCaptureHeader = typeof SourceCaptureHeader.Type
+export const SourceCapturePriorThread = Schema.Struct(threadFields)
+export type SourceCapturePriorThread = typeof SourceCapturePriorThread.Type
+/** Opaque provider checkpoint; Host bounds and freezes it without interpreting it. */
+export const SourceCaptureCheckpoint = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024 * 1024))
+export const SourceCaptureHeaderV2 = Schema.Struct({
+  ...SourceCaptureHeader.fields,
+  sourceCheckpoint: SourceCaptureCheckpoint,
+  target: Schema.Struct({ ...SourceCaptureHeader.fields.target.fields,
+    retainedThreadIds: Schema.Array(identity).check(Schema.isMaxLength(1000)) }),
+  sourceFailures: Schema.Array(AdapterSourceFailure).check(Schema.isMaxLength(MaxSourceFailures)),
+  sourceFailuresTruncated: Schema.Boolean
+})
+export type SourceCaptureHeaderV2 = typeof SourceCaptureHeaderV2.Type
 export const SourceCapturePage = Schema.Struct({ frames: Schema.Array(SourceCaptureFrame).check(Schema.isMaxLength(100)), done: Schema.Boolean })
 export type SourceCapturePage = typeof SourceCapturePage.Type
 export const SourceDiscoveryPage = Schema.Struct({
@@ -42,14 +55,37 @@ export type SourceOpenRequest = {
   readonly sourceId: string; readonly rawEnabled: boolean; readonly limits: SourceCaptureLimits
   readonly projection: SourceProjectionLimits; readonly signal: AbortSignal
 }
+export type SourceOpenRequestV2 = SourceOpenRequest & {
+  readonly priorThreads: ReadonlyArray<SourceCapturePriorThread>
+  readonly priorCheckpoint?: string
+  readonly legacyCheckpoint?: string
+}
+export type SourceLegacyMigrationRequest = {
+  readonly checkpointCursor: string
+  readonly cursor: string | null
+  readonly limits: SourceCaptureLimits
+  readonly signal: AbortSignal
+}
 /** Foreign package boundary: Host owns Effect Scope, validates metadata/pages,
  * assigns revisions and Raw references, and freezes the final delivery bytes. */
 export type SourceCaptureView = SourceCaptureHeader & {
   readonly read: (signal: AbortSignal) => unknown | PromiseLike<unknown>
   readonly close: () => unknown | PromiseLike<unknown>
 }
-export type SourceCaptureRuntime = {
+export type SourceCaptureRuntimeV1 = {
   readonly protocolVersion: typeof SourceCaptureVersion
   readonly discover: (request: SourceDiscoverRequest) => unknown | PromiseLike<unknown>
   readonly open: (request: SourceOpenRequest) => SourceCaptureView | PromiseLike<SourceCaptureView>
 }
+export type SourceCaptureViewV2 = SourceCaptureHeaderV2 & {
+  readonly read: (signal: AbortSignal) => unknown | PromiseLike<unknown>
+  readonly close: () => unknown | PromiseLike<unknown>
+}
+export type SourceCaptureRuntimeV2 = {
+  readonly protocolVersion: typeof SourceCaptureVersion2
+  readonly discover: (request: SourceDiscoverRequest) => unknown | PromiseLike<unknown>
+  readonly open: (request: SourceOpenRequestV2) => SourceCaptureViewV2 | PromiseLike<SourceCaptureViewV2>
+  /** Bounded decoding/validation of this provider's own acknowledged legacy cursor. */
+  readonly legacyMigration?: (request: SourceLegacyMigrationRequest) => unknown | PromiseLike<unknown>
+}
+export type SourceCaptureRuntime = SourceCaptureRuntimeV1 | SourceCaptureRuntimeV2

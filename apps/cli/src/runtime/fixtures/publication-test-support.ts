@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { CaptureJournal, PublicationError, PublicationTransport, beginPublicationCapture, sealPublicationCapture,
   deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError,
   SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
-import { PublicationProtocol, PublicationTargetProfile, type PublicationAttempt, type PublicationCapabilities, type PublicationPart,
+import { PublicationProtocol, PublicationTargetProfile, PublicationTargetProfile2, type PublicationLegacyAdoption, type PublicationAttempt, type PublicationCapabilities, type PublicationPart,
   type RawPublicationChunk, type RawPublicationReceipt, type RawPublicationPolicy } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { expect } from "vitest"
@@ -23,7 +23,9 @@ export const directories: string[] = []
 export const failure = (reason: PublicationError["reason"]) => new PublicationError({ reason, message: "injected remote failure" })
 
 // Test Adapter for the real owned remote Seam. Local storage is always SQLite.
-export const fixture = async (partBytes = 4096, admission: Partial<PublicationCapabilities["limits"]> = {}) => {
+export const fixture = async (partBytes = 4096, admission: Partial<PublicationCapabilities["limits"]> = {}, features: {
+  readonly v2?: boolean; readonly adoption?: Pick<PublicationLegacyAdoption, "revisionFloor" | "baselineThreads">
+} = {}) => {
   const directory = await mkdtemp(join(tmpdir(), "atape-delivery-")); directories.push(directory)
   const path = join(directory, "capture.sqlite")
   let serial = 0, mode: "create" | "open" = "create", requests = 0
@@ -32,11 +34,14 @@ export const fixture = async (partBytes = 4096, admission: Partial<PublicationCa
   let lostPut = false, lostActivation = false, wrongPart = false
   let statusHangs = false
   let statusError: PublicationError["reason"] | undefined
+  let adoptions = 0, reservations = 0
   const operation = <A>(body: () => A) => Effect.try({ try: () => { requests++; return body() }, catch: cause => cause as PublicationError })
   const snapshot = () => structuredClone(attempt)
   const remote = Layer.succeed(PublicationTransport, PublicationTransport.of({
-    capabilities: () => operation(() => ({ ...capabilities, limits: { ...capabilities.limits, ...admission, partBytes } })),
-    reserve: () => operation(() => ({ id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp })),
+    capabilities: () => operation(() => ({ ...capabilities, ...(features.v2 ? { targetProfiles: [PublicationTargetProfile, PublicationTargetProfile2], legacyAdoption: true } : {}), limits: { ...capabilities.limits, ...admission, partBytes } })),
+    reserve: () => operation(() => { reservations++; return { id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp } }),
+    adoptLegacy: () => operation(() => { adoptions++; if (!features.adoption) throw failure("unavailable")
+      return { id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp, ...features.adoption } }),
     begin: (_, input) => operation(() => {
       parts.clear()
       attempt = { ...input, id: input.reservationId, sessionId: "session", fence: serial, leaseUntil: timestamp, expiresAt: timestamp,
@@ -151,7 +156,7 @@ export const fixture = async (partBytes = 4096, admission: Partial<PublicationCa
     receiptError: (value: typeof receiptError) => { receiptError = value },
     receiptPatch: (patch: Partial<RawPublicationReceipt>) => { receiptPatch = patch },
     policy: (enabled: boolean, userRevision = 1) => { policy = { enabled, authority: { ...authority, userRevision } } },
-    requests: () => requests, snapshot,
+    requests: () => requests, adoptions: () => adoptions, reservations: () => reservations, snapshot,
     losePut: () => { lostPut = true }, loseActivation: () => { lostActivation = true }, badPart: () => { wrongPart = true },
     hangStatus: (enabled: boolean) => { statusHangs = enabled },
     failStatus: (reason: PublicationError["reason"] | undefined) => { statusError = reason },

@@ -1136,6 +1136,28 @@ paths:
               schema: {$ref: "#/components/schemas/PublicationReservation"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
+  /api/v1/publications/adopt-legacy:
+    post:
+      operationId: publicationAdoptLegacy
+      tags: [Ingestion]
+      summary: Explicitly adopt a legacy captured Session
+      description: Permanently fences new legacy writes in this authenticated capture scope. Legacy Reader, Search and Overview remain selected until the first complete activation. Returns a durable safe revision floor and source-local Thread metadata; retries preserve the adoption baseline.
+      x-atape-authorization-actions: [canonical.ingest]
+      x-atape-route: {class: cli_only, requestBodyPolicy: json-control-plane, requestBodyLimit: 65536, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PublicationScope"}
+      responses:
+        "200":
+          description: Bounded operation result; retries preserve immutable receipts.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PublicationAdoption"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
   /api/v1/publications/attempts:
     post:
       operationId: publicationBegin
@@ -2007,6 +2029,19 @@ components:
         id: {type: string, format: uuid}
         sessionId: {type: string}
         expiresAt: {type: string, format: date-time}
+    PublicationAdoption:
+      type: object
+      additionalProperties: false
+      required: [id, sessionId, expiresAt, revisionFloor, baselineThreads]
+      properties:
+        id: {type: string, format: uuid}
+        sessionId: {type: string}
+        expiresAt: {type: string, format: date-time}
+        revisionFloor: {type: integer, minimum: 0, maximum: 9007199254740990}
+        baselineThreads:
+          type: array
+          maxItems: 100
+          items: {$ref: "#/components/schemas/CanonicalThread"}
     PublicationBegin:
       type: object
       additionalProperties: false
@@ -2048,7 +2083,7 @@ components:
     PublicationAttempt:
       type: object
       additionalProperties: false
-      required: [id, sessionId, captureId, baseHead, transformVersion, state, fence, parts, retainedBytes, validatedParts, candidateEvents, candidateUsage, leaseUntil, expiresAt, seal, activation]
+      required: [id, sessionId, captureId, baseHead, transformVersion, state, fence, parts, retainedBytes, validatedParts, retainedParts, candidateEvents, candidateUsage, leaseUntil, expiresAt, seal, activation]
       properties:
         id: {type: string}
         sessionId: {type: string}
@@ -2060,6 +2095,7 @@ components:
         parts: {type: integer}
         retainedBytes: {type: integer}
         validatedParts: {type: integer}
+        retainedParts: {type: integer, description: Private inherited storage units; excluded from upload receipts and the frozen wire manifest.}
         candidateEvents: {type: integer}
         candidateUsage: {type: integer}
         leaseUntil: {type: string, format: date-time}
@@ -2096,10 +2132,12 @@ components:
     PublicationCapabilities:
       type: object
       additionalProperties: false
-      required: [protocol, targetProfile, limits, statusPageSize, reclaimPageSize]
+      required: [protocol, targetProfile, targetProfiles, legacyAdoption, limits, statusPageSize, reclaimPageSize]
       properties:
         protocol: {type: string, const: atape.publication.v1}
         targetProfile: {type: string, const: atape.publication-target.v1}
+        targetProfiles: {type: array, items: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2]}}
+        legacyAdoption: {type: boolean, const: true}
         limits: {$ref: "#/components/schemas/PublicationCapacity"}
         statusPageSize: {type: integer, const: 100}
         reclaimPageSize: {type: integer, const: 32}
@@ -2107,8 +2145,17 @@ components:
       type: object
       additionalProperties: false
       required: [profile, events, usage, threads]
+      allOf:
+        - if: {properties: {profile: {const: atape.publication-target.v2}}}
+          then: {required: [retainedThreadIds]}
       properties:
-        profile: {type: string, const: atape.publication-target.v1}
+        profile: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2]}
+        retainedThreadIds:
+          description: Required for v2 (including an empty array); source-local nonroot Thread IDs retained from the bound base. v1 does not support retention. Events and usage counts include only explicit projection.
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: {type: string}
         events: {type: integer}
         usage: {type: integer}
         threads: {type: integer}

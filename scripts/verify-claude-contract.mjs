@@ -2,21 +2,26 @@ import { spawn } from "node:child_process"
 import { createInterface } from "node:readline"
 import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
+import { freezeClaudeLegacy } from "./freeze-claude-legacy.mjs"
 
 export const requiredTest = "TestHTTPAuthenticationAndAuthorizationContract/native_Claude_Collector"
+export const requiredLegacyTest = "TestHTTPAuthenticationAndAuthorizationContract/legacy_Claude_Collector"
+export const requiredTests = [requiredTest, requiredLegacyTest]
 export function verifyClaudeResult(events) {
-  if (!events.some(event => event.Action === "pass" && event.Test === requiredTest &&
+  for (const required of requiredTests) if (!events.some(event => event.Action === "pass" && event.Test === required &&
     event.Package === "github.com/SingleMai/ATape/server/internal/adapters/httpapi")) {
-    throw new Error(`Required Claude contract did not pass (missing or skipped): ${requiredTest}`)
+    throw new Error(`Required Claude contract did not pass (missing or skipped): ${required}`)
   }
 }
 
 async function run() {
   if (process.argv.length !== 2) throw new Error("Use verify-claude-contract.mjs")
+  const historical = await freezeClaudeLegacy()
+  console.log(`Frozen genuine Claude legacy ${historical.metadata.revision} tarball sha256=${historical.metadata.tarball.sha256}`)
   const child = spawn("go", ["test", "./internal/adapters/httpapi", "-run",
-    "^TestHTTPAuthenticationAndAuthorizationContract$/^native_Claude_Collector$", "-count=1", "-json", "-timeout=20m"], {
+    "^TestHTTPAuthenticationAndAuthorizationContract$/^(native|legacy)_Claude_Collector$", "-count=1", "-json", "-timeout=30m"], {
     cwd: fileURLToPath(new URL("../server", import.meta.url)),
-    env: { ...process.env, ATAPE_INTEGRATION_TESTS: "1", TESTCONTAINERS_RYUK_DISABLED: "true" },
+    env: { ...process.env, ATAPE_CLAUDE_LEGACY_TARBALL: historical.tarball, ATAPE_INTEGRATION_TESTS: "1", TESTCONTAINERS_RYUK_DISABLED: "true" },
     stdio: ["ignore", "pipe", "inherit"]
   })
   const events = []
@@ -26,7 +31,7 @@ async function run() {
     try {
       const event = JSON.parse(line)
       if (event.Output) process.stdout.write(event.Output)
-      if (event.Test === requiredTest) events.push(event)
+      if (requiredTests.includes(event.Test)) events.push(event)
     } catch { malformed = true; process.stderr.write(`${line}\n`) }
   })
   const interrupt = () => child.kill("SIGINT"), terminate = () => child.kill("SIGTERM")
@@ -39,6 +44,7 @@ async function run() {
   } finally {
     lines.close()
     process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", terminate)
+    await historical.cleanup()
   }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

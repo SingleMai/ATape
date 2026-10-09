@@ -1,10 +1,10 @@
 import { Effect, ManagedRuntime } from "effect"
-import { applyProjectSetup, planProjectSetup, installAdapter, inspectTools, applyToolChange, planToolChange, loginCLI, runCollector, upgradeAdapters } from "@atape/application"
+import { AdapterRuntimes, ClientConfigStore, CollectorStateStore, applyProjectSetup, planProjectSetup, installAdapter, inspectTools, applyToolChange, planToolChange, loginCLI, runCollector, upgradeAdapters } from "@atape/application"
 import { defaultNodeClientPaths, makeNodeClientLayer } from "../src/runtime/clientLayers.ts"
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
-import { appendFile, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -37,7 +37,6 @@ const projectDirectory = join(temporaryRoot, "project")
 const codexHome = join(temporaryRoot, "codex-home")
 const claudeHome = join(temporaryRoot, "claude-home")
 const claudeDirectory = join(claudeHome, "projects", "release-fixture")
-const claudeSource = join(claudeDirectory, "session.jsonl")
 const stateDirectory = join(temporaryRoot, "state")
 const binary = join(
   installDirectory,
@@ -120,7 +119,7 @@ try {
     observations: job.observations
   })), [{ projectId: "release-project", adapterId: "codex", observations: 0 }])
 
-  await verifyClaudeUpgrade()
+  await verifyClaudePackageReplacement()
   const opencode = await runtime.runPromise(installAdapter(opencodeArtifact))
   assert.equal(opencode.adapter.adapterId, "opencode")
   assert.equal(opencode.adapter.version, opencodePackage.version)
@@ -150,7 +149,7 @@ try {
   await run(process.execPath, ["adapters/grok/scripts/verify-package.mjs", grokArtifact], repositoryRoot)
   // The fixture artifact is kept outside release/ and never replaces publish bytes.
   await verifyChecksums()
-  process.stdout.write("Verified CLI artifact help, Codex/Claude/OpenCode/CodeBuddy/Kimi/Grok artifacts through the source Node Host, and a versioned Claude replacement preserving capture progress. Installed console/daemon coverage is the separate CLI package gate.\n")
+  process.stdout.write("Verified CLI artifact help, Codex/Claude/OpenCode/CodeBuddy/Kimi/Grok artifacts through the source Node Host, and a versioned Claude package replacement preserving configuration and checkpoint bytes. Installed console/daemon coverage is the separate CLI package gate; Claude delivery and legacy compatibility use the required authenticated PostgreSQL contracts.\n")
 } finally {
   await runtime?.dispose()
   for (const key of Object.keys(environment)) {
@@ -177,7 +176,7 @@ async function verifyChecksums() {
   }
 }
 
-async function verifyClaudeUpgrade() {
+async function verifyClaudePackageReplacement() {
   // There is no historical released Claude package in this test. Re-version the
   // current bundle in isolated staging to exercise the real package replacement
   // boundary; this is not evidence of old source-format compatibility.
@@ -192,32 +191,38 @@ async function verifyClaudeUpgrade() {
   const packed = JSON.parse((await run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", staging], join(staging, "package"))).stdout)
   const upgradeSource = join(temporaryRoot, "claude-upgrade.tgz")
   await copyFile(join(staging, packed[0].filename), upgradeSource)
+  const statePath = join(stateDirectory, "state", "collector.json")
+  const beforeInstall = await readFile(statePath, "utf8")
   const installed = await runtime.runPromise(installAdapter(upgradeSource))
   assert.equal(installed.adapter.adapterId, "claude")
   assert.equal(installed.adapter.version, fixtureVersion)
   assert.equal(installed.adapter.upgradeSpec, `file:${await realpath(upgradeSource)}`)
+  assert.equal(await readFile(statePath, "utf8"), beforeInstall, "package installation must not rewrite Collector state")
   await configure(["codex", "claude"])
-  const source = (await readFile(join(repositoryRoot, "adapters/claude/fixtures/native-read-2.1.263.jsonl"), "utf8"))
-    .replaceAll("/fixture/native-read", projectDirectory)
-  await writeFile(claudeSource, source)
-  const collect = async () => {
-    const report = await collectProject()
-    assert.deepEqual(report.failures, [])
-    const job = report.jobs.find(job => job.adapterId === "claude")
-    assert.ok(job)
-    assert.equal(job.sourceFailures, undefined)
-    return job
-  }
-  assert.equal((await collect()).observations, 1)
-  const statePath = join(stateDirectory, "state", "collector.json")
+  const configuration = () => runtime.runPromise(ClientConfigStore.use(store => store.transact(config => Effect.succeed({ value: config }))))
+  const configured = await configuration()
+  const project = configured.projects.find(item => item.id === "release-project")
+  assert.ok(project)
+  const verifyRuntime = adapter => runtime.runPromise(Effect.scoped(Effect.gen(function*() {
+    const hosted = yield* (yield* AdapterRuntimes).open({ ...project, adapterIds: configured.enabledAdapterIds }, adapter)
+    assert.ok("sourceCapture" in hosted)
+    assert.equal("collect" in hosted, false)
+    assert.equal(hosted.sourceCapture.protocolVersion, "atape.source-capture.v2")
+    assert.equal(typeof hosted.sourceCapture.legacyMigration, "function")
+  })))
+  await verifyRuntime(installed.adapter)
+  // Generated state tests package replacement's byte preservation only. It is
+  // never collected or claimed as native capture/old-format compatibility proof.
+  // Delivery uses the required PG18 and genuine previous-main legacy contracts.
+  const generatedCheckpoint = { instanceOrigin: remote.origin, userId: "release-user", projectId: project.id,
+    projectCreatedAt: project.createdAt, adapterId: "claude", adapterVersion: fixtureVersion, revision: 1,
+    cursor: "generated-package-replacement-checkpoint", rawObjects: [], canonicalPublished: false,
+    updatedAt: new Date().toISOString() }
+  await runtime.runPromise(CollectorStateStore.use(store => store.commit({ instanceOrigin: remote.origin, userId: "release-user",
+    projectId: project.id, adapterId: "claude", expectedRevision: 0, checkpoint: generatedCheckpoint })))
   const before = await readFile(statePath, "utf8")
   const checkpoint = JSON.parse(before).checkpoints.find(item => item.adapterId === "claude")
-  assert.equal(checkpoint.adapterVersion, fixtureVersion)
-  assert.equal(checkpoint.rawObjects.length, 1)
-  const submitted = () => remote.requests.filter(request => request.url === "/api/v1/ingestion/canonical/batches")
-  const firstEvents = submitted()[0].body.events
-  assert.equal(firstEvents.length, 6)
-  assert.ok(firstEvents.some(event => event.toolUpdateJson?.includes("rawInput")))
+  assert.deepEqual(checkpoint, generatedCheckpoint)
 
   await copyFile(claudeArtifact, upgradeSource)
   const upgraded = { adapters: await runtime.runPromise(upgradeAdapters("claude")) }
@@ -225,25 +230,15 @@ async function verifyClaudeUpgrade() {
   assert.equal(upgraded.adapters[0].adapterId, "claude")
   assert.equal(upgraded.adapters[0].version, claudePackage.version)
   assert.equal(await readFile(statePath, "utf8"), before, "package replacement must not rewrite Collector state")
-  const unchanged = await collect()
-  assert.equal(unchanged.observations, 0)
-  assert.equal(unchanged.rawChunks, 0)
-  assert.equal(submitted().length, 1)
-  const resumed = JSON.parse(await readFile(statePath, "utf8")).checkpoints.find(item => item.adapterId === "claude")
-  assert.equal(resumed.adapterVersion, claudePackage.version)
-  assert.equal(resumed.cursor, checkpoint.cursor)
-  assert.deepEqual(resumed.rawObjects, checkpoint.rawObjects)
-
-  const last = source.trimEnd().split("\n").map(line => JSON.parse(line)).filter(record => record.uuid).at(-1)
-  await appendFile(claudeSource, JSON.stringify({ ...last, uuid: "packaged-upgrade-append", parentUuid: last.uuid,
-    message: { role: "assistant", content: "Captured after packaged upgrade" } }) + "\n")
-  const appended = await collect()
-  assert.equal(appended.observations, 1)
-  assert.equal(appended.rawChunks, 1)
-  const nextEvents = submitted()[1].body.events
-  assert.deepEqual(nextEvents.map(event => event.sourceEventId), ["packaged-upgrade-append:0"],
-    "append after package upgrade must capture only the new event without replaying history")
-  assert.equal((await collect()).observations, 0)
+  const replaced = await configuration()
+  assert.deepEqual({ ...replaced, adapters: replaced.adapters.filter(item => item.adapterId !== "claude") },
+    { ...configured, adapters: configured.adapters.filter(item => item.adapterId !== "claude") },
+    "package replacement must preserve Projects, tool selections and other Adapter configuration")
+  const current = replaced.adapters.find(item => item.adapterId === "claude")
+  assert.equal(current.upgradeSpec, installed.adapter.upgradeSpec)
+  assert.equal(current.version, claudePackage.version)
+  await verifyRuntime(current)
+  assert.equal(await readFile(statePath, "utf8"), before, "opening the installed runtime must not rewrite Collector state")
 }
 
 function atape(arguments_) {

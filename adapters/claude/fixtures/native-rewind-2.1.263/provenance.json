@@ -1,0 +1,91 @@
+{
+  "acquiredAt": "2026-10-09",
+  "nativeVersion": "2.1.263",
+  "nativeBinarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "fixtureCwd": "/atape/fixture/claude-rewind",
+  "method": "Installed native CLI against an isolated deterministic loopback Anthropic-compatible streaming endpoint; all assistant thinking/text and usage are synthetic. Native CLI persisted each JSONL file.",
+  "sanitization": "Literal byte replacement of isolated acquisition workspace/base paths, longest alias first including macOS /private aliases. JSONL was not parsed and reserialized. UUIDs, parents, selectors, timestamps and source order are unchanged.",
+  "snapshots": [
+    {
+      "mode": "resume",
+      "file": "resume-01-first-0.jsonl",
+      "originalSha256": "c7569bd9d7e972202a9def9ea6ff654c30eb703244d803677b76a6ac85900413",
+      "originalBytes": 3864,
+      "sanitizedSha256": "8c4722a6df8e51aacafeaec745458c55ef9850f26be11416c967a9817b0c1401",
+      "sanitizedBytes": 3568,
+      "rows": 8
+    },
+    {
+      "mode": "resume",
+      "file": "resume-02-discarded-0.jsonl",
+      "originalSha256": "663c67da05e6dacc5d54020bb879314450352d2e8e19b38c6de3c28acd160a3c",
+      "originalBytes": 7774,
+      "sanitizedSha256": "073fe8216ba245a25619305451d4b79d20433c04134713d5c697c0cef48b2b62",
+      "sanitizedBytes": 7182,
+      "rows": 16
+    },
+    {
+      "mode": "resume",
+      "file": "resume-03-rewound-0.jsonl",
+      "originalSha256": "8166418c0be41e67364938592c20989a5c268b549a60f87dd36ff208d1462137",
+      "originalBytes": 11595,
+      "sanitizedSha256": "6a1f5e57e31419e55a67717f5eeea3fc249fb6932d5244d834d817c459306007",
+      "sanitizedBytes": 10707,
+      "rows": 23
+    },
+    {
+      "mode": "resume",
+      "file": "resume-04-continued-0.jsonl",
+      "originalSha256": "0d2f7d71bc9fdc864dda471ab2c731f4ae7dbb7b059b84d565d3838d593f7cdd",
+      "originalBytes": 15410,
+      "sanitizedSha256": "640a15ed080dc0a097fc369359a4c2616dd6311764be6e793869fb9ffb2d3d05",
+      "sanitizedBytes": 14226,
+      "rows": 30
+    },
+    {
+      "mode": "control",
+      "file": "control-01-first.jsonl",
+      "originalSha256": "ab503cebd568e6cc6725a8798c55e4b511770f8482fbf16cba7f08129d0c9cc6",
+      "originalBytes": 3708,
+      "sanitizedSha256": "e5610fb3365734649a6b897460a83465020d0dd71ef9ea483d47471dd8aedf7d",
+      "sanitizedBytes": 3412,
+      "rows": 7
+    },
+    {
+      "mode": "control",
+      "file": "control-02-discarded.jsonl",
+      "originalSha256": "64fd0745f1f9cf8c852ed9607ab6095650539aa9dcd073878c72225de9043cde",
+      "originalBytes": 7375,
+      "sanitizedSha256": "9c4e88b967a1dee54b470cb112a399205625c5413447bd5aca63ce68ba52d206",
+      "sanitizedBytes": 6783,
+      "rows": 13
+    },
+    {
+      "mode": "control",
+      "file": "control-03-rewind-only.jsonl",
+      "originalSha256": "da7777c352cd58bb81db07363daba8c92939747f9c3dbe8d32d8185db968049a",
+      "originalBytes": 7569,
+      "sanitizedSha256": "c14ce5e86face3b17c6d1587b7580ecef4d81659fe328cef9c9eabf08b798e81",
+      "sanitizedBytes": 6977,
+      "rows": 14
+    },
+    {
+      "mode": "control",
+      "file": "control-04-current.jsonl",
+      "originalSha256": "22eabd5f1370128da2df5f0c8bbb2a55f3a890625e5e7d6eafa2f13fca29a028",
+      "originalBytes": 11232,
+      "sanitizedSha256": "775c3e97fd519c4d4d955c245592fb1c865b3d6e34ad08b94a84f667e036297e",
+      "sanitizedBytes": 10344,
+      "rows": 20
+    },
+    {
+      "mode": "control",
+      "file": "control-05-empty-rewind.jsonl",
+      "originalSha256": "118b9a6baa67e4650efe5d2c384188e2ed06416b8bfd776c2b8c1ed019d0a308",
+      "originalBytes": 11390,
+      "sanitizedSha256": "72720b9ac7161c1729ad5166a2470c0eac901c117cfe997b50d7d30b92a88db9",
+      "sanitizedBytes": 10502,
+      "rows": 21
+    }
+  ]
+}

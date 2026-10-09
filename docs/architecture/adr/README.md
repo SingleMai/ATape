@@ -126,6 +126,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0098](0098-claude-current-thread-continuity.md) | Claude current Thread continuity around unlinked delegation |
 | [0099](0099-claude-thinking-projection.md) | Claude thinking projection and checkpoint upgrade |
 | [0100](0100-managed-automatic-updates.md) | Managed automatic CLI and official Adapter updates |
+| [0101](0101-claude-active-path-and-legacy-adoption.md) | Claude Active Path and explicit legacy adoption |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

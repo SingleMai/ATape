@@ -82,13 +82,16 @@ must identify the immutable images actually tested.
 seven checksummed tarballs and installs the CLI into a clean prefix. It installs
 a disposable integration and verifies the installed console/daemon through a PTY.
 Release Adapter checks install Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok through the source Node
-Host’s application Interface, then collect a controlled native Claude
-fixture through an authenticated loopback HTTP test Adapter. It replaces a
+Host’s application Interface. The Claude package replacement check replaces a
 test-only pre-release Claude package with the exact release tarball via
-the original-source update Module Interface, checking unchanged checkpoints, no duplicate upload,
-stable Event identities and successful capture after append. The test-only package
+the original-source update Module Interface, checking byte-identical generated
+checkpoint state, unchanged Project/tool selections and the installed v2 runtime.
+The test-only package
 uses the current bundle with a distinct version; it is not historical compatibility
-evidence and never enters `release/`. Real Go persistence/read behavior remains
+evidence and never enters `release/`. Claude delivery, migration, append, rewind,
+compaction and recovery require both the current sourceCapture and genuine
+previous-main legacy contracts over authenticated HTTP/PostgreSQL; missing or
+skipped subtests fail the gate. Real Go persistence/read behavior remains
 covered by the CLI/Go end-to-end suite, including actual OpenCode, CodeBuddy, Kimi and Grok package replacement,
 independent Canonical/Raw progress, no-op recovery and background source changes.
 The exact checksummed OpenCode, CodeBuddy, Kimi and Grok artifacts also run their installed source-capability

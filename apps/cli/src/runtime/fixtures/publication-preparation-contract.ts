@@ -41,6 +41,7 @@ if (input.mode === "bound") {
     const unavailable = () => Effect.fail(new PublicationError({ reason: "unavailable", message: "Content HTTP is forbidden during preparation." }))
     const remote = Layer.succeed(PublicationTransport, PublicationTransport.of({
       capabilities: () => Effect.succeed(caps), reserve: () => Effect.succeed({ id: "attempt", sessionId: "session", expiresAt: at }),
+      adoptLegacy: unavailable,
       begin: (_, begin) => Effect.sync(() => { attempt = { ...begin, id: "attempt", sessionId: "session", fence: 1, leaseUntil: at, expiresAt: at,
         state: "open", parts: 0, retainedBytes: 0, seal: null, validatedParts: 0, candidateEvents: 0, candidateUsage: 0, activation: null }; return attempt }),
       status: () => Effect.succeed(attempt), put: unavailable, seal: unavailable, validate: unavailable, renew: unavailable, reject: unavailable, activate: unavailable

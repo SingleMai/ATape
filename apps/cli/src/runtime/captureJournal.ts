@@ -16,6 +16,7 @@ export type CaptureJournalOptions = {
   readonly limits: CaptureJournalLimits
 }
 const MetadataBytes = 32 * 1024
+const SourceMetadataBytes = 2 * 1024 * 1024
 const failure = (reason: CaptureJournalError["reason"], message: string) => new CaptureJournalError({ reason, message })
 const text = (value: unknown, maximum = 500): string => {
   if (typeof value !== "string" || value.length === 0 || Buffer.byteLength(value) > maximum || value.includes("\0"))
@@ -31,6 +32,11 @@ const json = (value: string) => {
   try { JSON.parse(value) } catch { throw failure("invalid", "Journal metadata must be JSON.") }
   return value
 }
+const sourceJson = (value: string) => {
+  text(value, SourceMetadataBytes)
+  try { JSON.parse(value) } catch { throw failure("invalid", "Source metadata must be JSON.") }
+  return value
+}
 const digest = (value: Uint8Array) => createHash("sha256").update(value).digest("hex")
 const scopeKey = (scope: CaptureScope) => JSON.stringify([text(scope.projectId), text(scope.adapterId), text(scope.sourceSessionId)])
 const RecordCounts = Schema.Struct({ session: Schema.Number, thread: Schema.Number, event: Schema.Number, usage: Schema.Number })
@@ -42,9 +48,11 @@ const Count = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(
 const CaptureRow = Schema.Struct({ records_retired: Schema.Literals([0, 1]), retained_records: Count, track_records: Schema.Literals([0, 1]), record_count: Count, purpose: Schema.Literals(["publication", "raw-observation"]), id: Schema.String, expected_checkpoint: Schema.NullOr(Schema.String), begin_json: Schema.String,
   raw_enabled: Schema.Literals([0, 1]), state: Schema.Literals(["preparing", "sealed", "activated", "completed", "abandoned"]),
   seal_json: Schema.NullOr(Schema.String), activation_receipt: Schema.NullOr(Schema.String), retained_bytes: Count,
-  raw_cancel_reason: Schema.NullOr(Schema.String), rejection_receipt: Schema.NullOr(Schema.String) })
+  raw_cancel_reason: Schema.NullOr(Schema.String), rejection_receipt: Schema.NullOr(Schema.String),
+  source_metadata: Schema.NullOr(Schema.String), source_metadata_sha: Schema.NullOr(Schema.String), source_metadata_bytes: Count })
 const ScopeRow = Schema.Struct({ records_initialized: Schema.Literals([0, 1]), canonical_coverage: Schema.NullOr(Schema.String),
-  observed_canonical: Schema.NullOr(Schema.String), observed_raw: Schema.NullOr(Schema.String), epoch: Count, checkpoint: Schema.NullOr(Schema.String), origin_key: Schema.String })
+  observed_canonical: Schema.NullOr(Schema.String), observed_raw: Schema.NullOr(Schema.String), epoch: Count, checkpoint: Schema.NullOr(Schema.String), origin_key: Schema.String,
+  revision_floor: Count, adoption_metadata: Schema.NullOr(Schema.String), adoption_metadata_sha: Schema.NullOr(Schema.String), adoption_metadata_bytes: Count })
 const UnitDisposition = Schema.Literals(["pending", "acknowledged", "canceled"])
 const UnitRow = Schema.Struct({ ordinal: Count, byte_count: Count, digest: Schema.String,
   disposition: UnitDisposition, receipt_json: Schema.NullOr(Schema.String) })
@@ -111,7 +119,7 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
           db.exec("COMMIT")
         }
         const version = db.prepare("PRAGMA user_version").get()
-        if (version?.user_version !== 1 && version?.user_version !== 2 && version?.user_version !== 3 && version?.user_version !== 4 && version?.user_version !== 5 && version?.user_version !== 6 && version?.user_version !== 7) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
+        if (![1,2,3,4,5,6,7,8].includes(Number(version?.user_version))) throw failure("corrupt", "Capture journal format is unsupported or incomplete.")
         const stored = db.prepare("SELECT identity,retained_bytes FROM binding").all()
         if (stored.length !== 1 || stored[0]?.identity !== identity) throw failure("binding", "Capture journal belongs to a different account or installation.")
         // Upgrade only a verified binding. Concurrent openers serialize and recheck.
@@ -162,6 +170,23 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
             CREATE INDEX obsolete_capture_records ON captures(scope_key,id) WHERE state IN ('completed','abandoned') AND retained_records>0;
             PRAGMA user_version=7`)
         }
+        if (db.prepare("PRAGMA user_version").get()?.user_version === 7) {
+          db.exec(`ALTER TABLE binding ADD COLUMN metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(metadata_bytes>=0);
+            ALTER TABLE scopes ADD COLUMN revision_floor INTEGER NOT NULL DEFAULT 0 CHECK(revision_floor>=0);
+            ALTER TABLE scopes ADD COLUMN adoption_metadata TEXT;
+            ALTER TABLE scopes ADD COLUMN adoption_metadata_sha TEXT;
+            ALTER TABLE scopes ADD COLUMN adoption_metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(adoption_metadata_bytes>=0);
+            ALTER TABLE captures ADD COLUMN source_metadata TEXT;
+            ALTER TABLE captures ADD COLUMN source_metadata_sha TEXT;
+            ALTER TABLE captures ADD COLUMN source_metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(source_metadata_bytes>=0);
+            CREATE TABLE legacy_migrations(migration_key TEXT PRIMARY KEY, checkpoint_json TEXT NOT NULL, checkpoint_sha TEXT NOT NULL, byte_count INTEGER NOT NULL CHECK(byte_count>0));
+            CREATE TRIGGER metadata_legacy_migrations_insert AFTER INSERT ON legacy_migrations BEGIN UPDATE binding SET metadata_entries=metadata_entries+1,metadata_bytes=metadata_bytes+new.byte_count; END;
+            CREATE TRIGGER metadata_legacy_migrations_delete AFTER DELETE ON legacy_migrations BEGIN UPDATE binding SET metadata_entries=metadata_entries-1,metadata_bytes=metadata_bytes-old.byte_count; END;
+            CREATE TRIGGER source_metadata_update AFTER UPDATE OF source_metadata_bytes ON captures BEGIN UPDATE binding SET metadata_bytes=metadata_bytes+new.source_metadata_bytes-old.source_metadata_bytes; END;
+            CREATE TRIGGER adoption_metadata_update AFTER UPDATE OF adoption_metadata_bytes ON scopes BEGIN UPDATE binding SET metadata_bytes=metadata_bytes+new.adoption_metadata_bytes-old.adoption_metadata_bytes; END;
+            CREATE INDEX retained_source_metadata ON captures(scope_key,id) WHERE source_metadata IS NOT NULL;
+            PRAGMA user_version=8`)
+        }
         db.exec("COMMIT")
         return db
       } catch (cause) {
@@ -184,6 +209,25 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
   }
   const one = (sql: string, ...parameters: SQLInputValue[]) => db.prepare(sql).get(...parameters)
   const update = (sql: string, ...parameters: SQLInputValue[]) => db.prepare(sql).run(...parameters)
+  const storedMetadata = (value: string | null, sha: string | null, byteCount: number) => {
+    if (value === null) {
+      if (byteCount !== 0) throw failure("corrupt", "Missing source metadata has a nonzero length.")
+      return null
+    }
+    const bytes = Buffer.from(value)
+    if (bytes.byteLength !== byteCount || byteCount > SourceMetadataBytes || digest(bytes) !== sha)
+      throw failure("corrupt", "Source metadata failed its length or digest check.")
+    try { JSON.parse(value) } catch { throw failure("corrupt", "Stored source metadata is invalid JSON.") }
+    return value
+  }
+  const metadataCapacity = (additional: number) => {
+    const accounting = one("SELECT retained_bytes,metadata_bytes FROM binding")
+    const retained = Number(accounting?.retained_bytes), metadata = Number(accounting?.metadata_bytes)
+    if (![retained,metadata].every(value => Number.isSafeInteger(value) && value >= 0))
+      throw failure("corrupt", "Journal byte accounting is invalid.")
+    if (additional > limits.pendingBytes - retained - metadata)
+      throw failure("capacity", "Source metadata admission is exhausted; existing delivery remains recoverable.")
+  }
   const transaction = <A>(work: () => A) => Effect.try({ try: () => {
     db.exec("BEGIN IMMEDIATE")
     try { const result = work(); db.exec("COMMIT"); return result }
@@ -299,6 +343,29 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
   }
   return {
     binding: Object.freeze({ ...options.binding }),
+    legacyMigration: (projectId,adapterId,checkpointDigest) => transaction(() => {
+      if (!/^[a-f0-9]{64}$/.test(checkpointDigest)) throw failure("invalid", "Legacy checkpoint identity must be SHA-256 metadata.")
+      const key = JSON.stringify([text(projectId),text(adapterId),checkpointDigest])
+      const row = one("SELECT checkpoint_json,checkpoint_sha,byte_count FROM legacy_migrations WHERE migration_key=?",key)
+      if (!row) return null
+      const value = decode(Schema.Struct({ checkpoint_json: Schema.String, checkpoint_sha: Schema.String, byte_count: Count }),row)
+      return { checkpointJson: storedMetadata(value.checkpoint_json,value.checkpoint_sha,value.byte_count)!, checkpointDigest: value.checkpoint_sha }
+    }),
+    freezeLegacyMigration: (projectId,adapterId,input) => transaction(() => {
+      const key = JSON.stringify([text(projectId),text(adapterId),input.checkpointDigest]), value = sourceJson(input.checkpointJson), bytes = Buffer.from(value)
+      if (digest(bytes) !== input.checkpointDigest) throw failure("invalid", "Legacy checkpoint digest does not match its frozen bytes.")
+      const old = one("SELECT checkpoint_json,checkpoint_sha,byte_count FROM legacy_migrations WHERE migration_key=?",key)
+      if (old) {
+        const previous = decode(Schema.Struct({ checkpoint_json: Schema.String, checkpoint_sha: Schema.String, byte_count: Count }),old)
+        storedMetadata(previous.checkpoint_json,previous.checkpoint_sha,previous.byte_count)
+        if (previous.checkpoint_sha !== input.checkpointDigest || previous.checkpoint_json !== value)
+          throw failure("conflict", "An established legacy migration cannot change its checkpoint.")
+        return { checkpointJson: value, checkpointDigest: input.checkpointDigest }
+      }
+      admitMetadata(1); metadataCapacity(bytes.byteLength)
+      update("INSERT INTO legacy_migrations VALUES(?,?,?,?)",key,value,input.checkpointDigest,bytes.byteLength)
+      return { checkpointJson: value, checkpointDigest: input.checkpointDigest }
+    }),
     claim: scope => transaction(() => {
       const key=scopeKey(scope); text(scope.originKey)
       const row=one("SELECT * FROM scopes WHERE scope_key=?",key)
@@ -312,6 +379,41 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       admitMetadata(1)
       update("INSERT INTO scopes(scope_key,origin_key,epoch,checkpoint) VALUES(?,?,1,NULL)",key,scope.originKey)
       return { scope, epoch:1, checkpoint:null }
+    }),
+    recordFloor: owner => transaction(() => ownerScope(owner).revision_floor),
+    adoptBaseline: (owner,input) => transaction(() => {
+      const scope = ownerScope(owner), value = sourceJson(input.metadataJson), bytes = Buffer.from(value), sha = digest(bytes)
+      integer(input.revisionFloor,0,Number.MAX_SAFE_INTEGER-1)
+      if (scope.adoption_metadata_sha !== null) {
+        if (scope.revision_floor !== input.revisionFloor || scope.adoption_metadata_sha !== sha)
+          throw failure("conflict", "An adopted source cannot change its version floor or baseline.")
+        storedMetadata(scope.adoption_metadata,scope.adoption_metadata_sha,scope.adoption_metadata_bytes)
+        return
+      }
+      if (scope.records_initialized === 1 || one("SELECT id FROM captures WHERE scope_key=? LIMIT 1",scope.key))
+        throw failure("state", "Adoption must precede publication preparation and version allocation.")
+      metadataCapacity(bytes.byteLength)
+      update("UPDATE scopes SET revision_floor=?,adoption_metadata=?,adoption_metadata_sha=?,adoption_metadata_bytes=? WHERE scope_key=?",
+        input.revisionFloor,value,sha,bytes.byteLength,scope.key)
+    }),
+    sourceMetadata: (owner,id) => transaction(() => {
+      const scope = ownerScope(owner)
+      if (id === null) return storedMetadata(scope.adoption_metadata,scope.adoption_metadata_sha,scope.adoption_metadata_bytes)
+      const row = capture(scope.key,id)
+      return storedMetadata(row.source_metadata,row.source_metadata_sha,row.source_metadata_bytes)
+    }),
+    setSourceMetadata: (owner,id,value) => transaction(() => {
+      const scope = ownerScope(owner), row = capture(scope.key,id), encoded = sourceJson(value), bytes = Buffer.from(encoded), sha = digest(bytes)
+      if (row.source_metadata !== null) {
+        storedMetadata(row.source_metadata,row.source_metadata_sha,row.source_metadata_bytes)
+        if (row.source_metadata !== encoded) throw failure("conflict", "A frozen source header cannot change.")
+        return
+      }
+      if (row.state !== "preparing" || row.record_count > 0 || one("SELECT ordinal FROM units WHERE scope_key=? AND capture_id=? LIMIT 1",scope.key,id))
+        throw failure("state", "Freeze source metadata before preparing any source records or units.")
+      if (bytes.byteLength > limits.targetBytes - row.retained_bytes) throw failure("capacity", "Source metadata exceeds target admission.")
+      metadataCapacity(bytes.byteLength)
+      update("UPDATE captures SET source_metadata=?,source_metadata_sha=?,source_metadata_bytes=? WHERE scope_key=? AND id=?",encoded,sha,bytes.byteLength,scope.key,id)
     }),
     sources: (projectId,adapterId,page) => transaction(() => {
       text(projectId); text(adapterId); integer(page.limit ?? 20,1,100)
@@ -374,9 +476,9 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       const canonicalCount = last("canonical"), rawCount = last("raw")
       const counts = { total: canonicalCount + rawCount, channel: unit.kind === "canonical" ? canonicalCount : rawCount }
       if (counts.channel !== unit.ordinal) throw failure("state","Prepared units must be appended contiguously.")
-      const total=one("SELECT retained_bytes FROM binding")?.retained_bytes
+      const accounting=one("SELECT retained_bytes,metadata_bytes FROM binding"), total=Number(accounting?.retained_bytes)+Number(accounting?.metadata_bytes)
       if (typeof total !== "number" || total<0 || !Number.isSafeInteger(total)) throw failure("corrupt","Journal byte accounting is invalid.")
-      if (Number(counts.total)>=limits.unitsPerTarget || unit.bytes.byteLength>limits.targetBytes-row.retained_bytes || unit.bytes.byteLength>limits.pendingBytes-total)
+      if (Number(counts.total)>=limits.unitsPerTarget || unit.bytes.byteLength>limits.targetBytes-row.retained_bytes-row.source_metadata_bytes || unit.bytes.byteLength>limits.pendingBytes-total)
         throw failure("capacity","Pending capture capacity is exhausted; unacknowledged content was retained.")
       admitMetadata(1)
       update("INSERT INTO units(scope_key,capture_id,kind,ordinal,byte_count,digest,body) VALUES(?,?,?,?,?,?,?)",
@@ -412,7 +514,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       const orphanedReference = previous?.raw_reference !== null && previous?.raw_reference !== undefined &&
         recordVersion(previous).rawReference?._tag === "object" && capture(scope.key,previous.version_capture).activation_receipt === null
       const changed = previous === undefined || previous.fingerprint !== input.fingerprint || previous.projection_version !== input.projectionVersion || wasAbsent || orphanedReference
-      const revision = changed ? integer((previous?.revision ?? 0)+1,1,Number.MAX_SAFE_INTEGER) : previous.revision
+      const revision = changed ? integer((previous?.revision ?? scope.revision_floor)+1,1,Number.MAX_SAFE_INTEGER) : previous.revision
       const actualReference = changed ? proposedReference : previous.raw_reference
       if (changed && row.raw_enabled !== 1 && input.rawReference?._tag === "object")
         throw failure("state","A new Raw-off Event version cannot acquire a Raw object reference.")
@@ -574,6 +676,8 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
           if (row.purpose === "publication") {
             update("UPDATE scopes SET checkpoint=? WHERE scope_key=?",manifest.nextCheckpoint,key)
             if (row.track_records === 1) update("UPDATE scopes SET canonical_coverage=? WHERE scope_key=?",id,key)
+            update("UPDATE scopes SET adoption_metadata=NULL,adoption_metadata_bytes=0 WHERE scope_key=?",key)
+            update("UPDATE captures SET source_metadata=NULL,source_metadata_sha=NULL,source_metadata_bytes=0 WHERE scope_key=? AND id<>? AND source_metadata IS NOT NULL AND activation_receipt IS NOT NULL",key,id)
           }
           complete(key,id)
           return
@@ -616,12 +720,14 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
           }
           if (row.state !== "sealed") throw failure("state","Only a sealed, unactivated capture can be rejected.")
           update("UPDATE captures SET state='abandoned',rejection_receipt=? WHERE scope_key=? AND id=?",settlement.receiptJson,key,id)
+          update("UPDATE captures SET source_metadata=NULL,source_metadata_sha=NULL,source_metadata_bytes=0 WHERE scope_key=? AND id=?",key,id)
           return
         }
         case "AbandonUnsealed": {
           if (row.state === "abandoned") return
           if (row.state !== "preparing") throw failure("state","Only an unsealed source view can be abandoned locally.")
           update("UPDATE captures SET state='abandoned' WHERE scope_key=? AND id=?",key,id)
+          update("UPDATE captures SET source_metadata=NULL,source_metadata_sha=NULL,source_metadata_bytes=0 WHERE scope_key=? AND id=?",key,id)
           return
         }
       }

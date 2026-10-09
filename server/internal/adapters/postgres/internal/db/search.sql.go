@@ -267,7 +267,7 @@ WITH terms AS (
  AND (NOT $3::boolean OR
       (d.occurred_at,d.event_id)<($4::timestamptz,$5::text))
  AND EXISTS(SELECT 1 FROM canonical_sessions s WHERE s.id=d.session_id AND s.record_state='active')
- AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id)
+ AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id AND s.current_head IS NOT NULL)
   OR EXISTS(SELECT 1 FROM canonical_publication_sources s
    JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
    WHERE s.session_id=d.session_id AND m.record_id=d.event_id AND m.search_descriptor=d.publication_descriptor))
@@ -362,7 +362,7 @@ INSERT INTO project_search_documents (
     $11,
     CASE WHEN $11::text='message' THEN lower($12::text) ELSE '' END
 WHERE ($15::text='' AND NOT EXISTS(
- SELECT 1 FROM canonical_publication_sources WHERE session_id=$3))
+ SELECT 1 FROM canonical_publication_sources WHERE session_id=$3 AND current_head IS NOT NULL))
  OR EXISTS(SELECT 1 FROM canonical_publication_sources s
  JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
  JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'

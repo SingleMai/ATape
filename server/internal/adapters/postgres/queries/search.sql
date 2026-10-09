@@ -82,7 +82,7 @@ INSERT INTO project_search_documents (
     sqlc.arg(event_kind),
     CASE WHEN sqlc.arg(event_kind)::text='message' THEN lower(sqlc.arg(text)::text) ELSE '' END
 WHERE (sqlc.arg(publication_head)::text='' AND NOT EXISTS(
- SELECT 1 FROM canonical_publication_sources WHERE session_id=sqlc.arg(session_id)))
+ SELECT 1 FROM canonical_publication_sources WHERE session_id=sqlc.arg(session_id) AND current_head IS NOT NULL))
  OR EXISTS(SELECT 1 FROM canonical_publication_sources s
  JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
  JOIN canonical_sessions cs ON cs.id=s.session_id AND cs.record_state='active'
@@ -163,7 +163,7 @@ WITH terms AS (
  AND (NOT sqlc.arg(has_after)::boolean OR
       (d.occurred_at,d.event_id)<(sqlc.arg(after_time)::timestamptz,sqlc.arg(after_id)::text))
  AND EXISTS(SELECT 1 FROM canonical_sessions s WHERE s.id=d.session_id AND s.record_state='active')
- AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id)
+ AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id AND s.current_head IS NOT NULL)
   OR EXISTS(SELECT 1 FROM canonical_publication_sources s
    JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
    WHERE s.session_id=d.session_id AND m.record_id=d.event_id AND m.search_descriptor=d.publication_descriptor))

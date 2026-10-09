@@ -50,6 +50,9 @@ func (s *PublicationStore) Validate(ctx context.Context, p authentication.Princi
 		if a.Seal == nil || (a.State != "sealed" && a.State != "validating") {
 			return a, publicationError("invalid", "only a sealed candidate can validate")
 		}
+		if a.ValidatedParts == a.Seal.Parts {
+			return s.validateRetention(ctx, q, userID, id, source, row, a)
+		}
 		ordinal := int32(a.ValidatedParts)
 		metadata, err := q.GetPublicationPartStorage(ctx, db.GetPublicationPartStorageParams{AttemptID: id, Ordinal: ordinal})
 		if err != nil {
@@ -106,47 +109,20 @@ func (s *PublicationStore) Validate(ctx context.Context, p authentication.Princi
 				return a, err
 			}
 			for n, thread := range normalized.Threads {
+				legacy, legacyErr := q.GetThreadForUpdate(ctx, db.GetThreadForUpdateParams{SessionID: a.SessionID, ID: thread.ID})
+				if legacyErr == nil && !sameOptionalString(legacy.ParentThreadID, thread.ParentThreadID) {
+					return a, publicationError("conflict", "legacy Thread parent is immutable")
+				}
+				if legacyErr != nil && !errors.Is(legacyErr, pgx.ErrNoRows) {
+					return a, persist("read legacy Thread parent", legacyErr)
+				}
 				if err = recordPublicationMember(ctx, q, id, a.SessionID, ordinal, preparedMember{kind: "thread", id: thread.ID, sourceKey: thread.SourceKey, threadID: thread.ID, revision: thread.Revision, fingerprint: thread.Digest, index: n}); err != nil {
 					return a, err
 				}
 			}
 		}
-		paths := publicationThreadPaths(normalized.Threads)
-		for n := range normalized.Events {
-			event := &normalized.Events[n]
-			fingerprint, e := canonical.EventVersionFingerprint(*event)
-			if e != nil {
-				return a, persist("fingerprint normalized Event", e)
-			}
-			descriptor, e := publicationFingerprint(struct {
-				Content string
-				Title   string
-				Harness string
-				Path    []canonical.ProjectionThread
-			}{fingerprint, normalized.Session.Title, normalized.Session.Actor.Harness, paths[event.ThreadID]})
-			if e != nil {
-				return a, e
-			}
-			if err = recordPublicationMember(ctx, q, id, a.SessionID, ordinal, preparedMember{kind: "event", id: event.ID, sourceKey: event.SourceKey, threadID: event.ThreadID, projection: event.ProjectionRevision, revision: event.Revision, fingerprint: fingerprint, index: n, sourceOrder: event.SourceOrder, eventIndex: event.EventIndex, descriptor: descriptor}); err != nil {
-				return a, err
-			}
-			metadata, e := q.NextIngestMetadata(ctx)
-			if e != nil {
-				return a, persist("allocate prepared Event provenance", e)
-			}
-			event.ObservedAt = normalized.ObservedAt
-			event.ReceivedAt = metadata.ReceivedAt
-			event.IngestSeq = uint64(metadata.IngestSeq)
-			if err = q.InsertPublicationProjectionChange(ctx, db.InsertPublicationProjectionChangeParams{AttemptID: id, EventID: event.ID}); err != nil {
-				return a, persist("prepare invisible Search work", err)
-			}
-		}
-		for n, value := range normalized.Usage {
-			keyHash := sha256.Sum256([]byte(value.SourceKey))
-			recordID := "u_" + hex.EncodeToString(keyHash[:12])
-			if err = recordPublicationMember(ctx, q, id, a.SessionID, ordinal, preparedMember{kind: "usage", id: recordID, sourceKey: value.SourceKey, threadID: value.ThreadID, revision: value.Revision, fingerprint: value.Digest, index: n}); err != nil {
-				return a, err
-			}
+		if err = materializePublicationContent(ctx, q, id, a.SessionID, ordinal, &normalized, false); err != nil {
+			return a, err
 		}
 		encoded, err := json.Marshal(normalized)
 		if err != nil {
@@ -175,7 +151,7 @@ func (s *PublicationStore) Validate(ctx context.Context, p authentication.Princi
 		}
 		target := string(targetBytes)
 		state := "validating"
-		if done {
+		if done && len(input.Target.RetainedThreadIDs) == 0 {
 			state = "validated"
 		}
 		if err = q.AdvancePublicationValidation(ctx, db.AdvancePublicationValidationParams{ID: id, Events: int32(len(normalized.Events)), Usage: int32(len(normalized.Usage)), ByteDelta: delta, HeaderDigest: &header, TargetJson: &target, State: state}); err != nil {
@@ -203,8 +179,44 @@ func preparePublicationPart(p authentication.Principal, source db.CanonicalPubli
 		return input, canonical.WriteBatch{}, publicationError("invalid", "candidate part contains trailing JSON")
 	}
 	target := input.Target
-	if target.Profile != publication.TargetProfile || target.Threads < 1 || target.Threads > 100 || target.Events < 0 || target.Events > maxParts*500 || target.Usage < 0 || target.Usage > maxParts*500 {
+	if (target.Profile != publication.TargetProfile && target.Profile != publication.RetentionTargetProfile) || target.Threads < 1 || target.Threads > 100 || target.Events < 0 || target.Events > maxParts*500 || target.Usage < 0 || target.Usage > maxParts*500 {
 		return input, canonical.WriteBatch{}, publicationError("invalid", "invalid target profile or member counts")
+	}
+	if (target.Profile == publication.TargetProfile && target.RetainedThreadIDs != nil) || (target.Profile == publication.RetentionTargetProfile && target.RetainedThreadIDs == nil) || len(target.RetainedThreadIDs) > 100 {
+		return input, canonical.WriteBatch{}, publicationError("invalid", "retention requires an explicit v2 target")
+	}
+	retained := make(map[string]bool, len(target.RetainedThreadIDs))
+	for _, value := range target.RetainedThreadIDs {
+		if !publicationText(value, 500) || retained[value] {
+			return input, canonical.WriteBatch{}, publicationError("invalid", "invalid retained Thread identity")
+		}
+		retained[value] = true
+	}
+	for _, thread := range input.Batch.Threads {
+		if retained[thread.SourceThreadID] && thread.ParentSourceThreadID == nil {
+			return input, canonical.WriteBatch{}, publicationError("invalid", "root Thread cannot be retained")
+		}
+		delete(retained, thread.SourceThreadID)
+	}
+	if len(retained) != 0 {
+		return input, canonical.WriteBatch{}, publicationError("invalid", "retained Thread header is absent")
+	}
+	for _, event := range input.Batch.Events {
+		for _, thread := range target.RetainedThreadIDs {
+			if event.SourceThreadID == thread {
+				return input, canonical.WriteBatch{}, publicationError("invalid", "retained Thread contains explicit Events")
+			}
+		}
+	}
+	for _, usage := range input.Batch.Usage {
+		for _, thread := range target.RetainedThreadIDs {
+			if usage.SourceThreadID == thread {
+				return input, canonical.WriteBatch{}, publicationError("invalid", "retained Thread contains explicit usage")
+			}
+		}
+	}
+	if target.Profile == publication.RetentionTargetProfile && input.Batch.Session.ReportedEventCount != target.Events {
+		return input, canonical.WriteBatch{}, publicationError("invalid", "Session count differs from explicit target projection")
 	}
 	batch := input.Batch
 	if batch.ProjectID != source.ProjectID || batch.Source.InstallationID != source.InstallationID || batch.Source.AdapterID != source.AdapterID || batch.Session.SourceSessionID != source.SourceSessionID {
@@ -220,6 +232,26 @@ func preparePublicationPart(p authentication.Principal, source db.CanonicalPubli
 	}
 	if normalized.Session.ID != source.SessionID || normalized.Session.SourceKey != source.SourceKey || len(normalized.Threads) != target.Threads {
 		return input, normalized, publicationError("invalid", "candidate identity or Thread count differs from its reservation")
+	}
+	if source.LegacyAdopted {
+		if normalized.Session.Revision <= source.RevisionFloor {
+			return input, normalized, publicationError("conflict", "Session revision does not exceed legacy floor")
+		}
+		for _, thread := range normalized.Threads {
+			if thread.Revision <= source.RevisionFloor {
+				return input, normalized, publicationError("conflict", "Thread revision does not exceed legacy floor")
+			}
+		}
+		for _, event := range normalized.Events {
+			if event.Revision <= source.RevisionFloor || event.ProjectionRevision <= source.RevisionFloor {
+				return input, normalized, publicationError("conflict", "Event version does not exceed legacy floor")
+			}
+		}
+		for _, usage := range normalized.Usage {
+			if usage.Revision <= source.RevisionFloor {
+				return input, normalized, publicationError("conflict", "usage revision does not exceed legacy floor")
+			}
+		}
 	}
 	sort.Slice(normalized.Threads, func(i, j int) bool { return normalized.Threads[i].ID < normalized.Threads[j].ID })
 	return input, normalized, nil
@@ -270,6 +302,9 @@ func recordPublicationMember(ctx context.Context, q *db.Queries, attemptID pgtyp
 	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return persist("check target membership", err)
 	}
+	if err := legacyPublicationIdentity(ctx, q, sessionID, member); err != nil {
+		return err
+	}
 	identity, err := q.GetPublicationRecordIdentity(ctx, db.GetPublicationRecordIdentityParams{SessionID: sessionID, Kind: member.kind, RecordID: member.id})
 	if err == nil && (identity.SourceKey != member.sourceKey || identity.ThreadID != member.threadID) {
 		return publicationError("conflict", "stable "+member.kind+" identity or ownership changed")
@@ -291,6 +326,47 @@ func recordPublicationMember(ctx context.Context, q *db.Queries, attemptID pgtyp
 	}
 	if err = q.InsertPublicationMember(ctx, db.InsertPublicationMemberParams{AttemptID: attemptID, Kind: member.kind, RecordID: member.id, SourceKey: member.sourceKey, PartOrdinal: partOrdinal, EntryIndex: int32(member.index), ThreadID: member.threadID, SourceOrder: member.sourceOrder, EventIndex: int64(member.eventIndex), SearchDescriptor: member.descriptor}); err != nil {
 		return persist("materialize target membership", err)
+	}
+	return nil
+}
+
+// Adoption never permits a previously used stable identity to move across
+// Threads, even when the first sourceCapture version has a fresh version pair.
+func legacyPublicationIdentity(ctx context.Context, q *db.Queries, sessionID string, member preparedMember) error {
+	switch member.kind {
+	case "thread":
+		value, err := q.GetThreadForUpdate(ctx, db.GetThreadForUpdateParams{SessionID: sessionID, ID: member.id})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return persist("read legacy Thread identity", err)
+		}
+		if value.SourceKey != member.sourceKey {
+			return publicationError("conflict", "stable Thread source identity changed")
+		}
+	case "event":
+		value, err := q.GetEventByIDForUpdate(ctx, member.id)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return persist("read legacy Event identity", err)
+		}
+		if value.SessionID != sessionID || value.SourceKey != member.sourceKey || value.ThreadID != member.threadID {
+			return publicationError("conflict", "stable Event source identity or ownership changed")
+		}
+	case "usage":
+		value, err := q.GetUsageForUpdate(ctx, member.sourceKey)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return persist("read legacy usage identity", err)
+		}
+		if value.SessionID != sessionID || value.ThreadID != member.threadID {
+			return publicationError("conflict", "stable usage ownership changed")
+		}
 	}
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
 	"github.com/SingleMai/ATape/server/internal/canonical"
+	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/sourceidentity"
 	"github.com/google/uuid"
@@ -45,7 +46,8 @@ func (s *PublicationStore) Capabilities() publication.Capabilities {
 	return publication.Capabilities{Protocol: publication.Protocol, TargetProfile: publication.TargetProfile,
 		Limits: publication.Capacity{PartBytes: l.PartBytes, TargetBytes: l.TargetBytes, UserPendingBytes: l.UserPendingBytes,
 			Parts: l.Parts, Reservations: l.Reservations, ReservationLifetimeMS: l.ReservationLifetime.Milliseconds(), LeaseLifetimeMS: l.LeaseLifetime.Milliseconds()},
-		StatusPageSize: 100, ReclaimPageSize: 32}
+		StatusPageSize: 100, ReclaimPageSize: 32,
+		TargetProfiles: []string{publication.TargetProfile, publication.RetentionTargetProfile}, LegacyAdoption: true}
 }
 
 func publicationError(code, message string) error {
@@ -141,6 +143,7 @@ func attemptValue(row db.GetPublicationAttemptRow) (publication.Attempt, error) 
 	value := publication.Attempt{ID: domainUUID(row.ID), SessionID: row.SessionID, CaptureID: row.CaptureID, TransformVersion: row.TransformVersion,
 		Fence: row.Fence, LeaseUntil: row.LeaseUntil, ExpiresAt: row.ExpiresAt, State: row.EffectiveState, Parts: int(row.PartCount), RetainedBytes: row.RetainedBytes}
 	value.ValidatedParts = int(row.ValidatedParts)
+	value.RetainedParts = int(row.DerivedParts)
 	value.CandidateEvents = int(row.CandidateEvents)
 	value.CandidateUsage = int(row.CandidateUsage)
 	if row.ActivationJson != nil {
@@ -178,11 +181,20 @@ func liveAttempt(a publication.Attempt) error {
 // Reserve returns a server-generated, finite-validity identity. Its loss can
 // consume only the configured reservation quota; it never creates visible data.
 func (s *PublicationStore) Reserve(ctx context.Context, p authentication.Principal, scope publication.Scope) (publication.Reservation, error) {
+	value, err := s.reserveSource(ctx, p, scope, false)
+	return value.Reservation, err
+}
+
+func (s *PublicationStore) AdoptLegacy(ctx context.Context, p authentication.Principal, scope publication.Scope) (publication.Adoption, error) {
+	return s.reserveSource(ctx, p, scope, true)
+}
+
+func (s *PublicationStore) reserveSource(ctx context.Context, p authentication.Principal, scope publication.Scope, adopt bool) (publication.Adoption, error) {
 	if !publicationText(scope.ProjectID, 200) || !publicationText(scope.InstallationID, 200) || !publicationText(scope.AdapterID, 200) || !publicationText(scope.SourceSessionID, 500) || !publicationText(scope.OriginKey, 500) {
-		return publication.Reservation{}, publicationError("invalid", "invalid publication scope")
+		return publication.Adoption{}, publicationError("invalid", "invalid publication scope")
 	}
-	return publicationTransaction(ctx, s, p, func(ctx context.Context, q *db.Queries, userID pgtype.UUID) (publication.Reservation, error) {
-		zero := publication.Reservation{}
+	return publicationTransaction(ctx, s, p, func(ctx context.Context, q *db.Queries, userID pgtype.UUID) (publication.Adoption, error) {
+		zero := publication.Adoption{}
 		sessionID := sourceidentity.SessionID(scope.ProjectID, p.UserID, scope.InstallationID, scope.AdapterID, scope.SourceSessionID)
 		sourceKey := sourceidentity.SessionSourceKey(scope.ProjectID, p.UserID, scope.InstallationID, scope.AdapterID, scope.SourceSessionID)
 		source := db.CanonicalPublicationSource{SessionID: sessionID, SourceKey: sourceKey, ProjectID: scope.ProjectID, CapturedByUserID: userID}
@@ -193,20 +205,60 @@ func (s *PublicationStore) Reserve(ctx context.Context, p authentication.Princip
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return zero, persist("read publication mode", err)
 		}
+		baseline := []ingestion.Thread{}
+		floor := int64(0)
 		if err == nil {
 			if old.SourceKey != sourceKey || old.OriginKey != scope.OriginKey {
 				return zero, publicationError("conflict", "source binding is immutable")
 			}
+			if adopt && !old.LegacyAdopted {
+				return zero, publicationError("conflict", "source has no legacy adoption")
+			}
+			floor = old.RevisionFloor
+			if old.BaselineThreadsJson != nil {
+				if err = json.Unmarshal([]byte(*old.BaselineThreadsJson), &baseline); err != nil {
+					return zero, persist("decode adoption baseline", err)
+				}
+			}
 		} else {
-			if _, e := q.GetSessionForUpdate(ctx, sessionID); e == nil {
-				return zero, publicationError("conflict", "legacy Session cannot enter publication mode")
-			} else if !errors.Is(e, pgx.ErrNoRows) {
+			legacy, e := q.GetSessionForUpdate(ctx, sessionID)
+			if e != nil && !errors.Is(e, pgx.ErrNoRows) {
 				return zero, persist("read legacy Session", e)
 			}
-			err = q.InsertPublicationSource(ctx, db.InsertPublicationSourceParams{SessionID: sessionID, SourceKey: sourceKey, ProjectID: scope.ProjectID, CapturedByUserID: userID,
-				InstallationID: scope.InstallationID, AdapterID: scope.AdapterID, SourceSessionID: scope.SourceSessionID, OriginKey: scope.OriginKey})
+			if adopt {
+				if errors.Is(e, pgx.ErrNoRows) {
+					return zero, publicationError("conflict", "legacy Session does not exist")
+				}
+				if legacy.SourceKey != sourceKey || legacy.ProjectID != scope.ProjectID || domainUUID(legacy.CapturedByUserID) != p.UserID {
+					return zero, publicationError("conflict", "legacy capture scope differs")
+				}
+				floor, err = q.LegacyRevisionFloor(ctx, sessionID)
+				if err != nil {
+					return zero, persist("read legacy revision floor", err)
+				}
+				if floor >= 9007199254740991 {
+					return zero, publicationError("capacity", "legacy revision floor cannot be incremented safely")
+				}
+				baseline, err = adoptionThreads(ctx, q, sessionID, sourceKey)
+				if err != nil {
+					return zero, err
+				}
+			} else if e == nil {
+				return zero, publicationError("conflict", "legacy Session cannot enter publication mode")
+			}
+			err = q.InsertPublicationSource(ctx, db.InsertPublicationSourceParams{SessionID: sessionID, SourceKey: sourceKey, ProjectID: scope.ProjectID, CapturedByUserID: userID, InstallationID: scope.InstallationID, AdapterID: scope.AdapterID, SourceSessionID: scope.SourceSessionID, OriginKey: scope.OriginKey})
 			if err != nil {
 				return zero, persist("bind publication mode", err)
+			}
+			if adopt {
+				encoded, e := json.Marshal(baseline)
+				if e != nil {
+					return zero, persist("encode adoption baseline", e)
+				}
+				text := string(encoded)
+				if err = q.AdoptPublicationSource(ctx, db.AdoptPublicationSourceParams{SessionID: sessionID, RevisionFloor: floor, BaselineThreadsJson: &text}); err != nil {
+					return zero, persist("fence legacy source", err)
+				}
 			}
 		}
 		usage, err := q.PublicationUsage(ctx, userID)
@@ -224,8 +276,39 @@ func (s *PublicationStore) Reserve(ctx context.Context, p authentication.Princip
 		if err != nil {
 			return zero, persist("reserve publication", err)
 		}
-		return publication.Reservation{ID: domainUUID(row.ID), SessionID: sessionID, ExpiresAt: row.ExpiresAt}, nil
+		return publication.Adoption{Reservation: publication.Reservation{ID: domainUUID(row.ID), SessionID: sessionID, ExpiresAt: row.ExpiresAt}, RevisionFloor: floor, BaselineThreads: baseline}, nil
 	})
+}
+
+func adoptionThreads(ctx context.Context, q *db.Queries, sessionID, sourceKey string) ([]ingestion.Thread, error) {
+	rows, err := q.ListSessionThreads(ctx, sessionID)
+	if err != nil {
+		return nil, persist("read adoption Thread metadata", err)
+	}
+	if len(rows) > 100 {
+		return nil, publicationError("capacity", "legacy topology exceeds supported Thread bound")
+	}
+	ids := make(map[string]string, len(rows))
+	for _, row := range rows {
+		value, ok := sourceidentity.SourceThreadID(sourceKey, row.SourceKey)
+		if !ok {
+			return nil, publicationError("conflict", "legacy Thread left the authenticated capture scope")
+		}
+		ids[row.ID] = value
+	}
+	result := make([]ingestion.Thread, 0, len(rows))
+	for _, row := range rows {
+		var parent *string
+		if row.ParentThreadID != nil {
+			value, ok := ids[*row.ParentThreadID]
+			if !ok {
+				return nil, publicationError("conflict", "legacy Thread parent is absent")
+			}
+			parent = &value
+		}
+		result = append(result, ingestion.Thread{SourceThreadID: ids[row.ID], ParentSourceThreadID: parent, Revision: row.Revision, Label: row.Label, Summary: row.Summary, CaptureStatus: row.CaptureStatus})
+	}
+	return result, nil
 }
 func (s *PublicationStore) Begin(ctx context.Context, p authentication.Principal, input publication.Begin) (publication.Attempt, error) {
 	id, err := publicationID(input.ReservationID)
@@ -504,7 +587,7 @@ func (s *PublicationStore) Reclaim(ctx context.Context, p authentication.Princip
 			if err = q.DeletePublicationPart(ctx, db.DeletePublicationPartParams{AttemptID: row.AttemptID, Ordinal: row.Ordinal}); err != nil {
 				return result, persist("reclaim publication part", err)
 			}
-			if err = q.SubtractPublicationBytes(ctx, db.SubtractPublicationBytesParams{ID: row.AttemptID, RetainedBytes: row.ByteCount}); err != nil {
+			if err = q.SubtractPublicationBytes(ctx, db.SubtractPublicationBytesParams{ID: row.AttemptID, RetainedBytes: row.ByteCount, Derived: row.Derived}); err != nil {
 				return result, persist("account reclaimed publication part", err)
 			}
 			result.Parts++
