@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest"
 import { CollectorDaemonProcess, CollectorDaemonProcessError } from "./collectorDaemon.ts"
 import { checkCLIUpgrade, CLIUpgradeError, CLIUpgradePlatform, upgradeCLI, resumeCLIUpgrade } from "./cliUpgrade.ts"
 
-const fixture = (version = "0.4.2", running = true) => {
-  let failInstall = false, failResume = false, installs = 0, stops = 0, stale = false
+const fixture = (version = "0.4.2", running = true, wanted = running) => {
+  let failInstall = false, failResume = false, installs = 0, pauses = 0, stale = false
   let owned = false, acquisitions = 0, releases = 0
   let installWait: Promise<void> | undefined, startWait: Promise<void> | undefined
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
@@ -24,10 +24,15 @@ const fixture = (version = "0.4.2", running = true) => {
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       refresh: () => Effect.sync(() => { const changed = running && stale; stale = false; return changed }),
       inspect: () => Effect.sync(() => running ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
-      stop: () => Effect.sync(() => { stops++; running = false; return true }),
-      start: options => Effect.suspend(() => {
+      stop: () => Effect.sync(() => { const stopped = running; wanted = false; running = false; return stopped }),
+      pause: () => Effect.sync(() => { pauses++; const stopped = running; running = false; return stopped }),
+      start: () => Effect.die("Upgrade must preserve intent instead of issuing Start"),
+      resume: () => Effect.suspend(() => {
+        if (!wanted) return Effect.succeed(undefined)
+        const options = { intervalMs: 45_000, concurrency: 2 }
         starts.push(options)
         return (startWait ? Effect.promise(() => startWait!) : Effect.void).pipe(Effect.flatMap(() => {
+          if (!wanted) return Effect.succeed(undefined)
           if (!failResume) running = true
           return failResume ? Effect.fail(new CollectorDaemonProcessError({ reason: "start", message: "failed" }))
             : Effect.succeed({ ...options, pid: 2, startedAt: "later", logFile: "log", created: true })
@@ -44,7 +49,7 @@ const fixture = (version = "0.4.2", running = true) => {
   }
   return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) => Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
     ownership: () => ({ owned, acquisitions, releases }), hold,
-    stale: () => { stale = true }, installs: () => installs, stops: () => stops, starts, running: () => running, failInstall: () => { failInstall = true }, failResume: (value = true) => { failResume = value } }
+    stale: () => { stale = true }, installs: () => installs, pauses: () => pauses, starts, running: () => running, failInstall: () => { failInstall = true }, failResume: (value = true) => { failResume = value } }
 }
 
 describe("CLI upgrade Module", () => {
@@ -52,12 +57,12 @@ describe("CLI upgrade Module", () => {
     const client = fixture()
     expect(await client.run(upgradeCLI("0.4.1"))).toEqual({ version: "0.4.2", updated: true, resumed: true })
     expect(client.installs()).toBe(1)
-    expect(client.stops()).toBe(1)
+    expect(client.pauses()).toBe(1)
     expect(client.starts).toEqual([{ intervalMs: 45_000, concurrency: 2 }])
     expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
     const stopped = fixture("0.4.2", false)
     expect((await stopped.run(upgradeCLI("0.4.1"))).resumed).toBe(false)
-    expect(stopped.stops()).toBe(0)
+    expect(stopped.pauses()).toBe(0)
     expect(stopped.starts).toEqual([])
   })
   it("finishes an external package update even when npm already reports the current version", async () => {
@@ -75,7 +80,7 @@ describe("CLI upgrade Module", () => {
       const client = fixture(version)
       expect((await client.run(upgradeCLI("0.4.1"))).updated).toBe(false)
       expect(client.installs()).toBe(0)
-      expect(client.stops()).toBe(0)
+      expect(client.pauses()).toBe(0)
     }
     await expect(fixture().run(upgradeCLI("development"))).rejects.toMatchObject({ reason: "installation" })
   })
@@ -83,7 +88,7 @@ describe("CLI upgrade Module", () => {
     const client = fixture()
     client.failInstall()
     await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "install" })
-    expect(client.stops()).toBe(0)
+    expect(client.pauses()).toBe(0)
     expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
     const resume = fixture()
     resume.failResume()
@@ -123,7 +128,7 @@ describe("CLI upgrade Module", () => {
       await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({ reason: "installation" })
       cancellation.abort()
       await expect(pending).rejects.toBeDefined()
-      expect(client.stops()).toBe(0)
+      expect(client.pauses()).toBe(0)
       expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
     } finally { finish(); cancellation.abort(); await pending.catch(() => {}) }
   })
@@ -144,7 +149,7 @@ describe("CLI upgrade Module", () => {
     } finally { finish(); cancellation.abort(); await pending.catch(() => {}) }
   })
   it("retains a recovery receipt when another update prevents resumption", async () => {
-    const client = fixture("0.4.2", false), finish = client.hold("start")
+    const client = fixture("0.4.2", false, true), finish = client.hold("start")
     const recovery = { version: "0.4.2", intervalMs: 45_000, concurrency: 2 }
     const pending = client.run(resumeCLIUpgrade(recovery))
     try {
@@ -154,5 +159,34 @@ describe("CLI upgrade Module", () => {
     await expect(pending).resolves.toMatchObject({ updated: true, resumed: true })
     expect(client.installs()).toBe(0)
     expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
+  })
+
+  it("honors Stop during installation and never revives it from the upgrade receipt", async () => {
+    const client = fixture(), finish = client.hold("install")
+    const pending = client.run(upgradeCLI("0.4.1"))
+    try {
+      await expect.poll(client.installs).toBe(1)
+      await client.run(CollectorDaemonProcess.use(process => process.stop()))
+      finish()
+      await expect(pending).resolves.toMatchObject({ version: "0.4.2", updated: true, resumed: false })
+      expect(client.running()).toBe(false)
+      expect(client.starts).toEqual([])
+      await expect(client.run(resumeCLIUpgrade({ version: "0.4.2", intervalMs: 45000, concurrency: 2 })))
+        .resolves.toMatchObject({ resumed: false })
+      expect(client.running()).toBe(false)
+    } finally { finish(); await pending.catch(() => {}) }
+  })
+
+  it("honors Stop after a failed resumption before retrying the retained receipt", async () => {
+    const client = fixture()
+    client.failResume()
+    const failed = await client.run(upgradeCLI("0.4.1").pipe(Effect.match({ onFailure: error => error, onSuccess: () => undefined })))
+    if (!(failed instanceof CLIUpgradeError) || !failed.recovery) throw new Error("Missing recovery receipt")
+    await client.run(CollectorDaemonProcess.use(process => process.stop()))
+    client.failResume(false)
+    await expect(client.run(resumeCLIUpgrade(failed.recovery))).resolves.toMatchObject({ resumed: false })
+    expect(client.running()).toBe(false)
+    expect(client.starts).toHaveLength(1)
+    expect(client.installs()).toBe(1)
   })
 })

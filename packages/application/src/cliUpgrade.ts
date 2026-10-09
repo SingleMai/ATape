@@ -42,15 +42,15 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   // Install and verify first: failed acquisition must not stop existing sync.
   yield* platform.install(version)
   if (running) {
-    // Once installation succeeds, finish the bounded stop/start handoff even if
+    // Once installation succeeds, finish the bounded pause/resume handoff even if
     // Ctrl+C arrives, so cancellation cannot strand a previously running sync.
     return yield* resumeOwnedCLIUpgrade({ version, intervalMs: running.intervalMs, concurrency: running.concurrency })
   }
   return { version, updated: true, resumed: Boolean(running) }
 }, Effect.scoped)
 
-// The recovery receipt retains the pre-upgrade intent across failed stop/start
-// attempts. Retrying it never queries npm or reinstalls the CLI.
+// The receipt identifies the installed upgrade, not permission to start sync.
+// Durable Collector intent wins on every retry, including a later user Stop.
 export const resumeCLIUpgrade = Effect.fn("CLIUpgrade.resume")(function*(recovery: typeof CLIUpgradeRecovery.Type) {
   yield* (yield* CLIUpgradePlatform).acquireOwnership().pipe(Effect.mapError(error => new CLIUpgradeError({
     reason: "resume", recovery, message: `ATape ${recovery.version} is installed, but sync could not resume. ${error.message}`
@@ -60,11 +60,11 @@ export const resumeCLIUpgrade = Effect.fn("CLIUpgrade.resume")(function*(recover
 
 const resumeOwnedCLIUpgrade = (recovery: typeof CLIUpgradeRecovery.Type) => Effect.gen(function*() {
   const process = yield* CollectorDaemonProcess
-  yield* process.stop().pipe(
-    Effect.andThen(process.start({ intervalMs: recovery.intervalMs, concurrency: recovery.concurrency })),
+  const resumed = yield* process.pause().pipe(
+    Effect.andThen(process.resume()),
     Effect.uninterruptible,
     Effect.mapError(() => new CLIUpgradeError({ reason: "resume", recovery,
       message: `ATape ${recovery.version} is installed, but sync could not resume. Retry resuming sync or open ATape with the same ATAPE_HOME and select Start sync.` }))
   )
-  return { version: recovery.version, updated: true, resumed: true }
+  return { version: recovery.version, updated: true, resumed: Boolean(resumed) }
 })

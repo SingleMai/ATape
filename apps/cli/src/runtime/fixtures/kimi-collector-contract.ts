@@ -93,7 +93,7 @@ if (input.phase === "initial") {
   writeFileSync(join(foreign, "agents", "main", "wire.jsonl"), native)
   execFileSync("npm", ["install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", "--prefix", installed, input.cliTarball], { cwd: home, stdio: "pipe", timeout: 120000 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
-  writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
+  writeFileSync(paths.configFile, JSON.stringify({ version: 3, autoStartEnabled: false, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId, teamSlug: "kimi-contract", teamName: "Kimi contract", name: "Kimi", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }
 if (["edit", "raw-off", "lose-activation", "raw-only"].includes(input.phase)) {

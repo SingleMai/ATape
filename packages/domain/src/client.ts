@@ -46,6 +46,7 @@ export const ClientConfig = Schema.Struct({
   version: Schema.Literal(ClientConfigVersion),
   locale: Schema.optionalKey(Schema.String),
   autoUpdateEnabled: Schema.optionalKey(Schema.Boolean),
+  autoStartEnabled: Schema.optionalKey(Schema.Boolean),
   activeInstanceOrigin: Schema.optionalKey(Schema.String),
   projects: Schema.Array(ProjectRegistration),
   adapters: Schema.Array(AdapterInstallation),

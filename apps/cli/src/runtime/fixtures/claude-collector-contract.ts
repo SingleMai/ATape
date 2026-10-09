@@ -133,7 +133,7 @@ if (input.phase === "initial") {
 if (input.phase === "initial" || input.phase === "thinking-seed") {
   mkdirSync(paths.atapeHome, { recursive: true, mode: 0o700 })
   mkdirSync(dirname(paths.configFile), { recursive: true })
-  writeFileSync(paths.configFile, JSON.stringify({ version: 3, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
+  writeFileSync(paths.configFile, JSON.stringify({ version: 3, autoStartEnabled: false, toolsConfigured: true, enabledAdapterIds: [], adapters: [], projects: [{
     id: input.projectId, instanceOrigin: input.origin, userId: input.userId, teamId: input.teamId,
     teamSlug: "claude-contract", teamName: "Claude contract", name: "Claude", type: "directory", path: workspace, createdAt: at, adapterIds: [] }] }))
 }

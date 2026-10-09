@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Effect } from "effect"
-import { kickAutomaticUpdates, runAutomaticUpdates } from "@atape/application"
+import { kickAutomaticUpdates, reconcileLoginStartup, runAutomaticUpdates, runLoginStartup } from "@atape/application"
 import { rm, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { parseCLI } from "./commandInput.ts"
@@ -13,7 +13,8 @@ import { acquireUpdateWorker, needsUpdateRecovery, recoverPendingUpdate } from "
 import { readRuntimeSelection, selectedBootstrap, updateDirectory } from "./runtime/runtimeSelection.ts"
 import { prepareCollectorReadiness } from "./runtime/collectorReadiness.ts"
 import { admitCollectorProcess } from "./runtime/collectorDaemonLayers.ts"
-import { delegateManagedRuntime } from "./runtime/runtimeLauncher.ts"
+import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtime/runtimeLauncher.ts"
+import { admitLoginStartup, withLoginStartupRecovery } from "./runtime/loginStartup.ts"
 import { cliVersion } from "./version.ts"
 
 const main = async () => {
@@ -61,6 +62,22 @@ const main = async () => {
   process.once("SIGINT", stop)
   process.once("SIGTERM", stop)
   try {
+    if (command.kind === "__login-start") {
+      const admitted = await admitLoginStartup(defaultNodeClientPaths(), command.options.startupToken, process.argv[1]!, process.env)
+      if (admitted === undefined) return
+      const paths = defaultNodeClientPaths(admitted)
+      const delegated = await delegateAdmittedLoginStartup(process.argv[1]!, process.argv.slice(2), admitted)
+      if (delegated !== undefined) { process.exitCode = delegated; return }
+      let completed = false
+      await withLoginStartupRecovery(paths, admitted.ATAPE_BOOTSTRAP_ENTRY!, admitted, async () => {
+        const current = await admitLoginStartup(paths, command.options.startupToken, process.argv[1]!, admitted)
+        if (current === undefined) return
+        await Effect.runPromise(runLoginStartup().pipe(Effect.provide(makeNodeClientLayer(defaultNodeClientPaths(current), current))), { signal: cancellation.signal })
+        completed = true
+      })
+      if (completed) await Effect.runPromise(kickAutomaticUpdates().pipe(Effect.provide(makeNodeClientLayer(paths, admitted))), { signal: cancellation.signal })
+      return
+    }
     if (command.kind === "__automatic-update") {
       const paths = defaultNodeClientPaths()
       const token = command.options.updateToken
@@ -85,7 +102,10 @@ const main = async () => {
     const program = command.kind === "__collector-daemon"
       ? Effect.scoped(Effect.gen(function*() {
         yield* admitCollectorProcess(defaultNodeClientPaths().collectorProcessFile, command.options.daemonToken)
-        yield* Effect.forkScoped(Effect.forever(kickAutomaticUpdates().pipe(Effect.andThen(Effect.sleep(30_000)))))
+        yield* Effect.forkScoped(Effect.forever(reconcileLoginStartup().pipe(
+          Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
+          Effect.andThen(kickAutomaticUpdates()), Effect.andThen(Effect.sleep(30_000))
+        )))
         yield* prepareCollectorReadiness(defaultNodeClientPaths(), process.env)
         yield* runCommand(command)
       }))

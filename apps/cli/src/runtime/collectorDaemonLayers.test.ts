@@ -106,6 +106,27 @@ setInterval(() => {}, 1000);
       Effect.runPromise(effect.pipe(Effect.provide(layer)))
     const daemon = await run(CollectorDaemonProcess)
     return { ...paths, entry, replace, run, daemon,
+      // A retained 0.5.3 UI knows the PID and maintenance protocol, but does
+      // not read or update the new durable intent file.
+      legacyStop: async () => {
+        const release = (await acquireProcessLock(`${paths.collectorProcessFile}.lock.sqlite`, 10_000))!
+        try {
+          const gateFile = `${paths.collectorProcessFile}.maintenance.json`
+          const gate = await readFile(gateFile, "utf8").then(value => JSON.parse(value)).catch(() => undefined)
+          if (gate) {
+            const { resume: _, ...stopped } = gate
+            await writeFile(gateFile, JSON.stringify({ ...stopped, generation: gate.generation + 1 }))
+          }
+          const record = await readFile(paths.collectorProcessFile, "utf8").then(value => JSON.parse(value)).catch(() => undefined)
+          if (record) {
+            try { process.kill(record.pid, "SIGTERM") } catch { /* Already exited. */ }
+            await expect.poll(() => {
+              try { process.kill(record.pid, 0); return true } catch { return false }
+            }).toBe(false)
+            await rm(paths.collectorProcessFile, { force: true })
+          }
+        } finally { release() }
+      },
       started: async (build: string, pid: number) => {
         await expect.poll(async () => JSON.parse(await readFile(marker, "utf8"))).toEqual({ build, pid })
       } }
@@ -167,6 +188,174 @@ setInterval(() => {}, 1000);
     } finally { await f.run(f.daemon.stop()) }
   })
 
+  it("persists Start across process loss and concurrent login resumes without creating a second Collector", async () => {
+    const f = await fixture()
+    try {
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      await f.started("original", original.pid)
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
+      expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8"))).toMatchObject({ restartPending: true })
+      const [first, second] = await Promise.all([f.run(f.daemon.resume()), f.run(f.daemon.resume())])
+      expect(first).toMatchObject({ intervalMs: 60000, concurrency: 3 })
+      expect(second).toMatchObject({ pid: first!.pid, intervalMs: 60000, concurrency: 3, created: false })
+      expect(first!.pid).not.toBe(original.pid)
+      await f.started("original", first!.pid)
+      await f.run(f.daemon.stop())
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+      expect(await f.run(f.daemon.stop())).toBe(false)
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("serializes user Stop with login resume and keeps the stopped intent for later triggers", async () => {
+    const f = await fixture()
+    let release!: () => void, entered!: () => void
+    const resolving = new Promise<void>(resolve => { entered = resolve })
+    const waiting = new Promise<void>(resolve => { release = resolve })
+    const layer = makeNodeCollectorDaemonLayer(f, async () => { entered(); await waiting; return f.entry })
+    const daemon = await Effect.runPromise(CollectorDaemonProcess.pipe(Effect.provide(layer)))
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
+      const resuming = Effect.runPromise(daemon.resume())
+      await resolving
+      const stopping = f.run(f.daemon.stop())
+      release()
+      await expect(resuming).resolves.toMatchObject({ intervalMs: 45000, concurrency: 2 })
+      await expect(stopping).resolves.toBe(true)
+      expect(await f.run(f.daemon.inspect())).toBeUndefined()
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+    } finally { release?.(); await f.run(f.daemon.stop()) }
+  })
+
+  it("resolves the selected runtime again when resuming after a lost process", async () => {
+    const f = await fixture(), replacement = join(f.entry, "..", "login-selected.mjs")
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
+      await f.replace("login-selected")
+      await copyFile(f.entry, replacement)
+      await f.replace("original")
+      const layer = makeNodeCollectorDaemonLayer(f, async () => replacement)
+      const resumed = await Effect.runPromise(CollectorDaemonProcess.use(process => process.resume()).pipe(Effect.provide(layer)))
+      expect(resumed).toMatchObject({ intervalMs: 45000, concurrency: 2 })
+      await f.started("login-selected", resumed!.pid)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("migrates missing intent only from a confirmed running legacy Collector", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      await rm(`${f.collectorProcessFile}.desired.json`)
+      expect(await f.run(f.daemon.resume())).toMatchObject({ pid: original.pid, created: false })
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
+      expect(await f.run(f.daemon.resume())).toMatchObject({ intervalMs: 60000, concurrency: 3, created: true })
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it.each(["legacy", "current"] as const)("does not revive collection after a retained 0.5.3 Stop with %s established intent", async version => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      if (version === "legacy") await rm(`${f.collectorProcessFile}.desired.json`)
+      expect(await f.run(f.daemon.inspect())).toMatchObject({ pid: original.pid })
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")))
+        .toMatchObject({ wanted: true, established: true })
+      await f.legacyStop()
+      // The older UI has no knowledge of the intent file. Login must infer its
+      // completed Stop from the absence of both PID and maintenance resume.
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8"))).toMatchObject({ wanted: true })
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+      expect(await f.run(f.daemon.refresh())).toBe(false)
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")))
+        .toEqual({ version: 1, wanted: false })
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("retries a first Start that failed before publishing any process identity", async () => {
+    const f = await fixture()
+    try {
+      await rm(f.entry)
+      await expect(f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))).rejects.toMatchObject({ reason: "io" })
+      expect(await f.run(f.daemon.inspect())).toBeUndefined()
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")))
+        .toEqual({ version: 1, wanted: true, intervalMs: 60000, concurrency: 3 })
+      await f.replace("repaired-first-start")
+      const resumed = await f.run(f.daemon.resume())
+      expect(resumed).toMatchObject({ intervalMs: 60000, concurrency: 3, created: true })
+      await f.started("repaired-first-start", resumed!.pid)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("retains resumable metadata across pause and a failed replacement spawn", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      expect(await f.run(f.daemon.pause())).toBe(true)
+      expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8")))
+        .toMatchObject({ pid: original.pid, restartPending: true })
+      await writeFile(f.entry, "process.exit(1)\n")
+      // Ownership can be confirmed just before Node evaluates this entry. In
+      // either timing the exited replacement must leave resumable metadata.
+      try { await f.run(f.daemon.resume()) } catch (cause) { expect(cause).toMatchObject({ reason: "start" }) }
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
+      expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8"))).toMatchObject({ restartPending: true })
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")))
+        .toMatchObject({ wanted: true, established: true })
+      await f.replace("repaired-replacement")
+      const resumed = await f.run(f.daemon.resume())
+      expect(resumed).toMatchObject({ intervalMs: 60000, concurrency: 3, created: true })
+      await f.started("repaired-replacement", resumed!.pid)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("does not inherit user intent from a stale legacy PID or restart marker", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      const record = JSON.parse(await readFile(f.collectorProcessFile, "utf8"))
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
+      await rm(`${f.collectorProcessFile}.desired.json`)
+      await writeFile(f.collectorProcessFile, JSON.stringify({ ...record, restartPending: true }))
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+      expect(await f.run(f.daemon.refresh())).toBe(false)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("fails closed on malformed saved intent and lets an explicit Stop repair it", async () => {
+    const f = await fixture()
+    await writeFile(`${f.collectorProcessFile}.desired.json`, JSON.stringify({ version: 1, wanted: true, intervalMs: 1, concurrency: 20 }))
+    await expect(f.run(f.daemon.resume())).rejects.toMatchObject({ reason: "identity" })
+    expect(await f.run(f.daemon.stop())).toBe(false)
+    expect(await f.run(f.daemon.resume())).toBeUndefined()
+  })
+
+  it("pauses legacy collection for maintenance without changing the desired schedule or cancelling a later Stop", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      await rm(`${f.collectorProcessFile}.desired.json`)
+      expect(await f.run(f.daemon.pause())).toBe(true)
+      expect(await f.run(f.daemon.inspect())).toBeUndefined()
+      expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8")))
+        .toMatchObject({ pid: original.pid, restartPending: true })
+      const resumed = await f.run(f.daemon.resume())
+      expect(resumed).toMatchObject({ intervalMs: 60000, concurrency: 3 })
+      expect(resumed!.pid).not.toBe(original.pid)
+      expect(await f.run(f.daemon.pause())).toBe(true)
+      expect(await f.run(f.daemon.stop())).toBe(false)
+      expect(await f.run(f.daemon.pause())).toBe(false)
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
   it("replaces legacy processes once through start and leaves a running process intact when the entry cannot be read", async () => {
     const f = await fixture()
     try {
@@ -212,9 +401,10 @@ setInterval(() => {}, 1000);
   it("resumes persisted restart intent after process exit and lets explicit stop cancel it", async () => {
     const f = await fixture()
     try {
-      await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
       const record = JSON.parse(await readFile(f.collectorProcessFile, "utf8"))
-      await f.run(f.daemon.stop())
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => f.run(f.daemon.inspect())).toBeUndefined()
       await writeFile(f.collectorProcessFile, JSON.stringify({ ...record, restartPending: true }))
       expect(await f.run(f.daemon.inspect())).toBeUndefined()
       expect(await f.run(f.daemon.refresh())).toBe(true)
@@ -273,6 +463,41 @@ setInterval(() => {}, 1000);
     } finally { release?.(); await f.run(f.daemon.stop()) }
   })
 
+  it("preserves established intent when maintenance observes a crashed Collector before inspect marks it pending", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      process.kill(original.pid, "SIGKILL")
+      await expect.poll(() => {
+        try { process.kill(original.pid, 0); return true } catch { return false }
+      }).toBe(false)
+      expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8"))).not.toHaveProperty("restartPending")
+      await withCollectorMaintenance(f, async () => f.entry, process.env, () => f.replace("recovered-before-inspect"))
+      const recovered = await f.run(f.daemon.inspect())
+      expect(recovered).toMatchObject({ intervalMs: 45000, concurrency: 2 })
+      expect(recovered!.pid).not.toBe(original.pid)
+      await f.started("recovered-before-inspect", recovered!.pid)
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")))
+        .toMatchObject({ wanted: true, established: true })
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("honors a retained 0.5.3 Stop which cancels the resume gate while maintenance has no PID", async () => {
+    const f = await fixture()
+    try {
+      await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      await withCollectorMaintenance(f, async () => f.entry, process.env, async () => {
+        await expect(readFile(f.collectorProcessFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+        await f.legacyStop()
+        await f.replace("must-remain-stopped")
+      })
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")))
+        .toEqual({ version: 1, wanted: false })
+      expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
   it("retains failed maintenance for recovery and preserves the original schedule", async () => {
     const f = await fixture()
     const failed = new Error("Activation failed")
@@ -287,6 +512,40 @@ setInterval(() => {}, 1000);
       expect(current).toMatchObject({ intervalMs: 60000, concurrency: 3 })
       await f.started("recovered", current!.pid)
       expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("migrates an interrupted legacy maintenance resume but never overrides a later user Stop", async () => {
+    const f = await fixture()
+    const gate = { version: 1, token: "legacy-maintenance", generation: 0, phase: "failed",
+      resume: { intervalMs: 60000, concurrency: 3 } }
+    try {
+      await writeFile(`${f.collectorProcessFile}.maintenance.json`, JSON.stringify(gate))
+      await expect(f.run(f.daemon.resume())).rejects.toMatchObject({ reason: "start" })
+      await withCollectorMaintenance(f, async () => f.entry, process.env, () => f.replace("legacy-recovered"))
+      const running = await f.run(f.daemon.inspect())
+      expect(running).toMatchObject({ intervalMs: 60000, concurrency: 3 })
+      await f.started("legacy-recovered", running!.pid)
+      await f.run(f.daemon.stop())
+      // Simulate an older retained worker carrying an uncancelled resume gate.
+      await writeFile(`${f.collectorProcessFile}.maintenance.json`, JSON.stringify(gate))
+      await withCollectorMaintenance(f, async () => f.entry, process.env, () => f.replace("must-remain-stopped"))
+      expect(await f.run(f.daemon.inspect())).toBeUndefined()
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("honors a persisted Stop even when a crashed Stop did not clear the updater's earlier resume gate", async () => {
+    const f = await fixture()
+    try {
+      await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
+      await withCollectorMaintenance(f, async () => f.entry, process.env, async () => {
+        // Reproduce process death after durable Stop intent, before gate mutation.
+        await writeFile(`${f.collectorProcessFile}.desired.json`, JSON.stringify({ version: 1, wanted: false }))
+        await f.replace("must-remain-stopped")
+      })
+      expect(await f.run(f.daemon.inspect())).toBeUndefined()
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
     } finally { await f.run(f.daemon.stop()) }
   })
 
@@ -519,11 +778,13 @@ await withCollectorMaintenance(${JSON.stringify(f)}, async () => ${JSON.stringif
       const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
       await f.started("original", original.pid)
       const fakePs = join(fakeBin, "ps")
-      await writeFile(fakePs, `#!${process.execPath}
-import { execFileSync } from "node:child_process";
-if (process.argv[3] === ${JSON.stringify(String(original.pid))}) {
-  process.stdout.write(execFileSync("/bin/ps", process.argv.slice(2)));
-} else { process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); }
+      const nodeExecutable = `'${process.execPath.replaceAll("'", "'\"'\"'")}'`
+      await writeFile(fakePs, `#!/bin/sh
+if [ "$2" = "${original.pid}" ]; then
+  exec /bin/ps "$@"
+else
+  exec ${nodeExecutable} -e 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'
+fi
 `)
       await chmod(fakePs, 0o700)
       await f.replace("unconfirmed-replacement")

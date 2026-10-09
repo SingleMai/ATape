@@ -4,6 +4,7 @@ import { inspectClient } from "./clientManagement.ts"
 import { ProjectSetupGateway } from "./projectSetup.ts"
 import { CLIExperienceError } from "./cliSetupPlatform.ts"
 import { startManagedCollector, stopManagedCollector } from "./collectorDaemon.ts"
+import { reconcileLoginStartup } from "./loginStartup.ts"
 
 export const currentProject = Effect.fn("CLIExperience.currentProject")(function*(expected: LocalProject) {
   const config = yield* inspectClient()
@@ -29,7 +30,9 @@ export const verifyProjectAccount = Effect.fn("CLIExperience.verifyAccount")(fun
 export const startExperienceCollector = Effect.fn("CLIExperience.start")(function*() {
   const config = yield* inspectClient()
   for (const project of config.projects.filter(project => project.adapterIds.length > 0)) yield* verifyProjectAccount(project)
-  return yield* startManagedCollector()
+  return yield* startManagedCollector().pipe(Effect.tap(() => reconcileLoginStartup().pipe(
+    Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings"))
+  )))
 })
 export const stopExperienceCollector = stopManagedCollector
 

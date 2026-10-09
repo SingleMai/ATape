@@ -56,6 +56,9 @@ class Terminal:
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         saved = json.loads(path.read_text()) if path.exists() else {"version": 3, "projects": [], "adapters": [], "toolsConfigured": False, "enabledAdapterIds": []}
         saved["autoUpdateEnabled"] = False
+        # Login startup is accepted separately using a controlled OS command
+        # Adapter. PTY checks must never register a service in the user's session.
+        saved["autoStartEnabled"] = False
         path.write_text(json.dumps(saved))
         self.master, self.slave = pty.openpty()
         self.before = termios.tcgetattr(self.slave)
@@ -355,14 +358,14 @@ try:
     terminal.wait("Your Projects")
     terminal.send("\t\x1b[C\r")
     terminal.wait("Accounts")
-    terminal.send("\x1b[B" * 2 + "\r")
+    terminal.send("\x1b[B" * 3 + "\r")
     terminal.wait("English")
     terminal.send("\r")
     terminal.wait("Language saved.")
     assert config()["locale"] == "en"
     terminal.send("\x1b")
     terminal.wait("Accounts")
-    terminal.send("\x1b[B" * 4 + "\r")
+    terminal.send("\x1b[B" * 5 + "\r")
     terminal.wait("Stop background sync?")
     assert running(), "opening the stop review stopped sync"
     terminal.send("\x1b[B\r")

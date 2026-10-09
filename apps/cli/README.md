@@ -40,7 +40,8 @@ maintenance remains separate. This manual operation uses the original in-place
 npm path; automatic updates use isolated version directories. See the [upgrade procedure](../../docs/cli/setup-and-adapters.md#upgrade-the-cli-and-adapters)
 for manual package replacement, pinned Adapter sources and failed-resume recovery.
 Automatic updates preserve user-stopped sync and recover only within compatible
-local-state contracts. They do not add reboot supervision or upload local logs.
+local-state contracts. Login startup can resume sync after login; local logs are
+not uploaded.
 
 ## First Project
 
@@ -59,8 +60,12 @@ queued history, up-to-date, partial and failed outcomes. Home offers Add project
 Tools and Settings; Project details show outcomes, recovery and disconnection.
 Use `r` to refresh in place and Esc to return. The theme-color cassette remains
 visible on every interactive page and adapts to terminal size. Exiting leaves background
-sync running. After reboot, open ATape and select Start sync; automatic boot persistence is not
-included. Stop in Settings explicitly affects every Project.
+sync running. Login startup is on by default after initialization on supported
+npm-global macOS/Linux installations. Settings can disable it without interrupting
+current sync. It resumes only sync you still want running; Stop in Settings
+persists across login and explicitly affects every Project. Unavailable native
+registration is visible with a retry action. Linux requires a systemd user manager.
+This is login recovery; later Collector crashes are not continuously supervised.
 
 Git Projects cover the repository across worktrees and independent clones.
 Repeating setup from another checkout updates its locator while preserving
@@ -79,7 +84,7 @@ provide compatibility or migration for older local configurations.
 
 `atape` is the only operational entry. Use Projects for connection and diagnostics,
 Tools and updates for tool selection and versions, and Settings for accounts,
-server, language and global sync. Integration maintenance under Tools supports
+server, language, login startup and global sync. Integration maintenance under Tools supports
 trusted package/path installation, original-source refresh and confirmed cleanup.
 
 `--help` and `--version` work without a terminal. `--lang` changes the session
@@ -98,7 +103,7 @@ pnpm test:release
 pnpm pack:release
 ```
 
-The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it through the installed executable. Source fixtures prepare inert test integrations and dispatch a real packaged independent updater against controlled GitHub/npm Adapters. The update check verifies one CLI/Adapter generation, unchanged raw configuration/bootstrap files, worker exit and bootstrap delegation without updating the user's installation. It also checks installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification exercises the independently bundled Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok Adapters through the source Node Host and package replacement recovery. `release/SHA256SUMS` covers all seven artifacts.
+The CLI package verification requires Python 3 for its macOS/Linux PTY checks. It installs its generated tarball into an isolated npm prefix, installs a temporary Adapter, starts the bundled background Collector, observes a successful cycle, and stops it through the installed executable. Source fixtures prepare inert test integrations and dispatch a real packaged independent updater against controlled GitHub/npm Adapters. The update check verifies one CLI/Adapter generation, unchanged raw configuration/bootstrap files, worker exit and bootstrap delegation without updating the user's installation. Login startup acceptance exercises the bundled headless entry, repeat ownership, selected runtime, durable Stop and disabled queued entries through controlled native commands. The optional `ATAPE_VERIFY_LEGACY_CLI_TARBALL` fixture verifies a published 0.5.3 bootstrap with a capable managed bundle. Native registration is a separate opt-in check; see the [support and verification limits](../../docs/cli/setup-and-adapters.md#login-startup). The package check also covers installed Ink controls, terminal restoration, guided login/Web Refresh, confirmed setup and global tool management. Release verification exercises the independently bundled Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok Adapters through the source Node Host and package replacement recovery. `release/SHA256SUMS` covers all seven artifacts.
 
 OpenCode reads local v1 SQLite history. Its accepted source/version/platform scope,
 source discovery, bounded defaults and Server prerequisite are documented in the

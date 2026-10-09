@@ -4,7 +4,7 @@ import { cliVersion } from "./version.ts"
 import { t } from "./i18n/index.ts"
 import type { ParsedCLI } from "./commandInput.ts"
 
-export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" | "__automatic-update" }>) {
+export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" | "__automatic-update" | "__login-start" }>) {
   if (cli.kind === "__collector-daemon") return yield* runManagedCollector(cli.options)
   yield* Effect.sync(() => { process.stdout.write(`${cli.kind === "version" ? `ATape ${cliVersion}` : helpText()}\n`) })
 })
@@ -22,7 +22,7 @@ Options:
 
 Run atape in an interactive macOS or Linux terminal.
 All operations are available inside ATape. Business subcommands and JSON output are not supported.
-Exiting ATape leaves background sync running. After a reboot, open ATape and select Start sync.
+Exiting ATape leaves background sync running. Login startup is on by default after setup; change it in Settings.
 
 Environment:
   ATAPE_HOME            Local ATape root (default: ~/.atape)

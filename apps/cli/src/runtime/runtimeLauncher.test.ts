@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { CLIInputError } from "../commandInput.ts"
-import { delegateManagedRuntime } from "./runtimeLauncher.ts"
+import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtimeLauncher.ts"
 import { managedStateContract, runtimeEntry, runtimeSelectionFile, selectRuntime } from "./runtimeSelection.ts"
 
 const temporaryDirectories: string[] = []
@@ -54,6 +54,19 @@ describe("managed executable bootstrap delegation", () => {
     const client = await fixture()
     await selectRuntime(client.home, undefined)
     expect(await delegateManagedRuntime(client.bootstrap, ["--version"], client.environment)).toBeUndefined()
+  })
+
+  it("delegates admitted login startup only to a runtime declaring the protocol", async () => {
+    const client = await fixture()
+    const args = ["__login-start", "--startup-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]
+    expect(await delegateManagedRuntime(client.bootstrap, args, client.environment)).toBeUndefined()
+    expect(await delegateAdmittedLoginStartup(client.bootstrap, args, client.environment)).toBeUndefined()
+    await expect(readFile(client.output)).rejects.toMatchObject({ code: "ENOENT" })
+    await writeFile(join(dirname(dirname(client.entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version: "1.2.3", type: "module",
+      atapeRuntime: { loginStartupProtocol: "atape.login-startup.v1" } }))
+    expect(await delegateAdmittedLoginStartup(client.bootstrap, args, client.environment)).toBe(7)
+    expect(JSON.parse(await readFile(client.output, "utf8"))).toMatchObject({ args, bootstrap: client.bootstrap })
+    expect(await delegateAdmittedLoginStartup(client.entry, args, client.environment)).toBeUndefined()
   })
 
   it("rejects public argument errors before inspecting a malformed managed selection", async () => {

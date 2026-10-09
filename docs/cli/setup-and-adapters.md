@@ -83,6 +83,10 @@ The setup review also explains that automatic updates are on by default for
 ATape and installed official npm integrations. Settings → Turn off automatic
 updates saves a machine-local preference; Turn on automatic updates enables them
 again. This does not change which tools or Projects may be captured.
+Login startup is also enabled by default and explained during setup. Settings
+offers Turn off login startup, Turn on login startup and, when needed, Retry
+login startup registration. The saved preference and actual OS registration
+status are shown separately.
 
 The initial wait is bounded to 15 seconds. Waiting for a first conversation,
 syncing, queued history, up to date, partial coverage and failure are distinct
@@ -96,8 +100,8 @@ Back menu row. The cassette remains in the shared responsive header.
 Use arrows and Enter to navigate, Space to select sources, Escape to go back or
 cancel, and Ctrl+C to exit. Path input supports paste, Unicode, Home/End and
 Ctrl+A/E/U/K. PgUp/PgDn pages long details on narrow screens. Exiting restores the
-terminal and leaves the independently managed Collector running. After reboot,
-open ATape and select Start sync.
+terminal and leaves the independently managed Collector running. With login
+startup registered, logging in resumes sync unless you explicitly stopped it.
 
 Pipes, CI, Windows and `TERM=dumb` fail with exit status 2 and plain guidance.
 There is no public JSON, one-shot collection or automation Interface. `--help` and
@@ -318,9 +322,10 @@ installation from interrupted npm preparation; they cannot reverse incompatible
 state changes. Reopen the CLI or allow a later trigger to reconcile interrupted
 maintenance. Installing a version is not proof of successful conversation sync.
 
-There is no OS boot/login supervisor in this increment. A machine with neither
-CLI nor Collector running cannot check or recover until ATape next runs. Automatic
-release-directory cleanup is also outside this increment. Automatic updates do
+The [login coordinator](#login-startup) can recover an interrupted handoff when
+you next log in. With startup off or unavailable, a machine with neither CLI nor
+Collector running cannot check or recover until ATape next runs. Automatic
+release-directory cleanup is outside this increment. Automatic updates do
 not upload local logs or introduce remote maintenance commands. See
 [ADR-0100](../architecture/adr/0100-managed-automatic-updates.md) for the release,
 compatibility and recovery decision.
@@ -456,6 +461,71 @@ reopening the source. Source deletion cannot reset the selected history. See the
 [OpenCode guide](../adapters/opencode.md) for the exact supported source matrix,
 source paths, default admission and required Server publication capability.
 
+## Login startup
+
+Initialization defaults to on; `autoStartEnabled: false` disables it for this
+`ATAPE_HOME`. A supported npm-global installation registers a user LaunchAgent on
+macOS or a systemd user service on Linux. It runs when the user logs in, without
+opening a terminal, browser or interactive authentication. Linux requires an
+available systemd user manager; ATape does not enable linger or install a root
+service. Windows, other package managers and source development builds are
+unsupported. Settings reports missing/unavailable registration rather than
+claiming the saved on preference is installed. Reopen ATape in a normal login
+session or choose Retry login startup registration to repair it.
+
+The short login coordinator validates its private registration and current
+preference, recovers pending automatic-update maintenance, and resumes only
+locally configured work the user still wants running. Explicit Start records
+that intent and its interval/concurrency. Stop clears it durably even after a
+process has disappeared; login, manual upgrade and automatic update cannot
+revive it. Upgrade pauses preserve it. Older installations inherit intent only
+from a confirmed running Collector or retained maintenance resume. An already
+stopped legacy installation must use Start sync once to establish intent.
+Established intent retains its process record through crashes and pause. Removal
+of that record without maintenance resume is treated as Stop, including Stop from
+an older console left open during automatic upgrade. After upgrading, reopen
+older consoles before Start or settings changes: an old Start cannot override a
+newer durable Stop. Preserve process/intent metadata along with capture state;
+manually deleting it can conservatively stop future recovery.
+
+Turning startup off takes effect before native unregistering, so an already
+queued login entry is inert. It leaves current sync and the user's running intent
+unchanged. On Linux, disabling future startup does not stop an active service
+cgroup or an independent updater. The service stays active after its successful
+short handoff to preserve detached children. This feature does not continuously
+supervise crashes: if the Collector later dies, open ATape and choose Start sync,
+or the next login can resume it.
+
+The OS entry binds absolute Node and an owned bundled coordinator at
+`startup/atape.mjs`; npm installation identity remains checked separately. This
+allows a capable managed release to add startup while the npm bootstrap is still
+older. The coordinator delegates to a selected release only when it declares the
+login startup capability. A rollback to a release lacking that capability makes
+startup inert; its older Stop operation cannot maintain the new intent contract.
+Return to a capable release and inspect Settings to repair startup. Private metadata keeps required provider paths, explicit
+`ATAPE_REDACT_VALUES` and proxy/CA context; it does not copy the whole shell
+environment, account credentials or conversation bodies. Explicit empty values
+clear retained context. Removing Node/npm externally can break the absolute
+paths; reopen ATape after repairing that installation. Mixed concurrent old/new
+CLI writers are outside this protocol; use the active installation for settings.
+
+Application and Node behavior checks cover default-on/explicit-off, durable
+Start/Stop, duplicate login, process loss, preserved schedules, paused maintenance,
+registration failures and partial-file recovery. Installed-package acceptance
+uses the real bundled headless entry and selected runtime with controlled OS
+commands and fixture capture data. On 2026-10-09, an isolated macOS native-manager
+check registered one unique LaunchAgent, observed its bundled empty headless
+helper exit successfully, then disabled and removed that owned registration.
+It contained no Projects, credentials or capture sources. This proves native
+registration, helper launch and cleanup; it does not prove delivery through a
+native-launched Collector. The generated Linux unit also passed real systemd 252
+analysis in an isolated Node 24 Linux container, including argv and working
+directory round trips for spaces, Unicode, percent signs, dollar signs, quotes,
+backslashes and a trailing space. No Linux user manager was started. Actual logout/login, machine reboot, power loss and
+Linux Collector cgroup acceptance remain unverified. Descriptor parsing and
+controlled commands alone do not establish those behaviors. See
+[ADR-0102](../architecture/adr/0102-login-startup.md).
+
 ## Local state
 
 All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
@@ -470,6 +540,8 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 - Managed CLI version directories: `~/.atape/releases/`
 - Managed runtime selection: `~/.atape/releases/current.json`
 - Update schedule, preparation and recovery metadata: `~/.atape/updates/`
+- Login coordinator and private registration/context: `~/.atape/startup/`
+- Durable sync intent and schedule: `<collector-process-file>.desired.json`
 
 Managed update metadata includes `updates/state.json` for the check/retry schedule,
 `updates/pending.json` for an interrupted activation and `updates/retained.json`
@@ -511,6 +583,7 @@ configured log path). The page does not force a new collection cycle.
 | Transport failure | Check Instance reachability and Sync details or the background log. Managed sync retries automatically. |
 | Unsupported source or capability | Follow the Adapter guide and update CLI/integrations in Tools. Missing Server capabilities require the operator’s [OpenCode rollout](../operations/opencode-rollout.md). |
 | CLI updated but sync stopped | Use Resume sync and continue, or open ATape with the same state directory and select Start sync. |
+| Login startup on but needs attention | Inspect Settings and retry registration from a normal login session. Check Node/npm paths and the user service manager. An explicit Stop still requires Start sync. |
 | Missing/corrupt state or full disk | Preserve [local state](#local-state), bindings and journals. Free unrelated disk space or restore a consistent backup; do not reset checkpoints. |
 | Raw archive absent | Check [Raw policy](raw-capture.md); Canonical and Raw acknowledgements are separate. |
 
@@ -538,7 +611,8 @@ plugin registry, runtime or package boundary was introduced. See
 [ADR-0079](../architecture/adr/0079-cli-module-boundaries.md).
 
 The parser accepts only the application launch, help/version, session options and
-token-bound internal Collector/updater entries. The updater also verifies its
+token-bound internal Collector/updater/login entries. The login entry validates
+its owned coordinator or selected executable and private registration; the updater verifies its
 owned worker-copy path; it is not a public operation or remote command Interface.
 Removed business commands, unknown options,
 duplicate flags and extra positionals fail with exit status 2. There are no aliases

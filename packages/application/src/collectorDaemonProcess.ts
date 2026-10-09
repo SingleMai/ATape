@@ -27,6 +27,10 @@ export type CollectorDaemonProcessSnapshot = ResolvedCollectorDaemonOptions & {
 
 export class CollectorDaemonProcess extends Context.Service<CollectorDaemonProcess, {
   start(options: ResolvedCollectorDaemonOptions): Effect.Effect<CollectorDaemonProcessSnapshot, CollectorDaemonProcessError>
+  // Resume persisted user intent without treating this background trigger as Start.
+  resume(): Effect.Effect<CollectorDaemonProcessSnapshot | undefined, CollectorDaemonProcessError>
+  // Maintenance quiesces collection while preserving the user's saved intent.
+  pause(): Effect.Effect<boolean, CollectorDaemonProcessError>
   // Restart only a running Host whose executable changed; preserve its schedule.
   refresh(): Effect.Effect<boolean, CollectorDaemonProcessError>
   stop(): Effect.Effect<boolean, CollectorDaemonProcessError>

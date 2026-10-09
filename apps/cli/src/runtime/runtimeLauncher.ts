@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process"
 import { realpath } from "node:fs/promises"
 import { constants } from "node:os"
+import { dirname, join } from "node:path"
+import { Schema } from "effect"
 import { parseCLI } from "../commandInput.ts"
 import { supportsInteractiveExperience } from "../interactiveEligibility.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { readRuntimeSelection, resolveRuntimeEntry } from "./runtimeSelection.ts"
+import { readBoundedJSON, readRuntimeSelection, resolveRuntimeEntry } from "./runtimeSelection.ts"
 
 // The npm executable remains a stable bootstrap. This Composition Root helper
 // delegates only validated public launches, before constructing the old runtime.
@@ -23,12 +25,39 @@ export const delegateManagedRuntime = async (
   const entry = await resolveRuntimeEntry(home, selected.bootstrapEntry)
   if (entry === await realpath(entryFile)) return undefined
 
+  return delegate(entry, args, { ...environment, ATAPE_BOOTSTRAP_ENTRY: selected.bootstrapEntry })
+}
+
+// This entry is called after private registration admission, before acquiring
+// update ownership. The selected child then recovers and rechecks admission
+// under that ownership. Never hold the parent's lock while joining this child.
+export const delegateAdmittedLoginStartup = async (
+  entryFile: string,
+  args: ReadonlyArray<string>,
+  environment: NodeJS.ProcessEnv
+): Promise<number | undefined> => {
+  if (parseCLI(args).kind !== "__login-start") throw new Error("Expected the admitted login startup entry.")
+  const home = defaultNodeClientPaths(environment).atapeHome
+  const selected = await readRuntimeSelection(home)
+  if (!selected) return undefined
+  const entry = await resolveRuntimeEntry(home, selected.bootstrapEntry)
+  if (entry === await realpath(entryFile)) return undefined
+  const capability = Schema.decodeUnknownSync(Schema.Struct({
+    name: Schema.Literal("@atape/cli"),
+    atapeRuntime: Schema.optionalKey(Schema.Struct({ loginStartupProtocol: Schema.optionalKey(Schema.String) }))
+  }))(await readBoundedJSON(join(dirname(dirname(entry)), "package.json")))
+  if (capability.atapeRuntime?.loginStartupProtocol !== "atape.login-startup.v1") return undefined
+  return delegate(entry, args, { ...environment, ATAPE_BOOTSTRAP_ENTRY: selected.bootstrapEntry })
+}
+
+const delegate = (entry: string, args: ReadonlyArray<string>, environment: NodeJS.ProcessEnv) => {
+
   // Relinquish input while the parent waits for the selected executable. The
   // child inherits cwd/stdin/stdout/stderr and owns normal terminal interaction.
   process.stdin.pause()
   return new Promise<number>((resolve, reject) => {
     const child = spawn(process.execPath, [entry, ...args], { stdio: "inherit",
-      env: { ...environment, ATAPE_BOOTSTRAP_ENTRY: selected.bootstrapEntry } })
+      env: environment })
     const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
     const handlers = signals.map(signal => {
       const forward = () => { child.kill(signal) }
