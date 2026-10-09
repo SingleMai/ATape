@@ -122,6 +122,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0094](0094-claude-repeated-single-read-auto-file.md) | Repeated Claude single-Read automatic replay and prior-file reinjection |
 | [0095](0095-claude-reversed-read-pair-results.md) | Claude planned Read-pair results in reverse order |
 | [0096](0096-claude-repeated-dual-read-auto-files.md) | Repeated Claude planned Read-pair automatic replay and prior files |
+| [0097](0097-claude-compaction-continuity.md) | Claude compaction continuity through source identity |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

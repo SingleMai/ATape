@@ -265,7 +265,8 @@ it("retains native Claude history across additive manual compaction and captures
 
     expect(compacted.startsWith(before)).toBe(true)
     await appendFile(claudeFile, compacted.slice(before.length))
-    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    // Each complete control record is independently acknowledged as Raw-only.
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 6, rawChunks: 6 })
     const afterCompact = await getJSON<Conversation>(serverUrl, conversationPath)
     expect(afterCompact.session.id).toBe(sessionId)
     expect(afterCompact.events.filter(event => event.kind === "message")).toEqual(original.events.filter(event => event.kind === "message"))
@@ -284,7 +285,7 @@ it("retains native Claude history across additive manual compaction and captures
 
     expect(continued.startsWith(compacted)).toBe(true)
     await appendFile(claudeFile, continued.slice(compacted.length))
-    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 1, rawChunks: 1 })
+    expect(onlyJob(await collect(fixture, serverUrl))).toMatchObject({ observations: 2, rawChunks: 2 })
     const afterContinue = await getJSON<Conversation>(serverUrl, conversationPath)
     expect(afterContinue.session.id).toBe(sessionId)
     expect((await getJSON<ProjectMemory>(serverUrl, "/api/v1/projects/support-notes/memory")).trail.map(session => session.id)).toEqual([sessionId])
@@ -719,16 +720,23 @@ const readRaw = async (serverUrl: string, archive: RawArchive) => {
   let text = ""
   for (const object of archive.objects) {
     largestObject = Math.max(largestObject, object.currentSizeBytes)
-    const page = await getJSON<RawContentPage>(
-      serverUrl,
-      `/api/v1/raw-objects/${encodeURIComponent(object.objectId)}/content?generation=${object.currentGeneration}&limit=8`
-    )
-    expect(page.nextCursor).toBeUndefined()
-    chunkCount += page.chunks.length
-    for (const chunk of page.chunks) {
-      largestChunk = Math.max(largestChunk, chunk.sizeBytes)
-      text += Buffer.from(chunk.contentBase64, "base64").toString("utf8")
-    }
+    let cursor: string | undefined
+    const contents: Buffer[] = [], cursors = new Set<string>()
+    do {
+      const page = await getJSON<RawContentPage>(
+        serverUrl,
+        `/api/v1/raw-objects/${encodeURIComponent(object.objectId)}/content?generation=${object.currentGeneration}&limit=8${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      )
+      expect(page.chunks.length).toBeLessThanOrEqual(8)
+      chunkCount += page.chunks.length
+      for (const chunk of page.chunks) {
+        largestChunk = Math.max(largestChunk, chunk.sizeBytes)
+        contents.push(Buffer.from(chunk.contentBase64, "base64"))
+      }
+      cursor = page.nextCursor
+      if (cursor) { expect(cursors.has(cursor)).toBe(false); cursors.add(cursor) }
+    } while (cursor)
+    text += Buffer.concat(contents).toString("utf8")
   }
   return { chunkCount, largestChunk, largestObject, text }
 }

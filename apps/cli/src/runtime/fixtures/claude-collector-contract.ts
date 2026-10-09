@@ -80,7 +80,7 @@ const pairCases = (JSON.parse(readFileSync(new URL("provenance.json", pairFixtur
   cases: ReadonlyArray<{ id: string; batch: { calls: ReadonlyArray<{ line: number }>; results: ReadonlyArray<{ line: number }> } }>
 }).cases
 const autoRounds = (JSON.parse(readFileSync(new URL("provenance.json", autoFixture), "utf8")) as {
-  rounds: ReadonlyArray<{ round: number; phase: string; lines: { originalG: number; S: number } }>
+  rounds: ReadonlyArray<{ round: number; phase: string; lines: { originalG: number; copyU: number; copyG: number; B: number; S: number } }>
 }).rounds
 const completeLinePrefix = (source: string, lines: number) => {
   let end = 0
@@ -135,13 +135,15 @@ if (input.phase === "tail-before") writeFileSync(tailFile, tailSnapshot("before"
 if (input.phase === "tail-compact") writeFileSync(tailFile, tailSnapshot("compacted"))
 if (input.phase === "tail-continued") writeFileSync(tailFile, tailSnapshot("continued"))
 if (input.phase === "tail-continued-again") writeFileSync(tailFile, tailSnapshot("continued-again"))
-const autoStage = /^auto-([123])-(originals|summary|answer)$/.exec(input.phase)
+const autoStage = /^auto-(\d+)-(originals|copy-user|copy-gap|boundary|summary|answer)$/.exec(input.phase)
 if (autoStage) {
   const round = autoRounds.find(round => round.round === Number(autoStage[1]))
   assert.ok(round, "Native automatic round is missing")
   const source = autoSnapshot(round.phase)
-  writeFileSync(autoFile, autoStage[2] === "answer" ? source
-    : completeLinePrefix(source, autoStage[2] === "originals" ? round.lines.originalG : round.lines.S))
+  const line = autoStage[2] === "originals" ? round.lines.originalG
+    : autoStage[2] === "copy-user" ? round.lines.copyU : autoStage[2] === "copy-gap" ? round.lines.copyG
+      : autoStage[2] === "boundary" ? round.lines.B : round.lines.S
+  writeFileSync(autoFile, autoStage[2] === "answer" ? source : completeLinePrefix(source, line))
 }
 const pairStage = /^pair-(tool|plan)-(plan|call0|call1|r0|r1|final-a|final|resume)$/.exec(input.phase)
 if (pairStage) {
@@ -172,8 +174,8 @@ if (autoReadStage) {
   assert.ok(next.startsWith(readFileSync(file, "utf8")), "Automatic Read phase changed the native prefix")
   writeFileSync(file, next)
 }
-// Literal native LF cuts, rather than regenerated records, expose both complete
-// single-Read rounds and the second summary's prior-file pending answer.
+// Literal native LF cuts expose repeated compaction and independently captured
+// Raw-only file context. The number of samples does not constrain continuation.
 const repeatedAutoReadStage = /^repeated-auto-read-(warmup|r[12]-(plan|call|result|originals|summary|file|final-a|final)|ordinary-resume)$/.exec(input.phase)
 if (repeatedAutoReadStage) {
   const slot = repeatedAutoReadStage[1]!
@@ -246,7 +248,7 @@ if (input.phase === "unsupported") {
   const boundary = rows.find(row => row.subtype === "compact_boundary")
   writeFileSync(join(input.home, "retained.jsonl"), source)
   writeFileSync(compactFile, source + JSON.stringify({ ...boundary, uuid: "controlled-auto-boundary",
-    logicalParentUuid: "controlled-policy-user", compactMetadata: { ...boundary.compactMetadata, trigger: "auto" } }) + "\n")
+    logicalParentUuid: "controlled-stale-parent", compactMetadata: { ...boundary.compactMetadata, trigger: "auto" } }) + "\n")
 }
 if (input.phase === "repair") writeFileSync(compactFile, readFileSync(join(input.home, "retained.jsonl")))
 if (input.phase === "delete") rmSync(join(sourceHome, "projects"), { recursive: true })
