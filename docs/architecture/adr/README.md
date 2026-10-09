@@ -131,6 +131,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0103](0103-login-startup.md) | User login startup and durable sync intent |
 | [0104](0104-capture-v2-state-upgrade.md) | Capture v2 state contract and explicit manual upgrade |
 | [0105](0105-client-redaction-policy.md) | Shared client redaction and policy-bound capture |
+| [0106](0106-redaction-settings.md) | Global redaction settings |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

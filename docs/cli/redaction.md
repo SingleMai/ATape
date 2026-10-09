@@ -3,7 +3,8 @@
 The Host applies one shared Redaction Module before Canonical and Raw upload and
 before retaining source diagnostics. Adapters supply provider data; they do not
 own the privacy policy. This guide describes the implementation in this checkout,
-not a published CLI release. See [ADR-0105](../architecture/adr/0105-client-redaction-policy.md).
+not a published CLI release. See [ADR-0105](../architecture/adr/0105-client-redaction-policy.md)
+and [ADR-0106](../architecture/adr/0106-redaction-settings.md).
 
 ## Supported rules
 
@@ -15,6 +16,7 @@ not a published CLI release. See [ADR-0105](../architecture/adr/0105-client-reda
 | Field pattern | `field_pattern` matches the JSON field name, not a JSONPath. When combined with `pattern`, both must match. Arrays inherit their field name. |
 | Structured content | JSON/JSONL and valid nested JSON TEXT are decoded before masking, including escaped values and keys. Duplicate decoded keys or masked-key collisions fail safely. |
 | Local inspection | `atape redaction-test` tests a UTF-8 file with the same effective policy and reports safe aggregate rule counts. |
+| Settings | `atape` → Settings → Privacy rules lists, adds, edits, validates and saves global custom rules. |
 
 Built-ins are always enabled; custom rules add protection. Built-in replacements
 retain `[REDACTED]` or `[REDACTED PRIVATE KEY]`. Custom replacements use
@@ -23,8 +25,8 @@ cannot leak. Counts describe masking operations, not unique credentials.
 
 ## Global configuration
 
-Create `$ATAPE_HOME/config/redaction.json` (`~/.atape/config/redaction.json` by
-default). A missing default file uses built-ins and environment values.
+Use Settings → Privacy rules, or create `$ATAPE_HOME/config/redaction.json`
+(`~/.atape/config/redaction.json` by default). A missing default file uses built-ins and environment values.
 `ATAPE_REDACTION_CONFIG_FILE` selects another file; an explicitly selected missing
 file is an error.
 
@@ -74,6 +76,41 @@ Changing the inherited environment of a running background process requires
 restarting that process. A configuration error stops that job before opening the
 Adapter or delivering content.
 
+## Manage rules in Settings
+
+Privacy rules shows the selected configuration file, custom rules, validation
+status and the count of resolved environment literals. It never shows literal
+values. Built-in protection is always on. Add or edit a rule's name, replacement
+type, value pattern, field pattern and optional capture group; delete a rule from
+its detail page. Ordinary fields accept their literal text, including regular
+expression backslashes. Advanced JSON-encoded editing preserves multiline or
+control-character strings without printing terminal control sequences.
+
+Validate the draft with the same Redaction engine before reviewing and saving.
+The review defaults to Cancel and explains that rules apply globally to future
+jobs, accepted history remains unchanged, and uncertain old delivery may need
+reconciliation. Cancelling the review leaves the file unchanged. Once saving is
+confirmed, the console waits for its result rather than offering a misleading
+cancel action during the atomic write. Validation or save
+failure retains the draft. Save detects observable changes since loading and
+asks for an explicit reload before a stale draft can replace the configuration.
+Cooperating Settings saves share a file lock; arbitrary external editors do not.
+
+Invalid expressions in an otherwise valid configuration remain editable.
+Malformed JSON or unsupported configuration structure must be repaired in the
+selected file before Settings can load it; Settings preserves that file. A
+successful save replaces only this configuration using an atomic owner-only
+file. Inspecting or validating creates no files and does not access Collector
+keys, checkpoints or publications. This flow requires neither sign-in nor a
+real provider session and does not start or stop sync.
+
+The displayed path and literal count reflect the console's inherited environment.
+A running background Collector can have a different environment. It reads the
+saved file on its next job only if it selects that same path; changing its
+environment requires restarting it. Settings does not change environment values
+or offer a complete-session preview. Use a standard-format local sample to test
+the resulting transformation.
+
 ## Test locally
 
 ```sh
@@ -112,7 +149,7 @@ Equal content under a changed policy cannot borrow an old packed Raw object.
 Preserve `<collector-state-file>.redaction-key` and its `.json` binding with
 Collector state. They are owner-only files. An established missing, corrupt or
 replaced key fails closed; restore the consistent pair rather than deleting state.
-Local file tests do not need or read this identity.
+Local file tests and Settings validation do not need or read this identity.
 
 During a managed update, local readiness is separate from collection admission:
 the replacement waits until both maintenance and the pending activation journal

@@ -103,7 +103,7 @@ const ScreenView = ({ screen, presenter, browser, setBrowser, modalBackdrop }: {
     : screen.kind === "sources" ? t("cli.view.controls.sources", "↑↓ Move · Space Select · Enter Save · Esc Back · Ctrl+C Exit")
     : screen.pathInput ? t("cli.view.controls.path", "↑↓ Choose · Enter Select · Tab Edit path")
     : screen.kind === "input" ? t("cli.view.controls.input", "Enter Continue · Esc Back · Ctrl+C Exit")
-    : screen.kind === "busy" ? t("cli.view.controls.busy", "Esc Cancel · Ctrl+C Exit")
+    : screen.kind === "busy" ? screen.backDisabled ? t("cli.privacy.committing", "Saving… · Ctrl+C Exit") : t("cli.view.controls.busy", "Esc Cancel · Ctrl+C Exit")
     : t("cli.view.controls.menu", "↑↓ Move · Enter Select{refresh} · Esc {back} · q Exit", { refresh: refreshControl, back: backControl })
   return h(Box, { flexDirection: "column", width: window.columns, height: rows, paddingX: 1 },
     h(BrandHeader, { mode: brand, title }),
@@ -115,6 +115,7 @@ const ScreenView = ({ screen, presenter, browser, setBrowser, modalBackdrop }: {
       : screen.kind === "input" ? h(TextEditor, {
         initial: screen.initial ?? "", suggestions: screen.suggestions ?? [], width,
         pathInput: Boolean(screen.pathInput), loading: Boolean(screen.directoriesLoading), capacity: Math.max(1, Math.min(5, available - 3)),
+        ...(screen.inputEncoding ? { inputEncoding: screen.inputEncoding } : {}),
         onChange: screen.pathInput ? presenter.pathChanged : () => {}, onSubmit: presenter.submit, onBack: presenter.back
       }) : screen.kind === "sources" ? h(MultiSelect, { options, defaultValue: [...screen.selected ?? []], visibleOptionCount: optionCount, onSubmit: presenter.submit })
         : screen.kind === "menu" ? h(Select, { options, visibleOptionCount: optionCount, onChange: presenter.submit })
@@ -275,15 +276,17 @@ const ProjectBrowser = ({ screen, presenter, width, capacity, browser, setBrowse
     options.length > capacity ? h(Text, { dimColor: true }, t("cli.view.more", "{index}/{total} · ↑↓ More", { index: index + 1, total: options.length })) : null)
 }
 
-const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity, escapeCloses = false, onChange, onSubmit, onBack }: {
+const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity, escapeCloses = false, inputEncoding, onChange, onSubmit, onBack }: {
   initial: string; suggestions: ReadonlyArray<DirectorySuggestion>; width: number; pathInput: boolean; loading: boolean; capacity: number
   escapeCloses?: boolean
+  inputEncoding?: "literal" | "json"
   onChange: (value: string, query?: string) => void; onSubmit: (value: string) => void; onBack: () => void
 }) => {
   const [edit, setEdit] = useState(() => ({ value: cleanInput(initial), cursor: characters(cleanInput(initial)).length }))
   // -2 edits the path; -1 is the explicit Use current directory action.
   const [candidate, setCandidate] = useState(-1)
   const [query, setQuery] = useState<string | undefined>()
+  const [inputError, setInputError] = useState(false)
   const current = useRef(edit)
   const search = (value: string) => { setQuery(value); setCandidate(0); onChange(current.current.value, value) }
   const update = (value: string, cursor: number) => { setQuery(undefined); setCandidate(-2); current.current = { value, cursor }; setEdit(current.current); onChange(value) }
@@ -291,6 +294,7 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
   const insert = (text: string) => {
     const edit = current.current
     const chars = characters(edit.value)
+    if (inputEncoding && /[\x00-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069]/.test(text)) { setInputError(true); return }
     const clean = cleanInput(text)
     if (pathInput && (query !== undefined || candidate !== -2)) {
       if (query === undefined && (clean.startsWith("/") || clean.startsWith("~"))) update(clean, characters(clean).length)
@@ -298,7 +302,8 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
       return
     }
     const value = chars.slice(0, edit.cursor).join("") + clean + chars.slice(edit.cursor).join("")
-    if (value.length <= 4096) update(value, edit.cursor + characters(clean).length)
+    if (value.length <= (inputEncoding ? 16384 : 4096)) { setInputError(false); update(value, edit.cursor + characters(clean).length) }
+    else if (inputEncoding) setInputError(true)
   }
   usePaste(text => {
     const clean = cleanInput(text)
@@ -316,6 +321,7 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
     }
     if (key.ctrl && input === "c") return
     if (key.return) {
+      if (inputError) return
       if (!pathInput || candidate === -1 && query === undefined) onSubmit(edit.value)
       else {
         if (candidate >= 0) {
@@ -349,11 +355,11 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
     if (key.rightArrow) return move(Math.min(chars.length, edit.cursor + 1))
     if (key.home || key.ctrl && input === "a") return move(0)
     if (key.end || key.ctrl && input === "e") return move(chars.length)
-    if (key.ctrl && input === "u") return update(chars.slice(edit.cursor).join(""), 0)
-    if (key.ctrl && input === "k") return update(chars.slice(0, edit.cursor).join(""), edit.cursor)
+    if (key.ctrl && input === "u") { setInputError(false); return update(chars.slice(edit.cursor).join(""), 0) }
+    if (key.ctrl && input === "k") { setInputError(false); return update(chars.slice(0, edit.cursor).join(""), edit.cursor) }
     if (key.backspace || key.delete) {
       const index = key.backspace ? edit.cursor - 1 : edit.cursor
-      if (index >= 0 && index < chars.length) { chars.splice(index, 1); update(chars.join(""), Math.max(0, index)) }
+      if (index >= 0 && index < chars.length) { setInputError(false); chars.splice(index, 1); update(chars.join(""), Math.max(0, index)) }
       return
     }
     if (!key.ctrl && !key.meta && !key.upArrow && !key.downArrow && !key.pageDown && !key.pageUp) insert(input)
@@ -365,6 +371,7 @@ const TextEditor = ({ initial, suggestions, width, pathInput, loading, capacity,
   while (tail && stringWidth(chars.slice(start, edit.cursor + 1).join("") + tail) > width - 4) tail = characters(tail).slice(0, -1).join("")
   const first = Math.max(0, candidate - capacity + 1)
   return h(Box, { flexDirection: "column" },
+    inputError ? h(Text, { color: "yellow" }, t("cli.privacy.inputRejected", "Input was not inserted: raw controls or excessive length. Edit again; use JSON escapes for controls.")) : null,
     pathInput && query !== undefined ? h(Text, { color: terminalTheme.accent, wrap: "truncate-end" }, escapeCloses
       ? t("cli.view.searchModal", "Search: {query}▌", { query: safeTerminalText(query) })
       : t("cli.view.search", "Search: {query}▌ · Esc Clear", { query: safeTerminalText(query) })) : null,

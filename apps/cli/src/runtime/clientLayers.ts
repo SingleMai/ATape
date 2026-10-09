@@ -18,6 +18,7 @@ import { makeAdapterReleasesLayer } from "./adapterReleases.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
 import { makeLoginStartupPlatformLayer } from "./loginStartup.ts"
+import { makeRedactionSettingsLayer } from "./redactionSettings.ts"
 import { makeSelectedConfigStoreLayer, readSelectedClientConfig, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
 
 // Existing Node caller Interface; implementations live at their own Seams.
@@ -70,6 +71,7 @@ export const makeNodeClientLayer = (
     makeDeviceMonitoringLayer(paths.atapeHome, readSelectedClientConfig(paths), globalThis.fetch,
       CollectorRunStatusStore.use(store => store.read()).pipe(Effect.provide(makeCollectorRunStatusLayer(paths.collectorStatusFile)))).pipe(Layer.provide(authenticatedHTTP)),
     makeSelectedConfigStoreLayer(paths),
+    makeRedactionSettingsLayer(paths, environment),
     makeCLISetupPlatformLayer(paths, environment),
     makeCLIUpgradePlatformLayer(paths.atapeHome, bootstrapEntry, environment),
     makeLoginStartupPlatformLayer(paths, bootstrapEntry, environment),

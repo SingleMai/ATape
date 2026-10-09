@@ -52,7 +52,7 @@ class Terminal:
         # These scenarios intentionally exercise the manual startup Upgrade/Skip
         # choice. Default-on unattended updates are accepted separately against
         # the packaged independent worker in verify-automatic-update.mjs.
-        path = root / "home/config/client.json"
+        path = Path((overrides or {}).get("ATAPE_HOME", env["ATAPE_HOME"])) / "config/client.json"
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         saved = json.loads(path.read_text()) if path.exists() else {"version": 3, "projects": [], "adapters": [], "toolsConfigured": False, "enabledAdapterIds": []}
         saved["autoUpdateEnabled"] = False
@@ -118,6 +118,128 @@ class Terminal:
             self.process.wait()
         os.close(self.master)
         os.close(self.slave)
+
+def verify_privacy_rules():
+    # No Projects or enabled integrations: this exercises the installed Settings
+    # flow independently of capture startup and the authenticated setup below.
+    home = root / "privacy-home"
+    (home / "config").mkdir(mode=0o700, parents=True)
+    client = home / "config/client.json"
+    client.write_text(json.dumps({"version": 3, "projects": [], "adapters": [],
+                                  "toolsConfigured": True, "enabledAdapterIds": [],
+                                  "autoUpdateEnabled": False, "autoStartEnabled": False}))
+    (home / "cache").mkdir(mode=0o700)
+    (home / "cache/cli-update.json").write_bytes(cache.read_bytes())
+    overrides = {"ATAPE_HOME": str(home), "ATAPE_REDACT_VALUES": "[]"}
+    terminal = Terminal(overrides=overrides)
+    terminals.append(terminal)
+    terminal.resize(100, 40)
+    terminal.wait("Your Projects")
+    terminal.send("\t\x1b[C\r")
+    terminal.wait("Accounts")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Add custom rule")
+    rules = home / "config/redaction.json"
+    before_client = client.read_bytes()
+
+    def capture_state():
+        return {str(path.relative_to(home)): path.read_bytes() for path in home.rglob("*")
+                if path.is_file() and ("state" in path.relative_to(home).parts
+                                       or ".redaction-key" in path.name)}
+
+    before_capture = capture_state()
+    assert not rules.exists(), "opening Privacy rules created a configuration file"
+    terminal.send("\r")
+    terminal.wait("Custom rule 1")
+
+    def field(index, hint, value):
+        terminal.send("\x1b[B" * index + "\r")
+        terminal.wait(hint)
+        terminal.send("\x15\x1b[200~" + value + "\x1b[201~")
+        terminal.send("\r")
+        terminal.wait("Custom rule 1")
+
+    name = '内部 "ticket" \\ 标签'
+    field(0, "A label for this rule.", name)
+    field(1, "Replacement label:", "INTERNAL")
+    terminal.send("\x1b[B" * 2 + "\r")
+    terminal.wait("RE2 value pattern")
+    terminal.send("\x1b[200~bad\ncontrol\x1b[201~")
+    terminal.wait("Input was not inserted:")
+    # A rejected paste also blocks Enter until the user edits or leaves the
+    # field; Escape returns to the unchanged draft instead of accepting it.
+    terminal.send("\r\x1b")
+    terminal.wait("Custom rule 1")
+    terminal.send("\x1b[B" * 5 + "\r")
+    terminal.wait("Use this for exact line breaks")
+    terminal.send("\x1b[B" * 2 + "\r")
+    terminal.wait("Enter a JSON string including quotes")
+    pattern = "ticket=(private-\\w+)\n\t\x1b"
+    terminal.send("\x15\x1b[200~" + json.dumps(pattern) + "\x1b[201~")
+    terminal.send("\r")
+    terminal.wait("Custom rule 1")
+    field(4, "JSON number for the capture group", "1")
+    terminal.send("\x1b[B" * 7 + "\r")
+    terminal.wait("Add custom rule")
+    terminal.send("\x1b[B" * 2 + "\r")
+    terminal.wait("Rules are valid. Validation does not save them.")
+    assert not rules.exists(), "validation saved a draft"
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Save global privacy rules?")
+    terminal.send("\r")  # The default review action is Cancel.
+    terminal.wait("Add custom rule")
+    assert not rules.exists(), "the default Cancel saved privacy rules"
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Save global privacy rules?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Privacy rules saved.")
+    expected = {"patterns": [{"name": name, "type": "INTERNAL", "pattern": pattern, "capture_group": 1}]}
+    assert json.loads(rules.read_text()) == expected, "the installed editor changed escaped rule input"
+    saved = rules.read_bytes()
+    sample = root / "privacy-sample.txt"
+    sample.write_text("ticket=private-alpha\n\t\x1b")
+    tested = subprocess.run([binary, "redaction-test", str(sample)], env=dict(env, **overrides), cwd=root,
+                            capture_output=True, text=True, timeout=40, check=True)
+    assert tested.stdout == "ticket=[REDACTED:INTERNAL]\n\t\x1b", "saved rules did not reach the installed redaction command"
+
+    # Invalid edits retain the accepted file. No repair/reset is inferred.
+    terminal.send("\x1b[B\r")
+    terminal.wait("Custom rule 1")
+    field(2, "Enter a JSON string including quotes", json.dumps("("))
+    terminal.send("\x1b[B" * 7 + "\r")
+    terminal.wait("Add custom rule")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Rules are invalid or exceed a limit.")
+    assert rules.read_bytes() == saved, "invalid RE2 input replaced accepted rules"
+    terminal.send("\x1b[B" * 4 + "\r")
+    terminal.wait("Discard unsaved rules?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Add custom rule")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Custom rule 1")
+    terminal.send("\x1b[B" * 6 + "\r")
+    terminal.wait("Delete this custom rule?")
+    terminal.send("\r")
+    terminal.wait("Custom rule 1")
+    assert rules.read_bytes() == saved, "the default Cancel deleted accepted rules"
+    terminal.send("\x1b[B" * 6 + "\r")
+    terminal.wait("Delete this custom rule?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Custom rules: 0")
+    assert rules.read_bytes() == saved, "deleting a draft changed the saved configuration"
+    terminal.send("\x1b[B" * 2 + "\r")
+    terminal.wait("Save global privacy rules?")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Privacy rules saved.")
+    assert json.loads(rules.read_text()) == {"patterns": []}, "confirmed deletion did not persist"
+    assert client.read_bytes() == before_client, "privacy editing changed capture configuration"
+    assert capture_state() == before_capture, "privacy editing changed Collector progress or its identity key"
+    terminal.send("\x1b")
+    terminal.wait("Accounts")
+    terminal.send("\x1b")
+    terminal.wait("Your Projects")
+    terminal.finish("q")
+    terminals.pop()
 
 terminals = []
 try:
@@ -358,14 +480,14 @@ try:
     terminal.wait("Your Projects")
     terminal.send("\t\x1b[C\r")
     terminal.wait("Accounts")
-    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.send("\x1b[B" * 4 + "\r")
     terminal.wait("English")
     terminal.send("\r")
     terminal.wait("Language saved.")
     assert config()["locale"] == "en"
     terminal.send("\x1b")
     terminal.wait("Accounts")
-    terminal.send("\x1b[B" * 5 + "\r")
+    terminal.send("\x1b[B" * 6 + "\r")
     terminal.wait("Stop background sync?")
     assert running(), "opening the stop review stopped sync"
     terminal.send("\x1b[B\r")
@@ -373,7 +495,8 @@ try:
     assert not running(), "confirmed stop did not stop the owned Collector"
     terminal.finish("q")
     terminals.pop()
-    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation, integration maintenance, executable replacement handoff, language and background lifetime.")
+    verify_privacy_rules()
+    print("Verified installed Ink controls, restoration, global tools, login/Web Refresh, confirmed setup, global cancellation, integration maintenance, executable replacement handoff, language, privacy editing/validation/cancellation/escaped input and background lifetime.")
 finally:
     for terminal in terminals:
         terminal.abort()
