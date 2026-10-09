@@ -34,7 +34,8 @@ evidence produce an attribution diagnostic. Both CLI and Adapter require
 Root histories use complete UTF-8 JSONL records and append-only source prefixes.
 The normalizer separates original conversation records, identity-preserving
 copies and provider controls before producing Canonical data. Actual user and
-assistant text, tool calls and correlated results use the shared ACP reader.
+assistant text, nonempty recorded assistant thinking, tool calls and correlated
+results use the shared ACP reader.
 Source UUID plus physical block-slot coordinates keep Event and message anchors
 stable; split records from one assistant API response remain distinct Events.
 
@@ -45,10 +46,20 @@ order are data rather than a fixed two-Read layout. Source order is preserved.
 Conversation identity, role and Thread ownership must agree before either Events
 or usage are admitted. UUID-less bookkeeping produces no conversation or usage.
 
-The shared reader displays bounded Input/Output as collapsed, escaped text/JSON.
-Unknown content and nonempty thinking remain Raw when captured; tool-bearing
-projections retain partial fidelity. [Search](../api/project-search.md) matches
-actual user/assistant message bodies and excludes tool summaries and full values.
+The shared reader displays recorded thinking inside collapsed Activity; targeting
+its exact Event opens that group. The Adapter's thinking fragments share one
+physical-block ACP `messageId` and the existing 256 KiB UTF-8 bound. The Reader
+displays each Canonical fragment inside Activity. Empty or whitespace-only thinking
+produces no Event. Whitespace-only fragments stay Raw-only because the shared
+Host/Server require nonblank Events; original part indices remain stable and
+remaining fragments carry partial fidelity when a blank part was omitted.
+Meaningful fragments preserve their exact contents; Raw preserves the full body.
+Signatures, opaque `redacted_thinking` payloads and unknown content remain Raw-only
+when Raw is captured; reasoning absent from JSONL cannot be recovered. Host
+redaction applies to the thinking body before HTTP ingestion. Bounded tool
+Input/Output uses collapsed, escaped text/JSON and retains partial fidelity.
+[Search](../api/project-search.md) matches actual user/assistant message bodies
+and excludes thinking, tool summaries and full values.
 The retained native corpus is Claude Code 2.1.263 evidence, not a blanket promise
 for every Claude version or source topology.
 
@@ -188,14 +199,24 @@ Preserve the complete CLI state directory. A package-version change alone does
 not reset capture: the Adapter validates cursor schema, original ownership and
 committed-prefix bytes. Single-file v1, discovery v2 and compressed `z3` cursors
 retain their supported recovery. Private normalization version 1 is separate
-from Event projection revision 4.
+from Event projection revision 5.
 
 Older acknowledged source context is reconstructed before continuation. Its
 leaf, calls and pending controls must agree with the source; existing Event
 fragments and deferred usage remain tied to their actual next original record.
-Upgrades preserve committed Events, byte-based revisions, tool anchors and Raw
-identity rather than replaying or deleting checkpoints. Recognized corrupt
-state, changed/truncated prefixes and unknown schemas fail explicitly. Genuine
+An older projection is authenticated and reprojected once from the retained
+source to add previously omitted thinking, as decided in
+[ADR-0099](../architecture/adr/0099-claude-thinking-projection.md). Existing projection-4 Events
+retain their IDs, byte-based revisions and tool anchors; the Server updates their
+active snapshots at the higher projection revision. Usage source IDs/revisions
+and independent Raw receipts retain their identity. Root and admitted children
+upgrade independently, including old children already at EOF. Old in-record
+page progress is first validated against its old visible Event list, then reset
+for the thought-inclusive projection. A missing captured child keeps its retained
+history/checkpoint. Recognized corrupt state, changed/truncated prefixes and
+unknown schemas fail explicitly. Projection 2 and 3 retain their existing
+accepted fallback; historical snapshot revisions/Raw IDs are not claimed to
+match incremental capture identities. Genuine
 older opaque checkpoints provide compatibility evidence; re-versioning a current
 bundle or deleting private fields does not.
 
@@ -214,64 +235,91 @@ and deploying a Server are separate actions.
 
 ## Verification and remaining work
 
-All 184 public `createAtapeAdapter`/`collect` tests pass. The installed package
-check and those suites exercise all twelve retained native compaction scenarios and explicitly generated
-1/2/3/10/100-cycle histories. Generated coverage varies ordinary gaps, tools,
-result order, context files and the first real continuation. It checks every
-complete-line and partial-EOF cut, exact retry after reopening, original usage
-revisions, independent Raw backfill, child ownership, malformed copies/controls,
-source repair and parser/checkpoint capacity. Deep unknown JSON and changed values
-are compared through the same caller Interface. These are behavior tests, not
-new native captures. The 36 generated unlinked-delegation cases add missing,
-asynchronous, noncompleted, error, unsafe and multi-Event receipt checks;
-current-Thread continuation, partial LF, one-Event pages, Raw-off/backfill and
-family diagnostics after root or sibling pages. Real source/correlation and
-pinned ownership conflicts remain failures. No new native child lifecycle
-acquisition is claimed.
+All 223 public `createAtapeAdapter`/`collect` tests pass on this candidate.
+The 39 thinking checks cover mixed blocks, same-API split records, physical
+coordinates, exact UTF-8 fragmentation/message grouping, one-Event retries,
+partial LF, Raw off/backfill, thought replay during compaction and independent
+root/child projection upgrades. Every thinking-suite collection slice also passes
+the public Host preparation Interface with real redaction. Blank/NEL/FEFF bodies
+and whitespace-only fragments preserve normal messages/tools/usage without
+violating the nonblank Canonical contract. Generated corrupt old-state cases check pending
+Event counts, controls, EOF, timestamps and omitted continuation state before
+reset. Existing source/correlation and pinned-ownership conflicts remain failures.
+Generated mutations are explicitly distinguished from native captures and
+actual previous-main checkpoint production.
+
+The new [native thinking family](../../adapters/claude/fixtures/native-thinking-2.1.263/README.md)
+records four nonempty bodies across a direct foreground Agent/Read family from
+an isolated installed Claude CLI 2.1.263. It establishes the native split-record
+layout and shared API IDs. Mock-supplied bodies/signatures and token counters do
+not establish real provider reasoning or billing. The public and installed
+factory checks capture twelve Events (eight existing message/tool Events and
+four thoughts), four latest API usage samples (68 input / 36 output), stable
+physical coordinates and exact independent root/child Raw. Raw-off collection
+and later bounded backfill emit no duplicate Events or usage.
 
 The candidate source SHA-256 is
-`597c849f44ffd83f628d89b59a178e6511e7db758f4ddf3fa01377017b796b4e`;
+`a96b06e22387caafec027e6bc94d73f78d98f65d7d14c892862b614833ec4926`;
 its built bundle is
-`0e029ba7427ea322975ae827b201451f998199e638e3a7b5c6291e5d16487733`.
-The installed tarball check covers native append/restart, generated 1/3/100 mixed
-cycles, six generated unlinked-receipt cases, cold idle/retry and Raw-off capture
-followed by bounded backfill. The shared Codex package verifier also passes.
+`8cb8fd606641cac585806c5219b1af1c56afa2f03449a7a8449d1195bc755063`.
+The installed package check also passes all twelve retained native compaction
+scenarios, generated 1/3/100 mixed cycles and six generated unlinked-receipt
+cases, with cold retry/idle and Raw-off/backfill. The shared Codex package
+verifier passes. CLI, Web and Claude typechecks, architecture/docs checks,
+all four Collector/Server E2E checks, all 58 Web unit tests and all 72 browser
+checks pass; four new browser checks cover keyboard Activity disclosure and
+exact root/foreground-child thought links at 390 px and 1440 px. Their Canonical
+HTTP fixtures are separate from real Collector/Server delivery evidence.
 
-Genuine compatibility inputs for this candidate were produced by previous main
-`c661ad01aaa4202f62abf9a660f0032fc0a16d8d`, source
-`0748f8cfb75514e80d255c59b045a69cde1779f0bf68eee0664383eb4970da66`,
-bundle `910afd6c3322a6e0db0e4b09293a1c828a047ce6f5f371bf164db3330c13bb43`.
-All six generated continuations reproduce the old blockage. Their 65 genuine
-opaque inputs, including ten actual Event-only/deferred-usage inputs and
-independent old Raw receipts, resume on this candidate through fresh runtimes
-and exact retries. They preserve complete original Event vectors, latest usage
-objects and contiguous acknowledged Raw suffix/object/generation. Raw-off inputs
-also retain Canonical identity through later backfill. No private checkpoint
-fields were rewritten.
+Genuine projection-4 compatibility inputs were produced by the public factory
+from previous main `2ee30bd03b48c066871487f81b8c5b7e87a6b6ad`, source
+`597c849f44ffd83f628d89b59a178e6511e7db758f4ddf3fa01377017b796b4e`,
+bundle `0e029ba7427ea322975ae827b201451f998199e638e3a7b5c6291e5d16487733`.
+All 166 inputs pass cold-factory upgrade and exact retry: 158 genuine non-null
+old checkpoints and eight fresh-capture controls. They comprise 43 native
+thinking-family inputs, 37 generated mixed/large-fragment family inputs and
+86 generated thinking mutations of retained manual/automatic compaction sources.
+They include 24 actual positive old in-record Event skips, 20 partial-LF inputs
+and two independently advanced old Raw-receipt inputs. Original visible Event
+objects differ only in projection revision; latest usage objects and contiguous
+Raw suffix/object/generation remain exact. Raw-off inputs later backfill without
+new Canonical data. No private fields were rewritten to manufacture old inputs.
+Input manifest SHA-256:
+`361d23b29c9672bc001c0f764fceb5482b5a5d8b8327115103a9018ad4bae905`;
+result SHA-256:
+`03dc1c74b28947b79116daf4edda95f5649734897d26178ae10375fc8c765c6e`.
+Earlier increments' 505/65 compatibility checks belong to their own candidates;
+they are not represented as newly rerun acceptance here.
 
-The earlier compaction increment at `c661ad0` separately verified 505 genuine
-inputs produced by `de57001ed98d58a9048c5e8c0263e510dd8a731a` (481 native LF
-checkpoints and 24 Event-only inputs). That recorded compatibility evidence
-belongs to its tested candidate; the current increment's 65 upgrades and
-retained native regression suites establish the checks run here.
-
-All four Collector/Server E2E checks pass. The final source and bundle pass the
-authenticated HTTP/PostgreSQL contract with 197 independently restarted
-managed-Collector stages. Its additional ten generated stages cover
-root and selected-child ordinary continuation around unlinked receipts, partial
-LF, persistent family diagnostics, Reader/tool/Search anchors, latest-once usage,
-unproved child exclusion and independent Raw backfill. The required contract
-actually ran and passed without skipping (305.39 seconds for its subtest). The
-local final log SHA-256 is
-`7aac9ca86cd6980f6103c4db4236d4341f9cd371b255755bae4b55439fbe9dc5`.
-The earlier increment's 187-stage pass is not this candidate's acceptance.
-Package publication and Server deployment are separate actions.
+The frozen source/bundle pass the authenticated HTTP/PostgreSQL contract with
+203 independently restarted installed-Collector stages, without skipping. Its
+six added thinking stages use a separate durable CLI state: an explicitly
+supplied genuine previous-main tarball produces projection-4 seed Events and
+Raw, then the installed candidate upgrades that same state with Raw disabled.
+The tarball contains the frozen old bundle and exact previous-main metadata,
+without version rewriting; SHA-256:
+`f043213e26b5fbad1092bfd1087fab954181182ba041ad0becbb89755fc4af77`.
+The old five Events become seven, all active stored Events move to projection 5,
+and old Reader IDs/data, byte revisions and Raw references stay unchanged.
+A Raw-off thought/text append then reaches nine Events and three latest usage
+samples (51 input / 27 output); idle emits nothing and Raw backfill preserves
+the original object/generation and exact retained bytes. Pure blank, NEL and
+FEFF blocks do not block the surrounding messages/tools/usage. Actual HTTP
+request capture verifies thought-body redaction before ingestion, excludes
+signatures/opaque payloads and retains physical block references. Authenticated
+Reader, message-only Search, usage, Raw and deletion-retention assertions pass.
+The Claude subtest took 328.34 seconds; final local log SHA-256:
+`5501756ec8bb41d3547075df197a4d272b8e136f8adba8faaa45ad51f4ae8927`.
+CI's default path checks a fresh candidate seed separately; a supplied old
+artifact is required for genuine installed-upgrade evidence. Earlier 187/197-stage
+passes are not acceptance for this candidate.
 
 Native source facts, acquisition controls, snapshot/cut hashes and request/usage
 limits are owned by the fixture records:
 
 | Source evidence | Recorded scope |
 | --- | --- |
+| [Thinking family](../../adapters/claude/fixtures/native-thinking-2.1.263/README.md) | Four native persisted bodies; root/child same-API split records; mock signatures/usage |
 | [Foreground child](../../adapters/claude/fixtures/native-foreground-child-2.1.263/README.md) | Direct completed Agent/Read family; independent root/child Raw |
 | [Manual compaction](../../adapters/claude/fixtures/native-manual-compact-2.1.263/README.md) | Singleton retained tail and real continuation |
 | [Manual text tail](../../adapters/claude/fixtures/native-manual-text-tail-2.1.263/README.md) | Same-response text pair; no executed Read |
@@ -292,5 +340,5 @@ summary-response records do not establish real provider cost completeness.
 Fork/rewind/Active Path replacement, cross-file Session adoption, broader child
 relationships and spill collection remain separate topology work. Legacy
 concurrent-writer, lost-checkpoint and pending delivery after source loss limits
-remain. Provider-specific browser staging and upgrades from historical published
-binaries are unverified. No package publication or Server deployment is claimed.
+remain. Live-provider browser staging and upgrades from historical published
+binaries are unverified; previous-main source-built artifacts are checked separately. No package publication or Server deployment is claimed.

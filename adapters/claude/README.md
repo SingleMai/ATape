@@ -66,9 +66,15 @@ normalizer behind the existing paged collect Interface:
   ownership conflicts and invalid source/graph evidence still stop that source.
 
 Shared Input/Output details are collapsed and escaped, with Host redaction before
-network requests. Unknown content/nonempty thinking remain captured Raw;
-tool-bearing projection retains partial fidelity. Search covers actual message
-bodies and excludes tool summaries/full values. Root, Thread and Raw identities
+network requests. Nonempty recorded assistant thinking appears in the shared
+Reader's Activity. The Adapter emits UTF-8 fragments with one ACP `messageId`
+per physical block; the Reader displays each Canonical fragment. Empty or
+whitespace-only thinking is skipped. Blank fragments remain Raw-only with original
+part indices; remaining fragments retain exact text and carry partial fidelity
+if a blank part was omitted. Signatures, opaque redacted thinking and unknown content remain
+Raw-only when captured. Missing reasoning cannot be recovered. Tool-bearing
+projection retains partial fidelity. Search covers actual message bodies and
+excludes thinking and tool summaries/full values. Root, Thread and Raw identities
 stay stable through supported upgrades and source deletion.
 
 ## Explicit limits
@@ -105,10 +111,14 @@ checkpoints cannot repair source semantics. Global capacity/corrupt cursor/Host
 failures still fail the job.
 
 Preserve the complete CLI state directory and upgrade through Tools and updates.
-Private normalization version 1 is separate from Event projection 4. Valid older
-single-file/discovery/z3 opaque checkpoints reconstruct committed source context
-without replaying Events, changing usage/Raw identity or dropping active state.
-Actual Event fragments and deferred usage remain on their original record.
+Private normalization version 1 is separate from Event projection 5. Valid older
+single-file/discovery/z3 opaque checkpoints authenticate committed source context,
+then reproject once to add previously omitted thinking. Projection-4 Event IDs
+and byte revisions remain stable at the higher projection revision; usage and Raw
+identity remain unchanged. Each admitted child upgrades independently. Old
+partial pages are validated against their old visible Events before reset.
+Projection 2 and 3 retain their existing accepted fallback; historical snapshot
+revisions/Raw IDs are not claimed to match incremental capture identities.
 Independent Raw receipts can be ahead of the supplied parser input. Unknown
 schemas and inconsistent old state fail explicitly. See
 [recovery](../../docs/adapters/claude.md#recovery-and-upgrades).

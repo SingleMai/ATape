@@ -1,0 +1,135 @@
+{
+  "executionVersion": "2.1.263",
+  "binarySha256": "ef5d2909c8af49f31ab6d5487e90316777bc2fac170adfe8160716caa8aaf4f9",
+  "sessionId": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac",
+  "agentId": "aa2bb7928384f99e7",
+  "fixtureCwd": "/fixture/native-thinking",
+  "files": [
+    {
+      "path": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac.jsonl",
+      "originalBytes": 11140,
+      "originalSha256": "e54d7ee9e907fab7252b60339806153e35a81938a38bc08798913e6b5b7636c9",
+      "sanitizedBytes": 10492,
+      "sanitizedSha256": "dc5127d92629aa34694f8eec089c92306d1fb84039acf2fca73b9e2a9f51b004"
+    },
+    {
+      "path": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.jsonl",
+      "originalBytes": 9024,
+      "originalSha256": "8496b8aa28be4a95d4da82ee2468088c82b1d8fdcd31328780b9696b907d841b",
+      "sanitizedBytes": 8376,
+      "sanitizedSha256": "dae212e4713bedc9cfe7cb3aaed100d89ed252c06a977ca7f795f43659f13ecb"
+    },
+    {
+      "path": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.meta.json",
+      "originalBytes": 128,
+      "originalSha256": "92cf6491860c5dd00bb4fccd6a8e7dd0cbfd44f6e8940150d1dae685961d21dc",
+      "sanitizedBytes": 128,
+      "sanitizedSha256": "92cf6491860c5dd00bb4fccd6a8e7dd0cbfd44f6e8940150d1dae685961d21dc"
+    }
+  ],
+  "thoughts": [
+    {
+      "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac.jsonl",
+      "recordLine": 7,
+      "recordEndByte": 4644,
+      "uuid": "5982ec91-0e5e-4318-ae28-1842de72f5bb",
+      "block": 0,
+      "apiResponseId": "msg_atape_thinking_mock_1",
+      "body": "ATAPE_NATIVE_THOUGHT_1: inspect the controlled fixture before answering. 思考🧠",
+      "signature": "atape-mock-signature-1"
+    },
+    {
+      "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac.jsonl",
+      "recordLine": 11,
+      "recordEndByte": 9262,
+      "uuid": "e66d1721-e125-48db-a67f-6a06b6ebc0e3",
+      "block": 0,
+      "apiResponseId": "msg_atape_thinking_mock_4",
+      "body": "ATAPE_NATIVE_THOUGHT_4: inspect the controlled fixture before answering. 思考🧠",
+      "signature": "atape-mock-signature-4"
+    },
+    {
+      "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.jsonl",
+      "recordLine": 2,
+      "recordEndByte": 1686,
+      "uuid": "f018b77c-17e3-46a0-ab93-354b80bd99f7",
+      "block": 0,
+      "apiResponseId": "msg_atape_thinking_mock_2",
+      "body": "ATAPE_NATIVE_THOUGHT_2: inspect the controlled fixture before answering. 思考🧠",
+      "signature": "atape-mock-signature-2"
+    },
+    {
+      "source": "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac/subagents/agent-aa2bb7928384f99e7.jsonl",
+      "recordLine": 7,
+      "recordEndByte": 7286,
+      "uuid": "c661333f-c163-417e-8812-ac7a10cf11e8",
+      "block": 0,
+      "apiResponseId": "msg_atape_thinking_mock_3",
+      "body": "ATAPE_NATIVE_THOUGHT_3: inspect the controlled fixture before answering. 思考🧠",
+      "signature": "atape-mock-signature-3"
+    }
+  ],
+  "requestCounts": {
+    "rootMessages": 2,
+    "childMessages": 2
+  },
+  "transport": "Deterministic localhost Anthropic Messages SSE mock; no real model invocation",
+  "usagePerResponse": {
+    "inputTokens": 17,
+    "outputTokens": 9
+  },
+  "subagentStats": {
+    "spawned": 1,
+    "startedInBackground": 0,
+    "maxDepth": 1,
+    "completed": 1
+  },
+  "argv": [
+    "--restricted",
+    "--safe-mode",
+    "--tools",
+    "Agent,Read",
+    "--allowedTools",
+    "Agent",
+    "Read",
+    "--permission-mode",
+    "manual",
+    "--permission-prompts",
+    "none",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--disable-slash-commands",
+    "--no-chrome",
+    "--model",
+    "claude-sonnet-4-6",
+    "--effort",
+    "low",
+    "--system-prompt",
+    "Controlled synthetic persistence fixture. Follow the deterministic tool requests.",
+    "--session-id",
+    "4e028c9c-9c9f-4d2b-afb5-f58d1950b6ac",
+    "--print",
+    "--output-format",
+    "json",
+    "ATAPE_NATIVE_THINKING_ROOT: Delegate a foreground read of fixture.txt."
+  ],
+  "environment": {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": "/fixture/native-thinking-runtime/home",
+    "LANG": "en_US.UTF-8",
+    "TMPDIR": "/fixture/native-thinking-runtime",
+    "CLAUDE_CONFIG_DIR": "/fixture/native-thinking-runtime/config",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:52702",
+    "ANTHROPIC_API_KEY": "<synthetic-loopback-key>",
+    "ANTHROPIC_MODEL": "claude-sonnet-4-6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-sonnet-4-6",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+    "CLAUDE_CODE_FORK_SUBAGENT": "0",
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "exit": 0,
+  "stderr": "",
+  "sourceSanitization": "Literal byte replacement of isolated temporary paths only; UUIDs, API IDs, body text, signatures, correlation metadata and record order unchanged."
+}

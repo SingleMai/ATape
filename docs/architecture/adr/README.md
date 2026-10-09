@@ -124,6 +124,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0096](0096-claude-repeated-dual-read-auto-files.md) | Repeated Claude planned Read-pair automatic replay and prior files |
 | [0097](0097-claude-compaction-continuity.md) | Claude compaction continuity through source identity |
 | [0098](0098-claude-current-thread-continuity.md) | Claude current Thread continuity around unlinked delegation |
+| [0099](0099-claude-thinking-projection.md) | Claude thinking projection and checkpoint upgrade |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

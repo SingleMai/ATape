@@ -100,7 +100,7 @@ it("discovers a child appearing after the parent is acknowledged without changin
   expect(child.observations[0]?.session.sourceSessionId).toBe(sessionId)
 })
 
-it("keeps legacy root identities and acknowledged Raw while upgrading a projection-3 checkpoint", async () => {
+it("keeps root identities and acknowledged Raw while upgrading a generated projection-3 checkpoint", async () => {
   const first = await read(); acknowledge(first)
   const old = JSON.parse(first.nextCursor!)
   const checkpoint = old.sessions[0].checkpoint
@@ -108,7 +108,7 @@ it("keeps legacy root identities and acknowledged Raw while upgrading a projecti
   delete checkpoint.children; delete checkpoint.familyRevision; delete checkpoint.familyObservedAt
   const upgraded = await read(request(JSON.stringify(old)))
   expect(upgraded.observations[0]?.events.map(e => e.sourceEventId)).toEqual(first.observations[0]?.events.map(e => e.sourceEventId))
-  expect(upgraded.observations[0]?.events.every(e => e.projectionRevision === 4)).toBe(true)
+  expect(upgraded.observations[0]?.events.every(e => e.projectionRevision === 5)).toBe(true)
   expect(upgraded.observations[0]?.rawSegments).toEqual([])
   expect(upgraded.observations[0]?.events.some(e => e.childSourceThreadId === threadId)).toBe(true)
   expect((await read(request(upgraded.nextCursor))).observations[0]?.events[0]?.sourceThreadId).toBe(threadId)
