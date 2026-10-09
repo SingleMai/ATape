@@ -64,7 +64,7 @@ establish persistence/layout behavior, not real provider reasoning or billing.
   These are local version-0.5.2 artifacts, not the rebased version-0.5.3 tarballs.
 
 A preliminary full PostgreSQL gate passed every required provider subtest,
-including new Claude 18 and historical Claude 203 stages, but its shared parent
+including new Claude 18 stages and the historical Claude contract, but its shared parent
 expired before final Search checks. This is a failed whole-gate run, not a pass.
 Its log SHA-256 is
 `5e8d4abb783f08cceba577262580fd86e678b147046d2e6532d8467217436ddd`.
@@ -73,6 +73,32 @@ existing optional review allowance) under a 30-minute runner. Individual source,
 HTTP operation and publication lease deadlines are unchanged. Final integration
 must pass on the rebased PR head, including both required Claude subtests and the
 complete parent; skipped/missing results are rejected by the gate.
+
+## Rebased integration acceptance
+
+The production candidate on main `0840d6a7061f3a38302f2ed97a4d26915d238845`
+was checked at `f1de7b56dafa6346bc2479bdb8ee1cb8cd071b0c`; subsequent evidence
+edits do not change the source hashes above.
+
+- Version-0.5.3 `pnpm test:release` passed, including the concurrent automatic
+  update package checks, CLI PTY, all Adapter packages and exact release checksums.
+  Log SHA-256: `4d8235dd3bd0e4594c976a533bffb615b010adc936538693fefbb0752ec65cfb`.
+  Claude bundle: `07ac7079b709e72407fa8b1930b8218cb8776ff2c478a94cb074dc101a191133`;
+  CLI bundle: `4dfb77692abc7d9e599c391cf06cb15d7a61956900685a875020c192d9cc5c9b`.
+  Claude tarball: `fc29557bdfc31a7efba302ac93f398184ed8d40add8576431cb53cff1165d7f8`;
+  CLI tarball: `36b6bf4e671287d30dfe6f6b34938004cc8d70da7321bc086d0eef7ff0b59d70`.
+- The final installed Claude verifier passed on those bundles, with log SHA-256
+  `c311e585ab365e23a395b48c906a65a8f06eaf3233e9cd6b63408c2951e1a6a4`.
+- Full `pnpm test:go:integration` passed, including the complete HTTP parent and
+  final Search assertions: 553.224 seconds for the HTTP package, zero failures
+  and zero skips. All six required current/historical provider subtests passed.
+  Claude current reported 18 independently restarted stages; the historical
+  legacy contract logged 163 installed phases on this run. Historical candidates'
+  203-stage records are not reused as this run's count. Log SHA-256:
+  `f8f28f31e0ea8220046bb3a7a1d6cbb1c24e835ea0cbb277d09575646f06173c`.
+- The CI merge tree was `376a0beec0efdaa4ce3d3397758bd0b519524414`, equal to that
+  production candidate's tree. Final PR checks must additionally cover the
+  committed evidence edits before integration.
 
 ## Material limits
 
