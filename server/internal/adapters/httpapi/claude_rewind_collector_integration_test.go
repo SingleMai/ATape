@@ -29,6 +29,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -443,7 +444,7 @@ func assertClaudeRewindCollectorContract(t *testing.T, modules Modules, pool *pg
 	}
 	assertMemoryCount(familySession, 14, 1)
 	retainedStore, ok, err := store.ConversationPage(t.Context(), principal, familySession, childID, canonical.ConversationPageRequest{Limit: 100})
-	if err != nil || !ok || !reflect.DeepEqual(retainedStore.Events, oldChildStore.Events) {
+	if err != nil || !ok || !canonicalcontract.EqualEvents(retainedStore.Events, oldChildStore.Events) {
 		t.Fatal("adoption changed inherited child versions/provenance/Raw refs", err)
 	}
 	if len(search("ATAPE_CONTROL_DISCARDED").Results) != 0 || len(search("ATAPE_REWIND_DISCARDED").Results) != 0 {

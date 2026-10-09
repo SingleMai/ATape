@@ -274,8 +274,13 @@ func TestPublicationLegacyAdoption(t *testing.T) {
 		t.Fatalf("selected target: %+v %v", current, err)
 	}
 	inherited, found, err := reader.Conversation(ctx, web, initial.SessionID, childID)
-	if err != nil || !found || !reflect.DeepEqual(inherited.Events, oldChild.Events) {
+	if err != nil || !found || !canonicalcontract.EqualEvents(inherited.Events, oldChild.Events) {
 		t.Fatalf("retained Event versions/Raw/provenance changed: %+v %v", inherited, err)
+	}
+	if !reflect.DeepEqual(inherited.Events, oldChild.Events) {
+		before, after := oldChild.Events[0], inherited.Events[0]
+		t.Logf("retained timestamps preserve instants across representation changes: ObservedAt=%#v -> %#v; ReceivedAt=%#v -> %#v; OccurredAt=%#v -> %#v",
+			before.ObservedAt, after.ObservedAt, before.ReceivedAt, after.ReceivedAt, before.OccurredAt, after.OccurredAt)
 	}
 	project, found, err := reader.Project(ctx, web, legacy.ProjectID)
 	if err != nil || !found || project.Sessions[0].EventCount != 63 || project.Sessions[0].Session.ReportedEventCount != 2 {
@@ -315,7 +320,7 @@ func TestPublicationLegacyAdoption(t *testing.T) {
 		t.Fatal(err)
 	}
 	inherited, found, err = reader.Conversation(ctx, web, initial.SessionID, childID)
-	if err != nil || !found || inherited.Head != nextHead.Head || !reflect.DeepEqual(inherited.Events, oldChild.Events) {
+	if err != nil || !found || inherited.Head != nextHead.Head || !canonicalcontract.EqualEvents(inherited.Events, oldChild.Events) {
 		t.Fatalf("retention after selected base reclamation: %+v %v", inherited, err)
 	}
 	// Removing the selected parent edge must reject retention rather than silently

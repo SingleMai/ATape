@@ -93,12 +93,45 @@ edits do not change the source hashes above.
   final Search assertions: 553.224 seconds for the HTTP package, zero failures
   and zero skips. All six required current/historical provider subtests passed.
   Claude current reported 18 independently restarted stages; the historical
-  legacy contract logged 163 installed phases on this run. Historical candidates'
-  203-stage records are not reused as this run's count. Log SHA-256:
+  legacy contract logged 203 unique installed phases on this run. This count
+  includes 163 phases logged by the main test and 40 by manual-fixture helpers; it is
+  computed from this run's log, not reused from historical candidates. Log SHA-256:
   `f8f28f31e0ea8220046bb3a7a1d6cbb1c24e835ea0cbb277d09575646f06173c`.
 - The CI merge tree was `376a0beec0efdaa4ce3d3397758bd0b519524414`, equal to that
   production candidate's tree. Final PR checks must additionally cover the
   committed evidence edits before integration.
+
+## UTC retention assertion correction
+
+[CI run 37912558272](https://github.com/SingleMai/ATape/actions/runs/37912558272)
+passed repository checks, production builds and exact package acceptance, but
+failed two newly added retention assertions. The same-head Security workflow
+passed all three jobs. Legacy pgx
+reads used `time.Local`; publication JSON restored the same timestamp instants
+using `time.UTC`. The assertions compared Go Location representation as well as
+Event values. Public Reader wire equality had already passed. The failed log's
+SHA-256 is `be4ec3f3c6db696da23f588c7a15de4d9adf0d3401aff43e83dc0c90bc24e0b0`.
+
+Both failures were reproduced with `TZ=UTC`. A test-only helper now copies Events,
+normalizes ObservedAt/ReceivedAt/OccurredAt to UTC and compares every field.
+Its regression checks reject changes to every Event field and timestamp instant,
+preserve slice membership distinctions and verify inputs are unchanged. No
+production code or artifacts changed; the source hashes above still apply.
+
+- UTC PostgreSQL adoption and all eight retention rejection scenarios passed.
+  The log records equal timestamp instants down to nanoseconds across Location
+  representations. SHA-256:
+  `139fca272f7684721b3e5eeb13d392d50a2eeef0de974af1234f6636fbe30a4c`.
+- The UTC two-Claude installed HTTP run passed its shared parent and final Search,
+  with current Claude's 18 restarted stages and all 203 unique legacy phases:
+  196.49 seconds for the parent, zero failures or skips. SHA-256:
+  `ae68729423f8d5242abcb7c970900dc7dea18d23d23c2d465fc772cb159c4a45`.
+- The comparison helper's parent and 24 field-mutation subtests passed.
+  SHA-256: `f5dbe2118ade781777e8a58d26b42b320319384281351a8300cbca96e3bb43f3`.
+  Architecture checks still cover 174 production files.
+
+Final PR CI must also cover these test corrections and evidence edits before
+integration. A failed or skipped whole gate is not accepted as a pass.
 
 ## Material limits
 
