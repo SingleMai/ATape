@@ -22,6 +22,16 @@ export const acquireProcessLock = async (path: string, waitMs = 0): Promise<(() 
     while (true) {
       try {
         database.exec("BEGIN EXCLUSIVE")
+        if (!database.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='atape_process_lock'").get()) {
+          // A rollback-only transaction leaves a new database empty. Beginning
+          // its next transaction then allocates a page, which fails on a full
+          // disk even when the caller only needs exclusion to inspect state.
+          // Initialize once while owned, preserving legacy empty lock inodes.
+          database.exec("CREATE TABLE atape_process_lock(id INTEGER PRIMARY KEY); COMMIT")
+          // COMMIT released exclusion. Reacquire through the same bounded loop;
+          // neither initialization nor an existing file establishes ownership.
+          continue
+        }
         acquired = true
         let released = false
         return () => {

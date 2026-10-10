@@ -509,6 +509,12 @@ the prior attempt before waiting for its apply lock. An orphan may finish while
 its token remains valid; it cannot commit after revocation. Busy or hung storage
 defers recovery rather than allowing concurrent migration.
 
+Shared SQLite coordination files are initialized once under exclusive ownership.
+Initialization commits before the caller reacquires its lease; later acquisition
+does not rewrite the lock database. Existing empty lock files are initialized by
+their next owner without replacement. This lets an already initialized capture
+home retain exclusion and inspect pending state even when its disk is full.
+
 After the fence, every retry moves forward to the recorded target, including
 after automatic updates are disabled or sync is stopped. Recovery never starts
 sync against Stop intent. Missing one metadata peer can be repaired from strict
@@ -537,6 +543,10 @@ apply-lock exclusion, and recover missing peers and marker-first successor
 authorization. The SQL-commit replay case constructs that crash state through
 the caller Interface; it does not claim a power-cut test. Unknown metadata fails
 closed, and a completed receipt survives a real same-contract bootstrap rebind.
+The dedicated Linux tmpfs contract exhausts real storage and checks a typed
+capacity failure, unchanged pending bytes/progress, fresh-process reopen while
+full, and write recovery after freeing space, including migration admission's
+initialized coordination lock.
 
 The implementation was verified locally on macOS with CLI/Application behavior
 tests, Collector/Server E2E, all seven official Adapter tarballs, and the installed

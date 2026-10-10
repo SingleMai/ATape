@@ -44,6 +44,58 @@ describe("OS-held process exclusion", () => {
     } finally { acquired?.(); release() }
   })
 
+  it("preserves a legacy empty lock while its process owns exclusion, then initializes the same file after release", async () => {
+    const { root, path } = await fixture(), marker = join(root, "ready")
+    const child = spawn(process.execPath, ["--input-type=module", "-e", `
+import { DatabaseSync } from "node:sqlite";
+import { writeFile } from "node:fs/promises";
+const database = new DatabaseSync(${JSON.stringify(path)});
+database.exec("BEGIN EXCLUSIVE");
+process.once("message", () => {
+  database.exec("ROLLBACK");
+  database.close();
+  process.disconnect();
+});
+await writeFile(${JSON.stringify(marker)}, "ready");
+`], { stdio: ["ignore", "ignore", "ignore", "ipc"] })
+    const exited = new Promise<void>(resolve => child.once("exit", () => resolve()))
+    let release: (() => void) | undefined
+    let releaseTimer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await expect.poll(() => readFile(marker, "utf8").catch(() => ""), { timeout: 3_000 }).toBe("ready")
+      const before = await stat(path)
+      expect(before.size).toBe(0)
+      expect(await acquireProcessLock(path)).toBeUndefined()
+      expect((await stat(path)).ino).toBe(before.ino)
+      expect(await readFile(path)).toEqual(Buffer.alloc(0))
+      const pending = acquireProcessLock(path, 1_000)
+      releaseTimer = setTimeout(() => child.send("release", () => {}), 50)
+      release = await pending
+      expect(release).toBeTypeOf("function")
+      const initialized = await stat(path)
+      expect(initialized.ino).toBe(before.ino)
+      expect(initialized.size).toBeGreaterThan(0)
+    } finally { clearTimeout(releaseTimer); release?.(); child.kill("SIGKILL"); await exited }
+  })
+
+  it("keeps initialized coordination bytes unchanged across repeated acquisitions and releases", async () => {
+    const { path } = await fixture()
+    const release = await acquireProcessLock(path)
+    expect(release).toBeTypeOf("function")
+    release?.()
+    const bytes = await readFile(path), before = await stat(path)
+    expect(bytes.byteLength).toBeGreaterThan(0)
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const held = await acquireProcessLock(path)
+      try {
+        expect(held).toBeTypeOf("function")
+        expect((await stat(path)).ino).toBe(before.ino)
+        expect(await readFile(path)).toEqual(bytes)
+      } finally { held?.() }
+      expect(await readFile(path)).toEqual(bytes)
+    }
+  })
+
   it("releases a killed process's exclusion immediately without stale-PID or age recovery", async () => {
     const { root, path } = await fixture(), marker = join(root, "ready")
     const module = fileURLToPath(new URL("./processLock.ts", import.meta.url))
