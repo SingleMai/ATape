@@ -6,16 +6,17 @@ import { dirname } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { withCollectorStateLock } from "./collectorStateLock.ts"
 import { captureInstallationPath, capturePathState, captureRoot, readCaptureInstallation } from "./captureBinding.ts"
+import { assertRuntimeDataAdmission, guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 
-export const makeCollectorStateLayer = (stateFile: string) => Layer.succeed(
+export const makeCollectorStateLayer = (stateFile: string, runtime: RuntimeContext = runtimeContext(dirname(stateFile))) => Layer.succeed(
   CollectorStateStore,
   CollectorStateStore.of({
-    capturedScopes: () => withCollectorState(stateFile, state => ({
+    capturedScopes: () => withCollectorState(stateFile, runtime, state => ({
       value: state.checkpoints.filter(checkpoint => checkpoint.canonicalPublished === true || checkpoint.rawObjects.length > 0)
         .map(({ instanceOrigin, userId, projectId, projectCreatedAt, adapterId }) =>
           ({ instanceOrigin, userId, projectId, projectCreatedAt, adapterId }))
     })),
-    snapshot: (instanceOrigin, userId, projectId, adapterId) => withCollectorState(stateFile, (state) => ({
+    snapshot: (instanceOrigin, userId, projectId, adapterId) => withCollectorState(stateFile, runtime, (state) => ({
       value: (() => {
         const checkpoint = state.checkpoints.find((item) =>
           item.instanceOrigin === instanceOrigin && item.userId === userId &&
@@ -27,7 +28,7 @@ export const makeCollectorStateLayer = (stateFile: string) => Layer.succeed(
       })()
     })),
     commit: ({ instanceOrigin, userId, projectId, adapterId, expectedRevision, checkpoint }) =>
-      withCollectorState(stateFile, (state) => {
+      withCollectorState(stateFile, runtime, (state) => {
         const current = state.checkpoints.find((item) =>
           item.instanceOrigin === instanceOrigin && item.userId === userId &&
           item.projectId === projectId && item.adapterId === adapterId)
@@ -64,8 +65,9 @@ type CollectorStateChange<A> = {
 
 const withCollectorState = <A>(
   stateFile: string,
+  runtime: RuntimeContext,
   change: (state: CollectorState) => CollectorStateChange<A>
-): Effect.Effect<A, CollectorStateError> => withCollectorStateLock(stateFile,
+): Effect.Effect<A, CollectorStateError> => checkAdmission(runtime).pipe(Effect.andThen(withCollectorStateLock(stateFile,
   readCollectorState(stateFile).pipe(
     Effect.flatMap((loaded) => Effect.try({
       try: () => ({ loaded, result: change(loaded.state) }),
@@ -75,18 +77,19 @@ const withCollectorState = <A>(
     })),
     Effect.flatMap(({ loaded, result }) => result.state === undefined && !loaded.created
       ? Effect.succeed(result.value)
-      : writeCollectorState(stateFile, result.state ?? loaded.state, loaded.created).pipe(Effect.as(result.value)))
+      : writeCollectorState(stateFile, result.state ?? loaded.state, runtime, loaded.created).pipe(Effect.as(result.value)))
   )
-)
+)))
 
 /** Bootstrap uses the same installation and lock as legacy checkpoint writes.
  * The callback's resources stay in its caller Scope; only the metadata lock ends. */
-export const withCollectorInstallation = <A, E, R>(stateFile: string, use: (installationId: string) => Effect.Effect<A, E, R>) =>
-  withCollectorStateLock(stateFile, Effect.gen(function*() {
+export const withCollectorInstallation = <A, E, R>(stateFile: string, use: (installationId: string) => Effect.Effect<A, E, R>,
+  runtime: RuntimeContext = runtimeContext(dirname(stateFile))) =>
+  checkAdmission(runtime).pipe(Effect.andThen(withCollectorStateLock(stateFile, Effect.gen(function*() {
     const loaded = yield* readCollectorState(stateFile)
-    if (loaded.created) yield* writeCollectorState(stateFile, loaded.state, true)
+    if (loaded.created) yield* writeCollectorState(stateFile, loaded.state, runtime, true)
     return yield* use(loaded.state.installationId)
-  }))
+  }))))
 
 const readCollectorState = (
   stateFile: string
@@ -125,12 +128,12 @@ const readCollectorState = (
       }))
   )
 
-const writeCollectorState = (stateFile: string, state: CollectorState, initialize = false): Effect.Effect<void, CollectorStateError> =>
+const writeCollectorState = (stateFile: string, state: CollectorState, runtime: RuntimeContext, initialize = false): Effect.Effect<void, CollectorStateError> =>
   Schema.decodeUnknownEffect(CollectorStateSchema)(state).pipe(
     Effect.mapError((error) => new CollectorStateError({
       reason: "decode", message: `ATape refused to persist invalid collector state: ${String(error)}`
     })),
-    Effect.flatMap((validated) => Effect.tryPromise({
+    Effect.flatMap((validated) => guardRuntimeWrite(runtime, Effect.tryPromise({
       try: async () => {
         await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 })
         const temporary = `${stateFile}.${process.pid}.${randomUUID()}.tmp`
@@ -148,8 +151,15 @@ const writeCollectorState = (stateFile: string, state: CollectorState, initializ
       catch: (cause) => new CollectorStateError({
         reason: "io", message: errorMessage("Could not write the collector state", cause)
       })
-    }))
+    }), admissionFailure))
   )
+
+const admissionFailure = (cause: unknown) => new CollectorStateError({
+  reason: "io", message: errorMessage("The running CLI cannot write Collector state", cause)
+})
+const checkAdmission = (runtime: RuntimeContext) => Effect.tryPromise({
+  try: () => assertRuntimeDataAdmission(runtime), catch: admissionFailure
+})
 
 const checkpointKey = (checkpoint: CollectorCheckpoint) =>
   `${checkpoint.instanceOrigin}\0${checkpoint.userId}\0${checkpoint.projectId}\0${checkpoint.adapterId}`

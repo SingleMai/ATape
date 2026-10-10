@@ -321,6 +321,27 @@ Recovery remains pending until the selected runtime passes local readiness, and
 collection cannot begin writing data before the coordinator durably completes
 the transaction. Invalid metadata or unavailable recovery code pauses collection.
 
+The running executable carries its own compiled version and capture contract.
+Replacing its npm manifest cannot make an already-open old console a new reader.
+Normal interactive, login and Collector work checks that identity after bootstrap
+delegation or owned recovery. Historical v2 bridge pointers and manual receipts
+keep their fixed v2 decoder independently of the current executable identity.
+
+Ordinary configuration transactions and local capture writes share a short
+per-home barrier with reader-floor advancement. It covers Collector checkpoint
+initialization/commit, capture binding metadata, journal creation/migration and
+every write transaction, including handles opened before an upgrade. A write
+already holding the barrier finishes before the floor advances; a later old
+write fails without committing. Reopen ATape when an old console reports that
+its runtime is below the recovery boundary. Journal cleanup still closes its
+handle; a WAL checkpoint can change physical bytes without adding logical data.
+User Stop and the updater's owned pause/resume handoff keep their stable control
+protocol and remain usable after the floor advances. Credentials, privacy policy,
+remote effects and control metadata retain their existing separate protocols.
+These guards apply to capable executables; already-published older binaries
+cannot acquire them retroactively. See
+[ADR-0110](../architecture/adr/0110-runtime-writer-admission.md).
+
 One independent, short-lived updater prepares an isolated version directory and
 Adapter slots while collection continues. It then obtains exclusive maintenance
 ownership, requests Collector cancellation and bounds the entire stop handoff.

@@ -5,6 +5,7 @@ import { lstat, open, readFile, realpath, rm } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { makeConfigStoreLayer, withClientConfigFileLock } from "./clientConfig.ts"
+import { runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { atomicJSON, missing, readBoundedJSON, runtimeSelectionFile } from "./runtimeFiles.ts"
 import { createUpdateControl, type UpdateRuntimeSelection } from "./updateControl.ts"
@@ -13,11 +14,13 @@ export { atomicJSON, missing, readBoundedJSON, runtimeEntry, runtimeSelectionFil
 
 // The legacy bridge remains a genuine v2 generation. Independent update control
 // carries its capture contract separately and never relabels this bridge.
-export const managedStateContract = "atape.client.v3-capture.v2"
+export const legacyBridgeCaptureContract = "atape.client.v3-capture.v2"
+/** @deprecated Historical bridge identity only; executing runtimes use their own compiled identity. */
+export const managedStateContract = legacyBridgeCaptureContract
 const StableVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
 export const RuntimeSelection = Schema.Struct({
   protocol: Schema.Literal("atape.runtime.v1"),
-  stateContract: Schema.Literal(managedStateContract),
+  stateContract: Schema.Literal(legacyBridgeCaptureContract),
   version: StableVersion,
   bootstrapEntry: Schema.String,
   bootstrapIdentity: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))),
@@ -157,7 +160,7 @@ export const preserveSelectedInstallations = (paths: NodeClientPaths): Promise<v
     }
   })
 
-export const makeSelectedConfigStoreLayer = (paths: NodeClientPaths) => Layer.effect(ClientConfigStore,
+export const makeSelectedConfigStoreLayer = (paths: NodeClientPaths, runtime: RuntimeContext = runtimeContext(paths.atapeHome)) => Layer.effect(ClientConfigStore,
   Effect.gen(function*() {
     const store = yield* ClientConfigStore
     return ClientConfigStore.of({
@@ -172,7 +175,7 @@ export const makeSelectedConfigStoreLayer = (paths: NodeClientPaths) => Layer.ef
           })))
         })))
     })
-  }).pipe(Effect.provide(makeConfigStoreLayer(paths.configFile))))
+  }).pipe(Effect.provide(makeConfigStoreLayer(paths.configFile, runtime))))
 
 export const selectedBootstrap = async (home: string, entry: string) => {
   const control = createUpdateControl(home)

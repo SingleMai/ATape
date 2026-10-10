@@ -7,6 +7,7 @@ import { lstat, mkdir, open } from "node:fs/promises"
 import { dirname } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { Effect, Layer, Schema } from "effect"
+import { guardRuntimeWrite, runtimeContext, withRuntimeWriteBarrier, type RuntimeContext } from "./runtimeAdmission.ts"
 
 export type CaptureJournalOptions = {
   readonly path: string
@@ -14,6 +15,7 @@ export type CaptureJournalOptions = {
   readonly mode: "create" | "open"
   readonly binding: { readonly instanceOrigin: string; readonly userId: string; readonly installationId: string }
   readonly limits: CaptureJournalLimits
+  readonly runtime?: RuntimeContext
 }
 const MetadataBytes = 32 * 1024
 const SourceMetadataBytes = 2 * 1024 * 1024
@@ -72,8 +74,9 @@ const storageError = (cause: unknown): CaptureJournalError => {
 
 export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer.effect(CaptureJournal, openCaptureJournal(options))
 
-export const openCaptureJournal = (options: CaptureJournalOptions) =>
-  Effect.acquireRelease(Effect.tryPromise({
+export const openCaptureJournal = (options: CaptureJournalOptions) => {
+  const runtime = options.runtime ?? runtimeContext(dirname(options.path))
+  return Effect.acquireRelease(guardRuntimeWrite(runtime, Effect.tryPromise({
     try: async () => {
       const { limits, binding } = options
       text(binding.instanceOrigin); text(binding.userId); text(binding.installationId)
@@ -195,8 +198,14 @@ export const openCaptureJournal = (options: CaptureJournalOptions) =>
         throw cause
       }
     }, catch: storageError
-  }), db => Effect.sync(() => db.close())).pipe(Effect.map(db => implementation(db, options)))
-function implementation(db: DatabaseSync, options: CaptureJournalOptions): CaptureJournal["Service"] {
+  }), storageError), db => withRuntimeWriteBarrier(runtime, Effect.sync(() => db.close()), storageError).pipe(
+    // A failed cleanup lease must not leak the handle. Close can checkpoint
+    // committed WAL bytes, but it cannot admit another logical transaction.
+    Effect.ensuring(Effect.sync(() => { if (db.isOpen) db.close() })), Effect.orDie
+  ))
+    .pipe(Effect.map(db => implementation(db, options, runtime)))
+}
+function implementation(db: DatabaseSync, options: CaptureJournalOptions, runtime: RuntimeContext): CaptureJournal["Service"] {
   const { limits } = options
   // Called only inside the existing write transaction, after idempotent replay
   // checks. No quota gate on settlement or body reclamation of admitted rows.
@@ -228,7 +237,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
     if (additional > limits.pendingBytes - retained - metadata)
       throw failure("capacity", "Source metadata admission is exhausted; existing delivery remains recoverable.")
   }
-  const transaction = <A>(work: () => A) => Effect.try({ try: () => {
+  const transaction = <A>(work: () => A) => guardRuntimeWrite(runtime, Effect.try({ try: () => {
     db.exec("BEGIN IMMEDIATE")
     try { const result = work(); db.exec("COMMIT"); return result }
     catch (cause) {
@@ -237,7 +246,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions): Captu
       if (db.isTransaction) db.exec("ROLLBACK")
       throw cause
     }
-  }, catch: storageError })
+  }, catch: storageError }), storageError)
   const decode = <A>(schema: Schema.ConstraintDecoder<A>, value: unknown): A => {
     try { return Schema.decodeUnknownSync(schema)(value) }
     catch { throw failure("corrupt", "Capture journal metadata failed validation.") }

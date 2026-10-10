@@ -7,6 +7,10 @@ const packageRoot = fileURLToPath(new URL("..", import.meta.url))
 const outputDirectory = fileURLToPath(new URL("../dist", import.meta.url))
 const outputFile = fileURLToPath(new URL("../dist/atape.js", import.meta.url))
 const packageManifest = JSON.parse(await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"))
+assert.equal(packageManifest.atapeRuntime?.protocol, "atape.runtime.v1")
+assert.ok(typeof packageManifest.atapeRuntime.stateContract === "string" &&
+  /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(packageManifest.atapeRuntime.stateContract),
+"The CLI must declare its compiled capture-state contract.")
 
 await rm(outputDirectory, { recursive: true, force: true })
 await mkdir(outputDirectory, { recursive: true })
@@ -18,7 +22,9 @@ await build({
   platform: "node",
   format: "esm",
   target: "node24",
-  define: { __ATAPE_CLI_VERSION__: JSON.stringify(packageManifest.version), "process.env.NODE_ENV": '"production"' },
+  define: { __ATAPE_CLI_VERSION__: JSON.stringify(packageManifest.version),
+    __ATAPE_CAPTURE_STATE_CONTRACT__: JSON.stringify(packageManifest.atapeRuntime.stateContract),
+    "process.env.NODE_ENV": '"production"' },
   banner: { js: 'import { createRequire as __atapeCreateRequire } from "node:module"; const require = __atapeCreateRequire(import.meta.url);' },
   plugins: [{
     name: "ink-release-without-devtools",

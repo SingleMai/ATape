@@ -4,13 +4,15 @@ import { execFileSync, spawn } from "node:child_process"
 import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import { admitCollectorProcess, isCollectorMaintenancePending, makeNodeCollectorDaemonLayer, makeCollectorRunStatusLayer,
   withCollectorMaintenance } from "./collectorDaemonLayers.ts"
 import { acquireProcessLock } from "./processLock.ts"
+import { assertRuntimeDataAdmission } from "./runtimeAdmission.ts"
+import { runtimeWriterFixture } from "./fixtures/runtime-writer-admission.ts"
 
 const temporaryDirectories: Array<string> = []
 
@@ -758,6 +760,28 @@ setInterval(() => {}, 1000);
     } finally { await f.run(f.daemon.stop()) }
   })
 
+  it("lets an old console Stop cancel restart after a same-contract reader floor advances", async () => {
+    const f = await fixture(), admission = await runtimeWriterFixture(dirname(f.entry))
+    const maintenanceFile = `${f.collectorProcessFile}.maintenance.json`
+    const gate = { version: 1, token: "owned-maintenance", ownerPid: process.pid, generation: 2, phase: "activating",
+      resume: { intervalMs: 60000, concurrency: 3 } }
+    try {
+      const running = await f.run(f.daemon.start(gate.resume))
+      await f.started("original", running.pid)
+      await writeFile(maintenanceFile, JSON.stringify(gate))
+      await admission.raiseFloor()
+      await expect(assertRuntimeDataAdmission(admission.runtime)).rejects.toMatchObject({ reason: "admission" })
+
+      expect(await f.run(f.daemon.stop())).toBe(true)
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8"))).toEqual({ version: 1, wanted: false })
+      const { resume: _, ...cancelled } = gate
+      expect(JSON.parse(await readFile(maintenanceFile, "utf8"))).toEqual({ ...cancelled, generation: gate.generation + 1 })
+      await expect(readFile(f.collectorProcessFile)).rejects.toMatchObject({ code: "ENOENT" })
+      expect(await f.run(f.daemon.resume())).toBeUndefined()
+      expect(await f.run(f.daemon.inspect())).toBeUndefined()
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
   it("honors Stop while the replacement is waiting for readiness", async () => {
     const f = await fixture()
     try {
@@ -989,6 +1013,8 @@ await withCollectorMaintenance(${JSON.stringify(f)}, async () => ${JSON.stringif
       await f.started("original", original.pid)
       const fakePs = join(fakeBin, "ps")
       const nodeExecutable = `'${process.execPath.replaceAll("'", "'\"'\"'")}'`
+      // Inject failure only for replacement confirmation. Repeated OS ps
+      // launches for the original must not consume that unrelated deadline.
       const originalCommand = execFileSync("/bin/ps", ["-p", String(original.pid), "-o", "command="], { encoding: "utf8" })
       const quotedCommand = `'${originalCommand.replaceAll("'", "'\"'\"'")}'`
       await writeFile(fakePs, `#!/bin/sh

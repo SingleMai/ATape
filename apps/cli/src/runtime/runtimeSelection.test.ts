@@ -9,8 +9,8 @@ import { afterEach, describe, expect, it } from "vitest"
 import { readClientConfig, withClientConfigFileLock } from "./clientConfig.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
 import {
-  makeSelectedConfigStoreLayer, managedStateContract, preserveSelectedInstallations, readEffectiveRuntimeSelection,
-  readRuntimeSelection, readSelectedClientConfig, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile,
+  makeSelectedConfigStoreLayer, legacyBridgeCaptureContract, preserveSelectedInstallations, readEffectiveRuntimeSelection,
+  readRuntimeSelection, readSelectedClientConfig, resolveLegacyRuntimeEntry, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile,
   selectedBootstrap, selectRuntime, type RuntimeSelection
 } from "./runtimeSelection.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
@@ -58,11 +58,11 @@ const fixture = async () => {
     await mkdir(dirname(entry), { recursive: true })
     await writeFile(entry, `console.log("ATape ${version}")`)
     await writeFile(join(dirname(dirname(entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version,
-      atapeRuntime: { stateContract: managedStateContract } }))
-    return { protocol: "atape.runtime.v1", stateContract: managedStateContract, version,
+      atapeRuntime: { stateContract: legacyBridgeCaptureContract } }))
+    return { protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract, version,
       bootstrapEntry: bootstrap, adapters: [{ before: original, after }] }
   }
-  const controlGeneration = async (version: string, captureStateContract = managedStateContract): Promise<UpdateRuntimeSelection> => {
+  const controlGeneration = async (version: string, captureStateContract = legacyBridgeCaptureContract): Promise<UpdateRuntimeSelection> => {
     const selected = await generation(version)
     await writeFile(join(dirname(dirname(runtimeEntry(home, version))), "package.json"), JSON.stringify({ name: "@atape/cli", version,
       atapeRuntime: { stateContract: captureStateContract, updateControlProtocol } }))
@@ -332,6 +332,31 @@ describe("independent update selection through the runtime and configuration Int
     await activate(client.home, selected)
     expect(await readEffectiveRuntimeSelection(client.home)).toEqual(selected)
     expect(await resolveRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, "2.0.0"))
+  })
+
+  it("retains the historical v2 bridge decoder after an independent capture contract advances", async () => {
+    const client = await fixture()
+    const bridge = await client.generation("1.2.2")
+    await selectRuntime(client.home, bridge)
+    const anchor = await readFile(runtimeSelectionFile(client.home))
+    const config = await readFile(client.paths.configFile)
+    const next = await client.controlGeneration("2.0.0", "atape.client.future-capture.v3")
+    const control = createUpdateControl(client.home)
+    const ticket = await control.prepare({ next, previous: {
+      protocol: updateControlProtocol, captureStateContract: legacyBridgeCaptureContract,
+      version: bridge.version, bootstrapEntry: bridge.bootstrapEntry,
+      bootstrapIdentity: next.bootstrapIdentity, adapters: bridge.adapters
+    } })
+    await control.begin(ticket)
+    await control.fence(ticket)
+    await control.complete(ticket)
+
+    expect(await readRuntimeSelection(client.home)).toEqual({ ...bridge, stateContract: "atape.client.v3-capture.v2" })
+    expect(await readEffectiveRuntimeSelection(client.home)).toEqual(next)
+    expect(await resolveLegacyRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, bridge.version))
+    expect(await resolveRuntimeEntry(client.home, client.bootstrap)).toBe(runtimeEntry(client.home, next.version))
+    expect(await readFile(runtimeSelectionFile(client.home))).toEqual(anchor)
+    expect(await readFile(client.paths.configFile)).toEqual(config)
   })
 
   it("keeps independent selection authoritative when a historical writer leaves pending recovery", async () => {

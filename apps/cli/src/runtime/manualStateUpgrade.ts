@@ -9,9 +9,10 @@ import type { NodeClientPaths } from "./clientPaths.ts"
 import { withClientConfigFileLock } from "./clientConfig.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
+import { assertRuntimeDataAdmission, runtimeContext } from "./runtimeAdmission.ts"
 import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 import { applyRuntimeSelection, atomicJSON, decodeLegacyRuntimeSelection, decodeRuntimeSelection,
-  managedStateContract, missing, readBoundedJSON, resolveRuntimeEntry, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
+  legacyBridgeCaptureContract, missing, readBoundedJSON, resolveRuntimeEntry, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
 
 export class ManualStateUpgradeError extends Schema.TaggedError<ManualStateUpgradeError>()("ManualStateUpgradeError", {
   reason: Schema.Literals(["busy", "pending", "running", "metadata"]), message: Schema.String
@@ -27,9 +28,9 @@ const ledgerFile = (home: string) => join(updateDirectory(home), "manual-state-u
 const admissionFile = (home: string) => join(updateDirectory(home), "v2-collector-admission.json")
 const retainedFile = (home: string) => join(updateDirectory(home), "retained.json")
 const Ledger = Schema.Union([
-  Schema.Struct({ protocol: Schema.Literal("atape.manual-state-upgrade.v1"), contract: Schema.Literal(managedStateContract),
+  Schema.Struct({ protocol: Schema.Literal("atape.manual-state-upgrade.v1"), contract: Schema.Literal(legacyBridgeCaptureContract),
     home: Schema.String, phase: Schema.Literal("completed"), configFile: Schema.String, processFile: Schema.String }),
-  Schema.Struct({ protocol: Schema.Literal("atape.manual-state-upgrade.v1"), contract: Schema.Literal(managedStateContract),
+  Schema.Struct({ protocol: Schema.Literal("atape.manual-state-upgrade.v1"), contract: Schema.Literal(legacyBridgeCaptureContract),
     home: Schema.String, phase: Schema.Literal("pending"), configFile: Schema.String, processFile: Schema.String,
     current: Schema.optionalKey(Schema.Unknown), retained: Schema.optionalKey(Schema.Unknown) })
 ])
@@ -62,7 +63,7 @@ const selection = async (path: string) => optional(async () => {
     return decodeLegacyRuntimeSelection(value)
   return decodeRuntimeSelection(value)
 })
-const Admission = Schema.Struct({ protocol: Schema.Literal("atape.v2-collector-admission.v1"), contract: Schema.Literal(managedStateContract),
+const Admission = Schema.Struct({ protocol: Schema.Literal("atape.v2-collector-admission.v1"), contract: Schema.Literal(legacyBridgeCaptureContract),
   home: Schema.String, configFile: Schema.String, processFile: Schema.String,
   pid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)), token: Schema.String })
 const readLedger = async (paths: NodeClientPaths) => {
@@ -125,14 +126,14 @@ const validateControlHandoff = async (paths: NodeClientPaths, record: typeof Pro
   const control = createUpdateControl(paths.atapeHome)
   if (!(await control.recoveryPending())) throw refused("metadata", "No independent update handoff admits this Collector.")
   const runtime = await control.handoffRuntime()
-  if (!runtime || runtime.captureStateContract !== managedStateContract) {
+  if (!runtime || runtime.captureStateContract !== legacyBridgeCaptureContract) {
     throw refused("metadata", "The update handoff does not preserve this Collector's capture contract.")
   }
-  await control.assertRuntimeAdmission({ version: runtime.version, captureStateContract: managedStateContract })
+  await control.assertRuntimeAdmission({ version: runtime.version, captureStateContract: legacyBridgeCaptureContract })
   const entry = await realpath(await resolveRuntimeEntry(paths.atapeHome, runtime.bootstrapEntry))
   const manifest = Schema.decodeUnknownSync(Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String,
     atapeRuntime: Schema.Struct({ updateControlProtocol: Schema.Literal(updateControlProtocol),
-      stateContract: Schema.Literal(managedStateContract) })
+      stateContract: Schema.Literal(legacyBridgeCaptureContract) })
   }))(await readBoundedJSON(join(dirname(dirname(entry)), "package.json")))
   if (manifest.version !== runtime.version) throw refused("metadata", "The update handoff selected a different Collector generation.")
   const key = createHash("sha256").update(JSON.stringify([process.execPath, entry])).update(await readFile(entry)).digest("hex")
@@ -188,7 +189,7 @@ export const recordV2CollectorAdmission = Effect.fn("ManualStateUpgrade.recordCo
       } else await validateControlHandoff(paths, record)
     }
     await privateDirectory(state.home)
-    await atomicJSON(admissionFile(state.home), { protocol: "atape.v2-collector-admission.v1", contract: managedStateContract,
+    await atomicJSON(admissionFile(state.home), { protocol: "atape.v2-collector-admission.v1", contract: legacyBridgeCaptureContract,
       home: state.home, configFile: resolve(paths.configFile), processFile: resolve(paths.collectorProcessFile), pid: record.pid, token })
   }).pipe(Effect.uninterruptible)
 })
@@ -204,6 +205,9 @@ export const prepareManualStateUpgrade = Effect.fn("ManualStateUpgrade.prepare")
       if (!release) throw refused("busy", "Another updater owns this ATape installation.")
       return release
     }), release => Effect.sync(release))
+    // Entry admission may have preceded another updater's completed handoff.
+    // Recheck after owning updates, before any legacy materialization writes.
+    yield* io(() => assertRuntimeDataAdmission(runtimeContext(paths.atapeHome)))
     yield* Effect.acquireRelease(io(async () => {
       const release = await acquireProcessLock(`${paths.collectorProcessFile}.lock.sqlite`)
       if (!release) throw refused("busy", "Another process owns the Collector lifecycle.")
@@ -219,7 +223,7 @@ export const prepareManualStateUpgrade = Effect.fn("ManualStateUpgrade.prepare")
       await withClientConfigFileLock(paths.configFile, async () => {
         const raw = await optional(() => readBoundedJSON(paths.configFile, 4 * 1024 * 1024))
         const config = raw === undefined ? emptyClientConfig() : Schema.decodeUnknownSync(ClientConfig)(raw)
-        const ledger = state.ledger ?? { protocol: "atape.manual-state-upgrade.v1" as const, contract: managedStateContract,
+        const ledger = state.ledger ?? { protocol: "atape.manual-state-upgrade.v1" as const, contract: legacyBridgeCaptureContract,
           home: state.home, phase: "pending" as const, configFile: resolve(paths.configFile), processFile: resolve(paths.collectorProcessFile),
           current: state.current?.stateContract === "atape.client.v3-capture.v1" ? state.current : undefined,
           retained: state.retained?.stateContract === "atape.client.v3-capture.v1" ? state.retained : undefined }
@@ -236,7 +240,7 @@ export const prepareManualStateUpgrade = Effect.fn("ManualStateUpgrade.prepare")
         if (!isDeepStrictEqual(effective.adapters, config.adapters)) await atomicJSON(paths.configFile, { ...raw as object, adapters: effective.adapters })
         await retire(runtimeSelectionFile(state.home), ledger.current)
         await retire(retainedFile(state.home), ledger.retained)
-        await atomicJSON(ledgerFile(state.home), { protocol: "atape.manual-state-upgrade.v1", contract: managedStateContract, home: state.home,
+        await atomicJSON(ledgerFile(state.home), { protocol: "atape.manual-state-upgrade.v1", contract: legacyBridgeCaptureContract, home: state.home,
           phase: "completed", configFile: resolve(paths.configFile), processFile: resolve(paths.collectorProcessFile) })
       })
     }).pipe(Effect.uninterruptible)

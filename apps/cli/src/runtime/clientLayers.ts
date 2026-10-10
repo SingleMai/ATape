@@ -1,5 +1,5 @@
 import { CollectorRunStatusStore, makeGitSourceAttributionLayer } from "@atape/application"
-import { cliVersion } from "../version.ts"
+import { cliVersion, captureStateContract } from "../version.ts"
 import { hostname, platform, arch } from "node:os"
 import { Effect, Layer } from "effect"
 import type { AdapterPackageFetch } from "./adapterPackageSource.ts"
@@ -15,7 +15,7 @@ import { makeProjectSetupGatewayLayer } from "./projectSetupLayers.ts"
 import { makeCLISetupPlatformLayer } from "./cliSetupPlatform.ts"
 import { makeCLIUpgradePlatformLayer } from "./cliUpgradePlatform.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
-import { managedStateContract } from "./runtimeSelection.ts"
+import { runtimeContext } from "./runtimeAdmission.ts"
 import { updateControlProtocol } from "./updateControl.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
@@ -61,13 +61,13 @@ export const makeNodeClientLayer = (
   )
   const locator = makeProjectLocatorLayer()
   const gitAttribution = makeGitSourceAttributionLayer().pipe(Layer.provide(Layer.mergeAll(
-    projectSetup, locator, makeGitSourceBindingsLayer(`${paths.collectorStateFile}.git-attribution`)
+    projectSetup, locator, makeGitSourceBindingsLayer(`${paths.collectorStateFile}.git-attribution`, runtimeContext(paths.atapeHome))
   )))
   const collector = makeNodeCollectorLayer(paths, environment).pipe(
     Layer.provide(Layer.mergeAll(authenticatedHTTP, gitAttribution, locator))
   )
   const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: cliVersion,
-    captureStateContract: managedStateContract, updateControlProtocol, fetchMetadata: fetchAdapterPackage })
+    captureStateContract, updateControlProtocol, fetchMetadata: fetchAdapterPackage })
   const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage, () => protectedRuntimeSlots(paths.atapeHome), discovery)
   const bootstrapEntry = environment.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1] ?? ""
   return Layer.mergeAll(
