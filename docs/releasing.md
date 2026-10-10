@@ -173,7 +173,9 @@ Publication workflows serialize in the fixed `atape-release-publication` queue
 without canceling an active run. One publication Module owns ordering: seven
 Adapters first, CLI last, then the versioned GitHub Release, and finally the
 persistent compatible catalog. It publishes private copies of the exact verified
-local tarball bytes. Reruns skip an existing npm version only when its integrity
+local tarball bytes. Both publication entry points validate the exact filename
+set, package identities, byte digests and SHA256SUMS before any external write.
+Reruns skip an existing npm version only when its integrity
 matches. A definite immutable-version conflict during npm propagation proceeds to
 the same public visibility check; authentication and other failures stop the run.
 

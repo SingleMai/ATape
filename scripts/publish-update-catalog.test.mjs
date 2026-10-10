@@ -181,6 +181,28 @@ function publicationFixture(local, remote, { published = false, latest = "0.5.5"
     } } }
 }
 
+test("malformed bundle artifacts cannot reach the first npm publication", async () => {
+  for (const kind of ["missing-cursor", "renamed", "duplicate", "extra", "swapped-names", "changed-bytes", "changed-integrity", "changed-checksums"]) {
+    const remote = githubFixture(), local = artifacts(), fixture = publicationFixture(local, remote)
+    const cursor = local.files.find(file => file.name === "@atape/adapter-cursor")
+    if (kind === "missing-cursor") local.files = local.files.filter(file => file !== cursor)
+    if (kind === "renamed") cursor.filename = "unexpected.tgz"
+    if (kind === "duplicate") local.files = local.files.map(file => file === cursor ? local.files[0] : file)
+    if (kind === "extra") local.files.push({ ...cursor, filename: "unexpected.tgz" })
+    if (kind === "swapped-names") [cursor.name, local.files[0].name] = [local.files[0].name, cursor.name]
+    if (kind === "changed-bytes") cursor.bytes = Buffer.from("changed")
+    if (kind === "changed-integrity") local.bundle.packages.find(item => item.name === cursor.name).integrity = artifacts("0.5.7").bundle.packages[0].integrity
+    if (kind === "changed-checksums") {
+      const checksums = local.files.find(file => file.filename === "SHA256SUMS")
+      checksums.bytes = Buffer.from("changed\n"); checksums.sha256 = digest(checksums.bytes)
+    }
+    await assert.rejects(publishRelease(fixture.input), /exact bundle tarballs|Local .* changed|SHA256SUMS/, kind)
+    assert.deepEqual(fixture.events, [], kind)
+    assert.deepEqual(fixture.staging, [], kind)
+    assert.deepEqual(remote.events, [], kind)
+  }
+})
+
 test("publication orders adapters then CLI, explicit latest, public verification before any GitHub write", async () => {
   const remote = githubFixture(), local = artifacts(), fixture = publicationFixture(local, remote)
   const verify = fixture.input.registry.verify

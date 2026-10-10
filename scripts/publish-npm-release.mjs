@@ -4,17 +4,16 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { decodeReleaseBundle } from "../packages/domain/src/releaseCatalog.ts"
 import { loadReleaseContract } from "./release-contract.mjs"
 import { createPublicReleaseRegistry, loadPublicationArtifacts, publicationCaptureContract,
-  publicationControlProtocol } from "./public-release-visibility.mjs"
+  publicationControlProtocol, validatePublicationArtifacts } from "./public-release-visibility.mjs"
 import { compareReleaseVersions, createGitHubPublication, publishUpdateCatalog, readPublicationTargets, preparePublicationMetadata } from "./publish-update-catalog.mjs"
 
 // One caller Interface owns npm ordering, anonymous visibility and advertisement.
 // execFile/npm and GitHub/registry HTTP are the actual remote process/transport Seams.
 export async function publishRelease({ release, artifacts, registry, github, notes, commit,
   execute = promisify(execFile), log = message => process.stdout.write(message) }) {
-  const bundle = decodeReleaseBundle(artifacts.bundle)
+  const bundle = validatePublicationArtifacts(artifacts)
   if (bundle.version !== release.version || release.tag !== `v${bundle.version}` ||
     bundle.captureStateContract !== publicationCaptureContract || bundle.updateControlProtocol !== publicationControlProtocol) {
     throw new Error("Only the matching same-capture.v2/control.v1 release may be published.")

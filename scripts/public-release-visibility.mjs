@@ -3,6 +3,7 @@ import { execFile } from "node:child_process"
 import { lstat, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
+import { archiveName } from "./release-contract.mjs"
 import { decodeReleaseBundle, releaseBundleProtocol, releasePackageNames } from "../packages/domain/src/releaseCatalog.ts"
 
 const execute = promisify(execFile)
@@ -14,6 +15,35 @@ const maximumArtifactBytes = 16 * 1024 * 1024
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex")
 const integrity = bytes => `sha512-${createHash("sha512").update(bytes).digest("base64")}`
 const canonicalTarball = (name, version) => `${registry}/${name}/-/${name.slice("@atape/".length)}-${version}.tgz`
+
+// Both publication callers validate the same immutable local inputs before any
+// external write, including npm writes which precede GitHub advertisement.
+export function validatePublicationArtifacts(artifacts) {
+  const bundle = decodeReleaseBundle(artifacts.bundle)
+  const expectedFilenames = new Set([...bundle.packages.map(item => archiveName(item.name, bundle.version)), "SHA256SUMS"])
+  if (!Array.isArray(artifacts.files) || artifacts.files.length !== expectedFilenames.size ||
+    new Set(artifacts.files.map(file => file.filename)).size !== expectedFilenames.size ||
+    artifacts.files.some(file => !expectedFilenames.has(file.filename))) {
+    throw new Error("Publication requires the exact bundle tarballs and SHA256SUMS.")
+  }
+  for (const file of artifacts.files) {
+    if (!Buffer.isBuffer(file.bytes) || file.bytes.length === 0 || file.bytes.length > maximumArtifactBytes || file.sha256 !== sha256(file.bytes)) {
+      throw new Error("Local publication bytes changed.")
+    }
+  }
+  const packages = bundle.packages.map(item => {
+    const file = artifacts.files.find(file => file.filename === archiveName(item.name, bundle.version))
+    if (file.name !== item.name || integrity(file.bytes) !== item.integrity) throw new Error(`Local artifact identity changed for ${item.name}.`)
+    return file
+  })
+  const checksums = artifacts.files.find(file => file.filename === "SHA256SUMS")
+  const expectedChecksums = [...packages].sort((a, b) => a.filename < b.filename ? -1 : 1)
+    .map(file => `${file.sha256}  ${file.filename}\n`).join("")
+  if (checksums.name !== undefined || checksums.bytes.toString("utf8") !== expectedChecksums) {
+    throw new Error("Verified publication artifacts no longer match SHA256SUMS.")
+  }
+  return bundle
+}
 
 // Local artifacts are the exact files already exercised by test:release. No
 // registry credential participates in constructing or verifying the descriptor.
@@ -141,7 +171,7 @@ export function createPublicReleaseRegistry({ fetch: transport = globalThis.fetc
           } catch (cause) {
             if (!(cause instanceof PropagationError)) throw cause
             const remaining = deadline - now()
-            if (remaining <= 0) throw new Error(`Seven-package public visibility was not established within ${budgetMs}ms.`, { cause })
+            if (remaining <= 0) throw new Error(`Complete-bundle public visibility was not established within ${budgetMs}ms.`, { cause })
             await sleep(Math.min(remaining, 1_000 * Math.min(10, 2 ** attempt++)))
           }
         }
