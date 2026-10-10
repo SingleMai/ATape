@@ -12,7 +12,9 @@ import (
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
+	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
+	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 )
 
 // This test Adapter supplies the same atomic, authorized snapshot Interface as
@@ -497,11 +499,108 @@ func TestOpenEmptySnapshotHasExplicitUnknownsAndEmptyArrays(t *testing.T) {
 	}
 }
 
+func longIdentifierBatch() ingestion.Batch {
+	batch := canonicalcontract.ValidBatch()
+	batch.Source.InstallationID = strings.Repeat("i", 200)
+	batch.Source.AdapterID = strings.Repeat("a", 200)
+	batch.Session.SourceSessionID = strings.Repeat("s", 500)
+	batch.Session.Actor.Name = strings.Repeat("u", 200)
+	batch.Threads[0].SourceThreadID = strings.Repeat("t", 500)
+	batch.Events = nil
+	return batch
+}
+
+func longIdentifierEvent(batch ingestion.Batch, index int, text string) ingestion.Event {
+	event := canonicalcontract.ValidBatch().Events[0]
+	event.SourceEventID = strings.Repeat("e", 490) + fmt.Sprintf("%010d", index)
+	event.SourceThreadID = batch.Threads[0].SourceThreadID
+	event.SourceOrder = int64(index)
+	event.Author = batch.Session.Actor.Name
+	event.Text = text
+	event.RawRef = ingestion.RawReference{Type: "unavailable", UnavailableReason: "capacity fixture"}
+	return event
+}
+
+func TestOpenMemoryBoundsAdmittedLongSourceIdentifiers(t *testing.T) {
+	store := canonical.NewMemoryStoreWithControlPlane(canonicalcontract.MemoryControlPlane())
+	writer, module := ingestion.NewIngestor(store), sessionanalytics.New(store)
+	batch := longIdentifierBatch()
+	var sessionID string
+	// Every individual identifier satisfies the public ingestion limits, and
+	// every batch fits the HTTP request envelope. Their retained compound keys
+	// must still count against the whole-conversation metadata budget.
+	for start := 0; start < 16000; start += 500 {
+		batch.BatchID = fmt.Sprintf("long-source-%d", start)
+		batch.Events = make([]ingestion.Event, 500)
+		for index := range batch.Events {
+			batch.Events[index] = longIdentifierEvent(batch, start+index, "x")
+		}
+		created, err := writer.ApplyBatch(t.Context(), canonicalcontract.CLIPrincipal(), batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessionID = created.SessionID
+		if start == 0 {
+			result, err := module.Open(t.Context(), canonicalcontract.WebPrincipal(), sessionID, sessionanalytics.Query{})
+			if err != nil || result.Summary.MessageFragments != 500 {
+				t.Fatalf("bounded prefix = %+v, %v", result.Summary, err)
+			}
+		}
+	}
+	result, err := module.Open(t.Context(), canonicalcontract.WebPrincipal(), sessionID, sessionanalytics.Query{})
+	if !errors.Is(err, sessionanalytics.ErrCapacity) || result.SessionID != "" {
+		t.Fatalf("long source metadata = %+v, %v", result, err)
+	}
+}
+
+func TestOpenMemorySourceBudgetIncludesUsageKeys(t *testing.T) {
+	store := canonical.NewMemoryStoreWithControlPlane(canonicalcontract.MemoryControlPlane())
+	writer, module := ingestion.NewIngestor(store), sessionanalytics.New(store)
+	batch := longIdentifierBatch()
+	text := strings.Repeat("x", 1<<20)
+	var sessionID string
+	// Keep Event metadata far below 32 MiB while bringing original text close
+	// to the separate 128 MiB source budget. Reuse one immutable text allocation.
+	for index := 0; index < 127; index++ {
+		batch.BatchID = fmt.Sprintf("source-text-%d", index)
+		batch.Events = []ingestion.Event{longIdentifierEvent(batch, index, text)}
+		created, err := writer.ApplyBatch(t.Context(), canonicalcontract.CLIPrincipal(), batch)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessionID = created.SessionID
+	}
+	if _, err := module.Open(t.Context(), canonicalcontract.WebPrincipal(), sessionID, sessionanalytics.Query{}); err != nil {
+		t.Fatalf("bounded source prefix: %v", err)
+	}
+	batch.Events = nil
+	for start := 0; start < 1000; start += 500 {
+		batch.BatchID = fmt.Sprintf("source-usage-%d", start)
+		batch.Usage = make([]ingestion.Usage, 500)
+		for index := range batch.Usage {
+			batch.Usage[index] = ingestion.Usage{SourceUsageID: strings.Repeat("v", 490) + fmt.Sprintf("%010d", start+index),
+				SourceThreadID: batch.Threads[0].SourceThreadID, Revision: 1, OccurredAt: batch.Session.UpdatedAt,
+				Model: strings.Repeat("m", 200), InputTokens: ptr(int64(1))}
+		}
+		if _, err := writer.ApplyBatch(t.Context(), canonicalcontract.CLIPrincipal(), batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := module.Open(t.Context(), canonicalcontract.WebPrincipal(), sessionID, sessionanalytics.Query{})
+	if !errors.Is(err, sessionanalytics.ErrCapacity) || result.SessionID != "" {
+		t.Fatalf("unaccounted usage source = %+v, %v", result, err)
+	}
+}
+
 func BenchmarkOpenMaximumFacts(b *testing.B) {
 	for _, profile := range []string{"messages", "tool_updates"} {
 		b.Run(profile, func(b *testing.B) {
 			s := emptySnapshot()
-			s.Events = make([]canonical.EventRecord, sessionanalytics.MaxFacts)
+			facts := sessionanalytics.MaxFacts
+			if profile == "tool_updates" {
+				facts = 64000
+			}
+			s.Events = make([]canonical.EventRecord, facts)
 			for index := range s.Events {
 				if profile == "messages" {
 					s.Events[index] = event(fmt.Sprintf("event-%06d", index), "root", "message", int64(index))

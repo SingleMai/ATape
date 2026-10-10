@@ -99,7 +99,10 @@ tool metadata is bounded to 8 KiB per Event. Aggregate Event metadata is bounded
 to 32 MiB; the complete
 JSON response is bounded to 2 MiB. Exceeding a bound fails explicitly with
 `422 analytics_capacity`; no partial success is presented as full analysis.
-The snapshot Adapter additionally bounds retained source data to 128 MiB.
+The snapshot Adapter additionally bounds native source facts and selected
+publication Event/Usage part bodies to 128 MiB. Native facts include Session,
+Thread, Usage and Event metadata as well as original Event bodies; long source
+identifiers contribute to these budgets.
 The operation has a 12-second deadline and observes caller cancellation.
 
 There is no migration, analysis worker, persisted result, cache, background
@@ -111,8 +114,8 @@ Running a test and deploying this capability remain separate actions.
 
 Local acceptance on 2026-10-10 covered PostgreSQL 17 native Canonical,
 publication replacement and legacy adoption with retained child data. A fixture
-with 60,002 Events and 6,000 Usage records returned analysis in 405, 281 and
-264 ms on an Apple M5 Pro with a local Docker database. These are single-reader
+with 60,002 Events and 6,000 Usage records returned analysis in 302, 284 and
+259 ms on an Apple M5 Pro with a local Docker database. These are single-reader
 fixture measurements, not a production latency guarantee. Current Go demo and
 Web also completed analysis-to-child-Event navigation without intercepted
 responses. The demo workspace sidebar still has an existing wire-shape mismatch;

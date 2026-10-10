@@ -11,8 +11,25 @@ SELECT id,session_id,thread_id,source_key,revision,projection_revision,
 FROM canonical_events WHERE session_id=$1 ORDER BY id LIMIT $2;
 
 -- name: AnalyticsNativeBytes :one
-SELECT COALESCE(sum(octet_length(text)::bigint+octet_length(tool_update_json)+octet_length(tool_label)+256),0)::bigint AS source_bytes
-FROM canonical_events WHERE session_id=$1;
+SELECT COALESCE(sum(source_bytes),0)::bigint AS source_bytes FROM (
+ SELECT sum(octet_length(e.id)::bigint+octet_length(e.session_id)+octet_length(e.thread_id)+octet_length(e.source_key)
+  +octet_length(e.order_fidelity)+octet_length(e.fidelity)+octet_length(e.kind)+octet_length(e.author)
+  +octet_length(e.text)+octet_length(e.tool_update_json)+octet_length(e.tool_label)
+  +octet_length(COALESCE(e.child_thread_id,''))+256) AS source_bytes
+ FROM canonical_events e WHERE e.session_id=$1
+ UNION ALL
+ SELECT sum(octet_length(u.source_key)::bigint+octet_length(u.session_id)+octet_length(u.thread_id)+octet_length(u.model)+128)
+ FROM canonical_usage u WHERE u.session_id=$1
+ UNION ALL
+ SELECT sum(octet_length(t.id)::bigint+octet_length(t.session_id)+octet_length(t.source_key)+octet_length(t.label)
+  +octet_length(t.summary)+octet_length(COALESCE(t.parent_thread_id,''))+octet_length(t.capture_status)+128)
+ FROM canonical_threads t WHERE t.session_id=$1
+ UNION ALL
+ SELECT sum(octet_length(s.id)::bigint+octet_length(s.project_id)+octet_length(COALESCE(s.captured_by_user_id::text,''))
+  +octet_length(s.source_key)+octet_length(s.title)+octet_length(s.summary)+octet_length(s.insight)
+  +octet_length(s.actor_name)+octet_length(s.actor_harness)+octet_length(s.branch)+octet_length(s.status)+octet_length(s.capture_status)+256)
+ FROM canonical_sessions s WHERE s.id=$1
+) AS facts;
 
 -- name: ListAnalyticsNativeUsage :many
 SELECT * FROM canonical_usage WHERE session_id=$1 ORDER BY source_key LIMIT $2;

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/authorization"
@@ -39,9 +40,25 @@ func AnalyticsBodyDigest(event EventRecord) EventBodyDigest {
 	return EventBodyDigest{Text: digest(event.Text), Tool: digest(event.ToolUpdateJSON)}
 }
 
+// AnalyticsEventMetadataBytes bounds retained Event strings and a fixed record
+// allowance. Text is excluded: source readers account for its original bytes
+// separately, while tool input/output are included until AnalyticsEvent strips
+// them. Transport provenance does not contribute to this Canonical read budget.
+func AnalyticsEventMetadataBytes(event EventRecord) int {
+	bytes := len(event.ID) + len(event.SessionID) + len(event.ThreadID) + len(event.SourceKey) +
+		len(event.OrderFidelity) + len(event.Fidelity) + len(event.Kind) + len(event.Author) +
+		len(event.ToolLabel) + len(event.ToolUpdateJSON) + 256
+	if event.ChildThreadID != nil {
+		bytes += len(*event.ChildThreadID)
+	}
+	return bytes
+}
+
 // AnalyticsEvent removes payloads without changing tool identity or state.
 func AnalyticsEvent(event EventRecord) (EventRecord, error) {
 	event.Text, event.RawRef = "", ""
+	event.Digest, event.AdapterVersion, event.SchemaVersion = "", "", ""
+	event.ObservedAt, event.ReceivedAt, event.IngestSeq = time.Time{}, time.Time{}, 0
 	if event.ToolUpdateJSON != "" {
 		_, err := ParseToolUpdate(event.ToolUpdateJSON)
 		if err != nil {
@@ -133,12 +150,25 @@ func (s *MemoryStore) analyticsLocked(ctx context.Context, p authentication.Prin
 	result := AnalyticsSnapshot{Session: session, Threads: []ThreadRecord{}, Events: []EventRecord{}, Usage: []UsageRecord{}}
 	bodies := map[string]EventBodyDigest{}
 	bytes := 0
-	sourceBytes := 0
+	sourceBytes := len(session.ID) + len(session.ProjectID) + len(session.CapturedByUserID) + len(session.SourceKey) +
+		len(session.Title) + len(session.Summary) + len(session.Insight) + len(session.Actor.Name) + len(session.Actor.Harness) +
+		len(session.Branch) + len(session.Status) + len(session.CaptureStatus) + 256
+	if sourceBytes > AnalyticsSourceBytes {
+		return result, false, ErrAnalyticsCapacity
+	}
 	for id := range s.threadIDsBySession[sessionID] {
 		if len(result.Threads) >= AnalyticsThreadLimit {
 			return result, false, ErrAnalyticsCapacity
 		}
-		result.Threads = append(result.Threads, cloneThread(s.threads[recordKey(sessionID, id)]))
+		thread := s.threads[recordKey(sessionID, id)]
+		sourceBytes += len(thread.ID) + len(thread.SessionID) + len(thread.SourceKey) + len(thread.Label) + len(thread.Summary) + len(thread.CaptureStatus) + 128
+		if thread.ParentThreadID != nil {
+			sourceBytes += len(*thread.ParentThreadID)
+		}
+		if sourceBytes > AnalyticsSourceBytes {
+			return result, false, ErrAnalyticsCapacity
+		}
+		result.Threads = append(result.Threads, cloneThread(thread))
 		for eventID := range s.eventIDsByThread[recordKey(sessionID, id)] {
 			if err := ctx.Err(); err != nil {
 				return result, false, err
@@ -147,7 +177,7 @@ func (s *MemoryStore) analyticsLocked(ctx context.Context, p authentication.Prin
 				return result, false, ErrAnalyticsCapacity
 			}
 			original := s.events[eventID]
-			sourceBytes += len(original.Text) + len(original.ToolUpdateJSON) + len(original.ToolLabel) + 256
+			sourceBytes += AnalyticsEventMetadataBytes(original) + len(original.Text)
 			if sourceBytes > AnalyticsSourceBytes {
 				return result, false, ErrAnalyticsCapacity
 			}
@@ -156,7 +186,7 @@ func (s *MemoryStore) analyticsLocked(ctx context.Context, p authentication.Prin
 			if err != nil {
 				return result, false, err
 			}
-			bytes += len(event.ToolUpdateJSON) + len(event.ToolLabel) + len(event.ID) + len(event.ThreadID) + 256
+			bytes += AnalyticsEventMetadataBytes(event)
 			if bytes > AnalyticsMetadataBytes {
 				return result, false, ErrAnalyticsCapacity
 			}
@@ -168,6 +198,10 @@ func (s *MemoryStore) analyticsLocked(ctx context.Context, p authentication.Prin
 			continue
 		}
 		if len(result.Usage) >= AnalyticsRecordLimit {
+			return result, false, ErrAnalyticsCapacity
+		}
+		sourceBytes += len(item.SourceKey) + len(item.SessionID) + len(item.ThreadID) + len(item.Model) + 128
+		if sourceBytes > AnalyticsSourceBytes {
 			return result, false, ErrAnalyticsCapacity
 		}
 		item.InputTokens, item.OutputTokens = cloneCounter(item.InputTokens), cloneCounter(item.OutputTokens)

@@ -59,6 +59,15 @@ func readAnalyticsSnapshot(ctx context.Context, q *db.Queries, p authentication.
 			return result, false, &canonical.RefreshRequiredError{Head: result.Head}
 		}
 	}
+	if result.Head == "" {
+		bytes, err := q.AnalyticsNativeBytes(ctx, sessionID)
+		if err != nil {
+			return result, false, persist("read native analysis bound", err)
+		}
+		if bytes > canonical.AnalyticsSourceBytes {
+			return result, false, canonical.ErrAnalyticsCapacity
+		}
+	}
 	threads, err := q.ListAnalyticsThreads(ctx, db.ListAnalyticsThreadsParams{SessionID: sessionID, Limit: canonical.AnalyticsThreadLimit + 1})
 	if err != nil {
 		return result, false, persist("read analysis threads", err)
@@ -75,7 +84,7 @@ func readAnalyticsSnapshot(ctx context.Context, q *db.Queries, p authentication.
 		if len(result.Events) >= canonical.AnalyticsRecordLimit {
 			return canonical.ErrAnalyticsCapacity
 		}
-		metadataBytes += len(event.ID) + len(event.ThreadID) + len(event.ToolLabel) + len(event.ToolUpdateJSON) + 256
+		metadataBytes += canonical.AnalyticsEventMetadataBytes(event)
 		if metadataBytes > canonical.AnalyticsMetadataBytes {
 			return canonical.ErrAnalyticsCapacity
 		}
@@ -86,13 +95,6 @@ func readAnalyticsSnapshot(ctx context.Context, q *db.Queries, p authentication.
 		return nil
 	}
 	if result.Head == "" {
-		bytes, err := q.AnalyticsNativeBytes(ctx, sessionID)
-		if err != nil {
-			return result, false, persist("read native analysis bound", err)
-		}
-		if bytes > canonical.AnalyticsSourceBytes {
-			return result, false, canonical.ErrAnalyticsCapacity
-		}
 		rows, err := q.ListAnalyticsNativeEvents(ctx, db.ListAnalyticsNativeEventsParams{SessionID: sessionID, Limit: canonical.AnalyticsRecordLimit + 1})
 		if err != nil {
 			return result, false, persist("read native analysis events", err)

@@ -310,7 +310,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		if thread == nil || event.SessionID != s.Session.ID {
 			return Result{}, errors.New("analysis event is outside snapshot")
 		}
-		metadataBytes += len(event.ToolUpdateJSON) + len(event.ToolLabel) + len(event.ID) + len(event.ThreadID)
+		metadataBytes += canonical.AnalyticsEventMetadataBytes(event)
 		if metadataBytes > canonical.AnalyticsMetadataBytes || len(event.ToolUpdateJSON) > 8192 {
 			return Result{}, ErrCapacity
 		}

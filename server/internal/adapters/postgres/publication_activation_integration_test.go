@@ -265,6 +265,16 @@ SELECT 'analysis-usage-'||n,s.id,'root',1,'fixture',s.updated_at,'model-'||(n%2)
 			samples = append(samples, elapsed)
 		}
 		t.Logf("60,002 Events (512-byte bodies), 6,000 Usage, single reader, three reads: %v", samples)
+		// Source identities can legitimately approach 2 KiB after the Adapter,
+		// installation, Session, Thread and Event identifiers are combined.
+		// A tiny body does not make those metadata bytes free to read.
+		_, e = pool.Exec(ctx, `UPDATE canonical_events SET source_key=repeat('s',1900)||source_key WHERE session_id=$1`, created.SessionID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = sessionanalytics.New(reader).Open(ctx, web, created.SessionID, sessionanalytics.Query{}); !errors.Is(e, sessionanalytics.ErrCapacity) {
+			t.Fatalf("long source identities bypassed analysis capacity: %v", e)
+		}
 	})
 	t.Run("overview reads mixed legacy Threads and publication Events within the request budget", func(t *testing.T) {
 		legacy, e := ingestion.NewIngestor(reader).ApplyBatch(ctx, cli, batch("overview-legacy"))
