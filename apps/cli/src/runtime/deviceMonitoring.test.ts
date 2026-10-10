@@ -17,6 +17,7 @@ it.each(["codex", "opencode"])("scopes %s device jobs to account and instance, r
   const config: ClientConfig = { ...emptyClientConfig(), projects: [project, { ...project, id: "two", instanceOrigin: "https://two.example", userId: "user-two", name: "Private other project" }],
     enabledAdapterIds: [adapterId], adapters: [{ adapterId: adapterId, packageName: `@atape/adapter-${adapterId}`, displayName: "Codex", upgradeSpec: `@atape/adapter-${adapterId}`, version: "0.4.4", installedAt: project.createdAt, updatedAt: project.createdAt }] }
   const layer = makeDeviceMonitoringLayer(home, Effect.succeed(config), (async input => {
+    if (String(input).endsWith("/tags/atape-update-catalog-v2")) return new Response("Not found", { status: 404 })
     checks++
     expect(String(input)).toBe(`https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`)
     const version = "0.4.5"

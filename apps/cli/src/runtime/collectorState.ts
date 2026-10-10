@@ -1,3 +1,4 @@
+import { guardCaptureRuntimeWrite, assertCaptureMigrationAdmission } from "./captureMigrationAdmission.ts"
 import { CollectorStateError, CollectorStateStore, type CollectorStateSnapshot } from "@atape/application"
 import { CollectorState as CollectorStateSchema, emptyCollectorState, type CollectorCheckpoint, type CollectorState } from "@atape/domain"
 import { randomUUID } from "node:crypto"
@@ -6,7 +7,7 @@ import { dirname } from "node:path"
 import { Effect, Layer, Schema } from "effect"
 import { withCollectorStateLock } from "./collectorStateLock.ts"
 import { captureInstallationPath, capturePathState, captureRoot, readCaptureInstallation } from "./captureBinding.ts"
-import { assertRuntimeDataAdmission, guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
+import { assertRuntimeDataAdmission, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 
 export const makeCollectorStateLayer = (stateFile: string, runtime: RuntimeContext = runtimeContext(dirname(stateFile))) => Layer.succeed(
   CollectorStateStore,
@@ -133,7 +134,7 @@ const writeCollectorState = (stateFile: string, state: CollectorState, runtime: 
     Effect.mapError((error) => new CollectorStateError({
       reason: "decode", message: `ATape refused to persist invalid collector state: ${String(error)}`
     })),
-    Effect.flatMap((validated) => guardRuntimeWrite(runtime, Effect.tryPromise({
+    Effect.flatMap((validated) => guardCaptureRuntimeWrite(runtime, Effect.tryPromise({
       try: async () => {
         await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 })
         const temporary = `${stateFile}.${process.pid}.${randomUUID()}.tmp`
@@ -159,7 +160,7 @@ const admissionFailure = (cause: unknown) => new CollectorStateError({
 })
 const checkAdmission = (runtime: RuntimeContext) => Effect.tryPromise({
   try: () => assertRuntimeDataAdmission(runtime), catch: admissionFailure
-})
+}).pipe(Effect.andThen(assertCaptureMigrationAdmission(runtime)), Effect.mapError(admissionFailure))
 
 const checkpointKey = (checkpoint: CollectorCheckpoint) =>
   `${checkpoint.instanceOrigin}\0${checkpoint.userId}\0${checkpoint.projectId}\0${checkpoint.adapterId}`

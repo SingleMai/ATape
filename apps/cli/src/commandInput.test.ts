@@ -69,3 +69,16 @@ it("decodes controlled start and preserves literal prompt including empty input"
 it.each([["start"], ["start", "cursor"], ["start", "--tool", "cursor", "--resume"],
   ["start", "--help", "--tool", "cursor"], ["start", "--tool", "cursor", "--tool", "cursor"],
   ["start", "--tool", "cursor", "--", "--native"]])("rejects unsupported start grammar %j", (...args) => expect(() => parseCLI(args)).toThrow())
+
+it("accepts only bounded token-bound migration entries without filesystem arguments", () => {
+  const token = "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", fingerprint = "a".repeat(64)
+  expect(parseCLI(["__capture-migration-preflight", token, token])).toEqual({
+    kind: "__capture-migration-preflight", options: { requestId: token, token } })
+  expect(parseCLI(["__capture-migration-apply", token, token, token, fingerprint])).toEqual({
+    kind: "__capture-migration-apply", options: { outerKey: token, attemptId: token, token, bundleFingerprint: fingerprint } })
+  for (const args of [["__capture-migration-preflight", token], ["__capture-migration-preflight", "/private/state", token],
+    ["__capture-migration-preflight", token, token, "--version"],
+    ["__capture-migration-apply", token, token, token, "short"],
+    ["__capture-migration-apply", token, token, token, fingerprint, "/private/state"]])
+    expect(() => parseCLI(args)).toThrow("Unsupported arguments")
+})

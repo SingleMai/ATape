@@ -4,22 +4,48 @@ import { lstat, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { archiveName } from "./release-contract.mjs"
-import { decodeReleaseBundle, releaseBundleProtocol, releasePackageNames } from "../packages/domain/src/releaseCatalog.ts"
+import { decodeManagedReleaseBundle, decodeReleaseBundle, decodeMigrationReleaseBundle, releaseBundleProtocol,
+  migrationReleaseBundleProtocol, releasePackageNames } from "../packages/domain/src/releaseCatalog.ts"
 
 const execute = promisify(execFile)
 const registry = "https://registry.npmjs.org"
 export const publicationCaptureContract = "atape.client.v3-capture.v2"
 export const publicationControlProtocol = "atape.update-control.v1"
+export const publicationMigrationProtocol = "atape.capture-migration.v1"
+export const publicationMigrationId = "journal-v7-to-v8"
+const legacyCaptureContract = "atape.client.v3-capture.v1"
 const maximumMetadataBytes = 256 * 1024
 const maximumArtifactBytes = 16 * 1024 * 1024
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex")
 const integrity = bytes => `sha512-${createHash("sha512").update(bytes).digest("base64")}`
 const canonicalTarball = (name, version) => `${registry}/${name}/-/${name.slice("@atape/".length)}-${version}.tgz`
 
+// Historical 0.5.4 reads unversioned latest forever. Only an actual v2 bridge
+// may advance it. An incompatible future publication needs a separately tested
+// compiled plan/policy and always uses a non-latest npm/GitHub advertisement.
+export const isLegacyLatestBridge = bundle => bundle.captureStateContract === publicationCaptureContract &&
+  bundle.updateControlProtocol === publicationControlProtocol
+export function publicationBundles(value) {
+  const bundle = decodeManagedReleaseBundle(value)
+  if (!isLegacyLatestBridge(bundle)) throw new Error("This publication policy cannot advertise future capture/control contracts; incompatible targets must remain nonlatest.")
+  if (bundle.protocol === releaseBundleProtocol) return { bundle, legacyBundle: bundle }
+  if (bundle.migration.protocol !== publicationMigrationProtocol || bundle.migration.id !== publicationMigrationId ||
+    bundle.migration.fromCaptureStateContracts.some(contract => ![legacyCaptureContract, publicationCaptureContract].includes(contract))) {
+    throw new Error("This publication policy does not support that compiled migration plan.")
+  }
+  return { bundle, migrationBundle: bundle, legacyBundle: decodeReleaseBundle({ protocol: releaseBundleProtocol,
+    version: bundle.version, captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol,
+    packages: bundle.packages }) }
+}
+
 // Both publication callers validate the same immutable local inputs before any
 // external write, including npm writes which precede GitHub advertisement.
 export function validatePublicationArtifacts(artifacts) {
-  const bundle = decodeReleaseBundle(artifacts.bundle)
+  const { bundle } = publicationBundles(artifacts.bundle)
+  if (bundle.packages.length !== releasePackageNames.length ||
+    releasePackageNames.some(name => !bundle.packages.some(item => item.name === name))) {
+    throw new Error("Publication requires the complete current producer package set.")
+  }
   const expectedFilenames = new Set([...bundle.packages.map(item => archiveName(item.name, bundle.version)), "SHA256SUMS"])
   if (!Array.isArray(artifacts.files) || artifacts.files.length !== expectedFilenames.size ||
     new Set(artifacts.files.map(file => file.filename)).size !== expectedFilenames.size ||
@@ -79,9 +105,18 @@ export async function loadPublicationArtifacts(release) {
     manifest.atapeRuntime?.releaseCatalogProtocol !== "atape.update-catalog.v1") {
     throw new Error("This publisher supports only catalog-capable capture.v2/control.v1 CLI bundles; future contracts require a separate publication policy.")
   }
-  const bundle = decodeReleaseBundle({ protocol: releaseBundleProtocol, version: release.version,
+  const common = { version: release.version,
     captureStateContract: manifest.atapeRuntime.stateContract, updateControlProtocol: manifest.atapeRuntime.updateControlProtocol,
-    packages: files.map(item => ({ name: item.name, integrity: item.integrity, tarball: canonicalTarball(item.name, release.version) })) })
+    packages: files.map(item => ({ name: item.name, integrity: item.integrity, tarball: canonicalTarball(item.name, release.version) })) }
+  let bundle
+  if (manifest.atapeRuntime.migrationReleaseCatalogProtocol !== undefined || manifest.atapeRuntime.captureMigrationProtocol !== undefined ||
+    manifest.atapeRuntime.captureMigration !== undefined) {
+    if (manifest.atapeRuntime.migrationReleaseCatalogProtocol !== "atape.update-catalog.v2" ||
+      manifest.atapeRuntime.captureMigrationProtocol !== publicationMigrationProtocol ||
+      manifest.atapeRuntime.updateWakeProtocol !== "atape.update-wake.v1") throw new Error("Packaged migration/catalog/wake capabilities are incomplete.")
+    bundle = decodeMigrationReleaseBundle({ ...common, protocol: migrationReleaseBundleProtocol, migration: manifest.atapeRuntime.captureMigration })
+  } else bundle = decodeReleaseBundle({ ...common, protocol: releaseBundleProtocol })
+  publicationBundles(bundle)
   return { bundle, files: [...files, { filename: "SHA256SUMS", path: checksumsPath, bytes: checksums, sha256: sha256(checksums) }] }
 }
 
@@ -151,7 +186,7 @@ export function createPublicReleaseRegistry({ fetch: transport = globalThis.fetc
       catch (cause) { if (cause instanceof PropagationError && cause.message.includes("HTTP 404")) return undefined; throw cause }
     },
     async verify(artifacts) {
-      const bundle = decodeReleaseBundle(artifacts.bundle)
+      const bundle = decodeManagedReleaseBundle(artifacts.bundle)
       const deadline = now() + budgetMs
       const verified = []
       for (const item of bundle.packages) {

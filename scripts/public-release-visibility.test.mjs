@@ -6,9 +6,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import test from "node:test"
-import { releaseBundleProtocol, releasePackageNames } from "../packages/domain/src/releaseCatalog.ts"
+import { releaseBundleProtocol, releasePackageNames, migrationReleaseBundleProtocol } from "../packages/domain/src/releaseCatalog.ts"
 import { createPublicReleaseRegistry, loadPublicationArtifacts, publicationCaptureContract,
-  publicationControlProtocol } from "./public-release-visibility.mjs"
+  publicationControlProtocol, publicationBundles, isLegacyLatestBridge, publicationMigrationProtocol,
+  publicationMigrationId } from "./public-release-visibility.mjs"
 
 const hash = (algorithm, bytes, encoding) => createHash(algorithm).update(bytes).digest(encoding)
 function artifacts(version = "0.5.6") {
@@ -87,14 +88,15 @@ test("exact lookup treats only a 404 as absent; unknown metadata remains an erro
   await assert.rejects(createPublicReleaseRegistry({ fetch: async () => Response.json({ version: "0.5.6" }) }).read("@atape/cli", "latest"), /Invalid/)
 })
 
-async function localRelease(t, contract = publicationCaptureContract, protocol = "atape.runtime.v1") {
+async function localRelease(t, contract = publicationCaptureContract, protocol = "atape.runtime.v1", capabilities = {}) {
   const directory = await mkdtemp(join(tmpdir(), "atape-publication-"))
   t.after(() => rm(directory, { recursive: true, force: true }))
   const local = artifacts()
   const packageDirectory = join(directory, "package")
   await mkdir(packageDirectory)
   await writeFile(join(packageDirectory, "package.json"), JSON.stringify({ name: "@atape/cli", version: local.bundle.version,
-    atapeRuntime: { protocol, stateContract: contract, updateControlProtocol: publicationControlProtocol, releaseCatalogProtocol: "atape.update-catalog.v1" } }))
+    atapeRuntime: { protocol, stateContract: contract, updateControlProtocol: publicationControlProtocol,
+      releaseCatalogProtocol: "atape.update-catalog.v1", ...capabilities } }))
   const packages = []
   for (const file of local.files) {
     const path = join(directory, file.filename)
@@ -128,4 +130,40 @@ test("packaged runtime protocol and the client's 16MiB acquisition limit are pub
   const release = await localRelease(t)
   await writeFile(join(release.releaseDirectory, release.packages[1].artifactName), Buffer.alloc(16 * 1024 * 1024 + 1))
   await assert.rejects(loadPublicationArtifacts(release), /Invalid local artifact/)
+})
+
+const migrationCapabilities = { migrationReleaseCatalogProtocol: "atape.update-catalog.v2",
+  captureMigrationProtocol: publicationMigrationProtocol, updateWakeProtocol: "atape.update-wake.v1",
+  captureMigration: { protocol: publicationMigrationProtocol, id: publicationMigrationId,
+    fromCaptureStateContracts: ["atape.client.v3-capture.v1", publicationCaptureContract] } }
+
+test("actual packaged migration capabilities produce a dual-readable immutable v2 bridge", async t => {
+  const result = await loadPublicationArtifacts(await localRelease(t, publicationCaptureContract, "atape.runtime.v1", migrationCapabilities))
+  assert.equal(result.bundle.protocol, migrationReleaseBundleProtocol)
+  assert.deepEqual(result.bundle.migration, migrationCapabilities.captureMigration)
+  assert.equal(publicationBundles(result.bundle).legacyBundle.protocol, releaseBundleProtocol)
+  assert.equal(isLegacyLatestBridge(result.bundle), true)
+})
+
+test("incomplete, unknown or mislabeled migration publication is refused", async t => {
+  for (const change of [{ captureMigrationProtocol: "unknown" }, { migrationReleaseCatalogProtocol: "unknown" },
+    { updateWakeProtocol: undefined }, { captureMigration: { ...migrationCapabilities.captureMigration, id: "unknown" } },
+    { captureMigration: { ...migrationCapabilities.captureMigration, fromCaptureStateContracts: ["future", publicationCaptureContract] } }]) {
+    const release = await localRelease(t, publicationCaptureContract, "atape.runtime.v1", { ...migrationCapabilities, ...change })
+    await assert.rejects(loadPublicationArtifacts(release))
+  }
+  const future = { ...artifacts().bundle, protocol: migrationReleaseBundleProtocol, captureStateContract: "future.v3",
+    migration: { ...migrationCapabilities.captureMigration, fromCaptureStateContracts: [publicationCaptureContract, "future.v3"] } }
+  assert.equal(isLegacyLatestBridge(future), false)
+  assert.throws(() => publicationBundles(future), /future.*nonlatest/)
+})
+
+test("anonymous visibility validates all exact package bytes for a migration bundle", async () => {
+  const local = artifacts()
+  local.bundle = { ...local.bundle, protocol: migrationReleaseBundleProtocol, migration: migrationCapabilities.captureMigration }
+  const remote = registryTransport(local)
+  const result = await createPublicReleaseRegistry({ fetch: remote.fetch }).verify(local)
+  assert.equal(result.bundle.protocol, migrationReleaseBundleProtocol)
+  assert.equal(result.packages.length, releasePackageNames.length)
+  assert.equal(remote.calls.length, releasePackageNames.length * 2)
 })

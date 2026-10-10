@@ -1,6 +1,6 @@
 import { AdapterPackageError, AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CollectorDaemonProcess, runAutomaticUpdates,
   type PreparedAutomaticUpdate } from "@atape/application"
-import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releasePackageNames, releaseBundleSection, releaseBundleFingerprint,
+import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releasePackageNames, releaseBundleSection, managedReleaseBundleFingerprint as releaseBundleFingerprint,
   type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { createHash, randomUUID } from "node:crypto"
@@ -117,6 +117,7 @@ else if (args[0]==="install") {
     if (behavior.offline) throw new TypeError("Fixture transport unavailable")
     if (address.startsWith("https://api.github.com/")) {
       const tag = decodeURIComponent(new URL(address).pathname.split("/").at(-1)!)
+      if (tag === "atape-update-catalog-v2") return new Response("Not found", { status: 404 })
       if (tag === "atape-update-catalog-v1") {
         const advertised = bundle(behavior.targetVersion)
         const incomplete = { ...advertised, packages: advertised.packages.filter(item => item.name !== behavior.missingPackage) }
@@ -321,8 +322,8 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     const target = () => f.run(AutomaticUpdatePlatform.use(platform => platform.target()))
     expect(await target()).toEqual(f.bundle("0.5.3"))
     expect(await target()).toEqual(f.bundle("0.5.3"))
-    expect(f.fetches).toHaveLength(2)
-    expect(f.fetches.every(address => address.endsWith("/tags/atape-update-catalog-v1"))).toBe(true)
+    expect(f.fetches).toHaveLength(4)
+    expect(f.fetches.every(address => /\/tags\/atape-update-catalog-v[12]$/.test(address))).toBe(true)
     expect(await f.npmCalls()).toEqual([])
   })
 
@@ -465,7 +466,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     await expect(f.run(runAutomaticUpdates("0.5.2").pipe(Effect.provide(store)))).rejects.toMatchObject({ reason: "prepare" })
     expect((await f.npmCalls()).some(args => args[0] === "install")).toBe(false)
     expect(f.adapterSpecs).toEqual([])
-    expect(f.fetches).toHaveLength(1)
+    expect(f.fetches).toHaveLength(2)
     expect(await readRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
     expect(await needsUpdateRecovery(f.paths)).toBe(false)
     expect(await f.raw()).toEqual(f.config)
@@ -504,10 +505,11 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     const f = await fixture(), prepared = await f.prepare()
     expect(prepared.bundle.version).toBe("0.5.3")
     expect(f.adapterSpecs).toEqual(["@atape/adapter-codex@0.5.3", "@atape/adapter-claude@0.5.3"])
-    expect(f.fetches).toHaveLength(3)
-    expect(f.fetches[0]).toContain("atape-update-catalog-v1")
-    expect(f.fetches[1]).toContain("/tags/v0.5.3")
-    expect(f.fetches[2]).toBe(f.bundle("0.5.3").packages.find(item => item.name === "@atape/cli")!.tarball)
+    expect(f.fetches).toHaveLength(4)
+    expect(f.fetches[0]).toContain("atape-update-catalog-v2")
+    expect(f.fetches[1]).toContain("atape-update-catalog-v1")
+    expect(f.fetches[2]).toContain("/tags/v0.5.3")
+    expect(f.fetches[3]).toBe(f.bundle("0.5.3").packages.find(item => item.name === "@atape/cli")!.tarball)
     const installation = (await f.npmCalls()).find(args => args[0] === "install")!
     expect(installation).not.toContain("@atape/cli@0.5.3")
     const archive = installation.at(-1)!

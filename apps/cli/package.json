@@ -10,7 +10,14 @@
     "loginStartupProtocol": "atape.login-startup.v1",
     "updateWakeProtocol": "atape.update-wake.v1",
     "updateControlProtocol": "atape.update-control.v1",
-    "releaseCatalogProtocol": "atape.update-catalog.v1"
+    "releaseCatalogProtocol": "atape.update-catalog.v1",
+    "migrationReleaseCatalogProtocol": "atape.update-catalog.v2",
+    "captureMigrationProtocol": "atape.capture-migration.v1",
+    "captureMigration": {
+      "protocol": "atape.capture-migration.v1",
+      "id": "journal-v7-to-v8",
+      "fromCaptureStateContracts": ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"]
+    }
   },
   "repository": {
     "type": "git",

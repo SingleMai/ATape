@@ -11,6 +11,7 @@ import { makeCollectorTransportLayer } from "./collectorTransport.ts"
 import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import { loadNodeRedactionPolicySnapshot } from "./redactionPolicy.ts"
 import { runtimeContext } from "./runtimeAdmission.ts"
+import { assertCaptureMigrationAdmission } from "./captureMigrationAdmission.ts"
 
 export { makeCollectorStateLayer, withCollectorInstallation } from "./collectorState.ts"
 export { makeAdapterRuntimeLayer } from "./adapterHost.ts"
@@ -51,11 +52,13 @@ export const makeNodeCollectorLayer = (
   const sources = Layer.unwrap(admission.pipe(Effect.map(value => makeSourceCaptureCollectorLayer(value)))).pipe(Layer.provide(Layer.mergeAll(
     states, journals, redactor, makePublicationTransportLayer(), makeRawPublicationTransportLayer()
   )))
-  const jobAdmission = paths.collectorProcessFile === undefined ? undefined : Effect.tryPromise({
+  const jobAdmission = Effect.tryPromise({
     try: async () => {
-      if (await isCollectorMaintenancePending(paths.collectorProcessFile!)) throw new Error("Collector admission is paused for an ATape update.")
+      if (paths.collectorProcessFile !== undefined && await isCollectorMaintenancePending(paths.collectorProcessFile))
+        throw new Error("Collector admission is paused for an ATape update.")
     },
     catch: () => new AdapterRuntimeError({ reason: "load", adapterId: "host", retryable: true, message: "Collector admission is paused for an ATape update." })
-  })
+  }).pipe(Effect.andThen(assertCaptureMigrationAdmission(runtime)), Effect.mapError(() => new AdapterRuntimeError({
+    reason: "load", adapterId: "host", retryable: true, message: "Collector admission is paused for capture migration." })))
   return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory, jobAdmission, { home: runtime.home, runtime }), makeCollectorTransportLayer(), redactor, policies, sources)
 }

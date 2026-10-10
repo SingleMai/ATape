@@ -107,3 +107,129 @@ export const releaseBundleFromBody = (body: string): ReleaseBundle | undefined =
   if (end < start) throw new Error("Release bundle section is malformed.")
   return decodeReleaseBundle(JSON.parse(body.slice(start, end).trim()))
 }
+
+// Migration discovery is additive. Published strict v1 readers keep their
+// original tag, body namespace, decoder and canonical bundle identity.
+export const migrationReleaseBundleProtocol = "atape.release-bundle.v2"
+export const migrationReleaseCatalogProtocol = "atape.update-catalog.v2"
+export const migrationReleaseCatalogTag = "atape-update-catalog-v2"
+export const MigrationReleaseBundle = Schema.Struct({
+  protocol: Schema.Literal(migrationReleaseBundleProtocol),
+  version: StableVersion,
+  captureStateContract: OpaqueProtocol,
+  updateControlProtocol: OpaqueProtocol,
+  packages: Schema.Array(ReleasePackage).check(Schema.isLengthBetween(7, 32)),
+  migration: Schema.Struct({ protocol: OpaqueProtocol, id: OpaqueProtocol,
+    fromCaptureStateContracts: Schema.Array(OpaqueProtocol).check(Schema.isLengthBetween(1, 16)) })
+}).check(Schema.makeFilter(bundle => {
+  try {
+    decodeReleaseBundle({ protocol: releaseBundleProtocol, version: bundle.version,
+      captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol, packages: bundle.packages })
+    return new Set(bundle.migration.fromCaptureStateContracts).size === bundle.migration.fromCaptureStateContracts.length &&
+      bundle.migration.fromCaptureStateContracts.includes(bundle.captureStateContract)
+  } catch { return false }
+}))
+export type MigrationReleaseBundle = typeof MigrationReleaseBundle.Type
+export const ManagedReleaseBundle = Schema.Union([ReleaseBundle, MigrationReleaseBundle])
+export type ManagedReleaseBundle = typeof ManagedReleaseBundle.Type
+
+const MigrationReleaseRoute = Schema.Struct({ fromCaptureStateContract: OpaqueProtocol,
+  updateControlProtocol: OpaqueProtocol, migrationProtocol: OpaqueProtocol, migrationId: OpaqueProtocol, version: StableVersion })
+const routeKey = (route: typeof MigrationReleaseRoute.Type) => JSON.stringify([route.fromCaptureStateContract,
+  route.updateControlProtocol, route.migrationProtocol, route.migrationId])
+export const MigrationReleaseCatalog = Schema.Struct({
+  protocol: Schema.Literal(migrationReleaseCatalogProtocol),
+  revision: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  bundles: Schema.Array(MigrationReleaseBundle).check(Schema.isMaxLength(64)),
+  routes: Schema.Array(MigrationReleaseRoute).check(Schema.isMaxLength(256))
+}).check(Schema.makeFilter(catalog => {
+  if (new Set(catalog.bundles.map(bundle => bundle.version)).size !== catalog.bundles.length ||
+    new Set(catalog.routes.map(routeKey)).size !== catalog.routes.length) return false
+  return catalog.routes.every(route => {
+    const bundle = catalog.bundles.find(item => item.version === route.version)
+    return bundle !== undefined && bundle.updateControlProtocol === route.updateControlProtocol &&
+      bundle.migration.protocol === route.migrationProtocol && bundle.migration.id === route.migrationId &&
+      bundle.migration.fromCaptureStateContracts.includes(route.fromCaptureStateContract)
+  }) && catalog.bundles.every(bundle => catalog.routes.some(route => route.version === bundle.version))
+}))
+export type MigrationReleaseCatalog = typeof MigrationReleaseCatalog.Type
+export const decodeMigrationReleaseBundle = (value: unknown): MigrationReleaseBundle =>
+  Schema.decodeUnknownSync(MigrationReleaseBundle, { onExcessProperty: "error" })(value)
+export const decodeManagedReleaseBundle = (value: unknown): ManagedReleaseBundle =>
+  Schema.decodeUnknownSync(ManagedReleaseBundle, { onExcessProperty: "error" })(value)
+export const decodeMigrationReleaseCatalog = (value: unknown): MigrationReleaseCatalog =>
+  Schema.decodeUnknownSync(MigrationReleaseCatalog, { onExcessProperty: "error" })(value)
+
+export const migrationReleaseBundleFingerprint = (value: MigrationReleaseBundle): string => {
+  const bundle = decodeMigrationReleaseBundle(value)
+  const base = JSON.parse(releaseBundleFingerprint({ protocol: releaseBundleProtocol, version: bundle.version,
+    captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol,
+    packages: bundle.packages })) as Record<string, unknown>
+  return JSON.stringify({ ...base, protocol: bundle.protocol, migration: { protocol: bundle.migration.protocol, id: bundle.migration.id,
+    fromCaptureStateContracts: [...bundle.migration.fromCaptureStateContracts].sort() } })
+}
+export const managedReleaseBundleFingerprint = (value: ManagedReleaseBundle): string => {
+  const bundle = decodeManagedReleaseBundle(value)
+  return bundle.protocol === releaseBundleProtocol ? releaseBundleFingerprint(bundle) : migrationReleaseBundleFingerprint(bundle)
+}
+
+export const selectMigrationReleaseBundle = (value: MigrationReleaseCatalog, compatibility: {
+  readonly captureStateContract: string; readonly updateControlProtocol: string
+  readonly supportedMigrationPlans: ReadonlyArray<{ readonly protocol: string; readonly id: string }>
+}): MigrationReleaseBundle => {
+  const catalog = decodeMigrationReleaseCatalog(value)
+  const routes = catalog.routes.filter(route => route.fromCaptureStateContract === compatibility.captureStateContract &&
+    route.updateControlProtocol === compatibility.updateControlProtocol && compatibility.supportedMigrationPlans.some(plan =>
+      plan.protocol === route.migrationProtocol && plan.id === route.migrationId))
+  const selected = routes.sort((a, b) => compareVersion(b.version, a.version))[0]
+  if (!selected) throw new Error("The migration catalog does not support this capture/control/known-plan combination.")
+  return catalog.bundles.find(bundle => bundle.version === selected.version)!
+}
+
+export const mergeMigrationReleaseBundle = (previous: MigrationReleaseCatalog | undefined,
+  value: MigrationReleaseBundle): MigrationReleaseCatalog => {
+  const bundle = decodeMigrationReleaseBundle(value)
+  const catalog = previous ? decodeMigrationReleaseCatalog(previous) :
+    { protocol: migrationReleaseCatalogProtocol, revision: 0, bundles: [], routes: [] } as const
+  const existing = catalog.bundles.find(item => item.version === bundle.version)
+  if (existing && migrationReleaseBundleFingerprint(existing) !== migrationReleaseBundleFingerprint(bundle))
+    throw new Error("A release version cannot change its immutable migration bundle.")
+  const routes = [...catalog.routes]
+  let changed = false
+  for (const fromCaptureStateContract of bundle.migration.fromCaptureStateContracts) {
+    const route = { fromCaptureStateContract, updateControlProtocol: bundle.updateControlProtocol,
+      migrationProtocol: bundle.migration.protocol, migrationId: bundle.migration.id, version: bundle.version }
+    const index = routes.findIndex(item => routeKey(item) === routeKey(route))
+    if (index < 0) { routes.push(route); changed = true }
+    else if (compareVersion(bundle.version, routes[index]!.version) > 0) { routes[index] = route; changed = true }
+  }
+  if (!changed) return decodeMigrationReleaseCatalog(catalog)
+  if (catalog.revision === Number.MAX_SAFE_INTEGER) throw new Error("Migration catalog revision exhausted.")
+  // Retain old-plan/source routes indefinitely, but do not accumulate every
+  // superseded build. Historical exact descriptors and client receipts persist.
+  const bundles = [...catalog.bundles.filter(item => item.version !== bundle.version), bundle]
+    .filter(item => routes.some(route => route.version === item.version))
+  return decodeMigrationReleaseCatalog({ protocol: migrationReleaseCatalogProtocol, revision: catalog.revision + 1, bundles, routes })
+}
+
+const migrationSectionProtocol = "atape.migration-release-bundle.v1"
+const migrationSectionStart = `<!-- ${migrationSectionProtocol}:start -->`
+const migrationSectionEnd = `<!-- ${migrationSectionProtocol}:end -->`
+export const migrationReleaseBundleSection = (bundle: MigrationReleaseBundle): string =>
+  `${migrationSectionStart}\n${JSON.stringify(JSON.parse(migrationReleaseBundleFingerprint(bundle)), null, 2)}\n${migrationSectionEnd}`
+export const migrationReleaseBundleFromBody = (body: string): MigrationReleaseBundle | undefined => {
+  if (/<!--\s*atape\.migration-release-bundle\.(?!v1:(?:start|end) -->)/.test(body))
+    throw new Error("Release body contains an unsupported or malformed migration bundle section.")
+  const starts = body.split(migrationSectionStart), ends = body.split(migrationSectionEnd)
+  const markers = body.match(/<!--\s*atape\.migration-release-bundle\./g)?.length ?? 0
+  if (starts.length === 1 && ends.length === 1 && markers === 0) return undefined
+  if (starts.length !== 2 || ends.length !== 2 || markers !== 2) throw new Error("Release body must contain one complete migration bundle section.")
+  const start = body.indexOf(migrationSectionStart) + migrationSectionStart.length, end = body.indexOf(migrationSectionEnd)
+  if (end < start) throw new Error("Release migration bundle section is malformed.")
+  const bundle = decodeMigrationReleaseBundle(JSON.parse(body.slice(start, end).trim()))
+  const legacy = releaseBundleFromBody(body)
+  if (legacy && releaseBundleFingerprint(legacy) !== releaseBundleFingerprint({ protocol: releaseBundleProtocol,
+    version: bundle.version, captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol,
+    packages: bundle.packages })) throw new Error("Legacy and migration release descriptors disagree.")
+  return bundle
+}

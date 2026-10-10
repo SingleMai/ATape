@@ -68,7 +68,8 @@ export const makeNodeClientLayer = (
     Layer.provide(Layer.mergeAll(authenticatedHTTP, gitAttribution, locator))
   )
   const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: cliVersion,
-    captureStateContract, updateControlProtocol, fetchMetadata: fetchAdapterPackage })
+    captureStateContract, updateControlProtocol, fetchMetadata: fetchAdapterPackage,
+    supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
   const packages = makeAdapterPackagesLayer(paths.adapterDirectory, fetchAdapterPackage, () => protectedRuntimeSlots(paths.atapeHome), discovery)
   const bootstrapEntry = environment.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1] ?? ""
   return Layer.mergeAll(

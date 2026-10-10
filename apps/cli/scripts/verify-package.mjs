@@ -12,6 +12,7 @@ import { verifyLoginStartup } from "./verify-login-startup.mjs"
 import { verifyLegacyStateContract } from "./verify-legacy-state-contract.mjs"
 import { verifyUpdateBridge } from "./verify-update-bridge.mjs"
 import { verifyPrivacyUpgrade } from "./verify-privacy-upgrade.mjs"
+import { verifyCaptureMigration } from "./verify-capture-migration.mjs"
 
 const execute = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -84,6 +85,7 @@ try {
     await verifyLoginStartup(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "login-startup"))
     await verifyUpdateWake(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "update-wake"))
     await verifyUpdateBridge(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "update-bridge"))
+    await verifyCaptureMigration(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "capture-migration"))
     if (process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL) {
       await verifyLegacyStateContract(join(installDirectory, "node_modules", "@atape", "cli"), join(temporaryRoot, "legacy-state-contract"), process.env.ATAPE_VERIFY_LEGACY_CLI_TARBALL)
     }
@@ -198,6 +200,7 @@ childProcess.spawn = function(file, args, options) {
 };
 globalThis.fetch = async function(url) {
   appendFileSync(${JSON.stringify(networkTrace)}, JSON.stringify({ url: String(url) }) + "\\n");
+  if (String(url) === "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v2") return new Response(null, { status: 404 });
   throw new TypeError("Controlled offline package acceptance");
 };
 syncBuiltinESMExports();
@@ -289,8 +292,9 @@ syncBuiltinESMExports();
   const failed = await json(scheduleFile), requests = await rows(networkTrace)
   assert.equal(failed.failures, 1)
   assert.ok(failed.nextCheckAt > Date.now())
-  assert.equal(requests.length, 1)
-  assert.equal(requests[0].url, "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1")
+  assert.equal(requests.length, 2)
+  assert.equal(requests[0].url, "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v2")
+  assert.equal(requests[1].url, "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1")
   await wake(metadata.token)
   assert.equal((await rows(networkTrace)).length, requests.length)
   assert.equal(await readFile(desiredFile, "utf8"), stoppedIntent)

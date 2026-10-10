@@ -32,6 +32,7 @@
     "harnesses": ["cursor"],
     "gitAttribution": "atape.git-attribution.v1",
     "sourceCapture": "atape.source-capture.v2",
+    "publicationTargetProfile": "atape.publication-target.v3",
     "newSession": "atape.new-session.v1"
   },
   "repository": {

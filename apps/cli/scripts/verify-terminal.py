@@ -150,9 +150,10 @@ def verify_privacy_rules():
     client.write_text(json.dumps({"version": 3, "projects": [], "adapters": [],
                                   "toolsConfigured": True, "enabledAdapterIds": [],
                                   "autoUpdateEnabled": False, "autoStartEnabled": False}))
-    privacy_cache = home / "cache/release-discovery/catalog.json"
-    privacy_cache.parent.mkdir(mode=0o700, parents=True)
-    privacy_cache.write_bytes(cache.read_bytes())
+    for source_cache in (cache, migration_cache):
+        privacy_cache = home / source_cache.relative_to(root / "home")
+        privacy_cache.parent.mkdir(mode=0o700, parents=True)
+        privacy_cache.write_bytes(source_cache.read_bytes())
     overrides = {"ATAPE_HOME": str(home), "ATAPE_REDACT_VALUES": "[]"}
     terminal = Terminal(overrides=overrides)
     terminals.append(terminal)
@@ -303,6 +304,18 @@ try:
     cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     cache.write_text(json.dumps({"checkedAt": int(time.time() * 1000),
                                  "catalog": {"protocol": "atape.update-catalog.v1", "revision": 1, "bundles": [bundle]}}))
+    # Migration-aware readers use their own durable catalog and must never
+    # infer a missing v2 feed from a transport failure. Seed the real strict
+    # shape; the UI chooses Skip and never executes these metadata-only bytes.
+    migration_bundle = dict(bundle, protocol="atape.release-bundle.v2", migration=runtime["captureMigration"])
+    migration_cache = root / "home/cache/release-discovery-v2/catalog.json"
+    migration_cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    migration_cache.write_text(json.dumps({"checkedAt": int(time.time() * 1000), "catalog": {
+        "protocol": "atape.update-catalog.v2", "revision": 1, "bundles": [migration_bundle],
+        "routes": [{"fromCaptureStateContract": source, "updateControlProtocol": runtime["updateControlProtocol"],
+                    "migrationProtocol": runtime["captureMigration"]["protocol"],
+                    "migrationId": runtime["captureMigration"]["id"], "version": available}
+                   for source in runtime["captureMigration"]["fromCaptureStateContracts"]]}}))
     terminal = Terminal(skip_updates=False)
     terminals.append(terminal)
     terminal.drain(.5)

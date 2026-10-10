@@ -1,10 +1,10 @@
 import { Schema } from "effect"
 import { AdapterThread } from "./collector.ts"
+import { PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3 } from "./publicationProfiles.ts"
+
+export { PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3 } from "./publicationProfiles.ts"
 
 export const PublicationProtocol = "atape.publication.v1"
-export const PublicationTargetProfile = "atape.publication-target.v1"
-export const PublicationTargetProfile2 = "atape.publication-target.v2"
-export const PublicationTargetProfile3 = "atape.publication-target.v3"
 const count = (maximum = Number.MAX_SAFE_INTEGER, minimum = 0) => Schema.Number.check(
   Schema.isInt(), Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500), Schema.isPattern(/^[^\u0000]+$/))

@@ -9,6 +9,7 @@ import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { atomicJSON, missing, readSelectedClientConfig, updateDirectory } from "./runtimeSelection.ts"
 import { createUpdateControl } from "./updateControl.ts"
+import { createCaptureMigrationCoordinator } from "./captureMigration.ts"
 
 const failure = (cause: unknown) => cause instanceof Error ? cause : new Error(String(cause))
 const io = <A>(run: () => Promise<A>) => Effect.tryPromise({ try: run, catch: failure })
@@ -56,6 +57,7 @@ export const prepareCollectorReadiness = (
   // state while that transaction can still restore the previous executable.
   while (yield* io(async () => await isCollectorMaintenancePending(paths.collectorProcessFile) ||
     await updateTransactionPending(paths.atapeHome) ||
+    await createCaptureMigrationCoordinator(paths, environment).recoveryPending() ||
     await createUpdateControl(paths.atapeHome).recoveryPending())) {
     yield* Effect.sleep(50)
   }

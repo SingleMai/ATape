@@ -181,10 +181,11 @@ export const makeHTTPAuthenticationGatewayLayer = (fetchImplementation: typeof g
   })
 )
 
-export const makeCredentialStoreLayer = (atapeHome: string, credentialDirectory: string) => Layer.succeed(
+export const makeCredentialStoreLayer = (atapeHome: string, credentialDirectory: string,
+  options: { readonly readExisting?: boolean } = {}) => Layer.succeed(
   CLICredentialStore,
   CLICredentialStore.of({
-    read: (instanceOrigin) => readCredential(atapeHome, credentialDirectory, instanceOrigin),
+    read: (instanceOrigin) => readCredential(atapeHome, credentialDirectory, instanceOrigin, options.readExisting),
     replace: ({ expectedCredentialId, credential }) => withCredentialLock(
       atapeHome,
       credentialDirectory,
@@ -412,52 +413,78 @@ const credentialPath = (credentialDirectory: string, instanceOrigin: string) => 
 const readCredential = (
   atapeHome: string,
   credentialDirectory: string,
-  instanceOrigin: string
-): Effect.Effect<StoredCLICredential | undefined, CLICredentialStoreError> => Effect.gen(function*() {
-  yield* ensureCredentialDirectories(atapeHome, credentialDirectory)
+  instanceOrigin: string,
+  readExisting = false
+): Effect.Effect<StoredCLICredential | undefined, CLICredentialStoreError> => Effect.tryPromise({
+  try: () => readCredentialData(atapeHome, credentialDirectory, instanceOrigin, readExisting),
+  catch: cause => cause instanceof CLICredentialStoreError ? cause : storeError("io", "Could not read the local CLI credential.")
+})
+
+export type ExistingCredentialIdentity = {
+  readonly instanceOrigin: string
+  readonly apiOrigin: string
+  readonly credentialId: string
+  readonly userId: string
+}
+
+// Parent Node update callbacks need the same secure decoder without starting an
+// Effect runtime or exposing the bearer. Missing storage remains untouched.
+export const inspectExistingCredentialIdentity = async (atapeHome: string, credentialDirectory: string,
+  instanceOrigin: string): Promise<ExistingCredentialIdentity | undefined> => {
+  const credential = await readCredentialData(atapeHome, credentialDirectory, instanceOrigin, true)
+  return credential === undefined ? undefined : { instanceOrigin: credential.instanceOrigin, apiOrigin: credential.apiOrigin,
+    credentialId: credential.credentialId, userId: credential.user.id }
+}
+
+const readCredentialData = async (atapeHome: string, credentialDirectory: string, instanceOrigin: string,
+  readExisting: boolean): Promise<StoredCLICredential | undefined> => {
+  try {
+    if (!(await prepareCredentialDirectories(atapeHome, credentialDirectory, readExisting))) return undefined
+  } catch (cause) { throw credentialDirectoryError(cause) }
   const path = credentialPath(credentialDirectory, instanceOrigin)
-  const bytes = yield* Effect.tryPromise({
-    try: async () => {
-      let metadata
-      try {
-        metadata = await lstat(path)
-      } catch (cause) {
-        if (hasCode(cause, "ENOENT")) return undefined
-        throw cause
+  let bytes: Uint8Array
+  try {
+    let metadata
+    try { metadata = await lstat(path) }
+    catch (cause) { if (hasCode(cause, "ENOENT")) return undefined; throw cause }
+    assertPrivateCredentialFile(metadata)
+    if (metadata.size > MaximumCredentialFileBytes) throw new UnsafeCredentialFile()
+    const handle = await open(path, constants.O_RDONLY | noFollowFlag())
+    try {
+      const opened = await handle.stat()
+      assertPrivateCredentialFile(opened)
+      if (opened.size > MaximumCredentialFileBytes) throw new UnsafeCredentialFile()
+      const buffer = Buffer.alloc(MaximumCredentialFileBytes + 1)
+      let length = 0
+      while (length < buffer.length) {
+        const read = await handle.read(buffer, length, buffer.length - length, null)
+        if (read.bytesRead === 0) break
+        length += read.bytesRead
       }
-      assertPrivateCredentialFile(metadata)
-      if (metadata.size > MaximumCredentialFileBytes) throw new UnsafeCredentialFile()
-      const handle = await open(path, constants.O_RDONLY | noFollowFlag())
-      try {
-        return await handle.readFile()
-      } finally {
-        await handle.close()
-      }
-    },
-    catch: (cause) => cause instanceof UnsafeCredentialFile
+      if (length > MaximumCredentialFileBytes) throw new UnsafeCredentialFile()
+      bytes = buffer.subarray(0, length)
+    } finally { await handle.close() }
+  } catch (cause) {
+    throw cause instanceof UnsafeCredentialFile
       ? storeError("unsafe", "The CLI credential file has unsafe ownership, mode, or type.")
       : storeError("io", "Could not read the local CLI credential.")
-  })
-  if (bytes === undefined) return undefined
-  const value = yield* Effect.try({
-    try: () => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown,
-    catch: () => storeError("decode", "The local CLI credential file is invalid.")
-  })
-  const decoded = yield* Schema.decodeUnknownEffect(StoredCLICredentialSchema)(value).pipe(
-    Effect.mapError(() => storeError("decode", "The local CLI credential file is invalid."))
-  )
+  }
+  let decoded: StoredCLICredential
+  try {
+    decoded = Schema.decodeUnknownSync(StoredCLICredentialSchema)(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)))
+  } catch { throw storeError("decode", "The local CLI credential file is invalid.") }
   if (decoded.instanceOrigin !== instanceOrigin) {
-    return yield* storeError("decode", "The local CLI credential does not match its Instance.")
+    throw storeError("decode", "The local CLI credential does not match its Instance.")
   }
   const normalizedInstance = normalizeInstanceOrigin(decoded.instanceOrigin, { allowLoopbackHttp: true })
   const normalizedAPI = normalizeInstanceOrigin(decoded.apiOrigin, { allowLoopbackHttp: true })
   if (normalizedInstance !== decoded.instanceOrigin || normalizedAPI !== decoded.apiOrigin ||
     (decoded.instanceOrigin.startsWith("https:") && !decoded.apiOrigin.startsWith("https:")) ||
     (decoded.instanceOrigin.startsWith("http:") && !decoded.apiOrigin.startsWith("http:"))) {
-    return yield* storeError("decode", "The local CLI credential contains an invalid Instance topology.")
+    throw storeError("decode", "The local CLI credential contains an invalid Instance topology.")
   }
   return decoded
-})
+}
 
 const persistCredential = (
   credentialDirectory: string,
@@ -494,20 +521,32 @@ const ensureCredentialDirectories = (
   atapeHome: string,
   credentialDirectory: string
 ): Effect.Effect<void, CLICredentialStoreError> => Effect.tryPromise({
-  try: async () => {
+  try: async () => { await prepareCredentialDirectories(atapeHome, credentialDirectory, false) },
+  catch: credentialDirectoryError
+})
+
+const prepareCredentialDirectories = async (atapeHome: string, credentialDirectory: string, readExisting: boolean): Promise<boolean> => {
     const home = resolve(atapeHome)
     const credentials = resolve(credentialDirectory)
     const child = relative(home, credentials)
     if (child === "" || child.startsWith(`..${sep}`) || child === ".." || child.split(sep).length !== 1) {
       throw new UnsafeCredentialFile()
     }
-    await ensurePrivateDirectory(home)
-    await ensurePrivateDirectory(credentials)
-  },
-  catch: (cause) => cause instanceof UnsafeCredentialFile
+    for (const directory of [home, credentials]) {
+      if (!readExisting) await ensurePrivateDirectory(directory)
+      else {
+        let metadata
+        try { metadata = await lstat(directory) }
+        catch (cause) { if (hasCode(cause, "ENOENT")) return false; throw cause }
+        assertPrivateDirectory(metadata)
+      }
+    }
+    return true
+}
+
+const credentialDirectoryError = (cause: unknown) => cause instanceof UnsafeCredentialFile
     ? storeError("unsafe", "ATAPE_HOME or its credential directory has unsafe ownership, mode, or type.")
     : storeError("io", "Could not prepare the local credential directory.")
-})
 
 const ensurePrivateDirectory = async (path: string) => {
   try {
@@ -516,6 +555,10 @@ const ensurePrivateDirectory = async (path: string) => {
     if (!hasCode(cause, "EEXIST")) throw cause
   }
   const metadata = await lstat(path)
+  assertPrivateDirectory(metadata)
+}
+
+const assertPrivateDirectory = (metadata: Stats) => {
   if (metadata.isSymbolicLink() || !metadata.isDirectory() || !ownedByCurrentUser(metadata.uid) ||
     (metadata.mode & 0o777) !== 0o700) {
     throw new UnsafeCredentialFile()

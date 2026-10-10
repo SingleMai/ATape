@@ -2,9 +2,11 @@ import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
 import { access, readFile } from "node:fs/promises"
 import test from "node:test"
-import { mergeReleaseBundle, releaseBundleProtocol, releaseBundleSection, releasePackageNames,
-  updateCatalogTag } from "../packages/domain/src/releaseCatalog.ts"
-import { publicationCaptureContract, publicationControlProtocol } from "./public-release-visibility.mjs"
+import { mergeReleaseBundle, releaseBundleProtocol, releaseBundleSection, releaseBundleFingerprint, releasePackageNames,
+  updateCatalogTag, migrationReleaseBundleProtocol, migrationReleaseCatalogTag, releaseBundleFromBody,
+  migrationReleaseBundleFromBody, migrationReleaseBundleFingerprint, mergeMigrationReleaseBundle } from "../packages/domain/src/releaseCatalog.ts"
+import { publicationCaptureContract, publicationControlProtocol, publicationMigrationProtocol,
+  publicationMigrationId } from "./public-release-visibility.mjs"
 import { createGitHubPublication, publishUpdateCatalog } from "./publish-update-catalog.mjs"
 import { publishRelease } from "./publish-npm-release.mjs"
 
@@ -203,6 +205,21 @@ test("malformed bundle artifacts cannot reach the first npm publication", async 
   }
 })
 
+test("a reader-compatible historical seven-package bundle cannot omit Cursor from a new publication", async () => {
+  for (const migration of [false, true]) {
+    const remote = githubFixture(), local = migration ? migrationArtifacts() : artifacts()
+    local.bundle.packages = local.bundle.packages.filter(item => item.name !== "@atape/adapter-cursor")
+    const packages = local.files.filter(file => file.name && file.name !== "@atape/adapter-cursor")
+    const bytes = Buffer.from([...packages].sort((a, b) => a.filename < b.filename ? -1 : 1)
+      .map(file => `${file.sha256}  ${file.filename}\n`).join(""))
+    local.files = [...packages, { filename: "SHA256SUMS", bytes, sha256: digest(bytes) }]
+    const fixture = publicationFixture(local, remote)
+    await assert.rejects(publishRelease(fixture.input), /complete current producer package set/)
+    assert.deepEqual(fixture.events, [])
+    assert.deepEqual(remote.events, [])
+  }
+})
+
 test("publication orders adapters then CLI, explicit latest, public verification before any GitHub write", async () => {
   const remote = githubFixture(), local = artifacts(), fixture = publicationFixture(local, remote)
   const verify = fixture.input.registry.verify
@@ -236,7 +253,7 @@ test("immutable npm mismatch and future contract fail before first external writ
   await assert.rejects(publishRelease(fixture.input), /different tarball integrity/)
   assert.equal(fixture.events.length, 0)
   fixture.input.artifacts.bundle.captureStateContract = "future.v3"
-  await assert.rejects(publishRelease(fixture.input), /same-capture/)
+  await assert.rejects(publishRelease(fixture.input), /future capture\/control/)
   assert.equal(writes(remote).length, 0)
 })
 
@@ -287,4 +304,137 @@ test("an existing version body above the client budget cannot become an automati
   remote.seed("v0.5.6", `${"x".repeat(128 * 1024)}\n${releaseBundleSection(local.bundle)}`, local.files)
   await assert.rejects(publish(remote, local), /publication metadata budget/)
   assert.equal(writes(remote).length, 0)
+})
+
+function migrationArtifacts(version = "0.5.6", sources = ["atape.client.v3-capture.v1", publicationCaptureContract]) {
+  const local = artifacts(version)
+  local.bundle = { ...local.bundle, protocol: migrationReleaseBundleProtocol,
+    migration: { protocol: publicationMigrationProtocol, id: publicationMigrationId, fromCaptureStateContracts: sources } }
+  return local
+}
+
+test("eight-package publication preserves a seven-package offline source route and v1 bridge compatibility", async () => {
+  const remote = githubFixture(), old = migrationArtifacts("0.5.4")
+  old.bundle.packages = old.bundle.packages.filter(item => item.name !== "@atape/adapter-cursor")
+  const { protocol: _, migration: __, ...common } = old.bundle
+  const legacy = { ...common, protocol: releaseBundleProtocol }
+  remote.seed(updateCatalogTag, JSON.stringify(mergeReleaseBundle(undefined, legacy)), [], { prerelease: true })
+  remote.seed(migrationReleaseCatalogTag, JSON.stringify(mergeMigrationReleaseBundle(undefined, old.bundle)), [], { prerelease: true })
+  const local = migrationArtifacts("0.5.6", [publicationCaptureContract])
+  await publish(remote, local)
+  const currentLegacy = JSON.parse(remote.releases.get(updateCatalogTag).body).bundles[0]
+  assert.equal(currentLegacy.protocol, releaseBundleProtocol)
+  assert.equal(currentLegacy.packages.length, releasePackageNames.length)
+  assert.ok(currentLegacy.packages.some(item => item.name === "@atape/adapter-cursor"))
+  assert.equal(releaseBundleFingerprint(releaseBundleFromBody(remote.releases.get("v0.5.6").body)), releaseBundleFingerprint(currentLegacy))
+  const migration = JSON.parse(remote.releases.get(migrationReleaseCatalogTag).body)
+  assert.equal(migration.routes.find(route => route.fromCaptureStateContract === "atape.client.v3-capture.v1").version, "0.5.4")
+  assert.equal(migration.routes.find(route => route.fromCaptureStateContract === publicationCaptureContract).version, "0.5.6")
+  const retained = migration.bundles.find(bundle => bundle.version === "0.5.4")
+  assert.equal(migrationReleaseBundleFingerprint(retained), migrationReleaseBundleFingerprint(old.bundle))
+})
+
+test("migration bridge advertises exact assets, dual descriptors, permanent v1 bridge then v2 routes", async () => {
+  const remote = githubFixture(), local = migrationArtifacts(), fixture = publicationFixture(local, remote)
+  fixture.input.registry.verify = async () => { assert.equal(writes(remote).length, 0); fixture.events.push("visible"); return {} }
+  const result = await publishRelease(fixture.input)
+  assert.equal(result.catalogRevision, 1)
+  assert.equal(result.migrationCatalogRevision, 1)
+  assert.equal(result.npmTag, "latest")
+  const body = remote.releases.get("v0.5.6").body
+  assert.equal(releaseBundleFromBody(body).protocol, releaseBundleProtocol)
+  assert.equal(migrationReleaseBundleFingerprint(migrationReleaseBundleFromBody(body)), migrationReleaseBundleFingerprint(local.bundle))
+  const mutations = writes(remote)
+  const v1 = mutations.findIndex(event => event.body?.tag_name === updateCatalogTag)
+  const v2 = mutations.findIndex(event => event.body?.tag_name === migrationReleaseCatalogTag)
+  assert.ok(v1 > 8 && v2 > v1)
+  const catalog = JSON.parse(remote.releases.get(migrationReleaseCatalogTag).body)
+  assert.equal(catalog.routes.length, 2)
+  assert.ok(catalog.routes.every(route => route.version === local.bundle.version && route.migrationId === publicationMigrationId))
+  remote.events.length = 0
+  await publish(remote, local)
+  assert.equal(writes(remote).length, 0)
+})
+
+test("interruption after v1 advertisement resumes only the missing migration catalog", async () => {
+  const remote = githubFixture(), local = migrationArtifacts()
+  const create = remote.github.create
+  remote.github.create = async body => {
+    if (body.tag_name === migrationReleaseCatalogTag) throw new Error("interrupted before v2")
+    return create(body)
+  }
+  await assert.rejects(publish(remote, local), /interrupted before v2/)
+  assert.ok(remote.releases.get(updateCatalogTag))
+  assert.equal(remote.releases.get("v0.5.6").draft, false)
+  assert.equal(remote.releases.has(migrationReleaseCatalogTag), false)
+  remote.github.create = create
+  remote.events.length = 0
+  await publish(remote, local)
+  assert.equal(writes(remote).length, 1)
+  assert.equal(writes(remote)[0].body.tag_name, migrationReleaseCatalogTag)
+})
+
+test("older migration rerun cannot regress either catalog or change latest", async () => {
+  const remote = githubFixture()
+  await publish(remote, migrationArtifacts("0.5.7"))
+  remote.events.length = 0
+  const fixture = publicationFixture(migrationArtifacts(), remote, { latest: "0.5.7" })
+  const result = await publishRelease(fixture.input)
+  assert.equal(result.npmTag, "atape-managed")
+  assert.equal(result.catalogRevision, 1)
+  assert.equal(result.migrationCatalogRevision, 1)
+  assert.ok(writes(remote).every(event => event.body?.make_latest !== "true"))
+  assert.equal(JSON.parse(remote.releases.get(migrationReleaseCatalogTag).body).routes[0].version, "0.5.7")
+})
+
+test("unknown plans and corrupt v2 metadata stop before npm or any GitHub mutation", async () => {
+  for (const change of ["plan", "catalog"]) {
+    const remote = githubFixture(), local = migrationArtifacts(), fixture = publicationFixture(local, remote)
+    if (change === "plan") local.bundle.migration.id = "unknown"
+    else remote.seed(migrationReleaseCatalogTag, JSON.stringify({ protocol: "unknown" }), [], { prerelease: true })
+    await assert.rejects(publishRelease(fixture.input))
+    assert.equal(fixture.events.length, 0)
+    assert.equal(writes(remote).length, 0)
+  }
+})
+
+test("same-version migration declaration changes fail before the first npm write", async () => {
+  const remote = githubFixture(), local = migrationArtifacts(), changed = migrationArtifacts("0.5.6", [publicationCaptureContract])
+  remote.seed(migrationReleaseCatalogTag, JSON.stringify(mergeMigrationReleaseBundle(undefined, local.bundle)), [], { prerelease: true })
+  const fixture = publicationFixture(changed, remote)
+  await assert.rejects(publishRelease(fixture.input), /immutable migration/)
+  assert.equal(fixture.events.length, 0)
+  assert.equal(writes(remote).length, 0)
+})
+
+test("immutable versioned migration descriptor cannot be changed after routes advanced", async () => {
+  const remote = githubFixture(), local = migrationArtifacts()
+  await publish(remote, local)
+  await publish(remote, migrationArtifacts("0.5.7"))
+  remote.events.length = 0
+  await assert.rejects(publish(remote, migrationArtifacts("0.5.6", [publicationCaptureContract])), /bundle differs/)
+  assert.equal(writes(remote).length, 0)
+  const fixture = publicationFixture(migrationArtifacts("0.5.6", [publicationCaptureContract]), remote)
+  await assert.rejects(publishRelease(fixture.input), /bundle differs/)
+  assert.equal(fixture.events.length, 0)
+  assert.equal(writes(remote).length, 0)
+})
+
+test("mutated local publication bytes fail before the first npm or GitHub write", async () => {
+  const remote = githubFixture(), local = migrationArtifacts(), fixture = publicationFixture(local, remote)
+  local.files[0].bytes[0] ^= 1
+  await assert.rejects(publishRelease(fixture.input), /Local publication bytes changed/)
+  assert.equal(fixture.events.length, 0)
+  assert.equal(writes(remote).length, 0)
+})
+
+test("a genuine bridge original v1 section and notes survive addition of its verified migration descriptor", async () => {
+  const remote = githubFixture(), local = migrationArtifacts()
+  const originalBody = `Original human notes.\n${releaseBundleSection(artifacts().bundle)}\n`
+  remote.seed("v0.5.6", originalBody, local.files)
+  await publish(remote, local)
+  const body = remote.releases.get("v0.5.6").body
+  assert.ok(body.startsWith(originalBody.trimEnd()))
+  assert.equal(migrationReleaseBundleFingerprint(migrationReleaseBundleFromBody(body)), migrationReleaseBundleFingerprint(local.bundle))
+  assert.equal(releaseBundleFromBody(body).version, local.bundle.version)
 })

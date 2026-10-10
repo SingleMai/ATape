@@ -19,6 +19,20 @@ const fixture = async (adapterId = "../unsafe/name") => {
   const prefix = { bytes: 10, rows: 1, sha256: "a".repeat(64) }
   return { home, root, store, controller, scope, origin, input, prefix, signal: controller.signal }
 }
+const updateFixture = async (f: Awaited<ReturnType<typeof fixture>>) => {
+  const bootstrap = join(f.home, "bootstrap.mjs")
+  await writeFile(bootstrap, "immutable bootstrap")
+  const generation = async (version: string): Promise<UpdateRuntimeSelection> => {
+    const entry = runtimeEntry(f.home, version); await mkdir(dirname(entry), { recursive: true }); await writeFile(entry, "// never executed")
+    await atomicJSON(join(dirname(dirname(entry)), "package.json"), { name: "@atape/cli", version, atapeRuntime: { stateContract: "capture.v2", updateControlProtocol } })
+    return { protocol: updateControlProtocol, version, captureStateContract: "capture.v2", bootstrapEntry: bootstrap,
+      bootstrapIdentity: createHash("sha256").update(await readFile(bootstrap)).digest("hex"), adapters: [] }
+  }
+  const previous = await generation("0.5.5"), next = await generation("0.5.6"), control = createUpdateControl(f.home)
+  const ticket = await control.prepare({ previous, next }); await control.begin(ticket)
+  const store = makeCreationReceiptStore(f.home, "test", { home: f.home, identity: previous })
+  return { previous, next, control, ticket, store, ledger: join(f.home, "updates", "control.json") }
+}
 describe("Host creation receipts through the caller Interface", () => {
   it("stores immutable confirmation independent of Project, with hashed namespaces and private permissions", async () => {
     const f = await fixture(), attempt = await f.scope.creation.recordAttempt(f.input, f.signal)
@@ -81,28 +95,62 @@ describe("Host creation receipts through the caller Interface", () => {
   })
 })
 
-it("checks runtime admission for directory creation and again for confirmation, without holding it during the session", async () => {
-  const f = await fixture("test"), bootstrap = join(f.home, "bootstrap.mjs")
-  await writeFile(bootstrap, "immutable bootstrap")
-  const generation = async (version: string): Promise<UpdateRuntimeSelection> => {
-    const entry = runtimeEntry(f.home, version); await mkdir(dirname(entry), { recursive: true }); await writeFile(entry, "// never executed")
-    await atomicJSON(join(dirname(dirname(entry)), "package.json"), { name: "@atape/cli", version, atapeRuntime: { stateContract: "capture.v2", updateControlProtocol } })
-    return { protocol: updateControlProtocol, version, captureStateContract: "capture.v2", bootstrapEntry: bootstrap,
-      bootstrapIdentity: createHash("sha256").update(await readFile(bootstrap)).digest("hex"), adapters: [] }
-  }
-  const previous = await generation("0.5.5"), next = await generation("0.5.6"), control = createUpdateControl(f.home)
-  const ticket = await control.prepare({ previous, next }); await control.begin(ticket)
-  const store = makeCreationReceiptStore(f.home, "test", { home: f.home, identity: previous })
+it("defers a floor until the pending proof confirms without holding the global writer barrier or losing native bytes", async () => {
+  const f = await fixture("test"), { previous, control, ticket, store } = await updateFixture(f)
   const scope = store.scope(f.origin, Effect.void, f.signal)
   await scope.creation.recordAttempt(f.input, f.signal)
-  // The whole live session holds no writer lease: the floor can advance now.
+  const native = join(f.root, "source.jsonl"), bytes = "native source remains intact\n"; await writeFile(native, bytes)
+  // The interactive lifetime holds only shared proof ownership, so ordinary
+  // old-runtime writes remain admitted while floor advancement is deferred.
+  const writer = await control.acquireRuntimeWrite(previous, 0); writer()
+  await expect(control.fence(ticket)).rejects.toMatchObject({ reason: "conflict" })
+  const confirmed = await scope.creation.confirm({ prefix: f.prefix }, f.signal)
   await control.fence(ticket)
-  await expect(scope.creation.confirm({ prefix: f.prefix }, f.signal)).rejects.toThrow("Runtime cannot")
-  expect(await store.reader.readConfirmed(f.input, f.signal)).toBeUndefined()
+  expect(await store.reader.readConfirmed(f.input, f.signal)).toEqual(confirmed)
+  expect(await readFile(native, "utf8")).toBe(bytes)
+  await scope.finish()
   const fresh = makeCreationReceiptStore(f.home, "different", { home: f.home, identity: previous }).scope(f.origin, Effect.void, f.signal)
   const before = await readdir(join(f.home, "state", "creation-receipts"))
   await expect(fresh.creation.recordAttempt({ ...f.input, sourceId: "another" }, f.signal)).rejects.toThrow("Runtime cannot")
   expect(await readdir(join(f.home, "state", "creation-receipts"))).toEqual(before)
+})
+
+it("requires every pending proof to confirm, abandon or close before a floor advances", async () => {
+  const f = await fixture("test"), { control, ticket, store } = await updateFixture(f)
+  const first = store.scope(f.origin, Effect.void, f.signal), second = store.scope(f.origin, Effect.void, f.signal)
+  await first.creation.recordAttempt(f.input, f.signal)
+  await second.creation.recordAttempt({ ...f.input, sourceId: "second" }, f.signal)
+  await first.creation.abandon(f.signal)
+  await expect(control.fence(ticket)).rejects.toMatchObject({ reason: "conflict" })
+  await second.finish()
+  await control.fence(ticket)
+  expect(await store.reader.readConfirmed(f.input, f.signal)).toBeUndefined()
+  expect(await store.reader.readConfirmed({ ...f.input, sourceId: "second" }, f.signal)).toBeUndefined()
+  await first.finish()
+})
+
+it("releases proof ownership when Scope cleanup fails and never bypasses an already committed floor", async () => {
+  const f = await fixture("test"), { previous, next, control, ticket, store, ledger } = await updateFixture(f)
+  const scope = store.scope(f.origin, Effect.void, f.signal)
+  await scope.creation.recordAttempt(f.input, f.signal)
+  // A historical Host without proof leases could already have a pending record
+  // when another owner committed a floor. This confirms that the new lease does
+  // not grant old code an exception to durable admission.
+  const durable = JSON.parse(await readFile(ledger, "utf8"))
+  await atomicJSON(ledger, { ...durable, phase: "fenced", forwardOnly: true,
+    floor: { minimumRuntimeVersion: next.version, captureStateContract: next.captureStateContract } })
+  await expect(scope.creation.confirm({ prefix: f.prefix }, f.signal)).rejects.toThrow("Runtime cannot")
+  await expect(scope.finish()).rejects.toThrow("Runtime cannot")
+  await expect(control.acquireRuntimeWrite(previous, 0)).rejects.toMatchObject({ reason: "admission" })
+  // Start a later real floor change to prove failed Scope cleanup released its
+  // OS ownership, rather than merely replaying the existing fence.
+  await control.fence(ticket); await control.complete(ticket)
+  const later = { ...next, version: "0.5.7" }, entry = runtimeEntry(f.home, later.version)
+  await mkdir(dirname(entry), { recursive: true }); await writeFile(entry, "// never executed")
+  await atomicJSON(join(dirname(dirname(entry)), "package.json"), { name: "@atape/cli", version: later.version,
+    atapeRuntime: { stateContract: later.captureStateContract, updateControlProtocol } })
+  const subsequent = await control.prepare({ next: later }); await control.begin(subsequent); await control.fence(subsequent)
+  expect(await store.reader.readConfirmed(f.input, f.signal)).toBeUndefined()
 })
 
 it("reads coherent immutable published receipts while concurrent scopes confirm their pending records", async () => {

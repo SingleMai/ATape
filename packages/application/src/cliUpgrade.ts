@@ -1,5 +1,5 @@
 import { Context, Effect, Schema, type Scope } from "effect"
-import { decodeReleaseBundle, releaseBundleFingerprint, type ReleaseBundle } from "@atape/domain"
+import { decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, type ManagedReleaseBundle as ReleaseBundle } from "@atape/domain"
 import { officialSources } from "@atape/adapter-catalog"
 import { AutomaticUpdatePlatform } from "./automaticUpdates.ts"
 import { inspectClient } from "./clientManagement.ts"
@@ -55,8 +55,12 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   if (adapters.some(adapter => !stableVersion(adapter.version) || newer(adapter.version, version))) {
     return yield* new CLIUpgradeError({ reason: "installation", message: "An official Adapter is ahead of this release. Reopen ATape and check versions again." })
   }
-  const updateRuntime = config.toolsConfigured && (newer(version, current) || adapters.some(adapter => adapter.version !== version))
   const updateEntry = newer(version, installed)
+  // A migration release must settle local state even after a user disconnects
+  // all tools. Replacing only the npm entry would bypass its durable fence.
+  const migrationRelease = bundle.protocol === "atape.release-bundle.v2"
+  const updateRuntime = (config.toolsConfigured || migrationRelease) &&
+    (newer(version, current) || adapters.some(adapter => adapter.version !== version) || (migrationRelease && updateEntry))
   if (!updateRuntime && !updateEntry) return { version: current, updated: false, resumed: yield* refreshManagedCollector() }
   const process = yield* CollectorDaemonProcess
   const running = yield* process.inspect()

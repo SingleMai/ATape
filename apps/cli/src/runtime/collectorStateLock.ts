@@ -15,8 +15,18 @@ const busy = (cause: unknown) => typeof cause === "object" && cause !== null && 
 export const withCollectorStateLock = <A, E, R>(stateFile: string, work: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(acquire(stateFile), () => work.pipe(Effect.uninterruptible), lock => Effect.promise(lock.close))
 
-const acquire = (stateFile: string) => Effect.tryPromise({
-  try: async () => {
+/** The managed updater uses the same lock without starting a nested Effect
+ * runtime inside its joined Node critical section. */
+export const withCollectorStateLockPromise = async <A>(stateFile: string, work: () => Promise<A>): Promise<A> => {
+  let lock: Awaited<ReturnType<typeof acquirePromise>>
+  try { lock = await acquirePromise(stateFile) }
+  catch (cause) { throw lockFailure(cause) }
+  try { return await work() } finally { await lock.close() }
+}
+const lockFailure = (cause: unknown) => new CollectorStateError({ reason: "io",
+  message: `Could not lock Collector state: ${cause instanceof Error ? cause.message : "storage unavailable"}` })
+const acquire = (stateFile: string) => Effect.tryPromise({ try: () => acquirePromise(stateFile), catch: lockFailure })
+const acquirePromise = async (stateFile: string) => {
     await mkdir(dirname(stateFile), { recursive: true, mode: 0o700 })
     const coordinationPath = `${stateFile}.lock.sqlite`
     let existing = await exists(coordinationPath)
@@ -74,8 +84,7 @@ const acquire = (stateFile: string) => Effect.tryPromise({
       try { if (held && db.isTransaction) db.exec("ROLLBACK") } finally { db.close() }
       throw cause
     }
-  }, catch: cause => new CollectorStateError({ reason: "io", message: `Could not lock Collector state: ${cause instanceof Error ? cause.message : "storage unavailable"}` })
-})
+}
 const stale = async (path: string) => {
   try {
     const value = JSON.parse(await readFile(path, "utf8")) as { pid?: unknown }

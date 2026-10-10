@@ -140,6 +140,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0112](0112-failed-candidate-cooldown.md) | Persistent cooldown for failed update candidates |
 | [0113](0113-independent-update-wakeup.md) | Independent periodic update wakeup |
 | [0114](0114-explicit-unknown-conversation-time.md) | Explicit unknown conversation time |
+| [0115](0115-explicit-capture-migrations.md) | Explicit capture migrations and forward recovery |
 | [0116](0116-controlled-cursor-creation.md) | Controlled Cursor creation and capture |
 | [0117](0117-cursor-local-first-publication.md) | Local first publication of Cursor 0.5.6 |
 

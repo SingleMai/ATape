@@ -57,7 +57,8 @@ export class AuthenticatedHTTPClient extends Context.Service<AuthenticatedHTTPCl
 export const makeAuthenticatedHTTPClientLayer = (
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
   allowLoopbackHttp = false,
-  deviceReport: Effect.Effect<CLIDeviceMetadata> = Effect.sync(() => ({ name: hostname(), platform: `${platform()} ${arch()}`, version: cliVersion }))
+  deviceReport: Effect.Effect<CLIDeviceMetadata> = Effect.sync(() => ({ name: hostname(), platform: `${platform()} ${arch()}`, version: cliVersion })),
+  options: { readonly omitDeviceReport?: boolean } = {}
 ) => Layer.effect(AuthenticatedHTTPClient, Effect.gen(function*() {
   const cachedDeviceReport = yield* Effect.cachedWithTTL(deviceReport, "30 seconds")
   const credentials = yield* CLICredentialStore
@@ -82,7 +83,7 @@ export const makeAuthenticatedHTTPClientLayer = (
           )
         }
         yield* verifyPinnedTopology(authentication, credential, verified, allowLoopbackHttp)
-        const device = input.deviceReport ?? (yield* cachedDeviceReport)
+        const device = options.omitDeviceReport ? undefined : input.deviceReport ?? (yield* cachedDeviceReport)
         return yield* credentialedRequest(fetchImplementation, credential, input, device)
       }).pipe(
         Effect.tapError(error => Effect.gen(function*() {
@@ -137,7 +138,7 @@ const credentialedRequest = (
   fetchImplementation: typeof globalThis.fetch,
   credential: StoredCLICredential,
   input: AuthenticatedHTTPRequest,
-  device: CLIDeviceMetadata
+  device?: CLIDeviceMetadata
 ): Effect.Effect<AuthenticatedHTTPResponse, AuthenticatedHTTPError> => Effect.tryPromise({
   try: async (signal) => {
     if (input.acceptPublicationTarget !== undefined &&
@@ -150,8 +151,10 @@ const credentialedRequest = (
     if (input.acceptPublicationTarget !== undefined) {
       headers.set("ATape-Accept-Publication-Target", input.acceptPublicationTarget)
     }
-    const report = Buffer.from(JSON.stringify(device)).toString("base64url")
-    if (report.length <= 8192) headers.set("X-Atape-Device", report)
+    if (device !== undefined) {
+      const report = Buffer.from(JSON.stringify(device)).toString("base64url")
+      if (report.length <= 8192) headers.set("X-Atape-Device", report)
+    }
     let body: string | Uint8Array<ArrayBuffer> | undefined
     if (input.encodedJson !== undefined) {
       const maximum = input.method === "POST" && input.path === "/api/v1/ingestion/raw/chunks" ? 5 * 1024 * 1024 :

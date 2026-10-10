@@ -3,6 +3,9 @@ import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } fr
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { createCreationReceiptAdmission } from "./creationReceiptAdmission.ts"
+import { makeCreationReceiptStore } from "./creationReceipts.ts"
+import { Effect } from "effect"
 import { atomicJSON, runtimeEntry } from "./runtimeFiles.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
 
@@ -70,6 +73,57 @@ describe("independent update control through its durable caller Interface", () =
     // Cleanup may close an old handle after its logical admission is revoked.
     const cleanup = await f.control().acquireRuntimeWriteBarrier(0)
     cleanup()
+  })
+
+  it("defers floor advancement without crossing the fence and permits ordinary pre-fence rollback", async () => {
+    const f = await fixture(), control = f.control(), admission = createCreationReceiptAdmission(f.home)
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket)
+    const pending = await admission.acquirePending(), before = await readFile(f.ledger, "utf8")
+    try {
+      await expect(control.fence(ticket)).rejects.toMatchObject({ reason: "conflict" })
+      expect(await readFile(f.ledger, "utf8")).toBe(before)
+      await control.assertRuntimeAdmission(f.previous)
+      const writer = await control.acquireRuntimeWrite(f.previous, 0); writer()
+      expect(await control.recoverSelection()).toEqual(f.previous)
+      await control.completeRecovery()
+      expect(await f.readLedger()).toMatchObject({ phase: "recovered", forwardOnly: false })
+    } finally { pending() }
+  })
+
+  it("replays an existing forward-only fence despite a newly pending target proof", async () => {
+    const f = await fixture(), control = f.control()
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket); await control.fence(ticket)
+    const pending = await createCreationReceiptAdmission(f.home).acquirePending()
+    try {
+      await control.fence(ticket)
+      expect(await f.readLedger()).toMatchObject({ phase: "fenced", forwardOnly: true })
+      await expect(control.acquireRuntimeWrite(f.previous, 0)).rejects.toMatchObject({ reason: "admission" })
+      const writer = await control.acquireRuntimeWrite(f.next, 0); writer()
+    } finally { pending() }
+  })
+
+  it("defers a manual bootstrap reader-floor increase until pending proofs finish", async () => {
+    const f = await fixture(), control = f.control()
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket); await control.complete(ticket)
+    const root = join(f.home, "native"); await mkdir(root, { mode: 0o700 })
+    const store = makeCreationReceiptStore(f.home, "cursor", { home: f.home, identity: f.next })
+    const signal = new AbortController().signal, scope = store.scope({ cwd: f.home }, Effect.void, signal)
+    const input = { sourceId: "new-session", stateDirectory: root, sourcePath: join(root, "session.jsonl"), profile: "synthetic.v1" }
+    await scope.creation.recordAttempt(input, signal)
+    await f.replaceBootstrap("0.5.6")
+    const before = await readFile(f.ledger, "utf8")
+    try {
+      await expect(control.rebindBootstrap()).rejects.toMatchObject({ reason: "conflict" })
+      expect(await readFile(f.ledger, "utf8")).toBe(before)
+      await control.assertRuntimeAdmission(f.next)
+      const confirmed = await scope.creation.confirm({ prefix: { bytes: 10, rows: 1, sha256: "a".repeat(64) } }, signal)
+      expect(await store.reader.readConfirmed(input, signal)).toEqual(confirmed)
+    } finally { await scope.finish() }
+    expect(await control.rebindBootstrap()).toMatchObject({ version: "0.5.6" })
+    await expect(control.assertRuntimeAdmission(f.next)).rejects.toMatchObject({ reason: "admission" })
   })
 
   it("rechecks conditional selection after waiting for an in-flight write and releases a failed fence", async () => {

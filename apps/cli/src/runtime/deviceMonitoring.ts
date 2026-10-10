@@ -13,7 +13,8 @@ export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<Cl
   const http = yield* AuthenticatedHTTPClient
   const lock = yield* Semaphore.make(1)
   const discovery = createReleaseDiscovery({ home, runtimeVersion: cliVersion, captureStateContract,
-    updateControlProtocol, fetchMetadata: fetchReleases })
+    updateControlProtocol, fetchMetadata: fetchReleases,
+    supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
   let versions: Record<string, string> = {}
   let checkedAt: string | undefined
   let nextCheck = 0

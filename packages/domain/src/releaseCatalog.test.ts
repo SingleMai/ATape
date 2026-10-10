@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { decodeReleaseBundle, decodeReleaseCatalog, mergeReleaseBundle, releaseBundleFingerprint, releaseBundleFromBody,
-  releaseBundleSection, releasePackageNames, selectReleaseBundle, type ReleaseBundle } from "./releaseCatalog.ts"
+  releaseBundleSection, releasePackageNames, selectReleaseBundle, type ReleaseBundle,
+  decodeMigrationReleaseBundle, decodeMigrationReleaseCatalog, decodeManagedReleaseBundle,
+  managedReleaseBundleFingerprint, migrationReleaseBundleFingerprint, mergeMigrationReleaseBundle,
+  selectMigrationReleaseBundle, migrationReleaseBundleSection, migrationReleaseBundleFromBody,
+  type MigrationReleaseBundle } from "./releaseCatalog.ts"
 
 const bundle = (version = "1.2.3", contract = "capture.v2", control = "control.v1"): ReleaseBundle => ({
   protocol: "atape.release-bundle.v1", version, captureStateContract: contract, updateControlProtocol: control,
@@ -147,5 +151,125 @@ describe("versioned Release body descriptor", () => {
       "<!-- atape.release-bundle.v1:start -->not json<!-- atape.release-bundle.v1:end -->"]) {
       expect(() => releaseBundleFromBody(body)).toThrow()
     }
+  })
+})
+
+const migrationBundle = (version = "1.2.3", sources = ["capture.v1", "capture.v2"], id = "journal-v7-to-v8",
+  contract = "capture.v2", protocol = "atape.capture-migration.v1"): MigrationReleaseBundle => ({
+  ...bundle(version, contract), protocol: "atape.release-bundle.v2",
+  migration: { protocol, id, fromCaptureStateContracts: sources }
+})
+const identity = { captureStateContract: "capture.v2", updateControlProtocol: "control.v1",
+  supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] }
+
+describe("explicit migration release bundles", () => {
+  it("keeps the original seven-package migration reader floor when producers add Cursor", () => {
+    const current = migrationBundle(), original = { ...current,
+      packages: current.packages.filter(item => item.name !== "@atape/adapter-cursor") }
+    expect(original.packages).toHaveLength(7)
+    expect(current.packages).toHaveLength(8)
+    expect(decodeMigrationReleaseBundle(original)).toEqual(original)
+    const old = mergeMigrationReleaseBundle(undefined, original)
+    expect(() => mergeMigrationReleaseBundle(old, current)).toThrow("immutable")
+    const next = mergeMigrationReleaseBundle(old, migrationBundle("1.2.4", ["capture.v2"]))
+    expect(selectMigrationReleaseBundle(next, { ...identity, captureStateContract: "capture.v1" })).toEqual(original)
+    expect(selectMigrationReleaseBundle(next, identity).packages).toHaveLength(8)
+  })
+
+  it("preserves strict v1 and its exact canonical identity", () => {
+    expect(decodeManagedReleaseBundle(bundle())).toEqual(bundle())
+    expect(managedReleaseBundleFingerprint(bundle())).toBe(releaseBundleFingerprint(bundle()))
+    expect(() => decodeReleaseBundle(migrationBundle())).toThrow()
+    expect(() => decodeReleaseCatalog(mergeMigrationReleaseBundle(undefined, migrationBundle()))).toThrow()
+  })
+
+  it("decodes opaque unknown plans while rejecting malformed and inferred source permission", () => {
+    expect(decodeMigrationReleaseBundle(migrationBundle("1.2.3", ["capture.unknown"], "unknown", "capture.unknown", "unknown")))
+      .toEqual(migrationBundle("1.2.3", ["capture.unknown"], "unknown", "capture.unknown", "unknown"))
+    for (const migration of [undefined, { ...migrationBundle().migration, fromCaptureStateContracts: [] },
+      { ...migrationBundle().migration, fromCaptureStateContracts: ["capture.v1"] },
+      { ...migrationBundle().migration, fromCaptureStateContracts: ["capture.v2", "capture.v2"] },
+      { ...migrationBundle().migration, protocol: "bad\nprotocol" }, { ...migrationBundle().migration, executable: "run" }])
+      expect(() => decodeMigrationReleaseBundle({ ...migrationBundle(), migration })).toThrow()
+    expect(() => decodeMigrationReleaseBundle({ ...migrationBundle(), packages: bundle().packages.slice(1) })).toThrow()
+  })
+
+  it("binds the full plan and additive package bytes independently of list order", () => {
+    const value = migrationBundle()
+    expect(migrationReleaseBundleFingerprint({ ...value, packages: [...value.packages].reverse(),
+      migration: { ...value.migration, fromCaptureStateContracts: [...value.migration.fromCaptureStateContracts].reverse() } }))
+      .toBe(migrationReleaseBundleFingerprint(value))
+    for (const changed of [migrationBundle("1.2.3", ["capture.v2"]), migrationBundle("1.2.3", undefined, "next-plan"),
+      migrationBundle("1.2.3", undefined, undefined, undefined, "next-protocol"),
+      { ...value, packages: [...value.packages, extraPackage()] }])
+      expect(managedReleaseBundleFingerprint(changed)).not.toBe(managedReleaseBundleFingerprint(value))
+  })
+})
+
+describe("persistent migration routes", () => {
+  it("advances a subset of sources while retaining an offline old-source path", () => {
+    const first = mergeMigrationReleaseBundle(undefined, migrationBundle())
+    const second = mergeMigrationReleaseBundle(first, migrationBundle("1.2.4", ["capture.v2"]))
+    expect(selectMigrationReleaseBundle(second, identity).version).toBe("1.2.4")
+    expect(selectMigrationReleaseBundle(second, { ...identity, captureStateContract: "capture.v1" }).version).toBe("1.2.3")
+    expect(second.bundles).toHaveLength(2)
+    expect(mergeMigrationReleaseBundle(second, migrationBundle())).toEqual(second)
+  })
+
+  it("retains a capability bridge when a future plan is unknown to an offline reader", () => {
+    const old = mergeMigrationReleaseBundle(undefined, migrationBundle())
+    const next = mergeMigrationReleaseBundle(old, migrationBundle("2.0.0", ["capture.v2", "capture.v3"], "next-plan", "capture.v3"))
+    expect(selectMigrationReleaseBundle(next, identity).version).toBe("1.2.3")
+    expect(selectMigrationReleaseBundle(next, { ...identity, supportedMigrationPlans: [...identity.supportedMigrationPlans,
+      { protocol: "atape.capture-migration.v1", id: "next-plan" }] }).version).toBe("2.0.0")
+    expect(() => selectMigrationReleaseBundle(next, { ...identity, supportedMigrationPlans: [] })).toThrow("known-plan")
+    const unknownProtocol = mergeMigrationReleaseBundle(next,
+      migrationBundle("3.0.0", ["capture.v2", "capture.v3"], "next-plan", "capture.v3", "future.protocol"))
+    expect(selectMigrationReleaseBundle(unknownProtocol, identity).version).toBe("1.2.3")
+  })
+
+  it("does not accumulate unreferenced superseded builds and keeps monotonic reruns", () => {
+    let catalog = mergeMigrationReleaseBundle(undefined, migrationBundle())
+    for (let index = 4; index < 80; index++) catalog = mergeMigrationReleaseBundle(catalog, migrationBundle(`1.2.${index}`))
+    expect(catalog.bundles).toHaveLength(1)
+    expect(catalog.routes).toHaveLength(2)
+    expect(catalog.revision).toBe(77)
+    expect(mergeMigrationReleaseBundle(catalog, migrationBundle("1.2.79"))).toEqual(catalog)
+    expect(mergeMigrationReleaseBundle(catalog, migrationBundle())).toEqual(catalog)
+  })
+
+  it("rejects immutable changes, ambiguous or dangling routes, invalid revisions and excess metadata", () => {
+    const catalog = mergeMigrationReleaseBundle(undefined, migrationBundle()), route = catalog.routes[0]!
+    expect(() => mergeMigrationReleaseBundle(catalog, migrationBundle("1.2.3", ["capture.v2"]))).toThrow("immutable")
+    for (const changed of [{ ...catalog, bundles: [...catalog.bundles, catalog.bundles[0]] },
+      { ...catalog, routes: [...catalog.routes, route] }, { ...catalog, routes: [{ ...route, version: "9.0.0" }] },
+      { ...catalog, routes: [{ ...route, migrationProtocol: "other" }] },
+      { ...catalog, routes: [{ ...route, fromCaptureStateContract: "unreadable" }] },
+      { ...catalog, routes: [] }, { ...catalog, revision: 0 }, { ...catalog, execute: "remote-command" }])
+      expect(() => decodeMigrationReleaseCatalog(changed)).toThrow()
+    expect(() => mergeMigrationReleaseBundle({ ...catalog, revision: Number.MAX_SAFE_INTEGER }, migrationBundle("1.2.4")))
+      .toThrow("exhausted")
+  })
+})
+
+describe("independent migration descriptor namespace", () => {
+  it("lets strict historical v1 readers consume a dual-descriptor actual bridge", () => {
+    const legacy = bundle(), migration = migrationBundle()
+    const body = `Notes\n${releaseBundleSection(legacy)}\n${migrationReleaseBundleSection(migration)}`
+    expect(releaseBundleFingerprint(releaseBundleFromBody(body)!)).toBe(releaseBundleFingerprint(legacy))
+    expect(migrationReleaseBundleFingerprint(migrationReleaseBundleFromBody(body)!)).toBe(migrationReleaseBundleFingerprint(migration))
+    expect(migrationReleaseBundleFromBody("Historical notes")).toBeUndefined()
+    expect(migrationReleaseBundleFingerprint(migrationReleaseBundleFromBody(migrationReleaseBundleSection(migration))!))
+      .toBe(migrationReleaseBundleFingerprint(migration))
+  })
+
+  it("rejects disagreeing shared identity and malformed migration sections", () => {
+    const section = migrationReleaseBundleSection(migrationBundle())
+    for (const body of [section + section, section.replace(":end", ":missing"), section.replace(":start", ":missing"),
+      "<!-- atape.migration-release-bundle.v1:end --><!-- atape.migration-release-bundle.v1:start -->",
+      `${section}\n<!-- atape.migration-release-bundle.v2:start -->`,
+      `${releaseBundleSection(bundle("1.2.4"))}\n${section}`,
+      "<!-- atape.migration-release-bundle.v1:start -->bad json<!-- atape.migration-release-bundle.v1:end -->"])
+      expect(() => migrationReleaseBundleFromBody(body)).toThrow()
   })
 })

@@ -1,10 +1,11 @@
+import { guardCaptureRuntimeWrite } from "./captureMigrationAdmission.ts"
 import { GitAttributionError, GitSourceBinding, GitSourceBindings, type GitBindingScope } from "@atape/application"
 import { Effect, Layer, Schema } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { link, mkdir, open, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import { guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
+import { runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 
 const MaxBindingBytes = 32 * 1024
 const decode = Schema.decodeUnknownSync(GitSourceBinding)
@@ -16,7 +17,7 @@ export const makeGitSourceBindingsLayer = (directory: string, runtime: RuntimeCo
     ])).digest("hex") + ".json")
   return Layer.succeed(GitSourceBindings, GitSourceBindings.of({
     read: (scope, sourceId) => bindingIO(() => readBinding(pathFor(scope, sourceId))),
-    remember: (scope, sourceId, binding) => guardRuntimeWrite(runtime, bindingIO(async () => {
+    remember: (scope, sourceId, binding) => guardCaptureRuntimeWrite(runtime, bindingIO(async () => {
       const path = pathFor(scope, sourceId)
       const bytes = JSON.stringify(decode(binding)) + "\n"
       if (Buffer.byteLength(bytes) > MaxBindingBytes) throw new Error("Binding too large")

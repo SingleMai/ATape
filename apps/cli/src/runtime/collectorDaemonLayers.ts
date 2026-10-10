@@ -120,7 +120,7 @@ export const withCollectorMaintenance = async <A>(
   resolveEntry: () => Promise<string>,
   environment: NodeJS.ProcessEnv,
   activate: (deadline: number) => Promise<A>,
-  options: { readonly recover?: (cause: unknown, deadline: number) => Promise<void>; readonly readyTimeoutMs?: number;
+  options: { readonly beforePause?: (wanted: boolean) => Promise<void>; readonly recover?: (cause: unknown, deadline: number) => Promise<void>; readonly readyTimeoutMs?: number;
     readonly activationTimeoutMs?: number; readonly recoveryTimeoutMs?: number } = {}
 ): Promise<A> => {
   if (process.platform === "win32") throw unsupportedManagedProcessPlatform()
@@ -138,7 +138,7 @@ const performCollectorMaintenance = async <A>(
   resolveEntry: () => Promise<string>,
   environment: NodeJS.ProcessEnv,
   activate: (deadline: number) => Promise<A>,
-  options: { readonly recover?: (cause: unknown, deadline: number) => Promise<void>; readonly readyTimeoutMs?: number;
+  options: { readonly beforePause?: (wanted: boolean) => Promise<void>; readonly recover?: (cause: unknown, deadline: number) => Promise<void>; readonly readyTimeoutMs?: number;
     readonly activationTimeoutMs?: number; readonly recoveryTimeoutMs?: number },
   activationDeadline: number
 ): Promise<A> => {
@@ -157,6 +157,9 @@ const performCollectorMaintenance = async <A>(
     const previous = await readMaintenance(paths.collectorProcessFile)
     const running = await readProcessRecord(paths.collectorProcessFile)
     const desired = await desiredState(paths.collectorProcessFile, running, previous, deadline)
+    // Observe intent while Start/Stop are serialized, before closing admission.
+    await options.beforePause?.(desired.wanted)
+    remaining()
     const resume = !desired.wanted ? undefined : previous === undefined
       ? { intervalMs: desired.intervalMs, concurrency: desired.concurrency }
       : previous.resume
@@ -741,6 +744,14 @@ const readDesiredState = async (processFile: string): Promise<CollectorDesiredSt
     if (hasCode(cause, "ENOENT")) return undefined
     throw new CollectorDaemonProcessError({ reason: "identity", message: "The saved Collector sync intent is invalid. Open ATape and choose Start or Stop." })
   }
+}
+
+/** Read-only preflight observation. beforePause rechecks under transition lock. */
+export const readCollectorSyncWanted = async (processFile: string): Promise<boolean> => {
+  const saved = await readDesiredState(processFile), running = await readProcessRecord(processFile),
+    gate = await readMaintenance(processFile)
+  if (saved) return saved.wanted && !(saved.established && !running && !gate?.resume)
+  return gate?.resume !== undefined || running !== undefined && await isOwnedProcess(running)
 }
 
 // Migration happens under the same transition lock as Start, Stop and updates.

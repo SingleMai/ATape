@@ -4,7 +4,7 @@ import { cliVersion } from "./version.ts"
 import { t } from "./i18n/index.ts"
 import type { ParsedCLI } from "./commandInput.ts"
 
-export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" | "__automatic-update" | "__login-start" | "__update-wake" | "redaction-test" | "redaction-help" | "start" | "start-help" }>) {
+export const runCommand = Effect.fn("CLI.entry")(function*(cli: Extract<ParsedCLI, { readonly kind: "help" | "version" | "__collector-daemon" }>) {
   if (cli.kind === "__collector-daemon") return yield* runManagedCollector(cli.options)
   yield* writeInformationalCommand(cli)
 })
