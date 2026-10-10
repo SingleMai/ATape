@@ -1,5 +1,5 @@
 import { officialSources } from "@atape/adapter-catalog"
-import { decodeReleaseBundle, releaseBundleFingerprint, type AdapterInstallation, type ReleaseBundle } from "@atape/domain"
+import { decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, type AdapterInstallation, type ManagedReleaseBundle as ReleaseBundle } from "@atape/domain"
 import { Clock, Context, Effect, Random, Schema, type Scope } from "effect"
 import { automaticUpdatesEnabled, inspectClient } from "./clientManagement.ts"
 import { newer, stableVersion } from "./releaseVersion.ts"

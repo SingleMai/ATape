@@ -36,6 +36,8 @@ const fixture = (options: {
   readonly stored?: StoredCLICredential
   readonly metadata?: InstanceMetadata
   readonly device?: import("@atape/domain").CLIDeviceMetadata
+  readonly deviceEffect?: Effect.Effect<import("@atape/domain").CLIDeviceMetadata>
+  readonly omitDeviceReport?: boolean
   readonly fetch?: typeof fetch
 } = {}) => {
   let discoveries = 0
@@ -68,7 +70,9 @@ const fixture = (options: {
       headers: { "content-type": "application/json" }
     })
   }) as typeof fetch
-  const layer = makeAuthenticatedHTTPClientLayer(options.fetch ?? fetchImplementation, false, options.device === undefined ? undefined : Effect.succeed(options.device)).pipe(Layer.provide(dependencies))
+  const layer = makeAuthenticatedHTTPClientLayer(options.fetch ?? fetchImplementation, false,
+    options.deviceEffect ?? (options.device === undefined ? undefined : Effect.succeed(options.device)),
+    options.omitDeviceReport === undefined ? {} : { omitDeviceReport: options.omitDeviceReport }).pipe(Layer.provide(dependencies))
   return {
     discoveries: () => discoveries,
     fetches,
@@ -105,6 +109,23 @@ describe("authenticated CLI HTTP boundary", () => {
       instanceOrigin: credential.instanceOrigin, ...input
     } as Parameters<typeof http.request>[0])))).rejects.toMatchObject({ reason: "rejected" })
     expect(client.fetches).toEqual([])
+  })
+
+  it("omits device reporting for migration preflight while preserving pinned bearer authentication", async () => {
+    const client = fixture({ omitDeviceReport: true, deviceEffect: Effect.die("Migration must not load a device report.") })
+    await client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      expectedUserId: credential.user.id, method: "GET", path: "/api/v1/publications/capabilities",
+      acceptPublicationTarget: PublicationTargetProfile3,
+      deviceReport: { name: "Ignored explicit report", platform: "darwin", version: "0.5.5",
+        sync: { phase: "waiting", jobs: [], jobsTruncated: false } } })))
+    expect(client.discoveries()).toBe(1)
+    expect(client.fetches).toHaveLength(1)
+    const headers = new Headers(client.fetches[0]?.init?.headers)
+    expect(headers.get("authorization")).toBe(`Bearer ${credential.credential}`)
+    expect(headers.get("ATape-Accept-Publication-Target")).toBe(PublicationTargetProfile3)
+    expect(headers.get("X-Atape-Device")).toBeNull()
+    expect(client.fetches[0]?.init?.body).toBeUndefined()
+    expect(client.fetches[0]?.init?.redirect).toBe("error")
   })
 
   it("sends sealed publication JSON bytes verbatim and bounds the encoded path", async () => {

@@ -259,6 +259,16 @@ export const createUpdateControl = (home: string) => {
   }
   return {
     readSelection,
+    // Capture migration authority observes this boundary under the admission
+    // barrier. Keep the outer protocol unchanged for retained bootstrap readers.
+    migrationBoundary: async (key: string) => {
+      const control = await transaction({ key })
+      const selection = await readSelection()
+      return { phase: control.phase, forwardOnly: control.forwardOnly, target: control.target,
+        ...(control.baseline ? { baseline: control.baseline } : {}),
+        ...(control.previous ? { previous: control.previous } : {}),
+        ...(selection ? { selection } : {}) }
+    },
     assertRuntimeAdmission,
     // Resource cleanup may checkpoint already-admitted SQLite bytes after the
     // reader floor moves. It uses exclusion without gaining logical admission.

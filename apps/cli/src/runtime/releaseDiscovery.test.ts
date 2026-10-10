@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { releaseBundleFingerprint, releaseBundleSection, releasePackageNames, updateCatalogTag, type ReleaseBundle } from "@atape/domain"
+import { managedReleaseBundleFingerprint as releaseBundleFingerprint, releaseBundleSection, releasePackageNames, updateCatalogTag, type ReleaseBundle } from "@atape/domain"
 import { createReleaseDiscovery, type ReleaseDiscovery } from "./releaseDiscovery.ts"
 
 const catalogURL = `https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`

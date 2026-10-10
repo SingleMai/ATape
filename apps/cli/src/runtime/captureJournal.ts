@@ -7,7 +7,8 @@ import { lstat, mkdir, open } from "node:fs/promises"
 import { dirname } from "node:path"
 import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import { Effect, Layer, Schema } from "effect"
-import { guardRuntimeWrite, runtimeContext, withRuntimeWriteBarrier, type RuntimeContext } from "./runtimeAdmission.ts"
+import { runtimeContext, withRuntimeWriteBarrier, type RuntimeContext } from "./runtimeAdmission.ts"
+import { captureMigrationAuthorityRequirement, guardCaptureRuntimeWrite, guardCaptureMigrationWrite, migrationHash, type CaptureMigrationWriteAuthority } from "./captureMigrationAdmission.ts"
 
 export type CaptureJournalOptions = {
   readonly path: string
@@ -74,9 +75,90 @@ const storageError = (cause: unknown): CaptureJournalError => {
 
 export const makeCaptureJournalLayer = (options: CaptureJournalOptions) => Layer.effect(CaptureJournal, openCaptureJournal(options))
 
+// This exact transformation is shared by ordinary historical compatibility and
+// the explicitly authorized managed plan. The caller owns its SQLite transaction.
+const upgradeJournalV7 = (db: DatabaseSync) => {
+  if (db.prepare("PRAGMA user_version").get()?.user_version !== 7) return
+  db.exec(`ALTER TABLE binding ADD COLUMN metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(metadata_bytes>=0);
+    ALTER TABLE scopes ADD COLUMN revision_floor INTEGER NOT NULL DEFAULT 0 CHECK(revision_floor>=0);
+    ALTER TABLE scopes ADD COLUMN adoption_metadata TEXT;
+    ALTER TABLE scopes ADD COLUMN adoption_metadata_sha TEXT;
+    ALTER TABLE scopes ADD COLUMN adoption_metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(adoption_metadata_bytes>=0);
+    ALTER TABLE captures ADD COLUMN source_metadata TEXT;
+    ALTER TABLE captures ADD COLUMN source_metadata_sha TEXT;
+    ALTER TABLE captures ADD COLUMN source_metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(source_metadata_bytes>=0);
+    CREATE TABLE legacy_migrations(migration_key TEXT PRIMARY KEY, checkpoint_json TEXT NOT NULL, checkpoint_sha TEXT NOT NULL, byte_count INTEGER NOT NULL CHECK(byte_count>0));
+    CREATE TRIGGER metadata_legacy_migrations_insert AFTER INSERT ON legacy_migrations BEGIN UPDATE binding SET metadata_entries=metadata_entries+1,metadata_bytes=metadata_bytes+new.byte_count; END;
+    CREATE TRIGGER metadata_legacy_migrations_delete AFTER DELETE ON legacy_migrations BEGIN UPDATE binding SET metadata_entries=metadata_entries-1,metadata_bytes=metadata_bytes-old.byte_count; END;
+    CREATE TRIGGER source_metadata_update AFTER UPDATE OF source_metadata_bytes ON captures BEGIN UPDATE binding SET metadata_bytes=metadata_bytes+new.source_metadata_bytes-old.source_metadata_bytes; END;
+    CREATE TRIGGER adoption_metadata_update AFTER UPDATE OF adoption_metadata_bytes ON scopes BEGIN UPDATE binding SET metadata_bytes=metadata_bytes+new.adoption_metadata_bytes-old.adoption_metadata_bytes; END;
+    CREATE INDEX retained_source_metadata ON captures(scope_key,id) WHERE source_metadata IS NOT NULL;
+    PRAGMA user_version=8`)
+}
+
+type MigrationJournal = Pick<CaptureJournalOptions, "path" | "binding"> & { readonly runtime: RuntimeContext }
+const inspectMigrationDatabase = (db: DatabaseSync, binding: CaptureJournalOptions["binding"]): 7 | 8 => {
+  for (const value of Object.values(binding)) text(value)
+  const version = Number(db.prepare("PRAGMA user_version").get()?.user_version)
+  if (version !== 7 && version !== 8) throw failure("corrupt", "The explicit journal migration supports only formats 7 and 8.")
+  const stored = db.prepare("SELECT identity,retained_bytes,metadata_entries FROM binding").all()
+  if (stored.length !== 1 || stored[0]?.identity !== JSON.stringify([binding.instanceOrigin, binding.userId, binding.installationId]))
+    throw failure("binding", "Capture journal belongs to a different account or installation.")
+  db.prepare("SELECT records_retired,retained_records FROM captures LIMIT 0").all()
+  db.prepare("SELECT records_initialized FROM scopes LIMIT 0").all()
+  db.prepare("SELECT revision FROM source_record_versions LIMIT 0").all()
+  db.prepare("SELECT revision FROM capture_records LIMIT 0").all()
+  db.prepare("SELECT disposition FROM units LIMIT 0").all()
+  if (version === 8) {
+    db.prepare("SELECT metadata_bytes FROM binding LIMIT 0").all()
+    db.prepare("SELECT revision_floor,adoption_metadata,adoption_metadata_sha,adoption_metadata_bytes FROM scopes LIMIT 0").all()
+    db.prepare("SELECT source_metadata,source_metadata_sha,source_metadata_bytes FROM captures LIMIT 0").all()
+    db.prepare("SELECT checkpoint_json,checkpoint_sha,byte_count FROM legacy_migrations LIMIT 0").all()
+  }
+  return version
+}
+const existingMigrationPath = async (path: string) => {
+  const stat = await lstat(path).catch(cause => { if (cause.code === "ENOENT") throw failure("missing", "Established capture journal is missing."); throw cause })
+  if (!stat.isFile() || stat.isSymbolicLink()) throw failure("binding", "Capture journal must be an existing regular file.")
+}
+/** Shared local inspection used by parent and target preflight; opening read-only
+ * never invokes ordinary journal compatibility upgrades or source workflows. */
+export const inspectCaptureJournalV7ToV8 = async (options: Pick<MigrationJournal, "path" | "binding">): Promise<7 | 8> => {
+  await existingMigrationPath(options.path)
+  const db = new DatabaseSync(options.path, { readOnly: true })
+  try { return inspectMigrationDatabase(db, options.binding) } finally { db.close() }
+}
+/** A narrow local DDL operation. Its authority Scope owns apply exclusion; it
+ * exposes no CaptureJournal writer and recreates no missing database. */
+export const migrateCaptureJournalV7ToV8 = (options: MigrationJournal, authority: CaptureMigrationWriteAuthority) =>
+  captureMigrationAuthorityRequirement(authority).pipe(Effect.flatMap(requirement => {
+    const account = requirement.inventory.find(account => account.path === options.path)
+    if (!account || account.deferred || account.bindingHash !== migrationHash(options.binding) ||
+      options.runtime.home !== requirement.home || options.runtime.identity.version !== requirement.target.version ||
+      options.runtime.identity.captureStateContract !== requirement.target.captureStateContract)
+      return Effect.fail(failure("binding", "Migration journal is outside the authority's exact registered inventory and target runtime."))
+    return Effect.acquireRelease(guardCaptureMigrationWrite(authority, Effect.tryPromise({ try: async () => {
+    await existingMigrationPath(options.path)
+    const db = new DatabaseSync(options.path)
+    try { inspectMigrationDatabase(db, options.binding); db.exec("PRAGMA foreign_keys=ON; PRAGMA busy_timeout=250; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL"); return db }
+    catch (cause) { db.close(); throw cause }
+  }, catch: storageError }), storageError), db => withRuntimeWriteBarrier(options.runtime, Effect.sync(() => db.close()), storageError).pipe(
+    Effect.ensuring(Effect.sync(() => { if (db.isOpen) db.close() })), Effect.orDie
+  )).pipe(Effect.flatMap(db => guardCaptureMigrationWrite(authority, Effect.try({ try: () => {
+    db.exec("BEGIN IMMEDIATE")
+    try {
+      const before = inspectMigrationDatabase(db, options.binding)
+      upgradeJournalV7(db)
+      inspectMigrationDatabase(db, options.binding)
+      db.exec("COMMIT")
+      return { before, after: 8 as const, bindingHash: migrationHash(options.binding) }
+    } catch (cause) { if (db.isTransaction) db.exec("ROLLBACK"); throw cause }
+  }, catch: storageError }), storageError)))
+  }))
+
 export const openCaptureJournal = (options: CaptureJournalOptions) => {
   const runtime = options.runtime ?? runtimeContext(dirname(options.path))
-  return Effect.acquireRelease(guardRuntimeWrite(runtime, Effect.tryPromise({
+  return Effect.acquireRelease(guardCaptureRuntimeWrite(runtime, Effect.tryPromise({
     try: async () => {
       const { limits, binding } = options
       text(binding.instanceOrigin); text(binding.userId); text(binding.installationId)
@@ -173,23 +255,7 @@ export const openCaptureJournal = (options: CaptureJournalOptions) => {
             CREATE INDEX obsolete_capture_records ON captures(scope_key,id) WHERE state IN ('completed','abandoned') AND retained_records>0;
             PRAGMA user_version=7`)
         }
-        if (db.prepare("PRAGMA user_version").get()?.user_version === 7) {
-          db.exec(`ALTER TABLE binding ADD COLUMN metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(metadata_bytes>=0);
-            ALTER TABLE scopes ADD COLUMN revision_floor INTEGER NOT NULL DEFAULT 0 CHECK(revision_floor>=0);
-            ALTER TABLE scopes ADD COLUMN adoption_metadata TEXT;
-            ALTER TABLE scopes ADD COLUMN adoption_metadata_sha TEXT;
-            ALTER TABLE scopes ADD COLUMN adoption_metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(adoption_metadata_bytes>=0);
-            ALTER TABLE captures ADD COLUMN source_metadata TEXT;
-            ALTER TABLE captures ADD COLUMN source_metadata_sha TEXT;
-            ALTER TABLE captures ADD COLUMN source_metadata_bytes INTEGER NOT NULL DEFAULT 0 CHECK(source_metadata_bytes>=0);
-            CREATE TABLE legacy_migrations(migration_key TEXT PRIMARY KEY, checkpoint_json TEXT NOT NULL, checkpoint_sha TEXT NOT NULL, byte_count INTEGER NOT NULL CHECK(byte_count>0));
-            CREATE TRIGGER metadata_legacy_migrations_insert AFTER INSERT ON legacy_migrations BEGIN UPDATE binding SET metadata_entries=metadata_entries+1,metadata_bytes=metadata_bytes+new.byte_count; END;
-            CREATE TRIGGER metadata_legacy_migrations_delete AFTER DELETE ON legacy_migrations BEGIN UPDATE binding SET metadata_entries=metadata_entries-1,metadata_bytes=metadata_bytes-old.byte_count; END;
-            CREATE TRIGGER source_metadata_update AFTER UPDATE OF source_metadata_bytes ON captures BEGIN UPDATE binding SET metadata_bytes=metadata_bytes+new.source_metadata_bytes-old.source_metadata_bytes; END;
-            CREATE TRIGGER adoption_metadata_update AFTER UPDATE OF adoption_metadata_bytes ON scopes BEGIN UPDATE binding SET metadata_bytes=metadata_bytes+new.adoption_metadata_bytes-old.adoption_metadata_bytes; END;
-            CREATE INDEX retained_source_metadata ON captures(scope_key,id) WHERE source_metadata IS NOT NULL;
-            PRAGMA user_version=8`)
-        }
+        upgradeJournalV7(db)
         db.exec("COMMIT")
         return db
       } catch (cause) {
@@ -237,7 +303,7 @@ function implementation(db: DatabaseSync, options: CaptureJournalOptions, runtim
     if (additional > limits.pendingBytes - retained - metadata)
       throw failure("capacity", "Source metadata admission is exhausted; existing delivery remains recoverable.")
   }
-  const transaction = <A>(work: () => A) => guardRuntimeWrite(runtime, Effect.try({ try: () => {
+  const transaction = <A>(work: () => A) => guardCaptureRuntimeWrite(runtime, Effect.try({ try: () => {
     db.exec("BEGIN IMMEDIATE")
     try { const result = work(); db.exec("COMMIT"); return result }
     catch (cause) {

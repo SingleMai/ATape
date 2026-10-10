@@ -1,6 +1,6 @@
 import { AdapterPackages, AutomaticUpdateError, AutomaticUpdatePlatform, automaticUpdatesEnabled,
   isNewerReleaseVersion, isStableReleaseVersion, officialSources } from "@atape/application"
-import { AdapterInstallation, ClientConfig, emptyClientConfig, ReleaseBundle, decodeReleaseBundle, releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
+import { AdapterInstallation, ClientConfig, emptyClientConfig, ManagedReleaseBundle as ReleaseBundle, decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
 import { copyFile, lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { createHash, randomUUID } from "node:crypto"
 import { dirname, join } from "node:path"
@@ -9,7 +9,9 @@ import { isDeepStrictEqual } from "node:util"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Schema } from "effect"
 import { captureStateContract } from "../version.ts"
-import type { NodeClientPaths } from "./clientPaths.ts"
+import { defaultNodeClientPaths, type NodeClientPaths } from "./clientPaths.ts"
+import { createCaptureMigrationCoordinator } from "./captureMigration.ts"
+import { activateManagedCaptureUpdate, recoverManagedCaptureUpdate } from "./managedCaptureUpdates.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { CollectorMaintenanceFailure, withCollectorMaintenance, isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
@@ -28,7 +30,7 @@ import { RuntimeSelection, atomicJSON, decodeRuntimeSelection, legacyBridgeCaptu
 const Schedule = Schema.Struct({ nextCheckAt: Schema.Number, failures: Schema.Number,
   version: Schema.optionalKey(Schema.String), failure: Schema.optionalKey(Schema.String) })
 const Pending = Schema.Struct({ next: RuntimeSelection, previous: Schema.optionalKey(RuntimeSelection) })
-const Prepared = Schema.Struct({ bundle: ReleaseBundle, selection: RuntimeSelection, baseline: Schema.Array(AdapterInstallation),
+const Prepared = Schema.Struct({ bundle: ReleaseBundle, selection: Schema.Union([RuntimeSelection, UpdateRuntimeSelection]), baseline: Schema.Array(AdapterInstallation),
   baselineSelection: Schema.optionalKey(Schema.Union([RuntimeSelection, UpdateRuntimeSelection])),
   controlEligible: Schema.optionalKey(Schema.Boolean), enabledAdapterIds: Schema.Array(Schema.String), hasGit: Schema.Boolean })
 const pendingFile = (home: string) => join(updateDirectory(home), "pending.json")
@@ -130,6 +132,7 @@ const controlCapable = async (entry: string) => {
 
 export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: string, environment: NodeJS.ProcessEnv) => {
   await assertNoPendingManualStateUpgrade(paths)
+  if (await recoverManagedCaptureUpdate(paths, bootstrap, environment)) return
   const control = createUpdateControl(paths.atapeHome)
   const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
   const controlPending = await control.recoveryPending()
@@ -165,6 +168,7 @@ export const recoverPendingUpdate = async (paths: NodeClientPaths, bootstrap: st
 }
 
 export const needsUpdateRecovery = async (paths: NodeClientPaths) =>
+  await createCaptureMigrationCoordinator(paths).recoveryPending() ||
   (await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))) !== undefined ||
   await createUpdateControl(paths.atapeHome).recoveryPending() || isCollectorMaintenancePending(paths.collectorProcessFile)
 
@@ -177,6 +181,7 @@ export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray
   const pending = await readOptional(pendingFile(home), Schema.decodeUnknownSync(Pending))
   if (pending) selections.push(pending.next, ...(pending.previous ? [pending.previous] : []))
   selections.push(...await createUpdateControl(home).protectedSelections())
+  selections.push(...await createCaptureMigrationCoordinator(defaultNodeClientPaths({ ...process.env, ATAPE_HOME: home })).protectedSelections())
   return [...new Set(selections.flatMap(selection => selection.adapters.flatMap(pair =>
     [pair.before.packageSlot, pair.after.packageSlot].filter((slot): slot is string => slot !== undefined))))]
 }
@@ -184,7 +189,8 @@ export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray
 export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFile: string, currentVersion: string,
   environment: NodeJS.ProcessEnv = process.env, fetchMetadata: typeof fetch = globalThis.fetch) => {
   const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: currentVersion,
-    captureStateContract, updateControlProtocol, fetchMetadata })
+    captureStateContract, updateControlProtocol, fetchMetadata,
+    supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
   let ownership: Promise<string | undefined> | undefined
   const bootstrap = () => {
     // Deduplicate concurrent probes only. npm/path failures and changes in
@@ -214,9 +220,9 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       prepare: (bundle, adapters, automatic) => Effect.gen(function*() {
         // This prepared/pending format is the historical v2 plan. A future
         // contract needs its own declared migration plan, never a v2 relabel.
-        if (captureStateContract !== legacyBridgeCaptureContract) return yield* updateError("unsupported",
-          "This runtime needs a capture migration plan before preparing managed updates.")
         const requested = yield* nodeEffect("release", async () => decodeReleaseBundle(bundle))
+        if (requested.protocol === "atape.release-bundle.v1" && captureStateContract !== legacyBridgeCaptureContract)
+          return yield* updateError("unsupported", "This runtime needs an explicit capture migration plan.")
         const version = requested.version
         yield* nodeEffect("state", () => assertCandidateEligible(paths.atapeHome, requested, automatic))
         yield* nodeEffect("state", async () => {
@@ -272,13 +278,15 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
             version, updatedAt: new Date().toISOString() } })
         }
         const key = randomUUID()
-        const selection: Selection = { protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract,
-          version, bootstrapEntry: original, adapters: replacements,
-          bootstrapIdentity: installedBootstrap.bootstrapIdentity }
+        const selection: Selection | ControlSelection = selectedBundle.protocol === "atape.release-bundle.v2"
+          ? { protocol: updateControlProtocol, captureStateContract: selectedBundle.captureStateContract,
+            version, bootstrapEntry: original, adapters: replacements, bootstrapIdentity: installedBootstrap.bootstrapIdentity }
+          : { protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract,
+            version, bootstrapEntry: original, adapters: replacements, bootstrapIdentity: installedBootstrap.bootstrapIdentity }
         const candidateConfig = { ...baseline, adapters: baseline.adapters.map(adapter =>
           replacements.find(pair => pair.before.adapterId === adapter.adapterId)?.after ?? adapter),
           enabledAdapterIds: [...new Set([...baseline.enabledAdapterIds, ...replacements.map(pair => pair.after.adapterId)])] }
-        yield* validateCollectorAdapters(paths, candidateConfig).pipe(
+        if (selectedBundle.protocol === "atape.release-bundle.v1") yield* validateCollectorAdapters(paths, candidateConfig).pipe(
           Effect.mapError(() => updateError("prepare", "The prepared Adapter runtime could not be loaded locally.")))
         const controlEligible = yield* nodeEffect("prepare", async () => {
           const targetCapable = await controlCapable(runtimeEntry(paths.atapeHome, version))
@@ -286,10 +294,12 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
             throw new Error("An independent update cannot return to a legacy-only package.")
           }
           const bridge = snapshot.selection ? runtimeEntry(paths.atapeHome, snapshot.selection.version) : original
+          if (selectedBundle.protocol === "atape.release-bundle.v2" && (!targetCapable || !await controlCapable(bridge)))
+            throw new Error("Capture migration requires independent control in both runtimes.")
           return targetCapable && await controlCapable(bridge)
         })
         yield* nodeEffect("prepare", () => atomicJSON(join(updateDirectory(paths.atapeHome), `${key}.prepared.json`), {
-          bundle: selectedBundle, selection: decodeRuntimeSelection(selection), baseline: baseline.adapters,
+          bundle: selectedBundle, selection: selection.protocol === updateControlProtocol ? selection : decodeRuntimeSelection(selection), baseline: baseline.adapters,
           ...(snapshot.selection ? { baselineSelection: snapshot.selection } : {}),
           ...(controlEligible ? { controlEligible: true } : {}),
           enabledAdapterIds: baseline.enabledAdapterIds, hasGit: baseline.projects.some(project => project.type === "git")
@@ -314,6 +324,17 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         if (installedBootstrap.bootstrapIdentity !== candidate.selection.bootstrapIdentity) {
           throw new Error("The npm bootstrap was replaced while preparing the update.")
         }
+        if (requested.protocol === "atape.release-bundle.v2") {
+          if (candidate.selection.protocol !== updateControlProtocol || !candidate.controlEligible)
+            throw new Error("Capture migration requires an independent prepared target.")
+          await activateManagedCaptureUpdate(paths, original, installedBootstrap, { ...candidate,
+            bundle: requested, selection: candidate.selection }, automatic, environment, signal)
+          await rm(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`), { force: true })
+          await clearCandidateFailure(paths.atapeHome, requested)
+          return
+        }
+        if (candidate.selection.protocol !== "atape.runtime.v1" || installedBootstrap.protocol !== "atape.runtime.v1")
+          throw new Error("The historical updater requires its original compatible selection.")
         const control = candidate.controlEligible ? createUpdateControl(paths.atapeHome) : undefined
         let ticket: UpdateControlTicket | undefined
         if (control && await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))) {
@@ -433,13 +454,18 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
   }))
 }
 
-const bootstrapSelection = async (original: string): Promise<Selection & { readonly bootstrapIdentity: string }> => {
+const bootstrapSelection = async (original: string): Promise<(Selection | ControlSelection) & { readonly bootstrapIdentity: string }> => {
   const manifest = Schema.decodeUnknownSync(Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String,
-    atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.Literal(legacyBridgeCaptureContract) })
+    atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.String,
+      captureStateContract: Schema.optionalKey(Schema.String), updateControlProtocol: Schema.optionalKey(Schema.String) })
   }))(await readBoundedJSON(join(dirname(dirname(original)), "package.json")))
   if (!isStableReleaseVersion(manifest.version)) throw new Error("The installed npm bootstrap must have a stable release version.")
-  return { protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract, version: manifest.version,
-    bootstrapEntry: original, bootstrapIdentity: createHash("sha256").update(await readFile(original)).digest("hex"), adapters: [] }
+  const identity = { version: manifest.version, bootstrapEntry: original,
+    bootstrapIdentity: createHash("sha256").update(await readFile(original)).digest("hex"), adapters: [] }
+  const contract = manifest.atapeRuntime.captureStateContract ?? manifest.atapeRuntime.stateContract
+  if (contract === legacyBridgeCaptureContract) return { ...identity, protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract }
+  if (manifest.atapeRuntime.updateControlProtocol !== updateControlProtocol) throw new Error("The bootstrap does not support independent control.")
+  return { ...identity, protocol: updateControlProtocol, captureStateContract: contract }
 }
 
 const requireForwardUpdate = (target: string, installed: string, reason: "prepare" | "handoff") => {
@@ -506,12 +532,18 @@ const prepareCLI = async (paths: NodeClientPaths, bundle: ReleaseBundle, artifac
 const validateCLI = async (directory: string, version: string, environment: NodeJS.ProcessEnv, signal: AbortSignal, bundle?: ReleaseBundle) => {
   const root = join(directory, "node_modules", "@atape", "cli")
   const manifest = await readBoundedJSON(join(root, "package.json")) as Record<string, unknown>
-  const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown; updateWakeProtocol?: unknown } | undefined
+  const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; captureStateContract?: unknown;
+    updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown; updateWakeProtocol?: unknown;
+    migrationReleaseCatalogProtocol?: unknown; captureMigrationProtocol?: unknown; captureMigration?: unknown } | undefined
   if (manifest.name !== "@atape/cli" || manifest.version !== version ||
-    contract?.protocol !== "atape.runtime.v1" || contract.stateContract !== captureStateContract ||
+    contract?.protocol !== "atape.runtime.v1" || typeof (contract.captureStateContract ?? contract.stateContract) !== "string" ||
+    bundle && (contract.captureStateContract ?? contract.stateContract) !== bundle.captureStateContract ||
     bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || contract.releaseCatalogProtocol !== updateCatalogProtocol || contract.updateWakeProtocol !== "atape.update-wake.v1")) {
     throw new Error("The selected CLI does not support compatible managed state.")
   }
+  if (bundle?.protocol === "atape.release-bundle.v2" && (contract.captureMigrationProtocol !== bundle.migration.protocol ||
+    contract.migrationReleaseCatalogProtocol !== "atape.update-catalog.v2" ||
+    !isDeepStrictEqual(contract.captureMigration, bundle.migration))) throw new Error("The selected CLI does not implement the declared capture migration.")
   const output = await executeOwnedProcess(process.execPath, [join(root, "dist", "atape.js"), "--version"],
     { ...environment, ATAPE_RUNTIME_DIRECT: "1" }, signal, 15_000)
   if (output.trim() !== `ATape ${version}`) throw new Error("Prepared CLI version verification failed.")

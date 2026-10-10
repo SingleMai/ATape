@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import { CollectorDaemonProcess, CollectorDaemonProcessError } from "./collectorDaemon.ts"
 import { checkCLIUpgrade, CLIUpgradeError, CLIUpgradePlatform, upgradeCLI, resumeCLIUpgrade } from "./cliUpgrade.ts"
-import { emptyClientConfig, releasePackageNames, type ClientConfig, type ReleaseBundle } from "@atape/domain"
+import { emptyClientConfig, releasePackageNames, type ClientConfig, type ManagedReleaseBundle as ReleaseBundle } from "@atape/domain"
 import { AutomaticUpdateError, AutomaticUpdatePlatform } from "./automaticUpdates.ts"
 import { ClientConfigStore } from "./clientManagement.ts"
 
@@ -11,7 +11,7 @@ const bundle = (version: string, integrity = `sha512-${"A".repeat(86)}==`): Rele
   packages: releasePackageNames.map(name => ({ name, integrity,
     tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` }))
 })
-const fixture = (version = "0.4.2", running = true, wanted = running, installed = "0.4.1") => {
+const fixture = (version = "0.4.2", running = true, wanted = running, installed = "0.4.1", selected = bundle(version)) => {
   let failInstall = false, failResume = false, installs = 0, pauses = 0, stale = false
   let stopDuringActivation = false
   let failPrepare = false, changedIntegrity = false, runtimeVersion = "0.4.1"
@@ -57,7 +57,7 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
         if (owned) return Effect.fail(new CLIUpgradeError({ reason: "installation", message: "Another update owns maintenance" }))
         return Effect.sync(() => { owned = true; acquisitions++ })
       }), () => Effect.sync(() => { owned = false; releases++ })),
-      latest: () => Effect.succeed(bundle(version)), installedVersion: () => Effect.succeed(installed),
+      latest: () => Effect.succeed(selected), installedVersion: () => Effect.succeed(installed),
       install: bundle => Effect.suspend(() => {
         installs++
         entryBundles.push(bundle)
@@ -199,6 +199,21 @@ describe("CLI upgrade Module", () => {
     expect(client.activations).toEqual([])
     expect(client.entryBundles).toEqual([bundle("0.4.2")])
     expect(client.config()).toEqual(before)
+  })
+
+  it.each(["0.4.1", "0.4.2"])("settles a migration release before refreshing an unconfigured command entry from %s", async current => {
+    const selected: ReleaseBundle = { ...bundle("0.4.2"), protocol: "atape.release-bundle.v2",
+      migration: { protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8",
+        fromCaptureStateContracts: ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"] } }
+    const client = fixture("0.4.2", false, false, "0.4.1", selected)
+    client.configure(false)
+    const before = client.config()
+    expect(await client.run(upgradeCLI(current))).toEqual({ version: "0.4.2", updated: true, resumed: false })
+    expect(client.prepared).toEqual([{ bundle: selected, adapters: [], automatic: false }])
+    expect(client.activations).toEqual([{ bundle: selected, automatic: false }])
+    expect(client.entryBundles).toEqual([selected])
+    expect(client.config()).toEqual(before)
+    expect(client.starts).toEqual([])
   })
 
   it("upgrades and resumes only previously running sync with its original settings", async () => {

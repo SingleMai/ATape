@@ -634,6 +634,38 @@ setInterval(() => {}, 1000);
     } finally { await f.run(f.daemon.stop()) }
   })
 
+  it("rejects changed prerequisites before publishing pause intent or stopping collection", async () => {
+    const f = await fixture()
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      let activated = false
+      await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
+        async () => { activated = true }, { beforePause: async wanted => {
+          expect(wanted).toBe(true)
+          expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
+          throw new Error("The preflight scope changed")
+        } })).rejects.toThrow("The preflight scope changed")
+      expect(activated).toBe(false)
+      expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
+      expect((await f.run(f.daemon.inspect()))?.pid).toBe(original.pid)
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
+  it("keeps stopped intent while claiming pause and rejects Start until the handoff finishes", async () => {
+    const f = await fixture()
+    await f.run(f.daemon.stop())
+    const beforePause: boolean[] = []
+    await withCollectorMaintenance(f, async () => f.entry, process.env, async () => {
+      await expect(f.run(f.daemon.start({ intervalMs: 30000, concurrency: 2 }))).rejects.toMatchObject({ reason: "start" })
+    }, { beforePause: async wanted => {
+      beforePause.push(wanted)
+      expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
+    } })
+    expect(beforePause).toEqual([false])
+    expect(await f.run(f.daemon.inspect())).toBeUndefined()
+    expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8")).wanted).toBe(false)
+  })
+
   it("bounds termination of an uncooperative Collector and hands off only after local readiness", async () => {
     const f = await fixture()
     await f.replace("ignores-termination", { ignoreTermination: true })

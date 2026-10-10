@@ -22,6 +22,8 @@ import { admitLoginStartup, withLoginStartupRecovery } from "./runtime/loginStar
 import { admitUpdateWake, makeUpdateWakePlatformLayer } from "./runtime/updateWake.ts"
 import { cliVersion, captureStateContract } from "./version.ts"
 import { assertManualStateUpgradeReady, prepareManualStateUpgrade, recordV2CollectorAdmission } from "./runtime/manualStateUpgrade.ts"
+import { applyCaptureMigrationEntry, preflightCaptureMigrationEntry } from "./runtime/captureMigration.ts"
+import { makeCaptureMigrationPrerequisitesLayer } from "./runtime/captureMigrationPrerequisites.ts"
 
 const main = async () => {
   let command
@@ -30,6 +32,22 @@ const main = async () => {
   } catch (cause) {
     process.stderr.write(`${t("cli.error.parse", "ATape: {message}", { message: cause instanceof Error ? cause.message : String(cause) })}\n`)
     process.exitCode = 2
+    return
+  }
+
+  if (command.kind === "__capture-migration-preflight" || command.kind === "__capture-migration-apply") {
+    const paths = defaultNodeClientPaths(), context = runtimeContext(paths.atapeHome)
+    const signal = AbortSignal.timeout(20_000)
+    try {
+      const result = command.kind === "__capture-migration-preflight"
+        ? await Effect.runPromise(preflightCaptureMigrationEntry(context, command.options).pipe(
+          Effect.provide(makeCaptureMigrationPrerequisitesLayer(paths))), { signal })
+        : await Effect.runPromise(applyCaptureMigrationEntry(context, command.options), { signal })
+      process.stdout.write(`${JSON.stringify(result)}\n`)
+    } catch {
+      process.stderr.write("ATape capture migration could not complete. Recovery will retry.\n")
+      process.exitCode = 1
+    }
     return
   }
 

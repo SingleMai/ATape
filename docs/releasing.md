@@ -186,7 +186,7 @@ See [npm's configuration expiry](https://docs.npmjs.com/trusted-publishers/#trus
 Publication workflows serialize in the fixed `atape-release-publication` queue
 without canceling an active run. One publication Module owns ordering: seven
 Adapters first, CLI last, then the versioned GitHub Release, and finally the
-persistent compatible catalog. It publishes private copies of the exact verified
+persistent compatible catalogs. It publishes private copies of the exact verified
 local tarball bytes. Both publication entry points validate the exact filename
 set, package identities, byte digests and SHA256SUMS before any external write.
 Reruns skip an existing npm version only when its integrity
@@ -203,13 +203,24 @@ JSON-encoded descriptor and catalog bodies are limited to 128 KiB before the
 first npm write, leaving room for GitHub metadata within the client budget.
 `publication.json` retains the workflow's publication result.
 
-The versioned stable Release contains one delimited `atape.release-bundle.v1`
-descriptor. The fixed prerelease `atape-update-catalog-v1` contains
+The real capture-v2 bridge's versioned stable Release retains its delimited
+`atape.release-bundle.v1` descriptor and adds an independent
+`atape.migration-release-bundle.v1` section containing strict bundle v2. Both must
+agree on the package set and runtime identity. The fixed prerelease `atape-update-catalog-v1` contains
 `atape.update-catalog.v1` JSON with monotonic revision and the latest complete
 bundle by capture/control pair. It does not become GitHub Latest and its tag is
 never moved. Same-version descriptor changes, catalog regression and removed
 families fail. Publication updates the catalog last; an older queued run cannot
 move an existing target backward.
+
+The fixed prerelease `atape-update-catalog-v2` contains strict migration bundles
+and routes keyed by source contract, control protocol and migration protocol/ID.
+Finalize the version Release, advertise the v1 bridge, then advertise v2 routes.
+An interrupted run can resume the missing advertisement. Old plan routes cannot
+be removed or regressed; unreferenced superseded bundles can leave the bounded
+catalog while immutable version descriptors and client receipts remain. Neither
+catalog becomes GitHub Latest or moves its tag. Validate existing version
+descriptors before npm writes, including versions no longer referenced by a catalog.
 
 The v1 reader requires the original seven packages and accepts up to 32 unique
 `@atape/*` entries. This allows additive official Adapters without changing the
@@ -217,32 +228,38 @@ reader protocol. All entries participate in immutable byte identity; unknown
 Adapters are not automatically installed. The current publisher still verifies
 exactly the eight packages built by this repository.
 
-This increment publishes only capture v2/control v1/catalog v1 packages. Forward
-compatible packages use explicit npm `latest`; a historical rerun behind the
+The publisher admits only the implemented capture-v2/control-v1
+`journal-v7-to-v8` plan and validates its actual packed capabilities. Compatible
+packages use explicit npm `latest`; a historical rerun behind the
 public CLI target uses `atape-managed` and does not become GitHub Latest. This
 uses the existing Trusted Publisher `npm publish` permission, without requiring a
 separate `npm dist-tag` management grant. Capable clients discover the complete
 catalog instead of individual tags; immutable historical clients retain their
-old behavior. Future capture-contract publication is rejected before the first
-npm publish. Before enabling it, retain a genuine catalog-capable v2 bridge at
-legacy GitHub/npm Latest and design permanent compatible routing and migration.
-See [ADR-0108](architecture/adr/0108-compatible-release-bundle-discovery.md).
+old behavior. Keep a genuine catalog-capable v2 bridge at legacy GitHub/npm Latest
+indefinitely. Future different-contract targets require nonlatest npm/GitHub
+publication and a separately implemented, verified migration plan; the current
+publisher rejects those unsupported plans before npm writes. See
+[ADR-0108](architecture/adr/0108-compatible-release-bundle-discovery.md) and
+[ADR-0115](architecture/adr/0115-explicit-capture-migrations.md).
 
 Before releasing changes to configuration, checkpoints, journals or the managed
-installation descriptor, verify the retained previous runtime can read the
-resulting state. Automatic rollback is limited to compatible state contracts;
-unified package versions alone do not establish that compatibility. Changes that
-require migration need an explicit supported migration/recovery design before
-being offered through unattended updates. Keep candidate evidence specific to the
-checks actually run; creating the GitHub Release does not deploy the Server or
+installation descriptor, establish the reader compatibility boundary. A rollback
+path requires evidence that the retained runtime can read the resulting state;
+unified package versions alone do not establish that compatibility. A migration
+path instead requires a verified compiled plan, writer fence and forward recovery
+through a durable completion receipt before unattended advertisement. Keep
+candidate evidence specific to the checks actually run; creating the GitHub Release does not deploy the Server or
 migrate an Instance. [ADR-0100](architecture/adr/0100-managed-automatic-updates.md)
 records the selected update Interface and recovery obligations.
 
 The CLI package declares its managed-runtime compatibility in `atapeRuntime`:
 `protocol: "atape.runtime.v1"` and
 `stateContract: "atape.client.v3-capture.v2"`,
-`updateControlProtocol: "atape.update-control.v1"`, and
-`releaseCatalogProtocol: "atape.update-catalog.v1"`. Publication checks the actual
+`updateControlProtocol: "atape.update-control.v1"`,
+`releaseCatalogProtocol: "atape.update-catalog.v1"`,
+`migrationReleaseCatalogProtocol: "atape.update-catalog.v2"`,
+`captureMigrationProtocol: "atape.capture-migration.v1"`, and the exact
+`captureMigration` plan/from-contract declaration. Publication checks the actual
 CLI archive; clients validate these capabilities and the installed executable
 version before activation. Do not retain
 the marker across an incompatible state-format change merely to make unattended

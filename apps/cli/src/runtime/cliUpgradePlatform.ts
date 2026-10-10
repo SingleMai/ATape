@@ -1,4 +1,4 @@
-import { decodeReleaseBundle, releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
+import { decodeManagedReleaseBundle as decodeReleaseBundle, managedReleaseBundleFingerprint as releaseBundleFingerprint, updateCatalogProtocol } from "@atape/domain"
 import { CLIUpgradeError, CLIUpgradePlatform, isNewerReleaseVersion, isStableReleaseVersion } from "@atape/application"
 import { Effect, Layer, Schema } from "effect"
 import { executeOwnedProcess as execute } from "./ownedProcess.ts"
@@ -18,7 +18,7 @@ import { inspectLocalAdapterPackage } from "./adapterPackageSource.ts"
 const registry = "https://registry.npmjs.org/"
 const Manifest = Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String })
 const CandidateManifest = Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String,
-  atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.Literal(captureStateContract),
+  atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.String,
     updateControlProtocol: Schema.Literal(updateControlProtocol), releaseCatalogProtocol: Schema.Literal(updateCatalogProtocol) }) })
 const readBounded = async (file: string) => {
   if ((await stat(file)).size > 256 * 1024) throw new Error("Metadata too large")
@@ -102,7 +102,8 @@ export const makeCLIUpgradePlatformLayer = (
   fetchMetadata: typeof globalThis.fetch = globalThis.fetch,
   runtimeVersion: string = cliVersion
 ) => {
- const discovery = createReleaseDiscovery({ home, runtimeVersion, captureStateContract, updateControlProtocol, fetchMetadata })
+ const discovery = createReleaseDiscovery({ home, runtimeVersion, captureStateContract, updateControlProtocol, fetchMetadata,
+   supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] })
  return Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
   acquireOwnership: () => Effect.acquireRelease(Effect.tryPromise({
     try: async () => {
@@ -175,7 +176,8 @@ export const makeCLIUpgradePlatformLayer = (
         const archive = await discovery.acquireArtifact(bundle, "@atape/cli", signal)
         try {
         const manifest = Schema.decodeUnknownSync(CandidateManifest)((await inspectLocalAdapterPackage(archive.path)).packageJSON)
-        if (manifest.version !== version) throw new Error("The CLI archive does not match the selected release")
+        if (manifest.version !== version || manifest.atapeRuntime.stateContract !== bundle.captureStateContract)
+          throw new Error("The CLI archive does not match the selected release")
         signal.throwIfAborted()
         await preserveSelectedInstallations(defaultNodeClientPaths({ ...environment, ATAPE_HOME: home }))
         try {

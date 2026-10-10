@@ -345,9 +345,9 @@ manifest while its first version descriptor propagates. This fallback never
 advertises another upgrade target.
 
 The prepared CLI package must declare `atapeRuntime.protocol` as
-`atape.runtime.v1` and `atapeRuntime.stateContract` as
-`atape.client.v3-capture.v2`. A missing or different contract rejects automatic
-activation; it does not migrate configuration, checkpoints or capture journals.
+`atape.runtime.v1` and its actual capture-state contract. A v1 release bundle
+requires the same contract. A v2 bundle requires an explicit compiled migration
+plan and verifies the target contract and capabilities before activation.
 The published 0.5.3 worker accepts v1 only, so it keeps its current installation
 when offered 0.5.4. This first v2 release requires the explicit manual transition
 below; later compatible v2 releases retain automatic updates and rollback.
@@ -365,14 +365,12 @@ bridge for an older bootstrap. A capable npm bootstrap can enter control directl
 An active control selection takes precedence over a copied older worker's legacy
 pointer. The CLI and official Adapter slots switch as one generation.
 
-This increment still admits only same-capture-contract candidates. It adds the
-durable boundary needed for a future migration plan, not an automatic v1→v2
-migration. Before a forward-only boundary, interrupted work restores the previous
+Before a forward-only boundary, interrupted work restores the previous
 selection; after one, recovery must use the recorded target and reader floor.
 The floor checks the exact capture contract as well as minimum runtime version.
 Recovery remains pending until the selected runtime passes local readiness, and
-collection cannot begin writing data before the coordinator durably completes
-the transaction. Invalid metadata or unavailable recovery code pauses collection.
+collection cannot begin writing migrated data before a durable migration receipt
+exists. Invalid metadata or unavailable recovery code pauses collection.
 
 The running executable carries its own compiled version and capture contract.
 Replacing its npm manifest cannot make an already-open old console a new reader.
@@ -455,12 +453,90 @@ compatibility and recovery decision, amended by
 [ADR-0107](../architecture/adr/0107-independent-update-control.md).
 
 Version-aware discovery is implemented by
-[ADR-0108](../architecture/adr/0108-compatible-release-bundle-discovery.md).
-Independent update wakeup is implemented; cross-contract migration remains a
-subsequent increment. Published 0.5.3 and 0.5.4 both use the same GitHub
+[ADR-0108](../architecture/adr/0108-compatible-release-bundle-discovery.md),
+extended by [explicit capture migration](#explicit-capture-migration).
+Published 0.5.3 and 0.5.4 both use the same GitHub
 `latest` and immutable npm package, but require different manifest contracts;
 one bridge package cannot serve both. A temporary release window cannot cover
 indefinitely offline installations. The 0.5.3 manual boundary below remains.
+
+### Explicit capture migration
+
+Migration-capable clients prefer the fixed `atape-update-catalog-v2` Release.
+Its routes bind source capture contract, update-control protocol and known
+migration protocol/plan to a complete immutable package bundle. Old plan routes
+remain available while newer plans advance. The initial absence of that catalog
+permits v1 fallback; once adopted, invalid, regressed or missing v2 metadata cannot
+silently strip migration identity. Optional offline checks can reuse a verified
+v2 cache. Exact-version receipts retain the package and plan identity.
+
+The first supported plan is `atape.capture-migration.v1 / journal-v7-to-v8`,
+from a capable capture-v1 or capture-v2 executable to actual capture v2. It admits
+registered journals at format 7 or 8 only. Real v7-to-v8 SQL is transactional;
+verified v8 is a retryable no-op. Other formats/plans are rejected before pause.
+This is a local storage transformation, not a history import or Server migration.
+Project/tool selections, Stop intent, credentials, privacy settings, Canonical
+and Raw obligations, receipts and checkpoints are retained.
+Manual upgrades use this same migration path when tools have been disconnected;
+retained journals cannot bypass the fence through command-entry-only replacement.
+
+The verified target executable performs read-only preflight before pause. Enabled
+SourceCapture v2 projects that still request sync require the existing Server
+publication/adoption capabilities. All configured accounts are checked; the
+active UI Instance does not narrow capture. Preflight reads existing credentials
+and package manifests without importing source factories, uploading content or
+reporting a device. Stopped sync skips remote prerequisites while permitting
+local migration. Raw-off still permits Canonical capture, so it does not suppress
+the capability check. Fresh local intent/configuration/inventory checks prevent
+Start or account changes from reusing an obsolete preflight.
+SourceCapture v2 manifests can declare `publicationTargetProfile`; older packages
+default to Profile2. Enabled Profile3 candidates, including Cursor, require a
+negotiated Profile3 capability before pause. Other Adapters retain the existing
+Profile2 requirement. This static minimum does not replace runtime header checks.
+
+An active controlled-session creation proof defers reader-floor advancement until
+it is confirmed or abandoned. The proof holds a separate OS lease, not the global
+writer barrier; the native conversation continues and update attempts stay
+bounded. Confirmed sessions do not delay updates, and a dead Host cannot leave a
+stale ownership marker that blocks recovery.
+
+After bounded pause, the updater fsyncs a strict requirement and progress ledger
+before selecting/fencing the target. The target private apply process has a
+20-second budget and holds one home-wide SQLite apply lock through journal close.
+Every SQL/progress/receipt commit revalidates its durable attempt token under the
+same admission barrier used for floor advancement. A new recovery owner revokes
+the prior attempt before waiting for its apply lock. An orphan may finish while
+its token remains valid; it cannot commit after revocation. Busy or hung storage
+defers recovery rather than allowing concurrent migration.
+
+After the fence, every retry moves forward to the recorded target, including
+after automatic updates are disabled or sync is stopped. Recovery never starts
+sync against Stop intent. Missing one metadata peer can be repaired from strict
+surviving evidence; corruption closes capture. Do not delete the requirement,
+ledger or apply lock as a repair. A completed receipt admits later same-contract
+versions at or above its target, subject to the current reader floor, without
+pinning an obsolete executable or Adapter slot. Configuration and Stop remain
+usable while capture is gated. See
+[ADR-0115](../architecture/adr/0115-explicit-capture-migrations.md).
+
+This implementation does not retrofit migration/wake support into immutable
+0.5.3. That installation needs separate initial delivery. Existing 0.5.4 devices
+enroll independent scheduling only after a capable actual entry runs. Keeping a
+real v2 bridge on historical GitHub/npm latest serves indefinitely offline legacy
+v2 readers; it cannot make the same package satisfy 0.5.3's incompatible contract.
+
+Migration caller checks execute a real compiled target, real SQLite and a
+controlled capable v1 coordinator. They cover fenced interruption with preference
+off, exact pre-fence restoration, Stop, unconfigured retained state, and later
+same-contract writes. They do not show that immutable 0.5.3 can discover this
+target or acquire a timer by itself.
+The narrow journal/authority checks additionally preserve genuine 0.5.3
+Canonical/Raw obligations across actual SQL commit followed by replay without
+progress, exercise a real orphan after parent `SIGKILL`, token revocation and
+apply-lock exclusion, and recover missing peers and marker-first successor
+authorization. The SQL-commit replay case constructs that crash state through
+the caller Interface; it does not claim a power-cut test. Unknown metadata fails
+closed, and a completed receipt survives a real same-contract bootstrap rebind.
 
 The implementation was verified locally on macOS with CLI/Application behavior
 tests, Collector/Server E2E, all seven official Adapter tarballs, and the installed
@@ -746,6 +822,10 @@ Managed update metadata includes `updates/state.json` for the check/retry schedu
 for the preceding managed selection. `updates/candidate-cooldowns.json` retains
 bounded startup-failure cooldowns independently of the check schedule. Independent
 control uses `updates/runtime.json` and its recovery ledger `updates/control.json`.
+Capture migration uses `updates/capture-migration.required.json`,
+`updates/capture-migration.json` and the OS-held
+`updates/capture-migration.apply.lock.sqlite`; preserve them with the registered
+account journals. Migration discovery has separate v2 cache/receipt metadata.
 Keep recovery metadata with `releases/current.json`
 and retained CLI/Adapter files during recovery; deleting pointers is not a
 supported repair for capture state.

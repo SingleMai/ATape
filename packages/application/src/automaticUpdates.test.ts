@@ -1,4 +1,4 @@
-import { emptyClientConfig, releasePackageNames, type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
+import { emptyClientConfig, releasePackageNames, type ManagedReleaseBundle as ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer, Logger } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"

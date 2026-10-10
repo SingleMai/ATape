@@ -21,6 +21,7 @@ import { join } from "node:path"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import {
+  inspectExistingCredentialIdentity,
   makeCredentialStoreLayer,
   makeHTTPAuthenticationGatewayLayer
 } from "./authenticationLayers.ts"
@@ -163,6 +164,61 @@ const credentialFixture = async () => {
 }
 
 describe("Node CLI Credential store Adapter", () => {
+  it("reads absent migration credentials without creating their home or directory", async () => {
+    const fixture = await credentialFixture()
+    const read = CLICredentialStore.use(store => store.read(credential.instanceOrigin)).pipe(
+      Effect.provide(makeCredentialStoreLayer(fixture.home, fixture.directory, { readExisting: true })))
+    expect(await Effect.runPromise(read)).toBeUndefined()
+    expect(await inspectExistingCredentialIdentity(fixture.home, fixture.directory, credential.instanceOrigin)).toBeUndefined()
+    expect(await readdir(fixture.parent)).toEqual([])
+    await mkdir(fixture.home, { mode: 0o700 })
+    expect(await Effect.runPromise(read)).toBeUndefined()
+    expect(await readdir(fixture.home)).toEqual([])
+  })
+
+  it("shares the existing secure decoder while exposing only stable credential identity", async () => {
+    const fixture = await credentialFixture()
+    await fixture.run(CLICredentialStore.use(store => store.replace({ credential })))
+    const [filename] = await readdir(fixture.directory)
+    const before = await readFile(join(fixture.directory, filename!))
+    const read = CLICredentialStore.use(store => store.read(credential.instanceOrigin)).pipe(
+      Effect.provide(makeCredentialStoreLayer(fixture.home, fixture.directory, { readExisting: true })))
+    expect(await Effect.runPromise(read)).toEqual(credential)
+    const identity = await inspectExistingCredentialIdentity(fixture.home, fixture.directory, credential.instanceOrigin)
+    expect(identity).toEqual({ instanceOrigin: credential.instanceOrigin, apiOrigin: credential.apiOrigin,
+      credentialId: credential.credentialId, userId: credential.user.id })
+    expect(JSON.stringify(identity)).not.toContain(credential.credential)
+    expect(await readdir(fixture.directory)).toEqual([filename])
+    expect(await readFile(join(fixture.directory, filename!))).toEqual(before)
+  })
+
+  it.each(["symlink", "mode", "oversized", "json", "binding"])("rejects unsafe existing credentials through both read Interfaces: %s", async kind => {
+    const fixture = await credentialFixture()
+    await fixture.run(CLICredentialStore.use(store => store.replace({ credential })))
+    const [filename] = await readdir(fixture.directory), target = join(fixture.directory, filename!)
+    if (kind === "symlink") {
+      const outside = join(fixture.parent, "outside.json")
+      await writeFile(outside, JSON.stringify(credential), { mode: 0o600 })
+      await rm(target); await symlink(outside, target)
+    } else if (kind === "mode") await chmod(target, 0o644)
+    else await writeFile(target, kind === "oversized" ? "x".repeat(16385) : kind === "json" ? "{" :
+      JSON.stringify({ ...credential, instanceOrigin: "https://other.example" }))
+    const reason = ["symlink", "mode", "oversized"].includes(kind) ? "unsafe" : "decode"
+    await expect(Effect.runPromise(CLICredentialStore.use(store => store.read(credential.instanceOrigin)).pipe(
+      Effect.provide(makeCredentialStoreLayer(fixture.home, fixture.directory, { readExisting: true })))))
+      .rejects.toMatchObject({ reason })
+    await expect(inspectExistingCredentialIdentity(fixture.home, fixture.directory, credential.instanceOrigin)).rejects.toMatchObject({ reason })
+  })
+
+  it("does not follow or repair an unsafe existing credential directory", async () => {
+    const fixture = await credentialFixture()
+    await mkdir(fixture.home, { mode: 0o700 })
+    const outside = join(fixture.parent, "outside")
+    await mkdir(outside, { mode: 0o700 }); await symlink(outside, fixture.directory)
+    await expect(inspectExistingCredentialIdentity(fixture.home, fixture.directory, credential.instanceOrigin)).rejects.toMatchObject({ reason: "unsafe" })
+    expect(await readdir(outside)).toEqual([])
+  })
+
   it("uses an opaque per-Instance filename and durable owner-only storage", async () => {
     const fixture = await credentialFixture()
     await fixture.run(Effect.gen(function*() {

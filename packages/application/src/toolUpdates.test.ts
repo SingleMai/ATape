@@ -1,5 +1,5 @@
 import { CollectorDaemonProcess } from "./collectorDaemonProcess.ts"
-import { emptyClientConfig, releasePackageNames, type ClientConfig, type ReleaseBundle } from "@atape/domain"
+import { emptyClientConfig, releasePackageNames, type ClientConfig, type ManagedReleaseBundle as ReleaseBundle } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import { AdapterPackages, AdapterPackageError, ClientConfigStore } from "./clientManagement.ts"

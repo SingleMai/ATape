@@ -92,6 +92,7 @@ else if (args[0] === "install") {
     UPGRADE_TEST_MODULES: modules, UPGRADE_TEST_CALLS: join(root, "calls.json"), UPGRADE_TEST_ENTRY: entry }
   const transport: typeof fetch = async (url, init) => {
     const address = String(url), match = address.match(/\/v(\d+\.\d+\.\d+)$/)
+    if (address.endsWith("/tags/atape-update-catalog-v2")) return new Response("Not found", { status: 404 })
     if (match) return Response.json({ tag_name: `v${match[1]}`, body: releaseBundleSection(bundle(match[1]!)), prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z" })
     const archive = address.match(/-(\d+\.\d+\.\d+)\.tgz$/)
     if (archive) return new Response(bytes(archive[1]!))

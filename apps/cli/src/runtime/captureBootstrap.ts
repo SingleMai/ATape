@@ -1,3 +1,4 @@
+import { guardCaptureRuntimeWrite } from "./captureMigrationAdmission.ts"
 import { CaptureJournals, CaptureJournalError } from "@atape/application"
 import { createHash } from "node:crypto"
 import { dirname, join } from "node:path"
@@ -6,7 +7,7 @@ import { openCaptureJournal } from "./captureJournal.ts"
 import { withCollectorInstallation } from "./collectorState.ts"
 import { CaptureInstallation, captureFailure, captureInstallationPath, capturePathState, captureRoot, ensureCaptureDirectory,
   readCaptureInstallation, readCaptureMetadata, writeCaptureMetadata } from "./captureBinding.ts"
-import { guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
+import { runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 
 const AccountBinding = Schema.Struct({ protocol: Schema.Literal("atape.capture-account.v1"),
   instanceOrigin: Schema.String, userId: Schema.String, installationId: Schema.String, phase: Schema.Literals(["initializing", "ready"]) })
@@ -14,7 +15,7 @@ const AccountBinding = Schema.Struct({ protocol: Schema.Literal("atape.capture-a
 /** Versioned local bootstrap, serialized with the existing Collector state lock.
  * A ready marker never grants permission to recreate a missing database. */
 export const makeCaptureJournalsLayer = (stateFile: string, runtime: RuntimeContext = runtimeContext(dirname(stateFile))) => {
-  const write = <A, E, R>(program: Effect.Effect<A, E, R>) => guardRuntimeWrite(runtime, program,
+  const write = <A, E, R>(program: Effect.Effect<A, E, R>) => guardCaptureRuntimeWrite(runtime, program,
     cause => captureFailure("io", `The running CLI cannot write capture bindings: ${cause instanceof Error ? cause.message : String(cause)}`))
   return Layer.succeed(CaptureJournals, CaptureJournals.of({
     open: (account, limits) => withCollectorInstallation(stateFile, installationId => Effect.gen(function*() {

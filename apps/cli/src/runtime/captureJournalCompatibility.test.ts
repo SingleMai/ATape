@@ -1,5 +1,3 @@
-import type { CaptureOwner, CaptureRecordInput } from "@atape/application"
-import { createHash } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,62 +6,13 @@ import { Effect } from "effect"
 import { expect, it } from "vitest"
 import { openCaptureJournal } from "./captureJournal.ts"
 import { captureJournalV7, type CaptureJournalV7 } from "./fixtures/capture-journal-v7.ts"
+import { binding, scope, limits, activated, sealed, raw, sha, activationReceipt, canonicalReceipt, rawReceipt, prepare, snapshot } from "./fixtures/capture-migration-state.ts"
 
-const binding = { instanceOrigin: "https://journal-upgrade.test", userId: "historical-user", installationId: "historical-installation" }
-const scope = { projectId: "historical-project", adapterId: "claude", sourceSessionId: "historical-session", originKey: "frozen-origin" }
-const limits = { unitBytes: 512, targetBytes: 4096, pendingBytes: 8192, metadataEntries: 1000, unitsPerTarget: 16, recordsPerTarget: 16 }
-const bytes = (value: string) => new TextEncoder().encode(value)
-const sha = (value: Uint8Array) => createHash("sha256").update(value).digest("hex")
-const activated = "01-activated-with-raw-pending"
-const sealed = "02-sealed-with-canonical-pending"
-const canonical = (id: string, ordinal: number) => bytes(`Frozen Canonical ${id}/${ordinal} 空格`)
-const raw = (id: string, ordinal: number) => bytes(`Frozen Raw ${id}/${ordinal}\u0000body`)
-const activationReceipt = '{"head":"historical-activated-head"}'
-const canonicalReceipt = (id: string, ordinal: number) => JSON.stringify({ capture: id, canonical: ordinal })
-const rawReceipt = (id: string, ordinal: number) => JSON.stringify({ capture: id, raw: ordinal })
 const schemaVersion = (path: string) => {
   const db = new DatabaseSync(path, { readOnly: true })
   try { return db.prepare("PRAGMA user_version").get()?.user_version }
   finally { db.close() }
 }
-const records = (id: string, rawCount: number): readonly CaptureRecordInput[] => [
-  ...(["session", "thread", "event"] as const).map(kind => ({ kind, key: `${kind}-identity`,
-    fingerprint: sha(bytes(`${id}/${kind}`)), projectionVersion: "historical-projection-v1",
-    ...(kind === "event" ? { rawReference: { _tag: "object" as const, sourceObjectId: "raw-0", fragment: "event-fragment" } } : {}) })),
-  ...Array.from({ length: rawCount }, (_, ordinal) => ({ kind: "raw" as const, key: `raw-${ordinal}`,
-    fingerprint: sha(raw(id, ordinal)), projectionVersion: "historical-raw-v1" }))
-]
-const prepare = (runtime: typeof Effect, journal: CaptureJournalV7, owner: CaptureOwner,
-  id: string, checkpoint: string | null, rawCount: number) => runtime.gen(function*() {
-  yield* journal.reserve(owner, { id, expectedCheckpoint: checkpoint, beginJson: JSON.stringify({ capture: id }), rawEnabled: true, trackRecords: true })
-  for (const ordinal of [0, 1]) yield* journal.append(owner, id, { kind: "canonical", ordinal, bytes: canonical(id, ordinal) })
-  for (let ordinal = 0; ordinal < rawCount; ordinal++) yield* journal.append(owner, id, { kind: "raw", ordinal, bytes: raw(id, ordinal) })
-  for (const record of records(id, rawCount)) {
-    yield* journal.record(owner, id, record)
-    yield* journal.bindRecord(owner, id, record, { _tag: "Unit",
-      ordinal: record.kind === "raw" ? Number(record.key.slice(4)) : record.kind === "event" ? 1 : 0 })
-  }
-  yield* journal.seal(owner, id, { canonicalUnits: 2, rawUnits: rawCount, nextCheckpoint: id === activated ? "cursor-1" : "cursor-2",
-    manifestJson: JSON.stringify({ frozen: id }), records: { canonical: { session: 1, thread: 1, event: 1, usage: 0 }, raw: { records: rawCount, scopeComplete: true } } })
-})
-const snapshot = (runtime: typeof Effect, journal: CaptureJournalV7) => runtime.gen(function*() {
-  const owner = yield* journal.claim(scope)
-  const captures = []
-  for (const id of [activated, sealed]) {
-    const recordPages = []
-    for (const kind of ["session", "thread", "event", "raw"] as const) recordPages.push(yield* journal.records(owner, id, { kind }))
-    captures.push({ canonical: yield* journal.inspect(owner, id, { kind: "canonical" }),
-      raw: yield* journal.inspect(owner, id, { kind: "raw" }), records: recordPages })
-  }
-  return { binding: journal.binding, scope: owner.scope, checkpoint: owner.checkpoint,
-    sources: yield* journal.sources(scope.projectId, scope.adapterId, {}), coverage: yield* journal.coverage(owner),
-    pending: yield* journal.pending(owner), unactivated: yield* journal.unactivated(owner), captures,
-    canonicalPayloads: [yield* journal.read(owner, activated, "canonical", 0), yield* journal.read(owner, activated, "canonical", 1),
-      yield* journal.read(owner, sealed, "canonical", 0), yield* journal.read(owner, sealed, "canonical", 1)],
-    // The sealed target's Raw bytes become publicly readable after activation;
-    // their exact payload is checked during resumed delivery below.
-    pendingRawPayload: yield* journal.read(owner, activated, "raw", 1) }
-})
 
 it("recovers genuine published 0.5.3 v7 Canonical/Raw obligations forward to v8 and fences the old reader", async () => {
   const directory = await mkdtemp(join(tmpdir(), "atape-journal-v7-upgrade-"))

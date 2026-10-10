@@ -5,24 +5,24 @@ import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { loadReleaseContract } from "./release-contract.mjs"
-import { createPublicReleaseRegistry, loadPublicationArtifacts, publicationCaptureContract,
-  publicationControlProtocol, validatePublicationArtifacts } from "./public-release-visibility.mjs"
-import { compareReleaseVersions, createGitHubPublication, publishUpdateCatalog, readPublicationTargets, preparePublicationMetadata } from "./publish-update-catalog.mjs"
+import { createPublicReleaseRegistry, loadPublicationArtifacts, isLegacyLatestBridge,
+  validatePublicationArtifacts } from "./public-release-visibility.mjs"
+import { compareReleaseVersions, createGitHubPublication, publishUpdateCatalog, readPublicationTargets, preparePublicationMetadata,
+  preflightVersionRelease } from "./publish-update-catalog.mjs"
 
 // One caller Interface owns npm ordering, anonymous visibility and advertisement.
 // execFile/npm and GitHub/registry HTTP are the actual remote process/transport Seams.
 export async function publishRelease({ release, artifacts, registry, github, notes, commit,
   execute = promisify(execFile), log = message => process.stdout.write(message) }) {
   const bundle = validatePublicationArtifacts(artifacts)
-  if (bundle.version !== release.version || release.tag !== `v${bundle.version}` ||
-    bundle.captureStateContract !== publicationCaptureContract || bundle.updateControlProtocol !== publicationControlProtocol) {
+  if (bundle.version !== release.version || release.tag !== `v${bundle.version}`)
     throw new Error("Only the matching same-capture.v2/control.v1 release may be published.")
-  }
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("Publication requires an exact commit.")
   await github.verifyVersionTag(release.tag, commit)
   const targets = await readPublicationTargets(github)
   // Detect immutable same-version catalog conflicts before the first npm write.
-  preparePublicationMetadata(bundle, notes, targets.catalog)
+  preparePublicationMetadata(bundle, notes, targets.catalog, targets.migrationCatalog)
+  await preflightVersionRelease(github, bundle, notes)
   const latest = []
   const existing = new Map()
   for (const item of bundle.packages) {
@@ -33,7 +33,7 @@ export async function publishRelease({ release, artifacts, registry, github, not
   }
   const advertised = [...latest, ...(targets.latestVersion ? [targets.latestVersion] : []),
     ...(targets.catalog?.bundles.map(item => item.version) ?? [])]
-  const tag = advertised.some(version => compareReleaseVersions(version, bundle.version) > 0) ? "atape-managed" : "latest"
+  const tag = !isLegacyLatestBridge(bundle) || advertised.some(version => compareReleaseVersions(version, bundle.version) > 0) ? "atape-managed" : "latest"
   const ordered = [...bundle.packages.filter(item => item.name !== "@atape/cli"), bundle.packages.find(item => item.name === "@atape/cli")]
   const staging = await mkdtemp(join(tmpdir(), "atape-npm-publication-"))
   try {
