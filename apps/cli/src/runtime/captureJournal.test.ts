@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { spawn } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -8,6 +8,8 @@ import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCaptureJournalLayer } from "./captureJournal.ts"
 import { downgradeJournalToV7 } from "./fixtures/capture-journal-legacy.ts"
+import { runtimeWriterFixture } from "./fixtures/runtime-writer-admission.ts"
+import type { RuntimeContext } from "./runtimeAdmission.ts"
 
 const temporary: string[] = []
 afterEach(async () => { await Promise.all(temporary.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -19,8 +21,8 @@ const setup = async () => {
   const directory = await mkdtemp(join(tmpdir(), "atape-journal-test-")); temporary.push(directory)
   return join(directory, "capture.sqlite")
 }
-const run = <A, E>(path: string, mode: "create" | "open", work: Effect.Effect<A, E, CaptureJournal>) =>
-  Effect.runPromise(work.pipe(Effect.provide(makeCaptureJournalLayer({ path, mode, binding, limits }))))
+const run = <A, E>(path: string, mode: "create" | "open", work: Effect.Effect<A, E, CaptureJournal>, runtime?: RuntimeContext) =>
+  Effect.runPromise(work.pipe(Effect.provide(makeCaptureJournalLayer({ path, mode, binding, limits, ...(runtime ? { runtime } : {}) }))))
 const reason = <A>(work: Effect.Effect<A, CaptureJournalError>) => work.pipe(Effect.match({
   onFailure: error => error.reason, onSuccess: () => "unexpected-success"
 }))
@@ -48,6 +50,54 @@ const downgradeToV3 = (db: DatabaseSync) => { downgradeToV5(db); db.exec(`DROP T
   DROP INDEX unactivated_source_capture; ALTER TABLE scopes DROP COLUMN observed_canonical; ALTER TABLE scopes DROP COLUMN observed_raw; PRAGMA user_version=3`) }
 
 describe("Capture journal Interface", () => {
+  it("refuses create and legacy-schema open below the floor without touching journal bytes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "atape-journal-admission-")); temporary.push(directory)
+    const admission = await runtimeWriterFixture(directory), path = join(directory, "capture.sqlite"), missing = join(directory, "missing.sqlite")
+    await run(path, "create", Effect.gen(function*() { const journal = yield* CaptureJournal; yield* journal.claim(scope) }), admission.runtime)
+    const legacy = new DatabaseSync(path); downgradeJournalToV7(legacy); legacy.close()
+    const before = await readFile(path)
+    await admission.raiseFloor()
+    await expect(run(missing, "create", CaptureJournal, admission.runtime)).rejects.toMatchObject({ reason: "io" })
+    await expect(stat(missing)).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(run(path, "open", CaptureJournal, admission.runtime)).rejects.toMatchObject({ reason: "io" })
+    expect(await readFile(path)).toEqual(before)
+    const unchanged = new DatabaseSync(path, { readOnly: true })
+    try { expect(unchanged.prepare("PRAGMA user_version").get()?.user_version).toBe(7) } finally { unchanged.close() }
+    await run(path, "open", CaptureJournal.pipe(Effect.asVoid), admission.nextRuntime)
+  })
+
+  it("rejects every transaction from an already-open old journal after a same-v2 floor advance and still closes it", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "atape-journal-admission-")); temporary.push(directory)
+    const admission = await runtimeWriterFixture(directory), path = join(directory, "capture.sqlite")
+    const snapshot = () => {
+      const db = new DatabaseSync(path, { readOnly: true })
+      try { return ["binding", "scopes", "captures", "units", "legacy_migrations"].map(table => db.prepare(`SELECT * FROM ${table}`).all()) }
+      finally { db.close() }
+    }
+    await run(path, "create", Effect.gen(function*() {
+      const journal = yield* CaptureJournal, owner = yield* journal.claim(scope)
+      yield* fill(journal, owner)
+      const before = snapshot()
+      yield* Effect.promise(admission.raiseFloor)
+      for (const write of [journal.claim(scope), journal.settle(owner, "capture", { _tag: "Activated", receiptJson: '{"head":1}' }),
+        journal.freezeLegacyMigration(scope.projectId, scope.adapterId, { checkpointJson: "{}", checkpointDigest: "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" }),
+        journal.append(owner, "capture", { kind: "canonical", ordinal: 1, bytes: bytes("late bytes") })])
+        expect(yield* reason(write)).toBe("io")
+      expect(snapshot()).toEqual(before)
+    }), admission.runtime)
+    await expect(stat(`${path}-wal`)).rejects.toMatchObject({ code: "ENOENT" })
+    // The old handle's finalizer runs despite lost admission. Reopen with the
+    // admitted runtime and inspect through the same production journal Interface.
+    await run(path, "open", Effect.gen(function*() {
+      const journal = yield* CaptureJournal, owner = yield* journal.claim(scope)
+      expect(owner.epoch).toBe(2)
+      expect(owner.checkpoint).toBeNull()
+      expect((yield* journal.inspect(owner, "capture", { kind: "canonical" })).capture.activationReceipt).toBeNull()
+      expect(yield* journal.read(owner, "capture", "canonical", 0)).toEqual(bytes("Canonical A"))
+      yield* journal.settle(owner, "capture", { _tag: "Activated", receiptJson: '{"head":1}' })
+      expect(yield* journal.read(owner, "capture", "raw", 0)).toEqual(bytes("Raw A"))
+    }), admission.nextRuntime)
+  })
   it("upgrades v4 after binding verification and finds the new Canonical attempt behind older Raw obligations", async () => {
     const path = await setup()
     await run(path, "create", Effect.gen(function*() {

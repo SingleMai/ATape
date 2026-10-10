@@ -10,6 +10,7 @@ import { makeAdapterRuntimeLayer } from "./adapterHost.ts"
 import { makeCollectorTransportLayer } from "./collectorTransport.ts"
 import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import { loadNodeRedactionPolicy } from "./redactionPolicy.ts"
+import { runtimeContext } from "./runtimeAdmission.ts"
 
 export { makeCollectorStateLayer, withCollectorInstallation } from "./collectorState.ts"
 export { makeAdapterRuntimeLayer } from "./adapterHost.ts"
@@ -27,8 +28,9 @@ export const makeNodeCollectorLayer = (
   paths: NodeCollectorPaths,
   environment: NodeJS.ProcessEnv = process.env
 ) => {
-  const states = makeCollectorStateLayer(paths.collectorStateFile)
-  const journals = makeCaptureJournalsLayer(paths.collectorStateFile)
+  const runtime = runtimeContext(paths.atapeHome ?? environment.ATAPE_HOME ?? dirname(paths.collectorStateFile))
+  const states = makeCollectorStateLayer(paths.collectorStateFile, runtime)
+  const journals = makeCaptureJournalsLayer(paths.collectorStateFile, runtime)
   // The compatibility requirement is inert with respect to disk/configuration.
   // Every production job replaces it with a freshly loaded immutable snapshot.
   const redactor = makeSecretRedactorLayer()

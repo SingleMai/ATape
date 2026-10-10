@@ -5,21 +5,27 @@ import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises"
 import { dirname } from "node:path"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Schema } from "effect"
+import { assertRuntimeDataAdmission, guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 
-export const makeConfigStoreLayer = (configFile: string) => Layer.succeed(
+const admissionFailure = (cause: unknown) => new ClientConfigStoreError({
+  reason: "io", message: errorMessage("This ATape runtime cannot access the client configuration; reopen ATape", cause)
+})
+
+export const makeConfigStoreLayer = (configFile: string, runtime: RuntimeContext = runtimeContext(dirname(configFile))) => Layer.succeed(
   ClientConfigStore,
   ClientConfigStore.of({
     transact: <A, E, R>(change: (config: ClientConfig) => Effect.Effect<ClientConfigChange<A>, E, R>) =>
-      Effect.acquireUseRelease(
+      Effect.tryPromise({ try: () => assertRuntimeDataAdmission(runtime), catch: admissionFailure }).pipe(Effect.andThen(Effect.acquireUseRelease(
         acquireConfigLock(configFile),
-        () => readClientConfig(configFile).pipe(
+        () => Effect.tryPromise({ try: () => assertRuntimeDataAdmission(runtime), catch: admissionFailure }).pipe(
+          Effect.andThen(readClientConfig(configFile)),
           Effect.flatMap(change),
           Effect.flatMap((result) => result.config === undefined
             ? Effect.succeed(result.value)
-            : writeClientConfig(configFile, result.config).pipe(Effect.as(result.value)))
+            : guardRuntimeWrite(runtime, writeClientConfig(configFile, result.config), admissionFailure).pipe(Effect.as(result.value)))
         ),
         (lock) => Effect.promise(() => releaseConfigLock(lock))
-      )
+      )))
   })
 )
 

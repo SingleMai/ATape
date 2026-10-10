@@ -8,6 +8,7 @@ import { Schema } from "effect"
 import { atomicJSON, missing, readBoundedJSON, runtimeEntry, updateDirectory } from "./runtimeFiles.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { syncPackageTree } from "./adapterPackages.ts"
+import { acquireProcessLock } from "./processLock.ts"
 
 export const updateControlProtocol = "atape.update-control.v1" as const
 const StableVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
@@ -106,7 +107,7 @@ const accepts = (floor: typeof Floor.Type | undefined, runtime: UpdateRuntimeAdm
   !floor || !older(runtime.version, floor.minimumRuntimeVersion) && runtime.captureStateContract === floor.captureStateContract
 
 /** Node update-control Interface. The caller holds ATape's update ownership for
- * every mutation, including recovery, and quiesces the Collector before begin.
+ * every control-ledger/selection mutation, including recovery, and quiesces the Collector before begin.
  * This Module never starts a Collector or interprets capture data. Its only
  * subprocess is a bounded direct version probe when rebinding npm. A fence must
  * finish before any incompatible target executable or migration is admitted.
@@ -118,6 +119,21 @@ export const createUpdateControl = (home: string) => {
   const readSelection = () => optionalJSON(pointerFile, decodeUpdateRuntimeSelection)
   const readControl = () => optionalJSON(controlFile, decodeControl)
   const writeControl = (control: Control) => atomicJSON(controlFile, decodeControl(control))
+  const acquireRuntimeWriteBarrier = async (waitMs = 5_000): Promise<() => void> => {
+    const release = await acquireProcessLock(join(updateDirectory(home), "admission.lock.sqlite"), waitMs)
+    return release ?? fail("conflict", "Another local runtime write or reader-floor change is in progress.")
+  }
+  const assertRuntimeAdmission = async (runtime: UpdateRuntimeAdmission): Promise<void> => {
+    version(runtime.version)
+    try { Schema.decodeUnknownSync(Contract)(runtime.captureStateContract) } catch { fail("admission", "Invalid runtime capture contract.") }
+    const control = await readControl()
+    if (!control) return
+    if (!accepts(control.floor, runtime)) fail("admission", "This runtime is below the durable recovery boundary.")
+    const previous = !control.forwardOnly && control.phase !== "completed" ? control.previous : undefined
+    const contract = previous?.captureStateContract ?? control.target.captureStateContract
+    if (runtime.captureStateContract !== contract)
+      fail("admission", "This runtime does not support the admitted capture contract.")
+  }
   const writeSelection = async (selection: UpdateRuntimeSelection | undefined) => {
     if (selection) await atomicJSON(pointerFile, decodeUpdateRuntimeSelection(selection))
     else {
@@ -217,17 +233,22 @@ export const createUpdateControl = (home: string) => {
       fail("conflict", "An unfinished update must recover before replacing its bootstrap.")
     const previous = await readSelection() ?? fail("conflict", "Bootstrap replacement requires an existing independent runtime selection.")
     const target = await replacementSelection(previous, prior?.floor)
-    await unchanged([previous])
-    const control: Control = { protocol: updateControlProtocol, key: randomUUID(), phase: "fenced", forwardOnly: true,
-      baseline: previous, previous, target,
-      floor: { minimumRuntimeVersion: target.version, captureStateContract: target.captureStateContract } }
-    // The npm executable is already replaced: every subsequent crash must
-    // recover forward to its verified immutable copy, never the old identity.
-    await writeControl(control)
-    await writeSelection(target)
-    await validateGeneration(target, true)
-    await unchanged([target])
-    await writeControl({ ...control, phase: recovering ? "recovering" : "completed" })
+    // Verification, subprocesses and the immutable generation copy precede the
+    // short barrier. The caller's update ownership protects their lifetime.
+    const release = await acquireRuntimeWriteBarrier()
+    try {
+      if (!isDeepStrictEqual(await readControl(), prior)) fail("conflict", "The update reader floor changed before bootstrap replacement committed.")
+      await unchanged([previous])
+      const control: Control = { protocol: updateControlProtocol, key: randomUUID(), phase: "fenced", forwardOnly: true,
+        baseline: previous, previous, target,
+        floor: { minimumRuntimeVersion: target.version, captureStateContract: target.captureStateContract } }
+      // The npm executable is already replaced: every subsequent crash must
+      // recover forward to its verified immutable copy, never the old identity.
+      await writeControl(control)
+      await writeSelection(target)
+      await unchanged([target])
+      await writeControl({ ...control, phase: recovering ? "recovering" : "completed" })
+    } finally { release() }
     return target
   }
   const bootstrapReplacementSelection = async (): Promise<UpdateRuntimeSelection | undefined> => {
@@ -238,6 +259,15 @@ export const createUpdateControl = (home: string) => {
   }
   return {
     readSelection,
+    assertRuntimeAdmission,
+    // Resource cleanup may checkpoint already-admitted SQLite bytes after the
+    // reader floor moves. It uses exclusion without gaining logical admission.
+    acquireRuntimeWriteBarrier,
+    acquireRuntimeWrite: async (runtime: UpdateRuntimeAdmission, waitMs = 5_000): Promise<() => void> => {
+      const release = await acquireRuntimeWriteBarrier(waitMs)
+      try { await assertRuntimeAdmission(runtime); return release }
+      catch (cause) { release(); throw cause }
+    },
     // Replacement context only, not admission to execute the old selection.
     // The recovery coordinator materializes this Adapter overlay under its
     // configuration lock before recoverSelection creates a new snapshot.
@@ -298,13 +328,18 @@ export const createUpdateControl = (home: string) => {
     fence: async (ticket: UpdateControlTicket): Promise<void> => {
       const control = await transaction(ticket)
       if (control.phase !== "begun" && control.phase !== "fenced") fail("conflict", "This update cannot cross its recovery boundary.")
-      await unchanged([control.baseline, control.target])
       await validateGeneration(control.target, true)
-      // This fsynced record, including the target recovery selection, precedes
-      // pointer repair and every caller-owned incompatible operation.
-      await writeControl({ ...control, phase: "fenced", forwardOnly: true,
-        floor: { minimumRuntimeVersion: control.target.version, captureStateContract: control.target.captureStateContract } })
-      await writeSelection(control.target)
+      const release = await acquireRuntimeWriteBarrier()
+      try {
+        if (!isDeepStrictEqual(await transaction(ticket), control)) fail("conflict", "The update changed before its reader-floor boundary committed.")
+        await unchanged([control.baseline, control.target])
+        // This fsynced record, including the target recovery selection, precedes
+        // pointer repair and every caller-owned incompatible operation. A writer
+        // already holding the barrier finishes before this floor can advance.
+        await writeControl({ ...control, phase: "fenced", forwardOnly: true,
+          floor: { minimumRuntimeVersion: control.target.version, captureStateContract: control.target.captureStateContract } })
+        await writeSelection(control.target)
+      } finally { release() }
     },
     complete: async (ticket: UpdateControlTicket): Promise<void> => {
       const control = await transaction(ticket)
@@ -351,16 +386,5 @@ export const createUpdateControl = (home: string) => {
       }
       await writeControl({ ...control, phase: "recovered" })
     },
-    assertRuntimeAdmission: async (runtime: UpdateRuntimeAdmission): Promise<void> => {
-      version(runtime.version)
-      try { Schema.decodeUnknownSync(Contract)(runtime.captureStateContract) } catch { fail("admission", "Invalid runtime capture contract.") }
-      const control = await readControl()
-      if (!control) return
-      if (!accepts(control.floor, runtime)) fail("admission", "This runtime is below the durable recovery boundary.")
-      const previous = !control.forwardOnly && control.phase !== "completed" ? control.previous : undefined
-      const contract = previous?.captureStateContract ?? control.target.captureStateContract
-      if (runtime.captureStateContract !== contract)
-        fail("admission", "This runtime does not support the admitted capture contract.")
-    }
   }
 }

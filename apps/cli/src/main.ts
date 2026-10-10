@@ -11,13 +11,14 @@ import { defaultNodeClientPaths, makeNodeClientLayer, readClientConfigLocale } f
 import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
 import { initializeCliI18n, resolveCliLocale, t } from "./i18n/index.ts"
 import { acquireUpdateWorker, needsUpdateRecovery, recoverPendingUpdate } from "./runtime/managedUpdates.ts"
-import { managedStateContract, readEffectiveRuntimeSelection, resolveRuntimeEntry, selectedBootstrap, updateDirectory } from "./runtime/runtimeSelection.ts"
+import { legacyBridgeCaptureContract, readEffectiveRuntimeSelection, resolveRuntimeEntry, selectedBootstrap, updateDirectory } from "./runtime/runtimeSelection.ts"
 import { createUpdateControl } from "./runtime/updateControl.ts"
+import { assertRuntimeDataAdmission, runtimeContext } from "./runtime/runtimeAdmission.ts"
 import { prepareCollectorReadiness } from "./runtime/collectorReadiness.ts"
 import { admitCollectorProcess } from "./runtime/collectorDaemonLayers.ts"
 import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtime/runtimeLauncher.ts"
 import { admitLoginStartup, withLoginStartupRecovery } from "./runtime/loginStartup.ts"
-import { cliVersion } from "./version.ts"
+import { cliVersion, captureStateContract } from "./version.ts"
 import { assertManualStateUpgradeReady, prepareManualStateUpgrade, recordV2CollectorAdmission } from "./runtime/manualStateUpgrade.ts"
 
 const main = async () => {
@@ -63,7 +64,10 @@ const main = async () => {
   if (requestsGuidedExperience(command) && supportsInteractiveExperience()) {
     const paths = defaultNodeClientPaths()
     const controlRecovery = await createUpdateControl(paths.atapeHome).recoveryPending()
-    if (!controlRecovery) await Effect.runPromise(prepareManualStateUpgrade(paths))
+    if (captureStateContract === legacyBridgeCaptureContract && !controlRecovery && !await createUpdateControl(paths.atapeHome).readSelection()) {
+      await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
+      await Effect.runPromise(prepareManualStateUpgrade(paths))
+    }
     if (await needsUpdateRecovery(paths)) {
       const release = await acquireUpdateWorker(paths.atapeHome)
       if (release) {
@@ -73,7 +77,8 @@ const main = async () => {
         if (delegated !== undefined) { process.exitCode = delegated; return }
       }
     }
-    if (controlRecovery) await Effect.runPromise(prepareManualStateUpgrade(paths))
+    await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
+    if (captureStateContract === legacyBridgeCaptureContract) await Effect.runPromise(prepareManualStateUpgrade(paths))
     const { runInteractiveExperience } = await import("./interactive/run.ts")
     await runInteractiveExperience(command)
     return
@@ -93,7 +98,6 @@ const main = async () => {
       const admitted = await admitLoginStartup(defaultNodeClientPaths(), command.options.startupToken, process.argv[1]!, process.env)
       if (admitted === undefined) return
       const paths = defaultNodeClientPaths(admitted)
-      await Effect.runPromise(assertManualStateUpgradeReady(paths))
       const delegated = await delegateAdmittedLoginStartup(process.argv[1]!, process.argv.slice(2), admitted)
       if (delegated !== undefined) { process.exitCode = delegated; return }
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -104,9 +108,8 @@ const main = async () => {
             const entry = await resolveRuntimeEntry(paths.atapeHome, admitted.ATAPE_BOOTSTRAP_ENTRY!)
             if (await realpath(entry) !== await realpath(process.argv[1]!)) { delegateAfterRecovery = true; return }
           }
-          if (cliVersion !== "development") await createUpdateControl(paths.atapeHome).assertRuntimeAdmission({
-            version: cliVersion, captureStateContract: managedStateContract
-          })
+          await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
+          await Effect.runPromise(assertManualStateUpgradeReady(paths))
           const current = await admitLoginStartup(paths, command.options.startupToken, process.argv[1]!, admitted)
           if (current === undefined) return
           await Effect.runPromise(runLoginStartup().pipe(Effect.provide(makeNodeClientLayer(defaultNodeClientPaths(current), current))), { signal: cancellation.signal })
@@ -137,6 +140,10 @@ const main = async () => {
           try: async () => recoverPendingUpdate(paths, await selectedBootstrap(paths.atapeHome, process.env.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1]!), process.env),
           catch: cause => new Error(String(cause))
         }).pipe(Effect.uninterruptible, Effect.andThen(Effect.gen(function*() {
+          // The copied old worker may repair control state, but must not begin
+          // another capture-dependent update using the selected runtime's name.
+          yield* Effect.tryPromise({ try: () => assertRuntimeDataAdmission(runtimeContext(paths.atapeHome)),
+            catch: cause => cause instanceof Error ? cause : new Error(String(cause)) })
           const current = (yield* Effect.tryPromise({ try: () => readEffectiveRuntimeSelection(paths.atapeHome), catch: cause => new Error(String(cause)) }))?.version ?? cliVersion
           yield* runAutomaticUpdates(current)
         }))),
@@ -148,12 +155,11 @@ const main = async () => {
     const program = command.kind === "__collector-daemon"
       ? Effect.scoped(Effect.gen(function*() {
         yield* admitCollectorProcess(defaultNodeClientPaths().collectorProcessFile, command.options.daemonToken)
-        if (cliVersion !== "development") yield* Effect.tryPromise({
-          try: () => createUpdateControl(defaultNodeClientPaths().atapeHome).assertRuntimeAdmission({
-            version: cliVersion, captureStateContract: managedStateContract
-          }), catch: cause => cause instanceof Error ? cause : new Error(String(cause))
+        yield* Effect.tryPromise({
+          try: () => assertRuntimeDataAdmission(runtimeContext(defaultNodeClientPaths().atapeHome)),
+          catch: cause => cause instanceof Error ? cause : new Error(String(cause))
         })
-        yield* recordV2CollectorAdmission(defaultNodeClientPaths(), command.options.daemonToken)
+        if (captureStateContract === legacyBridgeCaptureContract) yield* recordV2CollectorAdmission(defaultNodeClientPaths(), command.options.daemonToken)
         yield* Effect.forkScoped(Effect.forever(reconcileLoginStartup().pipe(
           Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
           Effect.andThen(Effect.sleep(300_000))

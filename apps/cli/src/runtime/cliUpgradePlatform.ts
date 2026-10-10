@@ -7,18 +7,18 @@ import { dirname, join, resolve } from "node:path"
 import { randomUUID } from "node:crypto"
 import { performance } from "node:perf_hooks"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
-import { managedStateContract, preserveSelectedInstallations } from "./runtimeSelection.ts"
+import { preserveSelectedInstallations } from "./runtimeSelection.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
-import { cliVersion } from "../version.ts"
+import { cliVersion, captureStateContract } from "../version.ts"
 import { inspectLocalAdapterPackage } from "./adapterPackageSource.ts"
 
 const registry = "https://registry.npmjs.org/"
 const Manifest = Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String })
 const CandidateManifest = Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String,
-  atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.Literal(managedStateContract),
+  atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.Literal(captureStateContract),
     updateControlProtocol: Schema.Literal(updateControlProtocol), releaseCatalogProtocol: Schema.Literal(updateCatalogProtocol) }) })
 const readBounded = async (file: string) => {
   if ((await stat(file)).size > 256 * 1024) throw new Error("Metadata too large")
@@ -102,7 +102,7 @@ export const makeCLIUpgradePlatformLayer = (
   fetchMetadata: typeof globalThis.fetch = globalThis.fetch,
   runtimeVersion: string = cliVersion
 ) => {
- const discovery = createReleaseDiscovery({ home, runtimeVersion, captureStateContract: managedStateContract, updateControlProtocol, fetchMetadata })
+ const discovery = createReleaseDiscovery({ home, runtimeVersion, captureStateContract, updateControlProtocol, fetchMetadata })
  return Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
   acquireOwnership: () => Effect.acquireRelease(Effect.tryPromise({
     try: async () => {
