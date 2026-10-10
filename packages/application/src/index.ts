@@ -40,3 +40,5 @@ export * from "./collectorRedactionPolicy.ts"
 export * from "./collectorRunStatus.ts"
 
 export * from "./agentSessionStart.ts"
+
+export * from "./sessionAnalytics.ts"

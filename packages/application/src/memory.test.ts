@@ -50,4 +50,28 @@ describe("versioned conversation reads", () => {
   const error = await Effect.runPromise(openConversation("session","root",{head:"head-old",after:"event-98"}).pipe(Effect.provide(layer),Effect.flip))
   expect(error.code).toBe("refresh_required")
  })
+ it("passes the analysis snapshot and event anchor through the reader Seam", async () => {
+  const conditional = { ...page, snapshot: "legacy:v1:current" }
+  const layer = Layer.succeed(MemoryGateway, MemoryGateway.of({
+   openProject: () => Effect.succeed(project),
+   openConversation: (_session, _thread, request) => {
+    expect(request).toEqual({ snapshot: conditional.snapshot, at: "event-42" })
+    return Effect.succeed(conditional)
+   }
+  }))
+  expect(await Effect.runPromise(openConversation("session", "root", {
+   snapshot: conditional.snapshot, at: "event-42"
+  }).pipe(Effect.provide(layer)))).toEqual(conditional)
+ })
+ it.each([undefined, "legacy:v1:changed"])("rejects missing or different analysis snapshot %s", async (snapshot) => {
+  const response = { ...page, ...(snapshot === undefined ? {} : { snapshot }) }
+  const layer = Layer.succeed(MemoryGateway, MemoryGateway.of({
+   openProject: () => Effect.succeed(project), openConversation: () => Effect.succeed(response)
+  }))
+  const error = await Effect.runPromise(openConversation("session", "root", {
+   snapshot: "legacy:v1:current", at: "event-42"
+  }).pipe(Effect.provide(layer), Effect.flip))
+  expect(error.status).toBe(409)
+  expect(error.code).toBe("refresh_required")
+ })
 })

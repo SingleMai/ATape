@@ -90,6 +90,10 @@ func TestPublicationLegacyAdoption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	legacyAnalysis, found, err := reader.SessionAnalytics(ctx, web, initial.SessionID, "")
+	if err != nil || !found || legacyAnalysis.Head != "" || len(legacyAnalysis.Events) != 64 || len(legacyAnalysis.Usage) != 1 {
+		t.Fatalf("legacy analysis before adoption: %+v %v", legacyAnalysis, err)
+	}
 	scope := publication.Scope{ProjectID: legacy.ProjectID, InstallationID: legacy.Source.InstallationID, AdapterID: legacy.Source.AdapterID, SourceSessionID: legacy.Session.SourceSessionID, OriginKey: "original-root"}
 	requireCode := func(err error, code string) {
 		t.Helper()
@@ -146,6 +150,10 @@ func TestPublicationLegacyAdoption(t *testing.T) {
 	}
 	if !reflect.DeepEqual(adoption.BaselineThreads, legacy.Threads) {
 		t.Fatalf("source-local baseline changed: %+v", adoption.BaselineThreads)
+	}
+	adoptedAnalysis, found, err := reader.SessionAnalytics(ctx, web, initial.SessionID, legacyAnalysis.SnapshotToken)
+	if err != nil || !found || adoptedAnalysis.SnapshotToken != legacyAnalysis.SnapshotToken || len(adoptedAnalysis.Events) != 64 || len(adoptedAnalysis.Usage) != 1 {
+		t.Fatalf("adoption changed analysis before activation: %+v %v", adoptedAnalysis, err)
 	}
 	repeated, err := store.AdoptLegacy(ctx, cli, scope)
 	if err != nil || repeated.RevisionFloor != 29 || !reflect.DeepEqual(repeated.BaselineThreads, adoption.BaselineThreads) {
@@ -269,6 +277,15 @@ func TestPublicationLegacyAdoption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	selectedAnalysis, found, err := reader.SessionAnalytics(ctx, web, initial.SessionID, "")
+	if err != nil || !found || selectedAnalysis.Head != head.Head || len(selectedAnalysis.Events) != 63 || len(selectedAnalysis.Usage) != 1 || selectedAnalysis.Usage[0].InputTokens == nil || *selectedAnalysis.Usage[0].InputTokens != 7 {
+		t.Fatalf("analysis selected retained members: %+v %v", selectedAnalysis, err)
+	}
+	_, _, err = reader.SessionAnalytics(ctx, web, initial.SessionID, legacyAnalysis.SnapshotToken)
+	var staleAnalysis *canonical.RefreshRequiredError
+	if !errors.As(err, &staleAnalysis) {
+		t.Fatalf("analysis accepted a legacy token after activation: %v", err)
+	}
 	current, found, err := reader.Conversation(ctx, web, initial.SessionID, "root")
 	if err != nil || !found || current.Head != head.Head || len(current.Events) != 2 || current.EventCounts[childID] != 61 {
 		t.Fatalf("selected target: %+v %v", current, err)
@@ -318,6 +335,10 @@ func TestPublicationLegacyAdoption(t *testing.T) {
 	}
 	if _, err = store.Reclaim(ctx, cli, 32); err != nil {
 		t.Fatal(err)
+	}
+	retainedAnalysis, found, err := reader.SessionAnalytics(ctx, web, initial.SessionID, "publication:"+nextHead.Head)
+	if err != nil || !found || retainedAnalysis.Head != nextHead.Head || len(retainedAnalysis.Events) != 63 || len(retainedAnalysis.Usage) != 1 {
+		t.Fatalf("analysis after selected base reclamation: %+v %v", retainedAnalysis, err)
 	}
 	inherited, found, err = reader.Conversation(ctx, web, initial.SessionID, childID)
 	if err != nil || !found || inherited.Head != nextHead.Head || !canonicalcontract.EqualEvents(inherited.Events, oldChild.Events) {

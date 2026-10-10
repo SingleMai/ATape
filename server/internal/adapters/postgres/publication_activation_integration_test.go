@@ -19,6 +19,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/publication"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 	"github.com/testcontainers/testcontainers-go"
@@ -145,6 +146,143 @@ func TestPublicationActivation(t *testing.T) {
 		}
 		return p
 	}
+	t.Run("Session analysis follows activation replacement and evidence", func(t *testing.T) {
+		b := batch("analysis-publication")
+		root := "provider-root"
+		b.Threads = append(b.Threads, ingestion.Thread{SourceThreadID: "worker", ParentSourceThreadID: &root, Revision: 1, Label: "Worker", CaptureStatus: "partial"})
+		call := b.Events[1]
+		call.SourceEventID, call.SourceOrder = "call", 3
+		call.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"shared","title":"Read","kind":"read","status":"pending","rawInput":{"path":"source-only-input"}}`
+		tool, e := canonical.ParseToolUpdate(call.ToolUpdateJSON)
+		if e != nil {
+			t.Fatal(e)
+		}
+		call.Kind, call.Text, call.ToolLabel = tool.Summary()
+		result := call
+		result.SourceEventID, result.SourceOrder = "result", 4
+		result.ToolUpdateJSON = `{"sessionUpdate":"tool_call_update","toolCallId":"shared","status":"completed","rawOutput":"source-only-output"}`
+		tool, e = canonical.ParseToolUpdate(result.ToolUpdateJSON)
+		if e != nil {
+			t.Fatal(e)
+		}
+		result.Kind, result.Text, result.ToolLabel = tool.Summary()
+		child := call
+		child.SourceEventID, child.SourceThreadID = "worker-call", "worker"
+		child.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"shared","title":"Read"}`
+		tool, e = canonical.ParseToolUpdate(child.ToolUpdateJSON)
+		if e != nil {
+			t.Fatal(e)
+		}
+		child.Kind, child.Text, child.ToolLabel = tool.Summary()
+		b.Events = append(b.Events, call, result, child)
+		count := func(n int64) *int64 { return &n }
+		b.Usage = []ingestion.Usage{{SourceUsageID: "u", SourceThreadID: root, Revision: 1, OccurredAt: b.Events[1].OccurredAt, Model: "model", InputTokens: count(100), OutputTokens: count(10)}}
+		a := stage(store, b, "", true)
+		if _, visible, e := reader.SessionAnalytics(ctx, web, a.SessionID, ""); e != nil || visible {
+			t.Fatalf("prepared candidate visible: %v %v", visible, e)
+		}
+		first := activate(a)
+		module := sessionanalytics.New(reader)
+		view, e := module.Open(ctx, web, first.SessionID, sessionanalytics.Query{})
+		if e != nil {
+			t.Fatal(e)
+		}
+		if view.Head != first.Head || view.Summary.ToolCalls != 2 || view.Summary.ChildThreads != 1 || *view.Usage.Tokens.Total != 110 {
+			t.Fatalf("incorrect publication analysis: %+v", view)
+		}
+		if len(view.Evidence.Items) != 2 {
+			t.Fatalf("wrong evidence: %+v", view.Evidence)
+		}
+		for _, item := range view.Evidence.Items {
+			page, visible, e := reader.ConversationPage(ctx, web, first.SessionID, item.ThreadID, canonical.ConversationPageRequest{Limit: 100, Head: view.Head, Snapshot: view.Snapshot, AtEventID: item.EventID})
+			if e != nil || !visible || len(page.Events) == 0 || page.Events[0].ID != item.EventID || page.SnapshotToken != view.Snapshot {
+				t.Fatalf("evidence Reader: %+v %v %v", page, visible, e)
+			}
+		}
+		// A validated replacement remains invisible until activation. The new
+		// target has fewer tools; old contributions must disappear, not accumulate.
+		b.Events = b.Events[:2]
+		b.Usage = nil
+		pending := stage(store, b, first.Head, true)
+		before, e := module.Open(ctx, web, first.SessionID, sessionanalytics.Query{Snapshot: view.Snapshot})
+		if e != nil || before.Summary.ToolCalls != 2 {
+			t.Fatalf("candidate leaked: %v", e)
+		}
+		second := activate(pending)
+		after, e := module.Open(ctx, web, first.SessionID, sessionanalytics.Query{})
+		if e != nil {
+			t.Fatal(e)
+		}
+		if after.Head != second.Head || after.Summary.ToolCalls != 0 || after.Usage.Samples != 0 || after.Usage.Tokens.Total != nil {
+			t.Fatalf("old facts survived replacement: %+v", after)
+		}
+		_, e = module.Open(ctx, web, first.SessionID, sessionanalytics.Query{Snapshot: view.Snapshot})
+		var changed *canonical.RefreshRequiredError
+		if !errors.As(e, &changed) {
+			t.Fatalf("stale evidence not rejected: %v", e)
+		}
+		_, _, e = reader.ConversationPage(ctx, web, first.SessionID, "root", canonical.ConversationPageRequest{Limit: 100, Snapshot: view.Snapshot})
+		if !errors.As(e, &changed) {
+			t.Fatalf("stale Reader not rejected: %v", e)
+		}
+		if e = reader.DeleteSession(ctx, web, first.SessionID, ""); e != nil {
+			t.Fatal(e)
+		}
+		if _, visible, e := reader.SessionAnalytics(ctx, web, first.SessionID, after.Snapshot); e != nil || visible {
+			t.Fatalf("deleted analysis visible: %v %v", visible, e)
+		}
+	})
+	t.Run("Session analysis reads representative native volume", func(t *testing.T) {
+		volumeBatch := batch("analysis-volume")
+		volumeBatch.BatchID = "analysis-volume-batch"
+		created, e := ingestion.NewIngestor(reader).ApplyBatch(ctx, cli, volumeBatch)
+		if e != nil {
+			t.Fatal(e)
+		}
+		t.Cleanup(func() {
+			if err := reader.DeleteSession(ctx, web, created.SessionID, ""); err != nil {
+				t.Error(err)
+			}
+		})
+		_, e = pool.Exec(ctx, `INSERT INTO canonical_events(id,session_id,thread_id,source_key,revision,projection_revision,digest,source_order,event_index,order_fidelity,fidelity,raw_ref,adapter_version,schema_version,observed_at,received_at,ingest_seq,kind,author,occurred_at,text,tool_label)
+SELECT 'analysis-volume-'||n,e.session_id,e.thread_id,'analysis-volume-'||n,1,1,e.digest,n+2,0,e.order_fidelity,e.fidelity,e.raw_ref,e.adapter_version,e.schema_version,e.observed_at,e.received_at,n+2000000,'message',e.author,e.occurred_at,repeat('x',512),''
+FROM canonical_events e CROSS JOIN generate_series(1,60000)n WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		_, e = pool.Exec(ctx, `INSERT INTO canonical_usage(source_key,session_id,thread_id,revision,digest,occurred_at,model,input_tokens,output_tokens,cache_read_tokens,cache_write_tokens)
+SELECT 'analysis-usage-'||n,s.id,'root',1,'fixture',s.updated_at,'model-'||(n%2),100,10,20,0 FROM canonical_sessions s CROSS JOIN generate_series(1,6000)n WHERE s.id=$1`, created.SessionID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		var samples []time.Duration
+		for range 3 {
+			started := time.Now()
+			view, e := sessionanalytics.New(reader).Open(ctx, web, created.SessionID, sessionanalytics.Query{})
+			elapsed := time.Since(started)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if view.Summary.MessageFragments != 60002 || view.Summary.RootUserInputs != 60001 || view.Usage.Samples != 6000 || *view.Usage.Tokens.Total != 660000 {
+				t.Fatalf("incomplete volume metrics: %+v %+v", view.Summary, view.Usage)
+			}
+			if elapsed > 3*time.Second {
+				t.Fatalf("single-reader 60k-events/6k-usage local acceptance budget exceeded: %s", elapsed)
+			}
+			samples = append(samples, elapsed)
+		}
+		t.Logf("60,002 Events (512-byte bodies), 6,000 Usage, single reader, three reads: %v", samples)
+		// Source identities can legitimately approach 2 KiB after the Adapter,
+		// installation, Session, Thread and Event identifiers are combined.
+		// A tiny body does not make those metadata bytes free to read.
+		_, e = pool.Exec(ctx, `UPDATE canonical_events SET source_key=repeat('s',1900)||source_key WHERE session_id=$1`, created.SessionID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if _, e = sessionanalytics.New(reader).Open(ctx, web, created.SessionID, sessionanalytics.Query{}); !errors.Is(e, sessionanalytics.ErrCapacity) {
+			t.Fatalf("long source identities bypassed analysis capacity: %v", e)
+		}
+	})
 	t.Run("overview reads mixed legacy Threads and publication Events within the request budget", func(t *testing.T) {
 		legacy, e := ingestion.NewIngestor(reader).ApplyBatch(ctx, cli, batch("overview-legacy"))
 		if e != nil {

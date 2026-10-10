@@ -154,6 +154,11 @@ unconfirmed observation. They are not included in remote device reports and do
 not alter Canonical, Raw, checkpoints or publication contracts.
 Local run status must be a regular UTF-8 file of at most 8 MiB; an invalid,
 unreadable or oversized report produces an unknown observation.
+If file metadata changes during a read, the status Adapter reopens and validates
+the complete snapshot again, with at most three attempts. This handles metadata
+updates overlapping atomic replacement while retaining all file and content
+checks; other read failures are not retried. Continued changes produce an unknown
+observation.
 
 ## Test locally
 

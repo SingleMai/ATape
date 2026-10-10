@@ -13,6 +13,7 @@ import (
 
 	"github.com/SingleMai/ATape/server/internal/conversation"
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"gopkg.in/yaml.v3"
 )
 
@@ -50,6 +51,8 @@ func TestOpenAPIReaderSchemasMatchWireTypes(t *testing.T) {
 		{"/api/v1/projects/{projectId}/memory", "ProjectMemory", conversation.ProjectMemory{}},
 		{"/api/v1/projects/{projectId}/search", "SearchPage", projectsearch.Page{}},
 		{"/api/v1/sessions/{sessionId}", "Conversation", conversation.Conversation{}},
+		{"/api/v1/sessions/{sessionId}/analytics", "SessionAnalytics", sessionanalytics.Result{}},
+		{"/api/v1/sessions/{sessionId}/analytics/evidence", "SessionAnalytics", sessionanalytics.Result{}},
 	} {
 		t.Run(entry.name, func(t *testing.T) {
 			if got := document.Paths[entry.path].Get.Responses["200"].Ref; got != "#/components/responses/"+entry.name {
@@ -119,10 +122,11 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		typ = typ.Elem()
 	}
 	if alternatives, ok := schema.Type.([]any); ok {
-		if !nullable || typ.Kind() != reflect.String || len(alternatives) != 2 || !slices.Contains(alternatives, any("string")) || !slices.Contains(alternatives, any("null")) {
+		primitive := map[reflect.Kind]string{reflect.String: "string", reflect.Int64: "integer"}[typ.Kind()]
+		if !nullable || primitive == "" || len(alternatives) != 2 || !slices.Contains(alternatives, any(primitive)) || !slices.Contains(alternatives, any("null")) {
 			return fmt.Errorf("%s: nullable schema does not describe %s", path, typ)
 		}
-		schema.Type = "string"
+		schema.Type = primitive
 	}
 	if typ == reflect.TypeOf(json.RawMessage{}) {
 		if schema.Type != nil || len(schema.Properties) != 0 {
@@ -130,7 +134,7 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		}
 		return nil
 	}
-	want := map[reflect.Kind]string{reflect.Struct: "object", reflect.Slice: "array", reflect.String: "string", reflect.Int: "integer"}[typ.Kind()]
+	want := map[reflect.Kind]string{reflect.Struct: "object", reflect.Slice: "array", reflect.String: "string", reflect.Int: "integer", reflect.Int64: "integer"}[typ.Kind()]
 	if want == "" || schema.Type != want {
 		return fmt.Errorf("%s: schema type %q does not describe %s", path, schema.Type, typ)
 	}

@@ -30,7 +30,8 @@ const MaxTitleScanBytes = 4 * 1024 * 1024
 const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
 const MaxFilesPerSession = 100
-const CanonicalProjectionRevisionOffset = 8
+const EventProjectionVersion = 4
+const CanonicalProjectionRevisionOffset = 10
 
 export class CodexArchiveError extends Schema.TaggedError<CodexArchiveError>()("CodexArchiveError", {
   reason: Schema.Literals(["configuration", "io", "format", "cursor", "limit"]),
@@ -313,13 +314,13 @@ const collectPage = async (
   throwIfAborted(request.signal)
   archive.inventoryPages = (archive.inventoryPages ?? 0) + 1
   const decoded = decodeCursor(request.cursor)
-  const projectionUpgrade = decoded.eventProjectionVersion !== 3 || decoded.usageVersion !== 1
+  const projectionUpgrade = decoded.eventProjectionVersion !== EventProjectionVersion || decoded.usageVersion !== 1
   const rewindCanonical = (active: ActiveCursor): ActiveCursor => active.phase !== "canonical" ? active : {
     ...active, spawnOffset: 0, eventFileIndex: 0, eventOffset: 0, emitted: false, step: 0, quantum: 0,
     files: active.files.map(({ startOffset: _start, ...file }) => file)
   }
   let cursor: CodexCursor = { ...decoded,
-    eventProjectionVersion: 3,
+    eventProjectionVersion: EventProjectionVersion,
     usageVersion: 1,
     ...(projectionUpgrade ? { pending: decoded.pending?.map(rewindCanonical) ?? [],
       ...(decoded.active ? { active: rewindCanonical(decoded.active) } : {}) } : {}),
@@ -1053,7 +1054,7 @@ const collectEvents = async (
       sourceEventId: `spawn-${child.sourceThreadId}`,
       sourceThreadId: child.parentSourceThreadId,
       revision: active.revision,
-      projectionRevision: 3,
+      projectionRevision: EventProjectionVersion,
       sourceOrder: timestampOrder(occurredAt),
       eventIndex: 0,
       orderFidelity: "native",
@@ -1190,7 +1191,7 @@ const mapCompletedItem = (
     sourceEventId: truncateUtf8(itemId, 500),
     sourceThreadId: file.threadId || sessionId,
     revision: 1,
-    projectionRevision: 3,
+    projectionRevision: EventProjectionVersion,
     sourceOrder: timestampOrder(envelope.timestamp),
     eventIndex: byteOffset,
     orderFidelity: "native",
@@ -1227,7 +1228,7 @@ const mapResponseItem = (
     sourceEventId: truncateUtf8(itemId, 500),
     sourceThreadId: file.threadId || sessionId,
     revision: 1,
-    projectionRevision: 3,
+    projectionRevision: EventProjectionVersion,
     sourceOrder: timestampOrder(envelope.value.timestamp),
     eventIndex: byteOffset,
     orderFidelity: "native",
@@ -1262,7 +1263,7 @@ const mapLegacyMessage = (
     sourceEventId: truncateUtf8(itemId, 500),
     sourceThreadId: file.threadId || sessionId,
     revision: 1,
-    projectionRevision: 3,
+    projectionRevision: EventProjectionVersion,
     sourceOrder: timestampOrder(envelope.value.timestamp),
     eventIndex: byteOffset,
     orderFidelity: "native",
@@ -1348,9 +1349,9 @@ const mapItemUpdate = (item: Record<string, unknown>, fallbackId: string): AcpSe
     case "FileChange":
       return toolUpdate(id, "Apply file changes", "edit", item.status)
     case "ImageView":
-      return toolUpdate(id, `View image ${basename(stringValue(item.path) ?? "image")}`, "read", "completed")
+      return toolUpdate(id, `View image ${basename(stringValue(item.path) ?? "image")}`, "read", item.status)
     case "Extension":
-      return toolUpdate(id, stringValue(item.kind) || "Extension", "other", "completed")
+      return toolUpdate(id, stringValue(item.kind) || "Extension", "other", item.status)
     default:
       return undefined
   }
@@ -1408,7 +1409,7 @@ const mapResponseSupplementUpdate = (
   }
   if (type === "custom_tool_call" || type === "function_call") {
     const label = stringValue(item.name) ?? "Codex tool"
-    return toolUpdate(id, label, responseToolKind(label), item.status ?? "completed")
+    return toolUpdate(id, label, responseToolKind(label), item.status)
   }
   return undefined
 }
@@ -1438,18 +1439,21 @@ const toolUpdate = (
     toolCallId: id,
     title: truncateUtf8(title, 500),
     kind,
-    status
+    ...(status === undefined ? {} : { status })
   }
 }
 
-const mapToolStatus = (value: unknown): "pending" | "in_progress" | "completed" | "failed" => {
+const mapToolStatus = (value: unknown): "pending" | "in_progress" | "completed" | "failed" | undefined => {
   switch (value) {
     case "pending": return "pending"
     case "in_progress":
     case "running": return "in_progress"
     case "completed":
     case "success": return "completed"
-    default: return "failed"
+    case "failed":
+    case "error":
+    case "cancelled": return "failed"
+    default: return undefined
   }
 }
 
@@ -1846,7 +1850,7 @@ const validActive = (active: ActiveCursor) => nonNegative(active.revision) && ac
   (active.quantum === undefined || nonNegative(active.quantum)) && active.sessionId.length <= 500 &&
   active.files.length <= 10_000 && active.files.every(validFile) && active.eventFileIndex <= active.files.length &&
   (active.frozenThreads === undefined || active.frozenThreads.length <= 100)
-const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === undefined || cursor.eventProjectionVersion === 2 || cursor.eventProjectionVersion === 3) && Number.isFinite(cursor.watermarkModifiedMs) &&
+const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === undefined || cursor.eventProjectionVersion === 2 || cursor.eventProjectionVersion === 3 || cursor.eventProjectionVersion === EventProjectionVersion) && Number.isFinite(cursor.watermarkModifiedMs) &&
   cursor.watermarkModifiedMs >= 0 && cursor.watermarkSessionId.length <= 500 &&
   (cursor.lastCanonicalSessionId === undefined || cursor.lastCanonicalSessionId.length <= 500) &&
   (cursor.lastCanonicalSourceKey === undefined || /^[a-f0-9]{64}$/.test(cursor.lastCanonicalSourceKey)) &&

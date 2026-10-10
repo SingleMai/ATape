@@ -979,6 +979,7 @@ paths:
         - {name: head, in: query, description: Selected head from the preceding page; a changed head returns refresh_required., schema: {type: string, maxLength: 200}}
         - {name: after, in: query, description: Previous nextEventId; requires head and excludes at., schema: {type: string, maxLength: 200}}
         - {name: at, in: query, description: Inclusive Event anchor for a search result; excludes after., schema: {type: string, maxLength: 200}}
+        - {name: snapshot, in: query, description: Conditional current Canonical snapshot from Session Analytics; requires limit. Any input change returns refresh_required., schema: {type: string, minLength: 1, maxLength: 200}}
       responses:
         "200": {$ref: "#/components/responses/Conversation"}
         "4XX": {$ref: "#/components/responses/Problem"}
@@ -996,6 +997,50 @@ paths:
         - {$ref: "#/components/parameters/CSRF"}
       responses:
         "204": {$ref: "#/components/responses/NoContent"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/sessions/{sessionId}/analytics:
+    parameters:
+      - {$ref: "#/components/parameters/SessionId"}
+    get:
+      operationId: getSessionAnalytics
+      x-atape-authorization-actions: [conversation.read]
+      tags: [Captured sessions]
+      summary: Analyze one current Canonical Session
+      description: Statistics and evidence share one authorized snapshot. Filters affect evidence only. Resource bounds fail explicitly with 422 analytics_capacity.
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: snapshot, in: query, schema: {type: string, minLength: 1, maxLength: 200}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads]}}
+        - {name: thread, in: query, schema: {type: string, maxLength: 500}}
+        - {name: tool, in: query, schema: {type: string, maxLength: 500}}
+        - {name: cursor, in: query, description: Opaque evidence cursor bound to the Session, snapshot, analytics version and filters; requires snapshot., schema: {type: string, maxLength: 1024}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        "200": {$ref: "#/components/responses/SessionAnalytics"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
+  /api/v1/sessions/{sessionId}/analytics/evidence:
+    parameters:
+      - {$ref: "#/components/parameters/SessionId"}
+    get:
+      operationId: getSessionAnalyticsEvidence
+      x-atape-authorization-actions: [conversation.read]
+      tags: [Captured sessions]
+      summary: Read evidence for a selected Session analysis
+      description: Returns the same analysis representation with a filtered evidence page. A changed Canonical snapshot returns 409 refresh_required.
+      x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{webSession: []}]
+      parameters:
+        - {name: snapshot, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads]}}
+        - {name: thread, in: query, schema: {type: string, maxLength: 500}}
+        - {name: tool, in: query, schema: {type: string, maxLength: 500}}
+        - {name: cursor, in: query, description: Opaque cursor for the same snapshot and filters., schema: {type: string, maxLength: 1024}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        "200": {$ref: "#/components/responses/SessionAnalytics"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
   /api/v1/sessions/{sessionId}/raw:
@@ -1610,6 +1655,14 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Conversation"}
+    SessionAnalytics:
+      description: Bounded statistics and an evidence page from one authorized current Canonical snapshot; no conversation or Raw bodies.
+      headers:
+        X-Request-ID: {$ref: "#/components/headers/RequestId"}
+        Cache-Control: {$ref: "#/components/headers/NoStore"}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/SessionAnalytics"}
     GenericJSON:
       description: Successful typed JSON representation; see the focused API document for the Module schema.
       headers:
@@ -1987,11 +2040,110 @@ components:
       required: [session, thread, threadPath, events]
       properties:
         head: {type: string}
+        snapshot: {type: string, description: Current Canonical token returned for a conditional snapshot read.}
         nextEventId: {type: string}
         session: {$ref: "#/components/schemas/ReaderSession"}
         thread: {$ref: "#/components/schemas/ReaderThread"}
         threadPath: {type: array, items: {$ref: "#/components/schemas/ReaderThreadPathItem"}}
         events: {type: array, items: {$ref: "#/components/schemas/ReaderEvent"}}
+    SessionAnalyticsTokens:
+      type: object
+      additionalProperties: false
+      required: [total, input, output, cacheRead, cacheWrite, recordedSamples, incompleteSamples]
+      properties:
+        total: {type: [integer, "null"], description: Input plus output only when both classifications are complete.}
+        input: {type: [integer, "null"], description: Includes cache Tokens already normalized by the Adapter.}
+        output: {type: [integer, "null"], description: Includes reasoning Tokens already normalized by the Adapter.}
+        cacheRead: {type: [integer, "null"]}
+        cacheWrite: {type: [integer, "null"]}
+        recordedSamples: {type: integer}
+        incompleteSamples: {type: integer}
+    SessionAnalyticsSummary:
+      type: object
+      additionalProperties: false
+      required: [rootUserInputs, messageFragments, thoughtFragments, toolCalls, childThreads, knownTimeEvents, unknownTimeEvents, unlinkedToolEvents]
+      properties:
+        rootUserInputs: {type: integer}
+        messageFragments: {type: integer}
+        thoughtFragments: {type: integer}
+        toolCalls: {type: integer}
+        childThreads: {type: integer}
+        knownTimeEvents: {type: integer}
+        unknownTimeEvents: {type: integer}
+        unlinkedToolEvents: {type: integer}
+    SessionAnalyticsTool:
+      type: object
+      additionalProperties: false
+      required: [name, kind, calls, completed, failed, pending, inProgress, unknown]
+      properties:
+        name: {type: string}
+        kind: {type: string}
+        calls: {type: integer}
+        completed: {type: integer}
+        failed: {type: integer}
+        pending: {type: integer}
+        inProgress: {type: integer}
+        unknown: {type: integer}
+    SessionAnalyticsThread:
+      type: object
+      additionalProperties: false
+      required: [id, label, captureStatus, eventCount, toolCalls, tokens]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        parentThreadId: {type: string}
+        captureStatus: {type: string}
+        eventCount: {type: integer}
+        toolCalls: {type: integer}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokens"}
+    SessionAnalyticsModelUsage:
+      type: object
+      additionalProperties: false
+      required: [model, samples, tokens]
+      properties:
+        model: {type: string}
+        samples: {type: integer}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokens"}
+    SessionAnalyticsUsage:
+      type: object
+      additionalProperties: false
+      required: [samples, tokens, models]
+      properties:
+        samples: {type: integer}
+        tokens: {$ref: "#/components/schemas/SessionAnalyticsTokens"}
+        models: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsModelUsage"}}
+    SessionAnalyticsEvidenceItem:
+      type: object
+      additionalProperties: false
+      required: [eventId, threadId, kind, label, occurredAt]
+      properties:
+        eventId: {type: string}
+        threadId: {type: string}
+        kind: {type: string}
+        label: {type: string}
+        occurredAt: {type: [string, "null"]}
+    SessionAnalyticsEvidence:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsEvidenceItem"}}
+        nextCursor: {type: string}
+    SessionAnalytics:
+      type: object
+      additionalProperties: false
+      required: [snapshot, analyticsVersion, sessionId, captureStatus, summary, tools, threads, usage, evidence]
+      properties:
+        snapshot: {type: string, description: Opaque conditional token for the current Canonical input; not historical retention or authorization.}
+        head: {type: string, description: Selected publication head when normalized publication is active.}
+        analyticsVersion: {type: integer, const: 1}
+        sessionId: {type: string}
+        captureStatus: {type: string}
+        summary: {$ref: "#/components/schemas/SessionAnalyticsSummary"}
+        tools: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsTool"}}
+        threads: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsThread"}}
+        usage: {$ref: "#/components/schemas/SessionAnalyticsUsage"}
+        evidence: {$ref: "#/components/schemas/SessionAnalyticsEvidence"}
     SearchResult:
       type: object
       additionalProperties: false
@@ -2809,6 +2961,7 @@ components:
             - publication_unknown
             - refresh_required
             - pagination_required
+            - analytics_capacity
             - invalid_request
             - invalid_user_code
             - invalid_join_code

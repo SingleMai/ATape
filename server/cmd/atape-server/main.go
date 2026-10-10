@@ -33,6 +33,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/releaseinfo"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/workspace"
@@ -310,6 +311,7 @@ type persistenceAdapters struct {
 	QueryIndex      projectsearch.QueryIndex
 	DirectoryStore  workspace.DirectoryStore
 	OverviewStore   teamoverview.Store
+	AnalyticsStore  sessionanalytics.Store
 	RawArchive      *rawarchive.Archive
 	Publication     httpapi.Publication
 	Pool            *pgxpool.Pool
@@ -325,7 +327,7 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 		}
 		slog.Info("using in-memory Canonical development Adapter")
 		return persistenceAdapters{
-			BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store,
+			BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store, AnalyticsStore: store,
 			ProjectionIndex: index, QueryIndex: index, DirectoryStore: store, RawArchive: raw,
 		}, nil
 	}
@@ -374,7 +376,7 @@ func providePersistenceAdapters(lifecycle fx.Lifecycle, config serverConfig) (pe
 		},
 	})
 	return persistenceAdapters{
-		BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store,
+		BatchStore: store, SnapshotStore: store, ChangeSource: store, OverviewStore: store, AnalyticsStore: store,
 		ProjectionIndex: store, QueryIndex: store, DirectoryStore: store,
 		RawArchive: rawarchive.NewArchive(store, chunkStore), Pool: pool, Publication: publisher,
 	}, nil
@@ -459,13 +461,14 @@ func provideHTTPHandler(
 	searcher *projectsearch.Searcher,
 	directory *workspace.Directory,
 	overview *teamoverview.Module,
+	analytics *sessionanalytics.Module,
 	raw *rawarchive.Archive,
 	publisher httpapi.Publication,
 ) (*httpapi.Handler, error) {
 	return httpapi.NewHandler(config.http, httpapi.Modules{
 		Authentication: authenticationModule, Teams: teamModule, Memory: memory,
 		Ingestor: ingestor, Searcher: searcher, Directory: directory, Raw: raw,
-		Cutover: cutoverModule, Overview: overview, Publication: publisher,
+		Cutover: cutoverModule, Overview: overview, Analytics: analytics, Publication: publisher,
 	})
 }
 
@@ -599,6 +602,7 @@ func main() {
 			projectsearch.NewSearcher,
 			workspace.NewDirectory,
 			teamoverview.New,
+			sessionanalytics.New,
 			provideHTTPHandler,
 			newHTTPServer,
 		),

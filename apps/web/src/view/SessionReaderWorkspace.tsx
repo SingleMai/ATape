@@ -4,15 +4,21 @@ import { Group, Panel, Separator, usePanelCallbackRef } from "react-resizable-pa
 import { useConversationPresenter } from "../presenters/memoryPresenter"
 import { SessionReaderView, type SessionReaderProps } from "./SessionReaderView"
 import { t } from "../i18n"
+import { SessionAnalyticsPanel, type AnalyticsEvidenceTarget } from "./SessionAnalyticsView"
 
-type Props = Omit<SessionReaderProps, "onOpenThread" | "embedded"> & {
+type Props = Omit<SessionReaderProps, "onOpenThread" | "embedded" | "onOpenAnalysis"> & {
   readonly sessionId: string
+  readonly evidenceHref: (target: AnalyticsEvidenceTarget) => string
+  readonly onOpenEvidence: (target: AnalyticsEvidenceTarget) => void
+  readonly onReturnFromAnalysis: () => void
 }
 type ThreadTab = { readonly id: string; readonly label: string }
 
 // Only ephemeral reading state lives here. The existing Effect presenter owns
 // each thread's remote data, refresh workflow, and subscription lifetime.
-export function SessionReaderWorkspace({ sessionId, ...reader }: Props) {
+export function SessionReaderWorkspace({ sessionId, evidenceHref, onOpenEvidence, onReturnFromAnalysis, ...reader }: Props) {
+  const [analysis, setAnalysis] = useState(false)
+  const [analysisOpened, setAnalysisOpened] = useState(false)
   const [tabs, setTabs] = useState<ReadonlyArray<ThreadTab>>([])
   const [active, setActive] = useState<string>()
   const [phase, setPhase] = useState<"closed" | "opening" | "open" | "closing">("closed")
@@ -124,7 +130,19 @@ export function SessionReaderWorkspace({ sessionId, ...reader }: Props) {
     }}>
     <Panel id={`${workspaceId}-main`} defaultSize="100%" minSize="30%" style={{ overflow: "hidden" }}>
       <div className="session-main-reader" ref={main} tabIndex={-1}>
-        <div className="session-main-content"><SessionReaderView {...reader} onOpenThread={openThread} /></div>
+        <div className="session-main-content">
+          <div hidden={analysis}><SessionReaderView {...reader}
+            onOpenThread={openThread} onOpenAnalysis={() => {
+              setAnalysisOpened(true); setAnalysis(true); setPhase("closed"); setTabs([]); setActive(undefined)
+              requestAnimationFrame(() => main.current?.querySelector<HTMLElement>(".session-analytics h1")?.focus({ preventScroll: true }))
+            }} /></div>
+          {analysisOpened && <div hidden={!analysis} inert={!analysis}><SessionAnalyticsPanel sessionId={sessionId} evidenceHref={evidenceHref}
+            onBack={() => {
+              onReturnFromAnalysis(); setAnalysis(false)
+              requestAnimationFrame(() => main.current?.focus({ preventScroll: true }))
+            }}
+            onOpenEvidence={target => { setAnalysis(false); onOpenEvidence(target) }} /></div>}
+        </div>
       </div>
     </Panel>
     <Separator className="thread-separator" aria-label={t("workspace.resizeChildConversations", "Resize child conversations")}

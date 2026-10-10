@@ -97,6 +97,7 @@ type Event struct {
 }
 
 type Conversation struct {
+	Snapshot    string           `json:"snapshot,omitempty"`
 	Head        string           `json:"head,omitempty"`
 	NextEventID string           `json:"nextEventId,omitempty"`
 	Session     Session          `json:"session"`
@@ -292,7 +293,7 @@ func (m *Memory) renderConversation(snapshot canonical.ConversationSnapshot) (Co
 		capturedBy = &CapturedUser{ID: user.ID, DisplayName: user.DisplayName, AvatarURL: user.AvatarURL}
 	}
 	return Conversation{
-		Head: snapshot.Head, NextEventID: snapshot.NextEventID,
+		Snapshot: snapshot.SnapshotToken, Head: snapshot.Head, NextEventID: snapshot.NextEventID,
 		Session: Session{
 			CapturedBy:    capturedBy,
 			ID:            snapshot.Session.ID,

@@ -592,7 +592,10 @@ func (s *MemoryStore) Conversation(
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.conversationLocked(ctx, principal, sessionID, threadID)
+}
 
+func (s *MemoryStore) conversationLocked(ctx context.Context, principal authentication.Principal, sessionID, threadID string) (ConversationSnapshot, bool, error) {
 	session, ok := s.sessions[sessionID]
 	if !ok {
 		return ConversationSnapshot{}, false, nil
@@ -752,12 +755,24 @@ func cloneEvent(event EventRecord) EventRecord {
 // The development Adapter retains its complete legacy snapshot. It never claims
 // a publication head or accepts continuations for a head it cannot preserve.
 func (s *MemoryStore) ConversationPage(ctx context.Context, p authentication.Principal, sessionID, threadID string, page ConversationPageRequest) (ConversationSnapshot, bool, error) {
-	snapshot, ok, err := s.Conversation(ctx, p, sessionID, threadID)
+	if err := ctx.Err(); err != nil {
+		return ConversationSnapshot{}, false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	snapshot, ok, err := s.conversationLocked(ctx, p, sessionID, threadID)
 	if err != nil || !ok {
 		return snapshot, ok, err
 	}
 	if page.Head != "" || page.AfterEventID != "" {
 		return ConversationSnapshot{}, false, &RefreshRequiredError{}
+	}
+	if page.Snapshot != "" {
+		facts, visible, err := s.analyticsLocked(ctx, p, sessionID, page.Snapshot)
+		if err != nil || !visible {
+			return ConversationSnapshot{}, visible, err
+		}
+		snapshot.SnapshotToken = facts.SnapshotToken
 	}
 	return snapshot, ok, nil
 }
