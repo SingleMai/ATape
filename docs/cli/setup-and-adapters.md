@@ -598,7 +598,7 @@ a verified cache exists. Shared-egress rate limiting can therefore postpone
 upgrades; cache-aware background discovery, immutable-receipt reuse and
 distribution capacity remain follow-up work.
 
-Public Stop and automatic-updates-off were checked before separate guarded
+On macOS, public Stop and automatic-updates-off were checked before separate guarded
 experiment cleanup. This post-release evidence does not rewrite the original
 staging waiver. It does not establish cross-format migration, the normal
 24–30-hour due interval, physical sleep/reboot/power-loss recovery, another disabled
