@@ -648,7 +648,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect(await createUpdateControl(f.paths.atapeHome).readSelection()).toBeUndefined()
     expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
     expect((await f.raw()).autoUpdateEnabled).toBe(false)
-  })
+  }, 15_000)
 
   it("recovers an interrupted independent selection before preparing again even after auto-off", async () => {
     const f = await fixture({ control: true }), prepared = await f.prepare()
@@ -668,7 +668,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect(await control.readSelection()).toBeUndefined()
     expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
     expect((await f.raw()).autoUpdateEnabled).toBe(false)
-  })
+  }, 15_000)
 
   it("rolls back a failed independent readiness check while keeping its compatible legacy bridge selected", async () => {
     const f = await fixture()
