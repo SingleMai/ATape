@@ -3,19 +3,20 @@ import { Effect, Layer, Schema } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { link, mkdir, open, rm } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
+import { guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 
 const MaxBindingBytes = 32 * 1024
 const decode = Schema.decodeUnknownSync(GitSourceBinding)
 
-export const makeGitSourceBindingsLayer = (directory: string) => {
+export const makeGitSourceBindingsLayer = (directory: string, runtime: RuntimeContext = runtimeContext(dirname(directory))) => {
   const pathFor = (scope: GitBindingScope, sourceId: string) => join(directory,
     createHash("sha256").update(JSON.stringify([
       scope.instanceOrigin, scope.userId, scope.id, scope.createdAt, scope.adapterId, sourceId
     ])).digest("hex") + ".json")
   return Layer.succeed(GitSourceBindings, GitSourceBindings.of({
     read: (scope, sourceId) => bindingIO(() => readBinding(pathFor(scope, sourceId))),
-    remember: (scope, sourceId, binding) => bindingIO(async () => {
+    remember: (scope, sourceId, binding) => guardRuntimeWrite(runtime, bindingIO(async () => {
       const path = pathFor(scope, sourceId)
       const bytes = JSON.stringify(decode(binding)) + "\n"
       if (Buffer.byteLength(bytes) > MaxBindingBytes) throw new Error("Binding too large")
@@ -33,7 +34,7 @@ export const makeGitSourceBindingsLayer = (directory: string) => {
         if (!winner) throw new Error("Binding disappeared")
         return winner
       } finally { await rm(temporary, { force: true }) }
-    })
+    }), bindingFailure)
   }))
 }
 
@@ -57,7 +58,8 @@ const readBinding = async (path: string): Promise<GitSourceBinding | undefined> 
   } finally { await handle.close() }
 }
 const hasCode = (cause: unknown, code: string) => cause instanceof Error && "code" in cause && cause.code === code
+const bindingFailure = () => new GitAttributionError({ reason: "io", message: "Could not read or preserve local Git source attribution. Existing evidence was not replaced." })
 const bindingIO = <A>(run: () => Promise<A>) => Effect.tryPromise({
   try: run,
-  catch: () => new GitAttributionError({ reason: "io", message: "Could not read or preserve local Git source attribution. Existing evidence was not replaced." })
+  catch: bindingFailure
 })

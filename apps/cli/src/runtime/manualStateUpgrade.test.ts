@@ -2,6 +2,8 @@ import { CollectorDaemonProcess } from "@atape/application"
 import { emptyClientConfig } from "@atape/domain"
 import { Effect } from "effect"
 import { createHash, randomUUID } from "node:crypto"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { chmod, lstat, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -13,7 +15,8 @@ import { recoverPendingUpdate } from "./managedUpdates.ts"
 import { acquireProcessLock } from "./processLock.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
-import { managedStateContract, readRuntimeSelection, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
+import { legacyBridgeCaptureContract, readRuntimeSelection, resolveRuntimeEntry, runtimeEntry, runtimeSelectionFile } from "./runtimeSelection.ts"
+import { runtimeWriterFixture } from "./fixtures/runtime-writer-admission.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -67,13 +70,13 @@ import { createUpdateControl } from ${JSON.stringify(new URL("./updateControl.ts
 const paths = defaultNodeClientPaths();
 const token = process.argv[process.argv.indexOf("--daemon-token") + 1];
 await Effect.runPromise(admitCollectorProcess(paths.collectorProcessFile, token));
-await createUpdateControl(paths.atapeHome).assertRuntimeAdmission({ version: ${JSON.stringify(version)}, captureStateContract: ${JSON.stringify(managedStateContract)} });
+await createUpdateControl(paths.atapeHome).assertRuntimeAdmission({ version: ${JSON.stringify(version)}, captureStateContract: ${JSON.stringify(legacyBridgeCaptureContract)} });
 await Effect.runPromise(recordV2CollectorAdmission(paths, token));
 if (process.env.ATAPE_TEST_FAIL_VERSION === ${JSON.stringify(version)}) process.exit(1);
 if (process.env.ATAPE_COLLECTOR_READY_FILE) await writeFile(process.env.ATAPE_COLLECTOR_READY_FILE, JSON.stringify({ pid: process.pid, token: process.env.ATAPE_COLLECTOR_READY_TOKEN }), { mode: 0o600 });
 setInterval(() => {}, 1000);
 `
-  const writePackage = async (entry: string, version: string, captureStateContract = managedStateContract) => {
+  const writePackage = async (entry: string, version: string, captureStateContract = legacyBridgeCaptureContract) => {
     await mkdir(dirname(entry), { recursive: true })
     await writeFile(entry, source(version))
     await writeFile(join(dirname(dirname(entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version, type: "module",
@@ -81,7 +84,7 @@ setInterval(() => {}, 1000);
   }
   await writePackage(bootstrap, "0.5.4")
   const bootstrapIdentity = createHash("sha256").update(await readFile(bootstrap)).digest("hex")
-  const generation = async (version: string, captureStateContract = managedStateContract): Promise<UpdateRuntimeSelection> => {
+  const generation = async (version: string, captureStateContract = legacyBridgeCaptureContract): Promise<UpdateRuntimeSelection> => {
     await writePackage(runtimeEntry(f.home, version), version, captureStateContract)
     return { protocol: updateControlProtocol, version, captureStateContract, bootstrapEntry: bootstrap, bootstrapIdentity, adapters: [] }
   }
@@ -101,13 +104,36 @@ setInterval(() => {}, 1000);
 }
 
 describe("explicit manual state upgrade through its interactive caller Interface", () => {
+  it("rechecks the actual runtime floor under update ownership before materializing legacy state", async () => {
+    const f = await fixture(), admission = await runtimeWriterFixture(f.home)
+    const files = [f.paths.configFile, f.currentFile, f.retainedFile, f.stopFile, f.captureFile]
+    const before = await Promise.all(files.map(path => readFile(path)))
+    await admission.raiseFloor()
+    const entry = join(f.home, "old-manual-caller.mjs")
+    // Native source execution supplies the same identity bindings embedded by
+    // the release build. The packaged entry is verified separately in PTY.
+    await writeFile(entry, `globalThis.__ATAPE_CLI_VERSION__ = "0.5.5";
+globalThis.__ATAPE_CAPTURE_STATE_CONTRACT__ = ${JSON.stringify(legacyBridgeCaptureContract)};
+const { Effect } = await import(${JSON.stringify(import.meta.resolve("effect"))});
+const { prepareManualStateUpgrade } = await import(${JSON.stringify(new URL("./manualStateUpgrade.ts", import.meta.url).href)});
+await Effect.runPromise(prepareManualStateUpgrade(${JSON.stringify(f.paths)}));\n`)
+    await expect(promisify(execFile)(process.execPath, [entry], { timeout: 15_000 })).rejects.toMatchObject({
+      code: 1, stderr: expect.stringContaining("ATape could not safely complete its manual state upgrade.")
+    })
+    expect(await Promise.all(files.map(path => readFile(path)))).toEqual(before)
+    await absent(f.ledgerFile)
+    const release = await acquireUpdateWorker(f.home)
+    expect(release).toBeTypeOf("function")
+    release?.()
+  })
+
   it("materializes the selected Adapter while preserving settings, bindings, Stop and all capture files", async () => {
     const f = await fixture()
     await f.run()
     expect(await f.persisted()).toEqual({ ...f.config, adapters: [f.selected, f.custom] })
     await absent(f.currentFile)
     await absent(f.retainedFile)
-    expect(await f.ledger()).toMatchObject({ phase: "completed", contract: managedStateContract })
+    expect(await f.ledger()).toMatchObject({ phase: "completed", contract: legacyBridgeCaptureContract })
     expect((await lstat(f.ledgerFile)).mode & 0o077).toBe(0)
     expect(await readFile(f.stopFile, "utf8")).toBe(f.stopBytes)
     expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
@@ -116,6 +142,36 @@ describe("explicit manual state upgrade through its interactive caller Interface
     await writeFile(f.paths.collectorProcessFile, JSON.stringify(f.record))
     await f.run() // Subsequent consoles remain available while v2 sync runs.
     expect(await readFile(f.ledgerFile)).toEqual(bytes)
+  })
+
+  it("keeps completed v2 receipts and legacy pointers historical when independent selection changes contract", async () => {
+    const f = await controlFixture()
+    await f.run()
+    const receipt = await readFile(f.ledgerFile)
+    const config = await readFile(f.paths.configFile)
+    const bridge = { ...f.current, stateContract: legacyBridgeCaptureContract, bootstrapEntry: f.bootstrap }
+    await writeFile(f.currentFile, JSON.stringify(bridge))
+    await writeFile(f.retainedFile, JSON.stringify({ ...bridge, version: "0.5.2", adapters: [] }))
+    const anchors = await Promise.all([readFile(f.currentFile), readFile(f.retainedFile)])
+    const next = await f.generation("1.0.0", "atape.client.future-capture.v3")
+    const ticket = await f.control.prepare({ next, previous: f.previous })
+    await f.control.begin(ticket)
+    await f.control.fence(ticket)
+    await f.control.complete(ticket)
+
+    await f.run()
+    await Effect.runPromise(assertManualStateUpgradeReady(f.paths))
+    expect(await readFile(f.ledgerFile)).toEqual(receipt)
+    expect(await f.ledger()).toMatchObject({ phase: "completed", contract: "atape.client.v3-capture.v2" })
+    expect(await readRuntimeSelection(f.home)).toEqual(bridge)
+    expect(await Promise.all([readFile(f.currentFile), readFile(f.retainedFile)])).toEqual(anchors)
+    expect(await readFile(f.paths.configFile)).toEqual(config)
+    expect(await readFile(f.stopFile, "utf8")).toBe(f.stopBytes)
+    expect(await readFile(f.captureFile)).toEqual(f.captureBytes)
+
+    // A historical receipt cannot be relabelled with the effective contract.
+    await writeFile(f.ledgerFile, JSON.stringify({ ...JSON.parse(receipt.toString("utf8")), contract: next.captureStateContract }), { mode: 0o600 })
+    await expect(Effect.runPromise(assertManualStateUpgradeReady(f.paths))).rejects.toMatchObject({ reason: "metadata" })
   })
 
   it("does not restore an overlay invalidated by a deliberate local Adapter replacement", async () => {
@@ -195,7 +251,7 @@ setInterval(() => {}, 1000);
     try {
       const started = await Effect.runPromise(daemon.start({ intervalMs: 30_000, concurrency: 1 }))
       const proofFile = join(f.home, "updates", "v2-collector-admission.json")
-      await expect.poll(() => readFile(proofFile, "utf8").then(JSON.parse).catch(() => undefined), { timeout: 15_000 }).toMatchObject({ pid: started.pid, contract: managedStateContract })
+      await expect.poll(() => readFile(proofFile, "utf8").then(JSON.parse).catch(() => undefined), { timeout: 15_000 }).toMatchObject({ pid: started.pid, contract: legacyBridgeCaptureContract })
       await absent(f.ledgerFile)
       await f.run()
       expect((await Effect.runPromise(daemon.inspect()))?.pid).toBe(started.pid)
@@ -217,7 +273,7 @@ setInterval(() => {}, 1000);
     expect(release).toBeTypeOf("function")
     try {
       const original = await Effect.runPromise(daemon.start({ intervalMs: 30_000, concurrency: 1 }))
-      await expect.poll(f.readProof, { timeout: 15_000 }).toMatchObject({ pid: original.pid, contract: managedStateContract })
+      await expect.poll(f.readProof, { timeout: 15_000 }).toMatchObject({ pid: original.pid, contract: legacyBridgeCaptureContract })
       await absent(f.currentFile)
       await absent(f.retainedFile)
       await absent(f.ledgerFile)
@@ -316,7 +372,7 @@ setInterval(() => {}, 1000);
         await writeFile(f.maintenanceFile, JSON.stringify(f.startingGate))
         if (kind === "v1 current") await writeFile(f.currentFile, JSON.stringify(f.current))
         if (kind === "v1 pending") await writeFile(join(f.home, "updates", "pending.json"), JSON.stringify({ next: f.current }))
-        if (kind === "manual migration") await writeFile(f.ledgerFile, JSON.stringify({ protocol: "atape.manual-state-upgrade.v1", contract: managedStateContract,
+        if (kind === "manual migration") await writeFile(f.ledgerFile, JSON.stringify({ protocol: "atape.manual-state-upgrade.v1", contract: legacyBridgeCaptureContract,
           home: f.home, phase: "pending", configFile: f.paths.configFile, processFile: f.paths.collectorProcessFile }), { mode: 0o600 })
         await expect(Effect.runPromise(recordV2CollectorAdmission(f.paths, kind === "foreign token" ? randomUUID() : f.record.token)))
           .rejects.toMatchObject({ reason: kind === "foreign token" ? "running" : "metadata" })
@@ -347,11 +403,11 @@ setInterval(() => {}, 1000);
 
   it("leaves an already selected v2 runtime to normal update recovery", async () => {
     const f = await fixture(false)
-    await writeFile(f.currentFile, JSON.stringify({ ...f.current, stateContract: managedStateContract }))
-    await writeFile(join(f.home, "updates", "pending.json"), JSON.stringify({ next: { ...f.current, stateContract: managedStateContract } }))
+    await writeFile(f.currentFile, JSON.stringify({ ...f.current, stateContract: legacyBridgeCaptureContract }))
+    await writeFile(join(f.home, "updates", "pending.json"), JSON.stringify({ next: { ...f.current, stateContract: legacyBridgeCaptureContract } }))
     await writeFile(f.paths.collectorProcessFile, JSON.stringify(f.record))
     await f.run()
-    expect((await readRuntimeSelection(f.home))?.stateContract).toBe(managedStateContract)
+    expect((await readRuntimeSelection(f.home))?.stateContract).toBe(legacyBridgeCaptureContract)
     await absent(f.ledgerFile)
   })
 

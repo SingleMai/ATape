@@ -2,10 +2,9 @@ import { CollectorDeviceGateway, officialSources, scopeCollectorReport } from "@
 import { emptyCollectorRunState, type CollectorRunState, type ClientConfig, type CLIDeviceMetadata } from "@atape/domain"
 import { hostname, platform, arch } from "node:os"
 import { Effect, Layer, Semaphore } from "effect"
-import { cliVersion } from "../version.ts"
+import { cliVersion, captureStateContract } from "../version.ts"
 import { AuthenticatedHTTPClient } from "./authenticatedHTTPClient.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
-import { managedStateContract } from "./runtimeSelection.ts"
 import { updateControlProtocol } from "./updateControl.ts"
 
 export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<ClientConfig, unknown>,
@@ -13,7 +12,7 @@ export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<Cl
   readStatus: Effect.Effect<CollectorRunState, unknown> = Effect.succeed(emptyCollectorRunState())) => Layer.effect(CollectorDeviceGateway, Effect.gen(function*() {
   const http = yield* AuthenticatedHTTPClient
   const lock = yield* Semaphore.make(1)
-  const discovery = createReleaseDiscovery({ home, runtimeVersion: cliVersion, captureStateContract: managedStateContract,
+  const discovery = createReleaseDiscovery({ home, runtimeVersion: cliVersion, captureStateContract,
     updateControlProtocol, fetchMetadata: fetchReleases })
   let versions: Record<string, string> = {}
   let checkedAt: string | undefined

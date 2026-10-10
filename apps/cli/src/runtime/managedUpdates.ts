@@ -8,6 +8,7 @@ import { spawn } from "node:child_process"
 import { isDeepStrictEqual } from "node:util"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Schema } from "effect"
+import { captureStateContract } from "../version.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
@@ -20,7 +21,7 @@ import { assertNoPendingManualStateUpgrade } from "./manualStateUpgrade.ts"
 import { createUpdateControl, UpdateRuntimeSelection, updateControlProtocol,
   type UpdateControlTicket, type UpdateRuntimeSelection as ControlSelection } from "./updateControl.ts"
 export { acquireUpdateWorker } from "./updateOwnership.ts"
-import { RuntimeSelection, atomicJSON, decodeRuntimeSelection, managedStateContract, missing, readBoundedJSON,
+import { RuntimeSelection, atomicJSON, decodeRuntimeSelection, legacyBridgeCaptureContract, missing, readBoundedJSON,
   applyRuntimeSelection, readEffectiveRuntimeSelection, readRuntimeSelection, resolveRuntimeEntry, runtimeEntry, selectRuntime, selectedBootstrap, updateDirectory,
   type RuntimeSelection as Selection } from "./runtimeSelection.ts"
 
@@ -128,7 +129,7 @@ export const protectedRuntimeSlots = async (home: string): Promise<ReadonlyArray
 export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFile: string, currentVersion: string,
   environment: NodeJS.ProcessEnv = process.env, fetchMetadata: typeof fetch = globalThis.fetch) => {
   const discovery = createReleaseDiscovery({ home: paths.atapeHome, runtimeVersion: currentVersion,
-    captureStateContract: managedStateContract, updateControlProtocol, fetchMetadata })
+    captureStateContract, updateControlProtocol, fetchMetadata })
   let ownership: Promise<string | undefined> | undefined
   const bootstrap = () => {
     // Deduplicate concurrent probes only. npm/path failures and changes in
@@ -156,6 +157,10 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       target: () => nodeEffect("release", signal => discovery.latest({ cached: false, signal })),
       record: input => nodeEffect("state", () => atomicJSON(scheduleFile(paths.atapeHome), input)),
       prepare: (bundle, adapters) => Effect.gen(function*() {
+        // This prepared/pending format is the historical v2 plan. A future
+        // contract needs its own declared migration plan, never a v2 relabel.
+        if (captureStateContract !== legacyBridgeCaptureContract) return yield* updateError("unsupported",
+          "This runtime needs a capture migration plan before preparing managed updates.")
         const requested = yield* nodeEffect("release", async () => decodeReleaseBundle(bundle))
         const version = requested.version
         yield* nodeEffect("state", async () => {
@@ -211,7 +216,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
             version, updatedAt: new Date().toISOString() } })
         }
         const key = randomUUID()
-        const selection: Selection = { protocol: "atape.runtime.v1", stateContract: managedStateContract,
+        const selection: Selection = { protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract,
           version, bootstrapEntry: original, adapters: replacements,
           bootstrapIdentity: installedBootstrap.bootstrapIdentity }
         const candidateConfig = { ...baseline, adapters: baseline.adapters.map(adapter =>
@@ -364,10 +369,10 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
 
 const bootstrapSelection = async (original: string): Promise<Selection & { readonly bootstrapIdentity: string }> => {
   const manifest = Schema.decodeUnknownSync(Schema.Struct({ name: Schema.Literal("@atape/cli"), version: Schema.String,
-    atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.Literal(managedStateContract) })
+    atapeRuntime: Schema.Struct({ protocol: Schema.Literal("atape.runtime.v1"), stateContract: Schema.Literal(legacyBridgeCaptureContract) })
   }))(await readBoundedJSON(join(dirname(dirname(original)), "package.json")))
   if (!isStableReleaseVersion(manifest.version)) throw new Error("The installed npm bootstrap must have a stable release version.")
-  return { protocol: "atape.runtime.v1", stateContract: managedStateContract, version: manifest.version,
+  return { protocol: "atape.runtime.v1", stateContract: legacyBridgeCaptureContract, version: manifest.version,
     bootstrapEntry: original, bootstrapIdentity: createHash("sha256").update(await readFile(original)).digest("hex"), adapters: [] }
 }
 
@@ -437,7 +442,7 @@ const validateCLI = async (directory: string, version: string, environment: Node
   const manifest = await readBoundedJSON(join(root, "package.json")) as Record<string, unknown>
   const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown } | undefined
   if (manifest.name !== "@atape/cli" || manifest.version !== version ||
-    contract?.protocol !== "atape.runtime.v1" || contract.stateContract !== managedStateContract ||
+    contract?.protocol !== "atape.runtime.v1" || contract.stateContract !== captureStateContract ||
     bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || contract.releaseCatalogProtocol !== updateCatalogProtocol)) {
     throw new Error("The selected CLI does not support compatible managed state.")
   }

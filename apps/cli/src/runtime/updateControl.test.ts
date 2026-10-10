@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto"
 import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { atomicJSON, runtimeEntry } from "./runtimeFiles.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
 
@@ -37,6 +37,77 @@ const fixture = async () => {
 }
 
 describe("independent update control through its durable caller Interface", () => {
+  it("finishes an admitted write before advancing a same-contract reader floor", async () => {
+    const f = await fixture(), control = f.control(), order: string[] = []
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket)
+    const release = await control.acquireRuntimeWrite(f.previous)
+    let fenced = false
+    const fence = f.control().fence(ticket).then(() => { fenced = true; order.push("floor") })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      expect(fenced).toBe(false)
+      expect(await f.readLedger()).toMatchObject({ phase: "begun" })
+      await writeFile(join(f.home, "admitted-write.json"), "old writer committed\n")
+      order.push("write")
+    } finally { release() }
+    await fence
+    expect(order).toEqual(["write", "floor"])
+    await expect(f.control().acquireRuntimeWrite(f.previous, 0)).rejects.toMatchObject({ reason: "admission" })
+    const admitted = await f.control().acquireRuntimeWrite(f.next, 0)
+    admitted(); admitted()
+  })
+
+  it("rejects a writer after the floor wins without retaining its rejected lease", async () => {
+    const f = await fixture(), control = f.control()
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket)
+    await control.fence(ticket)
+    await expect(f.control().acquireRuntimeWrite(f.previous, 0)).rejects.toMatchObject({ reason: "admission" })
+    await expect(f.control().acquireRuntimeWrite({ ...f.next, version: "not-a-version" }, 0)).rejects.toMatchObject({ reason: "metadata" })
+    const release = await f.control().acquireRuntimeWrite(f.next, 0)
+    release()
+    // Cleanup may close an old handle after its logical admission is revoked.
+    const cleanup = await f.control().acquireRuntimeWriteBarrier(0)
+    cleanup()
+  })
+
+  it("rechecks conditional selection after waiting for an in-flight write and releases a failed fence", async () => {
+    const f = await fixture(), control = f.control()
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket)
+    const release = await control.acquireRuntimeWrite(f.previous), later = await f.generation("0.5.6")
+    const fence = f.control().fence(ticket)
+    const rejected = expect(fence).rejects.toMatchObject({ reason: "conflict" })
+    try { await atomicJSON(f.pointer, later) } finally { release() }
+    await rejected
+    expect(await f.control().readSelection()).toEqual(later)
+    expect(await f.readLedger()).toMatchObject({ phase: "begun", forwardOnly: false })
+    const cleanup = await f.control().acquireRuntimeWriteBarrier(0)
+    cleanup()
+  })
+
+  it("copies a verified replacement outside the write barrier but waits to advance its reader floor", async () => {
+    const f = await fixture(), control = f.control()
+    const ticket = await control.prepare({ next: f.next, previous: f.previous })
+    await control.begin(ticket)
+    await control.complete(ticket)
+    const release = await control.acquireRuntimeWrite(f.next)
+    let rebound = false
+    const replacement = (async () => { await f.replaceBootstrap("0.5.6"); return f.control().rebindBootstrap() })()
+      .then(result => { rebound = true; return result })
+    try {
+      await vi.waitFor(async () => expect(await readFile(runtimeEntry(f.home, "0.5.6"), "utf8")).toContain("ATape 0.5.6"))
+      expect(rebound).toBe(false)
+      expect(await f.readLedger()).toMatchObject({ phase: "completed", target: { version: "0.5.5" } })
+    } finally { release() }
+    const target = await replacement
+    expect(target.version).toBe("0.5.6")
+    await expect(f.control().acquireRuntimeWrite(f.next, 0)).rejects.toMatchObject({ reason: "admission" })
+    const admitted = await f.control().acquireRuntimeWrite(target, 0)
+    admitted()
+  })
+
   it("starts without a selection and preparation does not select or reject the historical compatible fallback", async () => {
     const f = await fixture(), control = f.control()
     expect(await control.readSelection()).toBeUndefined()

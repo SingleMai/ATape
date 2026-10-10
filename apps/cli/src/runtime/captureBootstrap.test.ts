@@ -8,6 +8,7 @@ import { CaptureJournals, CollectorStateStore } from "@atape/application"
 import { afterEach, describe, expect, it } from "vitest"
 import { makeCaptureJournalsLayer } from "./captureBootstrap.ts"
 import { makeCollectorStateLayer } from "./collectorLayers.ts"
+import { runtimeWriterFixture } from "./fixtures/runtime-writer-admission.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -39,6 +40,42 @@ const runChild = (fixture: string, stateFile: string) => new Promise<{ installat
 })
 
 describe("Collector capture bootstrap", () => {
+  it("refuses first bootstrap below the runtime floor before creating installation or capture state", async () => {
+    const f = await fixture(), admission = await runtimeWriterFixture(f.root)
+    await admission.raiseFloor()
+    await expect(Effect.runPromise(Effect.scoped(f.open()).pipe(Effect.provide(
+      makeCaptureJournalsLayer(f.stateFile, admission.runtime))))).rejects.toMatchObject({ reason: "io" })
+    for (const path of [f.stateFile, `${f.stateFile}.lock.sqlite`, `${f.stateFile}.capture-installation.json`, `${f.stateFile}.captures`])
+      await expect(stat(path)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+  it("preserves existing binding and journal bytes when an old factory tries to add an account after the floor", async () => {
+    const f = await fixture(); await f.initialize()
+    const admission = await runtimeWriterFixture(f.root)
+    const paths = [f.stateFile, `${f.stateFile}.capture-installation.json`, ...await f.files()]
+    const before = await Promise.all(paths.map(path => readFile(path)))
+    await admission.raiseFloor()
+    const open = (runtime = admission.runtime) => Effect.runPromise(Effect.scoped(f.open({ ...account, userId: "new-user" }))
+      .pipe(Effect.provide(makeCaptureJournalsLayer(f.stateFile, runtime))))
+    await expect(open()).rejects.toMatchObject({ reason: "io" })
+    expect(await Promise.all(paths.map(path => readFile(path)))).toEqual(before)
+    expect(await f.files()).toHaveLength(2)
+    await open(admission.nextRuntime)
+    expect((await f.files()).filter(path => path.endsWith(".sqlite"))).toHaveLength(2)
+  })
+  it("rechecks bootstrap writes when the floor advances while waiting for the existing Collector lock", async () => {
+    const f = await fixture(); await f.initialize()
+    const admission = await runtimeWriterFixture(f.root), paths = [f.stateFile, `${f.stateFile}.capture-installation.json`, ...await f.files()]
+    const before = await Promise.all(paths.map(path => readFile(path))), blocker = new DatabaseSync(`${f.stateFile}.lock.sqlite`)
+    blocker.exec("BEGIN EXCLUSIVE")
+    let release = () => { blocker.exec("COMMIT"); blocker.close(); release = () => undefined }
+    const pending = Effect.runPromise(Effect.scoped(f.open({ ...account, userId: "new-user" })).pipe(Effect.provide(
+      makeCaptureJournalsLayer(f.stateFile, admission.runtime))))
+    await new Promise(resolve => setTimeout(resolve, 75))
+    try { await admission.raiseFloor() } finally { release() }
+    await expect(pending).rejects.toMatchObject({ reason: "io" })
+    expect(await Promise.all(paths.map(path => readFile(path)))).toEqual(before)
+    expect(await f.files()).toHaveLength(2)
+  })
   it("waits for a competing exclusive lock during connection initialization without replacing installation identity", async () => {
     const f = await fixture(), initial = await f.initialize()
     const blocker = new DatabaseSync(`${f.stateFile}.lock.sqlite`)
