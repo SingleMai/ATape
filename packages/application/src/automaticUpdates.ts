@@ -5,7 +5,7 @@ import { automaticUpdatesEnabled, inspectClient } from "./clientManagement.ts"
 import { newer, stableVersion } from "./releaseVersion.ts"
 
 export class AutomaticUpdateError extends Schema.TaggedError<AutomaticUpdateError>()("AutomaticUpdateError", {
-  reason: Schema.Literals(["unsupported", "release", "prepare", "handoff", "state"]),
+  reason: Schema.Literals(["unsupported", "release", "prepare", "handoff", "state", "cooldown"]),
   message: Schema.String
 }) {}
 
@@ -21,7 +21,7 @@ export class AutomaticUpdatePlatform extends Context.Service<AutomaticUpdatePlat
   supported(): Effect.Effect<boolean, AutomaticUpdateError>
   schedule(): Effect.Effect<{ readonly nextCheckAt: number; readonly failures: number }, AutomaticUpdateError>
   target(): Effect.Effect<ReleaseBundle, AutomaticUpdateError>
-  prepare(bundle: ReleaseBundle, adapters: ReadonlyArray<AdapterInstallation>): Effect.Effect<PreparedAutomaticUpdate, AutomaticUpdateError, Scope.Scope>
+  prepare(bundle: ReleaseBundle, adapters: ReadonlyArray<AdapterInstallation>, automatic: boolean): Effect.Effect<PreparedAutomaticUpdate, AutomaticUpdateError, Scope.Scope>
   activate(prepared: PreparedAutomaticUpdate, automatic: boolean): Effect.Effect<void, AutomaticUpdateError>
   record(input: { readonly nextCheckAt: number; readonly failures: number; readonly version?: string; readonly failure?: string }): Effect.Effect<void, AutomaticUpdateError>
   launch(): Effect.Effect<void, AutomaticUpdateError>
@@ -79,16 +79,19 @@ export const runAutomaticUpdates = Effect.fn("AutomaticUpdates.run")((current: s
     // attempt ineligible rather than silently producing a mixed bundle.
     if (!newer(current, version) && !adapters.some(adapter => !stableVersion(adapter.version) || newer(adapter.version, version)) &&
       (newer(version, current) || adapters.some(adapter => adapter.version !== version))) {
-      const prepared = yield* platform.prepare(bundle, adapters)
-      const matches = yield* Effect.try({ try: () => releaseBundleFingerprint(decodeReleaseBundle(prepared.bundle)) === fingerprint,
-        catch: () => new AutomaticUpdateError({ reason: "prepare", message: "The prepared update bundle is invalid." }) })
-      if (!matches || prepared.key.length === 0) {
-        return yield* new AutomaticUpdateError({ reason: "prepare", message: "The prepared update differs from the selected release." })
+      const prepared = yield* platform.prepare(bundle, adapters, !force).pipe(Effect.catch(error =>
+        !force && error.reason === "cooldown" ? Effect.succeed(undefined) : Effect.fail(error)))
+      if (prepared) {
+        const matches = yield* Effect.try({ try: () => releaseBundleFingerprint(decodeReleaseBundle(prepared.bundle)) === fingerprint,
+          catch: () => new AutomaticUpdateError({ reason: "prepare", message: "The prepared update bundle is invalid." }) })
+        if (!matches || prepared.key.length === 0) {
+          return yield* new AutomaticUpdateError({ reason: "prepare", message: "The prepared update differs from the selected release." })
+        }
+        const latest = yield* readSettings
+        if (!latest.toolsConfigured || !force && !automaticUpdatesEnabled(latest)) return { updated: false }
+        updated = yield* platform.activate(prepared, !force).pipe(Effect.as(true), Effect.catch(error =>
+          !force && error.reason === "cooldown" ? Effect.succeed(false) : Effect.fail(error)))
       }
-      const latest = yield* readSettings
-      if (!latest.toolsConfigured || !force && !automaticUpdatesEnabled(latest)) return { updated: false }
-      yield* platform.activate(prepared, !force)
-      updated = true
     }
     const installed = updated ? version : current
     yield* platform.record({ nextCheckAt: (yield* Clock.currentTimeMillis) + 24 * Hour + (yield* Random.next) * 6 * Hour,

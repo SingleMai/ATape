@@ -116,3 +116,7 @@ cross-contract bootstrap before setup/authentication, data migrations and Server
 prerequisites, independent periodic OS wakeup, and persistent failed-bundle
 isolation remain subsequent increments. Transport failure alone cannot permanently
 quarantine a release. Native reboot/power-loss acceptance remains separate.
+
+[ADR-0112](0112-failed-candidate-cooldown.md) adds finite, persisted cooldown
+after a narrowly classified startup failure and confirmed rollback. It does not
+permanently classify a bundle as bad code.

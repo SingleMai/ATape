@@ -1,13 +1,13 @@
 import { AdapterPackageError, AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CollectorDaemonProcess, runAutomaticUpdates,
   type PreparedAutomaticUpdate } from "@atape/application"
-import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releasePackageNames, releaseBundleSection,
+import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releasePackageNames, releaseBundleSection, releaseBundleFingerprint,
   type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { adapterPackageRoot } from "./adapterInstallation.ts"
 import { isCollectorMaintenancePending, makeNodeCollectorDaemonLayer } from "./collectorDaemonLayers.ts"
 import { defaultNodeClientPaths } from "./clientPaths.ts"
@@ -16,7 +16,7 @@ import { atomicJSON, managedStateContract, readEffectiveRuntimeSelection, readRu
 import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
 const cliSource = (version: string) => `import { writeFileSync } from "node:fs";
 if (process.argv.includes("--version")) console.log("ATape ${version}");
@@ -79,7 +79,7 @@ else if (args[0]==="install") {
       teamId: "team", teamSlug: "team", teamName: "Team", name: "Project", type: "directory", path: root,
       createdAt: "2026-10-09T00:00:00.000Z" }] }
   const behavior = { missingPackage: "", invalidFactory: false, targetVersion: "0.5.3", corruptArtifact: false,
-    changedDescriptor: false }
+    changedDescriptor: false, catalogRevision: 0, otherFamily: false, offline: false }
   const artifactBytes = (name: string, version: string) => Buffer.from(JSON.stringify({ name, version }))
   const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-bundle.v1", version,
     captureStateContract: managedStateContract, updateControlProtocol,
@@ -111,13 +111,15 @@ else if (args[0]==="install") {
   }))
   const fetchMetadata: typeof fetch = async url => {
     const address = String(url); fetches.push(address)
+    if (behavior.offline) throw new TypeError("Fixture transport unavailable")
     if (address.startsWith("https://api.github.com/")) {
       const tag = decodeURIComponent(new URL(address).pathname.split("/").at(-1)!)
       if (tag === "atape-update-catalog-v1") {
         const advertised = bundle(behavior.targetVersion)
         const incomplete = { ...advertised, packages: advertised.packages.filter(item => item.name !== behavior.missingPackage) }
         return Response.json({ tag_name: tag, draft: false, prerelease: true, published_at: "2026-10-01T00:00:00.000Z",
-          body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: Number(behavior.targetVersion.split(".").at(-1)) + 1, bundles: [incomplete] }) })
+          body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: behavior.catalogRevision || Number(behavior.targetVersion.split(".").at(-1)) + 1,
+            bundles: [incomplete, ...(behavior.otherFamily ? [{ ...bundle("9.0.0"), captureStateContract: "capture.future" }] : [])] }) })
       }
       const descriptor = bundle(tag.slice(1))
       const changed = behavior.changedDescriptor ? { ...descriptor, packages: descriptor.packages.map((item, index) => index === 0
@@ -133,15 +135,19 @@ else if (args[0]==="install") {
   const layer = (path = entry, version = "0.5.2") => makeAutomaticUpdatePlatformLayer(paths, path, version, environment, fetchMetadata).pipe(Layer.provide(packages))
   const run = <A, E>(effect: Effect.Effect<A, E, AutomaticUpdatePlatform>, path = entry, version = "0.5.2", signal?: AbortSignal) =>
     Effect.runPromise(effect.pipe(Effect.provide(layer(path, version))), signal ? { signal } : undefined)
-  const prepare = (version = "0.5.3", selected: ReadonlyArray<AdapterInstallation> = adapters, signal?: AbortSignal) => {
+  const prepare = (version = "0.5.3", selected: ReadonlyArray<AdapterInstallation> = adapters, signal?: AbortSignal, automatic = true) => {
     behavior.targetVersion = version
-    return run(Effect.scoped(AutomaticUpdatePlatform.use(platform => platform.prepare(bundle(version), selected))), entry, "0.5.2", signal)
+    return run(Effect.scoped(AutomaticUpdatePlatform.use(platform => platform.prepare(bundle(version), selected, automatic))), entry, "0.5.2", signal)
   }
   const activate = (prepared: PreparedAutomaticUpdate, automatic = true) => run(AutomaticUpdatePlatform.use(platform => platform.activate(prepared, automatic)))
   const daemonLayer = makeNodeCollectorDaemonLayer(paths, () => resolveRuntimeEntry(paths.atapeHome, entry), environment)
   const daemonRun = <A, E>(effect: Effect.Effect<A, E, CollectorDaemonProcess>) => Effect.runPromise(effect.pipe(Effect.provide(daemonLayer)))
   const daemon = await daemonRun(CollectorDaemonProcess)
+  const cooldowns = () => readFile(join(paths.atapeHome, "updates", "candidate-cooldowns.json"), "utf8")
+    .then(value => JSON.parse(value).candidates as { bundle: ReleaseBundle; failures: number; failedAt: number; retryAfter: number; stage: string }[])
+    .catch(cause => { if (cause.code === "ENOENT") return []; throw cause })
   return { root, paths, entry, calls, environment, adapters, adapterSpecs, config, behavior, bundle, fetches, run, prepare, activate, daemon, daemonRun,
+    cooldowns,
     raw: async () => JSON.parse(await readFile(paths.configFile, "utf8")) as ClientConfig,
     selected: () => Effect.runPromise(readSelectedClientConfig(paths)),
     save: (next: ClientConfig) => atomicJSON(paths.configFile, next),
@@ -149,6 +155,164 @@ else if (args[0]==="install") {
 }
 
 describe.skipIf(process.platform === "win32")("managed update Node Adapter", () => {
+  it.each([false, true])("persists candidate cooldown after confirmed rollback (independent=%s) and never pauses for stale preparation", async control => {
+    const f = await fixture({ control }), prepared = await f.prepare(), stale = await f.prepare()
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.environment.MANAGED_TEST_FAIL_READY = "0.5.3"
+      await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+      const [record] = await f.cooldowns()
+      expect(record).toMatchObject({ failures: 1, stage: "candidate-readiness" })
+      expect(releaseBundleFingerprint(record!.bundle)).toBe(releaseBundleFingerprint(f.bundle("0.5.3")))
+      expect(record!.retryAfter - record!.failedAt).toBe(24 * 60 * 60 * 1000)
+      expect(await needsUpdateRecovery(f.paths)).toBe(false)
+      const fallback = await f.daemonRun(f.daemon.inspect())
+      delete f.environment.MANAGED_TEST_FAIL_READY
+      const installs = f.adapterSpecs.length, fetches = f.fetches.length
+      // Each call constructs a fresh Adapter, proving this is durable state.
+      await expect(f.prepare()).rejects.toMatchObject({ reason: "cooldown" })
+      await expect(f.activate(stale)).rejects.toMatchObject({ reason: "cooldown" })
+      expect(f.adapterSpecs).toHaveLength(installs)
+      expect(f.fetches).toHaveLength(fetches)
+      expect((await f.daemonRun(f.daemon.inspect()))?.pid).toBe(fallback?.pid)
+      expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  }, 20_000)
+
+  it("keeps discovering during cooldown, ignores unrelated catalog revision and admits a newer bundle", async () => {
+    const f = await fixture({ control: true })
+    const store = Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(f.config).pipe(Effect.map(result => result.value)) }))
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.environment.MANAGED_TEST_FAIL_READY = "0.5.3"
+      await expect(f.activate(await f.prepare())).rejects.toMatchObject({ reason: "handoff" })
+      const fallback = await f.daemonRun(f.daemon.inspect()), installs = f.adapterSpecs.length
+      f.behavior.catalogRevision = 20; f.behavior.otherFamily = true
+      expect(await f.run(runAutomaticUpdates("0.5.2").pipe(Effect.provide(store))))
+        .toEqual({ updated: false, version: "0.5.2" })
+      expect(f.fetches.at(-1)).toContain("atape-update-catalog-v1")
+      expect(f.adapterSpecs).toHaveLength(installs)
+      expect((await f.daemonRun(f.daemon.inspect()))?.pid).toBe(fallback?.pid)
+      expect(await readFile(join(f.paths.atapeHome, "updates", "state.json"), "utf8").then(JSON.parse))
+        .toMatchObject({ failures: 0, version: "0.5.2" })
+      delete f.environment.MANAGED_TEST_FAIL_READY
+      f.behavior.catalogRevision = 21
+      const newer = await f.prepare("0.5.4")
+      await f.activate(newer)
+      expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.4")
+      expect((await f.cooldowns()).map(record => record.bundle.version)).toEqual(["0.5.3"])
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  }, 20_000)
+
+  it("permits explicit retry with auto-off and Stop, and clears only the successful bundle", async () => {
+    const f = await fixture(), prepared = await f.prepare()
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.environment.MANAGED_TEST_FAIL_READY = "0.5.3"
+      await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+      await f.daemonRun(f.daemon.stop())
+      await f.save({ ...f.config, autoUpdateEnabled: false })
+      delete f.environment.MANAGED_TEST_FAIL_READY
+      const retry = await f.prepare("0.5.3", f.adapters, undefined, false)
+      expect(await f.cooldowns()).toHaveLength(1)
+      await f.activate(retry, false)
+      expect(await f.cooldowns()).toEqual([])
+      expect((await f.raw()).autoUpdateEnabled).toBe(false)
+      expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
+      expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.3")
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  }, 15_000)
+
+  it("expires and escalates repeated candidate cooldown up to seven days without changing process budgets", async () => {
+    const f = await fixture({ control: true }), clock = vi.spyOn(Date, "now")
+    let now = Date.now()
+    clock.mockImplementation(() => now)
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.environment.MANAGED_TEST_FAIL_READY = "0.5.3"
+      for (const [index, hours] of [24, 72, 168, 168].entries()) {
+        const prepared = await f.prepare()
+        await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+        const [record] = await f.cooldowns()
+        expect(record).toMatchObject({ failures: index + 1, failedAt: now, retryAfter: now + hours * 60 * 60 * 1000 })
+        await expect(f.prepare()).rejects.toMatchObject({ reason: "cooldown" })
+        now = record!.retryAfter
+      }
+      delete f.environment.MANAGED_TEST_FAIL_READY
+      await f.activate(await f.prepare())
+      expect(await f.cooldowns()).toEqual([])
+    } finally { clock.mockRestore(); await f.daemonRun(f.daemon.stop()) }
+  }, 30_000)
+
+  it.each(["transport", "prepare", "configuration"])("never gives %s failure a candidate cooldown", async failure => {
+    const f = await fixture()
+    if (failure === "transport") {
+      f.behavior.offline = true
+      await expect(f.prepare()).rejects.toMatchObject({ reason: "release" })
+      f.behavior.offline = false
+    } else if (failure === "prepare") {
+      f.environment.MANAGED_TEST_FAIL_NPM = "true"
+      await expect(f.prepare()).rejects.toMatchObject({ reason: "prepare" })
+      delete f.environment.MANAGED_TEST_FAIL_NPM
+    } else {
+      const prepared = await f.prepare()
+      await f.save({ ...f.config, autoUpdateEnabled: false })
+      await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
+      await f.save(f.config)
+    }
+    expect(await f.cooldowns()).toEqual([])
+    await expect(f.prepare()).resolves.toHaveProperty("key")
+  })
+
+  it.each(["invalid JSON", "protocol", "unknown field", "unknown bundle field", "duration", "duplicate", "capacity", "size"])("fails closed before automatic or manual preparation on corrupt cooldown state: %s", async kind => {
+    const f = await fixture()
+    const failedAt = Date.now(), record = { bundle: f.bundle("0.5.3"), failures: 1, failedAt,
+      retryAfter: failedAt + 24 * 60 * 60 * 1000, stage: "candidate-readiness" }
+    const state = { protocol: "atape.candidate-cooldown.v1", candidates: [record] }
+    const content = kind === "invalid JSON" ? "invalid JSON" : JSON.stringify(
+      kind === "protocol" ? { ...state, protocol: "unknown" } :
+      kind === "unknown field" ? { ...state, unexpected: true } :
+      kind === "unknown bundle field" ? { ...state, candidates: [{ ...record, bundle: { ...record.bundle, unexpected: true } }] } :
+      kind === "duration" ? { ...state, candidates: [{ ...record, retryAfter: failedAt + 1 }] } :
+      kind === "duplicate" ? { ...state, candidates: [record, record] } :
+      kind === "capacity" ? { ...state, candidates: Array.from({ length: 65 }, (_, index) => ({ ...record, bundle: f.bundle(`1.0.${index}`) })) } :
+      { ...state, padding: "x".repeat(4 * 1024 * 1024) })
+    await atomicJSON(join(f.paths.atapeHome, "updates", "candidate-cooldowns.json"), {})
+    await writeFile(join(f.paths.atapeHome, "updates", "candidate-cooldowns.json"), content)
+    await expect(f.prepare()).rejects.toMatchObject({ reason: "state" })
+    await expect(f.prepare("0.5.3", f.adapters, undefined, false)).rejects.toMatchObject({ reason: "state" })
+    expect(await f.npmCalls()).toEqual([])
+    expect(f.adapterSpecs).toEqual([])
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("validates cooldown metadata before a manual activation can change selection", async () => {
+    const f = await fixture(), prepared = await f.prepare()
+    await atomicJSON(join(f.paths.atapeHome, "updates", "candidate-cooldowns.json"), { protocol: "unknown", candidates: [] })
+    await expect(f.activate(prepared, false)).rejects.toMatchObject({ reason: "state" })
+    expect(await readEffectiveRuntimeSelection(f.paths.atapeHome)).toBeUndefined()
+    expect(await needsUpdateRecovery(f.paths)).toBe(false)
+  })
+
+  it("retains the latest failure within the 64-record bound even when older timestamps are ahead", async () => {
+    const f = await fixture(), failedAt = Date.now() + 60_000
+    await atomicJSON(join(f.paths.atapeHome, "updates", "candidate-cooldowns.json"), {
+      protocol: "atape.candidate-cooldown.v1", candidates: Array.from({ length: 64 }, (_, index) => ({
+        bundle: f.bundle(`1.0.${index}`), failures: 1, failedAt, retryAfter: failedAt + 24 * 60 * 60 * 1000,
+        stage: "candidate-readiness" })) })
+    try {
+      await f.daemonRun(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      f.environment.MANAGED_TEST_FAIL_READY = "0.5.3"
+      await expect(f.activate(await f.prepare())).rejects.toMatchObject({ reason: "handoff" })
+      const records = await f.cooldowns()
+      expect(records).toHaveLength(64)
+      expect(records[0]).toMatchObject({ failures: 1 })
+      expect(releaseBundleFingerprint(records[0]!.bundle)).toBe(releaseBundleFingerprint(f.bundle("0.5.3")))
+      await expect(f.prepare()).rejects.toMatchObject({ reason: "cooldown" })
+      expect(await needsUpdateRecovery(f.paths)).toBe(false)
+    } finally { await f.daemonRun(f.daemon.stop()) }
+  }, 15_000)
+
   it("discovers a complete catalog bundle and refreshes automatic targets without legacy Latest", async () => {
     const f = await fixture()
     const target = () => f.run(AutomaticUpdatePlatform.use(platform => platform.target()))
@@ -518,6 +682,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
       expect((await readEffectiveRuntimeSelection(f.paths.atapeHome))?.version).toBe("0.5.3")
       expect(await f.daemonRun(f.daemon.inspect())).toMatchObject({ intervalMs: 45000, concurrency: 2 })
       expect(await needsUpdateRecovery(f.paths)).toBe(false)
+      expect((await f.cooldowns()).map(record => record.bundle.version)).toEqual(["0.5.4"])
     } finally { await f.daemonRun(f.daemon.stop()) }
   }, 30_000)
 
@@ -529,6 +694,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
       await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
       expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(true)
       expect(await createUpdateControl(f.paths.atapeHome).recoveryPending()).toBe(true)
+      expect(await f.cooldowns()).toEqual([])
       await f.save({ ...f.config, autoUpdateEnabled: false })
       delete f.environment.MANAGED_TEST_FAIL_READY
       await recoverPendingUpdate(f.paths, f.entry, f.environment)
@@ -677,6 +843,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
       await expect(f.activate(prepared)).rejects.toMatchObject({ reason: "handoff" })
       expect(await isCollectorMaintenancePending(f.paths.collectorProcessFile)).toBe(true)
       expect(await needsUpdateRecovery(f.paths)).toBe(true)
+      expect(await f.cooldowns()).toEqual([])
       expect(JSON.parse(await readFile(join(f.paths.atapeHome, "updates", "pending.json"), "utf8")))
         .toMatchObject({ next: { version: "0.5.3" }, previous: { version: "0.5.2" } })
       await f.save({ ...f.config, autoUpdateEnabled: false })

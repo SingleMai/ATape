@@ -33,6 +33,20 @@ export type NodeCollectorDaemonPaths = {
 type CollectorEntry = string | (() => Promise<string>)
 const resolveCollectorEntry = (entry: CollectorEntry) => typeof entry === "string" ? Promise.resolve(entry) : entry()
 
+// This is evidence for a finite retry cooldown, never a verdict that the
+// candidate is permanently broken. It is emitted only after fallback readiness
+// and maintenance release; callers still validate their restored selection.
+export class CollectorMaintenanceFailure extends CollectorDaemonProcessError {
+  readonly stage = "candidate-readiness" as const
+  readonly recovery = "ready" as const
+  constructor(failure: CollectorDaemonProcessError) {
+    super({ reason: "start", message: failure.message })
+  }
+}
+class LocalCollectorReadinessFailure extends CollectorDaemonProcessError {
+  constructor(message: string) { super({ reason: "start", message }) }
+}
+
 const ProcessFileVersion = 1 as const
 const CollectorProcessRecord = Schema.Struct({
   version: Schema.Literal(ProcessFileVersion),
@@ -57,6 +71,17 @@ const CollectorMaintenance = Schema.Struct({
 })
 type CollectorMaintenance = typeof CollectorMaintenance.Type
 const maintenanceFile = (processFile: string) => `${processFile}.maintenance.json`
+const ReadyMarker = Schema.Struct({ token: Schema.String, pid: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)) })
+const readReadyMarker = async (path: string): Promise<typeof ReadyMarker.Type | undefined> => {
+  let bytes: string
+  try { bytes = await readFile(path, "utf8") }
+  catch (cause) {
+    if (hasCode(cause, "ENOENT")) return undefined
+    throw new CollectorDaemonProcessError({ reason: "io", message: errorMessage("Could not read Collector readiness metadata", cause) })
+  }
+  try { return Schema.decodeUnknownSync(ReadyMarker)(JSON.parse(bytes)) }
+  catch { throw new CollectorDaemonProcessError({ reason: "identity", message: "Collector readiness metadata is invalid." }) }
+}
 const CollectorDesiredState = Schema.Union([
   Schema.Struct({ version: Schema.Literal(1), wanted: Schema.Literal(false) }),
   Schema.Struct({ version: Schema.Literal(1), wanted: Schema.Literal(true), intervalMs: Schema.Number, concurrency: Schema.Number,
@@ -150,7 +175,7 @@ const performCollectorMaintenance = async <A>(
     if (record) await stopOwnedProcess(paths.collectorProcessFile, record, true, deadline)
     else await rm(paths.collectorProcessFile, { force: true })
   })
-  const resume = async () => {
+  const resume = async (): Promise<"ready" | "stopped"> => {
     const readyFile = `${maintenanceFile(paths.collectorProcessFile)}.${token}.ready`
     const readyToken = randomUUID()
     const readyDeadline = Math.min(deadline, performance.now() + (options.readyTimeoutMs ?? 10_000))
@@ -177,33 +202,53 @@ const performCollectorMaintenance = async <A>(
         launched = await readProcessRecord(paths.collectorProcessFile)
       })
       if (launched) {
+        let identityUncertain = false
         while (performance.now() < readyDeadline) {
           const gate = await ownedMaintenance(paths.collectorProcessFile, token)
           // User Stop wins even while the new runtime is preparing readiness.
           if (gate.generation !== claim.gate.generation || !gate.resume ||
             !(await readDesiredState(paths.collectorProcessFile))?.wanted) {
             await stopCurrent()
-            return
+            return "stopped"
           }
-          const ready = await readFile(readyFile, "utf8").then(value => JSON.parse(value) as unknown).catch(() => undefined)
-          let owned: boolean
-          try { owned = await isOwnedProcess(launched, readyDeadline) } catch (cause) {
-            if (performance.now() >= readyDeadline) break
-            throw cause
+          const ready = await readReadyMarker(readyFile)
+          // Identity uncertainty must survive even when its probe consumed the
+          // readiness budget. It is not a local-readiness failure verdict.
+          const owned = await isOwnedProcess(launched, readyDeadline)
+          if (!owned) {
+            if (!processExists(launched.pid)) throw new LocalCollectorReadinessFailure("The updated Collector did not become locally ready.")
+            // ps can stop reporting an exiting child before kill(pid, 0)
+            // observes its reap. Confirm within the existing readiness budget;
+            // a still-live mismatch at its end remains identity uncertainty.
+            identityUncertain = true
+            await delay(Math.min(50, Math.max(0, readyDeadline - performance.now())))
+            continue
           }
-          if (!owned) break
-          if (typeof ready === "object" && ready !== null && "token" in ready && "pid" in ready &&
-            ready.token === readyToken && ready.pid === launched.pid) return
+          identityUncertain = false
+          if (ready !== undefined) {
+            if (ready.token !== readyToken || ready.pid !== launched.pid) throw new CollectorDaemonProcessError({ reason: "identity",
+              message: "Collector readiness marker does not match its launched process." })
+            return "ready"
+          }
           await delay(Math.min(50, Math.max(0, readyDeadline - performance.now())))
         }
-        throw new CollectorDaemonProcessError({ reason: "start", message: "The updated Collector did not become locally ready." })
+        if (identityUncertain && processExists(launched.pid)) throw new CollectorDaemonProcessError({ reason: "identity",
+          message: "Could not confirm ownership of the updated Collector process." })
+        throw new LocalCollectorReadinessFailure("The updated Collector did not become locally ready.")
       }
-    } finally { await rm(readyFile, { force: true }) }
+      return "stopped"
+    } finally {
+      await rm(readyFile, { force: true }).catch(cause => { throw new CollectorDaemonProcessError({ reason: "io",
+        message: errorMessage("Could not remove Collector readiness metadata", cause) }) })
+    }
   }
   const release = () => lock(async () => {
-    await ownedMaintenance(paths.collectorProcessFile, token)
+    const gate = await ownedMaintenance(paths.collectorProcessFile, token)
+    const stillWanted = gate.generation === claim.gate.generation && gate.resume !== undefined &&
+      (await readDesiredState(paths.collectorProcessFile))?.wanted === true
     await rm(maintenanceFile(paths.collectorProcessFile), { force: true })
     await syncDirectory(dirname(paths.collectorProcessFile))
+    return stillWanted
   })
   const markFailed = () => withProcessLockPromise(paths.collectorProcessFile, async () => {
     const { ownerPid: _, ...gate } = await ownedMaintenance(paths.collectorProcessFile, token)
@@ -223,21 +268,23 @@ const performCollectorMaintenance = async <A>(
     return result
   } catch (cause) {
     deadline = performance.now() + (options.recoveryTimeoutMs ?? 30_000)
+    let recoveredReady = false
     try {
       if (stopped) await stopCurrent()
       remaining()
       if (stopped && options.recover) {
         await options.recover(cause, deadline)
         remaining()
-        await resume()
+        const resumed = await resume()
         remaining()
-        await release()
+        recoveredReady = await release() && resumed === "ready"
       } else await markFailed()
     } catch (recoveryCause) {
       await markFailed().catch(() => {})
       throw new CollectorDaemonProcessError({ reason: "start",
         message: `Collector maintenance needs recovery: ${recoveryCause instanceof Error ? recoveryCause.message : String(recoveryCause)}` })
     }
+    if (cause instanceof LocalCollectorReadinessFailure && recoveredReady) throw new CollectorMaintenanceFailure(cause)
     throw cause
   }
 }
@@ -453,14 +500,15 @@ const launchProcess = async (
   await establishDesiredState(paths.collectorProcessFile)
   while (performance.now() < deadline) {
     if (await isOwnedProcess(record, deadline)) return { ...presentProcess(record), created: true }
+    if (!processExists(record.pid)) throw new LocalCollectorReadinessFailure(
+      `The Collector process exited during startup. Inspect ${paths.collectorLogFile}.`)
     await delay(Math.min(50, Math.max(0, deadline - performance.now())))
   }
   // An unconfirmed startup may still own a process. Preserve its identity so
   // recovery must terminate it before launching a replacement.
-  throw new CollectorDaemonProcessError({
-    reason: "start",
-    message: `The Collector process exited during startup. Inspect ${paths.collectorLogFile}.`
-  })
+  if (processExists(record.pid)) throw new CollectorDaemonProcessError({ reason: "identity",
+    message: "Could not confirm ownership of the Collector process." })
+  throw new LocalCollectorReadinessFailure(`The Collector process exited during startup. Inspect ${paths.collectorLogFile}.`)
 }
 
 const processPause = (processFile: string) => {
