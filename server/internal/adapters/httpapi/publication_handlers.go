@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/publication"
@@ -88,8 +89,31 @@ func (h *Handler) publicationCapabilities(w http.ResponseWriter, r *http.Request
 	if _, ok := strictQuery(w, r); !ok {
 		return
 	}
-	writeJSON(w, r, http.StatusOK, h.publication.Capabilities())
+	writeJSON(w, r, http.StatusOK, negotiatedPublicationCapabilities(h.publication.Capabilities(), r.Header.Values("ATape-Accept-Publication-Target")))
 }
+
+// Older Hosts decode the capability list as a closed v1/v2 schema. Newer
+// profiles are advertised only when the caller opts in; unknown tokens remain
+// harmless so a future Host can negotiate with this Server.
+func negotiatedPublicationCapabilities(capabilities publication.Capabilities, accepted []string) publication.Capabilities {
+	allowV3 := false
+	for _, field := range accepted {
+		for _, token := range strings.Split(field, ",") {
+			if strings.TrimSpace(token) == publication.UnknownTimeTargetProfile {
+				allowV3 = true
+			}
+		}
+	}
+	selected := make([]string, 0, len(capabilities.TargetProfiles))
+	for _, profile := range capabilities.TargetProfiles {
+		if profile == publication.TargetProfile || profile == publication.RetentionTargetProfile || allowV3 && profile == publication.UnknownTimeTargetProfile {
+			selected = append(selected, profile)
+		}
+	}
+	capabilities.TargetProfiles = selected
+	return capabilities
+}
+
 func (h *Handler) publicationReserve(w http.ResponseWriter, r *http.Request) {
 	if _, ok := strictQuery(w, r); !ok {
 		return

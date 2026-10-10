@@ -252,7 +252,7 @@ implicitly retries or performs multiple validation steps.
 
 | Method and path under `/api/v1/publications` | Input / result |
 | --- | --- |
-| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. |
+| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. HTTP defaults to v1/v2 for older Hosts; `ATape-Accept-Publication-Target: atape.publication-target.v3` additionally negotiates v3. Unknown header tokens are ignored. |
 | `POST /reservations` | Project, installation, Adapter, source Session and Origin; finite server reservation. |
 | `POST /adopt-legacy` | Same scope; explicitly fenced legacy adoption with reservation, `revisionFloor` and `baselineThreads`. |
 | `POST /attempts` | Reservation ID, capture ID, base head, transform version; immutable attempt. |

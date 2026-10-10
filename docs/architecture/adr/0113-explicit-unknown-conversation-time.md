@@ -40,7 +40,11 @@ projection hashes and write behavior when they do not select the new profile.
 
 Publication target `atape.publication-target.v3` requires canonical v3 and the
 complete-target/retained-Thread rules of target v2. It is advertised in the
-existing capability list. A Server without that capability fails before content
+existing capability list when the Host sends `ATape-Accept-Publication-Target:
+atape.publication-target.v3`. Without that opt-in, HTTP returns only v1/v2,
+preserving older Hosts' closed capability decoders. Comma-separated or repeated
+header values are accepted; unknown tokens are ignored rather than advertised.
+A Server without that capability fails before content
 preparation/upload. Every part of a candidate carries the same target and
 canonical profiles, including a part containing only known clocks. The existing
 header digest binds those choices; selection never depends on individual parts.

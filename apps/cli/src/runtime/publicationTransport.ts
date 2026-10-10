@@ -1,6 +1,6 @@
 import { PublicationError, PublicationTransport } from "@atape/application"
 import {
-  PublicationActivation, PublicationAttempt, PublicationCapabilities, PublicationPage, PublicationPart, PublicationReservation, PublicationLegacyAdoption,
+  PublicationActivation, PublicationAttempt, PublicationCapabilities, PublicationPage, PublicationPart, PublicationReservation, PublicationLegacyAdoption, PublicationTargetProfile3,
   type PublicationBinding
 } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
@@ -37,7 +37,8 @@ export const makePublicationTransportLayer = () => Layer.effect(PublicationTrans
     )
   const attemptPath = (id: string) => `/api/v1/publications/attempts/${encodeURIComponent(id)}` as const
   return PublicationTransport.of({
-    capabilities: binding => request(binding, { method: "GET", path: "/api/v1/publications/capabilities" }, PublicationCapabilities),
+    capabilities: binding => request(binding, { method: "GET", path: "/api/v1/publications/capabilities",
+      acceptPublicationTarget: PublicationTargetProfile3 }, PublicationCapabilities),
     reserve: (binding, scope) => request(binding, { method: "POST", path: "/api/v1/publications/reservations", body: scope }, PublicationReservation),
     adoptLegacy: (binding, scope) => request(binding, { method: "POST", path: "/api/v1/publications/adopt-legacy", body: scope }, PublicationLegacyAdoption),
     begin: (binding, begin) => request(binding, { method: "POST", path: "/api/v1/publications/attempts", body: begin }, PublicationAttempt),

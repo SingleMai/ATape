@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -50,9 +51,50 @@ func assertHTTPUnknownTimeContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 		}
 		return b
 	}
-	caps := send("GET", "/api/v1/publications/capabilities", nil, false, 200)
-	if !strings.Contains(caps.Body.String(), publication.UnknownTimeTargetProfile) {
-		t.Fatal("capabilities omit unknown-time target")
+	for _, negotiation := range []struct {
+		name    string
+		headers []string
+		v3      bool
+	}{
+		{name: "legacy default"},
+		{name: "empty", headers: []string{""}},
+		{name: "v2 only", headers: []string{publication.RetentionTargetProfile}},
+		{name: "future unknown", headers: []string{"atape.publication-target.v4"}},
+		{name: "unknown syntax", headers: []string{publication.UnknownTimeTargetProfile + ";q=1"}},
+		{name: "exact v3", headers: []string{publication.UnknownTimeTargetProfile}, v3: true},
+		{name: "token list", headers: []string{"atape.publication-target.v4, " + publication.UnknownTimeTargetProfile}, v3: true},
+		{name: "empty list tokens", headers: []string{" , " + publication.UnknownTimeTargetProfile + " , , "}, v3: true},
+		{name: "duplicate header fields", headers: []string{"atape.publication-target.v4", publication.UnknownTimeTargetProfile}, v3: true},
+	} {
+		r := httptest.NewRequest("GET", "/api/v1/publications/capabilities", nil)
+		r.Header.Set("Authorization", "Bearer "+credential)
+		for _, field := range negotiation.headers {
+			r.Header.Add("ATape-Accept-Publication-Target", field)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("%s capabilities: %d %s", negotiation.name, w.Code, w.Body.String())
+		}
+		var caps publication.Capabilities
+		decodeResponse(t, w, &caps)
+		want := []string{publication.TargetProfile, publication.RetentionTargetProfile}
+		if negotiation.v3 {
+			want = append(want, publication.UnknownTimeTargetProfile)
+		}
+		if !slices.Equal(caps.TargetProfiles, want) || caps.TargetProfile != publication.TargetProfile || strings.Contains(w.Body.String(), "atape.publication-target.v4") {
+			t.Fatalf("%s capabilities: %s", negotiation.name, w.Body.String())
+		}
+	}
+	// The opt-in changes no credential boundary: Web sessions cannot discover
+	// publication capabilities even when they request the new profile.
+	r := httptest.NewRequest("GET", "/api/v1/publications/capabilities", nil)
+	r.AddCookie(cookie)
+	r.Header.Set("ATape-Accept-Publication-Target", publication.UnknownTimeTargetProfile)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 401 {
+		t.Fatalf("Web capabilities opt-in: %d %s", w.Code, w.Body.String())
 	}
 	batch := canonicalcontract.ValidBatch()
 	batch.ProjectID = projectID

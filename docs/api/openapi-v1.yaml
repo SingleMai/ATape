@@ -1102,6 +1102,12 @@ paths:
       operationId: publicationCapabilities
       tags: [Ingestion]
       summary: Capabilities a bounded atomic publication operation
+      parameters:
+        - in: header
+          name: ATape-Accept-Publication-Target
+          required: false
+          schema: {type: string}
+          description: Comma-separated accepted extension profiles; repeated fields are combined. Exact atape.publication-target.v3 opts into v3 advertisement. Missing, empty and unknown tokens retain the v1/v2 response; unknown tokens are ignored.
       description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
       x-atape-authorization-actions: []
       x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}

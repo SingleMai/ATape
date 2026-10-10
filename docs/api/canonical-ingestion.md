@@ -197,7 +197,10 @@ source ordering rather than a manufactured clock; Search puts unknown clocks
 after known clocks, and Overview excludes them from dated activity. An unknown
 Session update time does not establish recent active presence. V3 retains the v2
 tool-detail contract. Publication requires the explicitly advertised v3 target
-profile for an entire candidate. See
+profile for an entire candidate. Hosts request that advertisement with
+`ATape-Accept-Publication-Target: atape.publication-target.v3`; a capabilities
+request without opt-in retains the older v1/v2 response. Unknown header tokens
+are ignored, including in comma-separated or repeated header fields. See
 [ADR-0113](../architecture/adr/0113-explicit-unknown-conversation-time.md).
 
 ## Structured usage
