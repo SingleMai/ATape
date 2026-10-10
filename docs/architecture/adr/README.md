@@ -137,6 +137,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0109](0109-collector-redaction-status.md) | Observed Collector redaction configuration |
 | [0110](0110-runtime-writer-admission.md) | Compiled runtime identity and serialized local capture writes |
 | [0111](0111-cursor-native-source-reader.md) | Cursor native source reader before capture enablement |
+| [0112](0112-failed-candidate-cooldown.md) | Persistent cooldown for failed update candidates |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

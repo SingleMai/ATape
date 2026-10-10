@@ -12,7 +12,7 @@ import { captureStateContract } from "../version.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { createReleaseDiscovery } from "./releaseDiscovery.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
-import { withCollectorMaintenance, isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
+import { CollectorMaintenanceFailure, withCollectorMaintenance, isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
 import { syncPackageTree } from "./adapterPackages.ts"
 import { withClientConfigFileLock } from "./clientConfig.ts"
 import { validateCollectorAdapters } from "./collectorReadiness.ts"
@@ -34,6 +34,61 @@ const Prepared = Schema.Struct({ bundle: ReleaseBundle, selection: RuntimeSelect
 const pendingFile = (home: string) => join(updateDirectory(home), "pending.json")
 const scheduleFile = (home: string) => join(updateDirectory(home), "state.json")
 const retainedFile = (home: string) => join(updateDirectory(home), "retained.json")
+const CandidateCooldowns = Schema.Struct({ protocol: Schema.Literal("atape.candidate-cooldown.v1"), candidates: Schema.Array(Schema.Struct({
+  bundle: ReleaseBundle, failures: Schema.Number, failedAt: Schema.Number, retryAfter: Schema.Number,
+  stage: Schema.Literal("candidate-readiness")
+})) })
+type CandidateCooldown = typeof CandidateCooldowns.Type["candidates"][number]
+const cooldownFile = (home: string) => join(updateDirectory(home), "candidate-cooldowns.json")
+const cooldownDuration = (failures: number) => (failures === 1 ? 24 : failures === 2 ? 72 : 7 * 24) * 60 * 60 * 1_000
+const cooldownLimit = 4 * 1024 * 1024
+const readCooldowns = async (home: string): Promise<ReadonlyArray<CandidateCooldown>> => {
+  try {
+    const state = Schema.decodeUnknownSync(CandidateCooldowns, { onExcessProperty: "error" })(await readBoundedJSON(cooldownFile(home), cooldownLimit))
+    if (state.candidates.length > 64) throw new Error("Too many candidate records.")
+    const seen = new Set<string>()
+    for (const record of state.candidates) {
+      const fingerprint = releaseBundleFingerprint(record.bundle)
+      if (seen.has(fingerprint) || !Number.isSafeInteger(record.failures) || record.failures < 1 ||
+        !Number.isSafeInteger(record.failedAt) || record.failedAt < 0 || !Number.isSafeInteger(record.retryAfter) ||
+        record.retryAfter !== record.failedAt + cooldownDuration(record.failures)) throw new Error("Invalid candidate record.")
+      seen.add(fingerprint)
+    }
+    return state.candidates
+  } catch (cause) {
+    if (missing(cause)) return []
+    throw updateError("state", "The saved candidate cooldown metadata is invalid or unavailable.")
+  }
+}
+const writeCooldowns = async (home: string, candidates: ReadonlyArray<CandidateCooldown>) => {
+  const state = { protocol: "atape.candidate-cooldown.v1", candidates }
+  if (Buffer.byteLength(JSON.stringify(state)) + 1 > cooldownLimit) throw updateError("state", "The candidate cooldown metadata exceeds its bounded size.")
+  try { await atomicJSON(cooldownFile(home), state) }
+  catch { throw updateError("state", "Could not save candidate cooldown metadata.") }
+}
+const assertCandidateEligible = async (home: string, bundle: ReleaseBundle, automatic: boolean) => {
+  const records = await readCooldowns(home)
+  if (!automatic) return
+  const fingerprint = releaseBundleFingerprint(bundle), now = Date.now()
+  const record = records.find(record => releaseBundleFingerprint(record.bundle) === fingerprint)
+  // A backwards clock must not turn a finite cooldown into an indefinite ban.
+  if (record && now >= record.failedAt && now < record.retryAfter) throw updateError("cooldown",
+    "This release is temporarily deferred after a failed local startup. New releases remain eligible; an explicit CLI update can retry it.")
+}
+const recordCandidateFailure = async (home: string, bundle: ReleaseBundle) => {
+  const records = await readCooldowns(home), fingerprint = releaseBundleFingerprint(bundle)
+  const previous = records.find(record => releaseBundleFingerprint(record.bundle) === fingerprint)
+  const failures = Math.min((previous?.failures ?? 0) + 1, Number.MAX_SAFE_INTEGER), failedAt = Date.now()
+  const record: CandidateCooldown = { bundle, failures, failedAt, retryAfter: failedAt + cooldownDuration(failures), stage: "candidate-readiness" }
+  const retained = records.filter(record => releaseBundleFingerprint(record.bundle) !== fingerprint)
+    .sort((left, right) => right.failedAt - left.failedAt).slice(0, 63)
+  await writeCooldowns(home, [record, ...retained])
+}
+const clearCandidateFailure = async (home: string, bundle: ReleaseBundle) => {
+  const records = await readCooldowns(home), fingerprint = releaseBundleFingerprint(bundle)
+  const retained = records.filter(record => releaseBundleFingerprint(record.bundle) !== fingerprint)
+  if (retained.length !== records.length) await writeCooldowns(home, retained)
+}
 const checkHandoffDeadline = (deadline: number) => {
   if (performance.now() >= deadline) throw new Error("Collector maintenance deadline expired before runtime selection.")
 }
@@ -156,13 +211,14 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       schedule: () => nodeEffect("state", async () => (await readOptional(scheduleFile(paths.atapeHome), Schema.decodeUnknownSync(Schedule))) ?? { nextCheckAt: 0, failures: 0 }),
       target: () => nodeEffect("release", signal => discovery.latest({ cached: false, signal })),
       record: input => nodeEffect("state", () => atomicJSON(scheduleFile(paths.atapeHome), input)),
-      prepare: (bundle, adapters) => Effect.gen(function*() {
+      prepare: (bundle, adapters, automatic) => Effect.gen(function*() {
         // This prepared/pending format is the historical v2 plan. A future
         // contract needs its own declared migration plan, never a v2 relabel.
         if (captureStateContract !== legacyBridgeCaptureContract) return yield* updateError("unsupported",
           "This runtime needs a capture migration plan before preparing managed updates.")
         const requested = yield* nodeEffect("release", async () => decodeReleaseBundle(bundle))
         const version = requested.version
+        yield* nodeEffect("state", () => assertCandidateEligible(paths.atapeHome, requested, automatic))
         yield* nodeEffect("state", async () => {
           await assertNoPendingManualStateUpgrade(paths)
           if (await needsUpdateRecovery(paths)) throw new Error("Interrupted update work must recover before preparing another release.")
@@ -249,6 +305,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           releaseBundleFingerprint(candidate.bundle) !== releaseBundleFingerprint(requested)) {
           throw new Error("Prepared immutable release bundle changed.")
         }
+        await assertCandidateEligible(paths.atapeHome, requested, automatic)
         await validateCLI(join(paths.atapeHome, "releases", requested.version), requested.version, environment, signal, requested)
         const original = await bootstrap()
         if (!original) throw new Error("The bootstrap installation changed.")
@@ -263,6 +320,9 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           throw new Error("A historical update must recover before independent activation.")
         }
         if (control && await control.recoveryPending()) throw new Error("An interrupted independent update must recover before activation.")
+        // Re-read durable cooldown immediately before writing recovery intent or
+        // entering maintenance; a stale prepared candidate must not pause sync.
+        await assertCandidateEligible(paths.atapeHome, requested, automatic)
         const previous = await readRuntimeSelection(paths.atapeHome) ?? installedBootstrap
         if (!control) await atomicJSON(pendingFile(paths.atapeHome), { next: candidate.selection, previous })
         const restore = (deadline: number) => withClientConfigFileLock(paths.configFile, async () => {
@@ -317,15 +377,20 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
         }, { recover: (_, deadline) => restore(deadline) }) } catch (cause) {
           // A completed rollback (or rejection before commit) must not trigger
           // another handoff. Preserve uncertain or still-gated recovery state.
-          await withClientConfigFileLock(paths.configFile, async () => {
-            if (await isCollectorMaintenancePending(paths.collectorProcessFile)) return
-            if (control) { await control.completeRecovery(); return }
-            const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
-            if (isDeepStrictEqual(pending?.next, candidate.selection) &&
-              !isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), candidate.selection)) {
-              await rm(pendingFile(paths.atapeHome), { force: true })
+          const recovered = await withClientConfigFileLock(paths.configFile, async () => {
+            if (await isCollectorMaintenancePending(paths.collectorProcessFile)) return false
+            if (control) await control.completeRecovery()
+            else {
+              const pending = await readOptional(pendingFile(paths.atapeHome), Schema.decodeUnknownSync(Pending))
+              if (isDeepStrictEqual(pending?.next, candidate.selection) &&
+                !isDeepStrictEqual(await readRuntimeSelection(paths.atapeHome), candidate.selection)) {
+                await rm(pendingFile(paths.atapeHome), { force: true })
+              }
             }
-          }).catch(() => {})
+            return !(await needsUpdateRecovery(paths)) && isDeepStrictEqual(await readEffectiveRuntimeSelection(paths.atapeHome),
+              control ? candidate.baselineSelection : previous)
+          }).catch(() => false)
+          if (cause instanceof CollectorMaintenanceFailure && recovered) await recordCandidateFailure(paths.atapeHome, requested)
           throw cause
         }
         if (control) {
@@ -333,6 +398,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
           await control.complete(ticket)
         } else await rm(pendingFile(paths.atapeHome), { force: true })
         await rm(join(updateDirectory(paths.atapeHome), `${prepared.key}.prepared.json`), { force: true })
+        await clearCandidateFailure(paths.atapeHome, requested)
       }),
       launch: () => nodeEffect("state", async () => {
         if (!(await needsUpdateRecovery(paths))) {

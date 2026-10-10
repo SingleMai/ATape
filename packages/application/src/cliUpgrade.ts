@@ -62,7 +62,7 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   const running = yield* process.inspect()
   if (updateRuntime) {
     const updates = yield* AutomaticUpdatePlatform
-    const prepared = yield* updates.prepare(bundle, adapters).pipe(Effect.mapError(error => new CLIUpgradeError({
+    const prepared = yield* updates.prepare(bundle, adapters, false).pipe(Effect.mapError(error => new CLIUpgradeError({
       reason: "install", message: `The complete ATape release could not be prepared. ${error.message}`
     })))
     const matches = yield* Effect.try({ try: () => releaseBundleFingerprint(decodeReleaseBundle(prepared.bundle)) === fingerprint && prepared.key.length > 0,

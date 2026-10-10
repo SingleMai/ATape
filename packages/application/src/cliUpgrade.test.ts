@@ -15,6 +15,7 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
   let failInstall = false, failResume = false, installs = 0, pauses = 0, stale = false
   let stopDuringActivation = false
   let failPrepare = false, changedIntegrity = false, runtimeVersion = "0.4.1"
+  let cooldownAt: "prepare" | "activate" | undefined, leases = 0, preparationReleases = 0
   let owned = false, acquisitions = 0, releases = 0
   let installWait: Promise<void> | undefined, startWait: Promise<void> | undefined
   const starts: Array<{ intervalMs: number; concurrency: number }> = []
@@ -22,7 +23,7 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
     adapterId: "codex", packageName: "@atape/adapter-codex", upgradeSpec: "@atape/adapter-codex", version: "0.4.1",
     displayName: "Codex", installedAt: "before", updatedAt: "before"
   }] }
-  const prepared: Array<{ bundle: ReleaseBundle; adapters: ClientConfig["adapters"] }> = []
+  const prepared: Array<{ bundle: ReleaseBundle; adapters: ClientConfig["adapters"]; automatic: boolean }> = []
   const activations: Array<{ bundle: ReleaseBundle; automatic: boolean }> = [], entryBundles: ReleaseBundle[] = []
   const layer = Layer.mergeAll(
     Layer.succeed(ClientConfigStore, ClientConfigStore.of({ transact: change => change(structuredClone(config)).pipe(
@@ -32,18 +33,23 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
       supported: () => Effect.die("Manual upgrade already owns supported installation"),
       recoveryPending: () => Effect.die("Unexpected automatic schedule check"), schedule: () => Effect.die("Unexpected schedule check"),
       target: () => Effect.die("Manual upgrade keeps its selected bundle"), record: () => Effect.die("Unexpected schedule mutation"), launch: () => Effect.die("Unexpected worker launch"),
-      prepare: (bundle, adapters) => Effect.suspend(() => {
-        prepared.push({ bundle, adapters })
+      prepare: (bundle, adapters, automatic) => Effect.suspend(() => {
+        prepared.push({ bundle, adapters, automatic })
+        if (cooldownAt === "prepare") return Effect.fail(new AutomaticUpdateError({ reason: "cooldown", message: "unexpected manual cooldown" }))
         return failPrepare ? Effect.fail(new AutomaticUpdateError({ reason: "prepare", message: "unavailable archive" })) :
           Effect.succeed({ key: "prepared-release", bundle: changedIntegrity ? { ...bundle, packages: bundle.packages.map(item =>
             ({ ...item, integrity: `sha512-${"A".repeat(85)}Q==` })) } : bundle })
-      }),
-      activate: (value, automatic) => Effect.sync(() => {
-        activations.push({ bundle: value.bundle, automatic })
-        if (stopDuringActivation) { wanted = false; running = false }
-        runtimeVersion = value.bundle.version
-        config = { ...config, adapters: config.adapters.map(adapter => prepared.at(-1)?.adapters.some(selected => selected.adapterId === adapter.adapterId)
-          ? { ...adapter, version: value.bundle.version } : adapter) }
+      }).pipe(Effect.flatMap(value => Effect.acquireRelease(Effect.sync(() => { leases++; return value }),
+        () => Effect.sync(() => { leases--; preparationReleases++ })))),
+      activate: (value, automatic) => Effect.suspend(() => {
+        if (cooldownAt === "activate") return Effect.fail(new AutomaticUpdateError({ reason: "cooldown", message: "unexpected manual cooldown" }))
+        return Effect.sync(() => {
+          activations.push({ bundle: value.bundle, automatic })
+          if (stopDuringActivation) { wanted = false; running = false }
+          runtimeVersion = value.bundle.version
+          config = { ...config, adapters: config.adapters.map(adapter => prepared.at(-1)?.adapters.some(selected => selected.adapterId === adapter.adapterId)
+            ? { ...adapter, version: value.bundle.version } : adapter) }
+        })
       })
     })),
     Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({
@@ -89,10 +95,12 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
   return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) => Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
     ownership: () => ({ owned, acquisitions, releases }), hold,
     prepared, activations, entryBundles, runtimeVersion: () => runtimeVersion, config: () => structuredClone(config),
+    leases: () => leases, preparationReleases: () => preparationReleases,
     edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) },
     configure: (value: boolean) => { config = { ...config, toolsConfigured: value, ...(value ? {} : { adapters: [] }) } },
     stopDuringActivation: () => { stopDuringActivation = true },
     failPrepare: () => { failPrepare = true }, changePreparedIntegrity: () => { changedIntegrity = true },
+    cooldown: (point: "prepare" | "activate") => { cooldownAt = point },
     stale: () => { stale = true }, installs: () => installs, pauses: () => pauses, starts, running: () => running, failInstall: (value = true) => { failInstall = value }, failResume: (value = true) => { failResume = value } }
 }
 
@@ -106,7 +114,7 @@ describe("CLI upgrade Module", () => {
     ] }))
     const before = client.config(), selected = bundle("0.4.2")
     await client.run(upgradeCLI("0.4.1"))
-    expect(client.prepared).toEqual([{ bundle: selected, adapters: before.adapters.slice(0, 2) }])
+    expect(client.prepared).toEqual([{ bundle: selected, adapters: before.adapters.slice(0, 2), automatic: false }])
     expect(client.activations).toEqual([{ bundle: selected, automatic: false }])
     expect(client.entryBundles).toEqual([selected])
     expect(client.runtimeVersion()).toBe("0.4.2")
@@ -162,6 +170,24 @@ describe("CLI upgrade Module", () => {
     expect(client.entryBundles).toEqual([])
     expect(client.pauses()).toBe(0)
     expect(client.running()).toBe(true)
+  })
+
+  it.each(["prepare", "activate"] as const)("surfaces unexpected manual %s cooldown without changing collection or command entry", async point => {
+    const client = fixture(), before = client.config()
+    client.cooldown(point)
+    await expect(client.run(upgradeCLI("0.4.1"))).rejects.toMatchObject({
+      reason: "install", message: expect.stringContaining("unexpected manual cooldown")
+    })
+    expect(client.prepared).toEqual([{ bundle: bundle("0.4.2"), adapters: before.adapters, automatic: false }])
+    expect(client.runtimeVersion()).toBe("0.4.1")
+    expect(client.config()).toEqual(before)
+    expect(client.activations).toEqual([])
+    expect(client.entryBundles).toEqual([])
+    expect(client.pauses()).toBe(0)
+    expect(client.running()).toBe(true)
+    expect(client.leases()).toBe(0)
+    expect(client.preparationReleases()).toBe(point === "activate" ? 1 : 0)
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
   })
 
   it("refreshes only the verified command entry before tools are configured", async () => {

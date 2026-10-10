@@ -270,6 +270,30 @@ schedule check is local and does not start npm or query release metadata before
 the check is due. A transient npm ownership-probe failure is retried on a later
 trigger instead of marking a long-running Collector permanently unsupported.
 
+A candidate that fails local startup/readiness and successfully restores the
+previous runtime enters a persistent cooldown: 24 hours after its first failure,
+72 hours after its second and seven days after subsequent failures. Expiry makes
+it eligible again; the actual retry waits for the next due trigger. Only a
+completed recovery with the previous runtime actually ready can record this
+failure; Stop, uncertain process identity, known filesystem I/O errors,
+preparation/transport failures and configuration races do not. A startup failure
+can still reflect temporary child-process resource problems, so this is a finite
+cooldown rather than a permanent bad-version decision.
+
+The key includes the complete immutable bundle, its contracts and all package
+digests. An unrelated catalog revision does not reset it. During cooldown,
+ordinary checks still discover new compatible bundles and use the normal
+24–30-hour check schedule without accumulating transient-error backoff. They skip
+the deferred bundle before installation and recheck before maintenance, so even
+an older prepared candidate cannot pause collection. A later complete bundle
+remains eligible. An explicit CLI update bypasses the delay for that attempt;
+successful activation clears only that bundle's record. The per-home file keeps
+at most 64 records, with bounded reads and atomic replacement. Invalid cooldown
+metadata prevents new managed updates before preparation, including manual
+attempts, while ordinary CLI use and interrupted-update recovery remain
+available. See [ADR-0112](../architecture/adr/0112-failed-candidate-cooldown.md).
+Already-published older workers do not acquire this behavior retroactively.
+
 The fixed GitHub prerelease tag `atape-update-catalog-v1` advertises the latest
 compatible complete bundle for this capture/control pair. Its monotonic revision
 and per-family version floor are persisted; regressions, same-version changed
@@ -402,8 +426,8 @@ compatibility and recovery decision, amended by
 
 Version-aware discovery is implemented by
 [ADR-0108](../architecture/adr/0108-compatible-release-bundle-discovery.md).
-An update wakeup independent of collection, cross-contract migration and
-persistent failed-bundle isolation remain subsequent increments. Published 0.5.3 and 0.5.4 both use the same GitHub
+An update wakeup independent of collection and cross-contract migration remain
+subsequent increments. Published 0.5.3 and 0.5.4 both use the same GitHub
 `latest` and immutable npm package, but require different manifest contracts;
 one bridge package cannot serve both. A temporary release window cannot cover
 indefinitely offline installations. The 0.5.3 manual boundary below remains.
@@ -675,7 +699,10 @@ All default client data lives below `ATAPE_HOME`, which defaults to `~/.atape`:
 
 Managed update metadata includes `updates/state.json` for the check/retry schedule,
 `updates/pending.json` for an interrupted activation and `updates/retained.json`
-for the preceding managed selection. Keep these with `releases/current.json`
+for the preceding managed selection. `updates/candidate-cooldowns.json` retains
+bounded startup-failure cooldowns independently of the check schedule. Independent
+control uses `updates/runtime.json` and its recovery ledger `updates/control.json`.
+Keep recovery metadata with `releases/current.json`
 and retained CLI/Adapter files during recovery; deleting pointers is not a
 supported repair for capture state.
 

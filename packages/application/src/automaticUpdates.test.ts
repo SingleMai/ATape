@@ -31,7 +31,8 @@ const fixture = (options: {
   let onPrepare: (() => void) | undefined
   let badPrepared: "version" | "integrity" | undefined, badConfig = false, leases = 0, released = 0, targets = 0, launches = 0, supportChecks = 0, scheduleChecks = 0
   const errors = new Map<FailurePoint, AutomaticUpdateError>()
-  const preparations: Array<{ bundle: ReleaseBundle; adapters: ReadonlyArray<AdapterInstallation> }> = []
+  const preparations: Array<{ bundle: ReleaseBundle; adapters: ReadonlyArray<AdapterInstallation>; automatic: boolean }> = []
+  const preparationModes: boolean[] = []
   const activations: Array<{ prepared: PreparedAutomaticUpdate; automatic: boolean }> = []
   const records: ScheduleRecord[] = []
   const logs: unknown[] = []
@@ -50,14 +51,17 @@ const fixture = (options: {
       supported: () => perform("supported", () => { supportChecks++; return options.supported !== false }),
       schedule: () => perform("schedule", () => { scheduleChecks++; return schedule }),
       target: () => perform("target", () => { targets++; return bundle(options.version ?? "0.5.2") }),
-      prepare: (selected, adapters) => perform("prepare", () => {
-        preparations.push({ bundle: selected, adapters })
-        onPrepare?.()
-        return { bundle: badPrepared === "version" ? bundle("0.5.9") : badPrepared === "integrity" ? {
-          ...selected, packages: selected.packages.map(item => ({ ...item, integrity: `sha512-${"B".repeat(84) + "AQ=="}` }))
-        } : selected, key: "prepared-slot" }
-      }).pipe(Effect.flatMap(prepared => Effect.acquireRelease(
-        Effect.sync(() => { leases++; return prepared }), () => Effect.sync(() => { leases--; released++ })))),
+      prepare: (selected, adapters, automatic) => Effect.suspend(() => {
+        preparationModes.push(automatic)
+        return perform("prepare", () => {
+          preparations.push({ bundle: selected, adapters, automatic })
+          onPrepare?.()
+          return { bundle: badPrepared === "version" ? bundle("0.5.9") : badPrepared === "integrity" ? {
+            ...selected, packages: selected.packages.map(item => ({ ...item, integrity: `sha512-${"B".repeat(84) + "AQ=="}` }))
+          } : selected, key: "prepared-slot" }
+        }).pipe(Effect.flatMap(prepared => Effect.acquireRelease(
+          Effect.sync(() => { leases++; return prepared }), () => Effect.sync(() => { leases--; released++ }))))
+      }),
       activate: (prepared, automatic) => perform("activate", () => {
         expect(leases).toBe(1)
         activations.push({ prepared, automatic })
@@ -70,7 +74,7 @@ const fixture = (options: {
   return {
     run: <A, E>(work: Effect.Effect<A, E, AutomaticUpdatePlatform | ClientConfigStore>) =>
       Effect.runPromise(work.pipe(Effect.provide(layer), Effect.provide(TestClock.layer()))),
-    preparations, activations, records, logs,
+    preparations, preparationModes, activations, records, logs,
     targets: () => targets, launches: () => launches, released: () => released, leases: () => leases,
     supportChecks: () => supportChecks, scheduleChecks: () => scheduleChecks,
     duringPreparation: (work: () => void) => { onPrepare = work },
@@ -199,7 +203,7 @@ describe("automatic updates through the application Interface", () => {
     const installed = [adapter("codex", "0.5.1"), adapter("claude", "0.5.2")]
     const client = fixture({ config: { adapters: installed, enabledAdapterIds: ["codex"] } })
     expect(await client.run(runAutomaticUpdates("0.5.2"))).toEqual({ updated: true, version: "0.5.2" })
-    expect(client.preparations).toEqual([{ bundle: bundle(), adapters: installed }])
+    expect(client.preparations).toEqual([{ bundle: bundle(), adapters: installed, automatic: true }])
     expect(client.activations).toEqual([{ prepared: { bundle: bundle(), key: "prepared-slot" }, automatic: true }])
     expect(client.leases()).toBe(0)
     expect(client.released()).toBe(1)
@@ -256,10 +260,48 @@ describe("automatic updates through the application Interface", () => {
   it("allows a manual forced update with automatic updates off while still requiring initialization", async () => {
     const client = fixture({ config: { autoUpdateEnabled: false }, schedule: { nextCheckAt: Hour, failures: 0 } })
     expect((await client.run(runAutomaticUpdates("0.5.1", true))).updated).toBe(true)
+    expect(client.preparationModes).toEqual([false])
     expect(client.activations[0]!.automatic).toBe(false)
     const uninitialized = fixture({ config: { toolsConfigured: false } })
     expect(await uninitialized.run(runAutomaticUpdates("0.5.1", true))).toEqual({ updated: false })
     expect(uninitialized.preparations).toEqual([])
+  })
+
+  it.each(["prepare", "activate"] as const)("treats an automatic %s cooldown as a normal check and closes prepared resources", async point => {
+    const client = fixture({ schedule: { nextCheckAt: 0, failures: 3 } })
+    client.fail(point, "cooldown")
+    expect(await client.run(runAutomaticUpdates("0.5.1"))).toEqual({ updated: false, version: "0.5.1" })
+    expect(client.preparationModes).toEqual([true])
+    expect(client.activations).toEqual([])
+    expect(client.records).toHaveLength(1)
+    expect(client.records[0]).toEqual({ nextCheckAt: expect.any(Number), failures: 0, version: "0.5.1" })
+    expect(client.records[0]!.nextCheckAt).toBeGreaterThanOrEqual(24 * Hour)
+    expect(client.records[0]!.nextCheckAt).toBeLessThanOrEqual(30 * Hour)
+    expect(client.leases()).toBe(0)
+    expect(client.released()).toBe(point === "activate" ? 1 : 0)
+    expect(client.logs).toEqual([])
+    expect(await client.run(runAutomaticUpdates("0.5.1"))).toEqual({ updated: false })
+    expect(client.targets()).toBe(1)
+  })
+
+  it.each(["prepare", "activate"] as const)("propagates an unexpected %s cooldown from a forced attempt", async point => {
+    const client = fixture({ config: { autoUpdateEnabled: false }, schedule: { nextCheckAt: Hour, failures: 3 } })
+    const error = client.fail(point, "cooldown")
+    await expect(client.run(runAutomaticUpdates("0.5.1", true))).rejects.toBe(error)
+    expect(client.preparationModes).toEqual([false])
+    expect(client.records).toHaveLength(1)
+    expect(client.records[0]).toMatchObject({ failures: 4, failure: "cooldown" })
+    expect(client.records[0]).not.toHaveProperty("version")
+    expect(client.leases()).toBe(0)
+    expect(client.released()).toBe(point === "activate" ? 1 : 0)
+  })
+
+  it("does not treat a cooldown from release discovery as a successful automatic check", async () => {
+    const client = fixture()
+    const error = client.fail("target", "cooldown")
+    await expect(client.run(runAutomaticUpdates("0.5.1"))).rejects.toBe(error)
+    expect(client.preparations).toEqual([])
+    expect(client.records[0]).toMatchObject({ failures: 1, failure: "cooldown" })
   })
 
   it.each(["0.5.3-beta.1", "latest", "garbage", "00.5.3"])("rejects an invalid stable release %s with a sanitized retry record", async version => {
