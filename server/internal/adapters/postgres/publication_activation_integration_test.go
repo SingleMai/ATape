@@ -233,10 +233,17 @@ func TestPublicationActivation(t *testing.T) {
 		}
 	})
 	t.Run("Session analysis reads representative native volume", func(t *testing.T) {
-		created, e := ingestion.NewIngestor(reader).ApplyBatch(ctx, cli, batch("analysis-volume"))
+		volumeBatch := batch("analysis-volume")
+		volumeBatch.BatchID = "analysis-volume-batch"
+		created, e := ingestion.NewIngestor(reader).ApplyBatch(ctx, cli, volumeBatch)
 		if e != nil {
 			t.Fatal(e)
 		}
+		t.Cleanup(func() {
+			if err := reader.DeleteSession(ctx, web, created.SessionID, ""); err != nil {
+				t.Error(err)
+			}
+		})
 		_, e = pool.Exec(ctx, `INSERT INTO canonical_events(id,session_id,thread_id,source_key,revision,projection_revision,digest,source_order,event_index,order_fidelity,fidelity,raw_ref,adapter_version,schema_version,observed_at,received_at,ingest_seq,kind,author,occurred_at,text,tool_label)
 SELECT 'analysis-volume-'||n,e.session_id,e.thread_id,'analysis-volume-'||n,1,1,e.digest,n+2,0,e.order_fidelity,e.fidelity,e.raw_ref,e.adapter_version,e.schema_version,e.observed_at,e.received_at,n+2000000,'message',e.author,e.occurred_at,repeat('x',512),''
 FROM canonical_events e CROSS JOIN generate_series(1,60000)n WHERE e.session_id=$1 AND e.source_order=1`, created.SessionID)
