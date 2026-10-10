@@ -9,6 +9,7 @@ import { isDeepStrictEqual } from "node:util"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { withClientConfigFileLock } from "./clientConfig.ts"
 import { guardRuntimeWrite, runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
+import { createCreationReceiptAdmission } from "./creationReceiptAdmission.ts"
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const missing = (cause: unknown) => typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT"
@@ -24,6 +25,7 @@ const Record = Schema.Union([Schema.Struct({ state: Schema.Literal("pending"), r
 /** Private durable Host metadata. The provider never receives storage paths or write authority outside a start Scope. */
 export const makeCreationReceiptStore = (home: string, adapterId: string, runtime: RuntimeContext = runtimeContext(home)) => {
   const base = resolve(home), directory = join(base, "state", "creation-receipts", hash(adapterId))
+  const admission = createCreationReceiptAdmission(base)
   const fail = (message: string) => new AdapterRuntimeError({ adapterId, reason: "contract", retryable: false, message })
   const uid = process.getuid?.()
   const directories = async (create: boolean) => {
@@ -83,11 +85,11 @@ export const makeCreationReceiptStore = (home: string, adapterId: string, runtim
       try { await parent.sync() } finally { await parent.close() }
     } finally { await rm(temporary, { force: true }) }
   }
-  const mutate = async <A>(file: string, work: (current: typeof Record.Type | undefined) => Promise<{ value: A; record: typeof Record.Type }>) => {
+  const mutate = async <A>(file: string, work: (current: typeof Record.Type | undefined) => Promise<{ value: A; record: typeof Record.Type }>, beforeWrite?: () => Promise<void>) => {
     await Effect.runPromise(guardRuntimeWrite(runtime, Effect.tryPromise({ try: () => directories(true), catch: cause => fail(`Could not initialize private creation storage: ${String(cause)}`) }), cause => fail(`Runtime cannot initialize creation storage: ${String(cause)}`)))
     return withClientConfigFileLock(file, async () => {
       const change = await work(await read(file))
-      await Effect.runPromise(guardRuntimeWrite(runtime, Effect.tryPromise({ try: () => atomic(file, change.record), catch: cause => fail(`Could not persist creation receipt: ${String(cause)}`) }), cause => fail(`Runtime cannot write creation receipts: ${String(cause)}`)))
+      await Effect.runPromise(guardRuntimeWrite(runtime, Effect.tryPromise({ try: async () => { await beforeWrite?.(); await atomic(file, change.record) }, catch: cause => fail(`Could not persist creation receipt: ${String(cause)}`) }), cause => fail(`Runtime cannot write creation receipts: ${String(cause)}`)))
       return change.value
     })
   }
@@ -106,6 +108,8 @@ export const makeCreationReceiptStore = (home: string, adapterId: string, runtim
     lifetime: AbortSignal) => {
     const frozenOrigin = immutable(structuredClone(origin))
     let active = true, claimed = false, attempt: CreationReceiptAttempt | undefined, state: "none" | "pending" | "confirmed" | "abandoned" = "none"
+    let pendingLease: (() => void) | undefined
+    const releasePending = () => { const release = pendingLease; pendingLease = undefined; release?.() }
     let pending: Promise<unknown> = Promise.resolve()
     const queue = <A>(signal: AbortSignal, work: () => Promise<A>) => {
       const task = pending.then(async () => { if (!active || lifetime.aborted || signal.aborted) throw fail("Creation callback is outside its active start scope."); return work() })
@@ -124,11 +128,14 @@ export const makeCreationReceiptStore = (home: string, adapterId: string, runtim
           Schema.decodeUnknownSync(CreationReceiptAttempt)(receipt)
           immutable(receipt)
           validateIdentity(receipt, root, decoded.sourceId)
-          const value = await mutate(location(root, decoded.sourceId), async current => {
-            await Effect.runPromise(revalidate, { signal: AbortSignal.any([signal, lifetime]) })
-            if (current) throw fail("This source already has a creation attempt; it cannot be adopted or reused.")
-            return { value: receipt, record: { state: "pending", receipt } }
-          })
+          let value: CreationReceiptAttempt
+          try {
+            value = await mutate(location(root, decoded.sourceId), async current => {
+              await Effect.runPromise(revalidate, { signal: AbortSignal.any([signal, lifetime]) })
+              if (current) throw fail("This source already has a creation attempt; it cannot be adopted or reused.")
+              return { value: receipt, record: { state: "pending", receipt } }
+            }, async () => { pendingLease = await admission.acquirePending() })
+          } catch (cause) { releasePending(); throw cause }
           attempt = value; state = "pending"; return value
         })
       },
@@ -140,7 +147,7 @@ export const makeCreationReceiptStore = (home: string, adapterId: string, runtim
           if (!current || current.state !== "pending" || !isDeepStrictEqual(current.receipt, attempt)) throw fail("Creation receipt compare-and-set failed.")
           return { value: undefined, record: { state: "confirmed", receipt } }
         })
-        state = "confirmed"; return receipt
+        state = "confirmed"; releasePending(); return receipt
       }),
       abandon: signal => queue(signal, async () => { await abandon() })
     }
@@ -151,10 +158,11 @@ export const makeCreationReceiptStore = (home: string, adapterId: string, runtim
         return { value: undefined, record: { state: "abandoned", receipt: attempt! } }
       })
       state = "abandoned"
+      releasePending()
     }
     let finishing: Promise<void> | undefined
     return { creation,
-      finish: () => { active = false; return finishing ??= (async () => { await pending; await abandon() })() },
+      finish: () => { active = false; return finishing ??= (async () => { try { await pending; await abandon() } finally { releasePending() } })() },
       result: (value: unknown) => {
         const result = Schema.decodeUnknownSync(NewSessionResult)(value)
         if (!attempt || result.sourceId !== attempt.sourceId || result.creation !== (state === "confirmed" ? "confirmed" : "unconfirmed")) throw fail("Adapter start result does not match Host creation facts.")

@@ -1,4 +1,4 @@
-import { PublicationCapabilities, PublicationTargetProfile2, SourceCaptureVersion2,
+import { PublicationCapabilities, PublicationTargetProfile2, PublicationTargetProfile3, SourceCaptureVersion2,
   ClientConfig as ClientConfigSchema, AdapterManifest as AdapterManifestSchema, type ClientConfig } from "@atape/domain"
 import { createHash } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
@@ -50,12 +50,16 @@ const inspectScope = async (paths: NodeClientPaths, scope: CaptureMigrationScope
       }
       adapters.push({ id, root, manifest })
     }
-    const required = new Map<string, { readonly instanceOrigin: string; readonly userId: string }>()
-    if (adapters.some(adapter => adapter.manifest.sourceCapture === SourceCaptureVersion2)) {
+    const sourcesV2 = adapters.filter(adapter => adapter.manifest.sourceCapture === SourceCaptureVersion2)
+    const publicationTargetProfile = sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile3)
+      ? PublicationTargetProfile3 : PublicationTargetProfile2
+    const required = new Map<string, { readonly instanceOrigin: string; readonly userId: string;
+      readonly publicationTargetProfile: typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 }>()
+    if (sourcesV2.length > 0) {
       // activeInstanceOrigin is a console preference; every configured Project
       // participates in collection with the global enabled Adapter selection.
       for (const project of config.projects) required.set(JSON.stringify([project.instanceOrigin, project.userId]),
-        { instanceOrigin: project.instanceOrigin, userId: project.userId })
+        { instanceOrigin: project.instanceOrigin, userId: project.userId, publicationTargetProfile })
     }
     const bindings = ordered([...required.values()])
     const credentials = []
@@ -93,15 +97,17 @@ export const preflightCaptureMigrationPrerequisites = (paths: NodeClientPaths, s
     if (before.bindings.length === 0) return { prerequisiteScopeFingerprint: before.prerequisiteScopeFingerprint }
     const http = yield* AuthenticatedHTTPClient
     yield* Effect.forEach(before.bindings, binding => http.request({ instanceOrigin: binding.instanceOrigin,
-      expectedUserId: binding.userId, method: "GET", path: "/api/v1/publications/capabilities" }).pipe(
+      expectedUserId: binding.userId, method: "GET", path: "/api/v1/publications/capabilities",
+      ...(binding.publicationTargetProfile === PublicationTargetProfile3 ? { acceptPublicationTarget: PublicationTargetProfile3 } : {}) }).pipe(
       Effect.mapError(httpFailure), Effect.flatMap(response => {
         if (response.status !== 200) return Effect.fail(failure(response.status === 401 || response.status === 403 ? "authentication" :
           response.status === 429 || response.status >= 500 ? "network" : "capability",
         "The Server did not accept its read-only capture prerequisite check. Migration is deferred."))
         return Schema.decodeUnknownEffect(PublicationCapabilities)(response.body).pipe(
           Effect.mapError(() => failure("capability", "The Server returned invalid capture capabilities. Migration is deferred.")),
-          Effect.flatMap(capabilities => capabilities.targetProfiles?.includes(PublicationTargetProfile2) && capabilities.legacyAdoption === true
-            ? Effect.void : Effect.fail(failure("capability", "SourceCapture v2 requires Server publication v2 targets and legacy adoption. Migration is deferred."))))
+          Effect.flatMap(capabilities => capabilities.targetProfiles?.includes(PublicationTargetProfile2) && capabilities.legacyAdoption === true &&
+            capabilities.targetProfiles.includes(binding.publicationTargetProfile)
+            ? Effect.void : Effect.fail(failure("capability", "SourceCapture v2 requires its declared Server publication target, v2 targets and legacy adoption. Migration is deferred."))))
       })), { concurrency: 2, discard: true })
     const after = yield* Effect.tryPromise({ try: () => inspectScope(paths, scope), catch: localFailure })
     if (before.prerequisiteScopeFingerprint !== after.prerequisiteScopeFingerprint) return yield* failure("changed",

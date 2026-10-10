@@ -9,6 +9,7 @@ import { atomicJSON, missing, readBoundedJSON, runtimeEntry, updateDirectory } f
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { syncPackageTree } from "./adapterPackages.ts"
 import { acquireProcessLock } from "./processLock.ts"
+import { createCreationReceiptAdmission } from "./creationReceiptAdmission.ts"
 
 export const updateControlProtocol = "atape.update-control.v1" as const
 const StableVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
@@ -105,6 +106,8 @@ const optionalJSON = async <A>(path: string, decode: (value: unknown) => A): Pro
 }
 const accepts = (floor: typeof Floor.Type | undefined, runtime: UpdateRuntimeAdmission) =>
   !floor || !older(runtime.version, floor.minimumRuntimeVersion) && runtime.captureStateContract === floor.captureStateContract
+const advancesFloor = (floor: typeof Floor.Type | undefined, target: UpdateRuntimeAdmission) =>
+  !floor || older(floor.minimumRuntimeVersion, target.version) || floor.captureStateContract !== target.captureStateContract
 
 /** Node update-control Interface. The caller holds ATape's update ownership for
  * every control-ledger/selection mutation, including recovery, and quiesces the Collector before begin.
@@ -114,6 +117,7 @@ const accepts = (floor: typeof Floor.Type | undefined, runtime: UpdateRuntimeAdm
  * Atomic file and directory syncs are joined; failed writes leave durable work
  * for recoverSelection rather than allowing the caller to infer completion. */
 export const createUpdateControl = (home: string) => {
+  const creationAdmission = createCreationReceiptAdmission(home)
   const pointerFile = join(updateDirectory(home), "runtime.json")
   const controlFile = join(updateDirectory(home), "control.json")
   const readSelection = () => optionalJSON(pointerFile, decodeUpdateRuntimeSelection)
@@ -236,9 +240,14 @@ export const createUpdateControl = (home: string) => {
     // Verification, subprocesses and the immutable generation copy precede the
     // short barrier. The caller's update ownership protects their lifetime.
     const release = await acquireRuntimeWriteBarrier()
+    let releaseProofs: (() => void) | undefined
     try {
       if (!isDeepStrictEqual(await readControl(), prior)) fail("conflict", "The update reader floor changed before bootstrap replacement committed.")
       await unchanged([previous])
+      if (advancesFloor(prior?.floor, target)) {
+        releaseProofs = await creationAdmission.tryAcquireFence()
+        if (!releaseProofs) fail("conflict", "A controlled session is still confirming its creation proof; retry the update after confirmation.")
+      }
       const control: Control = { protocol: updateControlProtocol, key: randomUUID(), phase: "fenced", forwardOnly: true,
         baseline: previous, previous, target,
         floor: { minimumRuntimeVersion: target.version, captureStateContract: target.captureStateContract } }
@@ -248,7 +257,7 @@ export const createUpdateControl = (home: string) => {
       await writeSelection(target)
       await unchanged([target])
       await writeControl({ ...control, phase: recovering ? "recovering" : "completed" })
-    } finally { release() }
+    } finally { try { releaseProofs?.() } finally { release() } }
     return target
   }
   const bootstrapReplacementSelection = async (): Promise<UpdateRuntimeSelection | undefined> => {
@@ -340,16 +349,24 @@ export const createUpdateControl = (home: string) => {
       if (control.phase !== "begun" && control.phase !== "fenced") fail("conflict", "This update cannot cross its recovery boundary.")
       await validateGeneration(control.target, true)
       const release = await acquireRuntimeWriteBarrier()
+      let releaseProofs: (() => void) | undefined
       try {
         if (!isDeepStrictEqual(await transaction(ticket), control)) fail("conflict", "The update changed before its reader-floor boundary committed.")
         await unchanged([control.baseline, control.target])
+        // A newly pending target session cannot block replay of an already
+        // durable forward-only fence. Only an actual floor advance needs this
+        // short exclusive probe; pending old proofs can then finish normally.
+        if (advancesFloor(control.floor, control.target)) {
+          releaseProofs = await creationAdmission.tryAcquireFence()
+          if (!releaseProofs) fail("conflict", "A controlled session is still confirming its creation proof; retry the update after confirmation.")
+        }
         // This fsynced record, including the target recovery selection, precedes
         // pointer repair and every caller-owned incompatible operation. A writer
         // already holding the barrier finishes before this floor can advance.
         await writeControl({ ...control, phase: "fenced", forwardOnly: true,
           floor: { minimumRuntimeVersion: control.target.version, captureStateContract: control.target.captureStateContract } })
         await writeSelection(control.target)
-      } finally { release() }
+      } finally { try { releaseProofs?.() } finally { release() } }
     },
     complete: async (ticket: UpdateControlTicket): Promise<void> => {
       const control = await transaction(ticket)

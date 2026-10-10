@@ -164,6 +164,16 @@ profile switch is invalid. Usage and observation times remain required. Existing
 providers need no profile change. See
 [unknown-time semantics](../api/canonical-ingestion.md#v3-unknown-source-clocks).
 
+SourceCapture v2 packages can declare the static Server minimum as
+`publicationTargetProfile: "atape.publication-target.v2"` or
+`"atape.publication-target.v3"`. Omission retains the v2 minimum. The field is
+invalid without `sourceCapture: "atape.source-capture.v2"`; unknown profiles are
+rejected. Sources emitting Canonical v3, including Cursor, declare v3 so managed
+migration preflight can negotiate and verify it before pausing collection,
+without importing a factory or reading source history. This declaration is part
+of the candidate manifest fingerprint. Each actual source header still determines
+the frozen publication profile and undergoes the normal Server capability checks.
+
 Unlike the paged observation runtime's attribution callback, discovery passes
 source evidence to the Host, which resolves directory/Git membership before
 opening included sources. Authentication, authorization and transport failures

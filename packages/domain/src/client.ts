@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import { PublicationTargetProfile2, PublicationTargetProfile3 } from "./publicationProfiles.ts"
 
 export const ClientConfigVersion = 3 as const
 export const AdapterProtocolVersion = "atape.adapter.v1alpha1" as const
@@ -65,9 +66,10 @@ export const AdapterManifest = Schema.Struct({
   gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion)),
   rawCapturePolicy: Schema.optionalKey(Schema.Literal("atape.raw-capture.v1")),
   sourceCapture: Schema.optionalKey(Schema.Literals([SourceCaptureVersion, SourceCaptureVersion2])),
+  publicationTargetProfile: Schema.optionalKey(Schema.Literals([PublicationTargetProfile2, PublicationTargetProfile3])),
   legacyMigration: Schema.optionalKey(Schema.Literal(LegacyMigrationVersion)),
   newSession: Schema.optionalKey(Schema.Literal(NewSessionVersion))
-})
+}).check(Schema.makeFilter(manifest => manifest.publicationTargetProfile === undefined || manifest.sourceCapture === SourceCaptureVersion2))
 export type AdapterManifest = typeof AdapterManifest.Type
 
 export const emptyClientConfig = (): ClientConfig => ({
