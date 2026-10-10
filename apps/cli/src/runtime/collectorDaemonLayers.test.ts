@@ -806,9 +806,13 @@ await withCollectorMaintenance(${JSON.stringify(f)}, async () => ${JSON.stringif
       await f.started("original", original.pid)
       const fakePs = join(fakeBin, "ps")
       const nodeExecutable = `'${process.execPath.replaceAll("'", "'\"'\"'")}'`
+      // Inject failure only for replacement confirmation. Repeated OS ps
+      // launches for the original must not consume that unrelated deadline.
+      const originalCommand = execFileSync("/bin/ps", ["-p", String(original.pid), "-o", "command="], { encoding: "utf8" })
+      const quotedCommand = `'${originalCommand.replaceAll("'", "'\"'\"'")}'`
       await writeFile(fakePs, `#!/bin/sh
 if [ "$2" = "${original.pid}" ]; then
-  exec /bin/ps "$@"
+  printf '%s' ${quotedCommand}
 else
   exec ${nodeExecutable} -e 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'
 fi
