@@ -6,6 +6,10 @@
 - Amended by [ADR-0105](0105-client-redaction-policy.md): a local-only redaction
   file test is a public inspection entry; operational navigation remains interactive.
 
+- Amended by [ADR-0116](0116-controlled-cursor-creation.md): controlled native
+  `atape start` is an interactive handoff entry; Project and tool management remain
+  in the console.
+
 ## Alternatives and decision
 
 Keeping explicit business commands alongside the console preserves scripting, but

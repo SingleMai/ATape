@@ -4,7 +4,7 @@ import { cliVersion } from "./version.ts"
 import { t } from "./i18n/index.ts"
 import type { ParsedCLI } from "./commandInput.ts"
 
-export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" | "__automatic-update" | "__login-start" | "__update-wake" | "redaction-test" | "redaction-help" }>) {
+export const runCommand = Effect.fn("CLI.entry")(function*(cli: Exclude<ParsedCLI, { readonly kind: "interactive" | "__automatic-update" | "__login-start" | "__update-wake" | "redaction-test" | "redaction-help" | "start" | "start-help" }>) {
   if (cli.kind === "__collector-daemon") return yield* runManagedCollector(cli.options)
   yield* writeInformationalCommand(cli)
 })
@@ -16,6 +16,7 @@ const helpText = () => t("cli.help", `ATape CLI
 
 Usage:
   atape                 Open ATape to manage projects, tools and settings
+  atape start --tool <id>  Start a new session in the current registered Project
   atape redaction-test <file>  Test redaction locally and print masked content
   atape --help          Show this help
   atape --version       Show the installed version
@@ -73,4 +74,20 @@ export const writeRedactionTestFailure = (error: unknown) => Effect.sync(() => {
         : t("cli.redaction.error.other", "Check the input, configuration and output destination.")
   process.stderr.write(`${t("cli.redaction.failed", "ATape: Local redaction test failed.")} ${detail}\n`)
   process.exitCode = 1
+})
+
+export const writeStartHelp = Effect.sync(() => { process.stdout.write(`${t("cli.start.help", `Start a controlled coding-agent session
+
+Usage:
+  atape start --tool <id> [--project <id>] [--prompt <literal>] [--lang <locale>]
+
+Run in an interactive macOS or Linux terminal inside a registered Project.
+The tool must be installed, enabled and support controlled session creation.
+A matching accessible Project is required; use --project when Git matches several Projects.
+The optional prompt is passed literally (up to 64 KiB UTF-8, without NUL).
+A confirmed creation receipt permits later background collection.`)}\n`) })
+export const writeStartResult = (result: { readonly sourceId: string; readonly creation: "confirmed" | "unconfirmed"; readonly exitCode: number }) => Effect.sync(() => {
+  process.stdout.write(`${result.creation === "confirmed" ? t("cli.start.confirmed", "Session creation confirmed: {sourceId}", result)
+    : t("cli.start.unconfirmed", "Session exited without confirmed creation: {sourceId}", result)}\n`)
+  process.exitCode = result.exitCode
 })

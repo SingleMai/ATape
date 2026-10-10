@@ -28,9 +28,9 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
     try: signal => invoke(work, AbortSignal.any([signal, lifetime, AbortSignal.timeout(Math.max(1, Math.ceil(durationMs)))]), disposeLate),
     catch: cause => {
       const reason = typeof cause === "object" && cause !== null && "reason" in cause ? cause.reason : undefined
-      return typeof reason === "string" && ["format", "unsupported", "attribution", "limit", "closed"].includes(reason)
+      return typeof reason === "string" && ["format", "unsupported", "attribution", "limit", "closed", "changed"].includes(reason)
         ? new AdapterRuntimeError({ adapterId, reason: "contract", retryable: false,
-          sourceFailureReason: reason === "limit" || reason === "attribution" || reason === "unsupported" && foreign.protocolVersion === SourceCaptureVersion2 ? reason : "format",
+          sourceFailureReason: reason === "limit" || reason === "attribution" || (reason === "unsupported" || reason === "changed") && foreign.protocolVersion === SourceCaptureVersion2 ? reason : "format",
           message: `Adapter source cannot be captured (${reason}).` })
         : failure(adapterId, "collect", "Adapter source operation failed, was canceled or exceeded its deadline.")
     }

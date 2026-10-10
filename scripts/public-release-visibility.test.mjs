@@ -34,11 +34,11 @@ function registryTransport(local, change = () => undefined) {
   } }
 }
 
-test("anonymous caller verifies all seven exact manifests and bytes without auth or redirects", async () => {
+test("anonymous caller verifies all producer exact manifests and bytes without auth or redirects", async () => {
   const local = artifacts(), remote = registryTransport(local)
   const result = await createPublicReleaseRegistry({ fetch: remote.fetch }).verify(local)
-  assert.equal(result.packages.length, 7)
-  assert.equal(remote.calls.length, 14)
+  assert.equal(result.packages.length, releasePackageNames.length)
+  assert.equal(remote.calls.length, releasePackageNames.length * 2)
   for (const { options } of remote.calls) {
     assert.equal(options.redirect, "error")
     assert.equal(options.headers.authorization, undefined)
@@ -52,7 +52,7 @@ test("propagation failures retry with one shared bounded deadline", async () => 
   const remote = registryTransport(local, url => !url.endsWith(".tgz") && failures++ < 2 ? new Response("", { status: 404 }) : undefined)
   await createPublicReleaseRegistry({ fetch: remote.fetch, now: () => clock, sleep: async ms => { clock += ms }, budgetMs: 10_000 }).verify(local)
   assert.equal(clock, 3000)
-  assert.equal(remote.calls.length, 16)
+  assert.equal(remote.calls.length, releasePackageNames.length * 2 + 2)
   clock = 0
   const unavailable = async () => new Response("", { status: 503 })
   await assert.rejects(createPublicReleaseRegistry({ fetch: unavailable, now: () => clock,
@@ -113,8 +113,8 @@ async function localRelease(t, contract = publicationCaptureContract, protocol =
 test("local artifacts bind exact checksums and the actual packaged CLI capabilities", async t => {
   const release = await localRelease(t)
   const result = await loadPublicationArtifacts(release)
-  assert.equal(result.files.length, 8)
-  assert.equal(result.bundle.packages.length, 7)
+  assert.equal(result.files.length, releasePackageNames.length + 1)
+  assert.equal(result.bundle.packages.length, releasePackageNames.length)
   await writeFile(join(release.releaseDirectory, release.packages[1].artifactName), "changed")
   await assert.rejects(loadPublicationArtifacts(release), /SHA256SUMS/)
 })

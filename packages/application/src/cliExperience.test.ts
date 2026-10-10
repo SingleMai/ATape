@@ -42,7 +42,7 @@ const fixture = (runtimeReleaseVersion = "1.0.0") => {
         }
       })), Effect.map(result => result.value)
     ) })),
-    Layer.succeed(ProjectLocator, ProjectLocator.of({ locate: path => Effect.succeed({ path, name: "Payments", type: "directory" }) })),
+    Layer.succeed(ProjectLocator, ProjectLocator.of({ locate: path => Effect.succeed({ requestedCwd: path, path, name: "Payments", type: "directory" }) })),
     Layer.succeed(CLISetupPlatform, CLISetupPlatform.of({
       runtimeReleaseVersion,
       detectSources: () => Effect.succeed(["codex"]), suggestDirectories: () => Effect.succeed([]),
@@ -52,7 +52,7 @@ const fixture = (runtimeReleaseVersion = "1.0.0") => {
       packages.push(spec)
       if (failInstall) throw new Error("offline")
       onPackageInstall?.()
-      const id = ["claude", "opencode", "codebuddy", "kimi", "grok"].find(id => spec.includes(id)) ?? "codex"
+      const id = ["claude", "opencode", "codebuddy", "kimi", "grok", "cursor"].find(id => spec.includes(id)) ?? "codex"
       return { packageName: `@atape/adapter-${id}`, upgradeSpec: spec.startsWith("@atape/") ? `@atape/adapter-${id}` : spec, version: "1.0.0", manifest: {
         protocolVersion: AdapterProtocolVersion, adapterId: id, displayName: id, entry: "./index.js", harnesses: [id]
       } }
@@ -188,7 +188,7 @@ describe("CLI experience application Interface", () => {
     expect((await client.run(prepareGuidedSetup(input))).automaticUpdatesEnabled).toBe(false)
     expect(client.starts()).toBe(0)
   })
-  it.each(["codex", "claude", "codebuddy", "kimi", "opencode", "grok"])("configures %s tools once at the exact runtime release and reuses the global selection", async sourceId => {
+  it.each(["codex", "claude", "codebuddy", "kimi", "opencode", "grok", "cursor"])("configures %s tools once at the exact runtime release and reuses the global selection", async sourceId => {
     const client = fixture()
     expect((await client.run(inspectTools())).configured).toBe(false)
     const tools = await client.run(planToolChange([sourceId]))
@@ -279,7 +279,7 @@ describe("CLI experience application Interface", () => {
   it("plans without installing/enabling/starting, then applies only the explicit selection", async () => {
     const client = fixture()
     const plan = await client.run(prepareGuidedSetup(input))
-    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false], ["codebuddy", false], ["kimi", false], ["opencode", false], ["grok", false]])
+    expect((await client.run(inspectTools())).choices.map(choice => [choice.id, choice.selected])).toEqual([["codex", true], ["claude", false], ["codebuddy", false], ["kimi", false], ["opencode", false], ["grok", false], ["cursor", false]])
     expect(client.config().projects).toEqual([])
     expect(client.packages).toEqual([])
     expect(client.starts()).toBe(0)

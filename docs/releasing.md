@@ -1,6 +1,6 @@
 # Releasing ATape
 
-ATape's release pipeline includes seven public MIT-licensed npm packages in one versioned release:
+ATape's release pipeline builds eight MIT-licensed npm packages with public publication metadata in one versioned release:
 
 - `@atape/cli`
 - `@atape/adapter-codex`
@@ -9,6 +9,7 @@ ATape's release pipeline includes seven public MIT-licensed npm packages in one 
 - `@atape/adapter-codebuddy`
 - `@atape/adapter-kimi`
 - `@atape/adapter-grok`
+- `@atape/adapter-cursor`
 
 The root, all public package manifests, private Web artifact, Server metadata,
 container labels, and Compose build contract carry the same explicit SemVer and
@@ -79,9 +80,9 @@ runtime dependencies. Security scans the resulting images; candidate evidence
 must identify the immutable images actually tested.
 
 `test:release` checks the four-file, self-contained Adapter packages, builds all
-seven checksummed tarballs and installs the CLI into a clean prefix. It installs
+eight checksummed tarballs and installs the CLI into a clean prefix. It installs
 a disposable integration and verifies the installed console/daemon through a PTY.
-Release Adapter checks install Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok through the source Node
+Release Adapter checks install Codex, Claude, OpenCode, CodeBuddy, Kimi, Grok and Cursor through the source Node
 Host’s application Interface. The Claude package replacement check replaces a
 test-only pre-release Claude package with the exact release tarball via
 the original-source update Module Interface, checking byte-identical generated
@@ -94,7 +95,11 @@ previous-main legacy contracts over authenticated HTTP/PostgreSQL; missing or
 skipped subtests fail the gate. Real Go persistence/read behavior remains
 covered by the CLI/Go end-to-end suite, including actual OpenCode, CodeBuddy, Kimi and Grok package replacement,
 independent Canonical/Raw progress, no-op recovery and background source changes.
-The exact checksummed OpenCode, CodeBuddy, Kimi and Grok artifacts also run their installed source-capability
+Cursor's separate installed contract exercises controlled start, synthetic native
+facts, confirmed creation receipts, nullable Reader/Search times, upload-time
+redaction and frozen recovery through authenticated HTTP/PostgreSQL. It does not
+establish authenticated native Cursor acceptance.
+The exact checksummed OpenCode, CodeBuddy, Kimi, Grok and Cursor artifacts also run their installed source-capability
 verification outside the checkout with controlled native data. The workflow publishes the exact release
 tarballs and attaches them plus `SHA256SUMS` to the GitHub Release.
 
@@ -157,6 +162,7 @@ npm trust github @atape/adapter-opencode --file release.yml --repo SingleMai/ATa
 npm trust github @atape/adapter-codebuddy --file release.yml --repo SingleMai/ATape --allow-publish
 npm trust github @atape/adapter-kimi --file release.yml --repo SingleMai/ATape --allow-publish
 npm trust github @atape/adapter-grok --file release.yml --repo SingleMai/ATape --allow-publish
+npm trust github @atape/adapter-cursor --file release.yml --repo SingleMai/ATape --allow-publish
 ```
 
 Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and configure npm publishing access to disallow traditional tokens. GitHub-hosted runners receive short-lived credentials through the workflow's `id-token: write` permission. Public repositories and packages also receive npm provenance attestations.
@@ -164,14 +170,14 @@ Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and 
 ## Publication order and recovery
 
 Publication workflows serialize in the fixed `atape-release-publication` queue
-without canceling an active run. One publication Module owns ordering: six
+without canceling an active run. One publication Module owns ordering: seven
 Adapters first, CLI last, then the versioned GitHub Release, and finally the
 persistent compatible catalog. It publishes private copies of the exact verified
 local tarball bytes. Reruns skip an existing npm version only when its integrity
 matches. A definite immutable-version conflict during npm propagation proceeds to
 the same public visibility check; authentication and other failures stop the run.
 
-Before any version is advertised, anonymously retrieve all seven exact public npm
+Before any version is advertised, anonymously retrieve all eight exact public npm
 manifests **and their tarball bytes**. Check identities, canonical URLs and SHA-512
 against the local artifacts within one ten-minute propagation budget. Each artifact
 is limited to 16 MiB, matching client acquisition. An incomplete or mismatched
@@ -193,7 +199,7 @@ The v1 reader requires the original seven packages and accepts up to 32 unique
 `@atape/*` entries. This allows additive official Adapters without changing the
 reader protocol. All entries participate in immutable byte identity; unknown
 Adapters are not automatically installed. The current publisher still verifies
-exactly the seven packages built by this repository.
+exactly the eight packages built by this repository.
 
 This increment publishes only capture v2/control v1/catalog v1 packages. Forward
 compatible packages use explicit npm `latest`; a historical rerun behind the

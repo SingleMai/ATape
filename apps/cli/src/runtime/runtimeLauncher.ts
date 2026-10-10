@@ -18,13 +18,13 @@ export const delegateManagedRuntime = async (
 ): Promise<number | undefined> => {
   const command = parseCLI(args)
   if (environment.ATAPE_RUNTIME_DIRECT === "1" ||
-    command.kind !== "interactive" && command.kind !== "help" && command.kind !== "version" ||
-    command.kind === "interactive" && !supportsInteractiveExperience(environment)) return undefined
+    command.kind !== "interactive" && command.kind !== "start" && command.kind !== "help" && command.kind !== "version" ||
+    (command.kind === "interactive" || command.kind === "start") && !supportsInteractiveExperience(environment)) return undefined
   const home = defaultNodeClientPaths(environment).atapeHome
   // A crashed handoff may have selected a target whose files are unavailable.
   // The capable coordinator enters main to recover under update ownership;
   // read-only commands still validate their selected executable normally.
-  if (command.kind === "interactive" && await createUpdateControl(home).recoveryPending()) return undefined
+  if ((command.kind === "interactive" || command.kind === "start") && await createUpdateControl(home).recoveryPending()) return undefined
   if ((command.kind === "help" || command.kind === "version") && !await createUpdateControl(home).readSelection()) {
     try {
       const value = await readBoundedJSON(runtimeSelectionFile(home))

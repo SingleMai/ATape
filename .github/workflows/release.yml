@@ -124,6 +124,7 @@ jobs:
             release/atape-adapter-codebuddy-*.tgz
             release/atape-adapter-kimi-*.tgz
             release/atape-adapter-grok-*.tgz
+            release/atape-adapter-cursor-*.tgz
             release/SHA256SUMS
           if-no-files-found: error
           retention-days: 30

@@ -4,6 +4,7 @@ import { join } from "node:path"
 const Registry = "https://registry.npmjs.org/"
 const Repository = "git+https://github.com/SingleMai/ATape.git"
 const PackageDefinitions = [
+  { path: "adapters/cursor/package.json", name: "@atape/adapter-cursor", directory: "adapters/cursor" },
   { path: "adapters/grok/package.json", name: "@atape/adapter-grok", directory: "adapters/grok" },
   { path: "apps/cli/package.json", name: "@atape/cli", directory: "apps/cli" },
   { path: "adapters/codex/package.json", name: "@atape/adapter-codex", directory: "adapters/codex" },

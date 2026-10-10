@@ -24,6 +24,7 @@ or its Adapter alone does not create conversations.
 | CodeBuddy Code CLI | [Supported primary JSONL Sessions and limits](../adapters/codebuddy.md#source-mapping-and-supported-scope) |
 | Kimi Code CLI | [Native Session compatibility and limits](../adapters/kimi.md) |
 | Grok Build | [Completed root conversations and limits](../adapters/grok.md#supported-native-profile) |
+| Cursor | [Experimental controlled new-session capture in local artifacts; native acceptance pending](../adapters/cursor.md) |
 
 Launch the installed `atape` executable from your Project
 directory. Source contributors can use `pnpm atape` from the ATape repository
@@ -69,7 +70,9 @@ use an authenticated Instance for this walkthrough.
 
 On first use the console opens setup; after tools have been configured it opens
 your Project list, even when empty. Press `n` for Add project to connect another
-directory. Business subcommands are removed; every operation is inside the console.
+directory. Project, tool and settings operations are inside the console. The narrow
+`atape start --tool cursor` entry hands the terminal to a controlled native
+session; see [Cursor creation and limits](../adapters/cursor.md).
 
 First use configures tools globally, then offers directory browsing, browser
 sign-in and Team selection when needed. Detection checks known local tool data
@@ -321,8 +324,9 @@ The fixed GitHub prerelease tag `atape-update-catalog-v1` advertises the latest
 compatible complete bundle for this capture/control pair. Its monotonic revision
 and per-family version floor are persisted; regressions, same-version changed
 bytes, unknown protocols and corrupt durable state are rejected. A versioned
-Release retains the immutable `atape.release-bundle.v1` descriptor, including all
-the seven required package names, canonical npm tarball URLs and SHA-512 integrity.
+Release retains the immutable `atape.release-bundle.v1` descriptor, including the
+original seven required package names and current additions such as Cursor,
+canonical npm tarball URLs and SHA-512 integrity.
 The v1 reader accepts up to 32 unique `@atape/*` packages, allowing future official
 Adapters without blocking older clients. Added packages remain part of the
 immutable descriptor; discovery does not install an unconfigured Adapter.
@@ -336,8 +340,8 @@ verified executable and manifest bytes before reuse. Download leases outlive npm
 termination, including cancellation. Incomplete publication, offline checks and
 failed preparation leave the current version usable. Cached optional lookups
 can use the last valid catalog offline; explicit checks report transport failure.
-An exact lookup for the running CLI can derive a bundle from all seven exact npm
-manifests while its first version descriptor propagates. This fallback never
+An exact lookup for the running CLI can derive a bundle from every producer exact npm
+manifest while its first version descriptor propagates. This fallback never
 advertises another upgrade target.
 
 The prepared CLI package must declare `atapeRuntime.protocol` as
@@ -459,7 +463,7 @@ one bridge package cannot serve both. A temporary release window cannot cover
 indefinitely offline installations. The 0.5.3 manual boundary below remains.
 
 The implementation was verified locally on macOS with CLI/Application behavior
-tests, Collector/Server E2E, all six official Adapter tarballs, and the installed
+tests, Collector/Server E2E, all seven official Adapter tarballs, and the installed
 CLI's independent-worker and terminal checks. Release metadata and npm acquisition
 in update fault tests use controlled external Adapters. These checks do not establish
 publication, an upgrade against the production registry, a real Linux upgrade, or
@@ -768,7 +772,7 @@ upload. Preserve the redaction key/binding with Collector state. Rules reload at
 each job boundary; uncertain old-policy delivery can pause instead of resending
 old bytes. See [client redaction](redaction.md) for configuration, limits and recovery.
 
-The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md), [OpenCode](../adapters/opencode.md), [CodeBuddy](../adapters/codebuddy.md), [Kimi](../adapters/kimi.md) and [Grok](../adapters/grok.md) guides.
+The executable package contract is documented in [Adapter package and runtime contract](../adapters/package-manifest.md). Provider-specific behavior is documented in the [Codex](../adapters/codex.md), [Claude](../adapters/claude.md), [OpenCode](../adapters/opencode.md), [CodeBuddy](../adapters/codebuddy.md), [Kimi](../adapters/kimi.md), [Grok](../adapters/grok.md) and [Cursor](../adapters/cursor.md) guides.
 
 ## Troubleshooting
 Start with Project → Sync details. PgUp/PgDn pages all diagnostics retained in the

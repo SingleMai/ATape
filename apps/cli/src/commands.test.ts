@@ -22,7 +22,7 @@ describe("ATape executable entry", () => {
     if (!address || typeof address === "string") throw new Error("fixture did not bind")
     const home = join(root, "home")
     try {
-      for (const args of [["login"], ["setup"], ["tools", "list"], ["adapters", "prune", "--apply"], ["collect", "--once"], ["status", "--json"], [], ["--json"]]) {
+      for (const args of [["login"], ["setup"], ["tools", "list"], ["adapters", "prune", "--apply"], ["collect", "--once"], ["status", "--json"], ["start", "--tool", "cursor"], [], ["--json"]]) {
         await expect(exec(process.execPath, [cli, ...args], { env: { ...environment, ATAPE_HOME: home,
           ATAPE_INSTANCE_URL: `http://127.0.0.1:${address.port}` } })).rejects.toMatchObject({ code: 2, stdout: "", stderr: expect.stringContaining("ATape") })
       }
@@ -140,3 +140,19 @@ describe("local redaction executable", () => {
     } finally { await rm(root, { recursive: true, force: true }) }
   }, 60000)
 })
+
+it("shows start help through both public entries without touching malformed managed state", async () => {
+  const root = await mkdtemp(join(tmpdir(), "atape-start-help-")), home = join(root, "home")
+  try {
+    for (const entry of [cli, bootstrap]) {
+      const result = await exec(process.execPath, [entry, "start", "--help"], { env: { ...environment, ATAPE_HOME: home } })
+      expect(result.stdout).toContain("atape start --tool <id>"); expect(result.stderr).toBe("")
+      await expect(stat(home)).rejects.toMatchObject({ code: "ENOENT" })
+    }
+    await mkdir(join(home, "updates"), { recursive: true }); await writeFile(join(home, "updates", "runtime.json"), "malformed")
+    expect((await exec(process.execPath, [bootstrap, "start", "--help", "--lang", "zh-CN"], { env: { ...environment, ATAPE_HOME: home } })).stdout).toContain("启动受控")
+    await expect(exec(process.execPath, [bootstrap, "start", "--tool", "cursor"], { env: { ...environment, ATAPE_HOME: home } })).rejects.toMatchObject({ code: 2 })
+    expect(await readFile(join(home, "updates", "runtime.json"), "utf8")).toBe("malformed")
+    await expect(stat(join(home, "config"))).rejects.toMatchObject({ code: "ENOENT" })
+  } finally { await rm(root, { recursive: true, force: true }) }
+}, 30000)

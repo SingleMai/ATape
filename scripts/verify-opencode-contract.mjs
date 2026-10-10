@@ -1,4 +1,5 @@
 import { requiredTest as grokRequiredTest, verifyGrokResult } from "./verify-grok-contract.mjs"
+import { requiredTest as cursorRequiredTest, verifyCursorResult } from "./verify-cursor-contract.mjs"
 import { requiredTest as kimiRequiredTest, verifyKimiResult } from "./verify-kimi-contract.mjs"
 import { requiredTest as codeBuddyRequiredTest, verifyCodeBuddyResult } from "./verify-codebuddy-contract.mjs"
 import { requiredTests as claudeRequiredTests, verifyClaudeResult } from "./verify-claude-contract.mjs"
@@ -22,6 +23,7 @@ export function verifyAllProviderResults(events) {
   verifyCodeBuddyResult(events)
   verifyKimiResult(events)
   verifyGrokResult(events)
+  verifyCursorResult(events)
 }
 
 async function run() {
@@ -47,7 +49,7 @@ async function run() {
     try {
       const event = JSON.parse(line)
       if (event.Output) process.stdout.write(event.Output)
-      if ([requiredTest, ...claudeRequiredTests, codeBuddyRequiredTest, kimiRequiredTest, grokRequiredTest].includes(event.Test)) events.push(event)
+      if ([requiredTest, ...claudeRequiredTests, codeBuddyRequiredTest, kimiRequiredTest, grokRequiredTest, cursorRequiredTest].includes(event.Test)) events.push(event)
     } catch { malformed = true; process.stderr.write(`${line}\n`) }
   })
   const interrupt = () => child.kill("SIGINT")
@@ -59,7 +61,7 @@ async function run() {
     if (args.includes("--all")) verifyAllProviderResults(events)
     else verifyOpenCodeResult(events)
     console.log(args.includes("--all")
-      ? "Required Claude, OpenCode, CodeBuddy, Kimi and Grok/PostgreSQL/installed-daemon contracts passed."
+      ? "Required Claude, OpenCode, CodeBuddy, Kimi, Grok and controlled Cursor/PostgreSQL/installed-daemon contracts passed."
       : "Required OpenCode/PostgreSQL/installed-daemon contract passed.")
   } finally {
     lines.close()

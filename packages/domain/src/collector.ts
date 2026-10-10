@@ -1,4 +1,5 @@
 import { Schema } from "effect"
+import type { CreationReceiptReader, NewSessionRuntime } from "./newSession.ts"
 import type { SourceCaptureRuntime } from "./sourceCapture.ts"
 import type {
   ContentBlock as OfficialAcpContentBlock,
@@ -288,6 +289,7 @@ export const AdapterCollectionPage = Schema.Struct({
 export type AdapterCollectionPage = typeof AdapterCollectionPage.Type
 
 export type AdapterOpenContext = {
+  readonly creationReceipts?: CreationReceiptReader
   readonly protocolVersion: typeof AdapterProtocolVersion
   readonly adapter: {
     readonly id: string
@@ -333,11 +335,13 @@ export type AdapterCollectRequest = {
 }
 
 export type LegacyAdapterRuntime = {
+  readonly newSession?: NewSessionRuntime
   readonly collect: (request: AdapterCollectRequest) => unknown | PromiseLike<unknown>
   readonly close?: () => unknown | PromiseLike<unknown>
 }
 
 export type SourceAdapterRuntime<Capture extends SourceCaptureRuntime = import("./sourceCapture.ts").SourceCaptureRuntimeV1> = {
+  readonly newSession?: NewSessionRuntime
   readonly sourceCapture: Capture
   readonly close: () => unknown | PromiseLike<unknown>
 }

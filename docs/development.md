@@ -19,7 +19,7 @@ integration checks require Docker.
 | [packages/domain](../packages/domain/) | Shared domain types, Schemas and pure rules |
 | [packages/adapter-catalog](../packages/adapter-catalog/) | Shared official-tool metadata |
 | [packages/ui](../packages/ui/README.md) and [packages/i18n](../packages/i18n/) | Reusable presentation, semantic themes and localization support |
-| [adapters](../adapters/) | Codex, Claude, OpenCode, CodeBuddy, Kimi and Grok provider Implementations; the Host loads their declared runtime capability |
+| [adapters](../adapters/) | Codex, Claude, OpenCode, CodeBuddy, Kimi, Grok and experimental Cursor provider Implementations; the Host loads their declared runtime capability |
 | [server/internal](../server/internal/) | Go Modules for authentication, authorization, Team, Canonical ingestion, publication, conversation, Raw and Search; private infrastructure under `adapters` |
 | [server/cmd/atape-server](../server/cmd/atape-server/) | Server Composition Root and process lifetime |
 | [specs](../specs/), [scripts](../scripts/) and [workflows](../.github/workflows/) | Machine-readable contracts, verification, packaging and delivery gates |
@@ -42,7 +42,7 @@ regression when appropriate.
 | Web behavior | `pnpm --filter @atape/web typecheck`, `pnpm --filter @atape/web test`, and affected `test:browser` scenarios |
 | CLI commands or terminal behavior | `pnpm --filter @atape/cli typecheck`, `pnpm --filter @atape/cli test`, `pnpm test:cli-package` for the installed executable |
 | Adapter projection or package/runtime contract | Affected Adapter `typecheck` and `test`; `pnpm test:adapter-package` for installed artifacts |
-| Collector / Server delivery | `pnpm test:e2e` for Codex against the demo Server; `pnpm test:claude-contract`, `pnpm test:opencode-contract`, `pnpm test:codebuddy-contract`, `pnpm test:kimi-contract` and `pnpm test:grok-contract` for installed Adapters over authenticated HTTP/PostgreSQL. Claude requires both current sourceCapture and genuine previous-main legacy contracts; the runner freezes that artifact automatically. |
+| Collector / Server delivery | `pnpm test:e2e` for Codex against the demo Server; `pnpm test:claude-contract`, `pnpm test:opencode-contract`, `pnpm test:codebuddy-contract`, `pnpm test:kimi-contract`, `pnpm test:grok-contract` and `pnpm test:cursor-contract` for installed Adapters over authenticated HTTP/PostgreSQL. Claude requires both current sourceCapture and genuine previous-main legacy contracts; the runner freezes that artifact automatically. |
 | Go Module | From `server/`, `go test ./internal/<module>/...`; use `pnpm test:go:integration` for persistence and authenticated boundaries, and race/fuzz checks when affected |
 | SQL migration or query | `pnpm generate:sqlc`, inspect generated changes, and run affected PostgreSQL integration checks |
 | Compose or backup/restore | `pnpm test:self-hosting:config`; `pnpm test:self-hosting:restore` for paired recovery in isolated containers/volumes |
@@ -51,7 +51,7 @@ regression when appropriate.
 `pnpm check` runs documentation and architecture checks, workspace typechecks and tests,
 Web browser tests, Codex/Claude E2E and Go unit suites. It does not include every
 release or PostgreSQL check. `pnpm test:go:integration` also runs installed
-Claude, OpenCode, CodeBuddy, Kimi and Grok contracts; its name is narrower than its coverage.
+Claude, OpenCode, CodeBuddy, Kimi, Grok and synthetic Cursor contracts; its name is narrower than its coverage.
 
 Genuine historical Claude and capture-journal fixtures install their pinned
 revision's dependency lock in an isolated temporary workspace and verify source

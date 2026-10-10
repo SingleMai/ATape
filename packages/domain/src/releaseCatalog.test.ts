@@ -13,7 +13,7 @@ const extraPackage = (name = "@atape/adapter-future", version = "1.2.3") => ({ n
 const extendedBundle = (): ReleaseBundle => ({ ...bundle(), packages: [...bundle().packages, extraPackage()] })
 
 describe("immutable complete release bundles", () => {
-  it("decodes the exact seven public packages with canonical SHA-512 and npm URLs", () => {
+  it("decodes the current producer packages with canonical SHA-512 and npm URLs", () => {
     expect(decodeReleaseBundle(bundle())).toEqual(bundle())
     for (const version of ["0.0.0", "9007199254740991.0.0"]) expect(decodeReleaseBundle(bundle(version)).version).toBe(version)
   })
@@ -23,10 +23,13 @@ describe("immutable complete release bundles", () => {
   })
 
   it("accepts bounded additive packages while retaining the original seven-package reader floor", () => {
+    const original = { ...bundle(), packages: bundle().packages.filter(item => item.name !== "@atape/adapter-cursor") }
+    expect(original.packages).toHaveLength(7)
+    expect(decodeReleaseBundle(original)).toEqual(original)
     const value = extendedBundle()
     expect(decodeReleaseBundle(value)).toEqual(value)
     const maximum = { ...bundle(), packages: [...bundle().packages,
-      ...Array.from({ length: 25 }, (_, index) => extraPackage(`@atape/future-${index}`))] }
+      ...Array.from({ length: 32 - bundle().packages.length }, (_, index) => extraPackage(`@atape/future-${index}`))] }
     expect(decodeReleaseBundle(maximum).packages).toHaveLength(32)
     expect(() => decodeReleaseBundle({ ...maximum, packages: [...maximum.packages, extraPackage()] })).toThrow()
   })
@@ -131,7 +134,7 @@ describe("versioned Release body descriptor", () => {
 
   it("preserves additive packages in the immutable version descriptor", () => {
     const value = extendedBundle(), parsed = releaseBundleFromBody(releaseBundleSection(value))!
-    expect(parsed.packages).toHaveLength(8)
+    expect(parsed.packages).toHaveLength(releasePackageNames.length + 1)
     expect(releaseBundleFingerprint(parsed)).toBe(releaseBundleFingerprint(value))
   })
 

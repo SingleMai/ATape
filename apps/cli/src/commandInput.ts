@@ -8,9 +8,12 @@ export type RedactionTestOptions = Global & {
   readonly format?: RedactionTestFormat
   readonly config?: string
 }
+export type StartOptions = Global & { readonly toolId: string; readonly projectId?: string; readonly initialPrompt?: string }
 export type ParsedCLI =
   | { readonly kind: "interactive"; readonly options: Global & { readonly noBrowser?: boolean } }
   | { readonly kind: "help" | "version"; readonly options: Global }
+  | { readonly kind: "start-help"; readonly options: Global }
+  | { readonly kind: "start"; readonly options: StartOptions }
   | { readonly kind: "redaction-help"; readonly options: Global }
   | { readonly kind: "redaction-test"; readonly options: RedactionTestOptions }
   | { readonly kind: "__collector-daemon"; readonly options: {
@@ -29,12 +32,13 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
   const updater = args[0] === "__automatic-update"
   const login = args[0] === "__login-start"
   const wake = args[0] === "__update-wake"
+  const start = args[0] === "start"
   const redaction = args[0] === "redaction-test"
   const fail = (): never => { throw new CLIInputError(t("cli.error.input", "Unsupported arguments. Run atape to manage projects, tools and settings, or atape --help.")) }
   let parsed: ReturnType<typeof parseArgs>
   try { parsed = parseArgs({
     args: [...args], allowPositionals: true, strict: true, tokens: true,
-    options: redaction ? {
+    options: start ? { help: { type: "boolean", short: "h" }, lang: { type: "string" }, tool: { type: "string" }, project: { type: "string" }, prompt: { type: "string" } } : redaction ? {
       help: { type: "boolean", short: "h" }, lang: { type: "string" },
       config: { type: "string" }, format: { type: "string" }
     } : wake ? { "wake-token": { type: "string" } } : login ? { "startup-token": { type: "string" } } : updater ? { "update-token": { type: "string" } } : internal ? {
@@ -48,8 +52,20 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
   const seen = new Set<string>()
   for (const token of tokens ?? []) {
     if (token.kind !== "option") continue
-    if (seen.has(token.name) || typeof token.value === "string" && token.value.trim() === "") fail()
+    if (seen.has(token.name) || typeof token.value === "string" && token.value.trim() === "" && !(start && token.name === "prompt")) fail()
     seen.add(token.name)
+  }
+  if (start) {
+    const options: Global = typeof values.lang === "string" ? { lang: values.lang } : {}
+    if (positionals.length !== 1) return fail()
+    if (values.help) {
+      if (values.tool !== undefined || values.project !== undefined || values.prompt !== undefined) return fail()
+      return { kind: "start-help", options }
+    }
+    if (typeof values.tool !== "string") return fail()
+    return { kind: "start", options: { ...options, toolId: values.tool,
+      ...(typeof values.project === "string" ? { projectId: values.project } : {}),
+      ...(typeof values.prompt === "string" ? { initialPrompt: values.prompt } : {}) } }
   }
   if (redaction) {
     const options: Global = typeof values.lang === "string" ? { lang: values.lang } : {}

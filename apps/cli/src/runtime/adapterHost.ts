@@ -1,13 +1,15 @@
 import { AdapterRuntimeError, AdapterRuntimes, GitSourceAttribution, GitAttributionError, ProjectLocator, type HostedAdapter } from "@atape/application"
 import { AdapterCollectionPage as AdapterCollectionPageSchema, AdapterManifest as AdapterManifestSchema,
-  AdapterProtocolVersion, GitAttributionVersion, GitSource,
+  AdapterProtocolVersion, GitAttributionVersion, GitSource, NewSessionVersion,
   type AdapterInstallation, type AdapterManifest, type AtapeAdapterModule, type AtapeAdapterRuntime } from "@atape/domain"
-import { readFile, realpath, stat } from "node:fs/promises"
+import { lstat, readFile, realpath, stat } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Effect, Layer, Schema } from "effect"
 import { hostSourceCapture, isSourceCaptureRuntime } from "./sourceCaptureRuntime.ts"
 import { adapterPackageRoot, leaseAdapterInstallation } from "./adapterInstallation.ts"
+import { makeCreationReceiptStore } from "./creationReceipts.ts"
+import { runtimeContext, type RuntimeContext } from "./runtimeAdmission.ts"
 import { readBoundedJSON } from "./runtimeSelection.ts"
 
 // Resolve and validate metadata in the owner; foreign import runs separately
@@ -39,7 +41,7 @@ export const resolveAdapterReadinessEntry = (directory: string, adapter: Adapter
     return pathToFileURL(entry).href
   }, catch: cause => cause instanceof Error ? cause : new Error(String(cause)) })
 
-export const makeAdapterRuntimeLayer = (adapterDirectory: string, admission?: Effect.Effect<void, AdapterRuntimeError>) => Layer.effect(
+export const makeAdapterRuntimeLayer = (adapterDirectory: string, admission?: Effect.Effect<void, AdapterRuntimeError>, receipts?: { readonly home: string; readonly runtime?: RuntimeContext }) => Layer.effect(
   AdapterRuntimes,
   Effect.gen(function*() {
     const attribution = yield* GitSourceAttribution
@@ -50,7 +52,7 @@ export const makeAdapterRuntimeLayer = (adapterDirectory: string, admission?: Ef
       open: (project, adapter) => acquireInstallation(adapter).pipe(
         Effect.mapError(cause => runtimeFailure(adapter.adapterId, "load", true, cause.message)),
         Effect.andThen(Effect.acquireRelease(
-        loadAdapterRuntime(adapterDirectory, project, adapter, attribution, locator),
+        loadAdapterRuntime(adapterDirectory, project, adapter, attribution, locator, receipts ?? { home: resolve(adapterDirectory, "..") }),
         ({ foreign, lifetime }) => Effect.sync(() => lifetime.abort()).pipe(
           Effect.flatMap(() => foreign.close === undefined
             ? Effect.void
@@ -77,7 +79,8 @@ const loadAdapterRuntime = (
   project: Parameters<AdapterRuntimes["Service"]["open"]>[0],
   adapter: Parameters<AdapterRuntimes["Service"]["open"]>[1],
   attribution: GitSourceAttribution["Service"],
-  locator: ProjectLocator["Service"]
+  locator: ProjectLocator["Service"],
+  receiptOptions: { readonly home: string; readonly runtime?: RuntimeContext }
 ) => Effect.gen(function*() {
   const packageRoot = adapterPackageRoot(adapterDirectory, adapter)
   const packageJSON = yield* Effect.tryPromise({
@@ -119,6 +122,8 @@ const loadAdapterRuntime = (
     )
   }
   const lifetime = new AbortController()
+  const receiptHome = yield* Effect.tryPromise({ try: async () => { if ((await lstat(receiptOptions.home)).isSymbolicLink()) throw new Error("ATape home cannot be a symlink"); return realpath(receiptOptions.home) }, catch: cause => runtimeFailure(adapter.adapterId, "load", false, errorMessage("Could not locate ATape home", cause)) })
+  const receipts = makeCreationReceiptStore(receiptHome, adapter.adapterId, receiptOptions.runtime ?? runtimeContext(receiptHome))
   let resolver = attribution.forProject(project, adapter.adapterId)
   let attributionFailure: GitAttributionError | undefined
   const attributionRuntimeFailure = () => runtimeFailure(adapter.adapterId,
@@ -129,6 +134,7 @@ const loadAdapterRuntime = (
   const foreign = yield* Effect.tryPromise({
     try: (signal) => Promise.resolve(module.createAtapeAdapter?.({
       protocolVersion: AdapterProtocolVersion,
+      creationReceipts: { readConfirmed: (input, signal) => receipts.reader.readConfirmed(input, AbortSignal.any([signal, lifetime.signal])) },
       adapter: { id: adapter.adapterId, version: adapter.version },
       project: { id: project.id, type: project.type, path: project.path },
       ...(project.type !== "git" ? {} : { gitAttribution: {
@@ -150,7 +156,10 @@ const loadAdapterRuntime = (
       adapter.adapterId, "load", false, errorMessage(`Could not create Adapter ${adapter.adapterId}`, cause)
     )
   }).pipe(Effect.onError(() => Effect.sync(() => lifetime.abort())))
-  if (manifest.legacyMigration !== undefined && manifest.sourceCapture !== "atape.source-capture.v2" || typeof foreign !== "object" || foreign === null || (manifest.sourceCapture === undefined
+  const hasNewSession = typeof foreign === "object" && foreign !== null && "newSession" in foreign && foreign.newSession !== undefined
+  const validNewSession = !hasNewSession || typeof foreign.newSession === "object" && foreign.newSession !== null &&
+    foreign.newSession.protocolVersion === NewSessionVersion && typeof foreign.newSession.start === "function" && typeof foreign.close === "function"
+  if ((manifest.newSession !== undefined) !== hasNewSession || !validNewSession || manifest.legacyMigration !== undefined && manifest.sourceCapture !== "atape.source-capture.v2" || typeof foreign !== "object" || foreign === null || (manifest.sourceCapture === undefined
     ? !("collect" in foreign) || typeof foreign.collect !== "function" || "sourceCapture" in foreign
     : !("sourceCapture" in foreign) || !isSourceCaptureRuntime(foreign.sourceCapture) || foreign.sourceCapture.protocolVersion !== manifest.sourceCapture ||
       (manifest.legacyMigration !== undefined) !== ("legacyMigration" in foreign.sourceCapture && typeof foreign.sourceCapture.legacyMigration === "function") ||
@@ -168,7 +177,32 @@ const loadAdapterRuntime = (
     }).pipe(Effect.catch(() => Effect.void))
     return yield* attributionRuntimeFailure()
   }
+  const newSession: Pick<HostedAdapter, "newSession"> = foreign.newSession === undefined ? {} : { newSession: {
+    start: request => Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const operation = new AbortController()
+        return { operation, receipt: receipts.scope(request.origin, request.revalidate, AbortSignal.any([operation.signal, lifetime.signal])) }
+      }),
+      scope => Effect.tryPromise({
+        try: async signal => {
+          const stop = () => scope.operation.abort()
+          signal.addEventListener("abort", stop, { once: true })
+          if (signal.aborted) stop()
+          try {
+          const value = await foreign.newSession!.start({ origin: Object.freeze({ ...request.origin }),
+            ...(request.initialPrompt === undefined ? {} : { initialPrompt: request.initialPrompt }),
+            signal: AbortSignal.any([signal, lifetime.signal]), creation: scope.receipt.creation })
+          await scope.receipt.finish()
+          return scope.receipt.result(value)
+          } finally { signal.removeEventListener("abort", stop) }
+        },
+        catch: cause => cause instanceof AdapterRuntimeError ? cause : runtimeFailure(adapter.adapterId, "start", false, errorMessage("Could not start controlled session", cause))
+      }),
+      scope => Effect.promise(async () => { scope.operation.abort(); await scope.receipt.finish() }).pipe(Effect.catchCause(cause => Effect.logWarning(`Could not finalize creation attempt: ${String(cause)}`)))
+    )
+  } }
   if ("sourceCapture" in foreign) return { foreign, lifetime, hosted: {
+    ...newSession,
     sourceCapture: hostSourceCapture(adapter.adapterId, foreign.sourceCapture, lifetime.signal),
     attribute: (source) => Schema.decodeUnknownEffect(GitSource)(source).pipe(
       Effect.mapError(() => runtimeFailure(adapter.adapterId, "contract", false, "Source supplied invalid Origin metadata.")),
@@ -191,6 +225,7 @@ const loadAdapterRuntime = (
     )
   } satisfies HostedAdapter }
   const hosted: HostedAdapter = {
+    ...newSession,
     collect: (request) => Effect.suspend(() => {
       if (request.rawCaptureEnabled === false && manifest.rawCapturePolicy !== "atape.raw-capture.v1") {
         return Effect.fail(runtimeFailure(adapter.adapterId, "contract", false,

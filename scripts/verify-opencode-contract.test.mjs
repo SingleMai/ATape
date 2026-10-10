@@ -39,6 +39,7 @@ test("Kimi acceptance cannot pass using only existing provider results", () => {
 })
 
 import { requiredTest as claudeTest, requiredLegacyTest as legacyClaudeTest } from "./verify-claude-contract.mjs"
+import { requiredTest as cursorTest } from "./verify-cursor-contract.mjs"
 test("combined acceptance requires Claude even when every source-capture provider passed", () => {
   const events = [requiredTest, codeBuddyTest, kimiTest, grokTest].map(Test => ({
     Test, Action: "pass", Package: "github.com/SingleMai/ATape/server/internal/adapters/httpapi"
@@ -48,5 +49,8 @@ test("combined acceptance requires Claude even when every source-capture provide
   assert.throws(() => verifyAllProviderResults([...events, { ...claude, Action: "skip" }]), /Claude.*missing or skipped/)
   assert.throws(() => verifyAllProviderResults([...events, claude]), /Claude.*missing or skipped/)
   assert.throws(() => verifyAllProviderResults([...events, claude, { ...claude, Test: legacyClaudeTest, Action: "skip" }]), /Claude.*missing or skipped/)
-  assert.doesNotThrow(() => verifyAllProviderResults([...events, claude, { ...claude, Test: legacyClaudeTest }]))
+  const providers = [...events, claude, { ...claude, Test: legacyClaudeTest }]
+  assert.throws(() => verifyAllProviderResults(providers), /Cursor.*missing or skipped/)
+  assert.throws(() => verifyAllProviderResults([...providers, { ...claude, Test: cursorTest, Action: "skip" }]), /Cursor.*missing or skipped/)
+  assert.doesNotThrow(() => verifyAllProviderResults([...providers, { ...claude, Test: cursorTest }]))
 })

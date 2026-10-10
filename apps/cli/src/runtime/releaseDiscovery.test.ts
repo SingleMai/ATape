@@ -139,7 +139,7 @@ describe("release discovery caller Interface", () => {
       .exact({ version: next.version, signal: signal() })).rejects.toThrow("no immutable")
   })
 
-  it("derives only the actual running version during descriptor propagation, checking all seven exact npm packages", async () => {
+  it("derives only the actual running version during descriptor propagation, checking every producer exact npm package", async () => {
     const requested: string[] = [], current = bundle(), client = discovery(await makeHome(), async url => {
       const address = String(url); requested.push(address)
       if (address === versionURL(current.version)) return new Response("missing", { status: 404 })
@@ -148,7 +148,7 @@ describe("release discovery caller Interface", () => {
         ...(package_.name === "@atape/cli" ? { atapeRuntime: { protocol: "atape.runtime.v1", stateContract: "capture.v2", updateControlProtocol: "atape.update-control.v1" } } : {}) })
     })
     expect(await client.exact({ version: current.version, signal: signal() })).toEqual(current)
-    expect(requested).toHaveLength(8)
+    expect(requested).toHaveLength(releasePackageNames.length + 1)
     expect(requested.slice(1)).toEqual(releasePackageNames.map(name => `https://registry.npmjs.org/${name.replace("/", "%2f")}/${current.version}`))
     expect(requested.some(url => url.endsWith("/latest"))).toBe(false)
   })

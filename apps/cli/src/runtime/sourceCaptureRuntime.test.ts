@@ -111,10 +111,10 @@ describe("Host source runtime capability", () => {
       reason: "contract", sourceFailureReason: reason === "unsupported" ? "format" : reason
     })
   })
-  it("preserves v2 unsupported source diagnostics", async () => {
+  it.each(["unsupported", "changed"])("preserves v2 %s source diagnostics", async reason => {
     const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion2,
-      discover: () => { throw { reason: "unsupported" } }, open: () => { throw { reason: "unsupported" } } }, new AbortController().signal)
-    await expect(Effect.runPromise(hosted.discover({ cursor: null, limits }))).rejects.toMatchObject({ reason: "contract", sourceFailureReason: "unsupported" })
+      discover: () => { throw { reason } }, open: () => { throw { reason } } }, new AbortController().signal)
+    await expect(Effect.runPromise(hosted.discover({ cursor: null, limits }))).rejects.toMatchObject({ reason: "contract", sourceFailureReason: reason })
   })
   it("opens the actual OpenCode package Interface and closes native views with the caller Scope", async () => {
     const f = await fixture()

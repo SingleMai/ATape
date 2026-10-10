@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { Effect, Schema } from "effect"
 
 export class CursorSourceError extends Schema.TaggedError<CursorSourceError>()("CursorSourceError", {
-  reason: Schema.Literals(["invalid_input", "missing", "io", "format", "unsupported", "limit", "duplicate", "changed"]),
+  reason: Schema.Literals(["invalid_input", "missing", "io", "format", "incomplete", "unsupported", "limit", "duplicate", "changed"]),
   message: Schema.String
 }) {}
 
@@ -27,7 +27,13 @@ export type CursorDiscoveryPage = {
   readonly sources: ReadonlyArray<CursorSourceCandidate>
   readonly cursor: string | null
   readonly done: boolean
+  readonly sourceFailures: ReadonlyArray<CursorSourceFailure>
+  readonly sourceFailuresTruncated: boolean
 }
+export type CursorSourceFailure = { readonly source: string; readonly reason: "io" | "format" | "unsupported" | "limit" | "duplicate" | "changed" }
+export const CursorSourcePrefix = Schema.Struct({ bytes: count(64 * 1024 * 1024), rows: count(1_000_000),
+  sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) })
+export type CursorSourcePrefix = typeof CursorSourcePrefix.Type
 export type CursorContentPart =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: "tool_use"; readonly name: string; readonly input: Readonly<Record<string, unknown>>; /** Not interpreted by this profile; raw fields remain intact. */ readonly toolCallId: null }
@@ -58,6 +64,9 @@ export type CursorSourceSnapshot = {
   readonly metadataCandidates: ReadonlyArray<CursorMetadataCandidate>
   /** Directory membership is a discovery hint, not a proved parent/call graph. */
   readonly subagentCandidates: ReadonlyArray<CursorSubagentCandidate>
+  readonly sourceFailures: ReadonlyArray<CursorSourceFailure>
+  readonly sourceFailuresTruncated: boolean
+  readonly currentFullPrefix: { readonly bytes: number; readonly rows: number; readonly sha256: string }
   readonly fileObservation: {
     readonly sizeBytes: number
     readonly sha256: string
@@ -67,14 +76,17 @@ export type CursorSourceSnapshot = {
 }
 
 type DiscoveryRequest = { readonly stateDirectory: string; readonly cursor: string | null; readonly limits: CursorSourceLimits }
-type ReadRequest = { readonly stateDirectory: string; readonly sourceId: string; readonly limits: CursorSourceLimits }
+type ReadRequest = { readonly stateDirectory: string; readonly sourceId: string; readonly limits: CursorSourceLimits; readonly requiredPrefixes?: ReadonlyArray<CursorSourcePrefix> }
 type Proof = { readonly path: string; readonly stat: BigIntStats }
-type Context = { readonly root: string; readonly limits: CursorSourceLimits; readonly proofs: Map<string, Proof>; entries: number; bytes: number }
+type Budget = { entries: number; bytes: number; exhausted: boolean }
+type Context = { readonly root: string; readonly limits: CursorSourceLimits; readonly proofs: Map<string, Proof>;
+  readonly budget: Budget; readonly strictDirectories: boolean; readonly failures: CursorSourceFailure[];
+  failuresTruncated: boolean; readonly ids: Map<string, number> }
 type Bytes = { readonly bytes: Buffer; readonly proof: Proof }
 
 const sourceIdentity = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200), Schema.isPattern(/^[A-Za-z0-9_-]+$/))
 const statePath = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096), Schema.isPattern(/^[^\u0000]+$/))
-const discoveryCursor = Schema.NullOr(Schema.String.check(Schema.isPattern(/^cursor-native-v1:[a-f0-9]{64}$/)))
+const discoveryCursor = Schema.NullOr(Schema.String.check(Schema.isPattern(/^cursor-native-v[12]:[a-f0-9]{64}$/)))
 const ObjectRow = Schema.Record(Schema.String, Schema.Unknown)
 const textPart = Schema.Struct({ type: Schema.Literal("text"), text: Schema.String })
 const toolPart = Schema.Struct({ type: Schema.Literal("tool_use"), name: Schema.String.check(Schema.isMinLength(1)), input: ObjectRow })
@@ -130,7 +142,10 @@ const verify = (context: Context) => Effect.gen(function*() {
   for (const proof of context.proofs.values()) {
     yield* Effect.yieldNow
     const current = yield* optionalStat(proof.path)
-    if (current === undefined || !same(proof.stat, current)) return yield* fail("changed", "Cursor source changed during observation; retry.")
+    const stable = current !== undefined && (proof.stat.isDirectory() && !context.strictDirectories
+      ? proof.stat.dev === current.dev && proof.stat.ino === current.ino && proof.stat.mode === current.mode && proof.stat.uid === current.uid && proof.stat.gid === current.gid
+      : same(proof.stat, current))
+    if (!stable) return yield* fail("changed", "Cursor source changed during observation; retry.")
     yield* pathIdentity(context, proof.path)
   }
 })
@@ -141,43 +156,58 @@ const list = (context: Context, path: string): Effect.Effect<ReadonlyArray<Diren
     while (true) {
       const entry = yield* io(() => handle.read())
       if (entry === null) break
-      if (++context.entries > context.limits.inventoryEntries) return yield* fail("limit", "Cursor source inventory exceeds its entry budget.")
-      if (entry.isSymbolicLink()) return yield* fail("unsupported", "Cursor source symlinks are unsupported.")
+      if (++context.budget.entries > context.limits.inventoryEntries) { context.budget.exhausted = true; return yield* fail("limit", "Cursor source inventory exceeds its entry budget.") }
       entries.push(entry)
     }
     return entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
   }), handle => io(() => handle.close()))
 
+const diagnose = (context: Context, source: string, reason: CursorSourceFailure["reason"]) => {
+  if (context.failures.length < 32) context.failures.push({ source, reason })
+  else context.failuresTruncated = true
+}
+const isolated = <A>(context: Context, source: string, work: Effect.Effect<A, CursorSourceError>) => work.pipe(Effect.catch(error => {
+  if (context.budget.exhausted || error.reason === "invalid_input") return Effect.fail(error)
+  diagnose(context, source, error.reason === "incomplete" ? "changed" : error.reason === "missing" ? "io" : error.reason)
+  return Effect.succeed(undefined)
+}))
 const inventory = (context: Context): Effect.Effect<ReadonlyArray<CursorSourceCandidate>, CursorSourceError> => Effect.gen(function*() {
   const projects = join(context.root, "projects")
   if (!(yield* directory(context, projects, true))) return []
-  const candidates: CursorSourceCandidate[] = [], ids = new Set<string>()
+  const candidates: CursorSourceCandidate[] = []
   for (const workspace of yield* list(context, projects)) {
-    if (!workspace.isDirectory()) continue
     const project = join(projects, workspace.name)
-    yield* directory(context, project)
-    const transcripts = join(project, "agent-transcripts")
-    if (!(yield* directory(context, transcripts, true))) continue
-    for (const entry of yield* list(context, transcripts)) {
-      if (!entry.isDirectory()) continue
-      const sourceDirectory = join(transcripts, entry.name)
-      yield* directory(context, sourceDirectory)
-      const transcriptPath = join(sourceDirectory, `${entry.name}.jsonl`)
-      const stat = yield* optionalStat(transcriptPath)
-      if (stat === undefined) continue
-      if (stat.isSymbolicLink() || !stat.isFile()) return yield* fail("unsupported", "Cursor transcript must be a regular file.")
-      yield* pathIdentity(context, transcriptPath)
-      yield* decode(sourceIdentity, entry.name, "unsupported", "Cursor source identity is unsupported.")
-      if (ids.has(entry.name)) return yield* fail("duplicate", "Cursor source identity occurs in multiple workspace directories.")
-      ids.add(entry.name)
-      candidates.push({ sourceId: entry.name, workspaceSlug: workspace.name, transcriptPath })
-    }
+    if (workspace.isSymbolicLink()) { diagnose(context, project, "unsupported"); continue }
+    if (!workspace.isDirectory()) continue
+    yield* isolated(context, project, Effect.gen(function*() {
+      yield* directory(context, project)
+      const transcripts = join(project, "agent-transcripts")
+      if (!(yield* directory(context, transcripts, true))) return
+      for (const entry of yield* list(context, transcripts)) {
+        const sourceDirectory = join(transcripts, entry.name)
+        if (entry.isSymbolicLink()) { diagnose(context, sourceDirectory, "unsupported"); continue }
+        if (!entry.isDirectory()) continue
+        yield* isolated(context, sourceDirectory, Effect.gen(function*() {
+          yield* decode(sourceIdentity, entry.name, "unsupported", "Cursor source identity is unsupported.")
+          context.ids.set(entry.name, (context.ids.get(entry.name) ?? 0) + 1)
+          yield* directory(context, sourceDirectory)
+          const transcriptPath = join(sourceDirectory, `${entry.name}.jsonl`), stat = yield* optionalStat(transcriptPath)
+          if (stat === undefined) return
+          if (stat.isSymbolicLink() || !stat.isFile()) return yield* fail("unsupported", "Cursor transcript must be a regular file.")
+          yield* pathIdentity(context, transcriptPath)
+          candidates.push({ sourceId: entry.name, workspaceSlug: workspace.name, transcriptPath })
+        }))
+      }
+    }))
   }
-  return candidates
+  return candidates.filter(candidate => {
+    if ((context.ids.get(candidate.sourceId) ?? 0) <= 1) return true
+    diagnose(context, candidate.transcriptPath, "duplicate"); return false
+  })
 })
 
 const withContext = <A>(stateDirectory: string, limits: CursorSourceLimits, missing: () => Effect.Effect<A, CursorSourceError>,
-  use: (context: Context) => Effect.Effect<A, CursorSourceError>): Effect.Effect<A, CursorSourceError> => Effect.gen(function*() {
+  use: (context: Context) => Effect.Effect<A, CursorSourceError>, strictDirectories = false): Effect.Effect<A, CursorSourceError> => Effect.gen(function*() {
   yield* decode(statePath, stateDirectory, "invalid_input", "Cursor state directory is invalid.")
   yield* decode(CursorSourceLimits, limits, "invalid_input", "Cursor source limits are invalid.")
   if (!isAbsolute(stateDirectory)) return yield* fail("invalid_input", "Cursor state directory must be absolute.")
@@ -189,27 +219,28 @@ const withContext = <A>(stateDirectory: string, limits: CursorSourceLimits, miss
     if (stat === undefined) return yield* missing()
     if (stat.isSymbolicLink() || !stat.isDirectory()) return yield* fail("unsupported", "Cursor state directory must be a real directory.")
     const root = yield* io(() => realpath(selected))
-    const context: Context = { root, limits, proofs: new Map(), entries: 0, bytes: 0 }
+    const context: Context = { root, limits, proofs: new Map(), budget: { entries: 0, bytes: 0, exhausted: false },
+      failures: [], failuresTruncated: false, ids: new Map(), strictDirectories }
     yield* remember(context, root, stat)
     const value = yield* use(context)
     yield* verify(context)
     return value
   }).pipe(Effect.timeoutOrElse({ duration: limits.durationMs, orElse: () => fail("limit", "Cursor source operation exceeded its deadline.") }))
 })
-const cursorFor = (source: CursorSourceCandidate) => "cursor-native-v1:" + createHash("sha256").update(JSON.stringify([source.workspaceSlug, source.sourceId])).digest("hex")
+const cursorFor = (source: CursorSourceCandidate) => "cursor-native-v2:" + createHash("sha256").update(JSON.stringify([source.workspaceSlug, source.sourceId])).digest("hex")
 
 /** Read-only bounded inventory. Slugs and current paths never establish Project Origin. */
 export const discoverCursorSources = (request: DiscoveryRequest): Effect.Effect<CursorDiscoveryPage, CursorSourceError> => Effect.gen(function*() {
   yield* decode(discoveryCursor, request.cursor, "invalid_input", "Cursor discovery cursor is invalid.")
   return yield* withContext(request.stateDirectory, request.limits,
-    () => Effect.succeed({ sources: [], cursor: null, done: true }),
+    () => Effect.succeed({ sources: [], cursor: null, done: true, sourceFailures: [], sourceFailuresTruncated: false }),
     context => Effect.gen(function*() {
-      const all = yield* inventory(context)
-      const previous = request.cursor === null ? -1 : all.findIndex(source => cursorFor(source) === request.cursor)
-      if (request.cursor !== null && previous < 0) return yield* fail("changed", "Cursor discovery position is no longer present; restart discovery.")
-      const sources = all.slice(previous + 1, previous + 1 + request.limits.pageSources)
-      const done = previous + 1 + sources.length >= all.length
-      return { sources, cursor: done ? null : cursorFor(sources.at(-1)!), done }
+      const all = (yield* inventory(context)).slice().sort((a, b) => cursorFor(a).localeCompare(cursorFor(b)))
+      const position = request.cursor?.replace("cursor-native-v1:", "cursor-native-v2:")
+      const later = position === undefined ? all : all.filter(source => cursorFor(source) > position)
+      const sources = later.slice(0, request.limits.pageSources), done = sources.length === later.length
+      return { sources, cursor: done ? null : cursorFor(sources.at(-1)!), done,
+        sourceFailures: context.failures, sourceFailuresTruncated: context.failuresTruncated }
     }))
 })
 
@@ -220,8 +251,8 @@ const readBytes = (context: Context, path: string, maximum: number): Effect.Effe
   return yield* Effect.acquireUseRelease(io(() => open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)), handle => Effect.gen(function*() {
     const before = yield* io(() => handle.stat({ bigint: true }))
     if (!before.isFile() || !same(pathBefore, before)) return yield* fail("changed", "Cursor source changed before reading; retry.")
-    const remaining = Math.min(maximum, context.limits.sourceBytes - context.bytes)
-    if (before.size > BigInt(remaining)) return yield* fail("limit", "Cursor source files exceed their aggregate byte budget.")
+    const remaining = Math.min(maximum, context.limits.sourceBytes - context.budget.bytes)
+    if (before.size > BigInt(remaining)) { context.budget.exhausted = true; return yield* fail("limit", "Cursor source files exceed their aggregate byte budget.") }
     yield* pathIdentity(context, path)
     const buffer = Buffer.alloc(Number(before.size) + 1)
     let bytesRead = 0
@@ -236,7 +267,7 @@ const readBytes = (context: Context, path: string, maximum: number): Effect.Effe
       return yield* fail("changed", "Cursor source changed during reading; retry.")
     yield* pathIdentity(context, path)
     yield* remember(context, path, after)
-    context.bytes += bytesRead
+    context.budget.bytes += bytesRead
     return { bytes: buffer.subarray(0, bytesRead), proof: { path, stat: after } }
   }), handle => io(() => handle.close()))
 })
@@ -277,13 +308,16 @@ const jsonObject = (bytes: Buffer) => Effect.gen(function*() {
   return { rawJson, raw }
 })
 const records = (bytes: Buffer, limits: CursorSourceLimits) => Effect.gen(function*() {
-  if (bytes.length > 0 && bytes.at(-1) !== 10) return yield* fail("format", "Cursor transcript has an incomplete trailing record; retry after a complete newline.")
   const output: CursorSourceRecord[] = []
   let offset = 0
   while (offset < bytes.length) {
     yield* Effect.yieldNow
     if (output.length >= limits.records) return yield* fail("limit", "Cursor transcript exceeds its record budget.")
     const end = bytes.indexOf(10, offset)
+    if (end < 0) {
+      if (bytes.length - offset > limits.rowBytes) return yield* fail("limit", "Cursor transcript record exceeds its byte budget.")
+      return yield* fail("incomplete", "Cursor transcript has an incomplete trailing record.")
+    }
     if (end - offset > limits.rowBytes) return yield* fail("limit", "Cursor transcript record exceeds its byte budget.")
     const { rawJson, raw } = yield* jsonObject(bytes.subarray(offset, end))
     const base: CursorRecordBase = { line: output.length + 1, rawJson, raw, eventTime: null, nativeEventId: null }
@@ -310,48 +344,81 @@ const records = (bytes: Buffer, limits: CursorSourceLimits) => Effect.gen(functi
 
 const metadata = (context: Context, sourceId: string) => Effect.gen(function*() {
   const chats = join(context.root, "chats"), candidates: CursorMetadataCandidate[] = []
-  if (!(yield* directory(context, chats, true))) return candidates
-  for (const bucket of yield* list(context, chats)) {
-    if (!bucket.isDirectory()) continue
-    const bucketPath = join(chats, bucket.name)
-    yield* directory(context, bucketPath)
-    const sessionPath = join(bucketPath, sourceId)
-    if (!(yield* directory(context, sessionPath, true))) continue
-    const path = join(sessionPath, "meta.json"), stat = yield* optionalStat(path)
-    if (stat === undefined) continue
-    const file = yield* readBytes(context, path, Math.min(context.limits.rowBytes, 64 * 1024))
-    const { raw } = yield* jsonObject(file.bytes)
-    const value = yield* decode(Metadata, raw, "format", "Cursor metadata candidate is malformed.")
-    candidates.push({ path, title: value.title ?? null, cwd: value.cwd ?? null, createdAtMs: value.createdAtMs ?? null, raw })
-  }
+  // Optional sidecars have their own stability proofs. They cannot decide whether
+  // the already-read root transcript proves content or creation continuity.
+  const auxiliary = (): Context => ({ ...context, proofs: new Map() })
+  const traversal = auxiliary()
+  yield* isolated(context, chats, Effect.gen(function*() {
+    if (!(yield* directory(traversal, chats, true))) return
+    for (const bucket of yield* list(traversal, chats)) {
+      const bucketPath = join(chats, bucket.name)
+      if (bucket.isSymbolicLink()) { diagnose(context, bucketPath, "unsupported"); continue }
+      if (!bucket.isDirectory()) continue
+      yield* isolated(context, bucketPath, Effect.gen(function*() {
+        const local = auxiliary()
+        yield* directory(local, bucketPath)
+        const sessionPath = join(bucketPath, sourceId)
+        if (!(yield* directory(local, sessionPath, true))) return
+        const path = join(sessionPath, "meta.json"), stat = yield* optionalStat(path)
+        if (stat === undefined) return
+        const maximum = Math.min(context.limits.rowBytes, 64 * 1024)
+        if (stat.size > BigInt(maximum)) { diagnose(context, path, "limit"); return }
+        const file = yield* readBytes(local, path, maximum), { raw } = yield* jsonObject(file.bytes)
+        const value = yield* decode(Metadata, raw, "format", "Cursor metadata candidate is malformed.")
+        yield* verify(local)
+        candidates.push({ path, title: value.title ?? null, cwd: value.cwd ?? null, createdAtMs: value.createdAtMs ?? null, raw })
+      }))
+    }
+  }))
   return candidates
 })
 const subagents = (context: Context, source: CursorSourceCandidate) => Effect.gen(function*() {
   const path = join(dirname(source.transcriptPath), "subagents"), candidates: CursorSubagentCandidate[] = []
-  if (!(yield* directory(context, path, true))) return candidates
-  for (const entry of yield* list(context, path)) {
-    if (entry.isDirectory() || !entry.name.endsWith(".jsonl")) continue
-    const sourceId = entry.name.slice(0, -6), transcriptPath = join(path, entry.name)
-    yield* decode(sourceIdentity, sourceId, "unsupported", "Cursor subagent candidate identity is unsupported.")
-    const stat = yield* io(() => lstat(transcriptPath, { bigint: true }))
-    if (stat.isSymbolicLink() || !stat.isFile()) return yield* fail("unsupported", "Cursor subagent candidate must be a regular file.")
-    yield* pathIdentity(context, transcriptPath)
-    if (candidates.length >= context.limits.subagents) return yield* fail("limit", "Cursor subagent candidates exceed their count budget.")
-    candidates.push({ sourceId, transcriptPath })
-  }
+  const local: Context = { ...context, proofs: new Map() }
+  yield* isolated(context, path, Effect.gen(function*() {
+    if (!(yield* directory(local, path, true))) return
+    for (const entry of yield* list(local, path)) {
+      if (entry.isDirectory() || !entry.name.endsWith(".jsonl")) continue
+      const sourceId = entry.name.slice(0, -6), transcriptPath = join(path, entry.name)
+      yield* isolated(context, transcriptPath, Effect.gen(function*() {
+        yield* decode(sourceIdentity, sourceId, "unsupported", "Cursor subagent candidate identity is unsupported.")
+        const stat = yield* io(() => lstat(transcriptPath, { bigint: true }))
+        if (stat.isSymbolicLink() || !stat.isFile()) return yield* fail("unsupported", "Cursor subagent candidate must be a regular file.")
+        yield* pathIdentity(local, transcriptPath)
+        if (candidates.length >= context.limits.subagents) { context.budget.exhausted = true; return yield* fail("limit", "Cursor subagent candidates exceed their count budget.") }
+        candidates.push({ sourceId, transcriptPath })
+      }))
+    }
+  }))
   return candidates
 })
 
 /** One complete, stable observation; no cross-observation continuity or attribution is claimed. */
 export const readCursorSource = (request: ReadRequest): Effect.Effect<CursorSourceSnapshot, CursorSourceError> => Effect.gen(function*() {
   yield* decode(sourceIdentity, request.sourceId, "invalid_input", "Cursor source identity is invalid.")
+  const prefixes = yield* decode(Schema.Array(CursorSourcePrefix).check(Schema.isMaxLength(2)), request.requiredPrefixes ?? [],
+    "invalid_input", "Cursor prefix requirements are invalid.")
   return yield* withContext(request.stateDirectory, request.limits,
     () => fail("missing", "Cursor state directory is missing."),
     context => Effect.gen(function*() {
       const source = (yield* inventory(context)).find(candidate => candidate.sourceId === request.sourceId)
-      if (source === undefined) return yield* fail("missing", "Cursor source is missing.")
+      if ((context.ids.get(request.sourceId) ?? 0) > 1) return yield* fail("duplicate", "Cursor source identity occurs in multiple workspace directories.")
+      if (source === undefined) {
+        if (context.failures.some(failure => failure.source.endsWith(`${sep}${request.sourceId}`) || failure.source.endsWith(`${sep}${request.sourceId}.jsonl`)))
+          return yield* fail("unsupported", "Cursor source location is unsupported.")
+        return yield* fail("missing", "Cursor source is missing.")
+      }
       const file = yield* readBytes(context, source.transcriptPath, context.limits.sourceBytes)
       const content = yield* records(file.bytes, context.limits)
+      for (const prefix of prefixes) {
+        if (prefix.bytes > file.bytes.length || file.bytes[prefix.bytes - 1] !== 10)
+          return yield* fail("changed", "Cursor source no longer contains its required complete prefix.")
+        const bytes = file.bytes.subarray(0, prefix.bytes)
+        let rows = 0
+        for (const byte of bytes) if (byte === 10) rows++
+        if (rows !== prefix.rows || createHash("sha256").update(bytes).digest("hex") !== prefix.sha256)
+          return yield* fail("changed", "Cursor source no longer contains its required content prefix.")
+      }
       const metadataCandidates = yield* metadata(context, source.sourceId)
       const subagentCandidates = yield* subagents(context, source)
       const modifiedAt = yield* Effect.try({ try: () => new Date(Number(file.proof.stat.mtimeMs)).toISOString(),
@@ -359,8 +426,31 @@ export const readCursorSource = (request: ReadRequest): Effect.Effect<CursorSour
       return {
         source, origin: { status: "unknown" as const, reason: "creation_evidence_unavailable" as const },
         records: content, metadataCandidates, subagentCandidates,
+        sourceFailures: context.failures, sourceFailuresTruncated: context.failuresTruncated,
+        currentFullPrefix: { bytes: file.bytes.length, rows: content.length, sha256: createHash("sha256").update(file.bytes).digest("hex") },
         fileObservation: { sizeBytes: file.bytes.length, sha256: createHash("sha256").update(file.bytes).digest("hex"),
           modifiedAt, modifiedAtMeaning: "filesystem_observation" as const }
       }
     }))
+})
+
+/** Exclusive creation preflight is stricter than best-effort discovery: an
+ * unreadable entry cannot prove that a fresh identity is absent. */
+export const assertCursorSourceAbsent = (request: ReadRequest & { readonly chatDirectory: string }) => Effect.gen(function*() {
+  yield* decode(sourceIdentity, request.sourceId, "invalid_input", "Cursor source identity is invalid.")
+  return yield* withContext(request.stateDirectory, request.limits, () => fail("missing", "Cursor state directory is missing."), context => Effect.gen(function*() {
+    yield* inventory(context)
+    if (context.failures.length || context.failuresTruncated) return yield* fail("unsupported", "Cursor inventory cannot prove a fresh source identity.")
+    if (context.ids.has(request.sourceId)) return yield* fail("duplicate", "Cursor source identity already exists.")
+    if (!contained(context.root, request.chatDirectory)) return yield* fail("invalid_input", "Cursor native claim path is invalid.")
+    // Inspect each existing parent without following links; the leaf is never created here.
+    for (const path of [join(context.root, "chats"), dirname(request.chatDirectory), request.chatDirectory]) {
+      const stat = yield* optionalStat(path)
+      if (stat === undefined) break
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return yield* fail("unsupported", "Cursor native claim path is unsupported.")
+      yield* pathIdentity(context, path)
+      yield* remember(context, path, stat)
+      if (path === request.chatDirectory) return yield* fail("duplicate", "Cursor native identity has already been claimed.")
+    }
+  }), true)
 })

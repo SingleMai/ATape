@@ -35,6 +35,7 @@ export class ClientManagementError extends Schema.TaggedError<ClientManagementEr
 }) {}
 
 export type LocatedProject = {
+  readonly requestedCwd: string
   readonly path: string
   readonly name: string
   readonly type: "git" | "directory"

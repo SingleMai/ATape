@@ -82,7 +82,7 @@ async function boundedBytes(response, limit) {
 }
 
 // fetch is the real anonymous registry transport Seam; the clock bounds retries
-// across all seven packages rather than granting a fresh budget per request.
+// across the complete producer bundle rather than granting a fresh budget per request.
 export function createPublicReleaseRegistry({ fetch: transport = globalThis.fetch, now = Date.now,
   sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)), budgetMs = 600_000 } = {}) {
   if (!(budgetMs > 0 && budgetMs <= 600_000)) throw new Error("Invalid public visibility budget.")

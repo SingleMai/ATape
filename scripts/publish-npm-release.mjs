@@ -61,7 +61,7 @@ export async function publishRelease({ release, artifacts, registry, github, not
     }
   } finally { await rm(staging, { recursive: true, force: true }) }
   const visibility = await registry.verify(artifacts)
-  log(`Verified all seven public npm manifests and exact tarball bytes for ${bundle.version}.\n`)
+  log(`Verified all ${bundle.packages.length} public npm manifests and exact tarball bytes for ${bundle.version}.\n`)
   const publication = await publishUpdateCatalog({ artifacts, notes, commit, github })
   return { ...publication, npmTag: tag, visibility }
 }

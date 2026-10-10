@@ -22,11 +22,12 @@ export const makeProjectLocatorLayer = () => Layer.succeed(ProjectLocator, Proje
         if (preference === "git") {
           throw locatedFailure("not_git", requested, `${requested} is not inside a Git worktree.`)
         }
-        return { path: requested, name: basename(requested), type: "directory" as const }
+        return { requestedCwd: requested, path: requested, name: basename(requested), type: "directory" as const }
       }
       const root = await realpath(gitRoot)
       const repositoryRemote = await findGitRemote(root, signal)
       return {
+        requestedCwd: requested,
         path: root,
         name: basename(root),
         type: "git" as const,

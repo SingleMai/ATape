@@ -1,3 +1,4 @@
+import { archiveName } from "./release-contract.mjs"
 import { createHash } from "node:crypto"
 import { decodeReleaseBundle, decodeReleaseCatalog, mergeReleaseBundle, releaseBundleFingerprint,
   releaseBundleFromBody, releaseBundleSection, updateCatalogTag } from "../packages/domain/src/releaseCatalog.ts"
@@ -108,7 +109,7 @@ export async function readPublicationTargets(github) {
 }
 
 // This Module owns all GitHub advertisement. The caller invokes it only after
-// anonymous verification of the complete seven-package bundle has succeeded.
+// anonymous verification of the complete producer bundle has succeeded.
 export async function publishUpdateCatalog({ artifacts, notes, commit, github }) {
   const bundle = decodeReleaseBundle(artifacts.bundle)
   if (bundle.captureStateContract !== publicationCaptureContract || bundle.updateControlProtocol !== publicationControlProtocol) {
@@ -116,7 +117,12 @@ export async function publishUpdateCatalog({ artifacts, notes, commit, github })
   }
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("Publication requires an exact commit.")
   preparePublicationMetadata(bundle, notes)
-  if (artifacts.files.length !== 8 || new Set(artifacts.files.map(file => file.filename)).size !== 8) throw new Error("Publication requires exactly seven tarballs and SHA256SUMS.")
+  const expectedFilenames = new Set([...bundle.packages.map(item => archiveName(item.name, bundle.version)), "SHA256SUMS"])
+  const actualFilenames = new Set(artifacts.files.map(file => file.filename))
+  if (artifacts.files.length !== expectedFilenames.size || actualFilenames.size !== expectedFilenames.size ||
+    [...actualFilenames].some(filename => !expectedFilenames.has(filename))) {
+    throw new Error("Publication requires the exact bundle tarballs and SHA256SUMS.")
+  }
   for (const file of artifacts.files) if (!Buffer.isBuffer(file.bytes) || file.sha256 !== digest(file.bytes)) throw new Error("Local publication bytes changed.")
   const tag = `v${bundle.version}`
   await github.verifyVersionTag(tag, commit)

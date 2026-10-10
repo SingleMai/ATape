@@ -186,3 +186,29 @@ The [CodeBuddy Code CLI Adapter](codebuddy.md), [Kimi Code CLI Adapter](kimi.md)
 The authoritative types remain in `packages/domain/src/collector.ts`; see
 [ADR-0068](../architecture/adr/0068-source-capture-runtime.md) and
 [default admission](../architecture/adr/0076-source-collection-release-admission.md).
+
+## Controlled new-session capability
+
+`newSession: "atape.new-session.v1"` is optional and must match a factory runtime
+`newSession` with that exact protocol and a `start` operation. A factory declaring
+this capability must also provide `close()` and join its owned operations before
+closure completes, including when its collection Interface is legacy `collect`.
+It accompanies a
+real collection capability; it is not a replacement empty collector. Cursor
+implements it with sourceCapture v2. Existing Adapters need no change.
+
+The Application owns fresh Project/account/permission selection. The request
+contains immutable launch origin, optional bounded prompt, cancellation and
+scope-bound `recordAttempt`, `confirm`, `abandon` callbacks. The Host owns bounded
+atomic receipt storage and rejects late callbacks; the Adapter supplies the native
+facts justifying confirmation. Read-only factory context
+`creationReceipts.readConfirmed({ stateDirectory, sourceId }, signal)` returns a
+confirmed receipt or absence, independently of the currently selected Project.
+Older context Types may omit it; Cursor explicitly requires an updated Host.
+Server credentials and upload operations remain outside the foreign Interface.
+
+The Host validates the returned source ID, creation state and numeric exit code
+against actual receipt facts. Scope cleanup joins writes, Adapter resources and
+the immediate native child before restoring the terminal. See
+[ADR-0116](../architecture/adr/0116-controlled-cursor-creation.md) and the
+[Cursor guide](cursor.md) for attribution, compatibility and verification limits.
