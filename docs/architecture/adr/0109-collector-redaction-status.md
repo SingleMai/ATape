@@ -49,6 +49,11 @@ needed.
   does not repair process records, start or stop collection, access redaction keys,
   or create files. Inspection observes the process before and after reading status;
   disagreement or read failure produces unknown with no stale jobs.
+- Run status is an atomically published read model. A reader may finish reading
+  the complete old snapshot after replacement unlinks its open inode. This is
+  distinct from configuration revision/CAS checks: status reads accept that
+  replacement while retaining bounds, regular-file and content-stability checks,
+  and do not acquire a write-producing lock merely to inspect status.
 - Only status from the observed live generation is current. A stopped Collector's
   retained records are explicitly historical. Missing legacy metadata is unknown,
   not evidence that protection is disabled. Concurrent jobs may show different
@@ -67,9 +72,9 @@ Verify lifecycle events and snapshot pinning through the collection Interface,
 including concurrent jobs, safe load failure, later failure and interruption.
 Verify inspection across generation changes, stopped and legacy status, read
 errors and file-version comparisons. Real temporary filesystem Adapter tests cover
-serialized writes, generation fencing, version-1 compatibility and observation
-without writes. Verify the installed Settings flow and the remote-report privacy
-boundary. Provider-specific sessions and complete-session previews add no required
+concurrent snapshot reads, serialized writes, generation fencing, version-1
+compatibility and observation without writes. Verify the installed Settings flow
+and remote-report privacy boundary. Provider-specific sessions and complete-session previews add no required
 acceptance surface to this increment.
 
 This is configuration observability. It does not prove upload completion, alter

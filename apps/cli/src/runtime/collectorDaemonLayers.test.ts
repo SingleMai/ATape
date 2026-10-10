@@ -70,6 +70,29 @@ describe("Node Collector run status Adapter", () => {
     expect(await readFile(f.statusFile, "utf8")).not.toContain("admitted-token")
   })
 
+  it("reads complete published snapshots while concurrent writers replace the status file", async () => {
+    const f = await redactionFixture(), store = await f.store()
+    const report = (observations: number) => ({
+      startedAt: "2026-10-10T01:00:00.000Z", completedAt: "2026-10-10T01:00:01.000Z",
+      jobs: Array.from({ length: 128 }, (_, index) => ({ projectId: `project-${index}`, adapterId: "claude",
+        pages: 1, observations, canonicalBatches: 1, rawChunks: 1, redactions: 0, hasMore: false })), failures: []
+    })
+    await Effect.runPromise(store.recordCycle(report(1)))
+    const readSnapshots = async () => {
+      for (let index = 0; index < 96; index++) {
+        const state = await Effect.runPromise(store.read())
+        expect(state.jobs).toHaveLength(128)
+        expect([1, 2]).toContain(state.jobs[0]!.observations)
+        expect(state.jobs.every(job => job.observations === state.jobs[0]!.observations)).toBe(true)
+      }
+    }
+    await Promise.all([
+      (async () => {
+        for (let index = 0; index < 64; index++) await Effect.runPromise(store.recordCycle(report(index % 2 + 1)))
+      })(), readSnapshots(), readSnapshots()
+    ])
+  })
+
   it("fences stale attempts, resets new snapshots, and prevents old or wrong processes claiming the new generation", async () => {
     const f = await redactionFixture()
     await f.owner("generation-a")
@@ -152,7 +175,8 @@ describe("Node Collector run status Adapter", () => {
 
   it("fails safely on malformed, oversized and symlinked run status without echoing source contents", async () => {
     const f = await redactionFixture(), store = await f.store()
-    for (const content of ['{"secret":"do-not-echo"', JSON.stringify({ version: 1, jobs: "do-not-echo" }), " ".repeat(8 * 1024 * 1024 + 1)]) {
+    for (const content of ['{"secret":"do-not-echo"', JSON.stringify({ version: 1, jobs: "do-not-echo" }),
+      Buffer.from([0xff]), " ".repeat(8 * 1024 * 1024 + 1)]) {
       await writeFile(f.statusFile, content)
       await expect(Effect.runPromise(store.read())).rejects.toThrow(/Collector run status/)
       try { await Effect.runPromise(store.read()) } catch (cause) { expect(String(cause)).not.toContain("do-not-echo") }

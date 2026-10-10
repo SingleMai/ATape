@@ -16,6 +16,7 @@ import {
 } from "@atape/domain"
 import { execFile, spawn } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
+import { constants } from "node:fs"
 import { mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { performance } from "node:perf_hooks"
@@ -749,11 +750,38 @@ const syncDirectory = async (path: string) => {
 }
 
 const maximumRunStatusBytes = 8 * 1024 * 1024
+// Writers publish immutable snapshots with rename. A reader may retain the
+// previous inode after that rename unlinks it; its bytes remain a valid snapshot.
+const readPublishedRunState = async (statusFile: string) => {
+  const handle = await open(statusFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const before = await handle.stat()
+    if (!before.isFile() || before.size > maximumRunStatusBytes) throw new Error("Invalid Collector status file")
+    // Admit one extra byte to detect growth without allocating the full bound
+    // for each foreground poll or background status transaction.
+    const buffer = Buffer.alloc(before.size + 1)
+    let size = 0
+    while (size <= before.size) {
+      const result = await handle.read(buffer, size, buffer.length - size, size)
+      if (result.bytesRead === 0) break
+      size += result.bytesRead
+    }
+    const after = await handle.stat()
+    const unlinkedSnapshot = before.nlink === 1 && after.nlink === 0
+    if (size !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
+      after.ino !== before.ino || after.dev !== before.dev || after.mode !== before.mode ||
+      after.uid !== before.uid || after.gid !== before.gid ||
+      after.nlink !== before.nlink && !unlinkedSnapshot ||
+      after.ctimeMs !== before.ctimeMs && !unlinkedSnapshot) throw new Error("Collector status changed during read")
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, size))) as unknown
+  } finally { await handle.close() }
+}
+
 const readRunState = (statusFile: string): Effect.Effect<CollectorRunState, CollectorRunStatusError> =>
   Effect.tryPromise({
     try: async () => {
       try {
-        return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode((await readBoundedRedactionFile(statusFile, maximumRunStatusBytes)).bytes)) as unknown
+        return await readPublishedRunState(statusFile)
       } catch (cause) {
         if (hasCode(cause, "ENOENT")) return emptyCollectorRunState() as unknown
         throw cause
