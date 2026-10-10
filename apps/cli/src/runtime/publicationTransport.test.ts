@@ -4,6 +4,7 @@ import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { AuthenticatedHTTPClient, type AuthenticatedHTTPRequest } from "./authenticatedHTTPClient.ts"
 import { makePublicationTransportLayer } from "./publicationTransport.ts"
+import { FrozenOldPublicationCapabilities } from "./fixtures/frozen-publication-v2.ts"
 
 const binding: PublicationBinding = {
   instanceOrigin: "https://atape.net", userId: "user-1", installationId: "installation-1"
@@ -17,24 +18,6 @@ const legacyCapabilities = {
   },
   statusPageSize: 100, reclaimPageSize: 32
 }
-
-// Frozen from f67ad67, before v3. Do not derive this compatibility decoder
-// from the current schema: an old installed Host cannot accept new literals.
-const oldCount = (maximum: number, minimum = 1) => Schema.Number.check(
-  Schema.isInt(), Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
-const FrozenOldPublicationCapabilities = Schema.Struct({
-  protocol: Schema.Literal("atape.publication.v1"), targetProfile: Schema.Literal("atape.publication-target.v1"),
-  targetProfiles: Schema.optionalKey(Schema.Array(Schema.Literals([
-    "atape.publication-target.v1", "atape.publication-target.v2"
-  ])).check(Schema.isMaxLength(2))),
-  legacyAdoption: Schema.optionalKey(Schema.Boolean),
-  limits: Schema.Struct({
-    partBytes: oldCount(4 * 1024 * 1024), targetBytes: oldCount(1024 * 1024 * 1024),
-    userPendingBytes: oldCount(16 * 1024 * 1024 * 1024), parts: oldCount(4096), reservations: oldCount(128),
-    reservationLifetimeMs: oldCount(24 * 60 * 60 * 1000), leaseLifetimeMs: oldCount(60 * 60 * 1000)
-  }),
-  statusPageSize: Schema.Literal(100), reclaimPageSize: Schema.Literal(32)
-})
 
 const fixture = (body: unknown) => {
   const requests: AuthenticatedHTTPRequest[] = []

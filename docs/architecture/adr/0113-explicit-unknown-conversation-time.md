@@ -51,6 +51,20 @@ header digest binds those choices; selection never depends on individual parts.
 Targets v1/v2 do not admit canonical v3. Frozen bytes and journal receipts remain
 the recovery authority; no new journal store or clock-derived checkpoint exists.
 
+Wire capability negotiation must also preserve older journal readers. New Intent
+records keep `capabilities.targetProfiles` within the old v1/v2 closed schema and
+store the negotiated v3 fact in a separate optional literal field. Older Struct
+decoders ignore that field and can recover frozen units opaquely. Current readers
+also accept earlier all-three capability records from this unpublished increment.
+The local capture state contract does not change. This compatibility is checked
+with the frozen old Intent decoder, not claimed as an executed old Host upgrade.
+
+Canonical preparation, fresh Raw-only preparation and comparison share one
+projection identity builder. A fresh Raw view must retain the selected Canonical
+profile, provider projection profile and native checkpoint before any Raw record
+is frozen. Existing published Session metadata proves the projection identity;
+acknowledged Raw-only work must compare unchanged on the next identical scan.
+
 Go may retain known-string transport construction with private explicit-null
 flags and strict JSON codecs. Its Canonical records use a zero `time.Time` only
 as an internal unknown representation. Wire and normalized publication JSON use

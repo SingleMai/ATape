@@ -28,6 +28,18 @@ export const sourceFingerprint = (value: unknown) => Effect.tryPromise({
 const positive = (value: number, minimum = 0) => Number.isSafeInteger(value) && value >= minimum
 export const PublicationPreparationVersion = "atape.host-canonical.v1"
 
+/** One identity for Canonical preparation, Raw-only preparation and comparison.
+ * Preserve existing v2 identities while keeping v3 outside that namespace. */
+export const sourceProjectionProfile = (view: Pick<PublicationDraftView, "profile" | "canonicalProfileVersion">, transformVersion: string) => Effect.gen(function*() {
+  const canonicalProfileVersion = yield* Schema.decodeUnknownEffect(CanonicalProfile)(view.canonicalProfileVersion ?? CanonicalProfileVersion).pipe(
+    Effect.mapError(() => fail("invalid", "Source Canonical profile is unsupported.")))
+  if (typeof view.profile !== "string" || !view.profile || view.profile.length > 500)
+    return yield* fail("invalid", "Source profile exceeds its bound.")
+  const profile = `${canonicalProfileVersion === CanonicalProfileVersion3 ? "atape.host-canonical.v2" : PublicationPreparationVersion}:${transformVersion}:${view.profile}`
+  if (profile.length > 500) return yield* fail("invalid", "Capture projection profile exceeds its bound.")
+  return { canonicalProfileVersion, profile }
+})
+
 
 export const validateCanonicalSourceMetadata = (owner: CaptureOwner, adapterVersion: string) => Effect.gen(function*() {
   const journal = yield* CaptureJournal
@@ -42,21 +54,16 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
   readonly captureId: string; readonly observedAt: string; readonly adapterVersion: string; readonly transformVersion: string
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal
-  const canonicalProfileVersion = yield* Schema.decodeUnknownEffect(CanonicalProfile)(view.canonicalProfileVersion ?? CanonicalProfileVersion).pipe(
-    Effect.mapError(() => fail("invalid", "Source Canonical profile is unsupported.")))
+  const { canonicalProfileVersion, profile } = yield* sourceProjectionProfile(view, input.transformVersion)
   if (view.origin.sourceId !== owner.scope.sourceSessionId || view.origin.originKey !== owner.scope.originKey ||
     view.session.sourceSessionId !== owner.scope.sourceSessionId) return yield* fail("binding", "Fresh source Origin differs from the claimed capture.")
-  if (!view.profile || view.profile.length > 500 || !positive(view.target.events) || !positive(view.target.usage) ||
+  if (!positive(view.target.events) || !positive(view.target.usage) ||
     !positive(view.target.threads, 1) || view.target.threads !== view.threads.length || view.session.reportedEventCount !== view.target.events)
     return yield* fail("invalid", "Source target counts are inconsistent.")
   const retained = new Set(view.target.retainedThreadIds ?? [])
   if (retained.size !== (view.target.retainedThreadIds?.length ?? 0) || retained.size > 1000 ||
     [...retained].some(id => !view.threads.some(thread => thread.sourceThreadId === id && thread.parentSourceThreadId !== undefined)))
     return yield* fail("invalid", "Retained Threads must be unique nonroot headers in the complete target.")
-  // Keep every existing v2 projection identity unchanged. The separate prefix
-  // prevents a v3 source profile from colliding with any v2 profile string.
-  const profile = `${canonicalProfileVersion === CanonicalProfileVersion3 ? "atape.host-canonical.v2" : PublicationPreparationVersion}:${input.transformVersion}:${view.profile}`
-  if (profile.length > 500) return yield* fail("invalid", "Capture projection profile exceeds its bound.")
   const placeholder = { _tag: "unavailable", reason: "Raw capture disabled" } as const
   const observation = (events: ReadonlyArray<AdapterEvent>, usage: ReadonlyArray<AdapterUsage>) => ({
     observationId: input.captureId, observedAt: input.observedAt, session: { ...view.session, revision: 1 },
