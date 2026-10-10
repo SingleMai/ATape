@@ -264,14 +264,17 @@ describe.skipIf(process.platform === "win32")("managed Collector executable repl
     const paths = { collectorProcessFile: join(root, "process.json"),
       collectorStatusFile: join(root, "status.json"), collectorLogFile: join(root, "collector.log") }
     const replace = (build: string, options: { readonly ignoreTermination?: boolean; readonly ready?: boolean;
-      readonly exitDuringReadiness?: boolean; readonly readyMarker?: "directory" | "malformed" | "foreign" } = {}) => writeFile(entry, `import { mkdirSync, writeFileSync } from "node:fs";
+      readonly exitDuringReadiness?: boolean; readonly readyMarker?: "directory" | "malformed" | "foreign" } = {}) => writeFile(entry, `import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 ${options.ignoreTermination ? 'process.on("SIGTERM", () => {});' : ""}
 writeFileSync(${JSON.stringify(marker)}, JSON.stringify({build:${JSON.stringify(build)},pid:process.pid}));
 if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.exitDuringReadiness === true}) process.exit(1);
 if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.readyMarker === "directory"}) mkdirSync(process.env.ATAPE_COLLECTOR_READY_FILE);
 if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.readyMarker === "malformed"}) writeFileSync(process.env.ATAPE_COLLECTOR_READY_FILE, '{"token":');
-if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.ready !== false}) writeFileSync(process.env.ATAPE_COLLECTOR_READY_FILE,
-JSON.stringify({token:${options.readyMarker === "foreign"} ? "foreign" : process.env.ATAPE_COLLECTOR_READY_TOKEN,pid:process.pid}));
+if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.ready !== false}) {
+  const temporary = process.env.ATAPE_COLLECTOR_READY_FILE + "." + process.pid + ".tmp";
+  writeFileSync(temporary, JSON.stringify({token:${options.readyMarker === "foreign"} ? "foreign" : process.env.ATAPE_COLLECTOR_READY_TOKEN,pid:process.pid}));
+  renameSync(temporary, process.env.ATAPE_COLLECTOR_READY_FILE);
+}
 setInterval(() => {}, 1000);
 `)
     await replace("original")
@@ -909,22 +912,28 @@ setInterval(() => {}, 1000);
 
   it("preserves identity uncertainty when its ps probe consumes the candidate readiness deadline", async () => {
     const f = await fixture(), originalPath = process.env.PATH, fakeBin = join(dirname(f.entry), "bin"), flag = join(dirname(f.entry), "hang-one-ps")
+    const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
     await mkdir(fakeBin)
-    await writeFile(join(fakeBin, "ps"), `#!${process.execPath}
-const { existsSync, readFileSync, writeFileSync, unlinkSync } = require("node:fs");
-const forward = () => { const result = require("node:child_process").spawnSync("/bin/ps", process.argv.slice(2), { encoding: "utf8" }); process.stdout.write(result.stdout || ""); process.exit(result.status ?? 1); };
-if (!existsSync(${JSON.stringify(flag)})) forward();
-else if (readFileSync(${JSON.stringify(flag)}, "utf8") === "confirm-start") { writeFileSync(${JSON.stringify(flag)}, "hang-readiness"); setTimeout(forward, 900); }
-else { unlinkSync(${JSON.stringify(flag)}); setInterval(() => {}, 1000); }
+    await writeFile(join(fakeBin, "ps"), `#!/bin/sh
+flag=${shellQuote(flag)}
+if [ ! -f "$flag" ]; then exec /bin/ps "$@"; fi
+IFS= read -r stage < "$flag"
+if [ "$stage" = "hang-readiness" ]; then
+  /bin/rm "$flag"
+  exec ${shellQuote(process.execPath)} -e 'setInterval(() => {}, 1000)'
+fi
+candidate_command=$(/bin/ps "$@")
+case "$candidate_command" in *" __collector-daemon "*) printf '%s' 'hang-readiness' > "$flag" ;; esac
+printf '%s\\n' "$candidate_command"
 `)
     await chmod(join(fakeBin, "ps"), 0o700)
     try {
       await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
       const failure = await withCollectorMaintenance(f, async () => f.entry, process.env, async () => {
         await f.replace("candidate"); await writeFile(flag, "confirm-start"); process.env.PATH = `${fakeBin}:${originalPath}`
-      }, { readyTimeoutMs: 2_500, recover: async () => { process.env.PATH = originalPath; await f.replace("restored") } })
+      }, { activationTimeoutMs: 2_000, recover: async () => { process.env.PATH = originalPath; await f.replace("restored") } })
         .then(() => undefined, error => error)
-      expect(failure).toMatchObject({ reason: "identity" })
+      expect(failure, failure?.message).toMatchObject({ reason: "identity" })
       expect(failure).not.toBeInstanceOf(CollectorMaintenanceFailure)
       expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
       await f.started("restored", (await f.run(f.daemon.inspect()))!.pid)
@@ -933,14 +942,16 @@ else { unlinkSync(${JSON.stringify(flag)}); setInterval(() => {}, 1000); }
 
   it("retries a transient live identity mismatch within the existing readiness budget", async () => {
     const f = await fixture(), originalPath = process.env.PATH, fakeBin = join(dirname(f.entry), "bin"), flag = join(dirname(f.entry), "ps-mismatch")
+    const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
     await mkdir(fakeBin)
-    await writeFile(join(fakeBin, "ps"), `#!${process.execPath}
-const { existsSync, readFileSync, writeFileSync, unlinkSync } = require("node:fs");
-if (existsSync(${JSON.stringify(flag)})) {
-  if (readFileSync(${JSON.stringify(flag)}, "utf8") === "confirm-start") writeFileSync(${JSON.stringify(flag)}, "mismatch");
-  else { unlinkSync(${JSON.stringify(flag)}); process.exit(0); }
-}
-const result = require("node:child_process").spawnSync("/bin/ps", process.argv.slice(2), { encoding: "utf8" }); process.stdout.write(result.stdout || ""); process.exit(result.status ?? 1);
+    await writeFile(join(fakeBin, "ps"), `#!/bin/sh
+flag=${shellQuote(flag)}
+if [ ! -f "$flag" ]; then exec /bin/ps "$@"; fi
+IFS= read -r stage < "$flag"
+if [ "$stage" = "mismatch" ]; then /bin/rm "$flag"; exit 0; fi
+candidate_command=$(/bin/ps "$@")
+case "$candidate_command" in *" __collector-daemon "*) printf '%s' 'mismatch' > "$flag" ;; esac
+printf '%s\\n' "$candidate_command"
 `)
     await chmod(join(fakeBin, "ps"), 0o700)
     try {
@@ -978,26 +989,31 @@ const result = require("node:child_process").spawnSync("/bin/ps", process.argv.s
 
   it.each(["activation", "readiness"] as const)("does not launch a candidate after entry resolution consumes the %s budget", async budget => {
     const f = await fixture()
-    let delayed = false
+    let delayed = false, activationDeadline = 0
     try {
       const original = await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
       await f.started("original", original.pid)
       await expect(withCollectorMaintenance(f, async () => {
-        if (!delayed) { delayed = true; await new Promise(resolve => setTimeout(resolve, budget === "activation" ? 200 : 350)) }
+        if (!delayed) {
+          delayed = true
+          await new Promise(resolve => setTimeout(resolve, budget === "activation"
+            ? Math.max(0, activationDeadline - performance.now()) + 50 : 2_100))
+        }
         return f.entry
-      }, process.env, () => f.replace("must-not-start"), {
-        activationTimeoutMs: budget === "activation" ? 150 : 2_000,
-        readyTimeoutMs: budget === "activation" ? 10_000 : 250, recoveryTimeoutMs: 1_000,
+      }, process.env, async deadline => { activationDeadline = deadline; await f.replace("must-not-start") }, {
+        activationTimeoutMs: budget === "activation" ? 2_000 : 10_000,
+        readyTimeoutMs: budget === "activation" ? 10_000 : 2_000,
         recover: async () => {
           expect(JSON.parse(await readFile(join(f.entry, "..", "started.json"), "utf8")).build).toBe("original")
           await f.replace("restored")
         }
       })).rejects.toMatchObject({ reason: "start", message: budget === "activation"
         ? "Collector maintenance deadline expired." : "The updated Collector did not become locally ready." })
+      expect(activationDeadline).toBeGreaterThan(0)
       expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
       await f.started("restored", (await f.run(f.daemon.inspect()))!.pid)
     } finally { await f.run(f.daemon.stop()) }
-  })
+  }, 15_000)
 
   it("keeps a recoverable gate when the recovery budget expires before restart", async () => {
     const f = await fixture()

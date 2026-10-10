@@ -18,13 +18,16 @@ import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
 const roots: string[] = []
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
-const cliSource = (version: string) => `import { writeFileSync } from "node:fs";
+const cliSource = (version: string) => `import { writeFileSync, renameSync } from "node:fs";
 if (process.argv.includes("--version")) console.log("ATape ${version}");
 else {
   if (process.env.MANAGED_TEST_FAIL_READY === "${version}" || process.env.MANAGED_TEST_FAIL_READY === "all") process.exit(1);
   writeFileSync(process.env.MANAGED_TEST_STARTED, JSON.stringify({version:"${version}",pid:process.pid}));
-  if (process.env.ATAPE_COLLECTOR_READY_FILE) writeFileSync(process.env.ATAPE_COLLECTOR_READY_FILE,
-    JSON.stringify({token:process.env.ATAPE_COLLECTOR_READY_TOKEN,pid:process.pid}));
+  if (process.env.ATAPE_COLLECTOR_READY_FILE) {
+    const readyFile=process.env.ATAPE_COLLECTOR_READY_FILE, temporary=readyFile+"."+process.pid+".tmp";
+    writeFileSync(temporary,JSON.stringify({token:process.env.ATAPE_COLLECTOR_READY_TOKEN,pid:process.pid}));
+    renameSync(temporary,readyFile);
+  }
   setInterval(() => {}, 1000);
 }
 `
@@ -696,11 +699,16 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
       expect(await createUpdateControl(f.paths.atapeHome).recoveryPending()).toBe(true)
       expect(await f.cooldowns()).toEqual([])
       await f.save({ ...f.config, autoUpdateEnabled: false })
+      const damagedCooldown = { protocol: "unknown", candidates: [] }
+      await atomicJSON(join(f.paths.atapeHome, "updates", "candidate-cooldowns.json"), damagedCooldown)
       delete f.environment.MANAGED_TEST_FAIL_READY
       await recoverPendingUpdate(f.paths, f.entry, f.environment)
       expect(await needsUpdateRecovery(f.paths)).toBe(false)
       expect(await f.daemonRun(f.daemon.inspect())).toMatchObject({ intervalMs: 45000, concurrency: 2 })
       expect((await f.raw()).autoUpdateEnabled).toBe(false)
+      expect(await readFile(join(f.paths.atapeHome, "updates", "candidate-cooldowns.json"), "utf8").then(JSON.parse))
+        .toEqual(damagedCooldown)
+      await expect(f.prepare()).rejects.toMatchObject({ reason: "state" })
     } finally { await f.daemonRun(f.daemon.stop()) }
   }, 30_000)
 

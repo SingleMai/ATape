@@ -46,6 +46,9 @@ export class CollectorMaintenanceFailure extends CollectorDaemonProcessError {
 class LocalCollectorReadinessFailure extends CollectorDaemonProcessError {
   constructor(message: string) { super({ reason: "start", message }) }
 }
+class CollectorIdentityProbeBudgetExpired extends CollectorDaemonProcessError {
+  constructor() { super({ reason: "identity", message: "Could not confirm ownership of the Collector process." }) }
+}
 
 const ProcessFileVersion = 1 as const
 const CollectorProcessRecord = Schema.Struct({
@@ -212,9 +215,19 @@ const performCollectorMaintenance = async <A>(
             return "stopped"
           }
           const ready = await readReadyMarker(readyFile)
+          if (ready !== undefined && (ready.token !== readyToken || ready.pid !== launched.pid)) throw new CollectorDaemonProcessError({ reason: "identity",
+            message: "Collector readiness marker does not match its launched process." })
+          if (performance.now() >= readyDeadline) break
           // Identity uncertainty must survive even when its probe consumed the
           // readiness budget. It is not a local-readiness failure verdict.
-          const owned = await isOwnedProcess(launched, readyDeadline)
+          let owned: boolean
+          try { owned = await isOwnedProcess(launched, readyDeadline) }
+          catch (cause) {
+            // No ownership observation was attempted. The existing readiness
+            // evidence decides expiry; errors from a real ps probe still fail.
+            if (cause instanceof CollectorIdentityProbeBudgetExpired) break
+            throw cause
+          }
           if (!owned) {
             if (!processExists(launched.pid)) throw new LocalCollectorReadinessFailure("The updated Collector did not become locally ready.")
             // ps can stop reporting an exiting child before kill(pid, 0)
@@ -225,11 +238,7 @@ const performCollectorMaintenance = async <A>(
             continue
           }
           identityUncertain = false
-          if (ready !== undefined) {
-            if (ready.token !== readyToken || ready.pid !== launched.pid) throw new CollectorDaemonProcessError({ reason: "identity",
-              message: "Collector readiness marker does not match its launched process." })
-            return "ready"
-          }
+          if (ready !== undefined) return "ready"
           await delay(Math.min(50, Math.max(0, readyDeadline - performance.now())))
         }
         if (identityUncertain && processExists(launched.pid)) throw new CollectorDaemonProcessError({ reason: "identity",
@@ -673,12 +682,13 @@ const isOwnedProcess = async (record: CollectorProcessRecord, deadline?: number)
   }
   try {
     const remaining = deadline === undefined ? 2_000 : Math.min(2_000, Math.ceil(deadline - performance.now()))
-    if (remaining <= 0) throw new Error("Process confirmation deadline expired")
+    if (remaining <= 0) throw new CollectorIdentityProbeBudgetExpired()
     const command = await execFileText("ps", ["-p", String(record.pid), "-o", "command="], remaining)
     const token = record.token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     return /(?:^|\s)__collector-daemon(?:\s|$)/.test(command) &&
       new RegExp(`(?:^|\\s)--daemon-token\\s+${token}(?:\\s|$)`).test(command)
-  } catch {
+  } catch (cause) {
+    if (cause instanceof CollectorIdentityProbeBudgetExpired) throw cause
     if (!processExists(record.pid)) return false
     throw new CollectorDaemonProcessError({ reason: "identity", message: "Could not confirm ownership of the Collector process." })
   }
