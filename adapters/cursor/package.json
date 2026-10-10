@@ -1,0 +1,13 @@
+{
+  "name": "@atape/adapter-cursor",
+  "version": "0.5.5",
+  "private": true,
+  "type": "module",
+  "description": "Private bounded reader for Cursor transcript candidates",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc -p tsconfig.json" },
+  "dependencies": { "effect": "catalog:" },
+  "devDependencies": { "@types/node": "^24.0.0", "typescript": "catalog:build", "vitest": "catalog:build" },
+  "engines": { "node": ">=24" },
+  "license": "MIT"
+}

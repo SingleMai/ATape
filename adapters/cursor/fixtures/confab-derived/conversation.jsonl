@@ -1,0 +1,6 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\n  Preserve 中文 🚀, tabs\tand two lines.\nSecond line stays here.  \n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"I will write the supplied content exactly.\n"},{"type":"tool_use","name":"write_file","input":{"path":"notes/中文 🚀.md","content":"line one\nline two\tend  ","enabled":false,"count":0,"nested":{"items":[null,true,"$TOKEN","`literal`"]}}}]}}
+{"type":"turn_ended","status":"success"}
+{"role":"user","message":{"content":[{"type":"text","text":"<user_query>\n  Preserve 中文 🚀, tabs\tand two lines.\nSecond line stays here.  \n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"The command result is not present in this source.  \n"}]}}
+{"type":"turn_ended","status":"success"}
