@@ -499,6 +499,9 @@ it is confirmed or abandoned. The proof holds a separate OS lease, not the globa
 writer barrier; the native conversation continues and update attempts stay
 bounded. Confirmed sessions do not delay updates, and a dead Host cannot leave a
 stale ownership marker that blocks recovery.
+Coordination resolves the existing home before choosing its fixed private paths,
+so OS path aliases such as macOS `/var` remain valid. A redirected `updates`
+directory, exposed permissions or foreign ownership still close admission.
 
 After bounded pause, the updater fsyncs a strict requirement and progress ledger
 before selecting/fencing the target. The target private apply process has a

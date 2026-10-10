@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process"
-import { chmod, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -101,6 +101,30 @@ await writeFile(${JSON.stringify(marker)}, "ready"); setInterval(() => {}, 1000)
     await expect(f.admission.tryAcquireFence()).rejects.toMatchObject({ reason: "storage" })
     await rm(f.path); await symlink(join(f.home, "elsewhere"), f.path)
     await expect(f.admission.acquirePending()).rejects.toMatchObject({ reason: "storage" })
+  })
+
+  it("shares pending ownership through a legitimate home alias", async () => {
+    const f = await fixture(), alias = join(f.home, "home-alias")
+    await symlink(f.home, alias)
+    const aliased = createCreationReceiptAdmission(alias), pending = await aliased.acquirePending()
+    try { expect(await f.admission.tryAcquireFence()).toBeUndefined() }
+    finally { pending() }
+    const fence = await f.admission.tryAcquireFence()
+    try { await expect(aliased.acquirePending()).rejects.toMatchObject({ reason: "busy" }) }
+    finally { fence?.() }
+    // Preserve the actual mkdtemp spelling too: /var is a system alias on macOS.
+    const rawHome = await mkdtemp(join(tmpdir(), "atape-creation-alias-")); homes.push(rawHome)
+    const raw = createCreationReceiptAdmission(rawHome), release = await raw.acquirePending(); release()
+    const admitted = await createCreationReceiptAdmission(await realpath(rawHome)).tryAcquireFence()
+    expect(admitted).toBeTypeOf("function"); admitted?.()
+  })
+
+  it("rejects a redirected updates directory even when its destination is private and owned", async () => {
+    const f = await fixture(), redirected = join(f.home, "elsewhere")
+    await mkdir(redirected, { mode: 0o700 }); await symlink(redirected, join(f.home, "updates"))
+    await expect(f.admission.acquirePending()).rejects.toMatchObject({ reason: "storage" })
+    await expect(f.admission.tryAcquireFence()).rejects.toMatchObject({ reason: "storage" })
+    expect(await readFile(join(redirected, "creation-receipts.lock.sqlite")).catch(() => undefined)).toBeUndefined()
   })
 
   it("fails closed when changed journal mode would let an exclusive writer pass shared readers", async () => {

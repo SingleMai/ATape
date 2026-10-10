@@ -26,8 +26,11 @@ const requireRollbackJournal = (database: DatabaseSync) => {
  * The shared lease alone survives across the interactive session. Process death
  * releases it, and exclusive acquisition never waits for a human to finish. */
 export const createCreationReceiptAdmission = (home: string) => {
-  const directory = updateDirectory(home), path = join(directory, "creation-receipts.lock.sqlite")
   const validateFile = async () => {
+    // ATAPE_HOME may use an ordinary filesystem alias, such as macOS /var.
+    // Resolve it before choosing the fixed coordination path so both names
+    // share OS ownership, while the updates component itself stays unlinked.
+    const directory = updateDirectory(await realpath(home)), path = join(directory, "creation-receipts.lock.sqlite")
     await mkdir(directory, { recursive: true, mode: 0o700 })
     const parent = await lstat(directory)
     if (!parent.isDirectory() || parent.isSymbolicLink() || await realpath(directory) !== resolve(directory) ||
@@ -39,10 +42,11 @@ export const createCreationReceiptAdmission = (home: string) => {
       if (!info.isFile() || info.nlink !== 1 || info.uid !== process.getuid?.() || (info.mode & 0o077) !== 0)
         fail("storage", "Creation-proof coordination must use a private owned file.")
     } finally { await file.close() }
+    return path
   }
   const acquirePending = async (): Promise<() => void> => {
     try {
-      await validateFile()
+      const path = await validateFile()
       // processLock owns one-time persistent initialization. Once initialized,
       // these read transactions neither rewrite storage nor allocate lock pages
       // on a full disk. A legacy empty file is initialized only while exclusive.
@@ -80,7 +84,7 @@ export const createCreationReceiptAdmission = (home: string) => {
     acquirePending,
     tryAcquireFence: async (): Promise<(() => void) | undefined> => {
       try {
-        await validateFile()
+        const path = await validateFile()
         const database = new DatabaseSync(path)
         try { requireRollbackJournal(database) } finally { database.close() }
         return await acquireProcessLock(path)
