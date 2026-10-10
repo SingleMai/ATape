@@ -558,7 +558,7 @@ const stopOwnedProcess = async (processFile: string, record: CollectorProcessRec
     if (clear) await rm(processFile, { force: true })
     return false
   }
-  if (!await waitForExit(record, gracefulDeadline)) {
+  if (!await waitForExit(record, gracefulDeadline, true)) {
     await signalOwnedProcess(record, "SIGKILL", deadline)
   }
   if (!await waitForExit(record, deadline)) {
@@ -702,22 +702,39 @@ const processExists = (pid: number) => {
 }
 
 const signalOwnedProcess = async (record: CollectorProcessRecord, signal: NodeJS.Signals, deadline: number) => {
-  if (!await isOwnedProcess(record, deadline)) return false
+  if (!await isOwnedProcess(record, deadline)) {
+    if (processExists(record.pid)) throw new CollectorDaemonProcessError({ reason: "identity",
+      message: "Could not confirm ownership of the Collector process." })
+    return false
+  }
   if (performance.now() >= deadline) throw new CollectorDaemonProcessError({ reason: "stop",
     message: "The Collector signal deadline expired before ownership was confirmed." })
   try { process.kill(record.pid, signal) } catch (cause) { if (!hasCode(cause, "ESRCH")) throw cause }
   return true
 }
 
-const waitForExit = async (record: CollectorProcessRecord, deadline: number) => {
+const waitForExit = async (record: CollectorProcessRecord, deadline: number, retryUncertainIdentity = false) => {
+  let uncertain: unknown
   while (performance.now() < deadline) {
-    try { if (!await isOwnedProcess(record, deadline)) return true } catch (cause) {
-      if (performance.now() >= deadline) return !processExists(record.pid)
-      throw cause
+    if (!processExists(record.pid)) return true
+    try {
+      if (!await isOwnedProcess(record, deadline)) {
+        if (!processExists(record.pid)) return true
+        uncertain = new CollectorDaemonProcessError({ reason: "identity",
+          message: "Could not confirm ownership of the Collector process." })
+      } else uncertain = undefined
+    } catch (cause) {
+      if (!processExists(record.pid)) return true
+      uncertain = cause
+      if (!retryUncertainIdentity && performance.now() < deadline) throw cause
     }
     await delay(Math.min(50, Math.max(0, deadline - performance.now())))
   }
-  return !processExists(record.pid)
+  if (!processExists(record.pid)) return true
+  // A failed probe is not an exit. Grace expiry leaves time for a fresh,
+  // bounded ownership check immediately before escalation to SIGKILL.
+  if (uncertain && !retryUncertainIdentity) throw uncertain
+  return false
 }
 
 const readMaintenance = async (processFile: string): Promise<CollectorMaintenance | undefined> => {
@@ -990,10 +1007,26 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
 }
 
 const execFileText = (file: string, args: ReadonlyArray<string>, timeout = 2_000) => new Promise<string>((resolveText, reject) => {
-  execFile(file, [...args], { encoding: "utf8", timeout, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, stdout) => {
+  const deadline = performance.now() + timeout
+  let expired = false
+  // Node can report error=null after its timeout destroys the output streams,
+  // even with empty/partial stdout. Own one timer so cancellation is explicit.
+  const child = execFile(file, [...args], { encoding: "utf8", killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, stdout) => {
+    clearTimeout(timer)
     if (error) reject(error)
+    else if (expired || child.killed || child.signalCode !== null || performance.now() >= deadline) {
+      reject(new Error("The Collector identity probe did not complete."))
+    }
     else resolveText(stdout)
   })
+  const timer = setTimeout(() => {
+    expired = true
+    // A descendant may inherit the probe's pipes. Close our readers as well
+    // as terminating the direct child so inherited handles cannot extend it.
+    child.stdout?.destroy()
+    child.stderr?.destroy()
+    try { child.kill("SIGKILL") } catch (cause) { reject(cause) }
+  }, Math.max(0, deadline - performance.now()))
 })
 
 const delay = (milliseconds: number) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds))
