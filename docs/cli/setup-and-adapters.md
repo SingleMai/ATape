@@ -685,7 +685,9 @@ conversation sync.
 ## Run collection
 Connect and sync starts the managed background Collector. Home offers Start sync
 when stopped; Settings offers Stop sync for all projects with an impact review.
-Exiting ATape leaves this process running. After reboot, open ATape to resume it.
+Exiting ATape leaves this process running. With [login startup](#login-startup)
+enabled, the next login resumes collection only when saved intent still requests
+it. If login startup is disabled or unavailable, open ATape to resume it.
 Public foreground collection, scheduler commands and tuning flags are removed.
 
 The Collector continues bounded catch-up cycles while pages remain and waits
