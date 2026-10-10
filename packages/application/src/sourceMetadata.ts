@@ -1,11 +1,12 @@
 import { Effect, Schema } from "effect"
-import { AdapterSourceFailure, SourceCapturePriorThread, SourceCaptureCheckpoint } from "@atape/domain"
+import { AdapterSourceFailure, SourceCapturePriorThread, SourceCaptureCheckpoint, CanonicalProfile } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { PublicationPreparationError, type PublicationDraftView } from "./canonicalSourceProjection.ts"
 import { SecretRedactor } from "./collectorContracts.ts"
 
 const Metadata = Schema.Struct({
   threads: Schema.Array(SourceCapturePriorThread).check(Schema.isMaxLength(1000)),
+  canonicalProfileVersion: Schema.optionalKey(CanonicalProfile),
   sourceCheckpoint: Schema.optionalKey(SourceCaptureCheckpoint),
   retainedThreadIds: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(1000))),
   sourceFailures: Schema.optionalKey(Schema.Array(AdapterSourceFailure).check(Schema.isMaxLength(32))),
@@ -34,6 +35,7 @@ export const maskSourceFailures = (failures: ReadonlyArray<typeof AdapterSourceF
 export const sourceMetadataJson = (view: PublicationDraftView<unknown, unknown>, threads: Metadata["threads"]) => Effect.gen(function*() {
   const sourceFailures = yield* maskSourceFailures(view.sourceFailures ?? [])
   return JSON.stringify({ threads,
+    ...(view.canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion: view.canonicalProfileVersion }),
     ...(view.sourceCheckpoint === undefined ? {} : { sourceCheckpoint: view.sourceCheckpoint, retainedThreadIds: view.target.retainedThreadIds ?? [],
       sourceFailures, sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }) })
 })

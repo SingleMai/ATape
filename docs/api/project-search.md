@@ -24,7 +24,10 @@ are supported, including single-character queries. Leading/trailing whitespace i
 trimmed. This is not token, fuzzy or semantic search; `#707` does not match `707`
 without the `#`. Unicode normalization/accent folding is not performed.
 
-Results are newest first, with descending Event ID as the tie-breaker. `text` is a
+Results with known occurrence times are newest first, followed by results whose
+`occurredAt` is `null`. Descending Event ID is the tie-breaker, including within
+the unknown-time group. Unknown-time messages remain searchable; observation
+clocks are not sorting substitutes. `text` is a
 match-centered excerpt of at most 640 Unicode characters; open the Event anchor to
 read the full body. `toolLabel` remains optional for wire compatibility but is not
 populated by message-body Search. A page is bounded to 50 results without a full
@@ -64,6 +67,8 @@ The cursor is versioned and scoped to both values. Old offset cursors and cursor
 from another query/Project return `422 validation_failed`; restart at the first
 page. Keyset pagination avoids offset rescans. Concurrent changes are visible on
 subsequent requests; pagination is not a frozen snapshot.
+The nullable-time keyset cursor crosses from known times to unknown times once,
+then continues by Event ID. Previous known-time keyset cursors remain readable.
 The complete response is the `SearchPage` schema in [OpenAPI](openapi-v1.yaml).
 
 Publication results are qualified by current head membership. Withdrawn or stale

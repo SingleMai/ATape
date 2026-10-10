@@ -250,7 +250,7 @@ type GetSessionForReadRow struct {
 	Branch             string
 	Status             string
 	CaptureStatus      string
-	UpdatedAt          time.Time
+	UpdatedAt          *time.Time
 	ReportedEventCount int64
 	CapturedByUserID   pgtype.UUID
 }
@@ -302,7 +302,7 @@ type GetSessionForUpdateRow struct {
 	Branch             string
 	Status             string
 	CaptureStatus      string
-	UpdatedAt          time.Time
+	UpdatedAt          *time.Time
 	ReportedEventCount int64
 	CapturedByUserID   pgtype.UUID
 	RecordState        string
@@ -476,7 +476,7 @@ type InsertEventParams struct {
 	IngestSeq          int64
 	Kind               string
 	Author             string
-	OccurredAt         time.Time
+	OccurredAt         *time.Time
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
@@ -547,7 +547,7 @@ type InsertEventVersionParams struct {
 	IngestSeq          int64
 	Kind               string
 	Author             string
-	OccurredAt         time.Time
+	OccurredAt         *time.Time
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
@@ -653,7 +653,7 @@ type InsertSessionParams struct {
 	Branch             string
 	Status             string
 	CaptureStatus      string
-	UpdatedAt          time.Time
+	UpdatedAt          *time.Time
 	ReportedEventCount int64
 	CapturedByUserID   pgtype.UUID
 }
@@ -751,7 +751,7 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        )::bigint AS child_thread_count
 FROM canonical_sessions s LEFT JOIN canonical_publication_sources ps ON ps.session_id=s.id
 WHERE s.project_id = $1 AND s.record_state = 'active'
-ORDER BY s.updated_at DESC, s.id
+ORDER BY s.updated_at DESC NULLS LAST, s.id
 `
 
 type ListProjectSessionsRow struct {
@@ -768,7 +768,7 @@ type ListProjectSessionsRow struct {
 	Branch             string
 	Status             string
 	CaptureStatus      string
-	UpdatedAt          time.Time
+	UpdatedAt          *time.Time
 	ReportedEventCount int64
 	CapturedByUserID   pgtype.UUID
 	EventCount         int64
@@ -992,7 +992,7 @@ type SelectPublicationSessionParams struct {
 	Branch             string
 	Status             string
 	CaptureStatus      string
-	UpdatedAt          time.Time
+	UpdatedAt          *time.Time
 	ReportedEventCount int64
 }
 
@@ -1057,7 +1057,7 @@ type UpdateEventParams struct {
 	IngestSeq          int64
 	Kind               string
 	Author             string
-	OccurredAt         time.Time
+	OccurredAt         *time.Time
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
@@ -1120,7 +1120,7 @@ type UpdateSessionParams struct {
 	Branch             string
 	Status             string
 	CaptureStatus      string
-	UpdatedAt          time.Time
+	UpdatedAt          *time.Time
 	ReportedEventCount int64
 }
 

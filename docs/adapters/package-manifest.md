@@ -156,6 +156,14 @@ then `close()`. The Host checks page and total limits, cursor progress, identity
 Raw policy and lifetime cancellation. A view has one scoped source snapshot;
 recovering a delivery never requires reopening it.
 
+Headers may explicitly select `canonicalProfileVersion: "atape.acp-centered.v3"`
+to represent unknown Session/Event source clocks as null. Omission keeps v2 and
+its required source clocks. Host preparation freezes that selection and requires
+the Server's advertised `atape.publication-target.v3` for every part; a per-part
+profile switch is invalid. Usage and observation times remain required. Existing
+providers need no profile change. See
+[unknown-time semantics](../api/canonical-ingestion.md#v3-unknown-source-clocks).
+
 Unlike the paged observation runtime's attribution callback, discovery passes
 source evidence to the Host, which resolves directory/Git membership before
 opening included sources. Authentication, authorization and transport failures

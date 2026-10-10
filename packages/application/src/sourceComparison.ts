@@ -1,5 +1,5 @@
 import { Effect, Schema, Scope } from "effect"
-import { sameRawAuthority, RawAuthority, type AdapterSourceFailure } from "@atape/domain"
+import { sameRawAuthority, RawAuthority, CanonicalProfileVersion, type AdapterSourceFailure } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./captureJournal.ts"
 import { canonicalSourceProjection, validateCanonicalSourceMetadata, sourceFingerprint, type PublicationDraftView } from "./canonicalSourceProjection.ts"
 import { captureRawAuthority, sourceComparisonContext } from "./publicationDelivery.ts"
@@ -44,9 +44,10 @@ export const comparePublicationSource = <E, R>(owner: CaptureOwner, input: {
     const changed = { canonical: "changed", raw: input.raw ? "required" : "disabled" } as const
     if (baseline === null) return changed
     const view = yield* input.source
-    const prior = view.sourceCheckpoint === undefined ? { threads: [] } : yield* decodeSourceMetadata(yield* journal.sourceMetadata(owner, baseline.capture.id))
+    const prior = yield* decodeSourceMetadata(yield* journal.sourceMetadata(owner, baseline.capture.id))
     const diagnostics = view.sourceCheckpoint === undefined ? {} : { sourceFailures: yield* maskSourceFailures(view.sourceFailures ?? []), sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }
     const changedView = { ...changed, ...diagnostics }
+    if ((view.canonicalProfileVersion ?? CanonicalProfileVersion) !== (prior.canonicalProfileVersion ?? CanonicalProfileVersion)) return changedView
     // The complete physical prefix is acknowledged only by a sealed/activated
     // target. Even Raw-only controls require durable source authentication.
     if (view.sourceCheckpoint !== undefined && prior.sourceCheckpoint !== view.sourceCheckpoint) return changedView

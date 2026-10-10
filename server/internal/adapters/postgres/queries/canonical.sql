@@ -208,7 +208,7 @@ SELECT s.id, s.project_id, s.source_key, s.revision, s.digest, s.title,
        )::bigint AS child_thread_count
 FROM canonical_sessions s LEFT JOIN canonical_publication_sources ps ON ps.session_id=s.id
 WHERE s.project_id = $1 AND s.record_state = 'active'
-ORDER BY s.updated_at DESC, s.id;
+ORDER BY s.updated_at DESC NULLS LAST, s.id;
 
 -- name: GetSessionForRead :one
 SELECT id, project_id, source_key, revision, digest, title, summary, insight,

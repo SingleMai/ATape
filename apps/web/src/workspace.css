@@ -717,7 +717,7 @@ button.workspace-team-trigger:hover,
   font-size: 11px;
   color: var(--atape-color-text-muted);
 }
-.global-result-context > span {
+.global-result-context > .conversation-time {
   white-space: nowrap;
 }
 .global-result strong {

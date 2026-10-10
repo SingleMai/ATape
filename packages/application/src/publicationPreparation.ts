@@ -1,5 +1,5 @@
 import { Effect, Scope } from "effect"
-import { PublicationTargetProfile, PublicationTargetProfile2, type AdapterEvent, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
+import { CanonicalProfileVersion3, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, type AdapterEvent, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./captureJournal.ts"
 import { canonicalMaterializationBound, projectCanonicalSubmission } from "./canonicalProjection.ts"
 import { publicationPreparationContext, rawObservationPreparationContext, sealPublicationCapture, sealRawObservation } from "./publicationDelivery.ts"
@@ -33,11 +33,14 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
   const limits = context.intent.capabilities.limits
   const prepared = yield* Effect.scoped(Effect.gen(function*() {
     const view = yield* input.source
+    const targetProfile = view.canonicalProfileVersion === CanonicalProfileVersion3 ? PublicationTargetProfile3 :
+      view.sourceCheckpoint === undefined ? PublicationTargetProfile : PublicationTargetProfile2
+    if (targetProfile !== PublicationTargetProfile && !context.intent.capabilities.targetProfiles?.includes(targetProfile))
+      return yield* fail("unsupported", "This source requires a publication target profile unavailable on the Server.")
     const projection = yield* canonicalSourceProjection(owner, view, { ...input, captureId, transformVersion: context.intent.begin.transformVersion })
-    const { profile, placeholder, masked } = projection
-    if (view.sourceCheckpoint !== undefined && !context.intent.capabilities.targetProfiles?.includes(PublicationTargetProfile2))
-      return yield* fail("unsupported", "This source requires complete-target v2 support from the Server.")
-    if (view.sourceCheckpoint !== undefined) yield* journal.setSourceMetadata(owner, captureId, yield* sourceMetadataJson(view, masked.threads))
+    const { profile, canonicalProfileVersion, placeholder, masked } = projection
+    if (view.sourceCheckpoint !== undefined || canonicalProfileVersion === CanonicalProfileVersion3)
+      yield* journal.setSourceMetadata(owner, captureId, yield* sourceMetadataJson(view, masked.threads))
     const version = (kind: CaptureRecordKey["kind"], key: string, fingerprint: string, rawReference: AdapterRawReference = placeholder) => Effect.gen(function*() {
       return yield* journal.record(owner, captureId, { kind, key, fingerprint, projectionVersion: profile,
         ...(kind === "event" ? { rawReference } : {}) })
@@ -59,12 +62,12 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
     const project = (projectedEvents: ReadonlyArray<AdapterEvent>, projectedUsage: ReadonlyArray<AdapterUsage>) =>
       projectCanonicalSubmission({ instanceOrigin: journal.binding.instanceOrigin, installationId: journal.binding.installationId,
         adapterId: owner.scope.adapterId, adapterVersion: input.adapterVersion, projectId: owner.scope.projectId,
-        observation: { observedAt: input.observedAt, session, threads, events: projectedEvents, usage: projectedUsage } })
+        observation: { observedAt: input.observedAt, session, threads, events: projectedEvents, usage: projectedUsage } }, canonicalProfileVersion)
     const wire = () => {
       const batch = project(events, usage)
-      return { target: { profile: view.sourceCheckpoint === undefined ? PublicationTargetProfile : PublicationTargetProfile2,
+      return { target: { profile: targetProfile,
         events: view.target.events, threads: view.target.threads, usage: view.target.usage,
-        ...(view.sourceCheckpoint === undefined ? {} : { retainedThreadIds: view.target.retainedThreadIds ?? [] }) }, batch: { ...batch, batchId: `p_${batchKey}_${ordinal}` } }
+        ...(targetProfile === PublicationTargetProfile ? {} : { retainedThreadIds: view.target.retainedThreadIds ?? [] }) }, batch: { ...batch, batchId: `p_${batchKey}_${ordinal}` } }
     }
     const flush = () => Effect.gen(function*() {
       const value = wire(), bytes = encode(value), bound = canonicalMaterializationBound(value.batch, journal.binding.userId)

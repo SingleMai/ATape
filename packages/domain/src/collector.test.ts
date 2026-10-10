@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { AdapterCollectionPage, AdapterProtocolVersion } from "./index.ts"
+import { AdapterCollectionPage, AdapterProtocolVersion, CanonicalBatch, CanonicalProfileVersion, CanonicalProfileVersion3 } from "./index.ts"
 
 const page = {
   protocolVersion: AdapterProtocolVersion,
@@ -51,6 +51,23 @@ const page = {
 }
 
 describe("Adapter collection protocol", () => {
+  it("requires explicit nullable source times only in Canonical v3", async () => {
+    const observation = page.observations[0]!
+    const batch = { protocolVersion: "atape.canonical.v1", canonicalProfileVersion: CanonicalProfileVersion3,
+      batchId: "unknown-time", observedAt: observation.observedAt,
+      source: { adapterId: "fixture", adapterVersion: "0.0.0", installationId: "installation" }, projectId: "project",
+      session: { ...observation.session, updatedAt: null }, threads: observation.threads,
+      events: [{ ...observation.events[0], rawRef: { type: "unavailable", reason: "fixture" }, kind: "message", author: "User", text: "hello", occurredAt: null }] }
+    const decoded = await Effect.runPromise(Schema.decodeUnknownEffect(CanonicalBatch)(batch))
+    expect(decoded.session.updatedAt).toBeNull(); expect(decoded.events[0]?.occurredAt).toBeNull()
+    expect(decoded.observedAt).toBe(observation.observedAt)
+    await expect(Effect.runPromise(Schema.decodeUnknownEffect(CanonicalBatch)({ ...batch, canonicalProfileVersion: CanonicalProfileVersion }))).rejects.toBeDefined()
+    for (const missing of [
+      { ...batch, session: { ...batch.session, updatedAt: undefined } },
+      { ...batch, events: [{ ...batch.events[0], occurredAt: undefined }] }
+    ]) await expect(Effect.runPromise(Schema.decodeUnknownEffect(CanonicalBatch)(missing))).rejects.toBeDefined()
+  })
+
   it("accepts the pinned ACP v1 content profile", async () => {
     const decoded = await Schema.decodeUnknownEffect(AdapterCollectionPage)(page).pipe(Effect.runPromise)
     expect(decoded.observations[0]?.events[0]?.update).toMatchObject({

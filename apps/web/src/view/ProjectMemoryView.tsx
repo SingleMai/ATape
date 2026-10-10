@@ -3,7 +3,8 @@ import { AgentIdentity, Badge, Button } from "@atape/ui"
 import { useState } from "react"
 import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPresenter"
 import { RefreshControl } from "./RefreshControl"
-import { formatDate, t } from "../i18n"
+import { t } from "../i18n"
+import { ConversationTime } from "./ConversationTime"
 
 type Props = {
   readonly state: LoadableView<ProjectMemory>
@@ -11,28 +12,6 @@ type Props = {
   readonly onOpenSession: (sessionId: string) => void
   readonly onRetry: () => void
 }
-
-const formatAbsoluteTime = (value: string) =>
-  formatDate(new Date(value), { dateStyle: "medium", timeStyle: "short" })
-
-const formatRelativeTime = (value: string) => {
-  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 1_000))
-  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds < 10) return t("time.justNow", "just now")
-  if (elapsedSeconds < 60) return t("time.secondsAgo", "{count}s ago", { count: elapsedSeconds })
-  const minutes = Math.floor(elapsedSeconds / 60)
-  if (minutes < 60) return t("time.minutesAgo", "{count}m ago", { count: minutes })
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return t("time.hoursAgo", "{count}h ago", { count: hours })
-  const days = Math.floor(hours / 24)
-  if (days < 30) return t("time.daysAgo", "{count}d ago", { count: days })
-  return formatAbsoluteTime(value)
-}
-
-const PresenceTime = ({ value }: { readonly value: string }) => (
-  <time dateTime={value} title={formatAbsoluteTime(value)}>
-    {formatRelativeTime(value)}
-  </time>
-)
 
 const TrailItem = ({
   session,
@@ -52,7 +31,7 @@ const TrailItem = ({
     </span>
     <span className="trail-tags">
       <Badge tone={session.status === "active" ? "success" : "neutral"}>{session.status}</Badge>
-      <PresenceTime value={session.updatedAt} />
+      <ConversationTime value={session.updatedAt} relative />
     </span>
   </button>
 )
@@ -82,7 +61,11 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
     ...new Map([...memory.active, ...memory.trail].map((session) => [session.id, session])).values()
   ]
     .filter((session) => !activeOnly || session.status === "active")
-    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+    .sort((a, b) => {
+      if (a.updatedAt === null) return b.updatedAt === null ? 0 : 1
+      if (b.updatedAt === null) return -1
+      return Date.parse(b.updatedAt) - Date.parse(a.updatedAt)
+    })
   return (
     <section className="project-conversations" aria-labelledby="project-memory-title">
       <header className="project-page-heading">
@@ -99,7 +82,7 @@ export const ProjectMemoryView = ({ state, refresh, onOpenSession, onRetry }: Pr
               refreshFailure={state.refreshFailureKey === undefined ? undefined : t(state.refreshFailureKey)}
               status={
                 <>
-                  {t("memory.updatedLabel", "Updated")} <PresenceTime value={memory.capturedThrough} />
+                  {t("memory.updatedLabel", "Updated")} <ConversationTime value={memory.capturedThrough} relative />
                 </>
               }
               onRefresh={onRetry}

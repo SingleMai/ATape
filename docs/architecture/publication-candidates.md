@@ -86,6 +86,15 @@ Inherited Events, Usage and Raw references retain their exact stored versions.
 Fresh Event/Usage counts describe uploaded content honestly; complete visible
 counts include the resulting inherited membership. Thread headers remain complete.
 
+The advertised `atape.publication-target.v3` profile pairs only with canonical
+`atape.acp-centered.v3`. It retains v2's explicit `retainedThreadIds` and complete
+target rules, and admits null Session/Event source clocks. V1/v2 targets reject
+canonical v3. The target and canonical profile are fixed across every part,
+including all-known parts of a mixed-clock candidate; changing them invalidates
+the header digest. Host preparation requires the advertised v3 capability before
+freezing content. Fixed normalized JSON preserves null clocks for Reader,
+Search, Overview and backfill. Usage and observation clocks remain required.
+
 After validating wire parts, Validate copies retained membership in bounded
 derived units. These private units do not alter wire ordinals, manifest digests
 or immutable Put receipts. Status reports `retainedParts` separately; a validation

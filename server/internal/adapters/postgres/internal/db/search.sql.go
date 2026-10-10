@@ -211,7 +211,7 @@ type LoadProjectionChangesRow struct {
 	Author           string
 	Harness          string
 	Kind             string
-	OccurredAt       time.Time
+	OccurredAt       pgtype.Timestamptz
 	Text             string
 	ToolLabel        string
 	IngestSeq        int64
@@ -265,30 +265,33 @@ WITH terms AS (
  WHERE d.project_id=$2 AND d.event_kind='message'
  AND d.body_grams @> terms.grams AND strpos(d.search_text,terms.literal)>0
  AND (NOT $3::boolean OR
-      (d.occurred_at,d.event_id)<($4::timestamptz,$5::text))
+      ($4::boolean AND d.occurred_at IS NULL AND d.event_id<$5::text) OR
+      (NOT $4::boolean AND
+       (d.occurred_at IS NULL OR (d.occurred_at,d.event_id)<($6::timestamptz,$5::text))))
  AND EXISTS(SELECT 1 FROM canonical_sessions s WHERE s.id=d.session_id AND s.record_state='active')
  AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id AND s.current_head IS NOT NULL)
   OR EXISTS(SELECT 1 FROM canonical_publication_sources s
    JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
    WHERE s.session_id=d.session_id AND m.record_id=d.event_id AND m.search_descriptor=d.publication_descriptor))
- ORDER BY d.occurred_at DESC,d.event_id DESC
- LIMIT $6
+ ORDER BY d.occurred_at DESC NULLS LAST,d.event_id DESC
+ LIMIT $7
 )
 SELECT d.event_id,d.project_id,d.session_id,d.session_title,d.thread_id,
  d.thread_path_ids,d.thread_path_labels,d.author,d.harness,d.occurred_at,
  substring(d.text FROM greatest(1,strpos(d.search_text,terms.literal)-120) FOR 640)::text AS text,
  d.ingest_seq,d.observed_at
 FROM selected JOIN project_search_documents d USING(event_id) CROSS JOIN terms
-ORDER BY selected.occurred_at DESC,selected.event_id DESC
+ORDER BY selected.occurred_at DESC NULLS LAST,selected.event_id DESC
 `
 
 type SearchDocumentsParams struct {
-	Term        string
-	ProjectID   string
-	HasAfter    bool
-	AfterTime   time.Time
-	AfterID     string
-	ResultLimit int32
+	Term         string
+	ProjectID    string
+	HasAfter     bool
+	AfterUnknown bool
+	AfterID      string
+	AfterTime    time.Time
+	ResultLimit  int32
 }
 
 type SearchDocumentsRow struct {
@@ -301,7 +304,7 @@ type SearchDocumentsRow struct {
 	ThreadPathLabels []string
 	Author           string
 	Harness          string
-	OccurredAt       time.Time
+	OccurredAt       *time.Time
 	Text             string
 	IngestSeq        int64
 	ObservedAt       time.Time
@@ -312,8 +315,9 @@ func (q *Queries) SearchDocuments(ctx context.Context, arg SearchDocumentsParams
 		arg.Term,
 		arg.ProjectID,
 		arg.HasAfter,
-		arg.AfterTime,
+		arg.AfterUnknown,
 		arg.AfterID,
+		arg.AfterTime,
 		arg.ResultLimit,
 	)
 	if err != nil {
@@ -400,7 +404,7 @@ type UpsertSearchDocumentParams struct {
 	ThreadPathLabels      []string
 	Author                string
 	Harness               string
-	OccurredAt            time.Time
+	OccurredAt            *time.Time
 	EventKind             string
 	Text                  string
 	IngestSeq             int64

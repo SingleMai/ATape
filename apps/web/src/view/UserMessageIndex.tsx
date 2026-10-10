@@ -2,7 +2,8 @@ import type { CanonicalEvent } from "@atape/domain"
 import { Eyebrow } from "@atape/ui"
 import { fromMarkdown } from "mdast-util-from-markdown"
 import { Component, createRef, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { formatDate, t } from "../i18n"
+import { t } from "../i18n"
+import { ConversationTime, formatConversationTime } from "./ConversationTime"
 
 type Props = { readonly prompts: ReadonlyArray<CanonicalEvent>; readonly children: ReactNode; readonly embedded?: boolean }
 type Anchor = {
@@ -125,15 +126,15 @@ const plainText = (node: MarkdownNode): string => {
   return node.children?.map(plainText).filter(Boolean).join(separator) ?? ""
 }
 const summaryOf = (text: string) => plainText(fromMarkdown(text)).replace(/\s+/g, " ").trim() || t("userMessages.fallback", "User message")
-const timeOf = (value: string) => formatDate(new Date(value), {
+const timeOptions: Intl.DateTimeFormatOptions = {
   hour: "2-digit", minute: "2-digit", hour12: false
-})
+}
 
 function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
   const items = useMemo(() => prompts.map((prompt, index) => {
     const summary = summaryOf(prompt.text)
-    const time = timeOf(prompt.occurredAt)
-    return { prompt, summary, time, label: t("userMessages.itemLabel", "{index}. {time} · {summary}", { index: index + 1, time, summary }) }
+    const time = formatConversationTime(prompt.occurredAt, timeOptions)
+    return { prompt, summary, label: t("userMessages.itemLabel", "{index}. {time} · {summary}", { index: index + 1, time, summary }) }
   }), [prompts])
   const [current, setCurrent] = useState(prompts[0]?.id)
   const [open, setOpen] = useState(false)
@@ -286,11 +287,11 @@ function UserMessageIndex({ prompts }: Pick<Props, "prompts">) {
       <div className="message-index-panel" id={panelId} inert={!open} data-open={open}>
         <header><Eyebrow>{t("userMessages.title", "User messages")}</Eyebrow><button type="button" aria-label={t("userMessages.close", "Close user messages")} onClick={close}>×</button></header>
         <div className="message-index-list" ref={list}>
-          {items.map(({ prompt, label, summary, time }, index) => <button key={prompt.id} type="button"
+          {items.map(({ prompt, label, summary }, index) => <button key={prompt.id} type="button"
             title={label} aria-label={label}
             aria-current={prompt.id === current ? "location" : undefined} onClick={() => locate(prompt)}>
             <span className="message-index-number">{String(index + 1).padStart(2, "0")}</span>
-            <time dateTime={prompt.occurredAt}>{time}</time>
+            <ConversationTime value={prompt.occurredAt} options={timeOptions} />
             <span className="message-index-summary">{summary}</span>
           </button>)}
         </div>

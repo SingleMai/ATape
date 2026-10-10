@@ -501,7 +501,9 @@ describe("CodeBuddy installed runtime Interface", () => {
     expect(events.filter(event => event.childSourceThreadId).map(event => event.childSourceThreadId)).toEqual(["agent-aeb3d60f", "agent-93604b67"])
     const childEvents = events.filter(event => event.sourceThreadId === "agent-aeb3d60f")
     expect(childEvents[0]!.update).toMatchObject({ content: { text: "Reply exactly ATAPE_BACKGROUND_CHILD_21240. Do not use tools." } })
-    expect(childEvents.at(-1)!.occurredAt > before.flatMap(frame => frame.events).at(-1)!.occurredAt).toBe(true)
+    const childTime = childEvents.at(-1)!.occurredAt, priorTime = before.flatMap(frame => frame.events).at(-1)!.occurredAt
+    if (typeof childTime !== "string" || typeof priorTime !== "string") throw new Error("CodeBuddy native events must retain known timestamps.")
+    expect(childTime > priorTime).toBe(true)
     expect(events.filter(event => event.sourceThreadId === f.request.sourceId && event.update.sessionUpdate === "user_message_chunk")).toHaveLength(3)
     expect(JSON.stringify(events.map(event => event.update))).not.toContain("<teammate-message")
     expect(events.filter(event => event.sourceThreadId === "agent-93604b67").map(event => event.update)).toContainEqual(expect.objectContaining({ title: "SendMessage", status: "completed" }))

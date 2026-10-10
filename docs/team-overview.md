@@ -52,6 +52,12 @@ deduplication for separately imported copies of one source conversation.
   Filter choices retain the Team's full Agent directory and models observed across
   both periods, including choices outside the active dimensions.
 
+Canonical v3 message clocks may be explicit null. These messages stay readable
+and contribute to the distinct-Session unknown-time disclosure, together with
+retained legacy sentinel times. They do not contribute dated activity. Native
+records, covered publication facts, JSON fallback and facts backfill use the
+same rule. Usage clocks remain known and independently validated.
+
 ## Token reporting
 
 Show the total and input, output, cache-read and cache-write amounts together.

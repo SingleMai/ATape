@@ -565,8 +565,8 @@ function rootTitle(root: RecordValue): string {
 }
 
 function projectRecord(record: RecordValue, order: number, revision: number, sourceObjectId: string,
-  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 = ProjectionRevision): { events: AdapterEvent[]; partial: boolean } {
-  const events: AdapterEvent[] = []
+  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 = ProjectionRevision): { events: Array<AdapterEvent & { readonly occurredAt: string }>; partial: boolean } {
+  const events: Array<AdapterEvent & { readonly occurredAt: string }> = []
   let partial = false
   if (!record.uuid || record.isMeta === true || record.type !== "user" && record.type !== "assistant") return { events, partial }
   const message = object(record.message)

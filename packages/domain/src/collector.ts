@@ -8,6 +8,9 @@ import { AdapterProtocolVersion } from "./client.ts"
 
 export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
 export const CanonicalProfileVersion = "atape.acp-centered.v2" as const
+export const CanonicalProfileVersion3 = "atape.acp-centered.v3" as const
+export const CanonicalProfile = Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3])
+export type CanonicalProfile = typeof CanonicalProfile.Type
 export const RawIngestionProtocolVersion = "atape.raw.v1" as const
 // Three decoded MiB expands to four MiB of Base64, leaving room for metadata
 // beneath the five MiB HTTP and reverse-proxy request ceiling.
@@ -53,7 +56,7 @@ export const AdapterSession = Schema.Struct({
   branch: Schema.String,
   status: Schema.Literals(["active", "idle", "ended"]),
   captureStatus: Schema.Literals(["healthy", "partial", "complete", "degraded"]),
-  updatedAt: Schema.String,
+  updatedAt: Schema.NullOr(Schema.String),
   reportedEventCount: Schema.Number
 })
 export type AdapterSession = typeof AdapterSession.Type
@@ -210,7 +213,7 @@ export const AdapterEvent = Schema.Struct({
   orderFidelity: Schema.Literals(["native", "derived"]),
   fidelity: Schema.Literals(["native", "derived", "partial", "redacted"]),
   rawRef: AdapterRawReference,
-  occurredAt: Schema.String,
+  occurredAt: Schema.NullOr(Schema.String),
   update: AcpSessionUpdate,
   childSourceThreadId: Schema.optionalKey(Schema.String)
 })
@@ -501,7 +504,7 @@ export const CanonicalIngestionEvent = Schema.Struct({
   rawRef: CanonicalRawReference,
   kind: Schema.Literals(["message", "thought", "tool_call", "tool_result", "artifact", "spawn", "lifecycle"]),
   author: Schema.String,
-  occurredAt: Schema.String,
+  occurredAt: Schema.NullOr(Schema.String),
   text: Schema.String,
   toolLabel: Schema.optionalKey(Schema.String),
   toolUpdateJson: Schema.optionalKey(Schema.String),
@@ -510,7 +513,7 @@ export const CanonicalIngestionEvent = Schema.Struct({
 
 export const CanonicalBatch = Schema.Struct({
   protocolVersion: Schema.Literal(CanonicalIngestionProtocolVersion),
-  canonicalProfileVersion: Schema.Literal(CanonicalProfileVersion),
+  canonicalProfileVersion: CanonicalProfile,
   batchId: Schema.String,
   observedAt: Schema.String,
   source: CanonicalSource,
@@ -519,7 +522,8 @@ export const CanonicalBatch = Schema.Struct({
   threads: Schema.Array(AdapterThread),
   events: Schema.Array(CanonicalIngestionEvent),
   usage: Schema.optionalKey(Schema.Array(AdapterUsage))
-})
+}).check(Schema.makeFilter(batch => batch.canonicalProfileVersion === CanonicalProfileVersion3 ||
+  batch.session.updatedAt !== null && batch.events.every(event => event.occurredAt !== null)))
 export type CanonicalBatch = typeof CanonicalBatch.Type
 
 export const CanonicalApplyReceipt = Schema.Struct({

@@ -269,6 +269,17 @@ const fixture = (options: {
 }
 
 describe("Collector Module", () => {
+  it.each(["session", "event"] as const)("rejects unknown %s time on the legacy observation path before content upload", async field => {
+    const page = collectionPage(), observation = page.observations[0]!
+    const capture = fixture({ page: { ...page, observations: [{ ...observation,
+      session: { ...observation.session, updatedAt: field === "session" ? null : observation.session.updatedAt },
+      events: observation.events.map((event, index) => ({ ...event, occurredAt: field === "event" && index === 0 ? null : event.occurredAt }))
+    }] } })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures[0]?.reason).toBe("contract")
+    expect(capture.canonical).toEqual([]); expect(capture.raw).toEqual([]); expect(capture.checkpoint()).toBeUndefined()
+  })
+
   it("preserves accepted Raw receipts when a later chunk is disabled", async () => {
     const page = collectionPage(), observation = page.observations[0]!, segment = observation.rawSegments[0]!
     const capture = fixture({

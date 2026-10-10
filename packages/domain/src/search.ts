@@ -14,7 +14,7 @@ export const SearchResult = Schema.Struct({
   threadPath: Schema.Array(SearchThreadPathItem),
   author: Schema.String,
   harness: Schema.String,
-  occurredAt: Schema.String,
+  occurredAt: Schema.NullOr(Schema.String),
   text: Schema.String,
   toolLabel: Schema.optionalKey(Schema.String)
 })

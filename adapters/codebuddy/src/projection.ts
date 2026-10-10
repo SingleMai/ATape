@@ -200,7 +200,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   if (manualCompact || emergency) fail("format", "CodeBuddy compaction has not completed; retry.")
   const captureStatus = partial ? "partial" as const : "healthy" as const
   const profile = hasEmergency ? "emergency" : hasCompaction ? source.forkedFrom ? "fork.compaction" : "compaction" : source.forkedFrom ? "fork" : "linear"
-  const header: SourceCaptureHeader = { profile: `codebuddy.cli.jsonl.${profile}.1`, origin: source.origin,
+  const header: SourceCaptureHeader & { readonly session: SourceCaptureHeader["session"] & { readonly updatedAt: string } } = { profile: `codebuddy.cli.jsonl.${profile}.1`, origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "codebuddy-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
     threads: [{ sourceThreadId: threadId, ...(child ? { parentSourceThreadId: child.parentId } : {}), label: child?.label ?? title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }

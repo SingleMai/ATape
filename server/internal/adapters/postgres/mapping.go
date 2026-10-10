@@ -17,7 +17,7 @@ func insertSessionParams(record canonical.SessionRecord) (db.InsertSessionParams
 		Revision: record.Revision, Digest: record.Digest, Title: record.Title,
 		Summary: record.Summary, Insight: record.Insight, ActorName: record.Actor.Name,
 		ActorHarness: record.Actor.Harness, Branch: record.Branch, Status: record.Status,
-		CaptureStatus: record.CaptureStatus, UpdatedAt: record.UpdatedAt,
+		CaptureStatus: record.CaptureStatus, UpdatedAt: nullableTime(record.UpdatedAt),
 		ReportedEventCount: int64(record.ReportedEventCount),
 		CapturedByUserID:   capturedBy,
 	}, nil
@@ -29,7 +29,7 @@ func updateSessionParams(record canonical.SessionRecord) db.UpdateSessionParams 
 		Title: record.Title, Summary: record.Summary, Insight: record.Insight,
 		ActorName: record.Actor.Name, ActorHarness: record.Actor.Harness,
 		Branch: record.Branch, Status: record.Status,
-		CaptureStatus: record.CaptureStatus, UpdatedAt: record.UpdatedAt,
+		CaptureStatus: record.CaptureStatus, UpdatedAt: nullableTime(record.UpdatedAt),
 		ReportedEventCount: int64(record.ReportedEventCount),
 	}
 }
@@ -61,7 +61,7 @@ func insertEventParams(record canonical.EventRecord) db.InsertEventParams {
 		RawRef: record.RawRef, AdapterVersion: record.AdapterVersion,
 		SchemaVersion: record.SchemaVersion, ObservedAt: record.ObservedAt,
 		ReceivedAt: record.ReceivedAt, IngestSeq: int64(record.IngestSeq),
-		Kind: record.Kind, Author: record.Author, OccurredAt: record.OccurredAt,
+		Kind: record.Kind, Author: record.Author, OccurredAt: nullableTime(record.OccurredAt),
 		Text: record.Text, ToolLabel: record.ToolLabel,
 		ToolUpdateJson: record.ToolUpdateJSON,
 		ChildThreadID:  record.ChildThreadID,
@@ -104,7 +104,7 @@ func insertEventVersionParams(record canonical.EventRecord) db.InsertEventVersio
 }
 
 func canonicalSession(row db.GetSessionForReadRow) canonical.SessionRecord {
-	return sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount)
+	return sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, domainTime(row.UpdatedAt), row.ReportedEventCount)
 }
 
 func sessionRecord(id, projectID, capturedByUserID, sourceKey string, revision int64, digest, title, summary, insight, actorName, actorHarness, branch, status, captureStatus string, updatedAt time.Time, reportedEventCount int64) canonical.SessionRecord {
@@ -139,8 +139,22 @@ func canonicalEvent(row db.CanonicalEvent) canonical.EventRecord {
 		RawRef: row.RawRef, AdapterVersion: row.AdapterVersion,
 		SchemaVersion: row.SchemaVersion, ObservedAt: row.ObservedAt,
 		ReceivedAt: row.ReceivedAt, IngestSeq: uint64(row.IngestSeq), Kind: row.Kind,
-		Author: row.Author, OccurredAt: row.OccurredAt, Text: row.Text,
+		Author: row.Author, OccurredAt: domainTime(row.OccurredAt), Text: row.Text,
 		ToolLabel: row.ToolLabel, ChildThreadID: row.ChildThreadID,
 		ToolUpdateJSON: row.ToolUpdateJson,
 	}
+}
+
+func nullableTime(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	return &value
+}
+
+func domainTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }

@@ -30,7 +30,7 @@ type CanonicalEvent struct {
 	IngestSeq          int64
 	Kind               string
 	Author             string
-	OccurredAt         time.Time
+	OccurredAt         *time.Time
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string
@@ -128,7 +128,7 @@ type VisibleCanonicalEvent struct {
 	IngestSeq          int64
 	Kind               string
 	Author             string
-	OccurredAt         time.Time
+	OccurredAt         *time.Time
 	Text               string
 	ToolLabel          string
 	ChildThreadID      *string

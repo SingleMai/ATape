@@ -4,6 +4,7 @@ import { AdapterThread } from "./collector.ts"
 export const PublicationProtocol = "atape.publication.v1"
 export const PublicationTargetProfile = "atape.publication-target.v1"
 export const PublicationTargetProfile2 = "atape.publication-target.v2"
+export const PublicationTargetProfile3 = "atape.publication-target.v3"
 const count = (maximum = Number.MAX_SAFE_INTEGER, minimum = 0) => Schema.Number.check(
   Schema.isInt(), Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500), Schema.isPattern(/^[^\u0000]+$/))
@@ -36,7 +37,7 @@ export const PublicationPage = Schema.Struct({ attempt: PublicationAttempt,
   parts: Schema.NullOr(Schema.Array(PublicationPart).check(Schema.isMaxLength(100))) })
 export const PublicationCapabilities = Schema.Struct({
   protocol: Schema.Literal(PublicationProtocol), targetProfile: Schema.Literal(PublicationTargetProfile),
-  targetProfiles: Schema.optionalKey(Schema.Array(Schema.Literals([PublicationTargetProfile, PublicationTargetProfile2])).check(Schema.isMaxLength(2))),
+  targetProfiles: Schema.optionalKey(Schema.Array(Schema.Literals([PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3])).check(Schema.isMaxLength(3))),
   legacyAdoption: Schema.optionalKey(Schema.Boolean),
   limits: Schema.Struct({ partBytes: count(4 * 1024 * 1024, 1), targetBytes: count(1024 * 1024 * 1024, 1),
     userPendingBytes: count(16 * 1024 * 1024 * 1024, 1), parts: count(4096, 1), reservations: count(128, 1),

@@ -533,7 +533,7 @@
   "time.minutesAgo": "{count} 分钟前",
   "time.minutesAgoLong": "{count} 分钟前",
   "time.secondsAgo": "{count} 秒前",
-  "time.unknown": "未知时间",
+  "time.unknown": "时间未知",
   "userMessages.close": "关闭用户消息",
   "userMessages.fallback": "用户消息",
   "userMessages.itemLabel": "{index}. {time} · {summary}",

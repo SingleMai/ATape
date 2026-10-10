@@ -67,7 +67,7 @@ func (s *Store) LeaseProjectionChanges(
 				ProjectID: row.ProjectID, SessionID: row.SessionID,
 				SessionTitle: row.SessionTitle, ThreadID: row.ThreadID,
 				ThreadPath: path, EventID: row.EventID, Author: row.Author,
-				Harness: row.Harness, OccurredAt: row.OccurredAt, Text: row.Text,
+				Harness: row.Harness, OccurredAt: row.OccurredAt.Time, Text: row.Text,
 				ToolLabel: row.ToolLabel, IngestSeq: uint64(row.IngestSeq),
 				ObservedAt: row.ObservedAt,
 			},
@@ -154,7 +154,7 @@ func (s *Store) UpsertProjectionDocuments(ctx context.Context, documents []canon
 			SessionID: document.SessionID, SessionTitle: document.SessionTitle,
 			ThreadID: document.ThreadID, ThreadPathIds: pathIDs,
 			ThreadPathLabels: pathLabels, Author: document.Author,
-			Harness: document.Harness, OccurredAt: document.OccurredAt,
+			Harness: document.Harness, OccurredAt: nullableTime(document.OccurredAt),
 			Text: document.Text, EventKind: document.Kind,
 			IngestSeq: int64(document.IngestSeq), ObservedAt: document.ObservedAt,
 		})
@@ -217,7 +217,7 @@ func (s *Store) SearchProjectionDocuments(
 	rows, err := queries.SearchDocuments(ctx, db.SearchDocumentsParams{
 		ProjectID: query.ProjectID,
 		Term:      query.Term,
-		HasAfter:  query.After != nil, AfterTime: after.Time, AfterID: after.EventID,
+		HasAfter:  query.After != nil, AfterUnknown: after.Time.IsZero(), AfterTime: after.Time, AfterID: after.EventID,
 		ResultLimit: int32(query.Limit + 1),
 	})
 	if err != nil {
@@ -239,7 +239,7 @@ func (s *Store) SearchProjectionDocuments(
 			ProjectID: row.ProjectID, SessionID: row.SessionID,
 			SessionTitle: row.SessionTitle, ThreadID: row.ThreadID,
 			ThreadPath: path, EventID: row.EventID, Author: row.Author,
-			Harness: row.Harness, OccurredAt: row.OccurredAt, Text: row.Text,
+			Harness: row.Harness, OccurredAt: domainTime(row.OccurredAt), Text: row.Text,
 			Kind: "message", IngestSeq: uint64(row.IngestSeq),
 			ObservedAt: row.ObservedAt,
 		})

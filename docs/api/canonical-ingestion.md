@@ -17,20 +17,22 @@ Membership, or Project ownership. `projectId` is only the target Resource
 locator; the server resolves its Team and current Membership before accepting
 the batch.
 
-The `atape.canonical.v1` transport accepts the legacy `atape.acp-centered.v1`
-profile and the current `atape.acp-centered.v2` profile. It accepts the shared
+The `atape.canonical.v1` transport accepts `atape.acp-centered.v1`,
+`atape.acp-centered.v2` and the explicit-unknown-time `atape.acp-centered.v3`
+profile. It accepts the shared
 event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`,
 `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol
 carries an explicit extension schema and version.
 
 ## Batch and publication write modes
 
-Codex and Claude use this batch endpoint. OpenCode's `atape.source-capture.v1`
-capability instead prepares complete targets through the separate
+Legacy Adapter collection uses this batch endpoint. Source-capture capabilities
+instead prepare complete targets through the separate
 [publication Interface](../architecture/publication-candidates.md). The Server
 reserves one write mode per source: batch ingestion cannot mutate a reserved
-publication source, and publication cannot adopt an existing legacy Session.
-An Adapter upgrade is not an implicit write-mode migration.
+publication source. Publication can adopt an existing legacy Session only through
+its explicit, ownership-checked adoption operation. An Adapter upgrade is not an
+implicit write-mode migration.
 
 ## Legacy-compatible example
 
@@ -175,11 +177,35 @@ tool update (with the child-Thread `spawn` exception) and derives `text` and
 Search indexes summaries rather than complete input/output. See
 [conversation reads](conversation.md) and [ADR-0030](../architecture/adr/0030-bounded-tool-details-implementation.md).
 
+## v3 unknown source clocks
+
+The v3 profile permits explicit `null` for `session.updatedAt` and an Event's
+`occurredAt`. Known values remain RFC 3339 timestamps. Missing fields, empty
+strings, invalid timestamps and values that truncate to Go's zero instant at
+PostgreSQL's microsecond storage precision are rejected; v1/v2
+continue rejecting unknown source clocks. Upload `observedAt` remains required
+and independent. Filesystem mtime, sidecar clocks and upload time must not replace
+an unknown occurrence time.
+
+The schema migration normalizes existing exact Go-zero source clocks to SQL
+NULL, including Search and Overview facts, so pagination treats them consistently
+as unknown. Other historical sentinels, such as the epoch, remain unchanged.
+Frozen publication bodies, manifests and digests are not rewritten.
+
+Reader responses preserve null and display an unknown time. Event order follows
+source ordering rather than a manufactured clock; Search puts unknown clocks
+after known clocks, and Overview excludes them from dated activity. An unknown
+Session update time does not establish recent active presence. V3 retains the v2
+tool-detail contract. Publication requires the explicitly advertised v3 target
+profile for an entire candidate. See
+[ADR-0113](../architecture/adr/0113-explicit-unknown-conversation-time.md).
+
 ## Structured usage
 
-Both accepted profiles may include up to 500 `usage` records per batch. Each
+All accepted profiles may include up to 500 `usage` records per batch. Each
 record identifies `sourceUsageId`, `sourceThreadId`, a positive safe-integer
-`revision`, `occurredAt`, and `model`. Its Thread must appear in the batch.
+`revision`, known `occurredAt`, and `model`. Usage occurrence time is not nullable
+in v3. Its Thread must appear in the batch.
 Include at least one of `inputTokens`, `outputTokens`, `cacheReadTokens` or
 `cacheWriteTokens`. Omit unknown counters; zero is a known measurement.
 

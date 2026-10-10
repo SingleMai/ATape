@@ -224,7 +224,7 @@ const projectThread = (source: Source, request: SourceOpenRequest, started: numb
   if (firstText && Buffer.byteLength(firstText) <= 200) title = firstText
   if (typeof source.meta.title === "string" && source.meta.title && Buffer.byteLength(source.meta.title) <= 200) title = source.meta.title
   const captureStatus = partial ? "partial" : "healthy"
-  const header: SourceCaptureHeader = { profile: forkMarkers ? "kimi.code.wire.fork.1" : contextHistory ? "kimi.code.wire.context.1" : "kimi.code.wire.linear.1", origin: source.origin,
+  const header: SourceCaptureHeader & { readonly session: SourceCaptureHeader["session"] & { readonly updatedAt: string } } = { profile: forkMarkers ? "kimi.code.wire.fork.1" : contextHistory ? "kimi.code.wire.context.1" : "kimi.code.wire.linear.1", origin: source.origin,
     session: { sourceSessionId: sourceId, title, summary: "", insight: "", actor: { name: "User", harness: "kimi-code" }, branch: "",
       status: active ? "active" : "idle", captureStatus, updatedAt: new Date(latest).toISOString(), reportedEventCount: events },
     threads: [{ sourceThreadId: threadId, ...(child ? { parentSourceThreadId: child.parentId === "main" ? sourceId : child.parentId } : {}), label: child?.label ?? title, summary: "", captureStatus }], target: { events, usage: usageCount, threads: 1 } }

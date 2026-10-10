@@ -1716,9 +1716,12 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 	if previousTarball != "" {
 		seedUpdatedAt = parseThinkingTimestamp("2026-10-08T13:00:03Z")
 	}
-	beforeUpdatedAt := parseThinkingTimestamp(thinkingBefore.Session.UpdatedAt)
+	if thinkingBefore.Session.UpdatedAt == nil {
+		t.Fatal("Claude seed updatedAt must be known")
+	}
+	beforeUpdatedAt := parseThinkingTimestamp(*thinkingBefore.Session.UpdatedAt)
 	if !beforeUpdatedAt.Equal(seedUpdatedAt) {
-		t.Fatalf("Claude seed updatedAt=%s want old/new visible EOF=%s", thinkingBefore.Session.UpdatedAt, seedUpdatedAt)
+		t.Fatalf("Claude seed updatedAt=%s want old/new visible EOF=%s", *thinkingBefore.Session.UpdatedAt, seedUpdatedAt)
 	}
 	thinkingStoredBefore, exists, err := store.Conversation(t.Context(), authentication.Principal{UserID: grant.User.ID, Method: authentication.WebAuthentication}, thinkingSession, "root")
 	if err != nil || !exists || len(thinkingStoredBefore.Events) != seedEvents {
@@ -1746,7 +1749,10 @@ func assertClaudeCollectorContract(t *testing.T, h *Handler, modules Modules, po
 		t.Fatalf("Claude installed thinking upgrade reset receipts or used the wrong projection: %+v", thinkingUpgrade)
 	}
 	thinkingProjected := read(thinkingSession, "root", 8)
-	projectedUpdatedAt := parseThinkingTimestamp(thinkingProjected.Session.UpdatedAt)
+	if thinkingProjected.Session.UpdatedAt == nil {
+		t.Fatal("Claude projected updatedAt must be known")
+	}
+	projectedUpdatedAt := parseThinkingTimestamp(*thinkingProjected.Session.UpdatedAt)
 	if !projectedUpdatedAt.Equal(parseThinkingTimestamp("2026-10-08T13:00:04Z")) || previousTarball != "" && !projectedUpdatedAt.After(beforeUpdatedAt) {
 		t.Fatal("Claude thought-only EOF did not advance the upgraded Session's visible updatedAt")
 	}

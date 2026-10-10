@@ -77,7 +77,7 @@ SELECT
 `).Scan(&migrationCount, &phase, &installation); err != nil {
 		t.Fatalf("read migration status: %v", err)
 	}
-	if migrationCount != 23 || phase != "prepared" || installation != "mapped" {
+	if migrationCount != 24 || phase != "prepared" || installation != "mapped" {
 		t.Fatalf("upgraded ledger: migrations=%d phase=%s installation=%s", migrationCount, phase, installation)
 	}
 

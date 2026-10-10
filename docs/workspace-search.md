@@ -44,6 +44,12 @@ The server returns a bounded excerpt around the match; opening it loads the full
 message. Versioned keyset cursors replace offset/count queries. Old open Search
 pages must restart at page one after a Server upgrade.
 
+Source occurrence and Session update clocks may be unknown. The Reader, message
+index, Project list, Search and Overview details show “Time unknown” for null
+values. Message order and exact-Event navigation are preserved. Project lists
+and Search place unknown clocks after known clocks; upload/refresh watermarks
+remain separate and do not supply an occurrence date.
+
 Keyword, Team, and Project are the supported filters. There are no member, Agent,
 or date filters in the existing backend contract. Cross-project global relevance,
 server-side filtering, and latency improvements for very large project directories

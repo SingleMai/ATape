@@ -114,8 +114,15 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		}
 		schema = resolved
 	}
-	if typ.Kind() == reflect.Pointer {
+	nullable := typ.Kind() == reflect.Pointer
+	if nullable {
 		typ = typ.Elem()
+	}
+	if alternatives, ok := schema.Type.([]any); ok {
+		if !nullable || typ.Kind() != reflect.String || len(alternatives) != 2 || !slices.Contains(alternatives, any("string")) || !slices.Contains(alternatives, any("null")) {
+			return fmt.Errorf("%s: nullable schema does not describe %s", path, typ)
+		}
+		schema.Type = "string"
 	}
 	if typ == reflect.TypeOf(json.RawMessage{}) {
 		if schema.Type != nil || len(schema.Properties) != 0 {
@@ -162,4 +169,15 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		return fmt.Errorf("%s: required properties = %v, wire requires %v", path, actual, required)
 	}
 	return nil
+}
+
+func TestReaderSchemaComparisonChecksNullableSourceClocks(t *testing.T) {
+	schema := readerSchema{Type: []any{"string", "null"}}
+	var nullable *string
+	if err := compareReaderSchema(reflect.TypeOf(nullable), schema, nil, "clock"); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareReaderSchema(reflect.TypeOf(""), schema, nil, "clock"); err == nil {
+		t.Fatal("nullable schema admitted a non-nullable source clock")
+	}
 }

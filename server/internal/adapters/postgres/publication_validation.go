@@ -179,11 +179,14 @@ func preparePublicationPart(p authentication.Principal, source db.CanonicalPubli
 		return input, canonical.WriteBatch{}, publicationError("invalid", "candidate part contains trailing JSON")
 	}
 	target := input.Target
-	if (target.Profile != publication.TargetProfile && target.Profile != publication.RetentionTargetProfile) || target.Threads < 1 || target.Threads > 100 || target.Events < 0 || target.Events > maxParts*500 || target.Usage < 0 || target.Usage > maxParts*500 {
+	if (target.Profile != publication.TargetProfile && target.Profile != publication.RetentionTargetProfile && target.Profile != publication.UnknownTimeTargetProfile) || target.Threads < 1 || target.Threads > 100 || target.Events < 0 || target.Events > maxParts*500 || target.Usage < 0 || target.Usage > maxParts*500 {
 		return input, canonical.WriteBatch{}, publicationError("invalid", "invalid target profile or member counts")
 	}
-	if (target.Profile == publication.TargetProfile && target.RetainedThreadIDs != nil) || (target.Profile == publication.RetentionTargetProfile && target.RetainedThreadIDs == nil) || len(target.RetainedThreadIDs) > 100 {
-		return input, canonical.WriteBatch{}, publicationError("invalid", "retention requires an explicit v2 target")
+	if (target.Profile == publication.TargetProfile && target.RetainedThreadIDs != nil) || (target.Profile != publication.TargetProfile && target.RetainedThreadIDs == nil) || len(target.RetainedThreadIDs) > 100 {
+		return input, canonical.WriteBatch{}, publicationError("invalid", "retention requires an explicit v2 or v3 target")
+	}
+	if (target.Profile == publication.UnknownTimeTargetProfile) != (input.Batch.CanonicalProfileVersion == ingestion.UnknownTimeCanonicalProfileVersion) {
+		return input, canonical.WriteBatch{}, publicationError("invalid", "v3 canonical profile requires a v3 target")
 	}
 	retained := make(map[string]bool, len(target.RetainedThreadIDs))
 	for _, value := range target.RetainedThreadIDs {
@@ -215,7 +218,7 @@ func preparePublicationPart(p authentication.Principal, source db.CanonicalPubli
 			}
 		}
 	}
-	if target.Profile == publication.RetentionTargetProfile && input.Batch.Session.ReportedEventCount != target.Events {
+	if target.Profile != publication.TargetProfile && input.Batch.Session.ReportedEventCount != target.Events {
 		return input, canonical.WriteBatch{}, publicationError("invalid", "Session count differs from explicit target projection")
 	}
 	batch := input.Batch

@@ -114,14 +114,14 @@ SELECT count(DISTINCT session_id)::bigint FROM (
  JOIN canonical_sessions s ON s.id=e.session_id
  AND NOT EXISTS(SELECT 1 FROM canonical_publication_sources selected WHERE selected.session_id=s.id AND selected.current_head IS NOT NULL) JOIN canonical_projects p ON p.id=s.project_id
  WHERE p.team_id=sqlc.arg(team_id) AND p.state<>'deleted' AND s.record_state='active'
- AND e.kind='message' AND e.occurred_at<'2000-01-01'::timestamptz
+ AND e.kind='message' AND (e.occurred_at IS NULL OR e.occurred_at<'2000-01-01'::timestamptz)
  UNION ALL
  SELECT source.session_id FROM canonical_publication_sources source
  JOIN canonical_sessions s ON s.id=source.session_id JOIN canonical_projects p ON p.id=s.project_id
  JOIN overview_publication_messages m ON m.attempt_id=source.current_head::uuid
  JOIN canonical_publication_parts part ON part.attempt_id=m.attempt_id AND part.ordinal=m.part_ordinal AND part.overview_version=1
  WHERE p.team_id=sqlc.arg(team_id) AND p.state<>'deleted' AND s.record_state='active'
- AND m.occurred_at<'2000-01-01'::timestamptz
+ AND (m.occurred_at IS NULL OR m.occurred_at<'2000-01-01'::timestamptz)
  UNION ALL
  SELECT source.session_id FROM canonical_publication_sources source
  JOIN canonical_sessions s ON s.id=source.session_id JOIN canonical_projects p ON p.id=s.project_id
@@ -129,7 +129,7 @@ SELECT count(DISTINCT session_id)::bigint FROM (
  CROSS JOIN LATERAL jsonb_to_recordset(convert_from(part.validated_body,'UTF8')::jsonb->'Events')
  AS j("Kind" text,"OccurredAt" timestamptz)
  WHERE p.team_id=sqlc.arg(team_id) AND p.state<>'deleted' AND s.record_state='active'
- AND j."Kind"='message' AND j."OccurredAt"<'2000-01-01'::timestamptz
+ AND j."Kind"='message' AND (j."OccurredAt" IS NULL OR j."OccurredAt"<'2000-01-01'::timestamptz)
 ) unknown_messages;
 
 -- name: OverviewPreviews :many

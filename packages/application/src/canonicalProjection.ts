@@ -1,4 +1,4 @@
-import { CanonicalIngestionProtocolVersion, CanonicalProfileVersion, type CanonicalBatch, type AcpContentBlock, type AcpSessionUpdate } from "@atape/domain"
+import { CanonicalIngestionProtocolVersion, CanonicalProfileVersion, type CanonicalProfile, type CanonicalBatch, type AcpContentBlock, type AcpSessionUpdate } from "@atape/domain"
 import type { CanonicalSubmission } from "./collectorContracts.ts"
 
 /** Conservative size contract for publication-target.v1 materialization. Go JSON
@@ -16,7 +16,7 @@ export const canonicalMaterializationBound = (batch: CanonicalBatch, userId: str
   return goJSONBytes(batch) + 4096 + (records + 2) * goJSONBytes(scope) + records * 2048
 }
 
-export const projectCanonicalSubmission = (submission: Omit<CanonicalSubmission, "userId">): Omit<CanonicalBatch, "batchId"> => {
+export const projectCanonicalSubmission = (submission: Omit<CanonicalSubmission, "userId">, canonicalProfileVersion: CanonicalProfile = CanonicalProfileVersion): Omit<CanonicalBatch, "batchId"> => {
   const source = {
     adapterId: submission.adapterId,
     adapterVersion: submission.adapterVersion,
@@ -51,7 +51,7 @@ export const projectCanonicalSubmission = (submission: Omit<CanonicalSubmission,
   })
   const base = {
     protocolVersion: CanonicalIngestionProtocolVersion,
-    canonicalProfileVersion: CanonicalProfileVersion,
+    canonicalProfileVersion,
     observedAt: submission.observation.observedAt,
     source,
     projectId: submission.projectId,

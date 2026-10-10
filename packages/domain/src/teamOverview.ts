@@ -5,7 +5,7 @@ export const OverviewTokens = Schema.Struct({ input: Count, output: Count, cache
 export const OverviewMetrics = Schema.Struct({ members: Schema.Number, activeMembers: Schema.Number, projects: Schema.Number, sessions: Schema.Number, messages: Schema.Number, tokens: OverviewTokens })
 export const OverviewOption = Schema.Struct({ id: Schema.String, name: Schema.String, current: Schema.Boolean })
 export const OverviewDetail = Schema.Struct({ id: Schema.String, name: Schema.String, current: Schema.Boolean, sessions: Schema.Number, projects: Schema.Number, tokens: OverviewTokens })
-export const OverviewSession = Schema.Struct({ id: Schema.String, projectId: Schema.String, projectName: Schema.String, memberId: Schema.String, memberName: Schema.String, agent: Schema.String, title: Schema.String, updatedAt: Schema.String, input: Schema.String, output: Schema.String, tokens: OverviewTokens })
+export const OverviewSession = Schema.Struct({ id: Schema.String, projectId: Schema.String, projectName: Schema.String, memberId: Schema.String, memberName: Schema.String, agent: Schema.String, title: Schema.String, updatedAt: Schema.NullOr(Schema.String), input: Schema.String, output: Schema.String, tokens: OverviewTokens })
 const OverviewPageFields = {
   teamId: Schema.String, teamName: Schema.String, timezone: Schema.String, from: Schema.String, to: Schema.String, updatedAt: Schema.String,
   metrics: OverviewMetrics, previous: OverviewMetrics,

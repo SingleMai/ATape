@@ -85,8 +85,14 @@ func (i *Index) SearchProjectionDocuments(
 		if document.ProjectID != query.ProjectID || document.Kind != "message" || !strings.Contains(strings.ToLower(document.Text), term) {
 			continue
 		}
-		if query.After != nil && (document.OccurredAt.After(query.After.Time) || (document.OccurredAt.Equal(query.After.Time) && document.EventID >= query.After.EventID)) {
-			continue
+		if query.After != nil {
+			if query.After.Time.IsZero() {
+				if !document.OccurredAt.IsZero() || document.EventID >= query.After.EventID {
+					continue
+				}
+			} else if !document.OccurredAt.IsZero() && (document.OccurredAt.After(query.After.Time) || (document.OccurredAt.Equal(query.After.Time) && document.EventID >= query.After.EventID)) {
+				continue
+			}
 		}
 		document.ThreadPath = append([]canonical.ProjectionThread(nil), document.ThreadPath...)
 		document.Text = excerpt(document.Text, query.Term)
@@ -108,6 +114,9 @@ func (i *Index) SearchProjectionDocuments(
 		documents = append(documents, document)
 	}
 	sort.Slice(documents, func(left, right int) bool {
+		if documents[left].OccurredAt.IsZero() != documents[right].OccurredAt.IsZero() {
+			return !documents[left].OccurredAt.IsZero()
+		}
 		if !documents[left].OccurredAt.Equal(documents[right].OccurredAt) {
 			return documents[left].OccurredAt.After(documents[right].OccurredAt)
 		}

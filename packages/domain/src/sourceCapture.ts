@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { SourceCaptureVersion, SourceCaptureVersion2 } from "./client.ts"
-import { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, AdapterSourceFailure, MaxSourceFailures, GitSource } from "./collector.ts"
+import { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, AdapterSourceFailure, MaxSourceFailures, GitSource, CanonicalProfile } from "./collector.ts"
 
 const count = (maximum: number, minimum = 1) => Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(minimum), Schema.isLessThanOrEqualTo(maximum))
 const identity = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(500), Schema.isPattern(/^[^\u0000]+$/))
@@ -25,6 +25,8 @@ export const SourceCaptureFrame = Schema.Struct({
 export type SourceCaptureFrame = typeof SourceCaptureFrame.Type
 export const SourceCaptureHeader = Schema.Struct({
   profile: identity, origin: GitSource, session: Schema.Struct(sessionFields),
+  /** One Canonical profile for the whole candidate; omitted means v2. */
+  canonicalProfileVersion: Schema.optionalKey(CanonicalProfile),
   threads: Schema.Array(Schema.Struct(threadFields)).check(Schema.isMaxLength(1000)),
   target: Schema.Struct({ events: count(2_000_000, 0), usage: count(1_000_000, 0), threads: count(1000) })
 })

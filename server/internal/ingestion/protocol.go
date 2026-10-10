@@ -6,6 +6,7 @@ import "fmt"
 const ProtocolVersion = "atape.canonical.v1"
 const CanonicalProfileVersion = "atape.acp-centered.v2"
 const LegacyCanonicalProfileVersion = "atape.acp-centered.v1"
+const UnknownTimeCanonicalProfileVersion = "atape.acp-centered.v3"
 
 type Source struct {
 	AdapterID      string `json:"adapterId"`
@@ -36,6 +37,7 @@ type Session struct {
 	Status             string `json:"status"`
 	CaptureStatus      string `json:"captureStatus"`
 	UpdatedAt          string `json:"updatedAt"`
+	UpdatedAtUnknown   bool   `json:"-"`
 	ReportedEventCount int    `json:"reportedEventCount"`
 }
 
@@ -61,6 +63,7 @@ type Event struct {
 	Kind                string       `json:"kind"`
 	Author              string       `json:"author"`
 	OccurredAt          string       `json:"occurredAt"`
+	OccurredAtUnknown   bool         `json:"-"`
 	Text                string       `json:"text"`
 	ToolLabel           string       `json:"toolLabel,omitempty"`
 	ToolUpdateJSON      string       `json:"toolUpdateJson,omitempty"`

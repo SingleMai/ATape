@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { CaptureJournal, PublicationError, PublicationTransport, beginPublicationCapture, sealPublicationCapture,
   deliverPublicationCapture, deliverPublicationRaw, beginRawObservation, sealRawObservation, RawPublicationTransport, RawPublicationError,
   SecretRedactor, makeSecretRedactorLayer } from "@atape/application"
-import { PublicationProtocol, PublicationTargetProfile, PublicationTargetProfile2, type PublicationLegacyAdoption, type PublicationAttempt, type PublicationCapabilities, type PublicationPart,
+import { PublicationProtocol, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, type PublicationLegacyAdoption, type PublicationAttempt, type PublicationCapabilities, type PublicationPart,
   type RawPublicationChunk, type RawPublicationReceipt, type RawPublicationPolicy } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { expect } from "vitest"
@@ -24,7 +24,7 @@ export const failure = (reason: PublicationError["reason"]) => new PublicationEr
 
 // Test Adapter for the real owned remote Seam. Local storage is always SQLite.
 export const fixture = async (partBytes = 4096, admission: Partial<PublicationCapabilities["limits"]> = {}, features: {
-  readonly v2?: boolean; readonly adoption?: Pick<PublicationLegacyAdoption, "revisionFloor" | "baselineThreads">
+  readonly v2?: boolean; readonly v3?: boolean; readonly adoption?: Pick<PublicationLegacyAdoption, "revisionFloor" | "baselineThreads">
 } = {}) => {
   const directory = await mkdtemp(join(tmpdir(), "atape-delivery-")); directories.push(directory)
   const path = join(directory, "capture.sqlite")
@@ -35,10 +35,13 @@ export const fixture = async (partBytes = 4096, admission: Partial<PublicationCa
   let statusHangs = false
   let statusError: PublicationError["reason"] | undefined
   let adoptions = 0, reservations = 0
+  const targetProfiles: NonNullable<PublicationCapabilities["targetProfiles"]> = features.v3
+    ? [PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3]
+    : [PublicationTargetProfile, PublicationTargetProfile2]
   const operation = <A>(body: () => A) => Effect.try({ try: () => { requests++; return body() }, catch: cause => cause as PublicationError })
   const snapshot = () => structuredClone(attempt)
   const remote = Layer.succeed(PublicationTransport, PublicationTransport.of({
-    capabilities: () => operation(() => ({ ...capabilities, ...(features.v2 ? { targetProfiles: [PublicationTargetProfile, PublicationTargetProfile2], legacyAdoption: true } : {}), limits: { ...capabilities.limits, ...admission, partBytes } })),
+    capabilities: () => operation((): PublicationCapabilities => ({ ...capabilities, ...(features.v2 || features.v3 ? { targetProfiles, legacyAdoption: true } : {}), limits: { ...capabilities.limits, ...admission, partBytes } })),
     reserve: () => operation(() => { reservations++; return { id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp } }),
     adoptLegacy: () => operation(() => { adoptions++; if (!features.adoption) throw failure("unavailable")
       return { id: `attempt-${++serial}`, sessionId: "session", expiresAt: timestamp, ...features.adoption } }),

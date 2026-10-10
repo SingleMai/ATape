@@ -30,7 +30,7 @@ func prepareOverviewFacts(ctx context.Context, q *db.Queries, attempt pgtype.UUI
 			return persist("prepare Overview topology", errors.New("fixed Event has no Thread"))
 		}
 		messages = append(messages, db.CopyOverviewMessagesParams{AttemptID: attempt, PartOrdinal: ordinal, EntryIndex: int32(n),
-			EventID: event.ID, ThreadID: event.ThreadID, OccurredAt: event.OccurredAt, Author: event.Author, Root: root,
+			EventID: event.ID, ThreadID: event.ThreadID, OccurredAt: nullableTime(event.OccurredAt), Author: event.Author, Root: root,
 			SourceOrder: event.SourceOrder, EventIndex: int64(event.EventIndex)})
 	}
 	usage := make([]db.CopyOverviewUsageParams, len(batch.Usage))

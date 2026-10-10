@@ -533,7 +533,7 @@
   "time.minutesAgo": "{count}m ago",
   "time.minutesAgoLong": "{count} min ago",
   "time.secondsAgo": "{count}s ago",
-  "time.unknown": "Unknown time",
+  "time.unknown": "Time unknown",
   "userMessages.close": "Close user messages",
   "userMessages.fallback": "User message",
   "userMessages.itemLabel": "{index}. {time} · {summary}",
