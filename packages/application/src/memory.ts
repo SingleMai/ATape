@@ -12,6 +12,7 @@ export class MemoryGatewayError extends Schema.TaggedError<MemoryGatewayError>()
 // the ATape server. Production HTTP and deterministic test Adapters make this
 // a real Seam.
 export type ConversationPageRequest = {
+  readonly snapshot?: string
   readonly head?: string
   readonly after?: string
   readonly at?: string
@@ -40,7 +41,8 @@ export const openConversation = Effect.fn("Memory.openConversation")(function*(
   )
   // Never accept a continuation from a different head, even from an older or
   // misconfigured server. Pages replace each other; they are never accumulated.
-  if ((page.head !== undefined && value.head !== page.head) ||
+  if ((page.snapshot !== undefined && value.snapshot !== page.snapshot) ||
+      (page.head !== undefined && value.head !== page.head) ||
       (value.nextEventId !== undefined && value.head === undefined)) {
     return yield* Effect.fail(new MemoryGatewayError({ reason: "http", status: 409,
       code: "refresh_required", message: "The conversation changed. Reload it before continuing." }))

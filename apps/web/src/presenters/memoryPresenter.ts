@@ -155,15 +155,17 @@ const useRefreshSettings = (
 
 const useCachedLoadableView = <A>(
   cacheKey: string,
-  result: AsyncResult.AsyncResult<A, MemoryGatewayError>
+  result: AsyncResult.AsyncResult<A, MemoryGatewayError>,
+  suppressedValue?: A
 ): LoadableView<A> => {
   const cache = useRef<{ readonly key: string; readonly value: A } | undefined>(undefined)
-  if (cache.current !== undefined && cache.current.key !== cacheKey) {
+  if (cache.current !== undefined && (cache.current.key !== cacheKey || cache.current.value === suppressedValue)) {
     cache.current = undefined
   }
 
   const view = toLoadableView(result)
   if (view._tag === "Ready") {
+    if (suppressedValue !== undefined && view.value === suppressedValue) return { _tag: "Loading" }
     cache.current = { key: cacheKey, value: view.value }
     return view
   }
@@ -211,18 +213,27 @@ export const useProjectMemoryPresenter = (projectId: string): {
 export const useConversationPresenter = (sessionId: string, threadId: string, page: ConversationPageRequest = {}, restart?: () => void): {
   readonly state: LoadableView<Conversation>
   readonly reload: () => void
+  readonly revalidate: () => void
   readonly refresh: RefreshSettingsView
 } => {
+  const [suppressedValue, setSuppressedValue] = useState<Conversation>()
   const pageKey = JSON.stringify([sessionId, threadId, page])
   const atom = conversationAtoms(pageKey)
   const result = useAtomValue(atom)
   const refreshAtom = useAtomRefresh(atom)
-  const reload = (page.head !== undefined || page.at !== undefined) && restart !== undefined ? restart : refreshAtom
-  const state = useCachedLoadableView(pageKey, result)
+  const reload = (page.head !== undefined || page.snapshot !== undefined || page.at !== undefined) && restart !== undefined ? restart : refreshAtom
+  const state = useCachedLoadableView(pageKey, result, suppressedValue)
   const refresh = useRefreshSettings(reload, result.waiting)
   return {
     state,
     reload,
+    // A separate read can establish that cached data is no longer authorized.
+    // Revalidation starts without fallback and preserves the selected page;
+    // refresh-required still uses the existing explicit restart action.
+    revalidate: () => {
+      if (state._tag === "Ready") setSuppressedValue(state.value)
+      refreshAtom()
+    },
     refresh
   }
 }

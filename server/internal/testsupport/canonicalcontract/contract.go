@@ -21,6 +21,7 @@ import (
 )
 
 type Store interface {
+	SessionAnalytics(context.Context, authentication.Principal, string, string) (canonical.AnalyticsSnapshot, bool, error)
 	teamoverview.Store
 	ingestion.BatchStore
 	conversation.SnapshotStore
@@ -59,6 +60,7 @@ func MemoryControlPlane() canonical.MemoryControlPlane {
 
 func Run(t *testing.T, factory Factory) {
 	t.Helper()
+	t.Run("Session analysis snapshot and conditional Reader", func(t *testing.T) { runAnalyticsSnapshot(t, factory(t)) })
 	t.Run("Team overview usage, replay, model filtering, child ownership and deletion", func(t *testing.T) {
 		store := factory(t)
 		writer := ingestion.NewIngestor(store)

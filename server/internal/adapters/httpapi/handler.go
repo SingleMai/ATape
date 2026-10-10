@@ -17,6 +17,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
 	"github.com/SingleMai/ATape/server/internal/releaseinfo"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/teamoverview"
 	"github.com/SingleMai/ATape/server/internal/workspace"
@@ -25,6 +26,7 @@ import (
 type Modules struct {
 	Publication    Publication
 	Overview       *teamoverview.Module
+	Analytics      *sessionanalytics.Module
 	Authentication *authentication.Module
 	Teams          *team.Module
 	Memory         *conversation.Memory
@@ -38,6 +40,7 @@ type Modules struct {
 type Handler struct {
 	publication Publication
 	overview    *teamoverview.Module
+	analytics   *sessionanalytics.Module
 	auth        *authentication.Module
 	teams       *team.Module
 	memory      *conversation.Memory
@@ -68,7 +71,7 @@ func NewHandler(config Config, modules Modules) (*Handler, error) {
 		return nil, errors.New("HTTP Adapter requires the Auth Cutover Module")
 	}
 	handler := &Handler{
-		overview: modules.Overview, publication: modules.Publication,
+		overview: modules.Overview, analytics: modules.Analytics, publication: modules.Publication,
 		auth: modules.Authentication, teams: modules.Teams,
 		memory: modules.Memory, ingestor: modules.Ingestor, searcher: modules.Searcher,
 		directory: modules.Directory, raw: modules.Raw, cutover: modules.Cutover, config: prepared,

@@ -106,6 +106,7 @@ export const CanonicalEvent = Schema.Struct({
 export type CanonicalEvent = typeof CanonicalEvent.Type
 
 export const Conversation = Schema.Struct({
+	 snapshot: Schema.optionalKey(Schema.String),
   head: Schema.optionalKey(Schema.String),
   nextEventId: Schema.optionalKey(Schema.String),
   session: Session,

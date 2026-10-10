@@ -49,8 +49,9 @@ time is unknown. Null clocks neither hide Events nor create dated activity.
 | `head` | Selected head returned by the preceding publication page |
 | `after` | Previous `nextEventId`, exclusive; requires `head`, excludes `at` |
 | `at` | Inclusive Event anchor, for example a Search result; excludes `after` |
+| `snapshot` | Conditional current Canonical token from Session Analytics, at most 200 bytes |
 
-`head`, `after` and `at` require `limit`. Unknown, duplicate and empty query values
+`head`, `after`, `at` and `snapshot` require `limit`. Unknown, duplicate and empty query values
 are rejected. Publication responses include `head`; while `nextEventId` is present,
 request another page with the same Thread/head and `after=nextEventId`. Pages may
 contain fewer Events than requested because the complete JSON representation is
@@ -61,6 +62,15 @@ head; do not concatenate Events from different heads. Without `limit`, a large
 publication can return `409 pagination_required`. Legacy batch-mode Sessions
 retain full reads even when `limit` is supplied, so this is not a universal
 pagination guarantee for all stored histories.
+
+[Session Analytics](../session-analytics.md) supplies a `snapshot` token with
+its evidence anchors. Pass that token when opening an Event to require the same
+current Canonical input; the response then includes `snapshot`. Publication
+tokens identify the selected head. Legacy tokens fingerprint Session, Thread,
+Event and Usage facts, so independently updated Usage also invalidates the
+conditional read. A mismatch returns `409 refresh_required`. The token neither
+retains a historical version nor authorizes access. Legacy conditional reads
+continue to return the complete Thread.
 
 An unknown or concealed Session/Thread returns `404 not_found`. Read paging and
 refresh behavior follows the [publication contract](../architecture/publication-candidates.md).

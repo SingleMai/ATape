@@ -836,9 +836,11 @@ const syncDirectory = async (path: string) => {
 }
 
 const maximumRunStatusBytes = 8 * 1024 * 1024
+const maximumRunStatusReadAttempts = 3
+class CollectorRunStatusSnapshotChanged extends Error {}
 // Writers publish immutable snapshots with rename. A reader may retain the
 // previous inode after that rename unlinks it; its bytes remain a valid snapshot.
-const readPublishedRunState = async (statusFile: string) => {
+const readPublishedRunStateAttempt = async (statusFile: string) => {
   const handle = await open(statusFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
   try {
     const before = await handle.stat()
@@ -854,13 +856,25 @@ const readPublishedRunState = async (statusFile: string) => {
     }
     const after = await handle.stat()
     const unlinkedSnapshot = before.nlink === 1 && after.nlink === 0
-    if (size !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
+    if (size !== before.size) throw new Error("Collector status changed during read")
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
       after.ino !== before.ino || after.dev !== before.dev || after.mode !== before.mode ||
       after.uid !== before.uid || after.gid !== before.gid ||
       after.nlink !== before.nlink && !unlinkedSnapshot ||
-      after.ctimeMs !== before.ctimeMs && !unlinkedSnapshot) throw new Error("Collector status changed during read")
+      after.ctimeMs !== before.ctimeMs && !unlinkedSnapshot) throw new CollectorRunStatusSnapshotChanged("Collector status changed during read")
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, size))) as unknown
   } finally { await handle.close() }
+}
+
+const readPublishedRunState = async (statusFile: string) => {
+  for (let attempt = 1; ; attempt++) {
+    try { return await readPublishedRunStateAttempt(statusFile) }
+    catch (cause) {
+      // Rename can expose an inode before its ctime update settles. Reopen and
+      // validate the complete snapshot again without weakening any file checks.
+      if (!(cause instanceof CollectorRunStatusSnapshotChanged) || attempt >= maximumRunStatusReadAttempts) throw cause
+    }
+  }
 }
 
 const readRunState = (statusFile: string): Effect.Effect<CollectorRunState, CollectorRunStatusError> =>

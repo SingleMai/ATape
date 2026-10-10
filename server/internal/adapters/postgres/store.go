@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/SingleMai/ATape/server/internal/adapters/postgres/internal/db"
 	"github.com/SingleMai/ATape/server/internal/authentication"
@@ -345,13 +346,18 @@ func (s *Store) Conversation(
 // ConversationPage reads at most 100 Events from one selected publication head.
 // Continuations must retain Head and the previous page's NextEventID.
 func (s *Store) ConversationPage(ctx context.Context, principal authentication.Principal, sessionID, threadID string, request canonical.ConversationPageRequest) (canonical.ConversationSnapshot, bool, error) {
-	if request.Limit < 1 || request.Limit > 100 || len(request.Head) > 200 || len(request.AfterEventID) > 200 || len(request.AtEventID) > 200 || (request.AfterEventID != "" && request.AtEventID != "") || (request.AfterEventID != "" && request.Head == "") {
+	if request.Limit < 1 || request.Limit > 100 || len(request.Snapshot) > 200 || len(request.Head) > 200 || len(request.AfterEventID) > 200 || len(request.AtEventID) > 200 || (request.AfterEventID != "" && request.AtEventID != "") || (request.AfterEventID != "" && request.Head == "") {
 		return canonical.ConversationSnapshot{}, false, publicationError("invalid", "invalid conversation page bounds")
 	}
 	return s.conversation(ctx, principal, sessionID, threadID, &request)
 }
 
 func (s *Store) conversation(ctx context.Context, principal authentication.Principal, sessionID, threadID string, request *canonical.ConversationPageRequest) (canonical.ConversationSnapshot, bool, error) {
+	if request != nil && request.Snapshot != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
 	if err := ctx.Err(); err != nil {
 		return canonical.ConversationSnapshot{}, false, err
 	}
@@ -383,6 +389,21 @@ func (s *Store) conversation(ctx context.Context, principal authentication.Princ
 	if request != nil && source.CurrentHead != nil && request.Head != "" && request.Head != *source.CurrentHead {
 		return canonical.ConversationSnapshot{}, false, &canonical.RefreshRequiredError{Head: *source.CurrentHead}
 	}
+	conditionalSnapshot := ""
+	if request != nil && request.Snapshot != "" {
+		if source.CurrentHead != nil {
+			conditionalSnapshot = "publication:" + *source.CurrentHead
+			if conditionalSnapshot != request.Snapshot {
+				return canonical.ConversationSnapshot{}, false, &canonical.RefreshRequiredError{Head: *source.CurrentHead}
+			}
+		} else {
+			facts, visible, err := readAnalyticsSnapshot(ctx, queries, principal, sessionID, request.Snapshot)
+			if err != nil || !visible {
+				return canonical.ConversationSnapshot{}, visible, err
+			}
+			conditionalSnapshot = facts.SnapshotToken
+		}
+	}
 	storedThread, err := queries.GetThreadForRead(ctx, db.GetThreadForReadParams{SessionID: sessionID, ID: threadID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return canonical.ConversationSnapshot{}, false, nil
@@ -395,11 +416,12 @@ func (s *Store) conversation(ctx context.Context, principal authentication.Princ
 		return canonical.ConversationSnapshot{}, false, persist("list conversation threads", err)
 	}
 	snapshot := canonical.ConversationSnapshot{
-		Session:     canonicalSession(storedSession),
-		Thread:      canonicalThread(db.CanonicalThread(storedThread)),
-		Threads:     make([]canonical.ThreadRecord, 0, len(threadRows)),
-		Events:      []canonical.EventRecord{},
-		EventCounts: make(map[string]int, len(threadRows)),
+		SnapshotToken: conditionalSnapshot,
+		Session:       canonicalSession(storedSession),
+		Thread:        canonicalThread(db.CanonicalThread(storedThread)),
+		Threads:       make([]canonical.ThreadRecord, 0, len(threadRows)),
+		Events:        []canonical.EventRecord{},
+		EventCounts:   make(map[string]int, len(threadRows)),
 	}
 	if source.CurrentHead != nil {
 		snapshot.Head = *source.CurrentHead

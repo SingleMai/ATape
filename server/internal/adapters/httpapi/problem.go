@@ -17,6 +17,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/teamoverview"
 )
@@ -25,6 +26,7 @@ type problemCode string
 
 const (
 	problemPaginationRequired         problemCode = "pagination_required"
+	problemAnalyticsCapacity          problemCode = "analytics_capacity"
 	problemRefreshRequired            problemCode = "refresh_required"
 	problemPublicationUnknown         problemCode = "publication_unknown"
 	problemPublicationCapacity        problemCode = "publication_capacity"
@@ -78,6 +80,7 @@ type problemDefinition struct {
 
 var problemRegistry = map[problemCode]problemDefinition{
 	problemPaginationRequired:         {409, "The resource requires pagination", "Read this resource using bounded pages."},
+	problemAnalyticsCapacity:          {422, "The Session exceeds analysis capacity", "This Session cannot be analyzed within the supported resource limits."},
 	problemRefreshRequired:            {409, "The conversation version changed", "Reload the conversation before continuing to another page."},
 	problemPublicationUnknown:         {404, "The publication proof is unavailable", "This response does not prove that activation never occurred. Retain unresolved obligations."},
 	problemPublicationCapacity:        {429, "The publication capacity is exhausted", "Reclaim eligible candidates or reduce the capture before retrying."},
@@ -187,6 +190,17 @@ func writeError(response http.ResponseWriter, request *http.Request, err error) 
 }
 
 func classifyError(err error) (problemCode, int, []fieldProblem) {
+	var analyticsValidation *sessionanalytics.InvalidQueryError
+	if errors.As(err, &analyticsValidation) {
+		return problemValidationFailed, 0, []fieldProblem{{Field: analyticsValidation.Field, Code: "invalid"}}
+	}
+	var analyticsNotFound *sessionanalytics.NotFoundError
+	if errors.As(err, &analyticsNotFound) {
+		return problemNotFound, 0, nil
+	}
+	if errors.Is(err, sessionanalytics.ErrCapacity) || errors.Is(err, canonical.ErrAnalyticsCapacity) {
+		return problemAnalyticsCapacity, 0, nil
+	}
 	var publicationError *publication.Error
 	if errors.As(err, &publicationError) {
 		switch publicationError.Code {
