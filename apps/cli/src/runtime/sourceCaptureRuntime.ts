@@ -1,6 +1,6 @@
 import { AdapterRuntimeError, type HostedSourceCapture } from "@atape/application"
 import { SourceCaptureHeader, SourceCaptureHeaderV2, SourceCapturePriorThread, SourceCapturePage, SourceDiscoveryPage, SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion, SourceCaptureVersion2,
-  type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
+  CanonicalProfileVersion3, type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
 import { Effect, Schema } from "effect"
 
 const failure = (adapterId: string, reason: AdapterRuntimeError["reason"], message: string) =>
@@ -84,6 +84,8 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       if (typeof view?.read !== "function" || typeof view?.close !== "function")
         return yield* failure(adapterId, "contract", "Adapter source must return a readable closeable view.")
       const header = yield* decode(foreign.protocolVersion === SourceCaptureVersion2 ? SourceCaptureHeaderV2 : SourceCaptureHeader, view, projection.pageBytes)
+      if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && header.session.updatedAt === null)
+        return yield* failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 profile.")
       if ("sourceCheckpoint" in header && Buffer.byteLength(header.sourceCheckpoint as string) > 1024 * 1024)
         return yield* failure(adapterId, "contract", "Source checkpoint exceeds its opaque byte bound.")
       if (header.origin.sourceId !== request.sourceId || header.session.sourceSessionId !== request.sourceId ||
@@ -97,6 +99,8 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       }, catch: cause => cause as AdapterRuntimeError }), () => call(signal => view.read(signal), deadline - performance.now()).pipe(
         Effect.flatMap(value => decode(SourceCapturePage, value, projection.pageBytes)),
         Effect.flatMap(page => {
+          if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && page.frames.some(frame => frame.events.some(event => event.occurredAt === null)))
+            return Effect.fail(failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 profile."))
           if (page.frames.length > projection.pageItems || !page.done && page.frames.length === 0 || !request.rawEnabled && page.frames.some(frame => frame.raw !== undefined))
             return Effect.fail(failure(adapterId, "contract", "Adapter source frame page violates its admission or Raw policy."))
           finished = page.done

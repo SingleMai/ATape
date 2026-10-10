@@ -1,11 +1,12 @@
 import { Effect, Schema } from "effect"
-import type { AdapterEvent, AdapterSession, AdapterThread, AdapterUsage, AdapterSourceFailure, SourceCaptureFrame } from "@atape/domain"
+import { CanonicalProfile, CanonicalProfileVersion, CanonicalProfileVersion3, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage, type AdapterSourceFailure, type SourceCaptureFrame } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { prepareCanonicalSlice } from "./collectorPreparation.ts"
 import { projectCanonicalSubmission } from "./canonicalProjection.ts"
 export type PublicationDraftFrame = SourceCaptureFrame
 export type PublicationDraftView<E = never, R = never> = {
   readonly profile: string
+  readonly canonicalProfileVersion?: CanonicalProfile
   readonly origin: { readonly sourceId: string; readonly originKey: string }
   readonly session: Omit<AdapterSession, "revision">
   readonly threads: ReadonlyArray<Omit<AdapterThread, "revision">>
@@ -27,6 +28,18 @@ export const sourceFingerprint = (value: unknown) => Effect.tryPromise({
 const positive = (value: number, minimum = 0) => Number.isSafeInteger(value) && value >= minimum
 export const PublicationPreparationVersion = "atape.host-canonical.v1"
 
+/** One identity for Canonical preparation, Raw-only preparation and comparison.
+ * Preserve existing v2 identities while keeping v3 outside that namespace. */
+export const sourceProjectionProfile = (view: Pick<PublicationDraftView, "profile" | "canonicalProfileVersion">, transformVersion: string) => Effect.gen(function*() {
+  const canonicalProfileVersion = yield* Schema.decodeUnknownEffect(CanonicalProfile)(view.canonicalProfileVersion ?? CanonicalProfileVersion).pipe(
+    Effect.mapError(() => fail("invalid", "Source Canonical profile is unsupported.")))
+  if (typeof view.profile !== "string" || !view.profile || view.profile.length > 500)
+    return yield* fail("invalid", "Source profile exceeds its bound.")
+  const profile = `${canonicalProfileVersion === CanonicalProfileVersion3 ? "atape.host-canonical.v2" : PublicationPreparationVersion}:${transformVersion}:${view.profile}`
+  if (profile.length > 500) return yield* fail("invalid", "Capture projection profile exceeds its bound.")
+  return { canonicalProfileVersion, profile }
+})
+
 
 export const validateCanonicalSourceMetadata = (owner: CaptureOwner, adapterVersion: string) => Effect.gen(function*() {
   const journal = yield* CaptureJournal
@@ -41,28 +54,27 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
   readonly captureId: string; readonly observedAt: string; readonly adapterVersion: string; readonly transformVersion: string
 }) => Effect.gen(function*() {
   const journal = yield* CaptureJournal
+  const { canonicalProfileVersion, profile } = yield* sourceProjectionProfile(view, input.transformVersion)
   if (view.origin.sourceId !== owner.scope.sourceSessionId || view.origin.originKey !== owner.scope.originKey ||
     view.session.sourceSessionId !== owner.scope.sourceSessionId) return yield* fail("binding", "Fresh source Origin differs from the claimed capture.")
-  if (!view.profile || view.profile.length > 500 || !positive(view.target.events) || !positive(view.target.usage) ||
+  if (!positive(view.target.events) || !positive(view.target.usage) ||
     !positive(view.target.threads, 1) || view.target.threads !== view.threads.length || view.session.reportedEventCount !== view.target.events)
     return yield* fail("invalid", "Source target counts are inconsistent.")
   const retained = new Set(view.target.retainedThreadIds ?? [])
   if (retained.size !== (view.target.retainedThreadIds?.length ?? 0) || retained.size > 1000 ||
     [...retained].some(id => !view.threads.some(thread => thread.sourceThreadId === id && thread.parentSourceThreadId !== undefined)))
     return yield* fail("invalid", "Retained Threads must be unique nonroot headers in the complete target.")
-  const profile = `${PublicationPreparationVersion}:${input.transformVersion}:${view.profile}`
-  if (profile.length > 500) return yield* fail("invalid", "Capture projection profile exceeds its bound.")
   const placeholder = { _tag: "unavailable", reason: "Raw capture disabled" } as const
   const observation = (events: ReadonlyArray<AdapterEvent>, usage: ReadonlyArray<AdapterUsage>) => ({
     observationId: input.captureId, observedAt: input.observedAt, session: { ...view.session, revision: 1 },
     threads: view.threads.map(thread => ({ ...thread, revision: 1 })), events, usage, rawSegments: []
   })
-  const masked = (yield* prepareCanonicalSlice(owner.scope.adapterId, observation([], []))).observation
+  const masked = (yield* prepareCanonicalSlice(owner.scope.adapterId, observation([], []), canonicalProfileVersion)).observation
   const project = (events: ReadonlyArray<AdapterEvent>) => projectCanonicalSubmission({
     instanceOrigin: journal.binding.instanceOrigin, installationId: journal.binding.installationId,
     adapterId: owner.scope.adapterId, adapterVersion: input.adapterVersion, projectId: owner.scope.projectId,
     observation: { observedAt: input.observedAt, session: masked.session, threads: masked.threads, events, usage: [] }
-  })
+  }, canonicalProfileVersion)
   let eventCount = 0, usageCount = 0, lastSourceOrder = -1, pages = 0
   const page = (value: { readonly frames: ReadonlyArray<PublicationDraftFrame>; readonly done: boolean }) => Effect.gen(function*() {
     if (++pages > 1_000_001 || value.frames.length > 100 || !value.done && value.frames.length === 0)
@@ -74,7 +86,7 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
     const ready = (yield* prepareCanonicalSlice(owner.scope.adapterId, observation(
       value.events.map(event => ({ ...event, revision: 1, projectionRevision: 1, rawRef: placeholder })),
       value.usage.map(sample => ({ ...sample, revision: 1 }))
-    ))).observation
+    ), canonicalProfileVersion)).observation
     const events = [], usage = []
     for (const event of ready.events) {
       if (retained.has(event.sourceThreadId)) return yield* fail("invalid", "Retained Thread cannot also contain explicit Events.")
@@ -97,5 +109,5 @@ export const canonicalSourceProjection = <E, R>(owner: CaptureOwner, view: Publi
     if (eventCount !== view.target.events || usageCount !== view.target.usage) return yield* fail("invalid", "Source ended before its complete declared target.")
     return { session: 1, thread: masked.threads.length, event: eventCount, usage: usageCount }
   })
-  return { profile, placeholder, masked, page, frame, finish }
+  return { profile, canonicalProfileVersion, placeholder, masked, page, frame, finish }
 })

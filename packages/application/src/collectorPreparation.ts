@@ -1,6 +1,6 @@
-import type { AcpContentBlock, AcpSessionUpdate, AdapterCollectionPage } from "@atape/domain"
+import type { AcpContentBlock, AcpSessionUpdate, AdapterCollectionPage, CanonicalProfile } from "@atape/domain"
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, AdapterSourceFailure,
-  MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes } from "@atape/domain"
+  MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes, CanonicalProfileVersion, CanonicalProfileVersion3 } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { CollectionContractError, SecretRedactor } from "./collectorContracts.ts"
 import { legacySecretRedactor, prepareCanonicalRedaction } from "./redaction.ts"
@@ -12,7 +12,8 @@ export const makeSecretRedactorLayer = (secretValues: ReadonlyArray<string> = []
 export const validatePage = (
   adapterId: string,
   requestCursor: string | null,
-  page: AdapterCollectionPage
+  page: AdapterCollectionPage,
+  canonicalProfileVersion: CanonicalProfile = CanonicalProfileVersion
 ): Effect.Effect<void, CollectionContractError> => {
   const fail = (message: string) => contractFailure(adapterId, message)
   if (page.progress && [page.progress.sourceFiles, page.progress.pendingCanonicalSessions, page.progress.pendingRawBytes]
@@ -39,7 +40,7 @@ export const validatePage = (
       return fail(`returned an invalid or duplicate observation ID ${JSON.stringify(observation.observationId)}.`)
     }
     observations.add(observation.observationId)
-    if (!validTimestamp(observation.observedAt) || !validTimestamp(observation.session.updatedAt)) {
+    if (!validTimestamp(observation.observedAt) || !validSourceTimestamp(observation.session.updatedAt, canonicalProfileVersion)) {
       return fail(`observation ${observation.observationId} contains an invalid timestamp.`)
     }
     if (!boundedIdentity(observation.session.sourceSessionId, 500) ||
@@ -106,7 +107,7 @@ export const validatePage = (
       if (!boundedIdentity(event.sourceEventId, 500) || eventIds.has(eventKey) ||
         !threadIds.has(event.sourceThreadId) || !positiveInteger(event.revision) ||
         !positiveInteger(event.projectionRevision) || !nonNegativeInteger(event.sourceOrder) ||
-        !nonNegativeInteger(event.eventIndex) || !validTimestamp(event.occurredAt) ||
+        !nonNegativeInteger(event.eventIndex) || !validSourceTimestamp(event.occurredAt, canonicalProfileVersion) ||
         !validAcpUpdate(event.update) ||
         (event.childSourceThreadId !== undefined && !threadIds.has(event.childSourceThreadId)) ||
         (event.rawRef._tag === "object"
@@ -132,17 +133,17 @@ export const validatePage = (
 
 /** Shared Host boundary for a bounded slice, including headers repeated across a
  * larger publication target. Validate before and after masking; never persist drafts. */
-export const prepareCanonicalSlice = (adapterId: string, input: unknown) => Effect.gen(function*() {
+export const prepareCanonicalSlice = (adapterId: string, input: unknown, canonicalProfileVersion: CanonicalProfile = CanonicalProfileVersion) => Effect.gen(function*() {
   const redactor = yield* SecretRedactor
   const observation = yield* Schema.decodeUnknownEffect(AdapterObservation)(input).pipe(
     Effect.mapError(() => new CollectionContractError({ adapterId, message: "Canonical slice has an invalid Adapter shape." })))
   const page = (value: AdapterObservation) => ({ protocolVersion: AdapterProtocolVersion, nextCursor: "prepared", hasMore: false, observations: [value] })
   if (observation.rawSegments.length !== 0) return yield* contractFailure(adapterId, "must prepare Raw through its independent capture path.")
-  yield* validatePage(adapterId, null, page(observation))
+  yield* validatePage(adapterId, null, page(observation), canonicalProfileVersion)
   const prepared = yield* prepareCanonicalRedaction(redactor, observation).pipe(
     Effect.mapError(() => new CollectionContractError({ adapterId, message: "Content cannot be safely redacted within its bounds." })))
   const result = { observation: prepared.value, replacements: prepared.replacements }
-  yield* validatePage(adapterId, null, page(result.observation))
+  yield* validatePage(adapterId, null, page(result.observation), canonicalProfileVersion)
   return result
 })
 
@@ -164,9 +165,17 @@ export const contractFailure = (adapterId: string, message: string) =>
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength
 const positiveInteger = (value: number) => Number.isSafeInteger(value) && value >= 1
 const nonNegativeInteger = (value: number) => Number.isSafeInteger(value) && value >= 0
-const validTimestamp = (value: string) =>
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
-  !Number.isNaN(Date.parse(value))
+const zeroTimestampMillis = Date.parse("0001-01-01T00:00:00Z")
+const validTimestamp = (value: string) => {
+  const match = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,9}))?(?:Z|[+-]\d{2}:\d{2})$/.exec(value)
+  if (match === null) return false
+  const millis = Date.parse(value)
+  // PostgreSQL stores microseconds. Reject only the tiny range that truncates to
+  // Go's zero instant; otherwise storage could turn a known clock into unknown.
+  return !Number.isNaN(millis) && (millis !== zeroTimestampMillis || /[1-9]/.test((match[1] ?? "").slice(0, 6)))
+}
+const validSourceTimestamp = (value: string | null, profile: CanonicalProfile) =>
+  value === null ? profile === CanonicalProfileVersion3 : validTimestamp(value)
 const boundedIdentity = (value: string, max: number) => value.trim() !== "" && utf8Bytes(value) <= max
 const boundedText = (value: string, max: number, empty: boolean) =>
   (empty || value.trim() !== "") && utf8Bytes(value) <= max

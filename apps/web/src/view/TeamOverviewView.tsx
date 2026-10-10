@@ -4,6 +4,7 @@ import { AgentIdentity, Button, resolveAgentIdentity } from "@atape/ui"
 import { useState } from "react"
 import type { useOverviewPresenter } from "../presenters/overviewPresenter"
 import { formatDate, formatNumber, t, type WebMessageKey } from "../i18n"
+import { ConversationTime } from "./ConversationTime"
 
 type Props = { readonly presenter: ReturnType<typeof useOverviewPresenter>; readonly selection: OverviewSelection;
   readonly onChange: (patch: Partial<OverviewSelection>) => void; readonly onOpenSession: (session: OverviewSession) => void }
@@ -130,7 +131,7 @@ function UsageChart({ data, metric, onSelect }: { readonly data: TeamOverview; r
 function SessionGrid({ rows, onOpen, showUsage = false }: { readonly rows: ReadonlyArray<OverviewSession>; readonly onOpen: (row: OverviewSession) => void; readonly showUsage?: boolean }) {
   if (rows.length === 0) return <p className="overview-empty">{t("overview.noConversations", "No conversations match this selection.")}</p>
   return <div className="overview-session-grid">{rows.map(row => <article className="overview-session" key={row.id}><header><AgentIdentity provider={row.agent} size={32} iconOnly /><button type="button" onClick={() => onOpen(row)}>{row.title || t("overview.untitledConversation", "Untitled conversation")}</button></header>
-    <p className="overview-session-meta">{row.memberName} · {row.projectName} · {resolveAgentIdentity(row.agent).label} <time dateTime={row.updatedAt}>{formatDate(new Date(row.updatedAt), { month: "short", day: "numeric" })}</time></p>
+    <p className="overview-session-meta">{row.memberName} · {row.projectName} · {resolveAgentIdentity(row.agent).label} <ConversationTime value={row.updatedAt} options={{ month: "short", day: "numeric" }} /></p>
     <p className="overview-preview"><span aria-label={t("overview.input", "Input")}>→</span><span>{row.input || t("overview.noInputPreview", "No user input preview")}</span></p><p className="overview-preview overview-output"><span aria-label={t("overview.output", "Output")}>←</span><span>{row.output || t("overview.awaitingReply", "Awaiting a reply")}</span></p>
     {showUsage && <TokenBreakdown tokens={row.tokens} />}
   </article>)}</div>

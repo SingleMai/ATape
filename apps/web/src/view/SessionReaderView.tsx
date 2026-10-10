@@ -12,7 +12,8 @@ import type { LoadableView, RefreshSettingsView } from "../presenters/memoryPres
 import { RefreshControl } from "./RefreshControl"
 import { ConversationReadingFrame } from "./UserMessageIndex"
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock"
-import { formatDate, t, type WebMessageKey } from "../i18n"
+import { t, type WebMessageKey } from "../i18n"
+import { ConversationTime } from "./ConversationTime"
 
 export type SessionReaderProps = {
   readonly state: LoadableView<Conversation>
@@ -34,9 +35,6 @@ export type SessionReaderProps = {
 
 const EventPrefix = createContext("")
 const useEventId = (id: string) => `${useContext(EventPrefix)}event-${id}`
-
-const formatTime = (value: string) =>
-  formatDate(new Date(value), { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 
 const eventLabel: Record<CanonicalEvent["kind"], WebMessageKey> = {
   message: "session.event.message",
@@ -129,7 +127,7 @@ const ChildThreadButton = ({
 const MessageMetadata = ({ event }: { readonly event: CanonicalEvent }) => (
   <footer className="message-metadata">
     <span>{event.author}</span>
-    <time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time>
+    <ConversationTime value={event.occurredAt} options={{ hour: "2-digit", minute: "2-digit", second: "2-digit" }} />
   </footer>
 )
 
@@ -377,9 +375,7 @@ export const SessionReaderView = ({
               status={
                 <>
                   {t("session.updatedLabel", "Updated")}{" "}
-                  <time dateTime={conversation.session.updatedAt}>
-                    {formatTime(conversation.session.updatedAt)}
-                  </time>
+                  <ConversationTime value={conversation.session.updatedAt} options={{ hour: "2-digit", minute: "2-digit", second: "2-digit" }} />
                 </>
               }
               onRefresh={onRetry}

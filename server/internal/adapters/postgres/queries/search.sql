@@ -77,7 +77,7 @@ INSERT INTO project_search_documents (
     sqlc.arg(event_id), sqlc.arg(project_id), sqlc.arg(session_id),
     sqlc.arg(session_title), sqlc.arg(thread_id), sqlc.arg(thread_path_ids),
     sqlc.arg(thread_path_labels), sqlc.arg(author), sqlc.arg(harness),
-    sqlc.arg(occurred_at), CASE WHEN sqlc.arg(event_kind)::text='message' THEN sqlc.arg(text)::text ELSE '' END, '',
+    sqlc.narg(occurred_at), CASE WHEN sqlc.arg(event_kind)::text='message' THEN sqlc.arg(text)::text ELSE '' END, '',
     sqlc.arg(ingest_seq), sqlc.arg(observed_at), sqlc.arg(publication_head), sqlc.arg(publication_descriptor),
     sqlc.arg(event_kind),
     CASE WHEN sqlc.arg(event_kind)::text='message' THEN lower(sqlc.arg(text)::text) ELSE '' END
@@ -161,13 +161,15 @@ WITH terms AS (
  WHERE d.project_id=sqlc.arg(project_id) AND d.event_kind='message'
  AND d.body_grams @> terms.grams AND strpos(d.search_text,terms.literal)>0
  AND (NOT sqlc.arg(has_after)::boolean OR
-      (d.occurred_at,d.event_id)<(sqlc.arg(after_time)::timestamptz,sqlc.arg(after_id)::text))
+      (sqlc.arg(after_unknown)::boolean AND d.occurred_at IS NULL AND d.event_id<sqlc.arg(after_id)::text) OR
+      (NOT sqlc.arg(after_unknown)::boolean AND
+       (d.occurred_at IS NULL OR (d.occurred_at,d.event_id)<(sqlc.arg(after_time)::timestamptz,sqlc.arg(after_id)::text))))
  AND EXISTS(SELECT 1 FROM canonical_sessions s WHERE s.id=d.session_id AND s.record_state='active')
  AND (NOT EXISTS(SELECT 1 FROM canonical_publication_sources s WHERE s.session_id=d.session_id AND s.current_head IS NOT NULL)
   OR EXISTS(SELECT 1 FROM canonical_publication_sources s
    JOIN canonical_publication_members m ON m.attempt_id=s.current_head::uuid AND m.kind='event'
    WHERE s.session_id=d.session_id AND m.record_id=d.event_id AND m.search_descriptor=d.publication_descriptor))
- ORDER BY d.occurred_at DESC,d.event_id DESC
+ ORDER BY d.occurred_at DESC NULLS LAST,d.event_id DESC
  LIMIT sqlc.arg(result_limit)
 )
 SELECT d.event_id,d.project_id,d.session_id,d.session_title,d.thread_id,
@@ -175,4 +177,4 @@ SELECT d.event_id,d.project_id,d.session_id,d.session_title,d.thread_id,
  substring(d.text FROM greatest(1,strpos(d.search_text,terms.literal)-120) FOR 640)::text AS text,
  d.ingest_seq,d.observed_at
 FROM selected JOIN project_search_documents d USING(event_id) CROSS JOIN terms
-ORDER BY selected.occurred_at DESC,selected.event_id DESC;
+ORDER BY selected.occurred_at DESC NULLS LAST,selected.event_id DESC;

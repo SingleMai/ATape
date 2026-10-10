@@ -64,6 +64,23 @@ const renderReader = (options: {
 )
 
 describe("SessionReaderView", () => {
+  it("labels unknown session, event and prompt times while retaining Canonical source order", () => {
+    const source = conversation([
+      { ...event("01", "message", "User", "First native prompt"), occurredAt: null },
+      { ...event("02", "message", "Codex", "Known response"), occurredAt: "2026-09-08T00:00:00Z" },
+      { ...event("03", "message", "User", "Second native prompt"), occurredAt: null }
+    ])
+    const html = renderReader({ value: { ...source, session: { ...source.session, updatedAt: null } } })
+    expect(html).toContain('<span class="conversation-time">Time unknown</span>')
+    expect(html).toContain('aria-label="1. Time unknown · First native prompt"')
+    expect(html).toContain('aria-label="2. Time unknown · Second native prompt"')
+    expect(html.indexOf('id="event-01"')).toBeLessThan(html.indexOf('id="event-02"'))
+    expect(html.indexOf('id="event-02"')).toBeLessThan(html.indexOf('id="event-03"'))
+    expect(html).toContain('dateTime="2026-09-08T00:00:00Z"')
+    expect(html).not.toContain("1970")
+    expect(html).not.toContain('dateTime=""')
+  })
+
   it("shows the capturing user's profile without rewriting message authors", () => {
     const html = renderReader({ value: { ...value, session: { ...value.session,
       capturedBy: { id: "owner", displayName: "Jackson", avatarUrl: "https://example.com/avatar.png" }

@@ -1102,6 +1102,12 @@ paths:
       operationId: publicationCapabilities
       tags: [Ingestion]
       summary: Capabilities a bounded atomic publication operation
+      parameters:
+        - in: header
+          name: ATape-Accept-Publication-Target
+          required: false
+          schema: {type: string}
+          description: Comma-separated accepted extension profiles; repeated fields are combined. Exact atape.publication-target.v3 opts into v3 advertisement. Missing, empty and unknown tokens retain the v1/v2 response; unknown tokens are ignored.
       description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
       x-atape-authorization-actions: []
       x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -1885,7 +1891,7 @@ components:
         actor: {$ref: "#/components/schemas/ReaderActor"}
         branch: {type: string}
         status: {type: string, enum: [active, idle, ended]}
-        updatedAt: {type: string}
+        updatedAt: {type: [string, "null"]}
         eventCount: {type: integer}
         childThreadCount: {type: integer}
     ProjectMemory:
@@ -1918,7 +1924,7 @@ components:
         branch: {type: string}
         status: {type: string, enum: [active, idle, ended]}
         captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
-        updatedAt: {type: string}
+        updatedAt: {type: [string, "null"]}
     ReaderThread:
       type: object
       additionalProperties: false
@@ -1970,7 +1976,7 @@ components:
         id: {type: string}
         kind: {type: string, enum: [message, thought, tool_call, tool_result, artifact, spawn, lifecycle, context, notice]}
         author: {type: string}
-        occurredAt: {type: string}
+        occurredAt: {type: [string, "null"]}
         text: {type: string}
         toolLabel: {type: string}
         tool: {$ref: "#/components/schemas/ReaderToolUpdate"}
@@ -1998,7 +2004,7 @@ components:
         threadPath: {type: array, items: {$ref: "#/components/schemas/ReaderThreadPathItem"}}
         author: {type: string}
         harness: {type: string}
-        occurredAt: {type: string}
+        occurredAt: {type: [string, "null"]}
         text: {type: string, description: "Match-centered message-body excerpt, at most 640 Unicode characters."}
         toolLabel: {type: string, description: "Legacy optional field; message-body Search does not populate it."}
     SearchPage:
@@ -2136,7 +2142,7 @@ components:
       properties:
         protocol: {type: string, const: atape.publication.v1}
         targetProfile: {type: string, const: atape.publication-target.v1}
-        targetProfiles: {type: array, items: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2]}}
+        targetProfiles: {type: array, items: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2, atape.publication-target.v3]}}
         legacyAdoption: {type: boolean, const: true}
         limits: {$ref: "#/components/schemas/PublicationCapacity"}
         statusPageSize: {type: integer, const: 100}
@@ -2146,12 +2152,13 @@ components:
       additionalProperties: false
       required: [profile, events, usage, threads]
       allOf:
-        - if: {properties: {profile: {const: atape.publication-target.v2}}}
+        - if: {properties: {profile: {enum: [atape.publication-target.v2, atape.publication-target.v3]}}}
           then: {required: [retainedThreadIds]}
+          else: {not: {required: [retainedThreadIds]}}
       properties:
-        profile: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2]}
+        profile: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2, atape.publication-target.v3]}
         retainedThreadIds:
-          description: Required for v2 (including an empty array); source-local nonroot Thread IDs retained from the bound base. v1 does not support retention. Events and usage counts include only explicit projection.
+          description: Required for v2/v3 (including an empty array); source-local nonroot Thread IDs retained from the bound base. v1 does not support retention. Events and usage counts include only explicit projection.
           type: array
           maxItems: 100
           uniqueItems: true
@@ -2163,6 +2170,17 @@ components:
       type: object
       additionalProperties: false
       required: [target, batch]
+      description: Target v3 requires canonical v3; target v1/v2 require canonical v1/v2. Every part in one candidate must repeat the same target and canonical profile.
+      allOf:
+        - if:
+            properties:
+              target: {properties: {profile: {const: atape.publication-target.v3}}}
+          then:
+            properties:
+              batch: {properties: {canonicalProfileVersion: {const: atape.acp-centered.v3}}}
+          else:
+            properties:
+              batch: {properties: {canonicalProfileVersion: {enum: [atape.acp-centered.v1, atape.acp-centered.v2]}}}
       properties:
         target: {$ref: "#/components/schemas/PublicationTarget"}
         batch: {$ref: "#/components/schemas/CanonicalBatch"}
@@ -2188,6 +2206,10 @@ components:
       minLength: 1
       maxLength: 200
       description: Opaque identifier without embedded authority.
+    NullableTimestamp:
+      oneOf:
+        - {$ref: "#/components/schemas/Timestamp"}
+        - {type: "null"}
     Timestamp:
       type: string
       format: date-time
@@ -2457,7 +2479,7 @@ components:
         branch: {type: string, maxLength: 2000}
         status: {type: string, enum: [active, idle, ended]}
         captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
-        updatedAt: {$ref: "#/components/schemas/Timestamp"}
+        updatedAt: {$ref: "#/components/schemas/NullableTimestamp"}
         reportedEventCount: {type: integer, minimum: 0}
     CanonicalThread:
       type: object
@@ -2501,21 +2523,33 @@ components:
         rawRef: {$ref: "#/components/schemas/RawReference"}
         kind: {type: string, enum: [message, thought, tool_call, tool_result, artifact, spawn, lifecycle]}
         author: {type: string}
-        occurredAt: {$ref: "#/components/schemas/Timestamp"}
+        occurredAt: {$ref: "#/components/schemas/NullableTimestamp"}
         text: {type: string, maxLength: 1048576}
         toolLabel: {type: string}
         toolUpdateJson:
           type: string
           maxLength: 140000
-          description: "v2 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). Maximum 140000 bytes; each JSON value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
+          description: "v2/v3 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). Maximum 140000 bytes; each JSON value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
         childSourceThreadId: {type: [string, "null"]}
     CanonicalBatch:
       type: object
       additionalProperties: false
       required: [protocolVersion, canonicalProfileVersion, batchId, observedAt, source, projectId, session, threads, events]
+      description: v3 alone permits explicit null occurrence/update times. Missing, empty and invalid timestamps remain invalid; observedAt and usage times are always known. A known timestamp that truncates to Go zero time at microsecond storage precision is invalid.
+      allOf:
+        - if: {properties: {canonicalProfileVersion: {enum: [atape.acp-centered.v1, atape.acp-centered.v2]}}}
+          then:
+            properties:
+              session:
+                properties:
+                  updatedAt: {$ref: "#/components/schemas/Timestamp"}
+              events:
+                items:
+                  properties:
+                    occurredAt: {$ref: "#/components/schemas/Timestamp"}
       properties:
         protocolVersion: {const: atape.canonical.v1}
-        canonicalProfileVersion: {type: string, enum: [atape.acp-centered.v1, atape.acp-centered.v2]}
+        canonicalProfileVersion: {type: string, enum: [atape.acp-centered.v1, atape.acp-centered.v2, atape.acp-centered.v3]}
         batchId: {type: string, minLength: 1, maxLength: 200}
         observedAt: {$ref: "#/components/schemas/Timestamp"}
         source: {$ref: "#/components/schemas/CanonicalSource"}

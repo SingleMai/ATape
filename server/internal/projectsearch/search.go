@@ -57,7 +57,7 @@ type Result struct {
 	ThreadPath   []ThreadPathItem `json:"threadPath"`
 	Author       string           `json:"author"`
 	Harness      string           `json:"harness"`
-	OccurredAt   string           `json:"occurredAt"`
+	OccurredAt   *string          `json:"occurredAt"`
 	Text         string           `json:"text"`
 	ToolLabel    string           `json:"toolLabel,omitempty"`
 }
@@ -139,7 +139,7 @@ func (s *Searcher) Search(
 			EventID: document.EventID, SessionID: document.SessionID,
 			SessionTitle: document.SessionTitle, ThreadID: document.ThreadID,
 			ThreadPath: path, Author: document.Author, Harness: document.Harness,
-			OccurredAt: document.OccurredAt.UTC().Format(time.RFC3339Nano),
+			OccurredAt: nullableTime(document.OccurredAt),
 			Text:       document.Text, ToolLabel: document.ToolLabel,
 		})
 	}
@@ -151,9 +151,14 @@ func (s *Searcher) Search(
 }
 
 type pageCursor struct {
-	Version  int      `json:"v"`
-	Scope    string   `json:"s"`
-	Position Position `json:"p"`
+	Version  int            `json:"v"`
+	Scope    string         `json:"s"`
+	Position cursorPosition `json:"p"`
+}
+
+type cursorPosition struct {
+	Time    *time.Time `json:"t"`
+	EventID string     `json:"e"`
 }
 
 func cursorScope(projectID, term string) string {
@@ -162,7 +167,11 @@ func cursorScope(projectID, term string) string {
 }
 
 func encodeCursor(position Position, projectID, term string) string {
-	body, _ := json.Marshal(pageCursor{Version: 1, Scope: cursorScope(projectID, term), Position: position})
+	var at *time.Time
+	if !position.Time.IsZero() {
+		at = &position.Time
+	}
+	body, _ := json.Marshal(pageCursor{Version: 2, Scope: cursorScope(projectID, term), Position: cursorPosition{Time: at, EventID: position.EventID}})
 	return base64.RawURLEncoding.EncodeToString(body)
 }
 
@@ -181,8 +190,20 @@ func decodeCursor(cursor, projectID, term string) (*Position, error) {
 	if err = json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}
-	if decoded.Version != 1 || decoded.Scope != cursorScope(projectID, term) || decoded.Position.Time.IsZero() || decoded.Position.EventID == "" || len(decoded.Position.EventID) > 200 {
+	if (decoded.Version != 1 && decoded.Version != 2) || decoded.Scope != cursorScope(projectID, term) || (decoded.Version == 1 && (decoded.Position.Time == nil || decoded.Position.Time.IsZero())) || (decoded.Position.Time != nil && decoded.Position.Time.IsZero()) || decoded.Position.EventID == "" || len(decoded.Position.EventID) > 200 {
 		return nil, fmt.Errorf("cursor does not match query")
 	}
-	return &decoded.Position, nil
+	position := &Position{EventID: decoded.Position.EventID}
+	if decoded.Position.Time != nil {
+		position.Time = *decoded.Position.Time
+	}
+	return position, nil
+}
+
+func nullableTime(value time.Time) *string {
+	if value.IsZero() {
+		return nil
+	}
+	formatted := value.UTC().Format(time.RFC3339Nano)
+	return &formatted
 }

@@ -25,6 +25,7 @@ sql:
       - "internal/adapters/postgres/migrations/000021_overview_native_covering_indexes.sql"
       - "internal/adapters/postgres/migrations/000022_message_body_search.sql"
       - "internal/adapters/postgres/migrations/000023_publication_legacy_adoption.sql"
+      - "internal/adapters/postgres/migrations/000024_unknown_conversation_time.sql"
     queries: "internal/adapters/postgres/queries"
     gen:
       go:
@@ -35,6 +36,36 @@ sql:
         emit_pointers_for_null_types: true
         omit_unused_structs: true
         overrides:
+          - column: "canonical_sessions.updated_at"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - column: "canonical_events.occurred_at"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - column: "canonical_event_versions.occurred_at"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - column: "project_search_documents.occurred_at"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - column: "overview_publication_messages.occurred_at"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
+          - column: "visible_canonical_events.occurred_at"
+            go_type:
+              import: "time"
+              type: "Time"
+              pointer: true
           - db_type: "timestamptz"
             go_type:
               import: "time"

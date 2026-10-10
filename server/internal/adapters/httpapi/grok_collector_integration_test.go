@@ -312,8 +312,12 @@ func assertGrokCollectorContract(t *testing.T, h *Handler, modules Modules, pool
 			resumed := capture("edit")
 			_, events := read(resumed.SessionID, fork.resumedEvents)
 			for i, event := range original {
-				if events[i].ID != event.ID || events[i].OccurredAt != event.OccurredAt {
-					t.Fatal("Grok fork resume changed copied Event identity or native time")
+				if event.OccurredAt == nil || events[i].OccurredAt == nil {
+					t.Fatalf("Grok fork resume lost known native Event time at index %d", i)
+				}
+				if events[i].ID != event.ID || *events[i].OccurredAt != *event.OccurredAt {
+					t.Fatalf("Grok fork resume changed copied Event identity or native time at index %d: before=(%s, %s) after=(%s, %s)",
+						i, event.ID, *event.OccurredAt, events[i].ID, *events[i].OccurredAt)
 				}
 			}
 			if fork.prefix == "compact" {

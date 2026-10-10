@@ -57,7 +57,7 @@ type CopyOverviewMessagesParams struct {
 	EntryIndex  int32
 	EventID     string
 	ThreadID    string
-	OccurredAt  time.Time
+	OccurredAt  *time.Time
 	Author      string
 	Root        bool
 	SourceOrder int64

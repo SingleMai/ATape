@@ -74,8 +74,8 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 	if batch.ProtocolVersion != ProtocolVersion {
 		return canonical.WriteBatch{}, invalid("protocolVersion", "must be "+ProtocolVersion)
 	}
-	if batch.CanonicalProfileVersion != CanonicalProfileVersion && batch.CanonicalProfileVersion != LegacyCanonicalProfileVersion {
-		return canonical.WriteBatch{}, invalid("canonicalProfileVersion", "must be "+CanonicalProfileVersion)
+	if batch.CanonicalProfileVersion != CanonicalProfileVersion && batch.CanonicalProfileVersion != LegacyCanonicalProfileVersion && batch.CanonicalProfileVersion != UnknownTimeCanonicalProfileVersion {
+		return canonical.WriteBatch{}, invalid("canonicalProfileVersion", "must be a supported Canonical profile")
 	}
 	if err := required("batchId", batch.BatchID, 200); err != nil {
 		return canonical.WriteBatch{}, err
@@ -117,7 +117,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 	if !captureStatus(batch.Session.CaptureStatus) {
 		return canonical.WriteBatch{}, invalid("session.captureStatus", "is not supported")
 	}
-	updatedAt, err := timestamp("session.updatedAt", batch.Session.UpdatedAt)
+	updatedAt, err := sourceTimestamp("session.updatedAt", batch.Session.UpdatedAt, batch.Session.UpdatedAtUnknown, batch.CanonicalProfileVersion)
 	if err != nil {
 		return canonical.WriteBatch{}, err
 	}
@@ -241,7 +241,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 		if err := required(field+".text", input.Text, maxTextBytes); err != nil {
 			return canonical.WriteBatch{}, err
 		}
-		occurredAt, err := timestamp(field+".occurredAt", input.OccurredAt)
+		occurredAt, err := sourceTimestamp(field+".occurredAt", input.OccurredAt, input.OccurredAtUnknown, batch.CanonicalProfileVersion)
 		if err != nil {
 			return canonical.WriteBatch{}, err
 		}
@@ -249,8 +249,8 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 			return canonical.WriteBatch{}, invalid(field+".toolLabel", "must be valid UTF-8 up to 500 bytes")
 		}
 		if input.ToolUpdateJSON != "" {
-			if batch.CanonicalProfileVersion != CanonicalProfileVersion {
-				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "requires the v2 profile")
+			if batch.CanonicalProfileVersion == LegacyCanonicalProfileVersion {
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "requires the v2 or v3 profile")
 			}
 			tool, err := canonical.ParseToolUpdate(input.ToolUpdateJSON)
 			if err != nil {
@@ -465,8 +465,8 @@ func optional(field string, value string, maxBytes int) error {
 
 func timestamp(field string, value string) (time.Time, error) {
 	parsed, err := time.Parse(time.RFC3339Nano, value)
-	if err != nil {
-		return time.Time{}, invalid(field, "must be an RFC3339 timestamp")
+	if err != nil || parsed.Truncate(time.Microsecond).IsZero() {
+		return time.Time{}, invalid(field, "must be an RFC3339 timestamp distinguishable from unknown at microsecond precision")
 	}
 	return parsed, nil
 }

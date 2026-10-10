@@ -86,6 +86,15 @@ Inherited Events, Usage and Raw references retain their exact stored versions.
 Fresh Event/Usage counts describe uploaded content honestly; complete visible
 counts include the resulting inherited membership. Thread headers remain complete.
 
+The advertised `atape.publication-target.v3` profile pairs only with canonical
+`atape.acp-centered.v3`. It retains v2's explicit `retainedThreadIds` and complete
+target rules, and admits null Session/Event source clocks. V1/v2 targets reject
+canonical v3. The target and canonical profile are fixed across every part,
+including all-known parts of a mixed-clock candidate; changing them invalidates
+the header digest. Host preparation requires the advertised v3 capability before
+freezing content. Fixed normalized JSON preserves null clocks for Reader,
+Search, Overview and backfill. Usage and observation clocks remain required.
+
 After validating wire parts, Validate copies retained membership in bounded
 derived units. These private units do not alter wire ordinals, manifest digests
 or immutable Put receipts. Status reports `retainedParts` separately; a validation
@@ -243,7 +252,7 @@ implicitly retries or performs multiple validation steps.
 
 | Method and path under `/api/v1/publications` | Input / result |
 | --- | --- |
-| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. |
+| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. HTTP defaults to v1/v2 for older Hosts; `ATape-Accept-Publication-Target: atape.publication-target.v3` additionally negotiates v3. Unknown header tokens are ignored. |
 | `POST /reservations` | Project, installation, Adapter, source Session and Origin; finite server reservation. |
 | `POST /adopt-legacy` | Same scope; explicitly fenced legacy adoption with reservation, `revisionFloor` and `baselineThreads`. |
 | `POST /attempts` | Reservation ID, capture ID, base head, transform version; immutable attempt. |

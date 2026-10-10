@@ -1,6 +1,6 @@
 import { Context, Effect, Schema } from "effect"
 import {
-  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile2,
+  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3,
   PublicationManifest, PublicationProtocol, PublicationScope, RawAuthority, RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority,
   type RawPublicationReceipt,
   type PublicationPart, type PublicationReservation
@@ -32,6 +32,7 @@ export class PublicationTransport extends Context.Service<PublicationTransport, 
 
 const Intent = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), binding: PublicationBinding,
   scope: PublicationScope, sessionId: Schema.String, begin: PublicationBegin, capabilities: PublicationCapabilities,
+  targetProfileV3: Schema.optionalKey(Schema.Literal(PublicationTargetProfile3)),
   adoption: Schema.optionalKey(Schema.Struct({ revisionFloor: PublicationLegacyAdoption.fields.revisionFloor })),
   rawAuthority: Schema.optionalKey(RawAuthority) })
 const Seal = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), fence: PublicationAttempt.fields.fence, manifest: PublicationManifest })
@@ -92,6 +93,12 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   const scope = yield* decode(PublicationScope, { ...owner.scope, installationId: binding.installationId })
   const rawAuthority = input.rawEnabled ? yield* decode(RawAuthority, input.rawAuthority) : undefined
   const capabilities = yield* remote.capabilities(binding)
+  // A capability added to the wire must not enter the older closed decoder in
+  // durable Intent.capabilities. Old Hosts ignore the separate negotiated fact
+  // and can still recover frozen units without interpreting their contents.
+  const durableCapabilities: PublicationCapabilities = { ...capabilities,
+    ...(capabilities.targetProfiles === undefined ? {} : { targetProfiles: [...new Set(capabilities.targetProfiles.filter(profile =>
+      profile === PublicationTargetProfile || profile === PublicationTargetProfile2))] }) }
   if (input.adoptLegacy && (input.baseHead !== "" || capabilities.legacyAdoption !== true || !capabilities.targetProfiles?.includes(PublicationTargetProfile2)))
     return yield* failure("unavailable", "Explicit legacy adoption requires a compatible Server and an initial publication head.")
   const adoption = input.adoptLegacy ? yield* decode(PublicationLegacyAdoption, yield* remote.adoptLegacy(binding, scope)) : undefined
@@ -100,7 +107,8 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
   const reservation = adoption ?? (yield* remote.reserve(binding, scope))
   const begin = yield* decode(PublicationBegin, { reservationId: reservation.id, captureId: input.captureId,
     baseHead: input.baseHead, transformVersion: input.transformVersion })
-  const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities,
+  const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities: durableCapabilities,
+    ...(capabilities.targetProfiles?.includes(PublicationTargetProfile3) ? { targetProfileV3: PublicationTargetProfile3 } : {}),
     ...(adoption === undefined ? {} : { adoption: { revisionFloor: adoption.revisionFloor } }),
     ...(rawAuthority === undefined ? {} : { rawAuthority }) }
   yield* journal.reserve(owner, { id: input.captureId, expectedCheckpoint: owner.checkpoint,
@@ -121,7 +129,10 @@ export const publicationPreparationContext = (owner: CaptureOwner, id: string) =
   if (capture.state !== "preparing" || !capture.trackRecords) return yield* failure("conflict", "Source preparation requires a tracked unsealed capture.")
   if (units.length > 0 || (yield* journal.records(owner, id, { kind: "session", limit: 1 })).length > 0)
     return yield* failure("conflict", "An interrupted source preparation must be abandoned before opening a fresh source.")
-  return { intent, rawEnabled: capture.rawEnabled }
+  const targetProfiles = intent.capabilities.targetProfiles ?? [intent.capabilities.targetProfile]
+  return { intent, rawEnabled: capture.rawEnabled,
+    targetProfiles: intent.targetProfileV3 === PublicationTargetProfile3 && !targetProfiles.includes(PublicationTargetProfile3)
+      ? [...targetProfiles, PublicationTargetProfile3] : targetProfiles }
 })
 
 const hashManifestText = (value: string) => Effect.tryPromise({

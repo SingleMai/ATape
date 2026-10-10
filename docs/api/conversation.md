@@ -20,6 +20,11 @@ The compact reader `project` contains `id`, `teamId`, `name` and `type` (`git` o
 `capturedThrough` is a Canonical watermark, not evidence of Raw or Search completion.
 The current Project memory response is not paginated.
 
+Session `updatedAt` and Event `occurredAt` may be `null` when the source does not
+establish that clock. The Web displays “Time unknown”; no observation timestamp
+is substituted. Session lists put known update times first and keep unknown-time
+entries in stable order. `capturedThrough` remains a Canonical watermark.
+
 ## Open a Thread
 
 ```http
@@ -33,6 +38,9 @@ User; it is separate from the source `actor`. Events expose reader identities,
 kind, author, occurrence time and text, with optional `toolLabel`, decoded `tool`
 details and `childThread`. They do not expose the full ingestion envelope or Raw
 reference metadata. Follow a child reference's ID using the `thread` parameter.
+
+Event ordering remains source order and Event index, including when occurrence
+time is unknown. Null clocks neither hide Events nor create dated activity.
 
 | Parameter | Meaning |
 | --- | --- |

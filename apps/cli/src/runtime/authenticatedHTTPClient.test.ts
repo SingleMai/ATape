@@ -3,7 +3,7 @@ import {
   CLIAuthenticationGateway,
   CLICredentialStore
 } from "@atape/application"
-import type { InstanceMetadata, StoredCLICredential } from "@atape/domain"
+import { PublicationTargetProfile3, type InstanceMetadata, type StoredCLICredential } from "@atape/domain"
 import { Effect, Layer, Logger } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -79,6 +79,34 @@ const fixture = (options: {
 }
 
 describe("authenticated CLI HTTP boundary", () => {
+  it("opts into publication v3 only for capabilities and leaves ordinary requests unchanged", async () => {
+    const client = fixture()
+    await client.run(Effect.gen(function*() {
+      const http = yield* AuthenticatedHTTPClient
+      yield* http.request({ instanceOrigin: credential.instanceOrigin, method: "GET",
+        path: "/api/v1/publications/capabilities", acceptPublicationTarget: PublicationTargetProfile3 })
+      yield* http.request({ instanceOrigin: credential.instanceOrigin, method: "GET", path: "/api/v1/workspace" })
+      yield* http.request({ instanceOrigin: credential.instanceOrigin, method: "GET", path: "/api/v1/publications/capabilities" })
+    }))
+    const headers = client.fetches.map(request => new Headers(request.init?.headers))
+    expect(headers[0]?.get("ATape-Accept-Publication-Target")).toBe("atape.publication-target.v3")
+    expect(headers[0]?.get("Authorization")).toBe(`Bearer ${credential.credential}`)
+    expect(headers[1]?.has("ATape-Accept-Publication-Target")).toBe(false)
+    expect(headers[2]?.has("ATape-Accept-Publication-Target")).toBe(false)
+  })
+
+  it.each([
+    { method: "POST", path: "/api/v1/publications/capabilities", acceptPublicationTarget: PublicationTargetProfile3 },
+    { method: "GET", path: "/api/v1/workspace", acceptPublicationTarget: PublicationTargetProfile3 },
+    { method: "GET", path: "/api/v1/publications/capabilities", acceptPublicationTarget: "atape.publication-target.v4" }
+  ] as const)("rejects publication negotiation outside the private transport contract (%#)", async input => {
+    const client = fixture()
+    await expect(client.run(AuthenticatedHTTPClient.use(http => http.request({
+      instanceOrigin: credential.instanceOrigin, ...input
+    } as Parameters<typeof http.request>[0])))).rejects.toMatchObject({ reason: "rejected" })
+    expect(client.fetches).toEqual([])
+  })
+
   it("sends sealed publication JSON bytes verbatim and bounds the encoded path", async () => {
     const client = fixture(), bytes = new TextEncoder().encode(' \n{ "text": "原样", "n": 1.0 }\n')
     const path = `/api/v1/publications/attempts/id/parts/0?sha256=${"a".repeat(64)}` as const

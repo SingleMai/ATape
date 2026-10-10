@@ -1,5 +1,5 @@
 import { AdapterRuntimes, SourceCaptureCollector, makeSourceCaptureCollectorLayer, runCollectionCycle } from "@atape/application"
-import { AdapterProtocolVersion, SourceCaptureVersion, SourceCaptureVersion2, LegacyMigrationVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage, type SourceCaptureViewV2 } from "@atape/domain"
+import { AdapterProtocolVersion, CanonicalProfileVersion, CanonicalProfileVersion3, SourceCaptureVersion, SourceCaptureVersion2, LegacyMigrationVersion, type AdapterInstallation, type LocalProject, type SourceCaptureView, type SourceDiscoveryPage, type SourceCaptureViewV2 } from "@atape/domain"
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
@@ -51,6 +51,49 @@ export const createAtapeAdapter = context => createOpenCodeRuntime({ path: ${JSO
 }
 
 describe("Host source runtime capability", () => {
+  it.each([undefined, CanonicalProfileVersion, CanonicalProfileVersion3])("admits unknown source times only with explicit profile %s", async canonicalProfileVersion => {
+    let closes = 0
+    const view: SourceCaptureView = { profile: "fixture.time", origin: { sourceId: "root", originKey: "origin", cwd: "/fixture" },
+      ...(canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion }),
+      session: { sourceSessionId: "root", title: "Root", summary: "", insight: "", actor: { name: "User", harness: "Fixture" }, branch: "", status: "idle",
+        captureStatus: "complete", reportedEventCount: 1, updatedAt: null },
+      threads: [{ sourceThreadId: "root", label: "Root", summary: "", captureStatus: "complete" }], target: { threads: 1, events: 1, usage: 0 },
+      read: () => ({ frames: [{ recordKey: "row", usage: [], events: [{ sourceEventId: "event", sourceThreadId: "root", sourceOrder: 0, eventIndex: 0,
+        orderFidelity: "native", fidelity: "native", occurredAt: null,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "unknown occurrence" } } }] }], done: true }),
+      close: () => { closes++ } }
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion, discover: () => undefined, open: () => view }, new AbortController().signal)
+    const read = Effect.scoped(Effect.gen(function*() {
+      const opened = yield* hosted.open({ sourceId: "root", rawEnabled: false, limits, projection })
+      expect(opened.session.updatedAt).toBeNull()
+      return yield* opened.read()
+    }))
+    if (canonicalProfileVersion === CanonicalProfileVersion3) {
+      const page = await Effect.runPromise(read)
+      expect(page.frames[0]?.events[0]?.occurredAt).toBeNull()
+    } else await expect(Effect.runPromise(read)).rejects.toMatchObject({ reason: "contract" })
+    expect(closes).toBe(1)
+  })
+
+  it.each([undefined, CanonicalProfileVersion])("rejects a later null Event under known-time header profile %s", async canonicalProfileVersion => {
+    let closes = 0
+    const view: SourceCaptureView = { profile: "fixture.time", origin: { sourceId: "root", originKey: "origin", cwd: "/fixture" },
+      ...(canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion }),
+      session: { sourceSessionId: "root", title: "Root", summary: "", insight: "", actor: { name: "User", harness: "Fixture" }, branch: "", status: "idle",
+        captureStatus: "complete", reportedEventCount: 1, updatedAt: "2026-09-10T00:00:00Z" },
+      threads: [{ sourceThreadId: "root", label: "Root", summary: "", captureStatus: "complete" }], target: { threads: 1, events: 1, usage: 0 },
+      read: () => ({ frames: [{ recordKey: "row", usage: [], events: [{ sourceEventId: "event", sourceThreadId: "root", sourceOrder: 0, eventIndex: 0,
+        orderFidelity: "native", fidelity: "native", occurredAt: null,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "unknown occurrence" } } }] }], done: true }),
+      close: () => { closes++ } }
+    const hosted = hostSourceCapture("fixture", { protocolVersion: SourceCaptureVersion, discover: () => undefined, open: () => view }, new AbortController().signal)
+    await expect(Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+      const opened = yield* hosted.open({ sourceId: "root", rawEnabled: false, limits, projection })
+      return yield* opened.read()
+    })))).rejects.toMatchObject({ reason: "contract" })
+    expect(closes).toBe(1)
+  })
+
   it("provides bounded collection without environment configuration and rejects malformed overrides", async () => {
     const f = await fixture()
     expect(await Effect.runPromise(SourceCaptureCollector.pipe(Effect.as(true), Effect.provide(makeNodeClientLayer(f.paths, {}))))).toBe(true)

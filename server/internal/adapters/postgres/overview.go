@@ -146,7 +146,7 @@ func (s *Store) Overview(ctx context.Context, principal authentication.Principal
 	}
 	result.Events = make([]canonical.OverviewEvent, 0, len(events))
 	for _, e := range events {
-		result.Events = append(result.Events, canonical.OverviewEvent{ID: e.ID, SessionID: e.SessionID, Author: e.Author, At: e.OccurredAt, Order: e.SourceOrder, Index: int(e.EventIndex), Root: e.Root})
+		result.Events = append(result.Events, canonical.OverviewEvent{ID: e.ID, SessionID: e.SessionID, Author: e.Author, At: e.OccurredAt.Time, Order: e.SourceOrder, Index: int(e.EventIndex), Root: e.Root})
 	}
 	next("models")
 	if filter.HasDimensions() {

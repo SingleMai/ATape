@@ -322,7 +322,7 @@ func (s *Store) Project(
 	}
 	for _, row := range rows {
 		snapshot.Sessions = append(snapshot.Sessions, canonical.ProjectSessionSnapshot{
-			Session:          sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, row.UpdatedAt, row.ReportedEventCount),
+			Session:          sessionRecord(row.ID, row.ProjectID, domainUUID(row.CapturedByUserID), row.SourceKey, row.Revision, row.Digest, row.Title, row.Summary, row.Insight, row.ActorName, row.ActorHarness, row.Branch, row.Status, row.CaptureStatus, domainTime(row.UpdatedAt), row.ReportedEventCount),
 			EventCount:       int(row.EventCount),
 			ChildThreadCount: int(row.ChildThreadCount),
 		})

@@ -7,7 +7,8 @@ import { SearchOverlayContext, type SearchSeed } from "../presenters/searchOverl
 import { useWorkspaceSearchPresenter, type WorkspaceSearchViewModel } from "../presenters/searchPresenter"
 import { useWorkspacePresenter } from "../presenters/workspacePresenter"
 import { SearchIcon } from "./WorkspaceIcons"
-import { formatDate, t } from "../i18n"
+import { t } from "../i18n"
+import { ConversationTime } from "./ConversationTime"
 
 export const GlobalSearchProvider = ({ children }: { readonly children: ReactNode }) => {
   const [open, setOpen] = useState(false)
@@ -398,7 +399,7 @@ const SearchResults = ({
             <span className="global-result-context">
               {multipleTeams ? `${result.teamName} / ` : ""}
               {result.projectName}
-              <span>{formatDate(new Date(result.occurredAt))}</span>
+              <ConversationTime value={result.occurredAt} />
             </span>
             <strong>{result.sessionTitle}</strong>
             <p>

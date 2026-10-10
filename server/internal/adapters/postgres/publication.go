@@ -47,7 +47,7 @@ func (s *PublicationStore) Capabilities() publication.Capabilities {
 		Limits: publication.Capacity{PartBytes: l.PartBytes, TargetBytes: l.TargetBytes, UserPendingBytes: l.UserPendingBytes,
 			Parts: l.Parts, Reservations: l.Reservations, ReservationLifetimeMS: l.ReservationLifetime.Milliseconds(), LeaseLifetimeMS: l.LeaseLifetime.Milliseconds()},
 		StatusPageSize: 100, ReclaimPageSize: 32,
-		TargetProfiles: []string{publication.TargetProfile, publication.RetentionTargetProfile}, LegacyAdoption: true}
+		TargetProfiles: []string{publication.TargetProfile, publication.RetentionTargetProfile, publication.UnknownTimeTargetProfile}, LegacyAdoption: true}
 }
 
 func publicationError(code, message string) error {

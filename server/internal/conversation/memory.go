@@ -28,16 +28,16 @@ type Actor struct {
 }
 
 type SessionSummary struct {
-	ID               string `json:"id"`
-	Title            string `json:"title"`
-	Summary          string `json:"summary"`
-	Insight          string `json:"insight"`
-	Actor            Actor  `json:"actor"`
-	Branch           string `json:"branch"`
-	Status           string `json:"status"`
-	UpdatedAt        string `json:"updatedAt"`
-	EventCount       int    `json:"eventCount"`
-	ChildThreadCount int    `json:"childThreadCount"`
+	ID               string  `json:"id"`
+	Title            string  `json:"title"`
+	Summary          string  `json:"summary"`
+	Insight          string  `json:"insight"`
+	Actor            Actor   `json:"actor"`
+	Branch           string  `json:"branch"`
+	Status           string  `json:"status"`
+	UpdatedAt        *string `json:"updatedAt"`
+	EventCount       int     `json:"eventCount"`
+	ChildThreadCount int     `json:"childThreadCount"`
 }
 
 type ProjectMemory struct {
@@ -62,7 +62,7 @@ type Session struct {
 	Branch        string        `json:"branch"`
 	Status        string        `json:"status"`
 	CaptureStatus string        `json:"captureStatus"`
-	UpdatedAt     string        `json:"updatedAt"`
+	UpdatedAt     *string       `json:"updatedAt"`
 }
 
 type Thread struct {
@@ -89,7 +89,7 @@ type Event struct {
 	ID          string                `json:"id"`
 	Kind        string                `json:"kind"`
 	Author      string                `json:"author"`
-	OccurredAt  string                `json:"occurredAt"`
+	OccurredAt  *string               `json:"occurredAt"`
 	Text        string                `json:"text"`
 	ToolLabel   string                `json:"toolLabel,omitempty"`
 	Tool        *canonical.ToolUpdate `json:"tool,omitempty"`
@@ -150,7 +150,14 @@ func (m *Memory) OpenProject(
 		Trail:           make([]SessionSummary, 0, len(snapshot.Sessions)),
 	}
 	sort.Slice(snapshot.Sessions, func(left, right int) bool {
-		return snapshot.Sessions[left].Session.UpdatedAt.After(snapshot.Sessions[right].Session.UpdatedAt)
+		a, b := snapshot.Sessions[left].Session, snapshot.Sessions[right].Session
+		if a.UpdatedAt.IsZero() != b.UpdatedAt.IsZero() {
+			return !a.UpdatedAt.IsZero()
+		}
+		if a.UpdatedAt.Equal(b.UpdatedAt) {
+			return a.ID < b.ID
+		}
+		return a.UpdatedAt.After(b.UpdatedAt)
 	})
 	now := m.now()
 	for _, stored := range snapshot.Sessions {
@@ -252,7 +259,7 @@ func (m *Memory) renderConversation(snapshot canonical.ConversationSnapshot) (Co
 			ID:         stored.ID,
 			Kind:       stored.Kind,
 			Author:     stored.Author,
-			OccurredAt: formatTime(stored.OccurredAt),
+			OccurredAt: nullableTime(stored.OccurredAt),
 			Text:       stored.Text,
 			ToolLabel:  stored.ToolLabel,
 		}
@@ -295,7 +302,7 @@ func (m *Memory) renderConversation(snapshot canonical.ConversationSnapshot) (Co
 			Branch:        snapshot.Session.Branch,
 			Status:        canonical.EffectiveSessionStatus(snapshot.Session.Status, snapshot.Session.UpdatedAt, m.now()),
 			CaptureStatus: snapshot.Session.CaptureStatus,
-			UpdatedAt:     formatTime(snapshot.Session.UpdatedAt),
+			UpdatedAt:     nullableTime(snapshot.Session.UpdatedAt),
 		},
 		Thread: Thread{
 			ID:             snapshot.Thread.ID,
@@ -317,7 +324,7 @@ func sessionSummary(stored canonical.ProjectSessionSnapshot, now time.Time) Sess
 		Actor:            actor(stored.Session.Actor),
 		Branch:           stored.Session.Branch,
 		Status:           canonical.EffectiveSessionStatus(stored.Session.Status, stored.Session.UpdatedAt, now),
-		UpdatedAt:        formatTime(stored.Session.UpdatedAt),
+		UpdatedAt:        nullableTime(stored.Session.UpdatedAt),
 		EventCount:       stored.EventCount,
 		ChildThreadCount: stored.ChildThreadCount,
 	}
@@ -355,4 +362,12 @@ func threadPath(current canonical.ThreadRecord, byID map[string]canonical.Thread
 
 func formatTime(value time.Time) string {
 	return value.Format(time.RFC3339)
+}
+
+func nullableTime(value time.Time) *string {
+	if value.IsZero() {
+		return nil
+	}
+	formatted := formatTime(value)
+	return &formatted
 }

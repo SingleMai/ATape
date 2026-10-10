@@ -77,8 +77,11 @@ pnpm --filter @atape/adapter-cursor typecheck
 pnpm --filter @atape/adapter-cursor test
 ```
 
-Next, evolve shared unknown-time semantics with explicit protocol compatibility
-and identify a trustworthy creation-evidence entry point. Then implement
+Shared unknown-time semantics now have an explicit canonical v3/publication v3
+contract, nullable Reader/Search clocks and undated Overview disclosure; see
+[ADR-0114](../architecture/adr/0114-explicit-unknown-conversation-time.md).
+The Cursor reader still has no installed capture Interface. Next, identify a
+trustworthy creation-evidence entry point, then implement
 sourceCapture v2 projection/checkpoints, Host loading and the installed
 Canonical/Raw/Search/redaction contract. Live Cursor CLI and IDE verification
 remain outstanding before claiming native support.

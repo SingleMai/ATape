@@ -29,7 +29,7 @@ export const SessionSummary = Schema.Struct({
   actor: Actor,
   branch: Schema.String,
   status: SessionStatus,
-  updatedAt: Schema.String,
+  updatedAt: Schema.NullOr(Schema.String),
   eventCount: Schema.Number,
   childThreadCount: Schema.Number
 })
@@ -56,7 +56,7 @@ export const Session = Schema.Struct({
   branch: Schema.String,
   status: SessionStatus,
   captureStatus: CaptureStatus,
-  updatedAt: Schema.String
+  updatedAt: Schema.NullOr(Schema.String)
 })
 export type Session = typeof Session.Type
 
@@ -97,7 +97,7 @@ export const CanonicalEvent = Schema.Struct({
     "notice"
   ]),
   author: Schema.String,
-  occurredAt: Schema.String,
+  occurredAt: Schema.NullOr(Schema.String),
   text: Schema.String,
   toolLabel: Schema.optionalKey(Schema.String),
   tool: Schema.optionalKey(AcpToolUpdate),

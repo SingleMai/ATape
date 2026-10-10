@@ -401,6 +401,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	var project projectDTO
 	decodeResponse(t, createProjectResponse, &project)
 
+	t.Run("explicit unknown times", func(t *testing.T) {
+		assertHTTPUnknownTimeContract(t, handler, pool, project.ID, token.Credential, sessionCookie, session.CSRFToken)
+	})
 	t.Run("publication transport", func(t *testing.T) {
 		assertHTTPPublicationContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})

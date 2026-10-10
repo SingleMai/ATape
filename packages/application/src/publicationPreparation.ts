@@ -1,5 +1,5 @@
 import { Effect, Scope } from "effect"
-import { PublicationTargetProfile, PublicationTargetProfile2, type AdapterEvent, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
+import { CanonicalProfileVersion, CanonicalProfileVersion3, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, type AdapterEvent, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./captureJournal.ts"
 import { canonicalMaterializationBound, projectCanonicalSubmission } from "./canonicalProjection.ts"
 import { publicationPreparationContext, rawObservationPreparationContext, sealPublicationCapture, sealRawObservation } from "./publicationDelivery.ts"
@@ -7,7 +7,7 @@ import { createRawPreparation, validateRawPreparationLimits, type RawPreparation
 import { decodeSourceMetadata, sourceMetadataJson, maskSourceFailures } from "./sourceMetadata.ts"
 export type { RawPreparationLimits } from "./rawPreparation.ts"
 
-import { canonicalSourceProjection, validateCanonicalSourceMetadata, PublicationPreparationError, PublicationPreparationVersion, sourceFingerprint as hash, encodeSource as encode,
+import { canonicalSourceProjection, sourceProjectionProfile, validateCanonicalSourceMetadata, PublicationPreparationError, PublicationPreparationVersion, sourceFingerprint as hash, encodeSource as encode,
   type PublicationDraftView } from "./canonicalSourceProjection.ts"
 export { PublicationPreparationError, PublicationPreparationVersion, type PublicationDraftFrame, type PublicationDraftView } from "./canonicalSourceProjection.ts"
 const fail = (reason: PublicationPreparationError["reason"], message: string) => new PublicationPreparationError({ reason, message })
@@ -33,11 +33,14 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
   const limits = context.intent.capabilities.limits
   const prepared = yield* Effect.scoped(Effect.gen(function*() {
     const view = yield* input.source
+    const targetProfile = view.canonicalProfileVersion === CanonicalProfileVersion3 ? PublicationTargetProfile3 :
+      view.sourceCheckpoint === undefined ? PublicationTargetProfile : PublicationTargetProfile2
+    if (targetProfile !== PublicationTargetProfile && !context.targetProfiles.includes(targetProfile))
+      return yield* fail("unsupported", "This source requires a publication target profile unavailable on the Server.")
     const projection = yield* canonicalSourceProjection(owner, view, { ...input, captureId, transformVersion: context.intent.begin.transformVersion })
-    const { profile, placeholder, masked } = projection
-    if (view.sourceCheckpoint !== undefined && !context.intent.capabilities.targetProfiles?.includes(PublicationTargetProfile2))
-      return yield* fail("unsupported", "This source requires complete-target v2 support from the Server.")
-    if (view.sourceCheckpoint !== undefined) yield* journal.setSourceMetadata(owner, captureId, yield* sourceMetadataJson(view, masked.threads))
+    const { profile, canonicalProfileVersion, placeholder, masked } = projection
+    if (view.sourceCheckpoint !== undefined || canonicalProfileVersion === CanonicalProfileVersion3)
+      yield* journal.setSourceMetadata(owner, captureId, yield* sourceMetadataJson(view, masked.threads))
     const version = (kind: CaptureRecordKey["kind"], key: string, fingerprint: string, rawReference: AdapterRawReference = placeholder) => Effect.gen(function*() {
       return yield* journal.record(owner, captureId, { kind, key, fingerprint, projectionVersion: profile,
         ...(kind === "event" ? { rawReference } : {}) })
@@ -59,12 +62,12 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
     const project = (projectedEvents: ReadonlyArray<AdapterEvent>, projectedUsage: ReadonlyArray<AdapterUsage>) =>
       projectCanonicalSubmission({ instanceOrigin: journal.binding.instanceOrigin, installationId: journal.binding.installationId,
         adapterId: owner.scope.adapterId, adapterVersion: input.adapterVersion, projectId: owner.scope.projectId,
-        observation: { observedAt: input.observedAt, session, threads, events: projectedEvents, usage: projectedUsage } })
+        observation: { observedAt: input.observedAt, session, threads, events: projectedEvents, usage: projectedUsage } }, canonicalProfileVersion)
     const wire = () => {
       const batch = project(events, usage)
-      return { target: { profile: view.sourceCheckpoint === undefined ? PublicationTargetProfile : PublicationTargetProfile2,
+      return { target: { profile: targetProfile,
         events: view.target.events, threads: view.target.threads, usage: view.target.usage,
-        ...(view.sourceCheckpoint === undefined ? {} : { retainedThreadIds: view.target.retainedThreadIds ?? [] }) }, batch: { ...batch, batchId: `p_${batchKey}_${ordinal}` } }
+        ...(targetProfile === PublicationTargetProfile ? {} : { retainedThreadIds: view.target.retainedThreadIds ?? [] }) }, batch: { ...batch, batchId: `p_${batchKey}_${ordinal}` } }
     }
     const flush = () => Effect.gen(function*() {
       const value = wire(), bytes = encode(value), bound = canonicalMaterializationBound(value.batch, journal.binding.userId)
@@ -126,16 +129,18 @@ export const prepareRawObservation = <E, R>(owner: CaptureOwner, observationId: 
   yield* validateRawPreparationLimits(input.limits)
   const result = yield* Effect.scoped(Effect.gen(function*() {
     const view = yield* input.source
-    if (!view.profile || new TextEncoder().encode(view.profile).byteLength > 500) return yield* fail("invalid", "Raw source profile exceeds its bound.")
+    const { canonicalProfileVersion, profile } = yield* sourceProjectionProfile(view, context.canonical.intent.begin.transformVersion)
     if (view.origin.sourceId !== owner.scope.sourceSessionId || view.origin.originKey !== owner.scope.originKey ||
       view.session.sourceSessionId !== owner.scope.sourceSessionId) return yield* fail("binding", "Fresh Raw source Origin differs from the claimed capture.")
-    if (view.sourceCheckpoint !== undefined) {
-      const prior = yield* decodeSourceMetadata(yield* (yield* CaptureJournal).sourceMetadata(owner, context.canonical.receipt.captureId))
-      if (view.sourceCheckpoint !== prior.sourceCheckpoint)
-        return yield* fail("conflict", "Fresh Raw source changed after comparison; publish its authenticated complete target before archiving it.")
-    }
+    const journal = yield* CaptureJournal
+    const prior = yield* decodeSourceMetadata(yield* journal.sourceMetadata(owner, context.canonical.receipt.captureId))
+    const session = yield* journal.recordStatus(owner, context.canonical.receipt.captureId, { kind: "session", key: view.session.sourceSessionId })
+    if (canonicalProfileVersion !== (prior.canonicalProfileVersion ?? CanonicalProfileVersion) ||
+      session?.disposition !== "published" || session.projectionVersion !== profile ||
+      view.sourceCheckpoint !== prior.sourceCheckpoint)
+      return yield* fail("conflict", "Fresh Raw source changed after comparison; publish its authenticated complete target before archiving it.")
     const raw = yield* createRawPreparation(owner, observationId, {
-      profile: `${PublicationPreparationVersion}:${context.canonical.intent.begin.transformVersion}:${view.profile}`,
+      profile,
       sessionId: context.canonical.receipt.sessionId, head: context.canonical.receipt.head, authority: context.rawAuthority,
       adapterVersion: input.adapterVersion, observedAt: input.observedAt, limits: input.limits
     })
