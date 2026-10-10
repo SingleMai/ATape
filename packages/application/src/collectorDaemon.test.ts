@@ -50,6 +50,7 @@ const fixture = (config: ClientConfig, status: CollectorRunState) => {
       transact: (change) => change(config).pipe(Effect.map((result) => result.value))
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      observe: () => Effect.die("Unexpected pure process observation"),
       pause: () => Effect.die("Unexpected pause"),
       resume: () => Effect.sync(() => {
         resumes++
@@ -83,6 +84,7 @@ const fixture = (config: ClientConfig, status: CollectorRunState) => {
     Layer.succeed(CollectorRunStatusStore, CollectorRunStatusStore.of({
       read: () => Effect.succeed(status),
       recordCycle: () => Effect.void,
+      recordRedactionJob: () => Effect.void,
       recordCollectorFailure: () => Effect.void
     }))
   )

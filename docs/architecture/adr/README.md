@@ -134,6 +134,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0106](0106-redaction-settings.md) | Global redaction settings |
 | [0107](0107-independent-update-control.md) | Independent update control and durable runtime admission |
 | [0108](0108-compatible-release-bundle-discovery.md) | Compatible release bundles and persistent discovery |
+| [0109](0109-collector-redaction-status.md) | Observed Collector redaction configuration |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

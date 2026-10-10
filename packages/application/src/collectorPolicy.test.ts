@@ -8,6 +8,7 @@ import { CollectorRedactionPolicies } from "./collectorRedactionPolicy.ts"
 import { SourceCaptureCollector } from "./sourceCollector.ts"
 import { compileRedactionPolicy, secretRedactorForPolicy } from "./redaction.ts"
 import { runCollectionCycle } from "./collector.ts"
+import { CollectorRunStatusStore, type CollectorRedactionJobEvent } from "./collectorRunStatus.ts"
 
 const timestamp = "2026-10-09T00:00:00Z", secret = "PRIVATE_LITERAL"
 const content = `{"message":"${secret}"}\n`
@@ -47,12 +48,22 @@ const fixture = async () => {
   let duringOpen: (() => void) | undefined
   let currentPage = (request: HostedCollectRequest) => request.cursor === "cursor-1" ? page(2, bytes(content)) : page(1)
   const canonical: CanonicalSubmission[] = [], raw: RawSubmission[] = [], accepted = new Map<string, string>()
+  const events: CollectorRedactionJobEvent[] = []
   const layer = Layer.mergeAll(
     Layer.succeed(ClientConfigStore, { transact: change => change(config).pipe(Effect.map(result => result.value)) }),
-    Layer.succeed(CollectorStateStore, { capturedScopes: () => Effect.succeed([]), snapshot: () => Effect.succeed({ installationId: "installation", ...(saved ? { checkpoint: saved } : {}) }),
+    Layer.succeed(CollectorStateStore, { capturedScopes: () => Effect.succeed([]), snapshot: () => Effect.sync(() => {
+      expect(events.at(-1)).toMatchObject({ kind: "loaded", snapshot: { revision: selected.policyId ?? "unversioned" } })
+      return { installationId: "installation", ...(saved ? { checkpoint: saved } : {}) }
+    }),
       commit: input => Effect.sync(() => { expect(input.expectedRevision).toBe(saved?.revision ?? 0); saved = structuredClone(input.checkpoint) }) }),
-    Layer.succeed(CollectorRedactionPolicies, { snapshot: () => Effect.sync(() => selected) }),
+    Layer.succeed(CollectorRedactionPolicies, { snapshot: () => Effect.sync(() => ({ redactor: selected, descriptor: {
+      configFile: "/state/redaction.json", origin: "default" as const, revision: selected.policyId ?? "unversioned",
+      exists: true, literalCount: selected === b ? 1 : 0, customRuleCount: 0
+    } })) }),
     Layer.succeed(SecretRedactor, a),
+    Layer.succeed(CollectorRunStatusStore, { read: () => Effect.succeed({ version: 1, jobs: [] }),
+      recordCycle: () => Effect.void, recordCollectorFailure: () => Effect.void,
+      recordRedactionJob: event => Effect.sync(() => { events.push(structuredClone(event)) }) }),
     Layer.succeed(AdapterRuntimes, { open: () => Effect.sync(() => { opens++; duringOpen?.(); return {
       collect: (request: HostedCollectRequest) => Effect.sync(() => { reads++; return currentPage(request) }) } }).pipe(Effect.flatMap(runtime => openFailure
         ? Effect.fail(new AdapterRuntimeError({ adapterId: "fixture", reason: "load", retryable: false, message: `Source error ${secret}` })) : Effect.succeed(runtime))) }),
@@ -76,7 +87,7 @@ const fixture = async () => {
         return Effect.succeed({ objectId: "object", generation: submission.serverGeneration, sizeBytes: submission.serverOffset + bytes(submission.content), finalized: submission.final, replayed: prior !== undefined })
       }) })
   )
-  return { a, b, canonical, raw, accepted, cycle: () => Effect.runPromise(runCollectionCycle().pipe(Effect.provide(layer))),
+  return { a, b, canonical, raw, accepted, events, cycle: () => Effect.runPromise(runCollectionCycle().pipe(Effect.provide(layer))),
     saved: () => saved, reads: () => reads, opens: () => opens,
     select: (id: "a" | "b") => { selected = id === "a" ? a : b }, seed: (value: CollectorCheckpoint) => { saved = value },
     unversioned: () => { selected = { redact: value => ({ value, replacements: 0 }) } },
@@ -92,9 +103,11 @@ describe("legacy policy-bound collection admission", () => {
     const f = await fixture(); f.duringOpen(() => f.select("b"))
     expect((await f.cycle()).failures).toEqual([])
     expect(f.saved()?.policyId).toBe(f.a.policyId)
+    expect(f.events[1]).toMatchObject({ kind: "loaded", snapshot: { revision: f.a.policyId, literalCount: 0 } })
     expect(JSON.stringify(f.canonical[0])).toContain(secret)
     expect((await f.cycle()).failures).toEqual([])
     expect(f.saved()?.policyId).toBe(f.b.policyId)
+    expect(f.events[4]).toMatchObject({ kind: "loaded", snapshot: { revision: f.b.policyId, literalCount: 1 } })
     expect(JSON.stringify(f.canonical[1])).not.toContain(secret)
   })
   it("continues a fully acknowledged nonfinal Raw object under a new policy without rewriting history", async () => {

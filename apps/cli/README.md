@@ -106,6 +106,10 @@ rule counts to stderr, and creates no capture state. See
 Settings → Privacy rules manages the same global custom rules with validation
 and a save review. Built-ins stay enabled; saved changes apply to later jobs
 using that configuration and do not alter accepted history.
+Its Background privacy status page shows the file and snapshot observed for each
+background job, compares them with the editor's saved version, and refreshes
+without changing sync. This page is a repository change after the published
+0.5.5 package; file-version matches do not prove identical inherited environments.
 Follow [first-sync verification](../../docs/cli/setup-and-adapters.md#confirm-the-first-sync)
 and [troubleshooting](../../docs/cli/setup-and-adapters.md#troubleshooting) for recovery.
 

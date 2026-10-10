@@ -4,35 +4,21 @@ import type {
   AdapterSourceFailure,
   ClientConfig,
   CollectorJobRunStatus,
-  CollectorRunFailure,
-  CollectorRunState
+  CollectorRunFailure
 } from "@atape/domain"
-import { Clock, Context, Effect, Schema } from "effect"
+import { Clock, Effect } from "effect"
+import { CollectorRunStatusStore } from "./collectorRunStatus.ts"
 import { withCollectorMonitoring } from "./collectorMonitoring.ts"
 import { inspectClient } from "./clientManagement.ts"
 import {
   CollectorConfigurationError,
   makeCollectionContinuation,
   hasUnauthenticatedFailure,
-  runCollectionCycle,
-  type CollectionCycleReport
+  runCollectionCycle
 } from "./collector.ts"
 
 export * from "./collectorDaemonProcess.ts"
-
-export class CollectorRunStatusError extends Schema.TaggedError<CollectorRunStatusError>()(
-  "CollectorRunStatusError",
-  {
-    reason: Schema.Literals(["io", "decode"]),
-    message: Schema.String
-  }
-) {}
-
-export class CollectorRunStatusStore extends Context.Service<CollectorRunStatusStore, {
-  read(): Effect.Effect<CollectorRunState, CollectorRunStatusError>
-  recordCycle(report: CollectionCycleReport): Effect.Effect<void, CollectorRunStatusError>
-  recordCollectorFailure(failure: CollectorRunFailure): Effect.Effect<void, CollectorRunStatusError>
-}>()("atape/application/CollectorRunStatusStore") {}
+export * from "./collectorRunStatus.ts"
 
 export type ManagedCollectorJobStatus = {
   readonly progress?: AdapterCollectionProgress

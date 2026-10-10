@@ -24,6 +24,7 @@ const fixture = (runtimeReleaseVersion = "0.4.4", commandEntryVersion = "0.4.4")
       detectSources: () => Effect.die("Unexpected detection"), suggestDirectories: () => Effect.die("Unexpected browsing"),
       supportsGit: () => Effect.die("Unexpected Git inspection"), creationKey: () => Effect.die("Unexpected setup key") })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      observe: () => Effect.die("Unexpected pure process observation"),
       resume: () => Effect.die("Unexpected resume"),
       pause: () => Effect.die("Unexpected pause"),
       refresh: () => Effect.succeed(false), inspect: () => Effect.succeed(undefined),

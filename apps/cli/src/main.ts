@@ -165,7 +165,8 @@ const main = async () => {
       : runCommand(command)
     await Effect.runPromise(
       program.pipe(
-        Effect.provide(makeNodeClientLayer(defaultNodeClientPaths())),
+        Effect.provide(makeNodeClientLayer(defaultNodeClientPaths(), process.env, globalThis.fetch, globalThis.fetch,
+          command.kind === "__collector-daemon" ? { collectorToken: command.options.daemonToken } : {})),
         Effect.matchEffect({
           onFailure: (error: unknown) => Effect.sync(() => {
             const message = error instanceof Error ? error.message : String(error)

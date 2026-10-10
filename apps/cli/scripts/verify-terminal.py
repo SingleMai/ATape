@@ -172,6 +172,14 @@ def verify_privacy_rules():
 
     before_capture = capture_state()
     assert not rules.exists(), "opening Privacy rules created a configuration file"
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Background sync: stopped")
+    terminal.send("\r")
+    terminal.wait("Background sync: stopped")
+    terminal.send("\x1b[B\r")
+    terminal.wait("Add custom rule")
+    assert capture_state() == before_capture, "observing background privacy created Collector state"
+    assert not rules.exists(), "observing background privacy created a configuration file"
     terminal.send("\r")
     terminal.wait("Custom rule 1")
 
@@ -234,6 +242,13 @@ def verify_privacy_rules():
     terminal.send("\x1b[B" * 3 + "\r")
     terminal.wait("Rules are invalid or exceed a limit.")
     assert rules.read_bytes() == saved, "invalid RE2 input replaced accepted rules"
+    terminal.send("\x1b[B" * 5 + "\r")
+    terminal.wait("Background sync: stopped")
+    terminal.send("\x1b")
+    terminal.wait("Add custom rule")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Rules are invalid or exceed a limit.")
+    assert rules.read_bytes() == saved, "background status changed the invalid unsaved draft"
     terminal.send("\x1b[B" * 4 + "\r")
     terminal.wait("Discard unsaved rules?")
     terminal.send("\x1b[B\r")
@@ -424,6 +439,42 @@ try:
     assert refreshed_process["pid"] != previous_process["pid"], "opening updated ATape retained the old Host"
     for field in ("intervalMs", "concurrency"):
         assert refreshed_process[field] == previous_process[field], "Host refresh changed " + field
+    # Observe the actual installed daemon's pinned snapshot through Settings.
+    # This also verifies that only the owned daemon receives write authority.
+    status_file = root / "home/state/collector-status.json"
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        observed = json.loads(status_file.read_text()).get("redaction", {})
+        if observed.get("generation") == hashlib.sha256(refreshed_process["token"].encode()).hexdigest() and any(
+                job.get("snapshot") for job in observed.get("jobs", [])):
+            break
+        time.sleep(.1)
+    else:
+        raise AssertionError("installed daemon did not report its pinned privacy snapshot")
+    assert refreshed_process["token"] not in json.dumps(observed), "privacy status exposed daemon ownership token"
+    terminal.send("\t\x1b[C\r")
+    terminal.wait("Accounts")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Add custom rule")
+    terminal.send("\x1b[B" * 3 + "\r")
+    terminal.wait("Background sync: running")
+    for _ in range(20):
+        if b"This job loaded the compared file revision." in terminal.output:
+            break
+        os.write(terminal.master, b"\x1b[6~")
+        terminal.drain(.15)
+    terminal.wait("This job loaded the compared file revision.")
+    terminal.send("\r")
+    terminal.wait("Background sync: running")
+    terminal.send("\x1b")
+    terminal.wait("Add custom rule")
+    terminal.send("\x1b")
+    terminal.wait("Accounts")
+    terminal.send("\x1b")
+    terminal.wait("Your Projects")
+    # Restore the original Projects focus and Tools action selection before
+    # continuing the existing navigation acceptance below.
+    terminal.send("\x1b[D\t")
     terminal.send("n")
     terminal.wait("Add project")
     terminal.wait("Project directory")

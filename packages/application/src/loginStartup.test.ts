@@ -37,6 +37,7 @@ const fixture = (initial: ClientConfig = configuredClient()) => {
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      observe: () => Effect.die("Unexpected pure process observation"),
       start: () => Effect.die("A login trigger must not issue Start"),
       pause: () => Effect.die("A login trigger must not pause maintenance"),
       refresh: () => Effect.die("A login trigger resumes intent, not stale process metadata"),

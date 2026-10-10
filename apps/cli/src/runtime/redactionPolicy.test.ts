@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { loadNodeRedactionPolicy } from "./redactionPolicy.ts"
+import { loadNodeRedactionPolicy, loadNodeRedactionPolicySnapshot } from "./redactionPolicy.ts"
+import { withClientConfigFileLock } from "./clientConfig.ts"
 
 const directories: string[] = []
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
@@ -25,6 +26,57 @@ const fixture = async () => {
 const custom = (pattern: string) => ({ patterns: [{ name: "internal", type: "INTERNAL", pattern }] })
 
 describe("Node redaction policy snapshots", () => {
+  it("describes only the same immutable file and literals used to compile a policy", async () => {
+    const f = await fixture()
+    await f.write(custom("internal-one"))
+    const options = { mode: "collector" as const, atapeHome: f.home, stateFile: f.stateFile,
+      environment: { APP_TOKEN: "literal-secret", ATAPE_REDACT_VALUES: '["literal-secret"]' } }
+    const original = await Effect.runPromise(loadNodeRedactionPolicySnapshot(options))
+    expect(original.descriptor).toEqual({ configFile: f.configFile, origin: "default", exists: true,
+      revision: expect.any(String), customRuleCount: 1, literalCount: 1 })
+    // The identity lock holds the public loader after its file read. Replacing
+    // the path leaves that read's open regular file intact.
+    let unlock!: () => void, locked!: () => void
+    const waiting = new Promise<void>(resolve => { unlock = resolve })
+    const entered = new Promise<void>(resolve => { locked = resolve })
+    const held = withClientConfigFileLock(`${f.stateFile}.redaction-key`, async () => { locked(); await waiting })
+    await entered
+    const lockFile = `${f.stateFile}.redaction-key.lock`
+    await utimes(lockFile, new Date(0), new Date((await stat(lockFile)).mtimeMs))
+    const pending = Effect.runPromise(loadNodeRedactionPolicySnapshot(options))
+    try {
+      // A blocked loader reads the existing lock's owner only after completing
+      // configuration validation. Its access time is an actual FS barrier.
+      await expect.poll(async () => (await stat(lockFile)).atimeMs).toBeGreaterThan(0)
+      const replacement = `${f.configFile}.replacement`
+      await writeFile(replacement, JSON.stringify(custom("internal-two")))
+      await rename(replacement, f.configFile)
+    } finally { unlock(); await held }
+    const loaded = await pending
+    expect(loaded.descriptor).toEqual(original.descriptor)
+    expect((await Effect.runPromise(loaded.policy.prepareText("internal-one internal-two literal-secret"))).value)
+      .toBe("[REDACTED:INTERNAL] internal-two [REDACTED]")
+    expect(loaded.descriptor.customRuleCount).toBe(1)
+    const next = await Effect.runPromise(loadNodeRedactionPolicySnapshot(options))
+    expect(next.descriptor.revision).not.toBe(loaded.descriptor.revision)
+    expect((await Effect.runPromise(next.policy.prepareText("internal-one internal-two"))).value)
+      .toBe("internal-one [REDACTED:INTERNAL]")
+    expect(JSON.stringify(loaded.descriptor)).not.toMatch(/internal-one|literal-secret|APP_TOKEN|policyId/)
+  })
+
+  it("resolves selected paths without creating state in test mode", async () => {
+    const f = await fixture()
+    const missing = await Effect.runPromise(loadNodeRedactionPolicySnapshot({ mode: "test", atapeHome: f.home, environment: {} }))
+    expect(missing.descriptor).toEqual({ configFile: f.configFile, origin: "default", revision: "missing", exists: false,
+      customRuleCount: 0, literalCount: 0 })
+    expect(await readdir(f.root)).toEqual([])
+    await f.write(custom("internal-one"))
+    const selected = await Effect.runPromise(loadNodeRedactionPolicySnapshot({ mode: "test", environment: {},
+      configFile: `${f.root}/home/config/../config/redaction.json` }))
+    expect(selected.descriptor).toMatchObject({ configFile: f.configFile, origin: "environment", exists: true, customRuleCount: 1 })
+    expect(await readdir(f.home)).toEqual(["config"])
+  })
+
   it("persists a private installation identity across concurrent loads and restarts", async () => {
     const f = await fixture()
     const policies = await Promise.all(Array.from({ length: 4 }, () => f.load()))

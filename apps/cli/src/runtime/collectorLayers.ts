@@ -9,7 +9,7 @@ import { makeCollectorStateLayer } from "./collectorState.ts"
 import { makeAdapterRuntimeLayer } from "./adapterHost.ts"
 import { makeCollectorTransportLayer } from "./collectorTransport.ts"
 import { isCollectorMaintenancePending } from "./collectorDaemonLayers.ts"
-import { loadNodeRedactionPolicy } from "./redactionPolicy.ts"
+import { loadNodeRedactionPolicySnapshot } from "./redactionPolicy.ts"
 
 export { makeCollectorStateLayer, withCollectorInstallation } from "./collectorState.ts"
 export { makeAdapterRuntimeLayer } from "./adapterHost.ts"
@@ -33,9 +33,9 @@ export const makeNodeCollectorLayer = (
   // Every production job replaces it with a freshly loaded immutable snapshot.
   const redactor = makeSecretRedactorLayer()
   const policies = Layer.succeed(CollectorRedactionPolicies, CollectorRedactionPolicies.of({
-    snapshot: () => loadNodeRedactionPolicy({ mode: "collector", stateFile: paths.collectorStateFile,
+    snapshot: () => loadNodeRedactionPolicySnapshot({ mode: "collector", stateFile: paths.collectorStateFile,
       atapeHome: paths.atapeHome ?? environment.ATAPE_HOME ?? dirname(paths.collectorStateFile), environment }).pipe(
-      Effect.map(secretRedactorForPolicy), Effect.mapError(() => new CollectorConfigurationError({ reason: "limits",
+      Effect.map(({ policy, descriptor }) => ({ redactor: secretRedactorForPolicy(policy), descriptor })), Effect.mapError(() => new CollectorConfigurationError({ reason: "limits",
         message: "The local redaction policy or its private identity is invalid. Fix the configuration or restore the existing redaction key with Collector state." })))
   }))
   const configured = environment.ATAPE_SOURCE_COLLECTION_LIMITS

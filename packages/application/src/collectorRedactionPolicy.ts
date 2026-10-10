@@ -1,10 +1,16 @@
 import { Context, Effect, Schema } from "effect"
 import { CollectorConfigurationError, SecretRedactor, type SecretRedactorService } from "./collectorContracts.ts"
+import type { RedactionConfigurationDescriptor } from "@atape/domain"
+
+export type CollectorRedactionSnapshot = {
+  readonly redactor: SecretRedactorService
+  readonly descriptor: RedactionConfigurationDescriptor
+}
 
 /** Node resolves configuration and environment once per job. The pinned value is
  * also the content admission authority for recovery of immutable captures. */
 export class CollectorRedactionPolicies extends Context.Service<CollectorRedactionPolicies, {
-  snapshot(): Effect.Effect<SecretRedactorService, CollectorConfigurationError>
+  snapshot(): Effect.Effect<CollectorRedactionSnapshot, CollectorConfigurationError>
 }>()("atape/application/CollectorRedactionPolicies") {}
 
 export const redactionTransformVersion = (policyId?: string) => policyId === undefined

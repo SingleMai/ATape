@@ -426,11 +426,42 @@ export const CollectorRunFailure = Schema.Struct({
 })
 export type CollectorRunFailure = typeof CollectorRunFailure.Type
 
+// Local observation only; never part of device, Canonical, Raw or Search payloads.
+export const RedactionConfigurationDescriptor = Schema.Struct({
+  configFile: Schema.String,
+  origin: Schema.Literals(["default", "environment"]),
+  revision: Schema.String,
+  exists: Schema.Boolean,
+  literalCount: Schema.Number,
+  customRuleCount: Schema.Number
+})
+export type RedactionConfigurationDescriptor = typeof RedactionConfigurationDescriptor.Type
+
+export const CollectorRedactionJobStatus = Schema.Struct({
+  projectId: Schema.String,
+  adapterId: Schema.String,
+  attemptId: Schema.String,
+  startedAt: Schema.String,
+  updatedAt: Schema.String,
+  phase: Schema.Literals(["loading", "active", "completed", "failed", "interrupted", "load_failed"]),
+  snapshot: Schema.optionalKey(RedactionConfigurationDescriptor)
+})
+export type CollectorRedactionJobStatus = typeof CollectorRedactionJobStatus.Type
+
+export const CollectorRedactionRunStatus = Schema.Struct({
+  generation: Schema.String,
+  configFile: Schema.String,
+  origin: Schema.Literals(["default", "environment"]),
+  jobs: Schema.Array(CollectorRedactionJobStatus)
+})
+export type CollectorRedactionRunStatus = typeof CollectorRedactionRunStatus.Type
+
 export const CollectorRunState = Schema.Struct({
   version: Schema.Literal(CollectorRunStateVersion),
   lastCycleStartedAt: Schema.optionalKey(Schema.String),
   lastCycleCompletedAt: Schema.optionalKey(Schema.String),
   collectorFailure: Schema.optionalKey(CollectorRunFailure),
+  redaction: Schema.optionalKey(CollectorRedactionRunStatus),
   jobs: Schema.Array(CollectorJobRunStatus)
 })
 export type CollectorRunState = typeof CollectorRunState.Type
