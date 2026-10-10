@@ -3,7 +3,7 @@
 - Status: Accepted for the source-reader increment
 - Date: 2026-10-10
 
-Later amendment: [ADR-0113](0113-explicit-unknown-conversation-time.md) defines
+Later amendment: [ADR-0114](0114-explicit-unknown-conversation-time.md) defines
 shared unknown-time semantics. It does not enable Cursor capture or establish
 native creation attribution.
 

@@ -1,4 +1,4 @@
-# ADR-0113: Explicit unknown conversation time
+# ADR-0114: Explicit unknown conversation time
 
 - Status: Accepted
 - Date: 2026-10-10

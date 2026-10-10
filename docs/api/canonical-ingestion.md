@@ -201,7 +201,7 @@ profile for an entire candidate. Hosts request that advertisement with
 `ATape-Accept-Publication-Target: atape.publication-target.v3`; a capabilities
 request without opt-in retains the older v1/v2 response. Unknown header tokens
 are ignored, including in comma-separated or repeated header fields. See
-[ADR-0113](../architecture/adr/0113-explicit-unknown-conversation-time.md).
+[ADR-0114](../architecture/adr/0114-explicit-unknown-conversation-time.md).
 
 ## Structured usage
 

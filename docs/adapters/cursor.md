@@ -79,7 +79,7 @@ pnpm --filter @atape/adapter-cursor test
 
 Shared unknown-time semantics now have an explicit canonical v3/publication v3
 contract, nullable Reader/Search clocks and undated Overview disclosure; see
-[ADR-0113](../architecture/adr/0113-explicit-unknown-conversation-time.md).
+[ADR-0114](../architecture/adr/0114-explicit-unknown-conversation-time.md).
 The Cursor reader still has no installed capture Interface. Next, identify a
 trustworthy creation-evidence entry point, then implement
 sourceCapture v2 projection/checkpoints, Host loading and the installed

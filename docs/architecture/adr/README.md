@@ -138,7 +138,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0110](0110-runtime-writer-admission.md) | Compiled runtime identity and serialized local capture writes |
 | [0111](0111-cursor-native-source-reader.md) | Cursor native source reader before capture enablement |
 | [0112](0112-failed-candidate-cooldown.md) | Persistent cooldown for failed update candidates |
-| [0113](0113-explicit-unknown-conversation-time.md) | Explicit unknown conversation time |
+| [0114](0114-explicit-unknown-conversation-time.md) | Explicit unknown conversation time |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old
