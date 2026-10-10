@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "synthetic-derived",
+  "nativeAuthenticatedSessionCaptured": false,
+  "constructedBy": "ATape",
+  "description": "Locally constructed compatibility inputs derived from pinned Confab test shapes. Message text, tool names and parameters, title and directory identities are synthetic. These files are not Cursor exports or native acceptance evidence.",
+  "sources": [
+    {
+      "kind": "third-party-test-shapes",
+      "repository": "https://github.com/ConfabulousDev/confab",
+      "ref": "8082a7ab8d3195ae8fb93545508be49bc4c8f5b7",
+      "path": "pkg/provider/cursor_test.go",
+      "url": "https://github.com/ConfabulousDev/confab/blob/8082a7ab8d3195ae8fb93545508be49bc4c8f5b7/pkg/provider/cursor_test.go",
+      "gitBlob": "46ca9b2afb7e8ae5939a2e2898fab9ae5c5a9799",
+      "usedFor": ["user message content envelope", "assistant text and tool_use content envelope", "turn_ended status envelope", "meta.json candidate shape"]
+    },
+    {
+      "kind": "static-bundle-inspection",
+      "version": "2026.10.01-e373342",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "archiveUrl": "https://downloads.cursor.com/lab/2026.10.01-e373342/darwin/arm64/agent-cli-package.tar.gz",
+      "archiveSha256": "629e51de43a0b7fb3b86f5ebc7e579f7df7df941b39f29e82945cde750145afc",
+      "usedFor": ["candidate nested transcript and metadata lookup paths"],
+      "nativeRuntimeAcceptance": false,
+      "officialStableSchemaGuarantee": false
+    }
+  ],
+  "files": {
+    "conversation.jsonl": "Synthetic conversation with repeated user text, assistant text, a tool invocation and independent status rows; no tool result, native event ID, model or per-event time is supplied.",
+    "meta.json": "Synthetic metadata candidate with a Confab-compatible field shape; no cwd or immutable creation proof is supplied."
+  },
+  "unverifiedNativeBehavior": ["CLI versus IDE producer identification", "immutable creation origin", "resume across workspaces", "event and turn IDs", "per-event timestamps", "tool results", "compaction and truncation identity continuity", "subagent parentage"],
+  "interpretation": {
+    "missingFacts": "Remain unknown. Neither filesystem mtime, metadata timestamps nor observation clocks become event occurrence times.",
+    "attribution": "Workspace slugs and metadata candidates do not prove Project or Git origin.",
+    "sampling": "Native CLI and IDE acceptance remains deferred until a real authenticated Cursor environment is available."
+  }
+}
