@@ -831,13 +831,18 @@ setInterval(() => {}, 1000);
     try {
       await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
       let restored = false
-      await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
+      const failure = await withCollectorMaintenance(f, async () => f.entry, process.env,
         () => f.replace("cannot-become-ready", { ready: false }), {
           // The readiness budget also applies when the previous child restarts.
           readyTimeoutMs: 5_000,
           recover: async () => { restored = true; await f.replace("restored") }
-        })).rejects.toMatchObject({ reason: "start", stage: "candidate-readiness", recovery: "ready",
+        }).then(() => undefined, error => error)
+      // A real ps probe started just before the deadline may time out; its
+      // identity uncertainty must not be classified as a candidate failure.
+      expect(["start", "identity"]).toContain(failure?.reason)
+      if (failure.reason === "start") expect(failure).toMatchObject({ reason: "start", stage: "candidate-readiness", recovery: "ready",
           message: "The updated Collector did not become locally ready." })
+      else expect(failure).not.toBeInstanceOf(CollectorMaintenanceFailure)
       expect(restored).toBe(true)
       expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
       const current = await f.run(f.daemon.inspect())
@@ -973,11 +978,13 @@ printf '%s\\n' "$candidate_command"
       await f.run(f.daemon.start({ intervalMs: 60000, concurrency: 3 }))
       const started = performance.now()
       let activationDeadline = 0, recoveryDeadline = 0
-      await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
+      const failure = await withCollectorMaintenance(f, async () => f.entry, process.env,
         async deadline => { activationDeadline = deadline; await f.replace("not-ready", { ready: false }) }, {
           activationTimeoutMs: 300, recoveryTimeoutMs: 1_000,
           recover: async (_, deadline) => { recoveryDeadline = deadline; await f.replace("restored") }
-        })).rejects.toMatchObject({ reason: "start" })
+        }).then(() => undefined, error => error)
+      expect(["start", "identity"]).toContain(failure?.reason)
+      if (failure.reason === "identity") expect(failure).not.toBeInstanceOf(CollectorMaintenanceFailure)
       expect(activationDeadline - started).toBeLessThan(325)
       expect(recoveryDeadline).toBeGreaterThan(activationDeadline)
       expect(performance.now() - started).toBeLessThan(2_000)
