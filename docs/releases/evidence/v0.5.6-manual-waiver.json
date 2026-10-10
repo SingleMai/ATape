@@ -1,0 +1,23 @@
+{
+  "protocol": "atape.manual-release-waiver.v1",
+  "releaseVersion": "0.5.6",
+  "authEpoch": "auth-v1",
+  "status": "authorized",
+  "candidateCommit": "58923a0fa1da29b8e6f3f0e40ac21d1f8307badd",
+  "authorizedOn": "2026-10-10",
+  "authorization": "On 2026-10-10 Asia/Singapore and UTC, the user explicitly requested npm publication: “npm 可以发布 然后我要做下授权。。” The user subsequently completed npm web login authorization. Under ADR-0048 the publication request authorizes coordinated 0.5.6 package publication and waiver of the listed manual staging checks only. ADR-0117 records the selected one-version local Cursor bootstrap. Automated CI, installed integration and security gates remain mandatory before publication. Server deployment and production database migration are not authorized.",
+  "scope": "manual-staging-only",
+  "unverifiedChecks": [
+    "candidate-artifacts",
+    "official-topology",
+    "github-provider-staging-smoke",
+    "official-domain-egress-deny-smoke",
+    "two-user-two-team",
+    "waf-tls-callback",
+    "backup-restore",
+    "observability-secret-sample",
+    "rollback",
+    "release-signoff"
+  ],
+  "riskNotice": "docs/releases/v0.5.6.md"
+}

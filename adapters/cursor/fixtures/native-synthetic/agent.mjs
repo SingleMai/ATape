@@ -26,9 +26,10 @@ if (!["empty", "failed"].includes(control.mode)) {
   mkdirSync(directory, { recursive: true })
   writeFileSync(file, control.mode === "partial" ? rows() + '{"role":' : control.mode === "malformed" ? '{"role":\n' : rows())
 }
-writeFileSync(control.ready, JSON.stringify({ id, pid: process.pid, file, args, cwd, root }))
 const finish = code => { writeFileSync(control.exited, JSON.stringify({ pid: process.pid, code })); process.exit(code) }
 process.on("SIGTERM", () => finish(143))
+// Publish readiness only after cancellation can be acknowledged by this fixture.
+writeFileSync(control.ready, JSON.stringify({ id, pid: process.pid, file, args, cwd, root }))
 if (!control.hold) finish(control.mode === "failed" ? 7 : 0)
 let previous = ""
 setInterval(() => {

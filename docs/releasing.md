@@ -121,7 +121,7 @@ gates merely by checking the index.
 
 ## First publication bootstrap
 
-npm Trusted Publishing can only be configured after a package already exists. For each package's first release (including the new CodeBuddy, Kimi and Grok Adapters):
+npm Trusted Publishing can only be configured after a package already exists. For each package's first release (currently the Cursor Adapter):
 
 1. Enable two-factor authentication on the npm owner account.
 2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.
@@ -143,6 +143,14 @@ exception, the exact artifact digest and the absence of GitHub build provenance
 for that one package version. All automated gates remain required. For that release, the ordinary
 tag workflow covered the other three packages and verified the already-published
 OpenCode bytes before creating the GitHub Release.
+
+For `@atape/adapter-cursor@0.5.6` only,
+[ADR-0117](architecture/adr/0117-cursor-local-first-publication.md) selects local
+account/MFA bootstrap with the exact verified tarball, followed by ordinary
+workflow publication of the other seven packages. It records the artifact digest
+and missing GitHub provenance for that one package version. All automated gates
+remain required, and the workflow accepts the existing version only when its
+integrity matches.
 
 ## Switch to npm Trusted Publishing
 
@@ -166,6 +174,12 @@ npm trust github @atape/adapter-cursor --file release.yml --repo SingleMai/ATape
 ```
 
 Run one release through OIDC, then delete the `NPM_TOKEN` repository secret and configure npm publishing access to disallow traditional tokens. GitHub-hosted runners receive short-lived credentials through the workflow's `id-token: write` permission. Public repositories and packages also receive npm provenance attestations.
+
+A new trust configuration must complete its first successful OIDC publish within
+two days or be recreated. A same-version retry that skips an already published
+package does not validate that package's trust configuration. Configure near the
+next real publication; do not manufacture a placeholder version to exercise it.
+See [npm's configuration expiry](https://docs.npmjs.com/trusted-publishers/#trusted-publisher-configuration-expiry).
 
 ## Publication order and recovery
 

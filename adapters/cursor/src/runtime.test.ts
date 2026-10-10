@@ -202,8 +202,9 @@ describe("Cursor public controlled newSession", () => {
   })
   it("joins the native child before runtime close resolves and never confirms a cancelled launch", async () => {
     const f = await native("empty", true), pending = f.start().catch(error => error)
-    await waitFor(() => json(f.control.ready)); await f.runtime.close()
-    expect(await pending).toBeDefined(); expect(await json(f.control.exited)).toMatchObject({ code: 143 }); expect(f.state().confirmed).toBeUndefined()
+    const ready = await waitFor(() => json(f.control.ready)); await f.runtime.close()
+    expect(await pending).toBeDefined(); expect(await json(f.control.exited)).toMatchObject({ pid: ready.pid, code: 143 }); expect(f.state().confirmed).toBeUndefined()
+    expect(() => process.kill(ready.pid as number, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
   })
   it("rejects an unexpected same-ID native locator instead of confirming arbitrary workspace contents", async () => {
     const f = await native("wrong-location")
