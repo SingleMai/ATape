@@ -340,7 +340,7 @@ protocol and remain usable after the floor advances. Credentials, privacy policy
 remote effects and control metadata retain their existing separate protocols.
 These guards apply to capable executables; already-published older binaries
 cannot acquire them retroactively. See
-[ADR-0109](../architecture/adr/0109-runtime-writer-admission.md).
+[ADR-0110](../architecture/adr/0110-runtime-writer-admission.md).
 
 One independent, short-lived updater prepares an isolated version directory and
 Adapter slots while collection continues. It then obtains exclusive maintenance

@@ -1,4 +1,4 @@
-# ADR-0109: Runtime identity and serialized capture writes
+# ADR-0110: Runtime identity and serialized capture writes
 
 Status: Accepted (2026-10-10)
 
