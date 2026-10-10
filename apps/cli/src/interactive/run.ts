@@ -6,7 +6,7 @@ import { makeNodeClientLayer, defaultNodeClientPaths } from "../runtime/clientLa
 import { ExperiencePresenter } from "./presenter.ts"
 import { ExperienceView } from "./view.ts"
 import { cliVersion } from "../version.ts"
-import { kickAutomaticUpdates, reconcileLoginStartup } from "@atape/application"
+import { kickAutomaticUpdates, reconcileLoginStartup, reconcileUpdateWake } from "@atape/application"
 import { restartInstalledCLI } from "../runtime/restartCLI.ts"
 
 export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonly kind: "interactive" }>) => {
@@ -15,6 +15,10 @@ export const runInteractiveExperience = async (cli: Extract<ParsedCLI, { readonl
   const maintenance = runtime.runPromise(Effect.scoped(Effect.gen(function*() {
     yield* Effect.forkScoped(Effect.forever(reconcileLoginStartup().pipe(
       Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
+      Effect.andThen(Effect.sleep(300_000))
+    )))
+    yield* Effect.forkScoped(Effect.forever(reconcileUpdateWake().pipe(
+      Effect.catch(() => Effect.logWarning("Automatic update wakeup needs attention; inspect Settings")),
       Effect.andThen(Effect.sleep(300_000))
     )))
     yield* Effect.forever(kickAutomaticUpdates().pipe(Effect.andThen(Effect.sleep(30_000))))

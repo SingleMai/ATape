@@ -6,6 +6,7 @@ import { currentProject, verifyProjectAccount, startExperienceCollector } from "
 import { inspectManagedCollector } from "./collectorDaemon.ts"
 import { officialSources } from "@atape/adapter-catalog"
 import { stableVersion } from "./releaseVersion.ts"
+import { reconcileUpdateWake } from "./updateWake.ts"
 
 export type SourceChoice = {
   readonly id: string
@@ -49,6 +50,7 @@ export const applyToolChange = Effect.fn("CLIExperience.applyTools")(function*(p
     const next: ClientConfig = { ...current, toolsConfigured: true, enabledAdapterIds: ids }
     return { value: next, config: next }
   }))
+  yield* reconcileUpdateWake().pipe(Effect.catch(() => Effect.logWarning("Automatic update wakeup needs attention; inspect Settings")))
   return saved
 })
 export const sourceChoices = (config: ClientConfig, detected: ReadonlyArray<string>): ReadonlyArray<SourceChoice> => [

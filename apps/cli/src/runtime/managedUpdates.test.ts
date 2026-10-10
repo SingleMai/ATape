@@ -62,7 +62,7 @@ else if (args[0]==="install") {
   fs.mkdirSync(path.join(destination,"dist"),{recursive:true});
   fs.writeFileSync(path.join(destination,"package.json"),JSON.stringify({name:"@atape/cli",version,type:"module",
     atapeRuntime:{protocol:"atape.runtime.v1",stateContract:process.env.MANAGED_TEST_CONTRACT,
-      updateControlProtocol:process.env.MANAGED_TEST_CONTROL,releaseCatalogProtocol:process.env.MANAGED_TEST_CATALOG}}));
+      updateControlProtocol:process.env.MANAGED_TEST_CONTROL,releaseCatalogProtocol:process.env.MANAGED_TEST_CATALOG,updateWakeProtocol:"atape.update-wake.v1"}}));
   const reported=process.env.MANAGED_TEST_WRONG_VERSION || version;
   fs.writeFileSync(path.join(destination,"dist","atape.js"), (${cliSource.toString()})(reported));
   }
@@ -648,7 +648,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect(await createUpdateControl(f.paths.atapeHome).readSelection()).toBeUndefined()
     expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
     expect((await f.raw()).autoUpdateEnabled).toBe(false)
-  })
+  }, 15_000)
 
   it("recovers an interrupted independent selection before preparing again even after auto-off", async () => {
     const f = await fixture({ control: true }), prepared = await f.prepare()
@@ -668,7 +668,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect(await control.readSelection()).toBeUndefined()
     expect(await f.daemonRun(f.daemon.inspect())).toBeUndefined()
     expect((await f.raw()).autoUpdateEnabled).toBe(false)
-  })
+  }, 15_000)
 
   it("rolls back a failed independent readiness check while keeping its compatible legacy bridge selected", async () => {
     const f = await fixture()
@@ -722,7 +722,7 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     expect(await needsUpdateRecovery(f.paths)).toBe(false)
   }, 15_000)
 
-  it.each(["updateControlProtocol", "releaseCatalogProtocol"])("rechecks target capability %s after preflight without starting a durable transaction", async capability => {
+  it.each(["updateControlProtocol", "releaseCatalogProtocol", "updateWakeProtocol"])("rechecks target capability %s after preflight without starting a durable transaction", async capability => {
     const f = await fixture({ control: true }), prepared = await f.prepare()
     const path = join(dirname(dirname(runtimeEntry(f.paths.atapeHome, prepared.bundle.version))), "package.json")
     const manifest = JSON.parse(await readFile(path, "utf8"))

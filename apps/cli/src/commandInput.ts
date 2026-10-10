@@ -18,6 +18,7 @@ export type ParsedCLI =
   } }
   | { readonly kind: "__automatic-update"; readonly options: { readonly updateToken: string } }
   | { readonly kind: "__login-start"; readonly options: { readonly startupToken: string } }
+  | { readonly kind: "__update-wake"; readonly options: { readonly wakeToken: string } }
 
 export class CLIInputError extends Error {}
 
@@ -27,6 +28,7 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
   const internal = args[0] === "__collector-daemon"
   const updater = args[0] === "__automatic-update"
   const login = args[0] === "__login-start"
+  const wake = args[0] === "__update-wake"
   const redaction = args[0] === "redaction-test"
   const fail = (): never => { throw new CLIInputError(t("cli.error.input", "Unsupported arguments. Run atape to manage projects, tools and settings, or atape --help.")) }
   let parsed: ReturnType<typeof parseArgs>
@@ -35,7 +37,7 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
     options: redaction ? {
       help: { type: "boolean", short: "h" }, lang: { type: "string" },
       config: { type: "string" }, format: { type: "string" }
-    } : login ? { "startup-token": { type: "string" } } : updater ? { "update-token": { type: "string" } } : internal ? {
+    } : wake ? { "wake-token": { type: "string" } } : login ? { "startup-token": { type: "string" } } : updater ? { "update-token": { type: "string" } } : internal ? {
       "daemon-token": { type: "string" }, interval: { type: "string" }, concurrency: { type: "string" }
     } : {
       help: { type: "boolean", short: "h" }, version: { type: "boolean", short: "v" },
@@ -60,6 +62,11 @@ export const parseCLI = (args: ReadonlyArray<string>): ParsedCLI => {
     return { kind: "redaction-test", options: { ...options, file: positionals[1]!,
       ...(typeof values.config === "string" ? { config: values.config } : {}),
       ...(values.format === undefined ? {} : { format: values.format as RedactionTestFormat }) } }
+  }
+  if (wake) {
+    if (positionals.length !== 1 || typeof values["wake-token"] !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(values["wake-token"])) return fail()
+    return { kind: "__update-wake", options: { wakeToken: values["wake-token"] } }
   }
   if (login) {
     if (positionals.length !== 1 || typeof values["startup-token"] !== "string" ||

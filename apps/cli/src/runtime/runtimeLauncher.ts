@@ -51,28 +51,54 @@ export const delegateAdmittedLoginStartup = async (
   environment: NodeJS.ProcessEnv
 ): Promise<number | undefined> => {
   if (parseCLI(args).kind !== "__login-start") throw new Error("Expected the admitted login startup entry.")
+  return delegateAdmittedNativeEntry(entryFile, args, environment, "loginStartupProtocol", "atape.login-startup.v1")
+}
+
+export const delegateAdmittedUpdateWake = async (
+  entryFile: string, args: ReadonlyArray<string>, environment: NodeJS.ProcessEnv, signal?: AbortSignal
+): Promise<number | undefined> => {
+  if (parseCLI(args).kind !== "__update-wake") throw new Error("Expected the admitted update wake entry.")
+  return delegateAdmittedNativeEntry(entryFile, args, environment, "updateWakeProtocol", "atape.update-wake.v1", signal)
+}
+
+const delegateAdmittedNativeEntry = async (entryFile: string, args: ReadonlyArray<string>, environment: NodeJS.ProcessEnv,
+  capabilityName: "loginStartupProtocol" | "updateWakeProtocol", protocol: string, signal?: AbortSignal): Promise<number | undefined> => {
   const home = defaultNodeClientPaths(environment).atapeHome
   if (await createUpdateControl(home).recoveryPending()) return undefined
   const selected = await readEffectiveRuntimeSelection(home)
-  if (!selected) return undefined
-  const entry = await resolveRuntimeEntry(home, selected.bootstrapEntry)
+  // A copied native launcher must enter the actual npm runtime even before its
+  // first managed selection. Private CA/proxy context is applied at Node start,
+  // and external npm replacement cannot leave an old compiled identity running.
+  const bootstrap = selected?.bootstrapEntry ?? (capabilityName === "updateWakeProtocol" ? environment.ATAPE_BOOTSTRAP_ENTRY : undefined)
+  if (!bootstrap) return undefined
+  const entry = await resolveRuntimeEntry(home, bootstrap)
   if (entry === await realpath(entryFile)) return undefined
   const capability = Schema.decodeUnknownSync(Schema.Struct({
     name: Schema.Literal("@atape/cli"),
-    atapeRuntime: Schema.optionalKey(Schema.Struct({ loginStartupProtocol: Schema.optionalKey(Schema.String) }))
+    atapeRuntime: Schema.optionalKey(Schema.Struct({ loginStartupProtocol: Schema.optionalKey(Schema.String),
+      updateWakeProtocol: Schema.optionalKey(Schema.String) }))
   }))(await readBoundedJSON(join(dirname(dirname(entry)), "package.json")))
-  if (capability.atapeRuntime?.loginStartupProtocol !== "atape.login-startup.v1") return undefined
-  return delegate(entry, args, { ...environment, ATAPE_BOOTSTRAP_ENTRY: selected.bootstrapEntry })
+  if (capability.atapeRuntime?.[capabilityName] !== protocol) return undefined
+  return delegate(entry, args, { ...environment, ATAPE_BOOTSTRAP_ENTRY: bootstrap }, signal)
 }
 
-const delegate = (entry: string, args: ReadonlyArray<string>, environment: NodeJS.ProcessEnv) => {
+const delegate = (entry: string, args: ReadonlyArray<string>, environment: NodeJS.ProcessEnv, signal?: AbortSignal) => {
 
   // Relinquish input while the parent waits for the selected executable. The
   // child inherits cwd/stdin/stdout/stderr and owns normal terminal interaction.
+  signal?.throwIfAborted()
   process.stdin.pause()
   return new Promise<number>((resolve, reject) => {
     const child = spawn(process.execPath, [entry, ...args], { stdio: "inherit",
       env: environment })
+    let force: ReturnType<typeof setTimeout> | undefined
+    const abort = () => {
+      if (force) return
+      child.kill("SIGTERM")
+      force = setTimeout(() => child.kill("SIGKILL"), 1_000)
+    }
+    signal?.addEventListener("abort", abort, { once: true })
+    if (signal?.aborted) abort()
     const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const
     const handlers = signals.map(signal => {
       const forward = () => { child.kill(signal) }
@@ -80,6 +106,8 @@ const delegate = (entry: string, args: ReadonlyArray<string>, environment: NodeJ
       return { signal, forward }
     })
     const cleanup = () => {
+      clearTimeout(force)
+      signal?.removeEventListener("abort", abort)
       for (const { signal, forward } of handlers) process.removeListener(signal, forward)
     }
     child.once("error", cause => { cleanup(); reject(cause) })

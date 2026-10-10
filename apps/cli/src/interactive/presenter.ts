@@ -5,7 +5,7 @@ import { decideProjectSetup, describeClientFailure,
   inspectRedactionSettings, validateRedactionSettings, saveRedactionSettings, inspectCollectorRedaction,
   type RedactionSettingsSnapshot, type RedactionConfiguration, type RedactionPattern, type CollectorRedactionView,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
-  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, setAutomaticUpdates, inspectLoginStartup, setLoginStartup, reconcileLoginStartup, installAdapter, upgradeAdapters, pruneAdapterPackages,
+  setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, inspectLoginStartup, setLoginStartup, reconcileLoginStartup, inspectUpdateWake, configureAutomaticUpdates, reconcileUpdateWake, installAdapter, upgradeAdapters, pruneAdapterPackages,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
 } from "@atape/application"
 import type { AdapterSourceFailure, LocalProject } from "@atape/domain"
@@ -782,11 +782,13 @@ export class ExperiencePresenter {
     }, undefined, () => this.configureTools(after, back, ids)), back), undefined, back)
   }
   private settings() {
-    this.work(t("cli.settings.reading", "Reading settings"), Effect.all({ snapshot: inspectCLIExperience(), startup: inspectLoginStartup() }), ({ snapshot, startup }) => this.show({ kind: "menu", title: t("cli.console.settings", "Settings"),
+    this.work(t("cli.settings.reading", "Reading settings"), Effect.all({ snapshot: inspectCLIExperience(), startup: inspectLoginStartup(), wake: inspectUpdateWake() }), ({ snapshot, startup, wake }) => this.show({ kind: "menu", title: t("cli.console.settings", "Settings"),
       details: [t("cli.settings.server", "Server: {origin}", { origin: this.instanceOrigin }),
         snapshot.automaticUpdatesEnabled
           ? t("cli.settings.automaticUpdatesOn", "Automatic updates: on · ATape and official npm integrations")
           : t("cli.settings.automaticUpdatesOff", "Automatic updates: off"),
+        ...(wake.enabled && wake.state !== "registered" ? [t("cli.settings.updateWakePending", "Periodic update checks need attention."),
+          ...(wake.message ? [safeTerminalText(wake.message)] : [])] : []),
         startup.enabled
           ? startup.state === "registered" ? t("cli.settings.loginStartupOn", "Login startup: on · resumes sync unless you stopped it")
             : t("cli.settings.loginStartupPending", "Login startup: on · needs attention")
@@ -797,6 +799,7 @@ export class ExperiencePresenter {
         { value: "automatic-updates", label: snapshot.automaticUpdatesEnabled
           ? t("cli.settings.disableAutomaticUpdates", "Turn off automatic updates")
           : t("cli.settings.enableAutomaticUpdates", "Turn on automatic updates") },
+        ...(wake.enabled && wake.state !== "registered" ? [{ value: "repair-update-wake", label: t("cli.settings.repairUpdateWake", "Retry periodic update registration") }] : []),
         { value: "login-startup", label: startup.enabled
           ? t("cli.settings.disableLoginStartup", "Turn off login startup")
           : t("cli.settings.enableLoginStartup", "Turn on login startup") },
@@ -806,7 +809,8 @@ export class ExperiencePresenter {
         { value: snapshot.collector.running ? "stop" : "start", label: snapshot.collector.running
           ? t("cli.settings.stopAll", "Stop sync for all projects") : t("cli.console.startSync", "Start sync") }]
     }, value => value === "automatic-updates"
-      ? this.work(t("cli.settings.savingAutomaticUpdates", "Saving automatic updates"), setAutomaticUpdates(!snapshot.automaticUpdatesEnabled), () => this.settings(), undefined, () => this.settings())
+      ? this.work(t("cli.settings.savingAutomaticUpdates", "Saving automatic updates"), configureAutomaticUpdates(!snapshot.automaticUpdatesEnabled), () => this.settings(), undefined, () => this.settings())
+      : value === "repair-update-wake" ? this.work(t("cli.settings.repairingUpdateWake", "Registering periodic update checks"), reconcileUpdateWake(), () => this.settings(), undefined, () => this.settings())
       : value === "login-startup" ? this.work(t("cli.settings.savingLoginStartup", "Saving login startup"), setLoginStartup(!startup.enabled), () => this.settings(), undefined, () => this.settings())
       : value === "repair-login-startup" ? this.work(t("cli.settings.repairingLoginStartup", "Registering login startup"), reconcileLoginStartup(), () => this.settings(), undefined, () => this.settings())
       : value === "privacy" ? this.privacy() : value === "accounts" ? this.accounts() : value === "language" ? this.language() : value === "server" ? this.instanceScreen(() => this.settings(), () => this.settings())

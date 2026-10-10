@@ -20,6 +20,7 @@ export * from "./cliUpgrade.ts"
 export * from "./toolUpdates.ts"
 export * from "./automaticUpdates.ts"
 export * from "./loginStartup.ts"
+export * from "./updateWake.ts"
 export { stableVersion as isStableReleaseVersion, newer as isNewerReleaseVersion } from "./releaseVersion.ts"
 
 export { CollectorDeviceGateway, scopeCollectorReport } from "./collectorMonitoring.ts"

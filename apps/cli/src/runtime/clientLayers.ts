@@ -20,6 +20,7 @@ import { updateControlProtocol } from "./updateControl.ts"
 import { makeGitSourceBindingsLayer } from "./gitSourceBindings.ts"
 import { makeAutomaticUpdatePlatformLayer, protectedRuntimeSlots } from "./managedUpdates.ts"
 import { makeLoginStartupPlatformLayer } from "./loginStartup.ts"
+import { makeUpdateWakePlatformLayer } from "./updateWake.ts"
 import { makeRedactionSettingsLayer } from "./redactionSettings.ts"
 import { makeSelectedConfigStoreLayer, readSelectedClientConfig, resolveRuntimeEntry, selectedBootstrap } from "./runtimeSelection.ts"
 
@@ -80,6 +81,7 @@ export const makeNodeClientLayer = (
     makeCLISetupPlatformLayer(paths, environment, cliVersion),
     makeCLIUpgradePlatformLayer(paths.atapeHome, bootstrapEntry, environment, globalThis.fetch, cliVersion),
     makeLoginStartupPlatformLayer(paths, bootstrapEntry, environment),
+    makeUpdateWakePlatformLayer(paths, bootstrapEntry, environment),
     locator,
     packages,
     makeAutomaticUpdatePlatformLayer(paths, bootstrapEntry, cliVersion, environment).pipe(Layer.provide(packages)),

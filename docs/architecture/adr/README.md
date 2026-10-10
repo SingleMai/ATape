@@ -144,3 +144,4 @@ When adding a decision, choose an unused number and add it here. Preserve an old
 record's rationale when a later decision changes it; link the amendment or
 replacement in both directions where applicable. Do not rewrite historical
 release authorization or evidence as if it applied to a new candidate.
+| [0113](0113-independent-update-wakeup.md) | Independent periodic update wakeup |

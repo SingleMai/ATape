@@ -419,5 +419,8 @@
   "cli.tools.commandEntryBehind": " · command entry {current} → {version}",
   "cli.tools.matchingVersion": " · for ATape {version}{older}",
   "cli.tools.bundleNotice": "CLI releases are cached for 12 hours. Official integrations match the running ATape version.",
-  "cli.tools.refreshCommandEntry": "Refresh ATape command entry to {version}"
+  "cli.tools.refreshCommandEntry": "Refresh ATape command entry to {version}",
+  "cli.settings.updateWakePending": "Periodic update checks need attention.",
+  "cli.settings.repairUpdateWake": "Retry periodic update registration",
+  "cli.settings.repairingUpdateWake": "Registering periodic update checks"
 }
