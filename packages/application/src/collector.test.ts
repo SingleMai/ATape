@@ -364,6 +364,7 @@ describe("Collector Module", () => {
     }).pipe(Effect.provideService(CollectorRunStatusStore, {
       read: () => Effect.succeed({ version: 1, jobs: [] }),
       recordCycle: () => Effect.void,
+      recordRedactionJob: () => Effect.void,
       recordCollectorFailure: () => Effect.void
     }), Effect.provide(TestClock.layer())))
   })
@@ -384,6 +385,7 @@ describe("Collector Module", () => {
     }).pipe(Effect.provideService(CollectorRunStatusStore, {
       read: () => Effect.succeed({ version: 1, jobs: [] }),
       recordCycle: () => Effect.void,
+      recordRedactionJob: () => Effect.void,
       recordCollectorFailure: () => Effect.void
     }), Effect.provide(TestClock.layer())))
   })
@@ -421,6 +423,7 @@ describe("Collector Module", () => {
     }) }), Effect.provideService(CollectorRunStatusStore, {
       read: () => Effect.succeed({ version: 1, jobs: [] }),
       recordCycle: report => Effect.sync(() => { reports.push(report.jobs.map(job => job.hasMore)) }),
+      recordRedactionJob: () => Effect.void,
       recordCollectorFailure: () => Effect.void
     }), Effect.provide(TestClock.layer())))
   })

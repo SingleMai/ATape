@@ -1,7 +1,8 @@
-import { CollectorDaemonProcess, CollectorRunStatusStore } from "@atape/application"
+import { CollectorDaemonProcess, CollectorRunStatusStore, type CollectorRedactionJobEvent } from "@atape/application"
 import { Effect } from "effect"
 import { execFileSync, spawn } from "node:child_process"
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises"
+import { chmod, copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { performance } from "node:perf_hooks"
@@ -20,6 +21,173 @@ afterEach(async () => {
 })
 
 describe("Node Collector run status Adapter", () => {
+  const redactionFixture = async () => {
+    const root = await mkdtemp(join(tmpdir(), "atape-redaction-status-"))
+    temporaryDirectories.push(root)
+    const processFile = join(root, "process.json"), statusFile = join(root, "status.json"), configFile = join(root, "redaction.json")
+    const owner = async (token: string, pid = process.pid) => writeFile(processFile, JSON.stringify({ version: 1, token, pid,
+      startedAt: "2026-10-10T01:00:00.000Z", intervalMs: 30000, concurrency: 4, logFile: join(root, "collector.log") }))
+    const store = (token?: string) => Effect.runPromise(CollectorRunStatusStore.pipe(Effect.provide(makeCollectorRunStatusLayer(statusFile,
+      token === undefined ? undefined : { processFile, collectorToken: token, configFile, origin: "default" }))))
+    const snapshot = { configFile, origin: "default" as const, revision: "saved-revision", exists: true, literalCount: 2, customRuleCount: 1 }
+    const event = (attemptId: string, kind: "loading" | "loaded", at = "2026-10-10T01:00:00.000Z"): CollectorRedactionJobEvent =>
+      kind === "loading" ? { kind, projectId: "project", adapterId: "claude", attemptId, at }
+        : { kind, projectId: "project", adapterId: "claude", attemptId, at, snapshot }
+    return { root, processFile, statusFile, configFile, owner, store, snapshot, event }
+  }
+
+  it("does not create status files for foreground redaction and reads legacy v1 state", async () => {
+    const f = await redactionFixture(), store = await f.store()
+    await Effect.runPromise(store.recordRedactionJob(f.event("foreground", "loading")))
+    expect(await readdir(f.root)).toEqual([])
+    expect(await Effect.runPromise(store.read())).toEqual({ version: 1, jobs: [] })
+    expect(await readdir(f.root)).toEqual([])
+    await writeFile(f.statusFile, JSON.stringify({ version: 1, jobs: [] }))
+    expect(await Effect.runPromise(store.read())).toEqual({ version: 1, jobs: [] })
+  })
+
+  it("atomically merges concurrent independent status writers without losing jobs or policy observations", async () => {
+    const f = await redactionFixture()
+    await f.owner("admitted-token")
+    const stores = await Promise.all([f.store("admitted-token"), f.store("admitted-token")])
+    await Promise.all(Array.from({ length: 12 }, async (_, index) => {
+      const store = stores[index % 2]!, adapterId = `adapter-${index}`
+      await Promise.all([
+        Effect.runPromise(store.recordRedactionJob({ kind: "loading", projectId: "project", adapterId,
+          attemptId: `attempt-${index}`, at: "2026-10-10T01:00:00.000Z" })),
+        Effect.runPromise(store.recordCycle({ startedAt: "2026-10-10T01:00:00.000Z", completedAt: "2026-10-10T01:00:01.000Z",
+          jobs: [{ projectId: "project", adapterId, pages: 1, observations: 1, canonicalBatches: 1,
+            rawChunks: 1, redactions: 0, hasMore: false }], failures: [] }))
+      ])
+    }))
+    const current = await Effect.runPromise(stores[0]!.read())
+    expect(current.jobs).toHaveLength(12)
+    expect(current.redaction?.jobs).toHaveLength(12)
+    expect(current.redaction).toMatchObject({ generation: createHash("sha256").update("admitted-token").digest("hex"),
+      configFile: f.configFile, origin: "default" })
+    await Effect.runPromise(stores[1]!.recordCollectorFailure({ occurredAt: "2026-10-10T01:00:02.000Z",
+      message: "Configuration unavailable" }))
+    expect((await Effect.runPromise(stores[0]!.read())).redaction).toEqual(current.redaction)
+    expect((await stat(f.statusFile)).mode & 0o777).toBe(0o600)
+    expect(await readFile(f.statusFile, "utf8")).not.toContain("admitted-token")
+  })
+
+  it("reads complete published snapshots while concurrent writers replace the status file", async () => {
+    const f = await redactionFixture(), store = await f.store()
+    const report = (observations: number) => ({
+      startedAt: "2026-10-10T01:00:00.000Z", completedAt: "2026-10-10T01:00:01.000Z",
+      jobs: Array.from({ length: 128 }, (_, index) => ({ projectId: `project-${index}`, adapterId: "claude",
+        pages: 1, observations, canonicalBatches: 1, rawChunks: 1, redactions: 0, hasMore: false })), failures: []
+    })
+    await Effect.runPromise(store.recordCycle(report(1)))
+    const readSnapshots = async () => {
+      for (let index = 0; index < 96; index++) {
+        const state = await Effect.runPromise(store.read())
+        expect(state.jobs).toHaveLength(128)
+        expect([1, 2]).toContain(state.jobs[0]!.observations)
+        expect(state.jobs.every(job => job.observations === state.jobs[0]!.observations)).toBe(true)
+      }
+    }
+    await Promise.all([
+      (async () => {
+        for (let index = 0; index < 64; index++) await Effect.runPromise(store.recordCycle(report(index % 2 + 1)))
+      })(), readSnapshots(), readSnapshots()
+    ])
+  })
+
+  it("fences stale attempts, resets new snapshots, and prevents old or wrong processes claiming the new generation", async () => {
+    const f = await redactionFixture()
+    await f.owner("generation-a")
+    const first = await f.store("generation-a")
+    await Effect.runPromise(first.recordRedactionJob(f.event("old", "loading")))
+    await Effect.runPromise(first.recordRedactionJob(f.event("old", "loaded")))
+    await Effect.runPromise(first.recordRedactionJob(f.event("new", "loading")))
+    expect((await Effect.runPromise(first.read())).redaction?.jobs[0]).not.toHaveProperty("snapshot")
+    await Effect.runPromise(first.recordRedactionJob(f.event("old", "loaded")))
+    await Effect.runPromise(first.recordRedactionJob({ ...f.event("old", "loading"), kind: "finished", outcome: "load_failed" }))
+    expect((await Effect.runPromise(first.read())).redaction?.jobs[0]).toMatchObject({ attemptId: "new", phase: "loading" })
+    await Effect.runPromise(first.recordRedactionJob(f.event("new", "loaded")))
+    await Effect.runPromise(first.recordRedactionJob({ ...f.event("new", "loading"), kind: "finished", outcome: "failed" }))
+    await Effect.runPromise(first.recordRedactionJob(f.event("new", "loaded")))
+    expect((await Effect.runPromise(first.read())).redaction?.jobs[0]).toMatchObject({ phase: "failed", snapshot: f.snapshot })
+
+    await f.owner("generation-b")
+    const second = await f.store("generation-b")
+    await Effect.runPromise(second.recordRedactionJob(f.event("new-process", "loading")))
+    const baseline = await readFile(f.statusFile, "utf8")
+    await Effect.runPromise(first.recordRedactionJob(f.event("late-old-process", "loading")))
+    expect(await readFile(f.statusFile, "utf8")).toBe(baseline)
+    await f.owner("generation-b", process.pid + 1)
+    await Effect.runPromise(second.recordRedactionJob(f.event("new-process", "loaded")))
+    expect(await readFile(f.statusFile, "utf8")).toBe(baseline)
+    await f.owner("generation-b")
+    await Effect.runPromise(second.recordRedactionJob({ ...f.event("new-process", "loading"), kind: "finished", outcome: "load_failed" }))
+    expect((await Effect.runPromise(second.read())).redaction?.jobs).toEqual([expect.objectContaining({ phase: "load_failed" })])
+    expect((await Effect.runPromise(second.read())).redaction?.jobs[0]).not.toHaveProperty("snapshot")
+    expect(await readFile(f.statusFile, "utf8")).not.toMatch(/generation-a|generation-b/)
+  })
+
+  it("uses attempt identity and phase rather than wall-clock order across clock corrections", async () => {
+    const f = await redactionFixture()
+    await f.owner("admitted-token")
+    const store = await f.store("admitted-token")
+    await Effect.runPromise(store.recordRedactionJob(f.event("first", "loading", "2026-10-10T01:00:30.000Z")))
+    await Effect.runPromise(store.recordRedactionJob(f.event("first", "loaded", "2026-10-10T01:00:20.000Z")))
+    expect((await Effect.runPromise(store.read())).redaction?.jobs[0]).toMatchObject({ phase: "active", snapshot: f.snapshot,
+      startedAt: "2026-10-10T01:00:30.000Z", updatedAt: "2026-10-10T01:00:20.000Z" })
+    await Effect.runPromise(store.recordRedactionJob({ ...f.event("first", "loading", "2026-10-10T01:00:10.000Z"),
+      kind: "finished", outcome: "completed" }))
+    expect((await Effect.runPromise(store.read())).redaction?.jobs[0]).toMatchObject({ phase: "completed", snapshot: f.snapshot,
+      updatedAt: "2026-10-10T01:00:10.000Z" })
+    await Effect.runPromise(store.recordRedactionJob(f.event("next", "loading", "2026-10-10T01:00:00.000Z")))
+    await Effect.runPromise(store.recordRedactionJob(f.event("next", "loaded", "2026-10-10T00:59:50.000Z")))
+    const active = await readFile(f.statusFile, "utf8")
+    await Effect.runPromise(store.recordRedactionJob(f.event("first", "loaded", "2026-10-10T02:00:00.000Z")))
+    await Effect.runPromise(store.recordRedactionJob({ ...f.event("first", "loading", "2026-10-10T02:00:00.000Z"),
+      kind: "finished", outcome: "failed" }))
+    expect(await readFile(f.statusFile, "utf8")).toBe(active)
+    await Effect.runPromise(store.recordRedactionJob({ ...f.event("next", "loading", "2026-10-10T00:59:40.000Z"),
+      kind: "finished", outcome: "completed" }))
+    const completed = await readFile(f.statusFile, "utf8")
+    await Effect.runPromise(store.recordRedactionJob(f.event("next", "loading", "2026-10-10T03:00:00.000Z")))
+    expect(await readFile(f.statusFile, "utf8")).toBe(completed)
+    expect((await Effect.runPromise(store.read())).redaction?.jobs[0]).toMatchObject({ attemptId: "next", phase: "completed",
+      startedAt: "2026-10-10T01:00:00.000Z", updatedAt: "2026-10-10T00:59:40.000Z", snapshot: f.snapshot })
+  })
+
+  it("retains transaction exclusion through cancellation before merging the next writer", async () => {
+    const f = await redactionFixture()
+    await f.owner("admitted-token")
+    const store = await f.store("admitted-token"), cancellation = new AbortController()
+    const release = (await acquireProcessLock(`${f.statusFile}.lock.sqlite`))!
+    const interrupted = Effect.runPromise(store.recordRedactionJob(f.event("cancelled-caller", "loading")), { signal: cancellation.signal })
+    // Attach the handler before aborting, then let the bounded transaction
+    // finish after lock contention even though its caller has gone away.
+    const settled = interrupted.catch(() => undefined)
+    cancellation.abort()
+    release()
+    await settled
+    await Effect.runPromise(store.recordCycle({ startedAt: "2026-10-10T01:00:00.000Z", completedAt: "2026-10-10T01:00:01.000Z",
+      jobs: [{ projectId: "project", adapterId: "claude", pages: 1, observations: 1, canonicalBatches: 1,
+        rawChunks: 1, redactions: 0, hasMore: false }], failures: [] }))
+    const status = await Effect.runPromise(store.read())
+    expect(status.jobs).toHaveLength(1)
+    expect(status.redaction?.jobs[0]).toMatchObject({ attemptId: "cancelled-caller", phase: "loading" })
+  })
+
+  it("fails safely on malformed, oversized and symlinked run status without echoing source contents", async () => {
+    const f = await redactionFixture(), store = await f.store()
+    for (const content of ['{"secret":"do-not-echo"', JSON.stringify({ version: 1, jobs: "do-not-echo" }),
+      Buffer.from([0xff]), " ".repeat(8 * 1024 * 1024 + 1)]) {
+      await writeFile(f.statusFile, content)
+      await expect(Effect.runPromise(store.read())).rejects.toThrow(/Collector run status/)
+      try { await Effect.runPromise(store.read()) } catch (cause) { expect(String(cause)).not.toContain("do-not-echo") }
+    }
+    await rm(f.statusFile)
+    await symlink(f.processFile, f.statusFile)
+    await expect(Effect.runPromise(store.read())).rejects.toThrow("Could not read Collector run status.")
+  })
+
   it("retains last success while exposing the current failure reason", async () => {
     const root = await mkdtemp(join(tmpdir(), "atape-run-status-"))
     temporaryDirectories.push(root)
@@ -134,13 +302,52 @@ setInterval(() => {}, 1000);
       } }
   }
 
+  it("observes an absent process without creating files or locks", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atape-process-observe-"))
+    temporaryDirectories.push(root)
+    const daemon = await Effect.runPromise(CollectorDaemonProcess.pipe(Effect.provide(makeNodeCollectorDaemonLayer({
+      collectorProcessFile: join(root, "state", "process.json"), collectorStatusFile: join(root, "state", "status.json"),
+      collectorLogFile: join(root, "logs", "collector.log")
+    }, join(root, "missing-entry.mjs")))))
+    expect(await Effect.runPromise(daemon.observe())).toBeUndefined()
+    expect(await readdir(root)).toEqual([])
+  })
+
+  it("observes the owned generation purely and treats live ownership mismatch as unknown", async () => {
+    const f = await fixture()
+    const started = await f.run(f.daemon.start({ intervalMs: 30000, concurrency: 1 }))
+    await f.started("original", started.pid)
+    const original = await readFile(f.collectorProcessFile, "utf8"), record = JSON.parse(original)
+    try {
+      const files = await readdir(join(f.collectorProcessFile, ".."))
+      expect(await f.run(f.daemon.observe())).toEqual({ generation: createHash("sha256").update(record.token).digest("hex"),
+        pid: started.pid, startedAt: started.startedAt })
+      expect(await readFile(f.collectorProcessFile, "utf8")).toBe(original)
+      expect(await readdir(join(f.collectorProcessFile, ".."))).toEqual(files)
+      await writeFile(f.collectorProcessFile, JSON.stringify({ ...record, token: record.token.slice(0, 8) }))
+      await expect(f.run(f.daemon.observe())).rejects.toThrow("Could not confirm the current Collector process.")
+      await writeFile(f.collectorProcessFile, JSON.stringify({ ...record, token: "secret-wrong-token" }))
+      await expect(f.run(f.daemon.observe())).rejects.toThrow("Could not confirm the current Collector process.")
+      await writeFile(f.collectorProcessFile, '{"secret":"do-not-echo"')
+      await expect(f.run(f.daemon.observe())).rejects.toThrow("Could not confirm the current Collector process.")
+    } finally {
+      await writeFile(f.collectorProcessFile, original)
+      await f.run(f.daemon.stop())
+    }
+    await writeFile(f.collectorProcessFile, original)
+    expect(await f.run(f.daemon.observe())).toBeUndefined()
+    expect(await readFile(f.collectorProcessFile, "utf8")).toBe(original)
+  })
+
   it("admits only the process and token published by the spawning parent, without waiting on its launch lock", async () => {
     const f = await fixture()
     const release = (await acquireProcessLock(`${f.collectorProcessFile}.lock.sqlite`))!
     const admitted = Effect.runPromise(admitCollectorProcess(f.collectorProcessFile, "owned-child"))
     await new Promise(resolve => setTimeout(resolve, 50))
-    await writeFile(f.collectorProcessFile, JSON.stringify({ version: 1, token: "owned-child", pid: process.pid,
+    const published = `${f.collectorProcessFile}.published`
+    await writeFile(published, JSON.stringify({ version: 1, token: "owned-child", pid: process.pid,
       startedAt: new Date().toISOString(), intervalMs: 30000, concurrency: 4, logFile: f.collectorLogFile }))
+    await rename(published, f.collectorProcessFile)
     try { await expect(admitted).resolves.toBeUndefined() }
     finally { release() }
   })

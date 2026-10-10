@@ -3,6 +3,7 @@ import {
   CollectorDaemonProcessError,
   CollectorRunStatusError,
   CollectorRunStatusStore,
+  type CollectorRedactionJobEvent,
   type CollectionCycleReport,
   type ResolvedCollectorDaemonOptions
 } from "@atape/application"
@@ -10,17 +11,21 @@ import {
   CollectorRunState as CollectorRunStateSchema,
   emptyCollectorRunState,
   type CollectorJobRunStatus,
+  type CollectorRedactionJobStatus,
   type CollectorRunState
 } from "@atape/domain"
 import { execFile, spawn } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
+import { constants } from "node:fs"
 import { mkdir, open, readFile, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer, Option, Schema } from "effect"
 import { acquireProcessLock } from "./processLock.ts"
+import { readBoundedRedactionFile, selectRedactionConfigurationFile } from "./redactionConfigurationFile.ts"
 
 export type NodeCollectorDaemonPaths = {
+  readonly atapeHome?: string
   readonly collectorProcessFile: string
   readonly collectorStatusFile: string
   readonly collectorLogFile: string
@@ -240,24 +245,34 @@ const performCollectorMaintenance = async <A>(
 export const makeNodeCollectorDaemonLayer = (
   paths: NodeCollectorDaemonPaths,
   entryFile: CollectorEntry,
-  environment: NodeJS.ProcessEnv = process.env
+  environment: NodeJS.ProcessEnv = process.env,
+  options: { readonly collectorToken?: string } = {}
 ) => Layer.merge(
   makeCollectorDaemonProcessLayer(paths, entryFile, environment),
-  makeCollectorRunStatusLayer(paths.collectorStatusFile)
+  makeCollectorRunStatusLayer(paths.collectorStatusFile, options.collectorToken === undefined ? undefined : {
+    processFile: paths.collectorProcessFile, collectorToken: options.collectorToken,
+    ...selectRedactionConfigurationFile({ ...(paths.atapeHome === undefined ? {} : { atapeHome: paths.atapeHome }), environment })
+  })
 )
 
-export const makeCollectorRunStatusLayer = (statusFile: string) => Layer.succeed(
+type CollectorRedactionWriter = {
+  readonly processFile: string
+  readonly collectorToken: string
+  readonly configFile: string
+  readonly origin: "default" | "environment"
+}
+export const makeCollectorRunStatusLayer = (statusFile: string, writer?: CollectorRedactionWriter) => Layer.succeed(
   CollectorRunStatusStore,
   CollectorRunStatusStore.of({
     read: () => readRunState(statusFile),
-    recordCycle: (report) => readRunState(statusFile).pipe(
-      Effect.map((current) => applyCycle(current, report)),
-      Effect.flatMap((next) => writeRunState(statusFile, next))
-    ),
-    recordCollectorFailure: (failure) => readRunState(statusFile).pipe(
-      Effect.map((current): CollectorRunState => ({ ...current, collectorFailure: failure })),
-      Effect.flatMap((next) => writeRunState(statusFile, next))
-    )
+    recordCycle: report => transactRunState(statusFile, current => Effect.succeed(applyCycle(current, report))),
+    recordCollectorFailure: failure => transactRunState(statusFile, current => Effect.succeed({ ...current, collectorFailure: failure })),
+    recordRedactionJob: event => writer === undefined ? Effect.void : transactRunState(statusFile, current => Effect.gen(function*() {
+      const record = yield* Effect.tryPromise({ try: () => readProcessRecord(writer.processFile),
+        catch: () => new CollectorRunStatusError({ reason: "io", message: "Could not confirm Collector status ownership." }) })
+      if (record?.pid !== process.pid || record.token !== writer.collectorToken) return undefined
+      return applyRedactionJob(current, event, writer)
+    }))
   })
 )
 
@@ -273,7 +288,8 @@ const makeCollectorDaemonProcessLayer = (
     pause: () => processPause(paths.collectorProcessFile),
     refresh: () => processRefresh(paths, entryFile, environment),
     stop: () => processStop(paths.collectorProcessFile),
-    inspect: () => processInspect(paths.collectorProcessFile)
+    inspect: () => processInspect(paths.collectorProcessFile),
+    observe: () => processObserve(paths.collectorProcessFile)
   })
 )
 
@@ -510,6 +526,28 @@ const processInspect = (processFile: string) => {
   })
 }
 
+const processGeneration = (token: string) => createHash("sha256").update(token).digest("hex")
+
+// Privacy inspection is deliberately read-only: unlike inspect, it never
+// repairs desired state or acquires a lock that would create local files.
+const processObserve = (processFile: string) => Effect.tryPromise({
+  try: async () => {
+    if (process.platform === "win32") throw unsupportedManagedProcessPlatform()
+    const record = await readProcessRecord(processFile)
+    if (record === undefined) return undefined
+    try { process.kill(record.pid, 0) } catch (cause) {
+      if (hasCode(cause, "ESRCH")) return undefined
+      if (!hasCode(cause, "EPERM")) throw cause
+    }
+    if (!(await isOwnedProcess(record))) {
+      if (!processExists(record.pid)) return undefined
+      throw new Error("Collector ownership could not be confirmed")
+    }
+    return { generation: processGeneration(record.token), pid: record.pid, startedAt: record.startedAt }
+  },
+  catch: () => new CollectorDaemonProcessError({ reason: "identity", message: "Could not confirm the current Collector process." })
+})
+
 const presentProcess = (record: CollectorProcessRecord) => ({
   pid: record.pid,
   startedAt: record.startedAt,
@@ -521,17 +559,18 @@ const presentProcess = (record: CollectorProcessRecord) => ({
 const readProcessRecord = async (processFile: string): Promise<CollectorProcessRecord | undefined> => {
   let value: unknown
   try {
-    value = JSON.parse(await readFile(processFile, "utf8")) as unknown
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode((await readBoundedRedactionFile(processFile, 16 * 1024)).bytes)) as unknown
   } catch (cause) {
     if (hasCode(cause, "ENOENT")) return undefined
     throw new CollectorDaemonProcessError({
-      reason: "io", message: errorMessage("Could not read Collector process metadata", cause)
+      reason: "io", message: "Could not read Collector process metadata."
     })
   }
   const decoded = Schema.decodeUnknownOption(CollectorProcessRecord)(value)
-  if (Option.isNone(decoded) || !Number.isSafeInteger(decoded.value.pid) || decoded.value.pid <= 0) {
+  if (Option.isNone(decoded) || !Number.isSafeInteger(decoded.value.pid) || decoded.value.pid <= 0 ||
+    decoded.value.token.length === 0 || decoded.value.token.length > 1024 || /[\s\x00-\x1f\x7f]/.test(decoded.value.token)) {
     throw new CollectorDaemonProcessError({
-      reason: "identity", message: `Collector process metadata at ${processFile} is invalid.`
+      reason: "identity", message: "Collector process metadata is invalid."
     })
   }
   return decoded.value
@@ -588,7 +627,9 @@ const isOwnedProcess = async (record: CollectorProcessRecord, deadline?: number)
     const remaining = deadline === undefined ? 2_000 : Math.min(2_000, Math.ceil(deadline - performance.now()))
     if (remaining <= 0) throw new Error("Process confirmation deadline expired")
     const command = await execFileText("ps", ["-p", String(record.pid), "-o", "command="], remaining)
-    return command.includes("__collector-daemon") && command.includes(record.token)
+    const token = record.token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    return /(?:^|\s)__collector-daemon(?:\s|$)/.test(command) &&
+      new RegExp(`(?:^|\\s)--daemon-token\\s+${token}(?:\\s|$)`).test(command)
   } catch {
     if (!processExists(record.pid)) return false
     throw new CollectorDaemonProcessError({ reason: "identity", message: "Could not confirm ownership of the Collector process." })
@@ -708,25 +749,53 @@ const syncDirectory = async (path: string) => {
   try { await directory.sync() } finally { await directory.close() }
 }
 
+const maximumRunStatusBytes = 8 * 1024 * 1024
+// Writers publish immutable snapshots with rename. A reader may retain the
+// previous inode after that rename unlinks it; its bytes remain a valid snapshot.
+const readPublishedRunState = async (statusFile: string) => {
+  const handle = await open(statusFile, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const before = await handle.stat()
+    if (!before.isFile() || before.size > maximumRunStatusBytes) throw new Error("Invalid Collector status file")
+    // Admit one extra byte to detect growth without allocating the full bound
+    // for each foreground poll or background status transaction.
+    const buffer = Buffer.alloc(before.size + 1)
+    let size = 0
+    while (size <= before.size) {
+      const result = await handle.read(buffer, size, buffer.length - size, size)
+      if (result.bytesRead === 0) break
+      size += result.bytesRead
+    }
+    const after = await handle.stat()
+    const unlinkedSnapshot = before.nlink === 1 && after.nlink === 0
+    if (size !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
+      after.ino !== before.ino || after.dev !== before.dev || after.mode !== before.mode ||
+      after.uid !== before.uid || after.gid !== before.gid ||
+      after.nlink !== before.nlink && !unlinkedSnapshot ||
+      after.ctimeMs !== before.ctimeMs && !unlinkedSnapshot) throw new Error("Collector status changed during read")
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, size))) as unknown
+  } finally { await handle.close() }
+}
+
 const readRunState = (statusFile: string): Effect.Effect<CollectorRunState, CollectorRunStatusError> =>
   Effect.tryPromise({
     try: async () => {
       try {
-        return JSON.parse(await readFile(statusFile, "utf8")) as unknown
+        return await readPublishedRunState(statusFile)
       } catch (cause) {
         if (hasCode(cause, "ENOENT")) return emptyCollectorRunState() as unknown
         throw cause
       }
     },
-    catch: (cause) => new CollectorRunStatusError({
-      reason: "io", message: errorMessage("Could not read Collector run status", cause)
+    catch: () => new CollectorRunStatusError({
+      reason: "io", message: "Could not read Collector run status."
     })
   }).pipe(
     Effect.flatMap((value) => Schema.decodeUnknownEffect(CollectorRunStateSchema)(value)),
     Effect.mapError((error) => error instanceof CollectorRunStatusError
       ? error
       : new CollectorRunStatusError({
-          reason: "decode", message: `The ATape Collector run status is invalid: ${String(error)}`
+          reason: "decode", message: "The ATape Collector run status is invalid."
         }))
   )
 
@@ -734,25 +803,76 @@ const writeRunState = (
   statusFile: string,
   state: CollectorRunState
 ): Effect.Effect<void, CollectorRunStatusError> => Schema.decodeUnknownEffect(CollectorRunStateSchema)(state).pipe(
-  Effect.mapError((error) => new CollectorRunStatusError({
-    reason: "decode", message: `ATape refused to persist invalid Collector run status: ${String(error)}`
+  Effect.mapError(() => new CollectorRunStatusError({
+    reason: "decode", message: "ATape refused to persist invalid Collector run status."
   })),
   Effect.flatMap((validated) => Effect.tryPromise({
     try: async () => {
+      const content = `${JSON.stringify(validated, null, 2)}\n`
+      if (Buffer.byteLength(content) > maximumRunStatusBytes) throw new Error("Collector status exceeds its admitted size")
       await mkdir(dirname(statusFile), { recursive: true, mode: 0o700 })
       const temporary = `${statusFile}.${process.pid}.${randomUUID()}.tmp`
       try {
-        await writeFile(temporary, `${JSON.stringify(validated, null, 2)}\n`, { mode: 0o600, flag: "wx" })
+        const handle = await open(temporary, "wx", 0o600)
+        try { await handle.writeFile(content); await handle.sync() }
+        finally { await handle.close() }
         await rename(temporary, statusFile)
+        await syncDirectory(dirname(statusFile))
       } finally {
         await rm(temporary, { force: true }).catch(() => undefined)
       }
     },
-    catch: (cause) => new CollectorRunStatusError({
-      reason: "io", message: errorMessage("Could not write Collector run status", cause)
+    catch: () => new CollectorRunStatusError({
+      reason: "io", message: "Could not write Collector run status."
     })
   }))
 )
+
+const transactRunState = (statusFile: string, change: (current: CollectorRunState) =>
+  Effect.Effect<CollectorRunState | undefined, CollectorRunStatusError>) => Effect.acquireUseRelease(
+  Effect.tryPromise({ try: async () => {
+    const release = await acquireProcessLock(`${statusFile}.lock.sqlite`, 10_000)
+    if (!release) throw new Error("Collector status is busy")
+    return release
+  }, catch: () => new CollectorRunStatusError({ reason: "io", message: "Could not lock Collector run status." }) }),
+  () => readRunState(statusFile).pipe(Effect.flatMap(change),
+    Effect.flatMap(next => next === undefined ? Effect.void : writeRunState(statusFile, next))),
+  release => Effect.sync(release)
+// Node filesystem promises do not stop when an Effect is interrupted. Retain
+// exclusion until every read/rename/fsync has settled, including cancellation.
+).pipe(Effect.uninterruptible)
+
+const applyRedactionJob = (current: CollectorRunState, event: CollectorRedactionJobEvent,
+  writer: CollectorRedactionWriter): CollectorRunState | undefined => {
+  const generation = processGeneration(writer.collectorToken)
+  const retained = current.redaction?.generation === generation ? current.redaction : undefined
+  const jobs = new Map((retained?.jobs ?? []).map(job => [jobKey(job.projectId, job.adapterId), job]))
+  const key = jobKey(event.projectId, event.adapterId), previous = jobs.get(key)
+  let next: CollectorRedactionJobStatus
+  if (event.kind === "loading") {
+    // The application awaits each scope's starts in order. Wall-clock values
+    // are informational; a clock correction must not reject a new attempt.
+    if (previous?.attemptId === event.attemptId) return undefined
+    next = { projectId: event.projectId, adapterId: event.adapterId, attemptId: event.attemptId,
+      startedAt: event.at, updatedAt: event.at, phase: "loading" }
+  } else {
+    if (!previous || previous.attemptId !== event.attemptId ||
+      !["loading", "active"].includes(previous.phase)) return undefined
+    if (event.kind === "loaded") {
+      if (previous.phase !== "loading") return undefined
+      next = { ...previous, phase: "active", updatedAt: event.at, snapshot: event.snapshot }
+    } else {
+      if (event.outcome === "load_failed" && previous.phase !== "loading" ||
+        event.outcome === "completed" && previous.phase !== "active") return undefined
+      const { snapshot, ...withoutSnapshot } = previous
+      next = { ...withoutSnapshot, phase: event.outcome, updatedAt: event.at,
+        ...(event.outcome === "load_failed" || snapshot === undefined ? {} : { snapshot }) }
+    }
+  }
+  jobs.set(key, next)
+  return { ...current, redaction: { generation, configFile: writer.configFile, origin: writer.origin,
+    jobs: [...jobs.values()].sort((left, right) => jobKey(left.projectId, left.adapterId).localeCompare(jobKey(right.projectId, right.adapterId))) } }
+}
 
 const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): CollectorRunState => {
   const jobs = new Map(current.jobs.map((job) => [jobKey(job.projectId, job.adapterId), job]))
@@ -792,6 +912,7 @@ const applyCycle = (current: CollectorRunState, report: CollectionCycleReport): 
   }
   return {
     version: current.version,
+    ...(current.redaction === undefined ? {} : { redaction: current.redaction }),
     lastCycleStartedAt: report.startedAt,
     lastCycleCompletedAt: report.completedAt,
     jobs: [...jobs.values()].sort((left, right) =>

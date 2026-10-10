@@ -1,7 +1,7 @@
 import { constants } from "node:fs"
 import { open } from "node:fs/promises"
 import { createHash } from "node:crypto"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { Schema } from "effect"
 
@@ -57,7 +57,7 @@ export type RedactionConfigurationSelection = { readonly configFile: string; rea
 export const selectRedactionConfigurationFile = (options: { readonly atapeHome?: string; readonly configFile?: string; readonly environment: NodeJS.ProcessEnv }): RedactionConfigurationSelection => {
   const atapeHome = options.atapeHome ?? options.environment.ATAPE_HOME ?? join(homedir(), ".atape")
   const explicit = options.configFile ?? options.environment.ATAPE_REDACTION_CONFIG_FILE
-  return { configFile: explicit ?? join(atapeHome, "config", "redaction.json"), origin: explicit === undefined ? "default" : "environment", explicit: explicit !== undefined }
+  return { configFile: resolve(explicit ?? join(atapeHome, "config", "redaction.json")), origin: explicit === undefined ? "default" : "environment", explicit: explicit !== undefined }
 }
 
 export const readRedactionConfigurationFile = async (selection: RedactionConfigurationSelection) => {

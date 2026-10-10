@@ -2,10 +2,13 @@
 
 The Host applies one shared Redaction Module before Canonical and Raw upload and
 before retaining source diagnostics. Adapters supply provider data; they do not
-own the privacy policy. The capabilities below require CLI 0.5.5 or later;
-[release notes](../releases/v0.5.5.md) record publication and acceptance scope.
+own the privacy policy. Rules, local testing and Settings require CLI 0.5.5 or
+later; [release notes](../releases/v0.5.5.md) record publication and acceptance
+scope. The background status page described below is a subsequent repository
+change and is not included in the published 0.5.5 package.
 See [ADR-0105](../architecture/adr/0105-client-redaction-policy.md)
-and [ADR-0106](../architecture/adr/0106-redaction-settings.md).
+and [ADR-0106](../architecture/adr/0106-redaction-settings.md), extended by
+[ADR-0109](../architecture/adr/0109-collector-redaction-status.md).
 
 ## Supported rules
 
@@ -18,6 +21,7 @@ and [ADR-0106](../architecture/adr/0106-redaction-settings.md).
 | Structured content | JSON/JSONL and valid nested JSON TEXT are decoded before masking, including escaped values and keys. Duplicate decoded keys or masked-key collisions fail safely. |
 | Local inspection | `atape redaction-test` tests a UTF-8 file with the same effective policy and reports safe aggregate rule counts. |
 | Settings | `atape` → Settings → Privacy rules lists, adds, edits, validates and saves global custom rules. |
+| Background observation | Privacy rules → Background privacy status shows the selected file and separately observed job snapshots, with manual Refresh. |
 
 Built-ins are always enabled; custom rules add protection. Built-in replacements
 retain `[REDACTED]` or `[REDACTED PRIVATE KEY]`. Custom replacements use
@@ -111,6 +115,45 @@ saved file on its next job only if it selects that same path; changing its
 environment requires restarting it. Settings does not change environment values
 or offer a complete-session preview. Use a standard-format local sample to test
 the resulting transformation.
+
+## Observe background configuration
+
+Privacy rules → Background privacy status reads local process and Collector run
+status without starting, stopping or repairing the background process. Refresh
+updates this observation; returning to the editor preserves its draft. The
+comparison target is the file version loaded or saved by the editor, never an
+unsaved draft. Reload the editor to compare with a later external file edit.
+
+Each job records its own loading, active and ended observations with a timestamp.
+These are the last recorded facts, not a live activity guarantee: a failed job
+observation write logs a safe warning and collection continues, so an ending may be absent
+until another observation replaces it. Times use the local system clock and may
+move backward after a clock adjustment; they are not heartbeat guarantees. A loaded snapshot
+contains the absolute selected path, default/environment selection, file revision,
+custom rule count and resolved literal count from that same policy load. It
+contains no expressions, literal values or policy identity. Loading failure is
+separate from failure after loading and does not leave an earlier snapshot
+labelled as current. Completion means the job ended, not that every source was
+uploaded successfully; use ordinary Project diagnostics for collection results.
+
+| Observation | Meaning |
+| --- | --- |
+| Matching file and revision | This job loaded that saved file version. Environment values can still differ between the console and background process. |
+| Same path, different revision | This job loaded another version. Later jobs read the file again; an active job keeps its existing snapshot. |
+| Different path | Saving the editor's file does not change the file selected by this background process. |
+| Running without a matching process report | No current snapshot can be confirmed, including a process launched by an older CLI. |
+| Stopped | Any shown snapshots are historical observations, not active jobs. |
+| Unknown | Process ownership, a stable process generation or readable status could not be confirmed. |
+
+Concurrent jobs can legitimately show different revisions across an edit. There
+is no global “all jobs updated” claim. Observations are bound to the managed
+process generation; restarting cannot make its predecessor's report current.
+Only the latest observed attempt per Project × Adapter is retained. The additive
+local status fields keep version 1 compatibility; missing fields degrade to an
+unconfirmed observation. They are not included in remote device reports and do
+not alter Canonical, Raw, checkpoints or publication contracts.
+Local run status must be a regular UTF-8 file of at most 8 MiB; an invalid,
+unreadable or oversized report produces an unknown observation.
 
 ## Test locally
 

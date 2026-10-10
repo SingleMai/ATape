@@ -33,7 +33,8 @@ export const makeNodeClientLayer = (
   paths: NodeClientPaths,
   environment: NodeJS.ProcessEnv = process.env,
   fetchAdapterPackage: AdapterPackageFetch = globalThis.fetch,
-  fetchAuthentication: typeof globalThis.fetch = globalThis.fetch
+  fetchAuthentication: typeof globalThis.fetch = globalThis.fetch,
+  options: { readonly collectorToken?: string } = {}
 ) => {
   const authentication = makeNodeAuthenticationLayer({
     atapeHome: paths.atapeHome,
@@ -85,6 +86,6 @@ export const makeNodeClientLayer = (
     projectSetup,
     collector,
     makeNodeCollectorDaemonLayer(paths, async () => resolveRuntimeEntry(paths.atapeHome,
-      await selectedBootstrap(paths.atapeHome, bootstrapEntry)), { ...environment, ATAPE_BOOTSTRAP_ENTRY: bootstrapEntry })
+      await selectedBootstrap(paths.atapeHome, bootstrapEntry)), { ...environment, ATAPE_BOOTSTRAP_ENTRY: bootstrapEntry }, options)
   )
 }

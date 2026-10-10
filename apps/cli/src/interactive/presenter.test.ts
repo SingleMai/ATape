@@ -1,6 +1,6 @@
-import { AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, setAutomaticUpdates, setupProject } from "@atape/application"
+import { AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, CollectorRunStatusError, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, inspectRedactionSettings, setAutomaticUpdates, setupProject, type CollectorDaemonObservation } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
-import { releasePackageNames, type ReleaseBundle } from "@atape/domain"
+import { releasePackageNames, type CollectorRunState, type ReleaseBundle } from "@atape/domain"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,7 +20,12 @@ const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-b
     tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) })
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const dispose of cleanup.splice(0)) await dispose() })
-const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false, setupReview = false, manualStartupUpdates = update !== undefined, privacyEnvironment: NodeJS.ProcessEnv = {}) => {
+const backgroundFixture = () => ({
+  process: { generation: "collector-generation", pid: 42, startedAt: "2026-10-10T01:00:00Z" } as CollectorDaemonObservation | undefined,
+  status: { version: 1, jobs: [] } as CollectorRunState,
+  error: undefined as CollectorRunStatusError | undefined
+})
+const fixture = async (setup = false, update?: Promise<string>, failInstall = false, failFirstResume = false, toolUpdate = false, maintenance = false, setupReview = false, manualStartupUpdates = update !== undefined, privacyEnvironment: NodeJS.ProcessEnv = {}, background?: ReturnType<typeof backgroundFixture>) => {
   const root = await mkdtemp(join(tmpdir(), "atape-presenter-"))
   const environment = {
     ATAPE_HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "config"),
@@ -44,6 +49,19 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
   const toolInstalls: string[] = []
   const prunes: boolean[] = []
   const base = Layer.mergeAll(makeNodeClientLayer(defaultNodeClientPaths(environment), environment),
+    ...(background ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      inspect: () => Effect.sync(() => background.process ? { ...background.process, logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
+      observe: () => Effect.sync(() => background.process), refresh: () => Effect.succeed(false),
+      start: () => Effect.die("Privacy observation must not start sync"),
+      stop: () => Effect.die("Privacy observation must not stop sync"),
+      pause: () => Effect.die("Privacy observation must not pause sync"),
+      resume: () => Effect.die("Privacy observation must not resume sync")
+    })), Layer.succeed(CollectorRunStatusStore, CollectorRunStatusStore.of({
+      read: () => Effect.suspend(() => background.error ? Effect.fail(background.error) : Effect.succeed(background.status)),
+      recordCycle: () => Effect.die("Privacy observation must not write status"),
+      recordCollectorFailure: () => Effect.die("Privacy observation must not write status"),
+      recordRedactionJob: () => Effect.die("Privacy observation must not write status")
+    }))] : []),
     Layer.succeed(LoginStartupPlatform, LoginStartupPlatform.of({
       inspect: () => Effect.sync(() => ({ state: loginRegistered ? "registered" as const : "missing" as const })),
       reconcile: enabled => Effect.sync(() => { loginRegistrations.push(enabled); loginRegistered = enabled; return { state: enabled ? "registered" as const : "missing" as const } })
@@ -79,6 +97,7 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
     activate: () => Effect.void, record: () => Effect.void, launch: () => Effect.void
   })), ...(failFirstResume ? [Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       refresh: () => Effect.succeed(false),
+    observe: () => Effect.sync(() => syncRunning ? { generation: "fixture", pid: 1, startedAt: "now" } : undefined),
     inspect: () => Effect.sync(() => syncRunning ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
     stop: () => Effect.sync(() => { syncWanted = false; syncRunning = false; return true }),
     pause: () => Effect.sync(() => { syncRunning = false; return true }),
@@ -159,8 +178,8 @@ const terminal = (presenter: ExperiencePresenter, rows = 14, columns = 80) => {
 }
 
 describe("interactive navigation through the presenter Interface", () => {
-  const privacy = async (environment: NodeJS.ProcessEnv = {}) => {
-    const client = await fixture(false, undefined, false, false, false, false, false, false, environment)
+  const privacy = async (environment: NodeJS.ProcessEnv = {}, background?: ReturnType<typeof backgroundFixture>) => {
+    const client = await fixture(false, undefined, false, false, false, false, false, false, environment, background)
     await client.toolsReady()
     client.presenter.start()
     await client.wait(screen => screen.layout === "projects")
@@ -195,6 +214,180 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.notice === "Rules are valid. Validation does not save them.")
     expect(client.presenter.getSnapshot().options?.some(option => option.value === "save")).toBe(false)
   })
+  it("preserves an unsaved draft and its saved comparison target across background refresh", async () => {
+    const background = backgroundFixture()
+    const client = await privacy({}, background)
+    const saved = await client.runtime.runPromise(inspectRedactionSettings())
+    const snapshot = { configFile: saved.configFile, revision: saved.revision, exists: saved.exists,
+      origin: saved.origin, literalCount: saved.literalCount, customRuleCount: 0 }
+    const job = { projectId: "project-1", adapterId: "codex", attemptId: "attempt-1",
+      startedAt: "2026-10-10T01:01:00Z", updatedAt: "2026-10-10T01:01:01Z", phase: "active" as const, snapshot }
+    background.status = { version: 1, jobs: [], redaction: { generation: background.process!.generation,
+      configFile: saved.configFile, origin: saved.origin, jobs: [job] } }
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "Draft kept")
+    await privacyField(client, "type", "DRAFT")
+    await privacyField(client, "pattern", "(?=invalid)")
+    client.presenter.submit("done")
+    const draft = await client.wait(screen => screen.title === "Privacy rules")
+    expect(draft.options?.at(-1)).toEqual({ value: "background", label: "Background privacy status" })
+    client.presenter.submit("background")
+    const first = await client.wait(screen => screen.title === "Background privacy status" && screen.kind === "menu")
+    expect(first.options).toEqual([{ value: "refresh", label: "Refresh background status" }, { value: "back", label: "Back to privacy rules" }])
+    expect(first.details).toContain("Background sync: running")
+    expect(first.details).toContain("This job loaded the compared file revision.")
+    expect(first.details).toContain("Custom rules: 0 · Environment exact values: 0 (values are hidden)")
+    expect(first.details).toContain("The comparison uses the file revision loaded or saved in this editor. Unsaved edits are excluded.")
+    await mkdir(join(client.environment.ATAPE_HOME!, "config"), { recursive: true })
+    const external = JSON.stringify({ patterns: [] })
+    await writeFile(saved.configFile, external)
+    const changed = await client.runtime.runPromise(inspectRedactionSettings())
+    expect(changed.revision).not.toBe(saved.revision)
+    background.status = { ...background.status, redaction: { ...background.status.redaction!, jobs: [{ ...job,
+      phase: "completed", updatedAt: "2026-10-10T01:02:00Z", snapshot: { ...snapshot, exists: true, revision: changed.revision } }] } }
+    client.presenter.submit("refresh")
+    const refreshed = await client.wait(screen => screen.title === "Background privacy status" && screen.details.includes("Current Collector observation · Last recorded state: Job completed"))
+    expect(refreshed.details).toContain(`Compared saved revision: ${JSON.stringify(saved.revision)}`)
+    expect(refreshed.details).toContain(`Loaded revision: ${JSON.stringify(changed.revision)}`)
+    expect(refreshed.details).toContain("This job loaded a different file revision. Future jobs reload their selected file.")
+    client.presenter.back()
+    const returned = await client.wait(screen => screen.title === "Privacy rules")
+    expect(returned.details).toContain("Custom rules: 1 · unsaved draft")
+    expect(returned.details).toContain("Validation: Draft needs validation")
+    client.presenter.submit("rule:0")
+    const rule = await client.wait(screen => screen.title === "Custom rule 1")
+    expect(rule.details).toContain('name: "Draft kept"')
+    expect(rule.details).toContain('pattern: "(?=invalid)"')
+    client.presenter.submit("done")
+    client.presenter.submit("save")
+    await client.wait(screen => screen.title === "Privacy rules" && Boolean(screen.notice?.startsWith("Rules are invalid")))
+    expect(await readFile(saved.configFile, "utf8")).toBe(external)
+    expect(client.starts).toEqual([])
+  })
+  it("reports each concurrent job's snapshot and last recorded state without a global effective claim", async () => {
+    const background = backgroundFixture()
+    const secret = "background-environment-secret-123456"
+    const client = await privacy({ APP_TOKEN: secret }, background)
+    const saved = await client.runtime.runPromise(inspectRedactionSettings())
+    const otherFile = join(client.root, "background\n\u001b[31m\u202e.json")
+    const snapshot = { configFile: saved.configFile, revision: saved.revision, exists: saved.exists,
+      origin: saved.origin, literalCount: 8, customRuleCount: 3 }
+    const job = { projectId: "project-1", adapterId: "codex", attemptId: "attempt-1",
+      startedAt: "2026-10-10T01:01:00Z", updatedAt: "2026-10-10T01:01:01Z", phase: "active" as const, snapshot }
+    background.status = { version: 1, jobs: [], redaction: { generation: background.process!.generation,
+      configFile: otherFile, origin: "environment", jobs: [job,
+        { ...job, projectId: "different-revision", attemptId: "attempt-2", snapshot: { ...snapshot, revision: "another-revision" } },
+        { ...job, projectId: "another-file\n\u001b[32m\u2066", adapterId: "custom\u001b[33m", attemptId: "attempt-3", snapshot: { ...snapshot, configFile: otherFile } },
+        { projectId: "load-failed", adapterId: "claude", attemptId: "attempt-4", startedAt: job.startedAt, updatedAt: job.updatedAt, phase: "load_failed" },
+        { projectId: "loading", adapterId: "codex", attemptId: "attempt-5", startedAt: job.startedAt, updatedAt: job.updatedAt, phase: "loading" },
+        { ...job, projectId: "failed-after-load", attemptId: "attempt-6", phase: "failed" },
+        { ...job, projectId: "interrupted", attemptId: "attempt-7", phase: "interrupted" }
+      ] } }
+    client.presenter.submit("background")
+    const screen = await client.wait(screen => screen.title === "Background privacy status" && screen.kind === "menu")
+    expect(screen.details).toContain("This job loaded the compared file revision.")
+    expect(screen.details).toContain("This job loaded a different file revision. Future jobs reload their selected file.")
+    expect(screen.details).toContain("This job selected another file. Saving the console file does not change it.")
+    expect(screen.details).toContain("Current Collector observation · Last recorded state: Privacy rules could not be loaded")
+    expect(screen.details).toContain("Current Collector observation · Last recorded state: Loading privacy rules")
+    expect(screen.details).toContain("Current Collector observation · Last recorded state: Job failed")
+    expect(screen.details).toContain("Current Collector observation · Last recorded state: Job interrupted")
+    expect(screen.details.filter(line => line === "No loaded snapshot was reported for this job.")).toHaveLength(2)
+    expect(screen.details).toContain("Custom rules: 3 · Environment exact values: 8 (values are hidden)")
+    expect(screen.details).toContain("A matching revision compares the file only. Environment values and upload results are not compared.")
+    expect(screen.details).toContain("Job states are last recorded observations. Missing updates can leave an earlier state.")
+    expect(screen.details.join("\n")).not.toContain(secret)
+    expect(screen.details.join("")).not.toMatch(/[\x00-\x1f\x7f-\x9f\u2028-\u202e\u2066-\u2069]/)
+    expect(screen.details.some(line => line.includes("background\\n\\u001b[31m\\u202e.json"))).toBe(true)
+    expect(screen.details.some(line => line.includes("custom\\u001b[33m"))).toBe(true)
+    const view = terminal(client.presenter, 14, 80)
+    await view.send("\x1b[6~")
+    expect(view.frame()).toContain("Refresh background status")
+    expect(view.frame()).toContain("Back to privacy rules")
+    client.presenter.submit("back")
+    await client.wait(screen => screen.title === "Privacy rules")
+    expect(client.starts).toEqual([])
+  })
+  it("compares a newly saved revision while waiting for separately observed later jobs", async () => {
+    const background = backgroundFixture()
+    const client = await privacy({}, background)
+    const before = await client.runtime.runPromise(inspectRedactionSettings())
+    const job = { projectId: "project-1", adapterId: "codex", attemptId: "attempt-1",
+      startedAt: "2026-10-10T01:01:00Z", updatedAt: "2026-10-10T01:01:01Z", phase: "active" as const,
+      snapshot: { configFile: before.configFile, revision: before.revision, exists: before.exists,
+        origin: before.origin, literalCount: before.literalCount, customRuleCount: 0 } }
+    background.status = { version: 1, jobs: [], redaction: { generation: background.process!.generation,
+      configFile: before.configFile, origin: before.origin, jobs: [job] } }
+    client.presenter.submit("add")
+    await client.wait(screen => screen.title === "Custom rule 1")
+    await privacyField(client, "name", "Saved rule")
+    await privacyField(client, "type", "PRIVATE")
+    await privacyField(client, "pattern", "private_value")
+    client.presenter.submit("done")
+    client.presenter.submit("save")
+    const review = await client.wait(screen => screen.title === "Save global privacy rules?")
+    expect(review.details).toContain("Future jobs that select this file load it at job start. Running jobs keep their current snapshots.")
+    client.presenter.submit("confirm")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Check background status for jobs using this file revision.")
+    const saved = await client.runtime.runPromise(inspectRedactionSettings())
+    client.presenter.submit("background")
+    const waiting = await client.wait(screen => screen.title === "Background privacy status" && screen.kind === "menu")
+    expect(waiting.details).toContain(`Compared saved revision: ${JSON.stringify(saved.revision)}`)
+    expect(waiting.details).toContain("This job loaded a different file revision. Future jobs reload their selected file.")
+    background.status = { ...background.status, redaction: { ...background.status.redaction!, jobs: [{ ...job, attemptId: "attempt-2",
+      snapshot: { ...job.snapshot, revision: saved.revision, exists: true, customRuleCount: 1 } }] } }
+    client.presenter.submit("refresh")
+    await client.wait(screen => screen.title === "Background privacy status" && screen.details.includes("This job loaded the compared file revision."))
+    client.presenter.submit("back")
+    const returned = await client.wait(screen => screen.title === "Privacy rules")
+    expect(returned.details).toContain("Custom rules: 1")
+    expect(returned.details).toContain("Validation: Valid")
+    expect(client.starts).toEqual([])
+  })
+  it("separates stopped history from unknown observations and allows status without readable console rules", async () => {
+    const background = backgroundFixture()
+    const client = await privacy({}, background)
+    const saved = await client.runtime.runPromise(inspectRedactionSettings())
+    background.process = undefined
+    background.status = { version: 1, jobs: [], redaction: { generation: "preceding-collector", configFile: saved.configFile,
+      origin: saved.origin, jobs: [{ projectId: "historical", adapterId: "codex", attemptId: "attempt-1", startedAt: "2026-10-10T01:01:00Z",
+        updatedAt: "2026-10-10T01:01:01Z", phase: "active", snapshot: { configFile: saved.configFile, revision: saved.revision,
+          exists: saved.exists, origin: saved.origin, literalCount: 0, customRuleCount: 0 } }] } }
+    client.presenter.submit("background")
+    const stopped = await client.wait(screen => screen.title === "Background privacy status" && screen.kind === "menu")
+    expect(stopped.details).toContain("Background sync: stopped")
+    expect(stopped.details).toContain("Shown jobs are historical observations, not active jobs.")
+    expect(stopped.details).toContain("Historical observation · Last recorded state: Job active")
+    background.process = { generation: "new-collector", pid: 43, startedAt: "2026-10-10T01:03:00Z" }
+    client.presenter.submit("refresh")
+    const unknown = await client.wait(screen => screen.title === "Background privacy status" && screen.details.includes("Background sync: unknown"))
+    expect(unknown.details).toContain("The current Collector and its task snapshots could not be confirmed.")
+    expect(unknown.details).toContain("No task snapshots are available for this observation.")
+    expect(unknown.details.some(line => line.includes("historical"))).toBe(false)
+    const privateError = "unreadable-status-secret-123456"
+    background.error = new CollectorRunStatusError({ reason: "io", message: privateError })
+    client.presenter.submit("refresh")
+    await client.wait(screen => screen.title === "Background privacy status" && screen.kind === "menu")
+    expect(JSON.stringify(client.presenter.getSnapshot())).not.toContain(privateError)
+    client.presenter.submit("back")
+    await client.wait(screen => screen.title === "Privacy rules")
+    await mkdir(join(client.environment.ATAPE_HOME!, "config"), { recursive: true })
+    await writeFile(saved.configFile, "malformed JSON must be preserved")
+    client.presenter.submit("reload")
+    const unreadable = await client.wait(screen => screen.title === "Privacy rules" && Boolean(screen.details[0]?.startsWith("Rules are invalid")))
+    expect(unreadable.options).toContainEqual({ value: "background", label: "Background privacy status" })
+    background.error = undefined
+    background.process = undefined
+    client.presenter.submit("background")
+    const noTarget = await client.wait(screen => screen.title === "Background privacy status" && screen.kind === "menu")
+    expect(noTarget.details).toContain("Console rules could not be loaded, so no file revision is being compared.")
+    expect(noTarget.details).not.toContain("This job loaded the compared file revision.")
+    expect(noTarget.details.some(line => line.startsWith("Compared saved revision:"))).toBe(false)
+    client.presenter.back()
+    await client.wait(screen => screen.title === "Privacy rules")
+    expect(await readFile(saved.configFile, "utf8")).toBe("malformed JSON must be preserved")
+  })
   it("edits every custom field, validates, cancels by default, and saves an exact global draft", async () => {
     const client = await privacy()
     const configBefore = await client.runtime.runPromise(inspectClient())
@@ -218,7 +411,7 @@ describe("interactive navigation through the presenter Interface", () => {
     client.presenter.submit("save")
     await client.wait(screen => screen.title === "Save global privacy rules?")
     client.presenter.submit("confirm")
-    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Check background status for jobs using this file revision.")
     expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({ patterns: [{ name: "内部凭据 \"primary\"", type: "INTERNAL", pattern: "token=(\\w+)", field_pattern: "(?i)^credential$", capture_group: 1 }] })
     expect(await client.runtime.runPromise(inspectClient())).toEqual(configBefore)
     expect(client.starts).toEqual([])
@@ -233,7 +426,7 @@ describe("interactive navigation through the presenter Interface", () => {
     client.presenter.submit("save")
     await client.wait(screen => screen.title === "Save global privacy rules?")
     client.presenter.submit("confirm")
-    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Check background status for jobs using this file revision.")
     expect(JSON.parse(await readFile(configFile, "utf8"))).toEqual({ patterns: [] })
   })
   it("retains invalid drafts and rejects a concurrent overwrite until explicit reload", async () => {
@@ -298,7 +491,7 @@ describe("interactive navigation through the presenter Interface", () => {
     client.presenter.submit("save")
     await client.wait(screen => screen.title === "Save global privacy rules?")
     client.presenter.submit("confirm")
-    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Check background status for jobs using this file revision.")
     const config = JSON.parse(await readFile(join(client.environment.ATAPE_HOME!, "config", "redaction.json"), "utf8"))
     expect(config.patterns[0]).toEqual({ name: "Line break", type: "EXACT", pattern: "line\nbreak\u001b" })
   })
@@ -328,7 +521,7 @@ describe("interactive navigation through the presenter Interface", () => {
       expect(view.frame()).not.toContain("Esc Cancel")
       expect(await readFile(configFile, "utf8").catch(() => undefined)).toBeUndefined()
     } finally { await rm(`${configFile}.lock`, { force: true }) }
-    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Check background status for jobs using this file revision.")
     expect(JSON.parse(await readFile(configFile, "utf8")).patterns[0].name).toBe("First")
     // A second edit saves from the completed snapshot rather than the pre-save
     // revision, which would incorrectly conflict with our own successful write.
@@ -339,7 +532,7 @@ describe("interactive navigation through the presenter Interface", () => {
     client.presenter.submit("save")
     await client.wait(screen => screen.title === "Save global privacy rules?")
     client.presenter.submit("confirm")
-    await client.wait(screen => screen.notice === "Privacy rules saved. Future collection jobs will use them.")
+    await client.wait(screen => screen.notice === "Privacy rules saved. Check background status for jobs using this file revision.")
     expect(JSON.parse(await readFile(configFile, "utf8")).patterns[0].name).toBe("Second")
   })
   it("rejects raw control pastes without stripping their meaning or accepting a stale input", async () => {

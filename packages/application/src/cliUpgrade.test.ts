@@ -60,6 +60,7 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      observe: () => Effect.die("Unexpected pure process observation"),
       refresh: () => Effect.sync(() => { const changed = running && stale; stale = false; return changed }),
       inspect: () => Effect.sync(() => running ? { pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 } : undefined),
       stop: () => Effect.sync(() => { const stopped = running; wanted = false; running = false; return stopped }),

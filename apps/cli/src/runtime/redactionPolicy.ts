@@ -1,4 +1,5 @@
-import { compileRedactionPolicy, type CompiledRedactionPolicy } from "@atape/application"
+import { compileRedactionPolicy, validateRedactionConfiguration, type CompiledRedactionPolicy } from "@atape/application"
+import type { RedactionConfigurationDescriptor } from "@atape/domain"
 import { constants } from "node:fs"
 import { lstat, mkdir, open, rename, rm } from "node:fs/promises"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
@@ -62,24 +63,33 @@ export type NodeRedactionPolicyOptions = {
 
 /** File tests compile the same rules with an ephemeral identity and never create
  * ATape state. Collection reloads configuration between immutable job snapshots. */
-export const loadNodeRedactionPolicy = (options: NodeRedactionPolicyOptions): Effect.Effect<
-  CompiledRedactionPolicy, RedactionPolicyLoadError | import("@atape/application").RedactionPolicyError
+export const loadNodeRedactionPolicySnapshot = (options: NodeRedactionPolicyOptions): Effect.Effect<
+  { readonly policy: CompiledRedactionPolicy; readonly descriptor: RedactionConfigurationDescriptor },
+  RedactionPolicyLoadError | import("@atape/application").RedactionPolicyError
 > => Effect.gen(function*() {
   const environment = options.environment ?? process.env
   const selection = selectRedactionConfigurationFile({ ...options, environment })
-  const configuration = yield* Effect.tryPromise({
-    try: async () => (await readRedactionConfigurationFile(selection)).content,
+  const source = yield* Effect.tryPromise({
+    try: () => readRedactionConfigurationFile(selection),
     catch: cause => cause instanceof RedactionPolicyLoadError ? cause : failure("io", "Could not load the local redaction configuration.")
   })
   const secretValues = yield* Effect.try({ try: () => environmentSecretValues(environment),
     catch: cause => cause instanceof RedactionPolicyLoadError ? cause : failure("configuration", "The configured redaction values are invalid.") })
+  const configuration = yield* validateRedactionConfiguration(source.content ?? {})
+  const descriptor: RedactionConfigurationDescriptor = Object.freeze({ configFile: selection.configFile,
+    origin: selection.origin, revision: source.revision, exists: source.exists,
+    literalCount: new Set(secretValues).size, customRuleCount: configuration.patterns?.length ?? 0 })
   // Validate/compile before persistent identity bootstrap so invalid policy input
   // does not modify local state. The second compilation only assigns its stable ID.
   const ephemeral = yield* Effect.sync(() => randomBytes(32))
   const validated = yield* compileRedactionPolicy({ configuration, secretValues, installationKey: ephemeral })
-  if (options.mode === "test") return validated
+  if (options.mode === "test") return { policy: validated, descriptor }
   if (!options.stateFile) return yield* failure("identity", "Collector redaction requires its installation state path.")
   const key = yield* Effect.tryPromise({ try: () => installationKey(options.stateFile!),
     catch: cause => cause instanceof RedactionPolicyLoadError ? cause : failure("identity", "Could not load the private redaction identity. Preserve its existing Collector state.") })
-  return yield* compileRedactionPolicy({ configuration, secretValues, installationKey: key })
+  const policy = yield* compileRedactionPolicy({ configuration, secretValues, installationKey: key })
+  return { policy, descriptor }
 })
+
+export const loadNodeRedactionPolicy = (options: NodeRedactionPolicyOptions) =>
+  loadNodeRedactionPolicySnapshot(options).pipe(Effect.map(snapshot => snapshot.policy))

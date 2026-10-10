@@ -25,6 +25,12 @@ export type CollectorDaemonProcessSnapshot = ResolvedCollectorDaemonOptions & {
   readonly created: boolean
 }
 
+export type CollectorDaemonObservation = {
+  readonly generation: string
+  readonly pid: number
+  readonly startedAt: string
+}
+
 export class CollectorDaemonProcess extends Context.Service<CollectorDaemonProcess, {
   start(options: ResolvedCollectorDaemonOptions): Effect.Effect<CollectorDaemonProcessSnapshot, CollectorDaemonProcessError>
   // Resume persisted user intent without treating this background trigger as Start.
@@ -35,6 +41,8 @@ export class CollectorDaemonProcess extends Context.Service<CollectorDaemonProce
   refresh(): Effect.Effect<boolean, CollectorDaemonProcessError>
   stop(): Effect.Effect<boolean, CollectorDaemonProcessError>
   inspect(): Effect.Effect<Omit<CollectorDaemonProcessSnapshot, "created"> | undefined, CollectorDaemonProcessError>
+  /** Verify ownership without repairing metadata, creating files or changing intent. */
+  observe(): Effect.Effect<CollectorDaemonObservation | undefined, CollectorDaemonProcessError>
 }>()("atape/application/CollectorDaemonProcess") {}
 
 export const refreshManagedCollector = Effect.fn("CollectorDaemon.refresh")(function*() {

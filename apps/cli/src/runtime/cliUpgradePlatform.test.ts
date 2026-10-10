@@ -247,6 +247,7 @@ describe("Node CLI upgrade Adapter", () => {
     const wait = new Promise<void>(resolve => { finish = resolve })
     const process = Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
       refresh: () => Effect.succeed(false),
+      observe: () => Effect.succeed(undefined),
       inspect: () => Effect.succeed({ pid: 1, startedAt: "now", logFile: "log", intervalMs: 45_000, concurrency: 2 }),
       pause: () => Effect.succeed(true),
       stop: () => Effect.die("Maintenance must not change user intent"),
@@ -375,6 +376,7 @@ setInterval(() => {}, 1000);
       resume: () => Effect.die("Unexpected login resume"),
       pause: () => Effect.die("Stale update cannot pause collection"),
       refresh: () => Effect.die("Stale update cannot refresh collection"), inspect: () => Effect.succeed(undefined),
+      observe: () => Effect.succeed(undefined),
       stop: () => Effect.die("Stale update cannot stop collection"), start: () => Effect.die("Stale update cannot start collection")
     }))
     await expect(client.run(upgradeCLI("0.4.1").pipe(Effect.provide(process)))).rejects.toMatchObject({ reason: "installation" })

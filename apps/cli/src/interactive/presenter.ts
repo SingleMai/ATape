@@ -2,8 +2,8 @@ import { decideProjectSetup, describeClientFailure,
   CLIAuthenticationInteraction, CLISetupPlatform, completeGuidedSetup, refreshManagedCollector, checkCLIUpgrade, upgradeCLI, resumeCLIUpgrade, CLIUpgradeError,
   experienceOnboardingURL, inspectCLIExperience, inspectClient, automaticUpdatesEnabled, loginStartupEnabled, inspectTools, planToolChange, applyToolChange,
   inspectToolUpdates, updateToolRelease, type ToolRelease,
-  inspectRedactionSettings, validateRedactionSettings, saveRedactionSettings,
-  type RedactionSettingsSnapshot, type RedactionConfiguration, type RedactionPattern,
+  inspectRedactionSettings, validateRedactionSettings, saveRedactionSettings, inspectCollectorRedaction,
+  type RedactionSettingsSnapshot, type RedactionConfiguration, type RedactionPattern, type CollectorRedactionView,
   loginCLI, logoutCLI, updateSyncReader, observeInitialSync, prepareGuidedSetup, removeExperienceProject, selectInstanceOrigin,
   setActiveInstance, startExperienceCollector, stopExperienceCollector, setClientLocale, setAutomaticUpdates, inspectLoginStartup, setLoginStartup, reconcileLoginStartup, installAdapter, upgradeAdapters, pruneAdapterPackages,
   type CLIExperienceSnapshot, type ConsoleProject, type DirectorySuggestion, type GuidedSetupPlan, type SourceChoice, type ProjectRecovery
@@ -817,8 +817,9 @@ export class ExperiencePresenter {
       snapshot, configuration: snapshot.configuration, dirty: false, validation: snapshot.validation
     }), error => this.show({ kind: "menu", title: t("cli.privacy.title", "Privacy rules"),
       details: [this.privacyFailure(error), t("cli.privacy.unreadable", "The existing file was not changed. Repair its JSON/schema or access, then reload.")],
-      options: [{ value: "reload", label: t("cli.privacy.reload", "Reload saved rules") }]
-    }, () => this.privacy(), () => this.settings()), () => this.settings())
+      options: [{ value: "reload", label: t("cli.privacy.reload", "Reload saved rules") },
+        { value: "background", label: t("cli.privacy.backgroundTitle", "Background privacy status") }]
+    }, value => value === "background" ? this.privacyBackground() : this.privacy(), () => this.settings()), () => this.settings())
   }
   private privacyFailure(error: unknown): string {
     const reason = typeof error === "object" && error !== null && "reason" in error ? error.reason : undefined
@@ -853,13 +854,15 @@ export class ExperiencePresenter {
       ...rules.map((rule, index) => ({ value: `rule:${index}`, label: `${index + 1}. ${terminalJSON(rule.name)} · ${terminalJSON(rule.type)}` })),
       { value: "validate", label: t("cli.privacy.validate", "Validate rules") },
       ...(draft.dirty ? [{ value: "save", label: t("cli.privacy.save", "Review and save rules") }] : []),
-      { value: "reload", label: t("cli.privacy.reload", "Reload saved rules") }
+      { value: "reload", label: t("cli.privacy.reload", "Reload saved rules") },
+      { value: "background", label: t("cli.privacy.backgroundTitle", "Background privacy status") }
     ] }, value => {
       if (value === "add") {
         const next = { ...draft, configuration: { patterns: [...rules, { name: "", type: "" }] }, dirty: true, validation: "unchecked" as const }
         return this.privacyRule(next, rules.length)
       }
       if (value === "reload") return this.privacyLeave(draft, () => this.privacy())
+      if (value === "background") return this.privacyBackground(draft)
       if (value === "save") return this.privacyValidate(draft, true)
       if (value === "validate") return this.privacyValidate(draft, false)
       if (typeof value === "string" && value.startsWith("rule:")) {
@@ -867,6 +870,72 @@ export class ExperiencePresenter {
         if (rules[index]) this.privacyRule(draft, index)
       }
     }, () => this.privacyLeave(draft, () => this.settings()))
+  }
+  private privacyBackground(draft?: RedactionDraft) {
+    const back = () => draft ? this.privacyDraft(draft) : this.privacy()
+    const target = draft ? { configFile: draft.snapshot.configFile, revision: draft.snapshot.revision } : undefined
+    this.work(t("cli.privacy.backgroundReading", "Reading background privacy status"), inspectCollectorRedaction(target), view => {
+      const states: Record<CollectorRedactionView["state"], string> = {
+        running: t("cli.privacy.backgroundRunning", "Background sync: running"),
+        stopped: t("cli.privacy.backgroundStopped", "Background sync: stopped"),
+        unknown: t("cli.privacy.backgroundUnknown", "Background sync: unknown")
+      }
+      const phases: Record<CollectorRedactionView["jobs"][number]["phase"], string> = {
+        loading: t("cli.privacy.backgroundLoading", "Loading privacy rules"),
+        active: t("cli.privacy.backgroundActive", "Job active"),
+        completed: t("cli.privacy.backgroundCompleted", "Job completed"),
+        failed: t("cli.privacy.backgroundFailed", "Job failed"),
+        interrupted: t("cli.privacy.backgroundInterrupted", "Job interrupted"),
+        load_failed: t("cli.privacy.backgroundLoadFailed", "Privacy rules could not be loaded")
+      }
+      const comparisons: Record<CollectorRedactionView["jobs"][number]["comparison"], string> = {
+        matches: t("cli.privacy.backgroundMatches", "This job loaded the compared file revision."),
+        different_revision: t("cli.privacy.backgroundDifferentRevision", "This job loaded a different file revision. Future jobs reload their selected file."),
+        different_file: t("cli.privacy.backgroundDifferentFile", "This job selected another file. Saving the console file does not change it."),
+        unknown: t("cli.privacy.backgroundUncompared", "This job's file revision could not be compared.")
+      }
+      this.show({ kind: "menu", title: t("cli.privacy.backgroundTitle", "Background privacy status"), details: [
+        states[view.state],
+        t("cli.privacy.backgroundChecked", "Checked at: {time}", { time: terminalJSON(view.checkedAt) }),
+        ...(target ? [
+          t("cli.privacy.backgroundTargetFile", "Compared console file: {file}", { file: terminalJSON(target.configFile) }),
+          t("cli.privacy.backgroundTargetRevision", "Compared saved revision: {revision}", { revision: terminalJSON(target.revision) }),
+          t("cli.privacy.backgroundTargetHint", "The comparison uses the file revision loaded or saved in this editor. Unsaved edits are excluded.")
+        ] : [t("cli.privacy.backgroundNoTarget", "Console rules could not be loaded, so no file revision is being compared.")]),
+        ...(view.configFile === undefined ? [] : [view.state === "running"
+          ? t("cli.privacy.backgroundSelectedFile", "Background selected file: {file}", { file: terminalJSON(view.configFile) })
+          : view.state === "stopped" ? t("cli.privacy.backgroundHistoricalFile", "Last reported background selected file: {file}", { file: terminalJSON(view.configFile) })
+            : t("cli.privacy.backgroundUnconfirmedFile", "Reported background file (unconfirmed): {file}", { file: terminalJSON(view.configFile) }),
+          ...(view.origin === undefined ? [] : [view.origin === "environment" ? t("cli.privacy.environmentFile", "Selected by ATAPE_REDACTION_CONFIG_FILE")
+            : t("cli.privacy.defaultFile", "Global ATape configuration file")])]),
+        t("cli.privacy.backgroundSnapshotHint", "Each job keeps its loaded snapshot. Future jobs reload their selected file."),
+        t("cli.privacy.backgroundComparisonHint", "A matching revision compares the file only. Environment values and upload results are not compared."),
+        t("cli.privacy.backgroundRecordedHint", "Job states are last recorded observations. Missing updates can leave an earlier state."),
+        ...(view.state === "unknown" ? [t("cli.privacy.backgroundUnknownHint", "The current Collector and its task snapshots could not be confirmed.")]
+          : view.state === "stopped" ? [t("cli.privacy.backgroundHistoricalHint", "Shown jobs are historical observations, not active jobs.")] : []),
+        ...(view.jobs.length === 0 ? [t("cli.privacy.backgroundEmpty", "No task snapshots are available for this observation.")]
+          : view.jobs.flatMap(job => [
+            t("cli.privacy.backgroundJob", "{tool} · Project: {project}", { tool: terminalJSON(toolLabel(job.adapterId)), project: terminalJSON(job.projectId) }),
+            t("cli.privacy.backgroundJobState", "{scope} · Last recorded state: {phase}", {
+              scope: job.scope === "current" ? t("cli.privacy.backgroundCurrent", "Current Collector observation")
+                : t("cli.privacy.backgroundHistorical", "Historical observation"), phase: phases[job.phase]
+            }),
+            t("cli.privacy.backgroundUpdated", "Last recorded at: {time}", { time: terminalJSON(job.updatedAt) }),
+            ...(job.snapshot ? [
+              t("cli.privacy.backgroundLoadedFile", "Loaded file: {file}", { file: terminalJSON(job.snapshot.configFile) }),
+              t("cli.privacy.backgroundLoadedRevision", "Loaded revision: {revision}", { revision: terminalJSON(job.snapshot.revision) }),
+              ...(job.snapshot.exists ? [] : [t("cli.privacy.backgroundMissingFile", "No saved file was present. Built-in and environment protection was loaded.")]),
+              t("cli.privacy.backgroundCounts", "Custom rules: {rules} · Environment exact values: {literals} (values are hidden)", {
+                rules: job.snapshot.customRuleCount, literals: job.snapshot.literalCount
+              })
+            ] : [t("cli.privacy.backgroundNoSnapshot", "No loaded snapshot was reported for this job.")]),
+            ...(target ? [comparisons[job.comparison]] : [])
+          ]))
+      ], options: [
+        { value: "refresh", label: t("cli.privacy.backgroundRefresh", "Refresh background status") },
+        { value: "back", label: t("cli.privacy.backgroundBack", "Back to privacy rules") }
+      ] }, value => value === "refresh" ? this.privacyBackground(draft) : back(), back)
+    }, undefined, back)
   }
   private privacyRule(draft: RedactionDraft, index: number, notice?: string) {
     const rules = draft.configuration.patterns ?? []
@@ -934,13 +1003,13 @@ export class ExperiencePresenter {
       if (!save) return this.privacyDraft(validated, t("cli.privacy.validationPassed", "Rules are valid. Validation does not save them."))
       this.confirm(t("cli.privacy.saveTitle", "Save global privacy rules?"), [
         t("cli.privacy.saveCount", "Save {count} custom rules to {file}.", { count: configuration.patterns?.length ?? 0, file: terminalJSON(draft.snapshot.configFile) }),
-        t("cli.privacy.saveTiming", "Applies to future collection jobs across all local projects. A running job keeps its current policy."),
+        t("cli.privacy.saveTiming", "Future jobs that select this file load it at job start. Running jobs keep their current snapshots."),
         t("cli.privacy.saveHistory", "Already accepted history stays unchanged. Some uncertain deliveries under an older policy may pause for recovery."),
         t("cli.privacy.saveSync", "Built-in protection stays on. Saving does not start or stop background sync.")
       ], t("cli.privacy.saveConfirm", "Save rules"), () => this.work(t("cli.privacy.saving", "Saving privacy rules"),
         saveRedactionSettings({ expectedRevision: draft.snapshot.revision, configuration }), snapshot => this.privacyDraft({
           snapshot, configuration: snapshot.configuration, dirty: false, validation: snapshot.validation
-        }, t("cli.privacy.saved", "Privacy rules saved. Future collection jobs will use them.")),
+        }, t("cli.privacy.saved", "Privacy rules saved. Check background status for jobs using this file revision.")),
         error => this.privacyDraft(validated, this.privacyFailure(error)), () => this.privacyDraft(validated), true), () => this.privacyDraft(validated))
     }, error => this.privacyDraft({ ...draft, validation: "invalid" }, this.privacyFailure(error)), () => this.privacyDraft(draft))
   }

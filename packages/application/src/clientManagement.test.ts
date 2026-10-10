@@ -45,6 +45,7 @@ const fixture = (fixedUpgradeSpec?: string, runtimeReleaseVersion = "1.0.0", pac
       detectSources: () => Effect.die("Unexpected detection"), suggestDirectories: () => Effect.die("Unexpected browsing"),
       supportsGit: () => Effect.die("Unexpected Git inspection"), creationKey: () => Effect.die("Unexpected setup key") })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      observe: () => Effect.die("Unexpected pure process observation"),
       resume: () => Effect.die("Unexpected resume"),
       pause: () => Effect.die("Unexpected pause"),
       refresh: () => Effect.suspend(() => { refreshes++; return failRefresh

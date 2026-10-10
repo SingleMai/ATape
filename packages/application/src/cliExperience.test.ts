@@ -73,6 +73,7 @@ const fixture = (runtimeReleaseVersion = "1.0.0") => {
       })
     })),
     Layer.succeed(CollectorDaemonProcess, CollectorDaemonProcess.of({
+      observe: () => Effect.die("Unexpected pure process observation"),
       resume: () => Effect.die("Interactive setup must issue Start, not background Resume"),
       pause: () => Effect.die("Interactive setup must not pause for maintenance"),
       refresh: () => Effect.succeed(false),
@@ -90,7 +91,8 @@ const fixture = (runtimeReleaseVersion = "1.0.0") => {
       })
     })),
     Layer.succeed(CollectorRunStatusStore, CollectorRunStatusStore.of({
-      read: () => Effect.succeed(runState), recordCycle: () => Effect.void, recordCollectorFailure: () => Effect.void
+      read: () => Effect.succeed(runState), recordCycle: () => Effect.void, recordRedactionJob: () => Effect.void,
+      recordCollectorFailure: () => Effect.void
     })),
     Layer.succeed(CollectorStateStore, CollectorStateStore.of({
       capturedScopes: () => Effect.succeed(checkpoint && (checkpoint.canonicalPublished || checkpoint.rawObjects.length) ? [checkpoint] : []),
