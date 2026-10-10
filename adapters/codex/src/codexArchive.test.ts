@@ -407,11 +407,53 @@ describe("Codex Adapter", () => {
     expect(observation.events.find((event) => event.sourceEventId === "legacy-tool")?.update)
       .toMatchObject({ sessionUpdate: "tool_call", title: "exec", kind: "execute", status: "completed" })
     expect(observation.events.find((event) => event.sourceEventId === "legacy-function")?.update)
-      .toMatchObject({ sessionUpdate: "tool_call", title: "apply_patch", kind: "edit", status: "completed" })
+      .toMatchObject({ sessionUpdate: "tool_call", title: "apply_patch", kind: "edit" })
+    expect(observation.events.find((event) => event.sourceEventId === "legacy-function")?.update)
+      .not.toHaveProperty("status")
     expect(JSON.stringify(observation.events)).not.toContain("provider-only")
     const rawObservation = requiredObservation(await collect(runtime, page.nextCursor))
     expect(rawObservation.rawSegments.map((segment) => segment.content).join(""))
       .toContain("provider-only-tool-output")
+  })
+
+  it("preserves unknown tool outcomes instead of inferring success or failure", async () => {
+    const root = await makeEmptyFixture()
+    await writeJsonl(join(root.sessionsDirectory, "tool-status.jsonl"), [
+      sessionMeta({ id: "tool-status", cwd: root.project }),
+      ...[undefined, "provider_future_status", "completed", "failed", "running"].map((status, index) =>
+        responseItem(`2026-08-16T00:00:0${index + 1}.000Z`, {
+          type: "function_call", id: `tool-${index}`, name: "exec", ...(status === undefined ? {} : { status })
+        }))
+    ])
+    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+    expect(observation.events).toHaveLength(5)
+    expect(observation.events[0]?.update).not.toHaveProperty("status")
+    expect(observation.events[1]?.update).not.toHaveProperty("status")
+    expect(observation.events[2]?.update).toMatchObject({ status: "completed" })
+    expect(observation.events[3]?.update).toMatchObject({ status: "failed" })
+    expect(observation.events[4]?.update).toMatchObject({ status: "in_progress" })
+  })
+
+  it("honors explicit outcomes and preserves missing outcomes across native tool item types", async () => {
+    const root = await makeEmptyFixture()
+    const types = ["CommandExecution", "McpToolCall", "FileChange", "ImageView", "Extension"]
+    const statuses = [undefined, "provider_future_status", "failed", "completed"]
+    await writeJsonl(join(root.sessionsDirectory, "native-tool-status.jsonl"), [
+      sessionMeta({ id: "native-tool-status", cwd: root.project }),
+      ...types.flatMap((type, typeIndex) => statuses.map((status, statusIndex) =>
+        itemCompleted(new Date(Date.UTC(2026, 7, 16, 0, 0, typeIndex * statuses.length + statusIndex + 1)).toISOString(), "native-tool-status", {
+          type, id: `${type}-${statusIndex}`, command: ["echo", "fixture"], server: "fixture", tool: "inspect",
+          path: "/tmp/fixture.png", kind: "Fixture extension", ...(status === undefined ? {} : { status })
+        })))
+    ])
+    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+    expect(observation.events).toHaveLength(types.length * statuses.length)
+    for (const type of types) {
+      expect(observation.events.find(event => event.sourceEventId === `${type}-0`)?.update).not.toHaveProperty("status")
+      expect(observation.events.find(event => event.sourceEventId === `${type}-1`)?.update).not.toHaveProperty("status")
+      expect(observation.events.find(event => event.sourceEventId === `${type}-2`)?.update).toMatchObject({ status: "failed" })
+      expect(observation.events.find(event => event.sourceEventId === `${type}-3`)?.update).toMatchObject({ status: "completed" })
+    }
   })
 
   it("prefers supported item_completed records when both Codex projections coexist", async () => {
@@ -606,7 +648,7 @@ describe("Codex Adapter", () => {
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
     expect(firstObservation.rawSegments).toEqual([])
-    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 8)
+    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 10)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
     const secondObservation = requiredObservation(second)
@@ -676,7 +718,7 @@ describe("Codex Adapter", () => {
 
     expect(observation.session.title).toBe("Checkout accessibility review")
     expect(observation.session.updatedAt).toBe("2026-09-05T00:03:00.000Z")
-    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 8)
+    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 10)
   })
 
   it("collects a title-only rename without new rollout or Raw bytes", async () => {
@@ -1036,9 +1078,10 @@ describe("Codex Adapter", () => {
     const observation = requiredObservation(raw)
     const progress = rawProgress(observation.session.sourceSessionId, observation.rawSegments)
     const state = JSON.parse(Buffer.from(raw.nextCursor!, "base64url").toString("utf8"))
-    delete state.eventProjectionVersion
+    state.eventProjectionVersion = 3
     let page = await collect(await openAdapter(fixture.project, "directory"), Buffer.from(JSON.stringify(state)).toString("base64url"), progress)
     expect(requiredObservation(page).events.map(e => e.sourceEventId)).toEqual(requiredObservation(first).events.map(e => e.sourceEventId))
+    expect(requiredObservation(page).events.every(event => event.projectionRevision === 4)).toBe(true)
     for (let i = 0; i < 10; i++) {
       expect(page.observations.flatMap(o => o.rawSegments)).toEqual([])
       if (!page.hasMore) break

@@ -24,6 +24,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"github.com/SingleMai/ATape/server/internal/team"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 	"github.com/SingleMai/ATape/server/internal/workspace"
@@ -122,6 +123,7 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 		Authentication: authenticationModule, Teams: teamModule, Cutover: cutoverModule, Publication: publisher,
 		Memory: conversation.NewMemory(store), Ingestor: ingestion.NewIngestor(store),
 		Searcher: projectsearch.NewSearcher(store), Directory: workspace.NewDirectory(store), Raw: archive,
+		Analytics: sessionanalytics.New(store),
 	}
 	handler, err := NewHandler(Config{
 		InstanceOrigin: "https://web.example.test", WebOrigin: "https://web.example.test",
@@ -456,6 +458,24 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	if conversationResponse.Code != http.StatusOK {
 		t.Fatalf("read captured Session = %d: %s", conversationResponse.Code, conversationResponse.Body.String())
 	}
+	analysisRequest := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+applied.SessionID+"/analytics?metric=user_inputs", nil)
+	analysisRequest.AddCookie(sessionCookie)
+	analysisResponse := httptest.NewRecorder()
+	handler.ServeHTTP(analysisResponse, analysisRequest)
+	var analysis sessionanalytics.Result
+	decodeResponse(t, analysisResponse, &analysis)
+	if analysisResponse.Code != http.StatusOK || analysis.Snapshot == "" || analysis.Summary.RootUserInputs != 1 || len(analysis.Evidence.Items) != 1 {
+		t.Fatalf("analyze captured Session = %d: %s", analysisResponse.Code, analysisResponse.Body.String())
+	}
+	conditionalRequest := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/"+applied.SessionID+"?limit=100&snapshot="+url.QueryEscape(analysis.Snapshot)+"&at="+url.QueryEscape(analysis.Evidence.Items[0].EventID), nil)
+	conditionalRequest.AddCookie(sessionCookie)
+	conditionalResponse := httptest.NewRecorder()
+	handler.ServeHTTP(conditionalResponse, conditionalRequest)
+	var conditional conversation.Conversation
+	decodeResponse(t, conditionalResponse, &conditional)
+	if conditionalResponse.Code != http.StatusOK || conditional.Snapshot != analysis.Snapshot {
+		t.Fatalf("open analysis evidence = %d: %s", conditionalResponse.Code, conditionalResponse.Body.String())
+	}
 	searchRequest := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+project.ID+"/search?q=durable", nil)
 	searchRequest.AddCookie(sessionCookie)
 	searchResponse := httptest.NewRecorder()
@@ -517,6 +537,7 @@ WHERE action = 'captured_session.delete'
 	for label, target := range map[string]string{
 		"Canonical": "/api/v1/sessions/" + applied.SessionID,
 		"Raw":       "/api/v1/sessions/" + applied.SessionID + "/raw",
+		"Analytics": "/api/v1/sessions/" + applied.SessionID + "/analytics",
 	} {
 		request := httptest.NewRequest(http.MethodGet, target, nil)
 		request.AddCookie(sessionCookie)

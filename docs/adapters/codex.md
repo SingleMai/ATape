@@ -168,10 +168,19 @@ selected-source attribution. Title-index changes, missing sources and idle cache
 inventories trigger complete discovery. Cached diagnostics are bounded discovery
 observations; they never authorize source reads.
 
-Projection v3 repairs cumulative item updates that previously collided across
-pages or lost their later text within a page. It replays Canonical history once
-with stable Event IDs and snapshot revisions; existing Raw acknowledgements
-are retained. See [ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md).
+Projection v4 retains the cumulative item repair described in
+[ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md) and preserves
+unknown tool outcomes. A missing or unrecognized provider status is omitted;
+it does not mean success or failure. Explicit provider outcomes and numeric
+command exit codes remain authoritative. Upgrading a projection v3 checkpoint
+replays Canonical history once with stable Event IDs and higher projection
+revisions; existing Raw acknowledgements are retained.
+
+The derived child-Thread spawn marker remains `completed`: observed child
+metadata proves the spawn occurred. This describes creation of the child, not
+successful completion of its delegated work. Native image-view and extension
+items follow their explicit status; their presence alone does not establish an
+outcome.
 
 ## Recovery and verification
 

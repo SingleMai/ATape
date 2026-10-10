@@ -34,17 +34,19 @@ func TestRouteInventoryIsClosedAndUnique(t *testing.T) {
 		seen[key] = route.Class
 	}
 	for key, expected := range map[string]RouteClass{
-		"GET /healthz":                                      PublicProtocol,
-		"GET /readyz":                                       PublicProtocol,
-		"GET /api/v1/instance":                              PublicProtocol,
-		"GET /api/v1/workspace":                             AnyPrincipal,
-		"GET /api/v1/projects/{projectId}/memory":           WebOnly,
-		"POST /api/v1/ingestion/canonical/batches":          CLIOnly,
-		"POST /api/v1/auth/federated/identity-bindings":     WebOnly,
-		"POST /api/v1/auth/cli/device-grants":               PublicProtocol,
-		"DELETE /api/v1/auth/cli/credentials/current":       CLIOnly,
-		"POST /api/v1/teams/{teamSlug}/projects":            AnyPrincipal,
-		"POST /api/v1/teams/{teamSlug}/join-code/rotations": WebOnly,
+		"GET /healthz":                                        PublicProtocol,
+		"GET /readyz":                                         PublicProtocol,
+		"GET /api/v1/instance":                                PublicProtocol,
+		"GET /api/v1/workspace":                               AnyPrincipal,
+		"GET /api/v1/projects/{projectId}/memory":             WebOnly,
+		"GET /api/v1/sessions/{sessionId}/analytics":          WebOnly,
+		"GET /api/v1/sessions/{sessionId}/analytics/evidence": WebOnly,
+		"POST /api/v1/ingestion/canonical/batches":            CLIOnly,
+		"POST /api/v1/auth/federated/identity-bindings":       WebOnly,
+		"POST /api/v1/auth/cli/device-grants":                 PublicProtocol,
+		"DELETE /api/v1/auth/cli/credentials/current":         CLIOnly,
+		"POST /api/v1/teams/{teamSlug}/projects":              AnyPrincipal,
+		"POST /api/v1/teams/{teamSlug}/join-code/rotations":   WebOnly,
 	} {
 		if got := seen[key]; got != expected {
 			t.Fatalf("route %s class = %q, want %q", key, got, expected)

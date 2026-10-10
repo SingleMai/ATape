@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/SingleMai/ATape/server/internal/canonical"
 	"github.com/SingleMai/ATape/server/internal/ingestion"
@@ -166,7 +167,7 @@ func (h *Handler) projectMemory(response http.ResponseWriter, request *http.Requ
 }
 
 func (h *Handler) conversation(response http.ResponseWriter, request *http.Request) {
-	query, ok := strictQuery(response, request, "thread", "limit", "head", "after", "at")
+	query, ok := strictQuery(response, request, "thread", "limit", "head", "after", "at", "snapshot")
 	if !ok {
 		return
 	}
@@ -174,12 +175,12 @@ func (h *Handler) conversation(response http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
-	if limit < 1 || limit > 100 {
+	if limit < 1 || limit > 100 || len(query.Get("snapshot")) > 200 || !utf8.ValidString(query.Get("snapshot")) {
 		writeProblem(response, request, problemInvalidRequest, 0, nil)
 		return
 	}
 	if !query.Has("limit") {
-		if query.Has("head") || query.Has("after") || query.Has("at") {
+		if query.Has("head") || query.Has("after") || query.Has("at") || query.Has("snapshot") {
 			writeProblem(response, request, problemInvalidRequest, 0, nil)
 			return
 		}
@@ -187,7 +188,7 @@ func (h *Handler) conversation(response http.ResponseWriter, request *http.Reque
 		publicationResult(response, request, value, err)
 		return
 	}
-	value, err := h.memory.OpenConversationPage(request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"), query.Get("thread"), canonical.ConversationPageRequest{Limit: limit, Head: query.Get("head"), AfterEventID: query.Get("after"), AtEventID: query.Get("at")})
+	value, err := h.memory.OpenConversationPage(request.Context(), principalFromContext(request.Context()), request.PathValue("sessionId"), query.Get("thread"), canonical.ConversationPageRequest{Limit: limit, Head: query.Get("head"), AfterEventID: query.Get("after"), AtEventID: query.Get("at"), Snapshot: query.Get("snapshot")})
 	publicationResult(response, request, value, err)
 }
 

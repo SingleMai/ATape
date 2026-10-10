@@ -23,6 +23,7 @@ export type SessionReaderProps = {
   readonly onOpenThread: (threadId: string, label?: string) => void
   readonly onRetry: () => void
   readonly onOpenRaw: () => void
+  readonly onOpenAnalysis?: () => void
   readonly onNextPage?: (head: string, after: string) => void
   readonly onFirstPage?: () => void
   readonly highlightedEventId?: string
@@ -296,6 +297,7 @@ export const SessionReaderView = ({
   onOpenThread,
   onRetry,
   onOpenRaw,
+  onOpenAnalysis,
   onNextPage,
   onFirstPage,
   highlightedEventId,
@@ -362,6 +364,7 @@ export const SessionReaderView = ({
             </p>
           </div>
         </div>
+        {onOpenAnalysis && <Button variant="ghost" onClick={onOpenAnalysis}>{t("analytics.title", "Session analysis")}</Button>}
         <details className="quiet-disclosure">
           <summary aria-label={t("session.conversationDetails", "Conversation details and actions")}>{t("session.more", "More")}</summary>
           <div className="quiet-disclosure-panel">

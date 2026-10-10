@@ -20,7 +20,7 @@ integration checks require Docker.
 | [packages/adapter-catalog](../packages/adapter-catalog/) | Shared official-tool metadata |
 | [packages/ui](../packages/ui/README.md) and [packages/i18n](../packages/i18n/) | Reusable presentation, semantic themes and localization support |
 | [adapters](../adapters/) | Codex, Claude, OpenCode, CodeBuddy, Kimi, Grok and experimental Cursor provider Implementations; the Host loads their declared runtime capability |
-| [server/internal](../server/internal/) | Go Modules for authentication, authorization, Team, Canonical ingestion, publication, conversation, Raw and Search; private infrastructure under `adapters` |
+| [server/internal](../server/internal/) | Go Modules for authentication, authorization, Team, Canonical ingestion, publication, conversation, Session Analytics, Raw and Search; private infrastructure under `adapters` |
 | [server/cmd/atape-server](../server/cmd/atape-server/) | Server Composition Root and process lifetime |
 | [specs](../specs/), [scripts](../scripts/) and [workflows](../.github/workflows/) | Machine-readable contracts, verification, packaging and delivery gates |
 

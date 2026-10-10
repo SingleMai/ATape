@@ -170,17 +170,19 @@ type CapturedUser struct {
 }
 
 type ConversationSnapshot struct {
-	Head        string
-	NextEventID string
-	CapturedBy  *CapturedUser
-	Session     SessionRecord
-	Thread      ThreadRecord
-	Threads     []ThreadRecord
-	Events      []EventRecord
-	EventCounts map[string]int
+	SnapshotToken string
+	Head          string
+	NextEventID   string
+	CapturedBy    *CapturedUser
+	Session       SessionRecord
+	Thread        ThreadRecord
+	Threads       []ThreadRecord
+	Events        []EventRecord
+	EventCounts   map[string]int
 }
 
 type ConversationPageRequest struct {
+	Snapshot     string
 	Head         string
 	AfterEventID string
 	AtEventID    string

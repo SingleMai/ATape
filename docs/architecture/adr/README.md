@@ -143,6 +143,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0115](0115-explicit-capture-migrations.md) | Explicit capture migrations and forward recovery |
 | [0116](0116-controlled-cursor-creation.md) | Controlled Cursor creation and capture |
 | [0117](0117-cursor-local-first-publication.md) | Local first publication of Cursor 0.5.6 |
+| [0118](0118-session-analytics-current-snapshot.md) | Session Analytics from one current Canonical snapshot |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

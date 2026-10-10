@@ -35,6 +35,7 @@ import {
 } from "./presenters/accessPresenter"
 import { useConversationPresenter, useProjectMemoryPresenter } from "./presenters/memoryPresenter"
 import { useSessionRawPresenter } from "./presenters/rawPresenter"
+import { SessionAnalyticsScope } from "./presenters/sessionAnalyticsPresenter"
 import { useSearchOverlay } from "./presenters/searchOverlayContext"
 import { SettingsOverlayContext, useSettingsOverlay, type SettingsTarget } from "./presenters/settingsOverlayContext"
 import { SettingsDialog } from "./view/SettingsDialog"
@@ -56,6 +57,7 @@ import { t } from "./i18n"
 
 const SessionSearch = Schema.Struct({
   head: Schema.optionalKey(Schema.String),
+  snapshot: Schema.optionalKey(Schema.String),
   after: Schema.optionalKey(Schema.String),
   thread: Schema.optionalKey(Schema.String),
   event: Schema.optionalKey(Schema.String),
@@ -67,6 +69,7 @@ const SessionSearch = Schema.Struct({
 
 type SessionLocationSearch = {
   readonly head?: string
+  readonly snapshot?: string
   readonly after?: string
   readonly thread: string
   readonly event?: string
@@ -83,6 +86,7 @@ const parseSessionSearch = (input: unknown): SessionLocationSearch =>
       thread: value.thread ?? "root",
       ...(value.event ? { event: value.event } : {}),
       ...(value.head ? { head: value.head } : {}),
+      ...(value.snapshot ? { snapshot: value.snapshot } : {}),
       ...(value.after ? { after: value.after } : {}),
       ...(value.from ? { from: value.from } : {}),
       ...(value.q ? { q: value.q } : {}),
@@ -427,18 +431,30 @@ function SessionRoute() {
   const navigate = useNavigate()
   const { openSearch, hasSearch } = useSearchOverlay()
   const restart = () => {
-    const { head: _head, after: _after, event: _event, ...first } = search
+    const { head: _head, snapshot: _snapshot, after: _after, event: _event, ...first } = search
     void navigate({ to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params, search: first, replace: true })
   }
   const page = { ...(search.head ? { head: search.head } : {}),
+    ...(search.snapshot ? { snapshot: search.snapshot } : {}),
     ...(search.after ? { after: search.after } : search.event ? { at: search.event } : {}) }
   const presenter = useConversationPresenter(params.sessionId, search.thread, page, restart)
   return (
     <>
+      <SessionAnalyticsScope key={params.sessionId}>
       <SessionReaderWorkspace
         key={`${params.sessionId}:${search.thread}`}
         sessionId={params.sessionId}
         state={presenter.state}
+        onReturnFromAnalysis={presenter.revalidate}
+        evidenceHref={target => {
+          const query = new URLSearchParams({ snapshot: target.snapshot, thread: target.threadId, event: target.eventId })
+          if (target.head) query.set("head", target.head)
+          return `/teams/${encodeURIComponent(params.teamId)}/projects/${encodeURIComponent(params.projectId)}/sessions/${encodeURIComponent(params.sessionId)}?${query}`
+        }}
+        onOpenEvidence={target => void navigate({
+          to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params,
+          search: { snapshot: target.snapshot, thread: target.threadId, event: target.eventId, ...(target.head ? { head: target.head } : {}) }
+        })}
         refresh={presenter.refresh}
         {...(search.after || search.event ? { onFirstPage: restart } : {})}
         onNextPage={(head, after) => void navigate({
@@ -459,6 +475,7 @@ function SessionRoute() {
           params: { teamId: params.teamId, projectId: params.projectId }
         })}
       />
+      </SessionAnalyticsScope>
       {search.raw === "open" && <RawDrawerRoute sessionId={params.sessionId} cursor={search.rawCursor ?? ""}
         onPage={(cursor) => {
           const { rawCursor: _cursor, ...rest } = search
