@@ -56,7 +56,7 @@
   "cli.guidance.sources": "为所有已连接项目启用一次工具。",
   "cli.guidance.toolInstall": "ATape 需要安装其 {tool} 读取器才能同步这些对话。",
   "cli.guidance.toolUpdate": "ATape 无法读取 {tool} 对话。更新 ATape 的读取器可能会有所帮助。",
-  "cli.help": "ATape CLI\n\n用法：\n  atape                 打开 ATape，管理项目、工具和设置\n  atape redaction-test <file>  本地测试脱敏并输出遮蔽内容\n  atape --help          显示帮助\n  atape --version       显示当前版本\n\n选项：\n  --lang <locale>       本次使用的界面语言（en、zh-CN）\n  --no-browser          显示登录链接，不自动打开浏览器\n\n请在 macOS 或 Linux 的交互式终端中运行 atape。\n在 ATape 内管理项目、工具和设置。使用 redaction-test 本地预览文件的脱敏结果。\n退出 ATape 后后台同步继续运行。初始化后默认开启登录自启动，可在设置中修改。\n\n环境变量：\n  ATAPE_HOME            本地数据目录（默认 ~/.atape）\n  ATAPE_INSTANCE_URL    默认服务器地址，也可在设置中修改\n  ATAPE_LANG            界面语言（en、zh-CN）",
+  "cli.help": "ATape CLI\n\n用法：\n  atape                 打开 ATape，管理项目、工具和设置\n  atape start --tool <id>  在当前项目启动新的编程会话\n  atape redaction-test <file>  本地测试脱敏并输出遮蔽内容\n  atape --help          显示帮助\n  atape --version       显示当前版本\n\n选项：\n  --lang <locale>       本次使用的界面语言（en、zh-CN）\n  --no-browser          显示登录链接，不自动打开浏览器\n\n请在 macOS 或 Linux 的交互式终端中运行 atape。\n在 ATape 内管理项目、工具和设置。使用 redaction-test 本地预览文件的脱敏结果。\n退出 ATape 后后台同步继续运行。初始化后默认开启登录自启动，可在设置中修改。\n\n环境变量：\n  ATAPE_HOME            本地数据目录（默认 ~/.atape）\n  ATAPE_INSTANCE_URL    默认服务器地址，也可在设置中修改\n  ATAPE_LANG            界面语言（en、zh-CN）",
   "cli.instance.checking": "正在检查实例",
   "cli.instance.hint": "使用 https://atape.net 或你的自托管实例地址。",
   "cli.instance.saving": "正在保存服务器",
@@ -422,5 +422,9 @@
   "cli.tools.refreshCommandEntry": "刷新 ATape 命令入口到 {version}",
   "cli.settings.updateWakePending": "定时更新检查需要处理。",
   "cli.settings.repairUpdateWake": "重新注册定时更新",
-  "cli.settings.repairingUpdateWake": "正在注册定时更新"
+  "cli.settings.repairingUpdateWake": "正在注册定时更新",
+  "cli.start.confirmed": "会话创建已确认：{sourceId}",
+  "cli.start.help": "启动受控的编程会话\n\n用法：\n  atape start --tool <id> [--project <id>] [--prompt <原文>] [--lang <语言>]\n\n请在已注册项目内的 macOS 或 Linux 交互式终端运行。\n工具须已安装、启用并支持受控创建。多个 Git 项目匹配时请用 --project 选择。\n提示词按原文传递，最多 64 KiB UTF-8 且不能含 NUL。\n创建凭据确认后，后台采集才能收录这个会话。",
+  "cli.start.unconfirmed": "会话已退出，创建尚未确认：{sourceId}",
+  "cli.start.terminalRequired": "启动会话需要 macOS 或 Linux 交互式终端。运行 atape start --help 查看用法。"
 }

@@ -76,12 +76,26 @@ test("caller creates complete version assets before public version, then fixed n
   assert.equal(result.catalogRevision, 1)
   const mutations = writes(remote)
   assert.equal(mutations[0].body.draft, true)
-  assert.equal(mutations.filter(event => event.route.endsWith("/assets")).length, 8)
+  assert.equal(mutations.filter(event => event.route.endsWith("/assets")).length, local.files.length)
   const advertised = mutations.findIndex(event => event.method === "PATCH" && event.body.draft === false && event.body.prerelease === false)
-  assert.equal(advertised, 9)
+  assert.equal(advertised, local.files.length + 1)
   assert.equal(mutations.at(-1).body.tag_name, updateCatalogTag)
   assert.equal(mutations.at(-1).body.prerelease, true)
   assert.equal(mutations.at(-1).body.make_latest, "false")
+})
+
+test("missing Cursor, renamed, duplicate and extra files fail before external writes", async () => {
+  for (const kind of ["missing-cursor", "renamed", "duplicate", "extra"]) {
+    const remote = githubFixture(), local = artifacts()
+    const cursor = local.files.find(file => file.name === "@atape/adapter-cursor")
+    assert.ok(cursor)
+    if (kind === "missing-cursor") local.files = local.files.filter(file => file !== cursor)
+    if (kind === "renamed") local.files = local.files.map(file => file === cursor ? { ...file, filename: "unexpected.tgz" } : file)
+    if (kind === "duplicate") local.files = local.files.map(file => file === cursor ? local.files[0] : file)
+    if (kind === "extra") local.files.push({ ...cursor, filename: "unexpected.tgz" })
+    await assert.rejects(publish(remote, local), /exact bundle tarballs/)
+    assert.equal(remote.events.length, 0)
+  }
 })
 
 test("same-byte rerun performs no uploads, tag moves or catalog revision changes", async () => {
@@ -124,7 +138,7 @@ test("draft interruption resumes missing uploads and publishes only after comple
   const remote = githubFixture(), local = artifacts()
   remote.seed("v0.5.6", `Release notes.\n${releaseBundleSection(local.bundle)}`, local.files.slice(0, 3), { draft: true })
   await publish(remote, local)
-  assert.equal(writes(remote).filter(event => event.route.endsWith("/assets")).length, 5)
+  assert.equal(writes(remote).filter(event => event.route.endsWith("/assets")).length, local.files.length - 3)
   assert.equal(remote.releases.get("v0.5.6").draft, false)
 })
 
@@ -167,14 +181,36 @@ function publicationFixture(local, remote, { published = false, latest = "0.5.5"
     } } }
 }
 
+test("malformed bundle artifacts cannot reach the first npm publication", async () => {
+  for (const kind of ["missing-cursor", "renamed", "duplicate", "extra", "swapped-names", "changed-bytes", "changed-integrity", "changed-checksums"]) {
+    const remote = githubFixture(), local = artifacts(), fixture = publicationFixture(local, remote)
+    const cursor = local.files.find(file => file.name === "@atape/adapter-cursor")
+    if (kind === "missing-cursor") local.files = local.files.filter(file => file !== cursor)
+    if (kind === "renamed") cursor.filename = "unexpected.tgz"
+    if (kind === "duplicate") local.files = local.files.map(file => file === cursor ? local.files[0] : file)
+    if (kind === "extra") local.files.push({ ...cursor, filename: "unexpected.tgz" })
+    if (kind === "swapped-names") [cursor.name, local.files[0].name] = [local.files[0].name, cursor.name]
+    if (kind === "changed-bytes") cursor.bytes = Buffer.from("changed")
+    if (kind === "changed-integrity") local.bundle.packages.find(item => item.name === cursor.name).integrity = artifacts("0.5.7").bundle.packages[0].integrity
+    if (kind === "changed-checksums") {
+      const checksums = local.files.find(file => file.filename === "SHA256SUMS")
+      checksums.bytes = Buffer.from("changed\n"); checksums.sha256 = digest(checksums.bytes)
+    }
+    await assert.rejects(publishRelease(fixture.input), /exact bundle tarballs|Local .* changed|SHA256SUMS/, kind)
+    assert.deepEqual(fixture.events, [], kind)
+    assert.deepEqual(fixture.staging, [], kind)
+    assert.deepEqual(remote.events, [], kind)
+  }
+})
+
 test("publication orders adapters then CLI, explicit latest, public verification before any GitHub write", async () => {
   const remote = githubFixture(), local = artifacts(), fixture = publicationFixture(local, remote)
   const verify = fixture.input.registry.verify
   fixture.input.registry.verify = async () => { assert.equal(writes(remote).length, 0); return verify() }
   await publishRelease(fixture.input)
-  assert.equal(fixture.events.length, 8)
-  assert.equal(fixture.events[6].name, "@atape/cli")
-  assert.ok(fixture.events.slice(0, 7).every(event => event.tag === "latest"))
+  assert.equal(fixture.events.length, local.bundle.packages.length + 1)
+  assert.equal(fixture.events[local.bundle.packages.length - 1].name, "@atape/cli")
+  assert.ok(fixture.events.slice(0, local.bundle.packages.length).every(event => event.tag === "latest"))
   for (const path of fixture.staging) await assert.rejects(access(path))
 })
 
@@ -184,7 +220,7 @@ test("older npm publication uses nonlatest tag and cannot advertise backward", a
   const fixture = publicationFixture(local, remote, { latest: "0.5.7" })
   const result = await publishRelease(fixture.input)
   assert.equal(result.npmTag, "atape-managed")
-  assert.ok(fixture.events.slice(0, 7).every(event => event.tag === "atape-managed"))
+  assert.ok(fixture.events.slice(0, local.bundle.packages.length).every(event => event.tag === "atape-managed"))
 })
 
 test("existing exact npm versions skip publish but still require all public bytes", async () => {

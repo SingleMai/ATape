@@ -5,7 +5,8 @@ export const officialSources = [
   { id: "codebuddy", label: "CodeBuddy Code CLI", packageName: "@atape/adapter-codebuddy" },
   { id: "kimi", label: "Kimi Code CLI", packageName: "@atape/adapter-kimi" },
   { id: "opencode", label: "OpenCode", packageName: "@atape/adapter-opencode" },
-  { id: "grok", label: "Grok Build", packageName: "@atape/adapter-grok" }
+  { id: "grok", label: "Grok Build", packageName: "@atape/adapter-grok" },
+  { id: "cursor", label: "Cursor", packageName: "@atape/adapter-cursor" }
 ] as const
 
 export const officialSourceLabel = (id: string) => officialSources.find(source => source.id === id)?.label ?? id

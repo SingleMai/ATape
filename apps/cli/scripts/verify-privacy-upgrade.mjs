@@ -113,7 +113,7 @@ syncBuiltinESMExports();\n`)
     baselineVersion: "0.5.4", baselineIntegrity, baselineTarballSha256: await digest(baselineTarball), baselineEntrySha256: baselineEntryDigest,
     candidateVersion: upgraded.version, candidateTarballSha256: await digest(candidate), candidateEntrySha256: targetDigest,
     baselineWorkerUnmodified: true, historicalAutomaticAcquisition: "genuine 0.5.4 legacy metadata contract and controlled exact package source",
-    manualDiscovery: "complete immutable catalog and version descriptor with SHA-512 for seven real fixture tarballs",
+    manualDiscovery: "complete immutable catalog and version descriptor with SHA-512 for eight real fixture tarballs",
     realNpmEntryRefresh: "verified downloaded candidate bytes passed to actual npm install --global --prefix isolated-prefix archive.tgz --offline --ignore-scripts",
     managedSettingsBeforeEntryRefresh: true, oldBootstrapRedactionTestExitCode: 2, redactionTestAfterEntryRefresh: true,
     selectedAdapterOverlayPreserved: true, syntheticExistingV2CheckpointBytesPreserved: true, stopIntentPreserved: true,

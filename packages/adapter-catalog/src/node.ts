@@ -17,7 +17,17 @@ export const openCodeDatabasePath = (environment: Environment, home: string) => 
 
 export const grokHome = (environment: Environment, home: string) => environment.ATAPE_GROK_HOME || environment.GROK_HOME || join(home, ".grok")
 
+const nonblank = (value: string | undefined) => value?.trim() ? value : undefined
+
+/** Native roots; pure resolution never opens or initializes Cursor storage. */
+export const cursorConfigHome = (environment: Environment, home: string) => {
+  const configured = nonblank(environment.CURSOR_CONFIG_DIR), xdg = nonblank(environment.XDG_CONFIG_HOME)
+  return configured ?? (xdg ? join(xdg, "cursor") : join(home, ".cursor"))
+}
+export const cursorDataHome = (environment: Environment, home: string) => nonblank(environment.CURSOR_DATA_DIR) ?? join(home, ".cursor")
+
 const locations = {
+  cursor: { kind: "directory", resolve: cursorDataHome },
   grok: { kind: "directory", resolve: grokHome },
   codex: { kind: "directory", resolve: codexHome },
   claude: { kind: "directory", resolve: claudeHome },

@@ -222,6 +222,7 @@ ATAPE_BOOTSTRAP_ENTRY:selected.bootstrapEntry, LAUNCHER_TEST_MARKER:process.env.
     try {
       const environment = { ...client.environment, TERM: "xterm", CI: "", CONTINUOUS_INTEGRATION: "", BUILD_NUMBER: "" }
       expect(await delegateManagedRuntime(client.bootstrap, [], environment)).toBeUndefined()
+      expect(await delegateManagedRuntime(client.bootstrap, ["start", "--tool", "cursor"], environment)).toBeUndefined()
       const args = ["__login-start", "--startup-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]
       expect(await delegateAdmittedLoginStartup(client.bootstrap, args, environment)).toBeUndefined()
       for (const flag of ["--help", "--version"]) {
@@ -242,6 +243,8 @@ ATAPE_BOOTSTRAP_ENTRY:selected.bootstrapEntry, LAUNCHER_TEST_MARKER:process.env.
     const client = await fixture()
     await writeFile(runtimeSelectionFile(client.home), "malformed")
     expect(await delegateManagedRuntime(client.bootstrap, ["--version"], { ...client.environment, ATAPE_RUNTIME_DIRECT: "1" })).toBeUndefined()
+    expect(await delegateManagedRuntime(client.bootstrap, ["start", "--help"], client.environment)).toBeUndefined()
+    expect(await delegateManagedRuntime(client.bootstrap, ["start", "--tool", "cursor"], { ...client.environment, CI: "true" })).toBeUndefined()
     expect(await delegateManagedRuntime(client.bootstrap, ["redaction-test", "sample.jsonl"], client.environment)).toBeUndefined()
     expect(await delegateManagedRuntime(client.bootstrap, ["redaction-test", "--help"], client.environment)).toBeUndefined()
     expect(await delegateManagedRuntime(client.bootstrap, ["__collector-daemon", "--daemon-token", "test-token"], client.environment)).toBeUndefined()
@@ -273,4 +276,17 @@ process.exitCode = await delegateManagedRuntime(process.env.LAUNCHER_TEST_BOOTST
       await exited
     }
   }, 10_000)
+})
+
+it("delegates an eligible start with literal argv and the selected runtime", async () => {
+  const f = await fixture(), input = Object.getOwnPropertyDescriptor(process.stdin, "isTTY"), output = Object.getOwnPropertyDescriptor(process.stdout, "isTTY")
+  Object.defineProperty(process.stdin, "isTTY", { configurable: true, value: true }); Object.defineProperty(process.stdout, "isTTY", { configurable: true, value: true })
+  try {
+    const args = ["start", "--tool", "cursor", "--prompt", "  中文\n--literal  "]
+    expect(await delegateManagedRuntime(f.bootstrap, args, { ...f.environment, TERM: "xterm", CI: "", CONTINUOUS_INTEGRATION: "", BUILD_NUMBER: "" })).toBe(7)
+    expect(JSON.parse(await readFile(f.output, "utf8"))).toMatchObject({ args, bootstrap: f.bootstrap })
+  } finally {
+    if (input) Object.defineProperty(process.stdin, "isTTY", input); else Reflect.deleteProperty(process.stdin, "isTTY")
+    if (output) Object.defineProperty(process.stdout, "isTTY", output); else Reflect.deleteProperty(process.stdout, "isTTY")
+  }
 })

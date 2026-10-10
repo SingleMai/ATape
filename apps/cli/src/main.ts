@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 
 import { Effect } from "effect"
-import { kickAutomaticUpdates, reconcileLoginStartup, reconcileUpdateWake, UpdateWakePlatform, runAutomaticUpdates, runLoginStartup } from "@atape/application"
+import { startAgentSession, kickAutomaticUpdates, reconcileLoginStartup, reconcileUpdateWake, UpdateWakePlatform, runAutomaticUpdates, runLoginStartup } from "@atape/application"
 import { rm, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { parseCLI } from "./commandInput.ts"
-import { runCommand, writeInformationalCommand, writeRedactionHelp, writeRedactionTestFailure, writeRedactionTestResult } from "./commands.ts"
+import { runCommand, writeInformationalCommand, writeRedactionHelp, writeRedactionTestFailure, writeRedactionTestResult, writeStartHelp, writeStartResult } from "./commands.ts"
+import { withTerminalState } from "./runtime/terminalState.ts"
 import { testLocalRedactionFile } from "./runtime/redactionTest.ts"
 import { defaultNodeClientPaths, makeNodeClientLayer, readClientConfigLocale } from "./runtime/clientLayers.ts"
 import { requestsGuidedExperience, supportsInteractiveExperience } from "./interactiveEligibility.ts"
@@ -32,6 +33,17 @@ const main = async () => {
     return
   }
 
+  if (command.kind === "start-help") {
+    initializeCliI18n(resolveCliLocale({ ...(command.options.lang === undefined ? {} : { flag: command.options.lang }), environment: process.env }))
+    await Effect.runPromise(writeStartHelp)
+    return
+  }
+  if (command.kind === "start" && !supportsInteractiveExperience()) {
+    initializeCliI18n(resolveCliLocale({ ...(command.options.lang === undefined ? {} : { flag: command.options.lang }), environment: process.env }))
+    process.stderr.write(`ATape: ${t("cli.start.terminalRequired")}\n`)
+    process.exitCode = 2
+    return
+  }
   if (command.kind === "redaction-test" || command.kind === "redaction-help") {
     initializeCliI18n(resolveCliLocale({
       ...(command.options.lang === undefined ? {} : { flag: command.options.lang }), environment: process.env
@@ -62,7 +74,7 @@ const main = async () => {
     return
   }
 
-  if (requestsGuidedExperience(command) && supportsInteractiveExperience()) {
+  if ((requestsGuidedExperience(command) || command.kind === "start") && supportsInteractiveExperience()) {
     const paths = defaultNodeClientPaths()
     const controlRecovery = await createUpdateControl(paths.atapeHome).recoveryPending()
     if (captureStateContract === legacyBridgeCaptureContract && !controlRecovery && !await createUpdateControl(paths.atapeHome).readSelection()) {
@@ -80,9 +92,11 @@ const main = async () => {
     }
     await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
     if (captureStateContract === legacyBridgeCaptureContract) await Effect.runPromise(prepareManualStateUpgrade(paths))
-    const { runInteractiveExperience } = await import("./interactive/run.ts")
-    await runInteractiveExperience(command)
-    return
+    if (command.kind === "interactive") {
+      const { runInteractiveExperience } = await import("./interactive/run.ts")
+      await runInteractiveExperience(command)
+      return
+    }
   }
   if (requestsGuidedExperience(command)) {
     process.stderr.write(`${t("cli.error.interactiveUnsupported", "ATape needs an interactive macOS or Linux terminal. Run atape there to manage projects, tools and settings. Use atape --help for launch options.")}\n`)
@@ -93,9 +107,15 @@ const main = async () => {
   const cancellation = new AbortController()
   const wakeDeadline = command.kind === "__update-wake" ? setTimeout(() => cancellation.abort(), 600_000) : undefined
   const stop = () => cancellation.abort()
-  process.once("SIGINT", stop)
-  process.once("SIGTERM", stop)
+  if (command.kind === "start") { process.on("SIGINT", stop); process.on("SIGTERM", stop) }
+  else { process.once("SIGINT", stop); process.once("SIGTERM", stop) }
   try {
+    if (command.kind === "start") {
+      await Effect.runPromise(withTerminalState(Effect.scoped(startAgentSession({ ...command.options, cwd: process.cwd() }).pipe(
+        Effect.flatMap(writeStartResult), Effect.provide(makeNodeClientLayer(defaultNodeClientPaths(), process.env))
+      ))), { signal: cancellation.signal })
+      return
+    }
     if (command.kind === "__update-wake") {
       const admitted = await admitUpdateWake(defaultNodeClientPaths(), command.options.wakeToken, process.argv[1]!, process.env)
       if (admitted === undefined) return
@@ -232,6 +252,7 @@ const main = async () => {
     )
   } catch (cause) {
     if (!cancellation.signal.aborted) throw cause
+    if (command.kind === "start") process.exitCode = 130
   } finally {
     if (wakeDeadline) clearTimeout(wakeDeadline)
     process.removeListener("SIGINT", stop)

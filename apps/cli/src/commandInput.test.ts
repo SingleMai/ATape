@@ -6,7 +6,7 @@ describe("single CLI entry", () => {
     [["--help"], "help"], [["-h"], "help"], [["--version"], "version"], [["-v"], "version"]] as const)("accepts %j", (args, kind) => {
     expect(parseCLI(args).kind).toBe(kind)
   })
-  it.each(["login", "logout", "setup", "projects", "tools", "adapters", "collect", "start", "stop", "status", "language", "upgrade", "help"])("removes the %s command", command => {
+  it.each(["login", "logout", "setup", "projects", "tools", "adapters", "collect", "stop", "status", "language", "upgrade", "help"])("removes the %s command", command => {
     expect(() => parseCLI([command])).toThrow("Run atape")
     expect(() => parseCLI([command, "--help"])).toThrow()
   })
@@ -60,3 +60,12 @@ it("parses the private periodic update entry", () => {
   expect(parseCLI(["__update-wake", "--wake-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]))
     .toEqual({ kind: "__update-wake", options: { wakeToken: "e859003d-90b4-44f6-ae5a-c14aa3c8ede7" } })
 })
+
+it("decodes controlled start and preserves literal prompt including empty input", () => {
+  for (const initialPrompt of ["", "  ", "a\nb\\c --resume", "中文"]) expect(parseCLI(["start", "--tool", "cursor", "--prompt", initialPrompt, "--project", "p"]))
+    .toEqual({ kind: "start", options: { toolId: "cursor", projectId: "p", initialPrompt } })
+  expect(parseCLI(["start", "--help"])).toEqual({ kind: "start-help", options: {} })
+})
+it.each([["start"], ["start", "cursor"], ["start", "--tool", "cursor", "--resume"],
+  ["start", "--help", "--tool", "cursor"], ["start", "--tool", "cursor", "--tool", "cursor"],
+  ["start", "--tool", "cursor", "--", "--native"]])("rejects unsupported start grammar %j", (...args) => expect(() => parseCLI(args)).toThrow())

@@ -63,6 +63,7 @@ const fixture = (fixedUpgradeSpec?: string, runtimeReleaseVersion = "1.0.0", pac
     })),
     Layer.succeed(ProjectLocator, ProjectLocator.of({
       locate: (path, preference) => Effect.succeed({
+        requestedCwd: path,
         path: preference === "directory" ? "/work/payments/src" : path.startsWith("/work/clone") ? path : "/work/payments",
         ...(preference === "directory" ? {} : { repositoryRemote: "git@github.com:acme/payments.git" }),
         name: preference === "directory" ? "src" : "payments",

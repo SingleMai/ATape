@@ -1,3 +1,4 @@
+import { cursorConfigHome, cursorDataHome } from "@atape/adapter-catalog/node"
 import { CLISetupPlatform } from "@atape/application"
 import { AdapterProtocolVersion, GitAttributionVersion } from "@atape/domain"
 import { Effect } from "effect"
@@ -13,7 +14,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 const fixture = async (override: (root: string) => Record<string, string> = () => ({}), runtimeReleaseVersion?: string) => {
   const root = await mkdtemp(join(tmpdir(), "atape-guided-"))
   roots.push(root)
-  const environment = { ATAPE_HOME: root, ATAPE_KIMI_HOME: join(root, "missing-kimi"), ATAPE_GROK_HOME: join(root, "missing-grok"), ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(root, "missing-codebuddy"),
+  const environment = { CURSOR_CONFIG_DIR: join(root, "missing-cursor"), CURSOR_DATA_DIR: join(root, "missing-cursor"), ATAPE_HOME: root, ATAPE_KIMI_HOME: join(root, "missing-kimi"), ATAPE_GROK_HOME: join(root, "missing-grok"), ATAPE_CODEX_HOME: join(root, "codex"), ATAPE_CLAUDE_HOME: join(root, "missing-claude"), ATAPE_CODEBUDDY_HOME: join(root, "missing-codebuddy"),
     XDG_DATA_HOME: join(root, "data"), OPENCODE_DB: "", ...override(root) }
   const paths = defaultNodeClientPaths(environment)
   const layer = makeCLISetupPlatformLayer(paths, environment, runtimeReleaseVersion)
@@ -25,6 +26,23 @@ describe("Node guided setup Adapter", () => {
     await mkdir(join(client.root, "npm", "dist"), { recursive: true })
     await writeFile(join(client.root, "npm", "package.json"), JSON.stringify({ name: "@atape/cli", version: "99.0.0" }))
     expect(await client.run(CLISetupPlatform.use(platform => Effect.succeed(platform.runtimeReleaseVersion)))).toBe(version ?? cliVersion)
+  })
+  it("resolves native Cursor roots without trimming values or initializing storage", () => {
+    expect(cursorConfigHome({}, "/user")).toBe("/user/.cursor")
+    expect(cursorDataHome({}, "/user")).toBe("/user/.cursor")
+    expect(cursorConfigHome({ CURSOR_CONFIG_DIR: " ", XDG_CONFIG_HOME: "/xdg" }, "/user")).toBe("/xdg/cursor")
+    expect(cursorDataHome({ CURSOR_DATA_DIR: "\t", XDG_CONFIG_HOME: "/xdg" }, "/user")).toBe("/user/.cursor")
+    expect(cursorConfigHome({ CURSOR_CONFIG_DIR: "/configured space " }, "/user")).toBe("/configured space ")
+    expect(cursorDataHome({ CURSOR_DATA_DIR: "/data space " }, "/user")).toBe("/data space ")
+  })
+  it.each(["directory", "missing", "file"])("detects Cursor %s data root without parsing history", async kind => {
+    const client = await fixture(root => ({ CURSOR_CONFIG_DIR: join(root, "cursor"), CURSOR_DATA_DIR: join(root, "cursor") }))
+    const path = join(client.root, "cursor")
+    if (kind === "directory") {
+      await mkdir(path)
+      await writeFile(join(path, "not-a-transcript"), "Detection only inspects the configured root.")
+    } else if (kind === "file") await writeFile(path, "not a directory")
+    expect(await client.run(CLISetupPlatform.use(platform => platform.detectSources()))).toEqual(kind === "directory" ? ["cursor"] : [])
   })
   it("detects Grok from the selected home without reading transcripts", async () => {
     const client = await fixture(root => ({ ATAPE_GROK_HOME: join(root, "selected-grok") }))

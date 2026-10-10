@@ -16,7 +16,7 @@ import { assertRuntimeDataAdmission, runtimeContext } from "./runtime/runtimeAdm
 let valid = true
 try { parseCLI(process.argv.slice(2)) } catch { valid = false }
 try {
-  if (valid && parseCLI(process.argv.slice(2)).kind === "interactive" && supportsInteractiveExperience()) {
+  if (valid && ["interactive", "start"].includes(parseCLI(process.argv.slice(2)).kind) && supportsInteractiveExperience()) {
     const paths = defaultNodeClientPaths()
     // An interrupted capable handoff must recover before the legacy manual
     // transition checks a stopped Collector or its temporary maintenance gate.

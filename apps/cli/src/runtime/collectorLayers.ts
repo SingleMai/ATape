@@ -57,5 +57,5 @@ export const makeNodeCollectorLayer = (
     },
     catch: () => new AdapterRuntimeError({ reason: "load", adapterId: "host", retryable: true, message: "Collector admission is paused for an ATape update." })
   })
-  return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory, jobAdmission), makeCollectorTransportLayer(), redactor, policies, sources)
+  return Layer.mergeAll(states, journals, makeAdapterRuntimeLayer(paths.adapterDirectory, jobAdmission, { home: runtime.home, runtime }), makeCollectorTransportLayer(), redactor, policies, sources)
 }

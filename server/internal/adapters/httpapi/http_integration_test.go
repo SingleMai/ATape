@@ -425,6 +425,9 @@ func TestHTTPAuthenticationAndAuthorizationContract(t *testing.T) {
 	t.Run("native OpenCode Collector", func(t *testing.T) {
 		assertOpenCodeCollectorContract(t, handler, modules, pool, project.ID, session.User.ID, token.Credential, sessionCookie, session.CSRFToken)
 	})
+	t.Run("controlled Cursor start and capture", func(t *testing.T) {
+		assertCursorCollectorContract(t, modules, pool)
+	})
 
 	batch := canonicalcontract.ValidBatch()
 	batch.ProjectID = project.ID

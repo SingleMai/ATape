@@ -1,6 +1,7 @@
 export {
-  CursorSourceError, CursorSourceLimits, discoverCursorSources, readCursorSource,
+  CursorSourceError, CursorSourceLimits, CursorSourcePrefix, discoverCursorSources, readCursorSource,
   type CursorSourceCandidate, type CursorDiscoveryPage, type CursorSourceSnapshot,
   type CursorSourceRecord, type CursorContentPart, type CursorMetadataCandidate,
-  type CursorSubagentCandidate
+  type CursorSourceFailure, type CursorSubagentCandidate
 } from "./cursorSource.ts"
+export { createAtapeAdapter } from "./runtime.ts"

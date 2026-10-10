@@ -923,7 +923,7 @@ describe("interactive navigation through the presenter Interface", () => {
     await client.wait(screen => screen.title === "Tools and updates")
     client.presenter.submit("configure")
     const tools = await client.wait(screen => screen.kind === "sources")
-    expect(tools.options).toEqual([{ value: "codex", label: "Codex" }, { value: "claude", label: "Claude Code" }, { value: "codebuddy", label: "CodeBuddy Code CLI" }, { value: "kimi", label: "Kimi Code CLI" }, { value: "opencode", label: "OpenCode" }, { value: "grok", label: "Grok Build" }])
+    expect(tools.options).toEqual([{ value: "codex", label: "Codex" }, { value: "claude", label: "Claude Code" }, { value: "codebuddy", label: "CodeBuddy Code CLI" }, { value: "kimi", label: "Kimi Code CLI" }, { value: "opencode", label: "OpenCode" }, { value: "grok", label: "Grok Build" }, { value: "cursor", label: "Cursor" }])
     expect(tools.selected).toEqual(["codex"])
     client.presenter.back()
     await client.wait(screen => screen.title === "Tools and updates")

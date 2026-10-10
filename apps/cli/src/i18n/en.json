@@ -56,7 +56,7 @@
   "cli.guidance.sources": "Enable tools once for all connected projects.",
   "cli.guidance.toolInstall": "ATape needs to install its {tool} reader to sync these conversations.",
   "cli.guidance.toolUpdate": "ATape couldn't read {tool} conversations. Updating ATape's reader may help.",
-  "cli.help": "ATape CLI\n\nUsage:\n  atape                 Open ATape to manage projects, tools and settings\n  atape redaction-test <file>  Test redaction locally and print masked content\n  atape --help          Show this help\n  atape --version       Show the installed version\n\nOptions:\n  --lang <locale>       Interface language for this session (en, zh-CN)\n  --no-browser          Show sign-in links without opening a browser\n\nRun atape in an interactive macOS or Linux terminal.\nManage projects, tools and settings inside ATape. Use redaction-test for a local file preview.\nExiting ATape leaves background sync running. Login startup is on by default after setup; change it in Settings.\n\nEnvironment:\n  ATAPE_HOME            Local ATape root (default: ~/.atape)\n  ATAPE_INSTANCE_URL    Default server address; also available in Settings\n  ATAPE_LANG            Interface language (en, zh-CN)",
+  "cli.help": "ATape CLI\n\nUsage:\n  atape                 Open ATape to manage projects, tools and settings\n  atape start --tool <id>  Start a new coding-agent session\n  atape redaction-test <file>  Test redaction locally and print masked content\n  atape --help          Show this help\n  atape --version       Show the installed version\n\nOptions:\n  --lang <locale>       Interface language for this session (en, zh-CN)\n  --no-browser          Show sign-in links without opening a browser\n\nRun atape in an interactive macOS or Linux terminal.\nManage projects, tools and settings inside ATape. Use redaction-test for a local file preview.\nExiting ATape leaves background sync running. Login startup is on by default after setup; change it in Settings.\n\nEnvironment:\n  ATAPE_HOME            Local ATape root (default: ~/.atape)\n  ATAPE_INSTANCE_URL    Default server address; also available in Settings\n  ATAPE_LANG            Interface language (en, zh-CN)",
   "cli.instance.checking": "Checking Instance",
   "cli.instance.hint": "Use https://atape.net or your self-hosted Instance origin.",
   "cli.instance.saving": "Saving server",
@@ -422,5 +422,9 @@
   "cli.tools.refreshCommandEntry": "Refresh ATape command entry to {version}",
   "cli.settings.updateWakePending": "Periodic update checks need attention.",
   "cli.settings.repairUpdateWake": "Retry periodic update registration",
-  "cli.settings.repairingUpdateWake": "Registering periodic update checks"
+  "cli.settings.repairingUpdateWake": "Registering periodic update checks",
+  "cli.start.confirmed": "Session creation confirmed: {sourceId}",
+  "cli.start.help": "Start a controlled coding-agent session\n\nUsage:\n  atape start --tool <id> [--project <id>] [--prompt <literal>] [--lang <locale>]\n\nRun in an interactive macOS or Linux terminal inside a registered Project.\nThe tool must be installed, enabled and support controlled session creation.\nA matching accessible Project is required; use --project when Git matches several Projects.\nThe optional prompt is passed literally (up to 64 KiB UTF-8, without NUL).\nA confirmed creation receipt permits later background collection.",
+  "cli.start.unconfirmed": "Session exited without confirmed creation: {sourceId}",
+  "cli.start.terminalRequired": "Starting a session requires an interactive macOS or Linux terminal. Run atape start --help for options."
 }

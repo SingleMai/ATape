@@ -9,7 +9,7 @@ import { DatabaseSync } from "node:sqlite"
 
 const execute = promisify(execFile)
 const officialPackages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude", "@atape/adapter-opencode",
-  "@atape/adapter-codebuddy", "@atape/adapter-kimi", "@atape/adapter-grok"]
+  "@atape/adapter-codebuddy", "@atape/adapter-kimi", "@atape/adapter-grok", "@atape/adapter-cursor"]
 const exists = file => readFile(file).then(() => true, cause => { if (cause.code === "ENOENT") return false; throw cause })
 const json = async file => JSON.parse(await readFile(file, "utf8"))
 const digest = async file => createHash("sha256").update(await readFile(file)).digest("hex")

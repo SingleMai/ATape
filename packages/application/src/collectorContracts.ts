@@ -1,7 +1,7 @@
 import type {
   SourceCaptureLimits, SourceProjectionLimits, SourceDiscoveryPage, SourceCapturePriorThread, GitSource, GitSourceDecision,
   AdapterCollectionPage, AdapterCollectionProgress, AdapterCollectionLimitValues, AdapterInstallation,
-  CanonicalApplyReceipt, CollectorCheckpoint, LocalProject, RawAppendReceipt
+  CanonicalApplyReceipt, CollectorCheckpoint, LocalProject, RawAppendReceipt, NewSessionResult
 } from "@atape/domain"
 import { AdapterObservation, AdapterProtocolVersion, AdapterSourceFailure } from "@atape/domain"
 import { Context, Effect, Schema, Scope } from "effect"
@@ -19,7 +19,7 @@ export class CollectorStateError extends Schema.TaggedError<CollectorStateError>
 }) {}
 
 export class AdapterRuntimeError extends Schema.TaggedError<AdapterRuntimeError>()("AdapterRuntimeError", {
-  reason: Schema.Literals(["load", "contract", "collect", "close", "unauthenticated", "transport"]),
+  reason: Schema.Literals(["load", "contract", "collect", "start", "close", "unauthenticated", "transport"]),
   sourceFailureReason: Schema.optionalKey(AdapterSourceFailure.fields.reason),
   adapterId: Schema.String,
   retryable: Schema.Boolean,
@@ -91,13 +91,20 @@ export type HostedSourceCapture = {
     readonly priorThreads?: ReadonlyArray<SourceCapturePriorThread>; readonly priorCheckpoint?: string; readonly legacyCheckpoint?: string }) =>
     Effect.Effect<PublicationDraftView<AdapterRuntimeError>, AdapterRuntimeError, Scope.Scope>
 }
-export type HostedAdapter = {
+export type HostedNewSession = {
+  readonly start: (request: {
+    readonly origin: { readonly cwd: string; readonly repositoryRemote?: string }
+    readonly initialPrompt?: string
+    readonly revalidate: Effect.Effect<void, AdapterRuntimeError>
+  }) => Effect.Effect<NewSessionResult, AdapterRuntimeError>
+}
+export type HostedAdapter = { readonly newSession?: HostedNewSession } & ({
   readonly collect: (request: HostedCollectRequest) => Effect.Effect<AdapterCollectionPage, AdapterRuntimeError>
 } | {
   readonly sourceCapture: HostedSourceCapture
   /** Host-owned ownership check after discovery has released its source view. */
   readonly attribute: (source: GitSource) => Effect.Effect<GitSourceDecision, AdapterRuntimeError>
-}
+})
 
 export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
   open(

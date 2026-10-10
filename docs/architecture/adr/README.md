@@ -138,11 +138,12 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0110](0110-runtime-writer-admission.md) | Compiled runtime identity and serialized local capture writes |
 | [0111](0111-cursor-native-source-reader.md) | Cursor native source reader before capture enablement |
 | [0112](0112-failed-candidate-cooldown.md) | Persistent cooldown for failed update candidates |
+| [0113](0113-independent-update-wakeup.md) | Independent periodic update wakeup |
 | [0114](0114-explicit-unknown-conversation-time.md) | Explicit unknown conversation time |
+| [0116](0116-controlled-cursor-creation.md) | Controlled Cursor creation and capture |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old
 record's rationale when a later decision changes it; link the amendment or
 replacement in both directions where applicable. Do not rewrite historical
 release authorization or evidence as if it applied to a new candidate.
-| [0113](0113-independent-update-wakeup.md) | Independent periodic update wakeup |

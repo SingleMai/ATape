@@ -1,4 +1,5 @@
-import { copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
+import { appendFile, copyFile, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, utimes, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { Effect } from "effect"
@@ -183,15 +184,15 @@ describe("Cursor candidate source reader", () => {
   })
 
   it.each([
-    ["complete JSON without LF", Buffer.from(JSON.stringify(user("unterminated")))],
-    ["partial JSON after a complete line", Buffer.from(lines([user("complete")]) + '{"role":"user"')],
-    ["truncated UTF-8 tail", Buffer.concat([Buffer.from(lines([user("complete")]) + '{"role":"user","message":{"content":[{"type":"text","text":"'), Buffer.from([0xf0, 0x9f])])],
+    ["complete JSON without LF", Buffer.from(JSON.stringify(user("unterminated"))), "incomplete"],
+    ["partial JSON after a complete line", Buffer.from(lines([user("complete")]) + '{"role":"user"'), "incomplete"],
+    ["truncated UTF-8 tail", Buffer.concat([Buffer.from(lines([user("complete")]) + '{"role":"user","message":{"content":[{"type":"text","text":"'), Buffer.from([0xf0, 0x9f])]), "incomplete"],
     ["invalid UTF-8 inside a terminated row", Buffer.concat([Buffer.from('{"role":"user","message":{"content":[{"type":"text","text":"'), Buffer.from([0xff]), Buffer.from('"}]}}\n')])],
     ["malformed complete JSON", Buffer.from('{"role":\n')],
     ["non-object JSON", Buffer.from("null\n")]
-  ])("rejects %s instead of returning a successful partial snapshot", async (_name, bytes) => {
-    const f = await fixture(bytes)
-    await expect(inspect(f)).rejects.toMatchObject({ reason: "format" })
+  ])("rejects %s instead of returning a successful partial snapshot", async (_name, bytes, reason = "format") => {
+    const f = await fixture(bytes as Buffer)
+    await expect(inspect(f)).rejects.toMatchObject({ reason })
   })
 
   it.each([
@@ -224,13 +225,15 @@ describe("Cursor candidate source reader", () => {
     await expect(discover(f.stateDirectory, { ...limits, inventoryEntries: 1 })).rejects.toMatchObject({ reason: "limit" })
   })
 
-  it("rejects malformed metadata and enforces its byte bound", async () => {
+  it("isolates malformed or oversized optional metadata as diagnostics", async () => {
     const f = await fixture()
     const path = join(f.stateDirectory, "chats", "bucket", f.sourceId, "meta.json")
     await mkdir(dirname(path), { recursive: true }); await writeFile(path, "{")
-    await expect(inspect(f)).rejects.toMatchObject({ reason: "format" })
+    expect((await inspect(f)).sourceFailures).toEqual([{ source: join(f.stateDirectory, "chats", "bucket"), reason: "format" }])
     await writeFile(path, JSON.stringify({ title: "x".repeat(2000) }))
-    await expect(inspect(f, { ...limits, rowBytes: 1024 })).rejects.toMatchObject({ reason: "limit" })
+    const oversized = await inspect(f, { ...limits, rowBytes: 1024 })
+    expect(oversized.metadataCandidates).toEqual([])
+    expect(oversized.sourceFailures).toEqual([{ source: path, reason: "limit" }])
   })
 
   it("bounds transcript and metadata bytes together while preserving all admitted candidates", async () => {
@@ -263,7 +266,9 @@ describe("Cursor candidate source reader", () => {
   it("rejects duplicate source IDs across workspace buckets instead of choosing an arbitrary origin", async () => {
     const f = await fixture()
     await addSource(f.stateDirectory, f.sourceId, "other-workspace")
-    await expect(discover(f.stateDirectory)).rejects.toMatchObject({ reason: "duplicate" })
+    const page = await discover(f.stateDirectory)
+    expect(page.sources).toEqual([])
+    expect(page.sourceFailures.map(failure => failure.reason)).toEqual(["duplicate", "duplicate"])
     await expect(inspect(f)).rejects.toMatchObject({ reason: "duplicate" })
   })
 
@@ -274,19 +279,21 @@ describe("Cursor candidate source reader", () => {
     await rm(f.path); await rename(target, f.path)
     const workspace = join(f.stateDirectory, "projects", f.workspaceSlug), outside = join(f.stateDirectory, "outside")
     await rename(workspace, outside); await symlink(outside, workspace)
-    await expect(discover(f.stateDirectory)).rejects.toMatchObject({ reason: "unsupported" })
-    await expect(inspect(f)).rejects.toMatchObject({ reason: "unsupported" })
+    expect((await discover(f.stateDirectory)).sourceFailures).toEqual([{ source: workspace, reason: "unsupported" }])
+    await expect(inspect(f)).rejects.toMatchObject({ reason: "missing" })
   })
 
-  it("rejects symlink metadata and child candidates", async () => {
+  it("isolates symlink metadata and child candidates without following them", async () => {
     const f = await fixture()
     const metadata = join(f.stateDirectory, "chats", "bucket", f.sourceId, "meta.json")
     await mkdir(dirname(metadata), { recursive: true }); await symlink(f.path, metadata)
-    await expect(inspect(f)).rejects.toMatchObject({ reason: "unsupported" })
+    expect((await inspect(f)).sourceFailures).toEqual([{ source: join(f.stateDirectory, "chats", "bucket"), reason: "unsupported" }])
     await rm(metadata)
     const child = join(dirname(f.path), "subagents", "child.jsonl")
     await mkdir(dirname(child)); await symlink(f.path, child)
-    await expect(inspect(f)).rejects.toMatchObject({ reason: "unsupported" })
+    const snapshot = await inspect(f)
+    expect(snapshot.subagentCandidates).toEqual([])
+    expect(snapshot.sourceFailures).toEqual([{ source: child, reason: "unsupported" }])
   })
 
   it.each(["", "/", "/."])("rejects a symlink state directory with suffix %j", async suffix => {
@@ -305,6 +312,57 @@ describe("Cursor candidate source reader", () => {
       await expect(Effect.runPromise(readCursorSource({ stateDirectory: f.stateDirectory, sourceId, limits }))).rejects.toMatchObject({ reason: "invalid_input" })
     }
     await expect(discover(f.stateDirectory, { ...limits, pageSources: 0 })).rejects.toMatchObject({ reason: "invalid_input" })
+  })
+
+
+  it("continues from two complete byte prefixes across identical rewrites and appends", async () => {
+    const f = await fixture(lines([user("first")]))
+    const initial = (await inspect(f)).currentFullPrefix
+    await appendFile(f.path, lines([user("second")]))
+    const prior = (await inspect(f)).currentFullPrefix
+    const full = await readFile(f.path)
+    await writeFile(f.path, full)
+    await appendFile(f.path, lines([user("third")]))
+    const snapshot = await Effect.runPromise(readCursorSource({ stateDirectory: f.stateDirectory, sourceId: f.sourceId, limits, requiredPrefixes: [initial, prior] }))
+    expect(snapshot.records).toHaveLength(3)
+    expect(snapshot.currentFullPrefix).toEqual({ bytes: (await readFile(f.path)).length, rows: 3, sha256: createHash("sha256").update(await readFile(f.path)).digest("hex") })
+    await writeFile(f.path, lines([user("rewritten first"), user("second"), user("third")]))
+    await expect(Effect.runPromise(readCursorSource({ stateDirectory: f.stateDirectory, sourceId: f.sourceId, limits, requiredPrefixes: [initial, prior] }))).rejects.toMatchObject({ reason: "changed" })
+    await writeFile(f.path, full.subarray(0, initial.bytes))
+    await expect(Effect.runPromise(readCursorSource({ stateDirectory: f.stateDirectory, sourceId: f.sourceId, limits, requiredPrefixes: [prior] }))).rejects.toMatchObject({ reason: "changed" })
+  })
+
+  it("validates complete rows and the trailing byte budget before reporting an incomplete tail", async () => {
+    const f = await fixture('{"role":\n{"unfinished":')
+    await expect(inspect(f)).rejects.toMatchObject({ reason: "format" })
+    await writeFile(f.path, lines([user("complete")]) + "x".repeat(1025))
+    await expect(inspect(f, { ...limits, rowBytes: 1024 })).rejects.toMatchObject({ reason: "limit" })
+  })
+
+  it("continues discovery when the previous page candidate has been deleted", async () => {
+    const f = await fixture()
+    await addSource(f.stateDirectory, "second"); await addSource(f.stateDirectory, "third")
+    const first = await discover(f.stateDirectory, { ...limits, pageSources: 1 })
+    expect(first.done).toBe(false)
+    await rm(dirname(first.sources[0]!.transcriptPath), { recursive: true })
+    const following = await discover(f.stateDirectory, { ...limits, pageSources: 2 }, first.cursor)
+    expect(following.sources).toHaveLength(2)
+    expect(following.done).toBe(true)
+    expect(following.sources.every(source => source.sourceId !== first.sources[0]!.sourceId)).toBe(true)
+  })
+
+  it("isolates unrelated inventory and metadata symlinks from a selected healthy transcript", async () => {
+    const f = await fixture()
+    const badWorkspace = join(f.stateDirectory, "projects", "bad-link")
+    await symlink(dirname(f.path), badWorkspace)
+    const chats = join(f.stateDirectory, "chats"); await mkdir(chats)
+    await symlink(dirname(f.path), join(chats, "bad-bucket"))
+    const badSession = join(chats, "bucket", f.sourceId); await mkdir(dirname(badSession)); await symlink(dirname(f.path), badSession)
+    const snapshot = await inspect(f)
+    expect(snapshot.records).toHaveLength(6)
+    expect(snapshot.metadataCandidates).toEqual([])
+    expect(snapshot.sourceFailures).toHaveLength(3)
+    expect(snapshot.sourceFailures.every(failure => failure.reason === "unsupported")).toBe(true)
   })
 
   it("can cancel a read and then replace and read the source again", async () => {

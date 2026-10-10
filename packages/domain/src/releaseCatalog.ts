@@ -7,7 +7,7 @@ export const updateCatalogTag = "atape-update-catalog-v1"
 // must extend releasePackageNames without growing this immutable reader floor.
 const requiredBundlePackages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude",
   "@atape/adapter-codebuddy", "@atape/adapter-kimi", "@atape/adapter-opencode", "@atape/adapter-grok"] as const
-export const releasePackageNames = [...requiredBundlePackages] as const
+export const releasePackageNames = [...requiredBundlePackages, "@atape/adapter-cursor"] as const
 
 const stableVersion = (value: string) => /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value) &&
   value.length < 40 && value.split(".").every(part => Number.isSafeInteger(Number(part)))

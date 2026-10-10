@@ -41,6 +41,7 @@ const fixture = (options: { readonly exact?: boolean; readonly remote?: string }
     })),
     Layer.succeed(ProjectLocator, ProjectLocator.of({
       locate: (path) => Effect.succeed({
+        requestedCwd: path,
         path,
         name: "payments",
         type: "git",
