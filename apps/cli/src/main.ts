@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Effect } from "effect"
-import { kickAutomaticUpdates, reconcileLoginStartup, runAutomaticUpdates, runLoginStartup } from "@atape/application"
+import { kickAutomaticUpdates, reconcileLoginStartup, reconcileUpdateWake, UpdateWakePlatform, runAutomaticUpdates, runLoginStartup } from "@atape/application"
 import { rm, realpath } from "node:fs/promises"
 import { join } from "node:path"
 import { parseCLI } from "./commandInput.ts"
@@ -16,8 +16,9 @@ import { createUpdateControl } from "./runtime/updateControl.ts"
 import { assertRuntimeDataAdmission, runtimeContext } from "./runtime/runtimeAdmission.ts"
 import { prepareCollectorReadiness } from "./runtime/collectorReadiness.ts"
 import { admitCollectorProcess } from "./runtime/collectorDaemonLayers.ts"
-import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtime/runtimeLauncher.ts"
+import { delegateAdmittedLoginStartup, delegateAdmittedUpdateWake, delegateManagedRuntime } from "./runtime/runtimeLauncher.ts"
 import { admitLoginStartup, withLoginStartupRecovery } from "./runtime/loginStartup.ts"
+import { admitUpdateWake, makeUpdateWakePlatformLayer } from "./runtime/updateWake.ts"
 import { cliVersion, captureStateContract } from "./version.ts"
 import { assertManualStateUpgradeReady, prepareManualStateUpgrade, recordV2CollectorAdmission } from "./runtime/manualStateUpgrade.ts"
 
@@ -90,10 +91,51 @@ const main = async () => {
   }
 
   const cancellation = new AbortController()
+  const wakeDeadline = command.kind === "__update-wake" ? setTimeout(() => cancellation.abort(), 600_000) : undefined
   const stop = () => cancellation.abort()
   process.once("SIGINT", stop)
   process.once("SIGTERM", stop)
   try {
+    if (command.kind === "__update-wake") {
+      const admitted = await admitUpdateWake(defaultNodeClientPaths(), command.options.wakeToken, process.argv[1]!, process.env)
+      if (admitted === undefined) return
+      const paths = defaultNodeClientPaths(admitted)
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const delegated = await delegateAdmittedUpdateWake(process.argv[1]!, process.argv.slice(2), admitted, cancellation.signal)
+        if (delegated !== undefined) { process.exitCode = delegated; return }
+        const release = await acquireUpdateWorker(paths.atapeHome)
+        if (!release) return // The active owner, or the next hourly wake, finishes the work.
+        let selectedElsewhere = false, recoveryOnly = false
+        try {
+          // Recovery is joined even after preference-off. A queued invocation
+          // must never abandon an earlier maintenance gate or migration fence.
+          await recoverPendingUpdate(paths, admitted.ATAPE_BOOTSTRAP_ENTRY!, admitted)
+          const selectedEntry = await resolveRuntimeEntry(paths.atapeHome, admitted.ATAPE_BOOTSTRAP_ENTRY!)
+          if (await realpath(selectedEntry) !== await realpath(process.argv[1]!) &&
+            selectedEntry !== admitted.ATAPE_BOOTSTRAP_ENTRY) {
+            selectedElsewhere = true
+          } else {
+            const current = await admitUpdateWake(paths, command.options.wakeToken, process.argv[1]!, admitted)
+            if (!current) return
+            recoveryOnly = current.ATAPE_UPDATE_WAKE_RECOVERY_ONLY === "1"
+            if (!recoveryOnly) {
+              await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
+              await Effect.runPromise(runAutomaticUpdates(cliVersion).pipe(
+                Effect.provide(makeNodeClientLayer(paths, current))), { signal: cancellation.signal })
+            }
+            selectedElsewhere = await resolveRuntimeEntry(paths.atapeHome, current.ATAPE_BOOTSTRAP_ENTRY!) !== selectedEntry
+          }
+        } finally { release() }
+        // Never wait for a delegated child while holding its update ownership.
+        if (selectedElsewhere) continue
+        await Effect.runPromise(recoveryOnly
+          ? UpdateWakePlatform.use(platform => platform.reconcile(false)).pipe(
+            Effect.provide(makeUpdateWakePlatformLayer(paths, admitted.ATAPE_BOOTSTRAP_ENTRY!, admitted)))
+          : reconcileUpdateWake().pipe(Effect.provide(makeNodeClientLayer(paths, admitted))), { signal: cancellation.signal })
+        return
+      }
+      throw new Error("Update runtime selection changed repeatedly. The next scheduled wake will retry.")
+    }
     if (command.kind === "__login-start") {
       const admitted = await admitLoginStartup(defaultNodeClientPaths(), command.options.startupToken, process.argv[1]!, process.env)
       if (admitted === undefined) return
@@ -164,6 +206,10 @@ const main = async () => {
           Effect.catch(() => Effect.logWarning("Login startup registration needs attention; inspect Settings")),
           Effect.andThen(Effect.sleep(300_000))
         )))
+        yield* Effect.forkScoped(Effect.forever(reconcileUpdateWake().pipe(
+          Effect.catch(() => Effect.logWarning("Automatic update wakeup needs attention; inspect Settings")),
+          Effect.andThen(Effect.sleep(300_000))
+        )))
         yield* Effect.forkScoped(Effect.forever(kickAutomaticUpdates().pipe(Effect.andThen(Effect.sleep(30_000)))))
         yield* prepareCollectorReadiness(defaultNodeClientPaths(), process.env)
         yield* runCommand(command)
@@ -187,6 +233,7 @@ const main = async () => {
   } catch (cause) {
     if (!cancellation.signal.aborted) throw cause
   } finally {
+    if (wakeDeadline) clearTimeout(wakeDeadline)
     process.removeListener("SIGINT", stop)
     process.removeListener("SIGTERM", stop)
   }

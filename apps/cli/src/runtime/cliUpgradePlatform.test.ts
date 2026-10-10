@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url"
 
 const bytes = (version: string) => {
   const payload = Buffer.from(JSON.stringify({ name: "@atape/cli", version, atapeRuntime: { protocol: "atape.runtime.v1",
-    stateContract: managedStateContract, updateControlProtocol, releaseCatalogProtocol: "atape.update-catalog.v1" } }))
+    stateContract: managedStateContract, updateControlProtocol, releaseCatalogProtocol: "atape.update-catalog.v1", updateWakeProtocol: "atape.update-wake.v1" } }))
   const header = Buffer.alloc(512)
   header.write("package/package.json"); header.write("0000644\0", 100); header.write("0000000\0", 108); header.write("0000000\0", 116)
   header.write(payload.length.toString(8).padStart(11, "0") + "\0", 124); header.write("00000000000\0", 136)

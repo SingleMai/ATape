@@ -8,6 +8,7 @@
     "protocol": "atape.runtime.v1",
     "stateContract": "atape.client.v3-capture.v2",
     "loginStartupProtocol": "atape.login-startup.v1",
+    "updateWakeProtocol": "atape.update-wake.v1",
     "updateControlProtocol": "atape.update-control.v1",
     "releaseCatalogProtocol": "atape.update-catalog.v1"
   },

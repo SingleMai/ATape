@@ -419,5 +419,8 @@
   "cli.tools.commandEntryBehind": " · 命令入口 {current} → {version}",
   "cli.tools.matchingVersion": " · 匹配 ATape {version}{older}",
   "cli.tools.bundleNotice": "CLI 版本清单缓存 12 小时。官方集成与当前运行的 ATape 版本保持一致。",
-  "cli.tools.refreshCommandEntry": "刷新 ATape 命令入口到 {version}"
+  "cli.tools.refreshCommandEntry": "刷新 ATape 命令入口到 {version}",
+  "cli.settings.updateWakePending": "定时更新检查需要处理。",
+  "cli.settings.repairUpdateWake": "重新注册定时更新",
+  "cli.settings.repairingUpdateWake": "正在注册定时更新"
 }

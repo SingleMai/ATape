@@ -261,7 +261,30 @@ The worker checks the actual npm bootstrap's stable version during preparation
 and again before selection, together with its executable digest. An older copied
 worker cannot select a release below a newer installation already on disk.
 
-Opening the CLI or a running Collector can trigger a due background check.
+After tool initialization, automatic updates register an independent user-level
+hourly wakeup on supported installations: a macOS calendar LaunchAgent or a Linux
+persistent systemd timer. This remains active with login startup off, the console
+closed and collection stopped. A wake performs the existing local due check;
+it does not issue Start or alter saved collection intent. Missed calendar wakes
+are retried after the user manager resumes. Settings reports missing/unavailable
+registration and offers a retry. Turning automatic updates off removes future
+scheduling without terminating an in-flight handoff; a queued entry rereads the
+saved preference before starting new work. If an update owner or pending recovery
+exists, the trusted schedule temporarily remains for recovery only; it is removed
+after recovery finishes. Already-admitted recovery remains allowed. No sudo, linger or root service is installed.
+
+The retained private coordinator joins update work under the same update ownership
+as other triggers, delegates to a capable selected runtime, and has a ten-minute
+cancellation budget. Native commands have ten-second limits. Linux uses an inactive
+oneshot after each run, so the next timer can activate it. Its KillMode=process
+preserves a Collector resumed by maintenance; that daemon remains owned by the
+Collector Module and user Stop. npm/probe/update subprocesses are joined. macOS
+Collector processes retain their separate owned process groups. The wake does not
+supervise collection or run while the machine/user manager is shut down. Node
+removal and unavailable native managers remain visible installation limits. See
+[ADR-0113](../architecture/adr/0113-independent-update-wakeup.md).
+
+Opening the CLI or a running Collector can also trigger a due background check.
 Successful checks schedule the next attempt after 24 hours plus 0–6 hours of
 jitter. Failures start with a one-hour exponential backoff, capped at 24 hours
 before jitter. Opening the CLI does not force a network request when the
@@ -328,7 +351,9 @@ below; later compatible v2 releases retain automatic updates and rollback.
 Capable packages additionally declare `atapeRuntime.updateControlProtocol` as
 `atape.update-control.v1`. Catalog candidates also declare
 `atapeRuntime.releaseCatalogProtocol` as `atape.update-catalog.v1`; both actual
-capabilities are checked before preparation and again before activation. This control protocol is independent of the capture
+capabilities and `atapeRuntime.updateWakeProtocol=atape.update-wake.v1` are checked
+before preparation and again before activation, preserving the periodic entry
+across selected generations. This control protocol is independent of the capture
 contract. After a capable bridge is installed, subsequent capable updates select
 `updates/runtime.json` and retain durable recovery intent in
 `updates/control.json`. The legacy `releases/current.json` remains a genuine v2
@@ -415,9 +440,10 @@ installation from interrupted npm preparation; they cannot reverse incompatible
 state changes. Reopen the CLI or allow a later trigger to reconcile interrupted
 maintenance. Installing a version is not proof of successful conversation sync.
 
-The [login coordinator](#login-startup) can recover an interrupted handoff when
-you next log in. With startup off or unavailable, a machine with neither CLI nor
-Collector running cannot check or recover until ATape next runs. Automatic
+The independent hourly wakeup and [login coordinator](#login-startup) can recover
+an interrupted handoff without opening the console. If native update scheduling
+is unavailable and neither CLI nor Collector runs, recovery waits until ATape
+next runs. Automatic
 release-directory cleanup is outside this increment. Automatic updates do
 not upload local logs or introduce remote maintenance commands. See
 [ADR-0100](../architecture/adr/0100-managed-automatic-updates.md) for the release,
@@ -426,8 +452,8 @@ compatibility and recovery decision, amended by
 
 Version-aware discovery is implemented by
 [ADR-0108](../architecture/adr/0108-compatible-release-bundle-discovery.md).
-An update wakeup independent of collection and cross-contract migration remain
-subsequent increments. Published 0.5.3 and 0.5.4 both use the same GitHub
+Independent update wakeup is implemented; cross-contract migration remains a
+subsequent increment. Published 0.5.3 and 0.5.4 both use the same GitHub
 `latest` and immutable npm package, but require different manifest contracts;
 one bridge package cannot serve both. A temporary release window cannot cover
 indefinitely offline installations. The 0.5.3 manual boundary below remains.
@@ -436,8 +462,22 @@ The implementation was verified locally on macOS with CLI/Application behavior
 tests, Collector/Server E2E, all six official Adapter tarballs, and the installed
 CLI's independent-worker and terminal checks. Release metadata and npm acquisition
 in update fault tests use controlled external Adapters. These checks do not establish
-publication, an upgrade against the production registry, Linux acceptance, or
-recovery from a real machine power loss.
+publication, an upgrade against the production registry, a real Linux upgrade, or
+recovery from a real machine power loss. Periodic wake tests cover application
+policy, native descriptor syntax, owned registration/admission and installed
+headless entry through controlled OS-command Adapters. An opt-in macOS native
+check additionally passed real LaunchAgent RunAtLoad and repeated kickstart with
+distinct coordinator PIDs, a separately owned child surviving both runs and
+disable, and cleanup of the isolated registration. This proves the native process
+lifetime, not real capture, calendar sleep/reboot or power-loss recovery.
+A separate isolated Linux systemd 252 user-manager check used the production
+Adapter's service/timer descriptors and an accelerated calendar. Two timer
+activations completed with distinct coordinator PIDs while one detached helper
+remained in the same service cgroup; disabling/stopping only the timer retained
+that helper and prevented new activations. Terminating the PAM login session with
+Linger=no removed the helper, user manager and cgroup. This verifies the selected
+native lifetime with controlled helpers, not a real packed upgrade and Collector
+resume, an elapsed hour or sleep/reboot. Temporary containers were removed.
 
 Adapter preflight checks package identity, entry containment and Git capabilities
 before executing imports in an isolated child process. The whole import batch has

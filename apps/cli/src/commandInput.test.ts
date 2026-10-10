@@ -19,6 +19,8 @@ describe("single CLI entry", () => {
     ["__collector-daemon", "--daemon-token", "token", "extra"],
     ["__automatic-update"], ["__automatic-update", "--update-token", "token"],
     ["__login-start"], ["__login-start", "--startup-token", "token"],
+    ["__update-wake"], ["__update-wake", "--wake-token", "token"],
+    ["__update-wake", "--wake-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "--no-browser"],
     ["__login-start", "--startup-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "--no-browser"],
     ["__automatic-update", "--update-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7", "extra"]])("rejects unsupported arguments %j", (...args) => {
     expect(() => parseCLI(args)).toThrow()
@@ -52,4 +54,9 @@ describe("single CLI entry", () => {
     expect(parseCLI(["__login-start", "--startup-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]))
       .toEqual({ kind: "__login-start", options: { startupToken: "e859003d-90b4-44f6-ae5a-c14aa3c8ede7" } })
   })
+})
+
+it("parses the private periodic update entry", () => {
+  expect(parseCLI(["__update-wake", "--wake-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]))
+    .toEqual({ kind: "__update-wake", options: { wakeToken: "e859003d-90b4-44f6-ae5a-c14aa3c8ede7" } })
 })

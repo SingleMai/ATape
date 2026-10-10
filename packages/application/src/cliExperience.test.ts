@@ -5,6 +5,7 @@ import { AdapterPackages, ClientConfigStore, ProjectLocator, inspectClient, inst
 import { CollectorDaemonProcess, CollectorRunStatusStore } from "./collectorDaemon.ts"
 import { CollectorStateStore } from "./collector.ts"
 import { ProjectSetupGateway, type SetupRemoteProject } from "./projectSetup.ts"
+import { UpdateWakePlatform } from "./updateWake.ts"
 import { LoginStartupError, LoginStartupPlatform, setLoginStartup } from "./loginStartup.ts"
 import {
   CLISetupPlatform, completeGuidedSetup,
@@ -81,6 +82,8 @@ const fixture = (runtimeReleaseVersion = "1.0.0") => {
       start: options => Effect.sync(() => { starts++; running = true; return { ...options, pid: 10, startedAt: date, logFile: "/logs/collector", created: true } }),
       stop: () => Effect.sync(() => { const was = running; running = false; return was })
     })),
+    Layer.succeed(UpdateWakePlatform, UpdateWakePlatform.of({ inspect: () => Effect.succeed({ state: "registered" }),
+      reconcile: enabled => Effect.succeed({ state: enabled ? "registered" : "missing" }) })),
     Layer.succeed(LoginStartupPlatform, LoginStartupPlatform.of({
       inspect: () => Effect.succeed({ state: "missing" }),
       reconcile: enabled => Effect.suspend(() => {

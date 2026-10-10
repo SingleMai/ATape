@@ -1,4 +1,4 @@
-import { AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, CollectorRunStatusError, LoginStartupPlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, inspectRedactionSettings, setAutomaticUpdates, setupProject, type CollectorDaemonObservation } from "@atape/application"
+import { AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradeError, CLIUpgradePlatform, CollectorDaemonProcess, CollectorDaemonProcessError, CollectorRunStatusStore, CollectorRunStatusError, LoginStartupPlatform, UpdateWakePlatform, ProjectSetupGateway, inspectCLIExperience, inspectClient, inspectRedactionSettings, setAutomaticUpdates, setupProject, type CollectorDaemonObservation } from "@atape/application"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { releasePackageNames, type CollectorRunState, type ReleaseBundle } from "@atape/domain"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -62,6 +62,8 @@ const fixture = async (setup = false, update?: Promise<string>, failInstall = fa
       recordCollectorFailure: () => Effect.die("Privacy observation must not write status"),
       recordRedactionJob: () => Effect.die("Privacy observation must not write status")
     }))] : []),
+    Layer.succeed(UpdateWakePlatform, UpdateWakePlatform.of({ inspect: () => Effect.succeed({ state: "registered" }),
+      reconcile: enabled => Effect.succeed({ state: enabled ? "registered" : "missing" }) })),
     Layer.succeed(LoginStartupPlatform, LoginStartupPlatform.of({
       inspect: () => Effect.sync(() => ({ state: loginRegistered ? "registered" as const : "missing" as const })),
       reconcile: enabled => Effect.sync(() => { loginRegistrations.push(enabled); loginRegistered = enabled; return { state: enabled ? "registered" as const : "missing" as const } })

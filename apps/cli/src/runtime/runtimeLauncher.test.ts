@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { CLIInputError } from "../commandInput.ts"
-import { delegateAdmittedLoginStartup, delegateManagedRuntime } from "./runtimeLauncher.ts"
+import { delegateAdmittedLoginStartup, delegateAdmittedUpdateWake, delegateManagedRuntime } from "./runtimeLauncher.ts"
 import { managedStateContract, runtimeEntry, runtimeSelectionFile, selectRuntime } from "./runtimeSelection.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
@@ -102,6 +102,58 @@ describe("managed executable bootstrap delegation", () => {
     expect(await delegateAdmittedLoginStartup(client.bootstrap, args, client.environment)).toBe(7)
     expect(JSON.parse(await readFile(client.output, "utf8"))).toMatchObject({ args, bootstrap: client.bootstrap })
     expect(await delegateAdmittedLoginStartup(client.entry, args, client.environment)).toBeUndefined()
+  })
+
+  it("delegates an admitted periodic wake only to a capable runtime and leaves pending recovery to its owner", async () => {
+    const client = await fixture()
+    const args = ["__update-wake", "--wake-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]
+    expect(await delegateManagedRuntime(client.bootstrap, args, client.environment)).toBeUndefined()
+    expect(await delegateAdmittedUpdateWake(client.bootstrap, args, client.environment)).toBeUndefined()
+    await writeFile(join(dirname(dirname(client.entry)), "package.json"), JSON.stringify({ name: "@atape/cli", version: "1.2.3", type: "module",
+      atapeRuntime: { updateWakeProtocol: "atape.update-wake.v1" } }))
+    expect(await delegateAdmittedUpdateWake(client.bootstrap, args, client.environment)).toBe(7)
+    expect(JSON.parse(await readFile(client.output, "utf8"))).toMatchObject({ args, bootstrap: client.bootstrap })
+    expect(await delegateAdmittedUpdateWake(client.entry, args, client.environment)).toBeUndefined()
+    await independentGeneration(client, "1.2.4", undefined, false)
+    expect(await delegateAdmittedUpdateWake(client.bootstrap, args, client.environment)).toBeUndefined()
+  })
+
+  it("enters the actual capable npm runtime before the first pointer, carrying private Node startup context", async () => {
+    const client = await fixture()
+    await selectRuntime(client.home, undefined)
+    const bootstrap = join(client.home, "npm", "node_modules", "@atape", "cli", "dist", "atape.js")
+    await mkdir(dirname(bootstrap), { recursive: true })
+    await writeFile(join(dirname(dirname(bootstrap)), "package.json"), JSON.stringify({ name: "@atape/cli", type: "module",
+      atapeRuntime: { updateWakeProtocol: "atape.update-wake.v1" } }))
+    await writeFile(bootstrap, `import { writeFileSync } from "node:fs";
+writeFileSync(process.env.LAUNCHER_TEST_OUTPUT, JSON.stringify({ entry: process.argv[1], proxy: process.env.HTTPS_PROXY }));`)
+    const args = ["__update-wake", "--wake-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"]
+    const environment = { ...client.environment, ATAPE_BOOTSTRAP_ENTRY: bootstrap, HTTPS_PROXY: "https://private-proxy.invalid" }
+    expect(await delegateAdmittedUpdateWake(client.bootstrap, args, environment)).toBe(0)
+    expect(JSON.parse(await readFile(client.output, "utf8"))).toEqual({ entry: bootstrap, proxy: environment.HTTPS_PROXY })
+    expect(await delegateAdmittedUpdateWake(bootstrap, args, environment)).toBeUndefined()
+  })
+
+  it("terminates and joins a hung wake delegate when its lifetime is cancelled", async () => {
+    const client = await fixture(`import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => {}); writeFileSync(process.env.LAUNCHER_TEST_OUTPUT, String(process.pid)); setInterval(() => {}, 1000);`)
+    await writeFile(join(dirname(dirname(client.entry)), "package.json"), JSON.stringify({ name: "@atape/cli", type: "module",
+      atapeRuntime: { updateWakeProtocol: "atape.update-wake.v1" } }))
+    const lifetime = new AbortController()
+    const joined = delegateAdmittedUpdateWake(client.bootstrap,
+      ["__update-wake", "--wake-token", "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"], client.environment, lifetime.signal)
+    let pid: number | undefined
+    try {
+      const deadline = Date.now() + 5_000
+      while (!pid && Date.now() < deadline) {
+        pid = await readFile(client.output, "utf8").then(Number, () => undefined)
+        if (!pid) await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      expect(pid).toBeDefined()
+      lifetime.abort()
+      expect(await joined).toBe(137)
+      expect(() => process.kill(pid!, 0)).toThrow()
+    } finally { lifetime.abort(); await joined }
   })
 
   it("rejects public argument errors before inspecting a malformed managed selection", async () => {

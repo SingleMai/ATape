@@ -506,10 +506,10 @@ const prepareCLI = async (paths: NodeClientPaths, bundle: ReleaseBundle, artifac
 const validateCLI = async (directory: string, version: string, environment: NodeJS.ProcessEnv, signal: AbortSignal, bundle?: ReleaseBundle) => {
   const root = join(directory, "node_modules", "@atape", "cli")
   const manifest = await readBoundedJSON(join(root, "package.json")) as Record<string, unknown>
-  const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown } | undefined
+  const contract = manifest.atapeRuntime as { protocol?: unknown; stateContract?: unknown; updateControlProtocol?: unknown; releaseCatalogProtocol?: unknown; updateWakeProtocol?: unknown } | undefined
   if (manifest.name !== "@atape/cli" || manifest.version !== version ||
     contract?.protocol !== "atape.runtime.v1" || contract.stateContract !== captureStateContract ||
-    bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || contract.releaseCatalogProtocol !== updateCatalogProtocol)) {
+    bundle && (contract.updateControlProtocol !== bundle.updateControlProtocol || contract.releaseCatalogProtocol !== updateCatalogProtocol || contract.updateWakeProtocol !== "atape.update-wake.v1")) {
     throw new Error("The selected CLI does not support compatible managed state.")
   }
   const output = await executeOwnedProcess(process.execPath, [join(root, "dist", "atape.js"), "--version"],
