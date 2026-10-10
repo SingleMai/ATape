@@ -21,6 +21,10 @@ Publishing two immutable npm versions and one GitHub Release cannot be one atomi
 
 ## Consequences
 
+The one-version local bootstrap exception for Cursor 0.5.6 is recorded in
+[ADR-0117](0117-cursor-local-first-publication.md); future Cursor versions use
+the ordinary Trusted Publisher route.
+
 - Consumers can install the CLI and Codex Adapter by stable `@atape` names or use checksummed GitHub Release tarballs.
 - MIT permits broad reuse with attribution and warranty disclaimer while keeping the open-source contribution boundary simple.
 - A compromised long-lived publish token is not part of steady-state release operation. Tag protection, GitHub environment approvals, or npm staged publication can add stronger human gates later without changing package artifacts.

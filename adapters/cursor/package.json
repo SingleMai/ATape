@@ -1,6 +1,6 @@
 {
   "name": "@atape/adapter-cursor",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "type": "module",
   "description": "ATape Adapter for controlled Cursor sessions and native transcripts",
   "exports": { ".": "./dist/index.js" },

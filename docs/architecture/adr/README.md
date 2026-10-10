@@ -141,6 +141,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0113](0113-independent-update-wakeup.md) | Independent periodic update wakeup |
 | [0114](0114-explicit-unknown-conversation-time.md) | Explicit unknown conversation time |
 | [0116](0116-controlled-cursor-creation.md) | Controlled Cursor creation and capture |
+| [0117](0117-cursor-local-first-publication.md) | Local first publication of Cursor 0.5.6 |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old
