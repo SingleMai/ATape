@@ -396,13 +396,23 @@ cannot acquire them retroactively. See
 One independent, short-lived updater prepares an isolated version directory and
 Adapter slots while collection continues. It then obtains exclusive maintenance
 ownership, requests Collector cancellation and bounds the entire stop handoff.
-The Collector has five seconds to exit after SIGTERM and at most two more seconds
-after SIGKILL; process identity and exit checks share the monotonic deadline.
+The stop handoff allows five seconds for initial identity confirmation, SIGTERM
+and graceful exit, then at most two more seconds for fresh identity confirmation,
+SIGKILL and exit confirmation. These checks share one monotonic deadline.
 It never waits for all historical
 capture to finish. If the old owned process cannot be confirmed stopped, the
 version is not switched. Activation atomically selects the prepared CLI/Adapter
 generation, then restarts only sync the user still wants running. Stop sync in
 Settings also cancels an update's restart intent.
+
+Ownership-probe cancellation or missing output does not establish process exit.
+In this checkout, the probe owns its deadline, closes inherited output pipes on
+timeout and rejects cancelled or late output. While the old PID remains alive,
+uncertain identity during the graceful phase retains the process record; force
+termination requires a fresh matching PID/token check within the remaining
+budget. A foreign live process is never signalled. This fix is not present in the
+immutable 0.5.6 or 0.5.7 npm packages: their probe can mistake a timeout's empty
+successful callback for exit and skip SIGKILL, leaving maintenance for retry.
 
 Update ownership, whole-handoff ownership and the short Collector process lock
 use OS-held exclusion. Process exit, including SIGKILL, releases ownership;
@@ -551,26 +561,49 @@ capacity failure, unchanged pending bytes/progress, fresh-process reopen while
 full, and write recovery after freeing space, including migration admission's
 initialized coordination lock.
 
-The implementation was verified locally on macOS with CLI/Application behavior
-tests, Collector/Server E2E, all seven official Adapter tarballs, and the installed
-CLI's independent-worker and terminal checks. Release metadata and npm acquisition
-in update fault tests use controlled external Adapters. These checks do not establish
-publication, an upgrade against the production registry, a real Linux upgrade, or
-recovery from a real machine power loss. Periodic wake tests cover application
-policy, native descriptor syntax, owned registration/admission and installed
-headless entry through controlled OS-command Adapters. An opt-in macOS native
-check additionally passed real LaunchAgent RunAtLoad and repeated kickstart with
-distinct coordinator PIDs, a separately owned child surviving both runs and
-disable, and cleanup of the isolated registration. This proves the native process
-lifetime, not real capture, calendar sleep/reboot or power-loss recovery.
-A separate isolated Linux systemd 252 user-manager check used the production
-Adapter's service/timer descriptors and an accelerated calendar. Two timer
-activations completed with distinct coordinator PIDs while one detached helper
-remained in the same service cgroup; disabling/stopping only the timer retained
-that helper and prevented new activations. Terminating the PAM login session with
-Linger=no removed the helper, user manager and cgroup. This verifies the selected
-native lifetime with controlled helpers, not a real packed upgrade and Collector
-resume, an elapsed hour or sleep/reboot. Temporary containers were removed.
+CLI/Application tests, Collector/Server E2E, all seven official Adapter tarballs,
+and installed CLI worker/terminal checks cover the local caller Interfaces.
+Fault tests use controlled release/npm Adapters; periodic-wake tests use controlled
+OS-command Adapters for registration, admission and the packed headless entry.
+Separate native helper checks cover macOS LaunchAgent RunAtLoad/repeated kickstart
+and Linux systemd 252 timer activations, detached-child survival, disable and
+non-linger PAM logout cleanup. Those helper checks establish process lifetime.
+
+Post-release macOS acceptance on 2026-10-10 passed the actual public
+0.5.6 → 0.5.7 bundle under the unchanged `atape.client.v3-capture.v2` contract.
+The production LaunchAgent's original calendar performed the upgrade with the
+console closed, login startup off and the owned old Collector deliberately
+stalled. Only the owned initial/retry due timestamps were accelerated. All eight
+public packages and seven Adapter slots were verified; native conversation
+continuity was exercised with OpenCode against authenticated isolated production
+Server Modules, PostgreSQL, Reader and Raw. Configuration, credentials, baseline
+Canonical identity/text and original Raw history were preserved. The npm bootstrap
+remained 0.5.6. Failed attempts are retained separately from the successful retry.
+Linux subsequently passed the same public upgrade through the production timer
+in an isolated Debian 12 arm64 container with a real systemd user manager. Its
+first maintenance handoff failed; the next unchanged hourly calendar recovered
+and upgraded without user intervention. That controlled stalled-process case
+took 1 hour 10.249 seconds from the first maintenance pause to confirmed 0.5.7
+readiness; the successful retry's old-process exit alone took 5.134 seconds.
+Real OpenCode continuation, all eligible Canonical/Raw data, repeated manual
+oneshot activation and non-linger PAM logout cleanup passed. This is not physical
+Linux desktop or login-startup delivery acceptance. The
+[sanitized acceptance record](../releases/evidence/v0.5.7-unattended-acceptance.json)
+keeps the failed attempts and the separate, unreleased source-fix checks.
+See [post-publication verification](../releases/v0.5.7.md#post-publication-verification)
+for the candidate-specific results and limits.
+
+Background due checks currently force a fresh anonymous GitHub catalog even when
+a verified cache exists. Shared-egress rate limiting can therefore postpone
+upgrades; cache-aware background discovery, immutable-receipt reuse and
+distribution capacity remain follow-up work.
+
+On macOS, public Stop and automatic-updates-off were checked before separate guarded
+experiment cleanup. This post-release evidence does not rewrite the original
+staging waiver. It does not establish cross-format migration, the normal
+24–30-hour due interval, physical sleep/reboot/power-loss recovery, another disabled
+calendar hour, production Server topology or human OAuth identity; the isolated
+external identity was synthetic.
 
 Adapter preflight checks package identity, entry containment and Git capabilities
 before executing imports in an isolated child process. The whole import batch has
@@ -808,9 +841,12 @@ registration, helper launch and cleanup; it does not prove delivery through a
 native-launched Collector. The generated Linux unit also passed real systemd 252
 analysis in an isolated Node 24 Linux container, including argv and working
 directory round trips for spaces, Unicode, percent signs, dollar signs, quotes,
-backslashes and a trailing space. No Linux user manager was started. Actual logout/login, machine reboot, power loss and
-Linux Collector cgroup acceptance remain unverified. Descriptor parsing and
-controlled commands alone do not establish those behaviors. See
+backslashes and a trailing space. That startup-specific check did not start a
+Linux user manager. Later unattended-update acceptance verified a resumed
+Collector's cgroup lifetime and non-linger PAM logout cleanup under a real
+containerized systemd user manager. Native login-startup capture delivery,
+physical logout/login, machine reboot and power loss remain unverified.
+Descriptor parsing and controlled commands alone do not establish those behaviors. See
 [ADR-0103](../architecture/adr/0103-login-startup.md).
 
 ## Local state

@@ -263,9 +263,9 @@ describe.skipIf(process.platform === "win32")("managed Collector executable repl
     const entry = join(root, "cli.mjs"), marker = join(root, "started.json")
     const paths = { collectorProcessFile: join(root, "process.json"),
       collectorStatusFile: join(root, "status.json"), collectorLogFile: join(root, "collector.log") }
-    const replace = (build: string, options: { readonly ignoreTermination?: boolean; readonly ready?: boolean;
+    const replace = (build: string, options: { readonly ignoreTermination?: boolean; readonly terminationMarker?: string; readonly ready?: boolean;
       readonly exitDuringReadiness?: boolean; readonly readyMarker?: "directory" | "malformed" | "foreign" } = {}) => writeFile(entry, `import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-${options.ignoreTermination ? 'process.on("SIGTERM", () => {});' : ""}
+${options.ignoreTermination ? `process.on("SIGTERM", () => { ${options.terminationMarker ? `writeFileSync(${JSON.stringify(options.terminationMarker)}, String(Date.now()));` : ""} });` : ""}
 writeFileSync(${JSON.stringify(marker)}, JSON.stringify({build:${JSON.stringify(build)},pid:process.pid}));
 if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.exitDuringReadiness === true}) process.exit(1);
 if (process.env.ATAPE_COLLECTOR_READY_FILE && ${options.readyMarker === "directory"}) mkdirSync(process.env.ATAPE_COLLECTOR_READY_FILE);
@@ -690,6 +690,179 @@ setInterval(() => {}, 1000);
       expect(current!.pid).not.toBe(original.pid)
       await f.started("updated", current!.pid)
     } finally { await f.run(f.daemon.stop()) }
+  }, 15_000)
+
+  it.each(["empty-success", "cancelled-partial"] as const)("rechecks ownership before force termination after a %s graceful-tail probe", async mode => {
+    const f = await fixture(), root = dirname(f.entry), originalPath = process.env.PATH
+    const terminationMarker = join(root, "term-at"), startedMarker = join(root, "stop-at"), injected = join(root, "probe-injected"), fakeBin = join(root, "bin")
+    await mkdir(fakeBin)
+    await f.replace("uncooperative", { ignoreTermination: true, terminationMarker })
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      await f.started("uncooperative", original.pid)
+      const command = execFileSync("/bin/ps", ["-p", String(original.pid), "-o", "command="], { encoding: "utf8" })
+      // The external ps Adapter fails once near grace expiry. Every process and
+      // signal is real; a subsequent probe must confirm ownership before KILL.
+      await writeFile(join(fakeBin, "ps"), `#!${process.execPath}
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+if (process.argv[3] === ${JSON.stringify(String(original.pid))}) {
+  if (existsSync(${JSON.stringify(terminationMarker)}) && Date.now() - Number(readFileSync(${JSON.stringify(startedMarker)}, "utf8")) >= 4500 && !existsSync(${JSON.stringify(injected)})) {
+    writeFileSync(${JSON.stringify(injected)}, ${JSON.stringify(mode)});
+    ${mode === "cancelled-partial" ? `process.stdout.write(${JSON.stringify(command)}); setInterval(() => {}, 1000);` : "process.exit(0);"}
+  } else process.stdout.write(${JSON.stringify(command)});
+} else {
+  try { process.stdout.write(execFileSync("/bin/ps", process.argv.slice(2))); }
+  catch (cause) { process.exit(cause.status ?? 1); }
+}
+`)
+      await chmod(join(fakeBin, "ps"), 0o700)
+      process.env.PATH = `${fakeBin}:${originalPath}`
+      await writeFile(startedMarker, String(Date.now()))
+      const started = performance.now()
+      await expect(withCollectorMaintenance(f, async () => f.entry, process.env, async () => {
+        expect(performance.now() - started).toBeGreaterThanOrEqual(4900)
+        expect(performance.now() - started).toBeLessThan(7500)
+        expect(() => process.kill(original.pid, 0)).toThrow()
+        expect(await readFile(injected, "utf8")).toBe(mode)
+        await f.replace("updated")
+        return "activated"
+      })).resolves.toBe("activated")
+      expect(await isCollectorMaintenancePending(f.collectorProcessFile)).toBe(false)
+      expect((await f.run(f.daemon.inspect()))!.pid).not.toBe(original.pid)
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8"))).toMatchObject({ wanted: true })
+    } finally { process.env.PATH = originalPath; await f.run(f.daemon.stop()) }
+  }, 15_000)
+
+  it("rejects cancelled identity output before sending any Collector signal", async () => {
+    const f = await fixture(), root = dirname(f.entry), originalPath = process.env.PATH
+    const terminationMarker = join(root, "term-at"), fakeBin = join(root, "bin")
+    await mkdir(fakeBin)
+    await f.replace("uncooperative", { ignoreTermination: true, terminationMarker })
+    let originalPid: number | undefined
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      originalPid = original.pid
+      await f.started("uncooperative", original.pid)
+      const record = await readFile(f.collectorProcessFile, "utf8")
+      const command = execFileSync("/bin/ps", ["-p", String(original.pid), "-o", "command="], { encoding: "utf8" })
+      await writeFile(join(fakeBin, "ps"), `#!${process.execPath}\nprocess.stdout.write(${JSON.stringify(command)}); setInterval(() => {}, 1000);\n`)
+      await chmod(join(fakeBin, "ps"), 0o700)
+      process.env.PATH = `${fakeBin}:${originalPath}`
+      let activated = false
+      const started = performance.now()
+      await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
+        async () => { activated = true })).rejects.toMatchObject({ reason: "identity" })
+      expect(performance.now() - started).toBeLessThan(3000)
+      expect(activated).toBe(false)
+      expect(await readFile(f.collectorProcessFile, "utf8")).toBe(record)
+      await expect(readFile(terminationMarker)).rejects.toMatchObject({ code: "ENOENT" })
+      expect(() => process.kill(original.pid, 0)).not.toThrow()
+    } finally {
+      process.env.PATH = originalPath
+      if (originalPid) try { process.kill(originalPid, "SIGKILL") } catch { /* Already exited. */ }
+      await f.run(f.daemon.stop())
+    }
+  }, 10_000)
+
+  it("bounds a cancelled identity probe when its descendant inherits the output pipes", async () => {
+    const f = await fixture(), root = dirname(f.entry), originalPath = process.env.PATH
+    const fakeBin = join(root, "bin"), pidsFile = join(root, "probe-pids.json")
+    await mkdir(fakeBin)
+    const cleanProbe = async () => {
+      const pids = await readFile(pidsFile, "utf8").then(value => JSON.parse(value)).catch(() => undefined)
+      for (const pid of pids ? [pids.descendant, pids.parent] : []) {
+        try {
+          const command = execFileSync("/bin/ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" })
+          if (command.includes(root)) process.kill(pid, "SIGKILL")
+        } catch { /* Already exited. */ }
+      }
+    }
+    // A broken implementation must still leave no test-owned descendant.
+    const cleanup = setTimeout(() => { void cleanProbe().catch(() => {}) }, 4000)
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      await f.started("original", original.pid)
+      const command = execFileSync("/bin/ps", ["-p", String(original.pid), "-o", "command="], { encoding: "utf8" })
+      await writeFile(join(fakeBin, "ps"), `#!${process.execPath}
+import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
+const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", ${JSON.stringify(pidsFile)}], { stdio: ["ignore", "inherit", "inherit"] });
+writeFileSync(${JSON.stringify(pidsFile)}, JSON.stringify({ parent: process.pid, descendant: descendant.pid }));
+process.stdout.write(${JSON.stringify(command)});
+setInterval(() => {}, 1000);
+`)
+      await chmod(join(fakeBin, "ps"), 0o700)
+      process.env.PATH = `${fakeBin}:${originalPath}`
+      let activated = false
+      const started = performance.now()
+      await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
+        async () => { activated = true })).rejects.toMatchObject({ reason: "identity" })
+      expect(performance.now() - started).toBeLessThan(3000)
+      expect(activated).toBe(false)
+      const pids = JSON.parse(await readFile(pidsFile, "utf8"))
+      expect(() => process.kill(pids.parent, 0)).toThrow()
+      expect(() => process.kill(pids.descendant, 0)).not.toThrow()
+      expect(() => process.kill(original.pid, 0)).not.toThrow()
+    } finally {
+      clearTimeout(cleanup)
+      process.env.PATH = originalPath
+      await cleanProbe()
+      await f.run(f.daemon.stop())
+    }
+  }, 10_000)
+
+  it("does not signal a live process whose saved token no longer matches", async () => {
+    const f = await fixture()
+    let originalPid: number | undefined
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      originalPid = original.pid
+      const record = JSON.parse(await readFile(f.collectorProcessFile, "utf8"))
+      const foreign = JSON.stringify({ ...record, token: "different-owner-token" })
+      await writeFile(f.collectorProcessFile, foreign)
+      await expect(f.run(f.daemon.stop())).rejects.toMatchObject({ reason: "identity" })
+      expect(() => process.kill(original.pid, 0)).not.toThrow()
+      expect(await readFile(f.collectorProcessFile, "utf8")).toBe(foreign)
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.desired.json`, "utf8"))).toEqual({ version: 1, wanted: false })
+    } finally {
+      if (originalPid) try { process.kill(originalPid, "SIGKILL") } catch { /* Already exited. */ }
+      await f.run(f.daemon.stop())
+    }
+  })
+
+  it("refuses force termination when ownership changes after TERM", async () => {
+    const f = await fixture(), root = dirname(f.entry), originalPath = process.env.PATH
+    const terminationMarker = join(root, "term-at"), fakeBin = join(root, "bin")
+    await mkdir(fakeBin)
+    await f.replace("uncooperative", { ignoreTermination: true, terminationMarker })
+    let originalPid: number | undefined
+    try {
+      const original = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      originalPid = original.pid
+      await f.started("uncooperative", original.pid)
+      const command = execFileSync("/bin/ps", ["-p", String(original.pid), "-o", "command="], { encoding: "utf8" })
+      await writeFile(join(fakeBin, "ps"), `#!${process.execPath}
+import { existsSync } from "node:fs";
+process.stdout.write(existsSync(${JSON.stringify(terminationMarker)}) ? "node __collector-daemon --daemon-token foreign-owner\\n" : ${JSON.stringify(command)});
+`)
+      await chmod(join(fakeBin, "ps"), 0o700)
+      process.env.PATH = `${fakeBin}:${originalPath}`
+      let activated = false
+      const started = performance.now()
+      await expect(withCollectorMaintenance(f, async () => f.entry, process.env,
+        async () => { activated = true })).rejects.toMatchObject({ reason: "identity" })
+      expect(performance.now() - started).toBeGreaterThanOrEqual(4900)
+      expect(performance.now() - started).toBeLessThan(7500)
+      expect(activated).toBe(false)
+      expect(() => process.kill(original.pid, 0)).not.toThrow()
+      expect(JSON.parse(await readFile(f.collectorProcessFile, "utf8")).pid).toBe(original.pid)
+      expect(JSON.parse(await readFile(`${f.collectorProcessFile}.maintenance.json`, "utf8"))).toMatchObject({ phase: "failed" })
+    } finally {
+      process.env.PATH = originalPath
+      if (originalPid) try { process.kill(originalPid, "SIGKILL") } catch { /* Already exited. */ }
+      await f.run(f.daemon.stop())
+    }
   }, 15_000)
 
   it("lets user Stop cancel maintenance restart without waiting for a ready file", async () => {

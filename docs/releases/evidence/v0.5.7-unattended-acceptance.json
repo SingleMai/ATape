@@ -1,0 +1,577 @@
+{
+  "protocol": "atape.unattended-post-release-acceptance.v1",
+  "passed": true,
+  "result": "Mac and an independent Linux fixture eventually passed after preserved natural-calendar failures; every earlier failed attempt remains failed",
+  "allObservedNaturalCalendarAttemptsPassed": false,
+  "historicalLinuxFailedNaturalCalendarAttemptCount": 2,
+  "currentLinuxFixtureFailedNaturalCalendarAttemptCount": 1,
+  "completedAt": "2026-10-10T16:30:45.981298+00:00",
+  "builderSha256": "b2318859a07f4b57479f671c4fa03bc4091afc1ce38337df6b47731ae1394086",
+  "releases": {
+    "0.5.6": {
+      "commit": "35cb7ee4f0ac7e11f786ed68ab7b0d731f70597e",
+      "tree": "b560c7f04d5dacfc3714e57427cea4e13d34c8b6",
+      "tag": "v0.5.6",
+      "packages": [
+        {
+          "name": "@atape/adapter-claude",
+          "sha256": "942799bf5a2d7c9566ba1e38a4a5f56affa4be540afca9f958bfc823ecc80e7f",
+          "integrity": "sha512-OiNVH/kOmTlfNHyrJ2e0wnqxAqGpDvGd0HdS4Y5tH182IkqxLwfpom8OCjVZbnU1Dn7MNWNhssDlaksXh1hKdw=="
+        },
+        {
+          "name": "@atape/adapter-codebuddy",
+          "sha256": "f01881d43a1a62b424cd3651449c51d11c532498f17e4b1dadfb5a931153dc8d",
+          "integrity": "sha512-LLMBOQC1kft5c4ZI0UajygFI8r+TPMdlZ2Qre7RKK2ukbduFfsf4Kb5Z8wZasywBD7nSq7kZtZ5F7THySuGD0A=="
+        },
+        {
+          "name": "@atape/adapter-codex",
+          "sha256": "bbc12f3b4872e0a3b641aebb5a87b582e28c56d4d87eb430ec6a0910ce7ab8a0",
+          "integrity": "sha512-x3Z8DdbwixUhyl6R6jX7DstVoIYS3vPlrV+3s7fLjPTCxnzhkYRBhDtnAjbE5GL/2jI9Kgp1S58NONOOtc5T/g=="
+        },
+        {
+          "name": "@atape/adapter-cursor",
+          "sha256": "277f545cdc53263d3d14c8ea47903e0bfb32872842af96bd387590f8a18c6225",
+          "integrity": "sha512-9RXsKKplilSF/Ot5W2WspB4uSDz+FxphHJNVRgG/V97Wv0jUOygwCUJ/wrPqjpam+OvVgIFhFgk/gfh8khNl9g=="
+        },
+        {
+          "name": "@atape/adapter-grok",
+          "sha256": "74f5e90f349395604b5ebc9ba7b2ed19885dba1be08cae8bf624d5123f8cc65b",
+          "integrity": "sha512-1UDWn1UzmhfhEMQMeEqWv4I7idrIRpGSUBIAI3woQBz+aTdt4sXCc48mvZ4RMchr7HT3aXcUAI8MUriCWW0lYw=="
+        },
+        {
+          "name": "@atape/adapter-kimi",
+          "sha256": "a4bb419f28f9eefd54799c4cf1013cfda8113935b6796d8fa5cd42211b49e2db",
+          "integrity": "sha512-9qkmbE7Snhebd/72OHLTCNJeYQ9xfdzddj8pjWd0YsmeM8RPZSIlSAy4hl1wpP/clujgX/gf2EbrPG7rZu0jAw=="
+        },
+        {
+          "name": "@atape/adapter-opencode",
+          "sha256": "b671b74ec730350903299f19649dda3f4fa2d6c5ed76354d12d4ec83dcbc61b6",
+          "integrity": "sha512-298isoigS+StX4nIlIL49a7S7fhnJElkeh1h5XVBYFGvsNznezflqIt4EXFkhzng7f2gXu9/fzxZfDn8Yd30Gw=="
+        },
+        {
+          "name": "@atape/cli",
+          "sha256": "a49080386a359b5c6981d69935bb810e29fa641268bd04f56cd9429320046a10",
+          "integrity": "sha512-GizK+FdSYXbSKRavc7iUx5nqv0wIPBhV4wrThmQigkz5+ln8zo7DzBK7nnQNPPRbv94BuvcaNPXDnawL6MlE9w=="
+        }
+      ]
+    },
+    "0.5.7": {
+      "commit": "c6cccd87a0fdc749bdaeb266bba8c06dcf46d01a",
+      "tree": "d2f18d2a764bdb85dbc22cdb0b0239cae62ef167",
+      "tag": "v0.5.7",
+      "packages": [
+        {
+          "name": "@atape/adapter-claude",
+          "sha256": "0f82cf4db5e8ec8c519e4240a9d8b297af2c16e3c5950b0d0ca54eb47924e191",
+          "integrity": "sha512-OmEHG2NVdgiR1WqysaCX8ss2CpnYrB1v/hQi3cvBZJ5W0YXL2AovaZXzXgmx7SO4uNNamCupkeuhSgOnb36l+Q=="
+        },
+        {
+          "name": "@atape/adapter-codebuddy",
+          "sha256": "571755578323f30d251b7aba1f5e19bcb056b63aa40ac19fddb1cb7cafb4ec4b",
+          "integrity": "sha512-NEwKrO7eZa3NANJ4wXI+ueKsnWEmYQIxYECv3kKfqHQpBLP91Q6pWVi8atGjt7gHIsb8tQG5nmKGuj6GI8dMbA=="
+        },
+        {
+          "name": "@atape/adapter-codex",
+          "sha256": "8f2f3e5dda025ad8e98898a225327801fcd1f9ad23e6a8af32de814e89619aeb",
+          "integrity": "sha512-PSNd8HrNzZ5QxyCXUEjEoYH2eHm67UsThhIYaQsqV26WpmrtemPflGeUE3qTGFLKht7FD3PvLCWjoGX0/uzO6g=="
+        },
+        {
+          "name": "@atape/adapter-cursor",
+          "sha256": "f0f9e9df05377937e40739dc520451926964817bc7aaf9660079babe89ec40d2",
+          "integrity": "sha512-0297lfaFMm0k/VriLFEscm58PSDizOy++j0f8TKorSzmnhcUoJuTp++wIYDNK/uORwMfkkyjqqNg03QrubihDg=="
+        },
+        {
+          "name": "@atape/adapter-grok",
+          "sha256": "6bc5ddb66141952dfbc493e9655566a3ed4583e48fac4b9d161f0d0478a8d248",
+          "integrity": "sha512-U++v3biJ9+GRMt/2QFJvuPIbDo8njR9Zfk6fi5SPd7bQ8mb1SlDRDMbzHWekiJ7mYQTI3v1p4pJBpjhM905Nlw=="
+        },
+        {
+          "name": "@atape/adapter-kimi",
+          "sha256": "a45979af64b5733927e678e1047e9979ad0667ac0c7fd247cda5a0bb1953793c",
+          "integrity": "sha512-asw0trBaSweVNoNkekzUzgYyX+TxGe0/k/Ya6EUCo9gy/wzRewX3+nopekMKCTwwoFTxquAoZOtZY0QuNgs2jg=="
+        },
+        {
+          "name": "@atape/adapter-opencode",
+          "sha256": "dfc2bfab495bc3c0b87a67081c0ff12cf4d469cd45f000512f5b92dcf282876d",
+          "integrity": "sha512-H9K6MDL6fWBs58j2AIiKelLyZgIC2IciZ3Oqm3waz0qMcIG0Pt25Ux+WG+ha48SLDJDJdCHuoUZfNRfdOtCzhA=="
+        },
+        {
+          "name": "@atape/cli",
+          "sha256": "554a536b958d528813bcde0b7098eb531eff0329f2891465365fd812f4861fbf",
+          "integrity": "sha512-0izyGIpTlIEsZsLgK5tk2A0qzoyuLuMVJcEAny3VE48GtPbNztVqtYR+nhzTCXzwzMm47GJDcEW5BtGmxPE2vw=="
+        }
+      ]
+    }
+  },
+  "publicationEvidence": {
+    "targetWorkflowRun": 38047933532,
+    "targetAnonymousNpmAndGitHubBytesVerified": true,
+    "baselineBasis": "Local published tag commit/tree plus independently retrieved exact npm SRI/SHA256 and installed public file bytes; baseline npm provenance attestations were not separately checked."
+  },
+  "captureStateContract": "atape.client.v3-capture.v2",
+  "macOS": {
+    "naturalCalendarAttempts": 2,
+    "firstAttempt": {
+      "passed": false,
+      "stage": "release discovery before preparation",
+      "originalWorkerFailure": "release",
+      "originalWorkerHTTPStatusNotRecorded": true,
+      "subsequentIndependentProbeHTTPStatus": 403,
+      "subsequentIndependentProbeAnonymousBudgetRemaining": 0,
+      "causeInference": "The published 0.5.6 path requires fresh anonymous GitHub discovery. The later independent public probe found the anonymous quota exhausted, consistent with the saved release failure before any candidate preparation; the original worker HTTP response was not captured."
+    },
+    "platform": {
+      "platform": "darwin",
+      "architecture": "arm64",
+      "macOSVersion": "26.3.2",
+      "macOSBuild": "25D2150",
+      "nodeVersion": "24.18.0",
+      "npmVersion": "11.16.0",
+      "actualGUIUserManager": true,
+      "realHOMEUnchanged": true
+    },
+    "httpRecoverySideEvidence": {
+      "status": 200,
+      "observedAt": "2026-10-10T13:13:08.858Z",
+      "catalogRevision": 2,
+      "targetVersion": "0.5.7",
+      "anonymousBudgetRemaining": 51,
+      "responseBodySha256": "3f26609a4dbc1d1f64dd71642d624b33cdef26fa98170fb4ba946d7abe013393",
+      "updaterInvoked": false,
+      "isUpgradePassEvidence": false
+    },
+    "retry": {
+      "passed": true,
+      "scheduleOnlyAcceleration": true,
+      "calendarRunsBefore": 2,
+      "calendarRunsAfter": 3
+    },
+    "actual057RuntimeAndAllSevenAdaptersVerified": true,
+    "npmBootstrapRemained056": true,
+    "rawConfigAndCredentialsPreserved": true,
+    "observedPauseUntilOldCollectorExitMs": 5067,
+    "nativeCapture": {
+      "sessionCount": 1,
+      "nativeMessages": 8,
+      "completedPhaseCount": 3,
+      "orphanUserMessageCount": 2,
+      "failedNativeAttempts": [
+        {
+          "phase": "after",
+          "attempt": 1,
+          "errorName": "UnknownError",
+          "stdoutSha256": "26a246cb17ee7df9f4a82bfe868e6b3ce3ca6ede5857ed15ee8bb8d311c5575d",
+          "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "snapshotSha256": "d69637909ade5525e57a0884c8c73252b3a8bf4d3df2e6c0e358ca8c2b9e7b83",
+          "snapshotReceipt": "atape-acceptance-artifacts/release-v057-live-server-r2/native-failed-attempt1-audit.json"
+        },
+        {
+          "phase": "after",
+          "attempt": 2,
+          "errorName": "UnknownError",
+          "stdoutSha256": "80db46a22e63a35bbfe8f66ba40a50bb66ba2ffadc25fca89ae4f1ecd93c8e3d",
+          "stderrSha256": "05e981f630f19849be9c683c3112836d95d75f6813e83f82d58d6188989de9b6",
+          "snapshotSha256": "97510e0fd2ff8058ce7653a0c589941635222667796c9797005deeae11661f17",
+          "snapshotReceipt": "atape-acceptance-artifacts/release-v057-live-server-r2/native-failed-attempt2-audit.json",
+          "diagnosticCode": "ProviderModelNotFoundError",
+          "diagnosticCodeBasis": "observed-stderr"
+        }
+      ],
+      "nativeParts": 17,
+      "eligibleNativeParts": 11,
+      "canonicalEvents": 11,
+      "baselineEventsPreserved": 3,
+      "newEventsFrom057": 8,
+      "baselineHistoricalAdapterVersion": "0.5.6",
+      "baselineEventsCurrentAdapterVersions": [
+        "0.5.7"
+      ],
+      "baselineCurrentProjectionRevisions": [
+        2
+      ],
+      "baselineEventIdsAndTextPreserved": true,
+      "rawRecordCount": 26,
+      "historicalFinalizedRawBytes": 28384,
+      "rawObjectCount": 5,
+      "historicalRawRecordCount": 37,
+      "allCurrentNativeRowsAndLatestUnionVerified": true,
+      "original056RawObjectRetained": true,
+      "allCanonicalRawRefsAndEligibleNativePartsVerified": true
+    },
+    "publicStopAndUpdatesOffVerified": true,
+    "experimentTeardownVerifiedSeparately": true,
+    "sourceHistoryRowsAndCredentialBytesPreservedByPublicControls": true,
+    "completeMacGateSha256": "aa23133ef2db50833591d5c62219c178997486403fc7a414fca511c51931a767",
+    "isolatedServerFixtureCleanupVerified": true,
+    "ownedJobUnloaded": true,
+    "disabledOverrideActive": false,
+    "ownedDisableEntryPresent": true,
+    "ownedDisableEntryValue": "enabled"
+  },
+  "Linux": {
+    "executionEnvironment": {
+      "kind": "isolated Linux container",
+      "nativeManager": "real systemd user manager",
+      "architecture": "arm64",
+      "containerOS": "Debian GNU/Linux 12 (bookworm)",
+      "systemdVersion": "systemd 252 (252.39-1~deb12u2)",
+      "dockerContext": "colima",
+      "containerImage": "sha256:a60354a8d6d3c13dd5bb05a0fdafda68ffec1e613f2658e082d6ad60e5433bd8",
+      "nodeVersion": "v24.20.0",
+      "physicalLinuxDesktopAcceptance": false,
+      "platformEvidenceSha256": "35a6749387801cb83523981cbe1ef3b8442556c55a02bfc6434c1b722b2c2dcd"
+    },
+    "acceptanceFixtureIsIndependentFromHistoricalFailures": true,
+    "networkWindowPreparation": {
+      "basis": "Separate temporary same-cached-image Node probe, before this new fixture natural update",
+      "initialProbeAt": "2026-10-10T15:03:19.007Z",
+      "initialProbeHTTPStatus": 403,
+      "initialProbeAnonymousBudgetRemaining": 0,
+      "observedResetAt": "2026-10-10T15:20:46+00:00",
+      "productionHomeHashMinute": 22,
+      "originalNaturalCalendarAt": "2026-10-10T15:22:00.000Z",
+      "homeHashSelectedForWindowAfterObservedReset": true,
+      "timerDescriptorOrClockOverride": false,
+      "diagnosticInstrumentation": "NODE_DEBUG=undici was set initially in the owned user manager to observe actual HTTP statuses; package bytes/descriptors and responses were not substituted.",
+      "diagnosticEnvironmentEvidenceSha256": "91e9dd15067765a544c6926269fe0313b43bc95cf9cd274641f5440847b28055",
+      "limit": "The separate probe reset timestamp does not establish the actual updater request quota bucket or guarantee transport success."
+    },
+    "naturalSystemdCalendarAttempts": 2,
+    "firstNaturalCalendarAttemptPassed": false,
+    "firstAttempt": {
+      "passed": false,
+      "stage": "Collector maintenance handoff after target preparation",
+      "failure": "handoff",
+      "recordedWorkerHTTP200RequestCount": 17,
+      "originalWorkerHTTPStatusNotRecorded": false,
+      "oldCollectorStillStoppedWithTermPending": true,
+      "selectionOrControlActivated": false,
+      "exactUnderlyingCauseEstablishedForThisAttempt": false,
+      "frozenFailureReceiptSha256": "42030d9853f7d731d7af7bcddc3511040c302b68915dd825ab3c29e0f0e27cb6",
+      "independentAuditSha256": "472bd7de60c462940f94f1c08b315afbd361df4aa0b961371e3ed8d9341746de"
+    },
+    "retry": {
+      "passed": true,
+      "sameFixtureAndOriginalProductionCalendar": true,
+      "scheduleOnlyAcceleration": true,
+      "originalFailedCalendarAt": "2026-10-10T15:22:00.000Z",
+      "successfulCalendarAt": "2026-10-10T16:22:00.000Z",
+      "failedMaintenanceAndIntentPreservedUntilNaturalRetry": true,
+      "wholeNaturalRetryUntilFinal057ReadyObservedMs": 23852,
+      "firstFailedMaintenancePauseObservedAt": "2026-10-10T15:22:13.603Z",
+      "failedMaintenanceObservedAt": "2026-10-10T15:22:20.511Z",
+      "final057ReadyAndCompletedObservedAt": "2026-10-10T16:22:23.852Z",
+      "observedFirstFailedPauseUntilFinal057ReadyMs": 3610249,
+      "lateReadOnlyVerificationCompletedAt": "2026-10-10T16:25:53.074Z",
+      "observedFirstFailedPauseUntilLateReadOnlyVerificationMs": 3819471,
+      "observedFailedMaintenanceUntilNextNaturalCalendarMs": 3579489,
+      "recoverySpanScope": "The original Collector had deliberately been SIGSTOP-stalled before either attempt. The failed first maintenance gate remained until the next hourly calendar; the short retry pause-to-exit measurement does not describe total capture interruption or ordinary uptime.",
+      "observedIntermediate056CollectorCount": 1,
+      "observedIntermediate056IdentitiesVerified": true,
+      "wholeRetryIsNotSubjectToOldCollectorExitMeasurement": true
+    },
+    "historicalFailedFixtures": [
+      {
+        "fixture": "linux-unattended-prepared",
+        "overallUnattendedAcceptancePassed": false,
+        "naturalCalendarAttemptCount": 2,
+        "failedNaturalCalendarAttemptCount": 2,
+        "attempts": [
+          {
+            "calendarAt": "2026-10-10T14:00:00.000Z",
+            "passed": false,
+            "workerFailure": "release",
+            "workerExitCode": 1,
+            "originalWorkerHTTPStatusNotRecorded": true,
+            "subsequentIndependentProbeHTTPStatus": 403,
+            "subsequentIndependentProbeObservedAt": "2026-10-10T14:01:16.321Z",
+            "causeInference": "The later matching-environment probe found anonymous quota exhausted; the original worker HTTP response was not captured."
+          },
+          {
+            "calendarAt": "2026-10-10T15:00:00.000Z",
+            "passed": false,
+            "workerFailure": "release",
+            "workerExitCode": 1,
+            "originalWorkerHTTPStatusNotRecorded": true,
+            "failureCauseEstablished": false
+          }
+        ],
+        "failureBeforeStagingOrPause": true,
+        "oldCollectorIntentConfigAndCredentialBytesPreservedUntilCleanup": true,
+        "nativeSuccessfulPhasesBeforeFailure": 2,
+        "nativeAfterAndFinalCaptureAndManualRepeatNotPerformed": true,
+        "ownedPAMAndContainerNetworkCleanupPassed": true,
+        "resumedCollectorCleanupClaimed": false,
+        "separateNewFixtureIsNotThisFixtureRetry": true
+      }
+    ],
+    "naturalSystemdCalendarUpgrade": true,
+    "actual057RuntimeAndAllSevenAdaptersVerified": true,
+    "allEightPublicPackageBytesVerified": true,
+    "retainedHistoricalPreparation": {
+      "count": 1,
+      "exactFirstFailedAttemptBytesPreserved": true,
+      "isPendingRecoveryTransaction": false,
+      "onlyExactHistoricalPreparedFileRemains": true,
+      "unknownPreparedFilesOrPendingTransactionPresent": false,
+      "preparedAndControlKeysAreIndependentNamespaces": true,
+      "currentPreparationKeySeparatelyCaptured": false,
+      "readOnlyObserverSupplementUsed": true,
+      "originalRetrySnapshotBytesPreservedAsExactPrefix": true,
+      "originalRetrySnapshotSha256": "e3cc19ccc5975faf33f3bfe218cd9ce6b8082037c0e19d0fe9584d43bf88235a",
+      "originalRetrySnapshotBytes": 54511,
+      "originalRetrySnapshotRows": 11,
+      "originalRetrySnapshotLastObservedAt": "2026-10-10T16:22:23.852Z",
+      "finalAppendOnlyRetryObservationsSha256": "9908f683a6b77a4719bcd382c5f7960d74eccac5f885d92d1df40c4f6d4f6dd8",
+      "laterObservationLinesAppended": 2,
+      "laterObservationTimes": [
+        "2026-10-10T16:26:53.664Z",
+        "2026-10-10T16:26:54.795Z"
+      ],
+      "limit": "The first failed pre-activation preparation remains on disk; it was not deleted to force acceptance. The prior zero-prepared harness condition was stricter than the published recovery contract."
+    },
+    "observedPauseUntilOldCollectorExitMs": 5134,
+    "nativeCapture": {
+      "sessionCount": 1,
+      "nativeMessages": 6,
+      "completedPhaseCount": 3,
+      "orphanUserMessageCount": 0,
+      "failedNativeAttempts": [],
+      "nativeParts": 15,
+      "eligibleNativeParts": 9,
+      "canonicalEvents": 9,
+      "baselineEventsPreserved": 3,
+      "newEventsFrom057": 6,
+      "baselineHistoricalAdapterVersion": "0.5.6",
+      "baselineEventsCurrentAdapterVersions": [
+        "0.5.7"
+      ],
+      "baselineCurrentProjectionRevisions": [
+        1
+      ],
+      "baselineEventIdsAndTextPreserved": true,
+      "rawRecordCount": 22,
+      "historicalFinalizedRawBytes": 15483,
+      "rawObjectCount": 3,
+      "historicalRawRecordCount": 24,
+      "allCurrentNativeRowsAndLatestUnionVerified": true,
+      "original056RawObjectRetained": true,
+      "allCanonicalRawRefsAndEligibleNativePartsVerified": true
+    },
+    "manualRepeatOneshotKeptCollector": true,
+    "manualRepeatWasNaturalCalendar": false,
+    "additionalNaturalActivationAfterSuccessfulHopClaimed": false,
+    "nonLingerPAMLogoutRemovedCollectorAndCgroup": true,
+    "finalIndependentHostAudit": {
+      "passed": true,
+      "receiptSha256": "4b8baaaa3ad64b87c35df34e7d7bdb2f8e0ee18095942da4f11327f6e7f9a345",
+      "nativeCanonicalRawAndPublicPackageCountsCrossChecked": true,
+      "timingsAndAppendOnlyPrefixCrossChecked": true,
+      "historicalPreparationAndCleanupCrossChecked": true,
+      "frozenNonCredentialFilesIndependentlyHashChecked": 2232,
+      "frozenCredentialFilesNotReadByIndependentAudit": 2,
+      "credentialPreservationWasRecordedByCaller": true,
+      "collectedOverlayRetainedFrozenStaleMaintenanceFile": true,
+      "actualLiveGateAbsenceVerifiedFromBoundReadyRows": true
+    },
+    "ownedContainersAndNetworkRemoved": true
+  },
+  "separateStopProcessDiagnostic": {
+    "sourceVersion": "0.5.6",
+    "platform": "Linux arm64",
+    "nodeVersion": "v24.20.0",
+    "sourceModuleMatchesPublishedTagRevision": true,
+    "compiledDiagnosticCallerIsPublishedBinary": false,
+    "untracedCallerAttempts": 12,
+    "untracedCallerStopFailures": 2,
+    "observedCallerCompletedSnapshotAttempts": 19,
+    "directSameAttemptMechanismFailures": 2,
+    "mechanism": "A real ps deadline destroyed its output while the child had exited successfully; Node returned null error with empty stdout. Ownership was incorrectly treated as absent, graceful wait skipped SIGKILL, and a later valid ownership check waited until the stop deadline.",
+    "actualLinuxCalendarFailureHasDirectUnderlyingTrace": false,
+    "remediationIncludedInPublished056Or057": false,
+    "reproductionResourcesRemoved": true,
+    "directReceiptSha256": "964b1ee0c478b692f8d9130f696dddc71888ec207efd04a921447f54d7677c1b"
+  },
+  "separateUnreleasedSourceValidation": {
+    "basePublishedVersion": "0.5.7",
+    "baseCommit": "c6cccd87a0fdc749bdaeb266bba8c06dcf46d01a",
+    "frozenProductionModuleSha256": "ca50f5b512027029703fed0b646923fdc21aa1d42f7fec957fcca8c02e76abcf",
+    "ownFrozenLockSha256": "c12a7cf11c5273d89e8dc172f299af2528d6f3e2140546d85d55303371aba68c",
+    "platform": "Linux arm64",
+    "nodeVersion": "24.20.0",
+    "network": "none",
+    "borrowedHistoricalDependencies": false,
+    "realPsStoppedHelperAttempts": 6,
+    "afterStopMaintenanceActivationReachedCount": 6,
+    "afterStopElapsedRangeMs": [
+      5022.968670000002,
+      5079.903611
+    ],
+    "cancelledSuccessfulPsCallbacksObservedBeforeFreshIdentityAndKill": 3,
+    "freshSuccessfulOwnedIdentityObservedBeforeEveryKill": true,
+    "inheritedPipeProbeRejectedAfterMs": 2011.6288140000001,
+    "pipeCancellationPreservedOriginalCollectorAndRejectedActivation": true,
+    "ownedTestHelpersAndContainersRemoved": true,
+    "fullCandidateReadinessOrNaturalUpdateClaimed": false,
+    "actualLinuxCalendarFailureDirectlyTraced": false,
+    "includedInPublished056Or057": false,
+    "sourceChecks": {
+      "collectorCallerTestsPassed": 70,
+      "cliSuitesPassed": 56,
+      "cliTestsPassed": 973,
+      "cliTestsSkipped": 2,
+      "cliTypecheckPassed": true,
+      "architectureTestsPassed": 5,
+      "architectureProductionFiles": 209,
+      "diffCheckPassed": true,
+      "fullCliCapturedSummarySha256": "73e773dee202e266869a8eddd52505f39318096a57cd7f03640327828bc95142",
+      "frozenTestFileSha256": "8588a1c72845d5d438f60ea10fdc135034006749a2a5739721e5b2a152883313",
+      "verificationReceiptSha256": "cb567487d3aef76801a560a9cd7091bfbc3370a9f304929804744160832ef4e9"
+    },
+    "receiptSha256": "a3b8e17128bec9c3ed4910dd5222da65b69ce8d95423198077337cc7de52afbb"
+  },
+  "receiptSha256ByRelativeName": {
+    "atape-acceptance-artifacts/collector-stop-fix-cli-suite-20261010.log": "73e773dee202e266869a8eddd52505f39318096a57cd7f03640327828bc95142",
+    "atape-acceptance-artifacts/collector-stop-fix-source-snapshot-20261010/collectorDaemonLayers.test.ts": "8588a1c72845d5d438f60ea10fdc135034006749a2a5739721e5b2a152883313",
+    "atape-acceptance-artifacts/collector-stop-fix-source-snapshot-20261010/collectorDaemonLayers.ts": "ca50f5b512027029703fed0b646923fdc21aa1d42f7fec957fcca8c02e76abcf",
+    "atape-acceptance-artifacts/collector-stop-fix-source-snapshot-20261010/snapshot.json": "71cc9e6018ff146123a218240cf6137f8baaf5cea2e661ce9e9ed727ff9c6ff1",
+    "atape-acceptance-artifacts/collector-stop-fix-verification-20261010.json": "cb567487d3aef76801a560a9cd7091bfbc3370a9f304929804744160832ef4e9",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/caller-repro.mjs": "4eee914afa9ee5cef1d7866fe62f8d9aa2bc809b027cc0017dae7956baa495a3",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/final-source-validation.json": "a3b8e17128bec9c3ed4910dd5222da65b69ce8d95423198077337cc7de52afbb",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/linux-pipe-lifetime.json": "c0d9db7a091713c0eba06c4615adc6e1484d3b731e78e4297dc1a66e8fd1c1e0",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/linux-stopped-helper.jsonl": "a9ceddf7a6a89bfa316d46802a64426e4522c417a1fc408907c06fe8c34df79f",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/pipe-repro.mjs": "6ca419786fb71e3361e30fcc1b091189da342697ee388c1650c54fd16032a3ff",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source-provenance.json": "08a222a903f73a7af53ad3588d5edf4186aade5d7b0bf70c66058185b6a20066",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source/apps/cli/build-caller-repro.mjs": "7797869eb03a3e80549fc093c2651aa8c3d3b375769e76a3bc177c88426db85e",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source/apps/cli/build-pipe-repro.mjs": "baba5bc1bd5b1c850d6cb914c3025a7ede710fa74921fe614332fd956173d6b4",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source/apps/cli/caller-repro.ts": "8ebae28a9b0233002c20fa49eb9237c71c745d87269e07288961e82a67d6ee4a",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source/apps/cli/pipe-repro.ts": "6e3681da791003e29d95d978f8df811b368e3b15e02b5498e0b13358577bd0cf",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source/apps/cli/src/runtime/collectorDaemonLayers.ts": "ca50f5b512027029703fed0b646923fdc21aa1d42f7fec957fcca8c02e76abcf",
+    "atape-acceptance-artifacts/final-candidate-stop-caller-repro-20261010T154354Z/source/pnpm-lock.yaml": "c12a7cf11c5273d89e8dc172f299af2528d6f3e2140546d85d55303371aba68c",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/backlog-before-upgrade-audit.json": "df0b5ece6bc106d2fd02006b9b1b5e468612354edb974c55f6e71b5704a9f222",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/baseline-audit.json": "670f603aed9e3c3e39d28c58065e3058a9e31d7a3a6e5353858d3a687aaac48b",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/baseline-response.json": "a9ba4a704635d145d01468d89f84ae786411e82756c79b0918496cd6ccf88a11",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/cleanup-audit.json": "6f540a0b21652b3935ae38a60bfddf35023d9a207c130fb5fa49f62da7a7828f",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/continued-request.json": "ccee2dbbae7810504dd801b24b7f1db8307c95d9d62d6e1f1580826db72a3dce",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/continued-response.json": "f54219fb686c481a0ef3e70867be43fed31543c5d20550fda712618b5470f3a4",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/final-native-capture-audit.json": "651e3827d561ec4c04196f8107cbbb1a2560e6f5382b7de23ffe3ef826d31262",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/native-failed-attempt1-audit.json": "d69637909ade5525e57a0884c8c73252b3a8bf4d3df2e6c0e358ca8c2b9e7b83",
+    "atape-acceptance-artifacts/release-v057-live-server-r2/native-failed-attempt2-audit.json": "97510e0fd2ff8058ce7653a0c589941635222667796c9797005deeae11661f17",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/after-independent-audit.json": "5ac0fa332feb2891ca6da377f2eb37c319a3f7a6317fd14ddb6a1d0ff78fcc35",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/before-independent-audit.json": "145ab335ea7ee48f212d3926cfcd8c1b0bf45709e9b6b50c2760020bdb034350",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/calendar-context.json": "940a854ceeb4e445d5c17620453ffe7c7518b3acd078a512e78890d8999e657c",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/evidence/calendar-armed.json": "f93de4711d2c590dc8645a1197d76f5d43c0686576a3491d5e8041c8bf448ea3",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/evidence/calendar-first-failure.json": "a926fb554ae589c4b3ef6128b43266755b64f73b1f42ffcf218352c51216188a",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/evidence/calendar-retry-armed.json": "d8c9422d3bac6f1158559fb9e9774575df484d866d164705da34d32f6b2ae814",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/experiment-teardown.json": "9fb59f887ab5126fa919fc3b62bc0e683eefd53f655ee319e91e92ce600cd3a3",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/macos-complete-acceptance.json": "aa23133ef2db50833591d5c62219c178997486403fc7a414fca511c51931a767",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/macos-platform.json": "74466fe9d6bccba46dd434a5ef3574ad8290229ddb3a383719105572d627e7ef",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/after.attempt1.stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/after.attempt1.stdout.jsonl": "26a246cb17ee7df9f4a82bfe868e6b3ce3ca6ede5857ed15ee8bb8d311c5575d",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/after.attempt2.stderr.log": "05e981f630f19849be9c683c3112836d95d75f6813e83f82d58d6188989de9b6",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/after.attempt2.stdout.jsonl": "80db46a22e63a35bbfe8f66ba40a50bb66ba2ffadc25fca89ae4f1ecd93c8e3d",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/after.receipt.json": "68c05d6b9eceb3359e35c3367a8f173c590947a84df7da3eec41da36ca490fb0",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/after.stdout.jsonl": "c6ed22a70095e31b5efa92f0e9761d494fe49a07573cc2ebc59807cf980cf4c8",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/before.receipt.json": "1408fb2e4269b12a569a0bd24a09efd8a7f529e98e037aea78df2d3e8b54dc29",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/before.stdout.jsonl": "b488eececdeb527b7c27eaae2d48835392f9146ac23cf178823c9563fba656ee",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/during.receipt.json": "7db17d184cedb15c26144fc00dae969b2ac15315a3b6cf7a75c690fff96ebe40",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/native-opencode/during.stdout.jsonl": "3dce482ed5b5e3ade66150325a5dd139d63fe1f6a20abc1e11e40c9448c578a9",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/public-stop-off-audit.json": "3c591d4b05297d500f1caa327291efb2642085d032662802e4599d779ee51aa0",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/release-http-recovery.json": "dc0a5e955e809abff9b74f1e705cda1195774180138a33245cf8df4b07ccc5ae",
+    "atape-acceptance-artifacts/release-v057-macos-unattended-audit/owned-node-npm-probe-_bjhai3l/unattended-observer-result.json": "bbe5ba0edc9f85bdabed42871c784b4b7b984ef9d188c38ca346b036d2766f4b",
+    "atape-acceptance-artifacts/release-v057-public-verification/verification.json": "126a32c4b05f31603d12e2e0594ae4675e853ceea79f05e3670897c9490b6d17",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/caller-repro.mjs": "15e17ccadfdf781798ce938d368a3c404cc2e89bcc2e781ba6e962e59c9cb37d",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/linux-traced-completed-snapshot.json": "6c0f9206970e77f37458ca9cc0776fbacd9f48fbddfb8c781acdbf0f0f0dad7c",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/reproduction-cleanup.json": "740edb96285c09c31600fdce29df2b935722ddd46e3062b8e4932f02bb16e449",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/reproduction-direct-causal-chain.json": "964b1ee0c478b692f8d9130f696dddc71888ec207efd04a921447f54d7677c1b",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/reproduction-summary.json": "8b5ba2555e30ab9c4cbea5fdfcccb84a1ca26e353a196df7cc7ad27ead313c25",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/source/apps/cli/caller-repro.ts": "8ebae28a9b0233002c20fa49eb9237c71c745d87269e07288961e82a67d6ee4a",
+    "atape-acceptance-artifacts/v056-stop-caller-repro-20261010T152847Z/source/apps/cli/src/runtime/collectorDaemonLayers.ts": "ffa103bedd32ebc3b1cae7abfb54b61431c6ce6d6e056a64bc3562854ae1a24e",
+    "linux-unattended-l2/captured/atape-de9ae3f0/updates/22ccdd9c-7b8d-4989-84f0-f8d6652754f8.prepared.json": "6177dcc8964f9f1eb7a1b396c0c4d40227b5e212a1dc2cf75f27df4d2c31c2cc",
+    "linux-unattended-l2/captured/atape-de9ae3f0/updates/control.json": "726306faede0da22b3d94e9c0cb13871b074efdbedc4c4bd5a9377d6ba21049f",
+    "linux-unattended-l2/captured/atape-de9ae3f0/updates/runtime.json": "5e7499622af1724a584fee84bc65300421ea5180d6be1a64deb0c0cb0cdbe6e0",
+    "linux-unattended-l2/captured/calendar-context.json": "85275f356b2e66f04ab65cb899c892a5811692b5e1cc09f406b1746f4493a267",
+    "linux-unattended-l2/captured/evidence/calendar-armed.json": "a6c8c776cbcb38c57fa632c5b2733a2bbd8da0ece5d7ff66ea101e48723717a4",
+    "linux-unattended-l2/captured/evidence/calendar-retry-armed.json": "7d9213512bfb1376e3140b9dbeba272f8a911248854720c50b4c1a35ef2035aa",
+    "linux-unattended-l2/captured/manual-repeat-oneshot.json": "a4cf5dae440370eb558a74bbd96d530af934a06c725498c569679e9f6ee62599",
+    "linux-unattended-l2/captured/native-opencode/after.receipt.json": "7c0d8f822a5a9999368a9a4ba87d8014cb6bd6c748993670615246ec6780980b",
+    "linux-unattended-l2/captured/native-opencode/after.stdout.jsonl": "da9a1c918aa628f137531eb6098bc2a9d599fc0d41ceff21d08768720cc65a1f",
+    "linux-unattended-l2/captured/native-opencode/before.receipt.json": "d60d749f767f3656eb497417775e8be0e06a5380bf859cc08aea2bc74d828766",
+    "linux-unattended-l2/captured/native-opencode/before.stdout.jsonl": "59ee03defb92e41e24a4296c660f60bb0f00dc6cc70d6a6b3bb048df16671faf",
+    "linux-unattended-l2/captured/native-opencode/during.receipt.json": "19b7507e178b0ad8a222f49b4ac248e82c511d8cb174c1451773904f98fd8822",
+    "linux-unattended-l2/captured/native-opencode/during.stdout.jsonl": "3c89c7289f5917827d59423c48cab1c93648e1df3fd575416c48914c65fb2be0",
+    "linux-unattended-l2/captured/server/backlog-before-upgrade-audit.json": "a9aadbe802ce5b8e987e30a752b2c189a59171f62bd6f75c693395bc7980a1c6",
+    "linux-unattended-l2/captured/server/baseline-audit.json": "51b9003ce976778a8dfba164ad81024d1dbfb8f00b8ef691d9a620bde7cb2a5a",
+    "linux-unattended-l2/captured/server/baseline-response.json": "92d3fa0da67b3c488683454043dfa214751af6db7f8cc341e004f765d89d4c47",
+    "linux-unattended-l2/captured/server/continued-request.json": "d8e80c909dcdf77d3a36900fae3b2e6aefeb94c08e7f40d08b620c65bd9881de",
+    "linux-unattended-l2/captured/server/continued-response.json": "abba42aa9004facd4346d55de47404ff489931bb45467852b94eec32122f3dc9",
+    "linux-unattended-l2/captured/server/final-native-capture-audit.json": "c6a7d5fd50920007fb2afacda435b2bb2024f4c8428afcab42ce6c4025a043ae",
+    "linux-unattended-l2/captured/server/final-pg-canonical-metadata.private.json": "82c33d4b43dc907cc0a7fc23b4e79bbd408bfa97dde0379e1f121b3f1d6e2043",
+    "linux-unattended-l2/captured/server/final-pg-canonical-ownership.json": "2d1a0606cc47d3ed0bae1e645b6d6844f0d145e22a8e383862a7a750ef51e58d",
+    "linux-unattended-l2/captured/unattended-observer-result.json": "9687980201155dbb33331b95f491860f8f7430eb2eec16a5606da3ac3a1a772b",
+    "linux-unattended-l2/captured/unattended-retry-observations.jsonl": "9908f683a6b77a4719bcd382c5f7960d74eccac5f885d92d1df40c4f6d4f6dd8",
+    "linux-unattended-l2/cleanup.json": "313f9706c227b8f682779dac53869774bfcc6f98c6d3908c8fa588624b6fc897",
+    "linux-unattended-l2/final-host-independent-audit.json": "4b8baaaa3ad64b87c35df34e7d7bdb2f8e0ee18095942da4f11327f6e7f9a345",
+    "linux-unattended-l2/finish-complete.json": "fe50b70d94076c60885fbf9952d885a71ce72f7fc380b5d7fcc208027a4c3321",
+    "linux-unattended-l2/first-natural-failure/captured/atape-de9ae3f0/config/client.json": "900c748ed191e9890e911374910b8c2aa495df318db8a60daacf1d2ccdf27986",
+    "linux-unattended-l2/first-natural-failure/captured/unattended-observations.jsonl": "1f253abeb6bf1326d2522c65e17e8a9a713d9f9202b9275b1f37ae3f3efb5884",
+    "linux-unattended-l2/first-natural-failure/independent-audit.json": "472bd7de60c462940f94f1c08b315afbd361df4aa0b961371e3ed8d9341746de",
+    "linux-unattended-l2/first-natural-failure/native-journal.private.log": "66d05ddfe11a9ff17e42f5e879b1551fefaf1b980c2501a8d391ed47ba0bfb19",
+    "linux-unattended-l2/first-natural-failure/receipt.json": "42030d9853f7d731d7af7bcddc3511040c302b68915dd825ab3c29e0f0e27cb6",
+    "linux-unattended-l2/first-natural-failure/snapshot.json": "7967c4e66380a583c01102a006eed552f8a67fc106047a4c8eb3856652a1e641",
+    "linux-unattended-l2/initial-release-network-probe.json": "3946d565db8dccb9a8008c5acae992e70281bdfc9684bacc5bef071f76507034",
+    "linux-unattended-l2/initial-user-manager-debug-environment.json": "91e9dd15067765a544c6926269fe0313b43bc95cf9cd274641f5440847b28055",
+    "linux-unattended-l2/observer-supplement-inputs/original-retry-observations.jsonl": "e3cc19ccc5975faf33f3bfe218cd9ce6b8082037c0e19d0fe9584d43bf88235a",
+    "linux-unattended-l2/observer-supplement-inputs/receipt.json": "cb3fd43315ad781ee19d3589c8e41b9e06ba9161744d4d5d0314c6be4622fff3",
+    "linux-unattended-l2/ownership.json": "b105e91af70af13f50285ec99bf01758150f64aa599f68fafd398c68bc09e3b7",
+    "linux-unattended-l2/pam-logout-cleanup.json": "efbb1fa543b013c99657b9a29eae0be4e68baf6e6c924b1a0bbef5ea406b5eef",
+    "linux-unattended-l2/platform-evidence.json": "35a6749387801cb83523981cbe1ef3b8442556c55a02bfc6434c1b722b2c2dcd",
+    "linux-unattended-prepared/captured/calendar-context.json": "1be494ba7a77ba8e810614d769bef2a47bb1af800b51bd17c316ff70affcd698",
+    "linux-unattended-prepared/captured/evidence/calendar-armed.json": "fe4bd74bc3936b81ef23e56aede982c8b84fc82fc05711385e116756006b1a7e",
+    "linux-unattended-prepared/captured/evidence/calendar-retry-armed.json": "50dff4369e58dc6f79348d31824224d00497db08b27240daa4b760f38e8cec04",
+    "linux-unattended-prepared/captured/evidence/release-network-recovered.json": "70281b939421eb2a031048a7a6ec5db67810abeb953dbc8615aaecbfa58863bc",
+    "linux-unattended-prepared/captured/server/baseline-audit.json": "0d8b941c3938cd2fa2801aa558dd9839551c95b9fb40385e302ade5b7f0d0c1c",
+    "linux-unattended-prepared/cleanup.json": "91420e378d1c18cfb7fc1aac1280f0603d71e78e004285f9cbfe5a1b2c8e46d7",
+    "linux-unattended-prepared/first-natural-failure/captured/calendar-context.json": "1be494ba7a77ba8e810614d769bef2a47bb1af800b51bd17c316ff70affcd698",
+    "linux-unattended-prepared/first-natural-failure/captured/evidence/calendar-armed.json": "fe4bd74bc3936b81ef23e56aede982c8b84fc82fc05711385e116756006b1a7e",
+    "linux-unattended-prepared/first-natural-failure/captured/evidence/first-calendar-release-network.private.json": "04573035549195debb862f6aab93729fcb20d3ddf645aa78706fb61f27fab9ee",
+    "linux-unattended-prepared/first-natural-failure/captured/unattended-observations.jsonl": "c11c1b5dc1f63b50c78038e99f5a9751e9d0c4d84f80f88958ec46c4df040015",
+    "linux-unattended-prepared/first-natural-failure/http-diagnostic-attribution.json": "d641e9b7469be48a9320a3d14e93440cd9a072666481a1a2341aaf76daccbe18",
+    "linux-unattended-prepared/first-natural-failure/independent-audit.json": "5964c97972fc6cef2078e7dc25b2a2994058490a117274ad7d7c09a9073e1578",
+    "linux-unattended-prepared/first-natural-failure/observer-parser-supplement.json": "c254831b3c4c241ab53139df13ae267d65edf3a461010b6e689b535635f2e08f",
+    "linux-unattended-prepared/first-natural-failure/receipt.json": "861494a487b390944e1ffe64d0006c5bb71a93a858feaeb67032a489b05c4791",
+    "linux-unattended-prepared/first-natural-failure/snapshot.json": "c823b0949e947c6e05f5e889ed55cb87367638d36f7fee54832bb28821785fdb",
+    "linux-unattended-prepared/ownership.json": "74f48cf4749ff301c79d579405f475f6bece27bc2d85b03851c0748ade6c8fda",
+    "linux-unattended-prepared/pam-logout-cleanup.json": "cf159ae65c28ece8c074827bd440d5de9f51ca42525f6b9abceacf0e051eca36",
+    "linux-unattended-prepared/second-natural-failure/independent-audit.json": "89413e3bbf5c993b0d0532acd4b73a348c6d763ff41e26239a4919481dd93b1b",
+    "linux-unattended-prepared/second-natural-failure/receipt.json": "1aad80b52ffd3531c5fb8ff0d6f8c844a0d85f01ff7cd9d39c58c37e57a6c215",
+    "linux-unattended-prepared/second-natural-failure/snapshot.json": "c6c0619f318656a905089dbc860a8eaedf4a5853e5882c3f538c3caa5c253735"
+  },
+  "scope": {
+    "postReleaseEvidence": true,
+    "historicalLinuxFailuresRemainFailed": true,
+    "originalManualStagingWaiverStatus": "unchanged; incomplete original staging remains pending",
+    "providerContinuity": {
+      "provider": "OpenCode",
+      "actualNativeConversationContinuation": true,
+      "otherOfficialAdapters": "All seven official Adapter slots and exact published package files were aligned; native conversation continuity for the other six providers was not exercised."
+    },
+    "tested": [
+      "Actual published 0.5.6 to 0.5.7 same-capture-v2 unattended update via natural hourly OS calendar",
+      "Real npm registry archives and exact published package file identity",
+      "Bounded replacement of deliberately SIGSTOP-stalled owned Collectors",
+      "Real OpenCode continuation through authenticated isolated Go/PostgreSQL/Raw/Reader APIs",
+      "Linux timer and process lifetime inside an isolated arm64 container with a real systemd user manager"
+    ],
+    "notEstablished": [
+      "Cross-format or cross-contract migration delivery",
+      "Normal 24\u201330 hour scheduling interval",
+      "Hardware sleep, reboot, power loss or physical host logout",
+      "Production deployment/topology or enterprise shared-NAT API capacity",
+      "A physical Linux desktop or native conversation continuity for the other six providers",
+      "An additional natural Linux activation in the new successful fixture; the repeat was explicit manual oneshot",
+      "Human OAuth identity; external authentication identity was synthetic"
+    ]
+  },
+  "privacy": "This summary contains public package identities/hashes, aggregate statistics, sanitized OS/runtime and diagnostic metadata, and relative evidence receipt names/hashes. Credentials, native log bodies, private source message IDs and other user LaunchAgent inventories are excluded."
+}
