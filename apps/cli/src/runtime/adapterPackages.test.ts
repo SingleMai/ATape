@@ -1,5 +1,5 @@
 import { AdapterPackages } from "@atape/application"
-import { releaseBundleSection, releasePackageNames, type ReleaseBundle } from "@atape/domain"
+import { releaseBundleURL, releasePackageNames, type ReleaseBundle } from "@atape/domain"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { execFile } from "node:child_process"
@@ -34,8 +34,7 @@ const releaseFixture = async (home: string, archive: string) => {
       tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-1.2.3.tgz` })) }
   const fetchMetadata: typeof fetch = async url => {
     requested.push(String(url))
-    if (String(url).startsWith("https://api.github.com/")) return Response.json({ tag_name: "v1.2.3",
-      body: releaseBundleSection(bundle), prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z" })
+    if (String(url) === releaseBundleURL("1.2.3", "atape.release-bundle.v1")) return Response.json(bundle)
     return new Response(bytes)
   }
   return { bundle, requested, discovery: createReleaseDiscovery({ home, runtimeVersion: "1.2.3", captureStateContract: "capture.v2",
@@ -53,7 +52,7 @@ describe("official Adapter release installation", () => {
     expect(installed).toMatchObject({ packageName: "@atape/adapter-codex", version: "1.2.3", upgradeSpec: "@atape/adapter-codex",
       manifest: { adapterId: "codex" } })
     expect(release.requested).toEqual([
-      "https://api.github.com/repos/SingleMai/ATape/releases/tags/v1.2.3",
+      releaseBundleURL("1.2.3", "atape.release-bundle.v1"),
       "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-1.2.3.tgz"
     ])
     const installedRoot = adapterPackageRoot(directory, installed)

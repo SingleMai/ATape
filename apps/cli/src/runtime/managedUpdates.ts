@@ -215,7 +215,7 @@ export const makeAutomaticUpdatePlatformLayer = (paths: NodeClientPaths, entryFi
       recoveryPending: () => nodeEffect("state", () => needsUpdateRecovery(paths)),
       supported: () => nodeEffect("unsupported", async () => (await bootstrap()) !== undefined),
       schedule: () => nodeEffect("state", async () => (await readOptional(scheduleFile(paths.atapeHome), Schema.decodeUnknownSync(Schedule))) ?? { nextCheckAt: 0, failures: 0 }),
-      target: () => nodeEffect("release", signal => discovery.latest({ cached: false, signal })),
+      target: () => nodeEffect("release", signal => discovery.latest({ cached: true, signal })),
       record: input => nodeEffect("state", () => atomicJSON(scheduleFile(paths.atapeHome), input)),
       prepare: (bundle, adapters, automatic) => Effect.gen(function*() {
         // This prepared/pending format is the historical v2 plan. A future

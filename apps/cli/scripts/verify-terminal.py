@@ -37,7 +37,7 @@ const original = globalThis.fetch;
 globalThis.fetch = async (input, ...args) => {
   const address = input instanceof Request ? input.url : String(input);
   const url = new URL(address);
-  if (url.hostname === "registry.npmjs.org" || url.hostname === "api.github.com" && url.pathname.includes("/releases/")) {
+  if (url.hostname === "updates.atape.net" || url.hostname === "registry.npmjs.org" || url.hostname === "api.github.com" && url.pathname.includes("/releases/")) {
     appendFileSync(process.env.TERMINAL_FIXTURE_RELEASE_REQUESTS, JSON.stringify(address) + "\\n");
     throw new Error("Fresh catalog terminal fixture forbids public release transport");
   }

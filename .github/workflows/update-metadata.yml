@@ -1,0 +1,66 @@
+name: Publish update metadata
+
+on:
+  workflow_dispatch:
+
+# Static repair and version publication share one writer queue. Every run reads
+# the actual latest public catalogs, regardless of when the run was requested.
+concurrency:
+  group: atape-release-publication
+  queue: max
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.repository == 'SingleMai/ATape' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install the pinned pnpm workspace
+        uses: pnpm/setup@84cb39b217b10273981911c288cd62326dc7c6d2 # v2
+        with:
+          cache: false
+
+      - name: Verify publication behavior and architecture
+        run: |
+          pnpm test:release:gates
+          pnpm check:architecture
+
+      - name: Prepare the complete static update snapshot
+        run: node scripts/export-static-update-catalog.mjs --output release/update-site
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Custom Domain setup is an explicit, separate ownership-checked operation.
+      # This config has no routes and cannot overwrite another origin's DNS.
+      - name: Atomically deploy the existing update metadata Worker assets
+        run: npx --yes wrangler@4.149.0 deploy --config wrangler-updates.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Confirm every public static metadata file
+        run: node scripts/export-static-update-catalog.mjs --verify release/static-publication.json
+
+      - name: Retain static publication evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: static-publication-${{ github.run_id }}
+          path: release/static-publication.json
+          if-no-files-found: ignore
+          retention-days: 30

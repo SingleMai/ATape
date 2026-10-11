@@ -288,9 +288,11 @@ removal and unavailable native managers remain visible installation limits. See
 [ADR-0113](../architecture/adr/0113-independent-update-wakeup.md).
 
 Opening the CLI or a running Collector can also trigger a due background check.
-Successful checks schedule the next attempt after 24 hours plus 0–6 hours of
-jitter. Failures start with a one-hour exponential backoff, capped at 24 hours
-before jitter. Opening the CLI does not force a network request when the
+Successful fresh checks schedule the next attempt after 24 hours plus 0–6 hours
+of jitter. Failures start with a one-hour exponential backoff, capped at 24 hours
+before jitter. Reusing an expired verified catalog after a transport failure
+also schedules this earlier retry, even if its bundle can be installed. Opening
+the CLI does not force a network request when the
 persisted schedule is not due. The
 schedule check is local and does not start npm or query release metadata before
 the check is due. A transient npm ownership-probe failure is retried on a later
@@ -320,11 +322,17 @@ attempts, while ordinary CLI use and interrupted-update recovery remain
 available. See [ADR-0112](../architecture/adr/0112-failed-candidate-cooldown.md).
 Already-published older workers do not acquire this behavior retroactively.
 
-The fixed GitHub prerelease tag `atape-update-catalog-v1` advertises the latest
-compatible complete bundle for this capture/control pair. Its monotonic revision
+New clients discover releases from the static CDN origin
+`https://updates.atape.net`: `/catalog/v1.json` and `/catalog/v2.json`, with exact
+descriptors under `/releases/<version>/bundle.v1.json` and `bundle.v2.json`.
+The distribution uses Cloudflare Workers Static Assets without a dynamic proxy.
+Clients make no anonymous GitHub API request on this path. Existing published
+clients retain the fixed GitHub prerelease catalogs as a compatibility bridge;
+they acquire the new distribution path only after a capable package release.
+The catalog advertises the latest compatible complete bundle. Its monotonic revision
 and per-family version floor are persisted; regressions, same-version changed
 bytes, unknown protocols and corrupt durable state are rejected. A versioned
-Release retains the immutable `atape.release-bundle.v1` descriptor, including the
+Release and static site retain the immutable `atape.release-bundle.v1` descriptor, including the
 original seven required package names and current additions such as Cursor,
 canonical npm tarball URLs and SHA-512 integrity.
 The v1 reader accepts up to 32 unique `@atape/*` packages, allowing future official
@@ -338,11 +346,32 @@ archive is downloaded with bounded size/time and its SHA-512 is checked before
 npm receives the local file. An existing version directory must match the newly
 verified executable and manifest bytes before reuse. Download leases outlive npm
 termination, including cancellation. Incomplete publication, offline checks and
-failed preparation leave the current version usable. Cached optional lookups
-can use the last valid catalog offline; explicit checks report transport failure.
+failed preparation leave the current version usable. Cached lookups reuse a
+verified catalog for twelve hours. Transport failures can reuse its last valid
+contents after expiry; explicit uncached checks report transport failure. Invalid
+or regressed metadata cannot fall back to cache. Metadata transport failures and
+transient HTTP statuses receive at most three attempts within one ten-second
+budget, including body reads and retry delay; cancellation interrupts both.
+When a cached lookup already has a valid catalog, its first transport failure
+returns that stale catalog immediately and leaves retry to the saved schedule.
+Long Retry-After delays defer to the persisted schedule. Valid exact-version
+receipts are reused without repeating immutable metadata requests, while a v1
+receipt cannot replace required v2 migration identity.
 An exact lookup for the running CLI can derive a bundle from every producer exact npm
 manifest while its first version descriptor propagates. This fallback never
 advertises another upgrade target.
+
+Static publication preserves historical exact descriptors and replaces a complete
+validated snapshot. Catalogs require HTTP revalidation; immutable descriptors
+can be cached for a year. See
+[ADR-0119](../architecture/adr/0119-static-update-distribution.md) and
+[static publication operations](../releasing.md#static-update-distribution).
+The [initial public distribution evidence](../releases/evidence/static-update-distribution-20261011.json)
+records five exact 0.5.7 metadata files, real CDN cache/404 responses and a
+fresh-home discovery/cache/receipt/npm-integrity check through the source
+Interface. It does not establish publication of a new CLI or a cross-version
+unattended rollout. History retention across new static versions is covered by
+publisher behavior tests, with live sampling from one client/network location.
 
 The prepared CLI package must declare `atapeRuntime.protocol` as
 `atape.runtime.v1` and its actual capture-state contract. A v1 release bundle
@@ -472,7 +501,8 @@ indefinitely offline installations. The 0.5.3 manual boundary below remains.
 
 ### Explicit capture migration
 
-Migration-capable clients prefer the fixed `atape-update-catalog-v2` Release.
+Migration-capable clients prefer static `/catalog/v2.json`; older published
+readers use the fixed `atape-update-catalog-v2` Release.
 Its routes bind source capture contract, update-control protocol and known
 migration protocol/plan to a complete immutable package bundle. Old plan routes
 remain available while newer plans advance. The initial absence of that catalog

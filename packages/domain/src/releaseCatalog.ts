@@ -3,6 +3,11 @@ import { Schema } from "effect"
 export const releaseBundleProtocol = "atape.release-bundle.v1"
 export const updateCatalogProtocol = "atape.update-catalog.v1"
 export const updateCatalogTag = "atape-update-catalog-v1"
+export const releaseMetadataBaseURL = "https://updates.atape.net"
+export const releaseCatalogURL = (protocol: "atape.update-catalog.v1" | "atape.update-catalog.v2") =>
+  `${releaseMetadataBaseURL}/catalog/${protocol === "atape.update-catalog.v2" ? "v2" : "v1"}.json`
+export const releaseBundleURL = (version: string, protocol: "atape.release-bundle.v1" | "atape.release-bundle.v2") =>
+  `${releaseMetadataBaseURL}/releases/${version}/bundle.${protocol === "atape.release-bundle.v2" ? "v2" : "v1"}.json`
 // The v1 reader always requires this original base. Future producer packages
 // must extend releasePackageNames without growing this immutable reader floor.
 const requiredBundlePackages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude",

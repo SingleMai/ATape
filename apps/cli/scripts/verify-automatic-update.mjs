@@ -6,6 +6,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { DatabaseSync } from "node:sqlite"
+import { releaseBundleURL, releaseCatalogURL } from "../../../packages/domain/src/releaseCatalog.ts"
 
 const execute = promisify(execFile)
 const officialPackages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude", "@atape/adapter-opencode",
@@ -144,6 +145,12 @@ globalThis.fetch = async input => {
     tag_name: "v" + process.env.UPDATE_FIXTURE_VERSION, prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z"
   });
   const fixture = JSON.parse(readFileSync(process.env.UPDATE_FIXTURE_PUBLIC_RELEASE, "utf8"));
+  if (address === ${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))} ||
+      address === ${JSON.stringify(releaseBundleURL(version, "atape.release-bundle.v2"))}) return new Response(null, { status: 404 });
+  if (address === ${JSON.stringify(releaseCatalogURL("atape.update-catalog.v1"))}) return Response.json({
+    protocol: "atape.update-catalog.v1", revision: 1, bundles: [fixture.bundle]
+  });
+  if (address === ${JSON.stringify(releaseBundleURL(version, "atape.release-bundle.v1"))}) return Response.json(fixture.bundle);
   if (address === "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v2") return new Response(null, { status: 404 });
   if (address === "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1") return Response.json({
     tag_name: "atape-update-catalog-v1", prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z",
@@ -307,18 +314,19 @@ process.on("SIGTERM", () => { appendFileSync(${JSON.stringify(collectorSignals)}
       assert.equal(requests[historicalPackages.length + 1], requests[0])
       assert.ok(requests.filter(address => address !== requests[0]).every(address => address.endsWith(`/${version}`)))
     } else {
-      const migrationCatalogURL = "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v2"
-      const catalogURL = "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1"
-      const versionURL = `https://api.github.com/repos/SingleMai/ATape/releases/tags/v${version}`
+      const migrationCatalogURL = releaseCatalogURL("atape.update-catalog.v2")
+      const catalogURL = releaseCatalogURL("atape.update-catalog.v1")
+      const versionURL = releaseBundleURL(version, "atape.release-bundle.v1")
+      const migrationVersionURL = releaseBundleURL(version, "atape.release-bundle.v2")
       assert.equal(requests[0], migrationCatalogURL)
       assert.equal(requests[1], catalogURL)
       assert.equal(requests.filter(address => address === migrationCatalogURL).length, 2)
-      assert.equal(requests.filter(address => address === catalogURL).length, 2)
+      assert.equal(requests.filter(address => address === catalogURL).length, 1, "The second preparation must reuse the fresh validated catalog")
       assert.ok(requests.includes(versionURL), "Preparation must check the immutable version descriptor")
       for (const name of ["@atape/cli", "@atape/adapter-codex"])
         assert.ok(requests.filter(address => address === publicPackages[name].manifest.dist.tarball).length >= 2,
           `Both preparation attempts must acquire verified ${name} bytes`)
-      assert.ok(requests.every(address => address === migrationCatalogURL || address === catalogURL || address === versionURL ||
+      assert.ok(requests.every(address => address === migrationCatalogURL || address === catalogURL || address === versionURL || address === migrationVersionURL ||
         bundle.packages.some(item => item.tarball === address)), "Capable workers must use catalog/descriptor/artifacts rather than npm latest")
     }
     const npmCalls = (await readFile(calls, "utf8")).trim().split("\n").map(line => JSON.parse(line))

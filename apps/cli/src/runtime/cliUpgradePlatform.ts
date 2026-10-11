@@ -117,7 +117,7 @@ export const makeCLIUpgradePlatformLayer = (
   }), release => Effect.sync(release)).pipe(Effect.asVoid),
   latest: cached => Effect.tryPromise({
     try: async signal => {
-      return discovery.latest({ cached, signal: AbortSignal.any([signal, AbortSignal.timeout(cached ? 1_500 : 10_000)]) })
+      return (await discovery.latest({ cached, signal: AbortSignal.any([signal, AbortSignal.timeout(cached ? 1_500 : 10_000)]) })).bundle
     },
     catch: () => new CLIUpgradeError({ reason: "check", message: "Could not check for updates. Check your connection and try the update again in Tools and updates." })
   }),

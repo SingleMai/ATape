@@ -13,6 +13,7 @@ import { verifyLegacyStateContract } from "./verify-legacy-state-contract.mjs"
 import { verifyUpdateBridge } from "./verify-update-bridge.mjs"
 import { verifyPrivacyUpgrade } from "./verify-privacy-upgrade.mjs"
 import { verifyCaptureMigration } from "./verify-capture-migration.mjs"
+import { releaseCatalogURL } from "../../../packages/domain/src/releaseCatalog.ts"
 
 const execute = promisify(execFile)
 const packageRoot = fileURLToPath(new URL("..", import.meta.url))
@@ -135,8 +136,8 @@ async function verifyUpdateWake(donorPackage, fixtureDirectory) {
     throw cause
   })).trim().split("\n").filter(Boolean).map(row => JSON.parse(row))
   const absent = file => assert.rejects(readFile(file), cause => cause.code === "ENOENT")
-  await Promise.all([mkdir(home, { mode: 0o700 }), mkdir(userHome, { mode: 0o700 }),
-    mkdir(join(home, "config"), { recursive: true, mode: 0o700 })])
+  await Promise.all([mkdir(home, { mode: 0o700 }), mkdir(userHome, { mode: 0o700 })])
+  await mkdir(join(home, "config"), { mode: 0o700 })
   await cp(donorPackage, bootstrapPackage, { recursive: true })
   await writeFile(join(root, "controlled-manager.json"), JSON.stringify({ registered: false, enabled: false, active: false }))
   await writeFile(managerFile, `import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -200,7 +201,7 @@ childProcess.spawn = function(file, args, options) {
 };
 globalThis.fetch = async function(url) {
   appendFileSync(${JSON.stringify(networkTrace)}, JSON.stringify({ url: String(url) }) + "\\n");
-  if (String(url) === "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v2") return new Response(null, { status: 404 });
+  if (String(url) === ${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))}) return new Response(null, { status: 404 });
   throw new TypeError("Controlled offline package acceptance");
 };
 syncBuiltinESMExports();
@@ -292,9 +293,10 @@ syncBuiltinESMExports();
   const failed = await json(scheduleFile), requests = await rows(networkTrace)
   assert.equal(failed.failures, 1)
   assert.ok(failed.nextCheckAt > Date.now())
-  assert.equal(requests.length, 2)
-  assert.equal(requests[0].url, "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v2")
-  assert.equal(requests[1].url, "https://api.github.com/repos/SingleMai/ATape/releases/tags/atape-update-catalog-v1")
+  assert.equal(requests.length, 4)
+  assert.equal(requests[0].url, releaseCatalogURL("atape.update-catalog.v2"))
+  assert.ok(requests.slice(1).every(request => request.url === releaseCatalogURL("atape.update-catalog.v1")),
+    "An offline static metadata request must retry within its bounded budget")
   await wake(metadata.token)
   assert.equal((await rows(networkTrace)).length, requests.length)
   assert.equal(await readFile(desiredFile, "utf8"), stoppedIntent)
