@@ -675,6 +675,50 @@ through a v2 runtime afterward; an old 0.5.3 reader cannot open v8, and restorin
 local files cannot undo Server adoption. See
 [ADR-0104](../architecture/adr/0104-capture-v2-state-upgrade.md).
 
+### Claude v4: 0.5.8 to 0.5.9
+
+An active official-Claude installation on 0.5.8 requires a stopped external CLI
+refresh. The genuine old updater rejects the new v4 Adapter manifest during
+preparation, before pausing its Collector; retrying the old Tools page cannot
+upgrade that decoder. This is an explicit compatibility refusal, not a
+successful automatic upgrade.
+
+1. Ensure every configured Instance supports publication v4, v2 targets and
+   legacy adoption (and v3 when Cursor is enabled). Finish pending update
+   recovery, choose **Stop sync**, and close old consoles.
+2. In the same npm installation, run `npm install --global @atape/cli@0.5.9`.
+   Keep the same `ATAPE_HOME` and existing path overrides. Do not delete runtime,
+   credential, checkpoint or migration files to force a fresh setup.
+3. Reopen `atape`. Its owned bootstrap recovery binds the new executable and
+   preserves Stop and existing Adapter selection, including an older managed
+   0.5.8 runtime. Open **Tools and updates**, then choose **Update matching
+   official integrations for ATape 0.5.9**. This invokes the existing complete
+   bundle coordinator even when the CLI itself is already current; stopped sync
+   stays stopped. The console restarts after success.
+4. Confirm CLI and eligible official integrations are 0.5.9. Start sync only
+   when ready. Pinned, local and custom integration sources retain their existing
+   selection and are not silently replaced.
+
+The completed transition advances the existing reader floor. Reopen ATape to
+use the new runtime; directly running the retained 0.5.8 executable is refused.
+The supported path preserves Projects, credentials, settings and existing
+capture progress. It does not establish fresh MCP/Skill source capture.
+[ADR-0121](../architecture/adr/0121-tool-identity-release-transition.md) records
+the release boundary.
+
+Installed acceptance on 2026-10-11 used exact npm-published 0.5.8 CLI and Claude
+archives and the local exact 0.5.9 candidate bundle. It verified genuine old
+automatic/UI refusal with the same live old Collector, an external real npm
+entry refresh with managed-runtime rebinding, the actual new console's complete
+bundle action, byte-preserved credentials/checkpoints and Stop, and the genuine
+old executable's reader-floor refusal. Catalog, package download and Server HTTP
+were owned external Test Adapters; npm installation and CLI/Collector processes
+were real and isolated. No production Instance, personal installation, OS login
+registration or fresh Provider conversation was used. After publication, registry
+and catalog visibility require their separate release verification.
+
+### Built-in CLI updates
+
 Open ATape → Tools and updates to inspect current/latest versions and apply each
 available update. With automatic updates enabled, startup launches due maintenance
 without a blocking Upgrade/Skip choice. With automatic updates disabled, startup

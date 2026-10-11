@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { AdapterSourceFailure, SourceCapturePriorThread, SourceCaptureCheckpoint, CanonicalProfile } from "@atape/domain"
+import { AdapterSourceFailure, SourceCapturePriorThread, SourceCaptureCheckpoint, CanonicalProfile, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { PublicationPreparationError, type PublicationDraftView } from "./canonicalSourceProjection.ts"
 import { SecretRedactor } from "./collectorContracts.ts"
@@ -7,17 +7,20 @@ import { SecretRedactor } from "./collectorContracts.ts"
 const Metadata = Schema.Struct({
   threads: Schema.Array(SourceCapturePriorThread).check(Schema.isMaxLength(1000)),
   canonicalProfileVersion: Schema.optionalKey(CanonicalProfile),
+  canonicalProfileV4: Schema.optionalKey(Schema.Literal(CanonicalProfileVersion4)),
   sourceCheckpoint: Schema.optionalKey(SourceCaptureCheckpoint),
   retainedThreadIds: Schema.optionalKey(Schema.Array(Schema.String).check(Schema.isMaxLength(1000))),
   sourceFailures: Schema.optionalKey(Schema.Array(AdapterSourceFailure).check(Schema.isMaxLength(32))),
   sourceFailuresTruncated: Schema.optionalKey(Schema.Boolean)
-})
-type Metadata = typeof Metadata.Type
+}).check(Schema.makeFilter(metadata => metadata.canonicalProfileV4 === undefined || metadata.canonicalProfileVersion === CanonicalProfileVersion3))
+type Metadata = Omit<typeof Metadata.Type, "canonicalProfileV4">
 const invalid = () => new PublicationPreparationError({ reason: "invalid", message: "Frozen source metadata is invalid or exceeds its bound." })
 export const decodeSourceMetadata = (json: string | null) => json === null ? Effect.succeed<Metadata>({ threads: [] }) : Effect.try({
   try: () => { if (new TextEncoder().encode(json).byteLength > 2 * 1024 * 1024) throw new Error(); return JSON.parse(json) as unknown },
   catch: invalid
-}).pipe(Effect.flatMap(Schema.decodeUnknownEffect(Metadata)), Effect.mapError(invalid))
+}).pipe(Effect.flatMap(Schema.decodeUnknownEffect(Metadata)),
+  Effect.map(({ canonicalProfileV4, ...metadata }): Metadata => ({ ...metadata,
+    ...(canonicalProfileV4 === undefined ? {} : { canonicalProfileVersion: CanonicalProfileVersion4 }) })), Effect.mapError(invalid))
 
 /** The current selected header is small provider metadata, never transcript text.
  * Adoption supplies the same Thread shape from the authenticated Server baseline. */
@@ -35,7 +38,9 @@ export const maskSourceFailures = (failures: ReadonlyArray<typeof AdapterSourceF
 export const sourceMetadataJson = (view: PublicationDraftView<unknown, unknown>, threads: Metadata["threads"]) => Effect.gen(function*() {
   const sourceFailures = yield* maskSourceFailures(view.sourceFailures ?? [])
   return JSON.stringify({ threads,
-    ...(view.canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion: view.canonicalProfileVersion }),
+    ...(view.canonicalProfileVersion === undefined ? {} : view.canonicalProfileVersion === CanonicalProfileVersion4
+      ? { canonicalProfileVersion: CanonicalProfileVersion3, canonicalProfileV4: CanonicalProfileVersion4 }
+      : { canonicalProfileVersion: view.canonicalProfileVersion }),
     ...(view.sourceCheckpoint === undefined ? {} : { sourceCheckpoint: view.sourceCheckpoint, retainedThreadIds: view.target.retainedThreadIds ?? [],
       sourceFailures, sourceFailuresTruncated: view.sourceFailuresTruncated ?? false }) })
 })

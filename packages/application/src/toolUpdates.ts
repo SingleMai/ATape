@@ -19,6 +19,7 @@ export type ToolRelease = {
   readonly status: "available" | "current" | "ahead" | "unavailable" | "manual" | "development"
   readonly latest?: string
   readonly commandEntryVersion?: string
+  readonly officialAdapterUpdates?: number
   readonly installation?: AdapterInstallation
 }
 
@@ -53,7 +54,14 @@ export const inspectToolUpdates = Effect.fn("ToolUpdates.inspect")(function*(cur
       : { ...row, status: "development" as const }
   })
   const release = yield* cliCheck
-  return [release, ...adapters]
+  // An external command-entry refresh can leave the complete release's official
+  // integrations behind. Keep the existing bundle operation reachable without
+  // replacing pinned/local packages or offering a downgrade.
+  const eligible = adapters.filter(adapter => adapter.source === "npm")
+  const matching = release.status === "current" && release.latest === runtimeVersion &&
+    eligible.every(adapter => stableVersion(adapter.version) && !newer(adapter.version, runtimeVersion))
+  const officialAdapterUpdates = matching ? eligible.filter(adapter => newer(runtimeVersion, adapter.version)).length : 0
+  return [officialAdapterUpdates > 0 ? { ...release, status: "available" as const, officialAdapterUpdates } : release, ...adapters]
 })
 
 // The displayed release is pinned. A stale screen cannot overwrite a newer

@@ -146,6 +146,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0118](0118-session-analytics-current-snapshot.md) | Session Analytics from one current Canonical snapshot |
 | [0119](0119-static-update-distribution.md) | Static release discovery and explicit cache freshness |
 | [0120](0120-normalized-tool-identity.md) | Normalized tool identity for Session Analytics |
+| [0121](0121-tool-identity-release-transition.md) | Tool identity release transition and frozen source recovery |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old
