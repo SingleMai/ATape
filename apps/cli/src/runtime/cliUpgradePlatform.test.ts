@@ -1,5 +1,5 @@
 import { AutomaticUpdatePlatform, ClientConfigStore, CLIUpgradePlatform, CollectorDaemonProcess, resumeCLIUpgrade, upgradeCLI } from "@atape/application"
-import { emptyClientConfig, releaseBundleSection, releasePackageNames, updateCatalogTag, type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
+import { emptyClientConfig, releaseCatalogURL, releasePackageNames, type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { gzipSync } from "node:zlib"
@@ -30,8 +30,7 @@ const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-b
   captureStateContract: managedStateContract, updateControlProtocol,
   packages: releasePackageNames.map(name => ({ name, integrity: `sha512-${createHash("sha512").update(bytes(version)).digest("base64")}`,
     tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) })
-const catalog = (version: string) => ({ tag_name: updateCatalogTag, prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z",
-  body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: 1, bundles: [bundle(version)] }) })
+const catalog = (version: string) => ({ protocol: "atape.update-catalog.v1", revision: 1, bundles: [bundle(version)] })
 const roots: string[] = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 const fixture = async (fetchMetadata: typeof fetch, failInstall = false, ignoreTermination = false, partialFailure = false, invalidVerification = false) => {
@@ -91,9 +90,9 @@ else if (args[0] === "install") {
     UPGRADE_TEST_MANIFEST: join(dirname(dirname(entry)), "package.json"),
     UPGRADE_TEST_MODULES: modules, UPGRADE_TEST_CALLS: join(root, "calls.json"), UPGRADE_TEST_ENTRY: entry }
   const transport: typeof fetch = async (url, init) => {
-    const address = String(url), match = address.match(/\/v(\d+\.\d+\.\d+)$/)
-    if (address.endsWith("/tags/atape-update-catalog-v2")) return new Response("Not found", { status: 404 })
-    if (match) return Response.json({ tag_name: `v${match[1]}`, body: releaseBundleSection(bundle(match[1]!)), prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z" })
+    const address = String(url), match = address.match(/\/releases\/(\d+\.\d+\.\d+)\/bundle\.v1\.json$/)
+    if (address.endsWith("/catalog/v2.json") || address.endsWith("/bundle.v2.json")) return new Response("Not found", { status: 404 })
+    if (match) return Response.json(bundle(match[1]!))
     const archive = address.match(/-(\d+\.\d+\.\d+)\.tgz$/)
     if (archive) return new Response(bytes(archive[1]!))
     return fetchMetadata(url, init)
@@ -270,7 +269,7 @@ describe("Node CLI upgrade Adapter", () => {
   it("shares complete cached bundle discovery and fails closed on corrupt reader-floor state", async () => {
     let calls = 0
     const client = await fixture(async (url, options) => {
-      calls++; expect(String(url)).toBe(`https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`)
+      calls++; expect(String(url)).toBe(releaseCatalogURL("atape.update-catalog.v1"))
       expect(options?.signal).toBeDefined()
       return Response.json(catalog("0.4.2"))
     })

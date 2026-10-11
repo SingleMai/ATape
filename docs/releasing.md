@@ -185,8 +185,8 @@ See [npm's configuration expiry](https://docs.npmjs.com/trusted-publishers/#trus
 
 Publication workflows serialize in the fixed `atape-release-publication` queue
 without canceling an active run. One publication Module owns ordering: seven
-Adapters first, CLI last, then the versioned GitHub Release, and finally the
-persistent compatible catalogs. It publishes private copies of the exact verified
+Adapters first, CLI last, then the versioned GitHub Release, the
+persistent compatible catalogs and the static CDN snapshot. It publishes private copies of the exact verified
 local tarball bytes. Both publication entry points validate the exact filename
 set, package identities, byte digests and SHA256SUMS before any external write.
 Reruns skip an existing npm version only when its integrity
@@ -272,3 +272,58 @@ forward journal recovery are defined in
 [ADR-0104](architecture/adr/0104-capture-v2-state-upgrade.md). Verify the old reader
 with genuine historical source or published bytes, and verify missing Server
 v2 capabilities leave the source's journal and legacy checkpoint unchanged.
+
+## Static update distribution
+
+The owned discovery origin is `https://updates.atape.net`. Cloudflare Workers
+Static Assets serves strict catalog JSON at `/catalog/v1.json` and
+`/catalog/v2.json`, with immutable descriptors at
+`/releases/<version>/bundle.v1.json` and `bundle.v2.json`. This is a static
+deployment without a dynamic proxy or client authentication. npm continues to
+serve the actual package archives. Existing published clients retain GitHub's
+catalog bridge; merging or deploying these files does not change their binaries.
+
+[The static exporter](../scripts/export-static-update-catalog.mjs) validates
+the current GitHub catalogs, version descriptors, release assets and public npm
+identities/bytes before writing a complete snapshot. It also reads the current
+static inventory, preserves historical exact descriptors and rejects catalog
+regression, removed routes or rewritten immutable versions. Historical valid
+seven-package bundles remain valid. `manifest.json` binds the complete file
+inventory with SHA-256; it is publisher state, not a new client protocol or a
+signature. A missing inventory on an established site is an error.
+
+Cloudflare deployment uses [the dedicated Wrangler configuration](../wrangler-updates.jsonc)
+and one complete export directory. Catalogs and inventory require revalidation;
+version descriptors have a one-year immutable cache policy. Missing objects
+return 404 rather than HTML fallback. After deployment, public verification
+must check the complete advertised inventory and exact file hashes. Save that
+result separately from the npm publication receipt.
+
+The tag publication workflow exports and deploys only after the existing package
+and GitHub publication steps succeed. The main-only
+[Publish update metadata workflow](../.github/workflows/update-metadata.yml) can
+re-export the actual public catalogs without publishing npm. Both writers share
+`atape-release-publication` serialization and compare with the current snapshot;
+rerunning an old workflow cannot intentionally restore an older advertisement.
+Use the metadata-only workflow to recover an interrupted static deployment.
+Do not roll back immutable descriptors or remove retained routes to repair it.
+
+```sh
+gh workflow run update-metadata.yml --ref main
+```
+
+Set the repository's `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets
+for this dedicated Worker. The configured account-owned token has Individual
+Workers Editor permission restricted to `atape-updates`, without zone or DNS
+permission. Initial domain setup is separate and uses the relevant zone lookup
+access; ordinary asset publication does not bind or modify routes.
+Never put a token in a catalog, repository file, CLI installation or workflow
+log. Verify hostname ownership and existing routing before first binding a
+custom domain. Do not overwrite the Server's existing Tunnel or DNS. Initial
+bootstrap is explicit and must distinguish actual absent metadata from network
+failure; a timeout or TLS failure cannot authorize a new empty snapshot.
+
+This static deployment is independently authorized from package publication.
+It does not deploy the Server, migrate a database, complete manual staging
+acceptance or deliver a new CLI to installed users. See
+[ADR-0119](architecture/adr/0119-static-update-distribution.md).

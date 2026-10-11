@@ -24,6 +24,7 @@ const fixture = (options: {
   readonly supported?: boolean
   readonly recoveryPending?: boolean
   readonly version?: string
+  readonly freshness?: "fresh" | "stale"
   readonly schedule?: { readonly nextCheckAt: number; readonly failures: number }
 } = {}) => {
   let config: ClientConfig = { ...emptyClientConfig(), toolsConfigured: true, ...options.config }
@@ -50,7 +51,7 @@ const fixture = (options: {
       recoveryPending: () => perform("recoveryPending", () => options.recoveryPending === true),
       supported: () => perform("supported", () => { supportChecks++; return options.supported !== false }),
       schedule: () => perform("schedule", () => { scheduleChecks++; return schedule }),
-      target: () => perform("target", () => { targets++; return bundle(options.version ?? "0.5.2") }),
+      target: () => perform("target", () => { targets++; return { bundle: bundle(options.version ?? "0.5.2"), freshness: options.freshness ?? "fresh" } }),
       prepare: (selected, adapters, automatic) => Effect.suspend(() => {
         preparationModes.push(automatic)
         return perform("prepare", () => {
@@ -220,6 +221,28 @@ describe("automatic updates through the application Interface", () => {
     expect(client.records[0]).toMatchObject({ failures: 0, version: "0.5.2" })
     expect(await client.run(runAutomaticUpdates("0.5.2"))).toEqual({ updated: false })
     expect(client.targets()).toBe(1)
+  })
+
+  it.each([false, true])("keeps stale discovery on durable retry even when the verified cached release upgrades=%s", async upgrade => {
+    const client = fixture({ freshness: "stale", config: { adapters: [adapter("codex", upgrade ? "0.5.1" : "0.5.2")] } })
+    expect(await client.run(runAutomaticUpdates(upgrade ? "0.5.1" : "0.5.2")))
+      .toEqual({ updated: upgrade, version: "0.5.2" })
+    expect(client.activations).toHaveLength(upgrade ? 1 : 0)
+    expect(client.records[0]).toMatchObject({ failures: 1, failure: "release", version: "0.5.2" })
+    expect(client.records[0]!.nextCheckAt).toBeGreaterThanOrEqual(Hour)
+    expect(client.records[0]!.nextCheckAt).toBeLessThanOrEqual(1.25 * Hour)
+    expect(await client.run(runAutomaticUpdates("0.5.2"))).toEqual({ updated: false })
+    expect(client.targets()).toBe(1)
+    expect(JSON.stringify(client.logs)).toContain("discovery deferred")
+  })
+
+  it("increases stale-discovery backoff across attempts instead of clearing prior failures", async () => {
+    const client = fixture({ freshness: "stale", config: { adapters: [adapter("codex", "0.5.2")] },
+      schedule: { nextCheckAt: 0, failures: 3 } })
+    expect(await client.run(runAutomaticUpdates("0.5.2"))).toEqual({ updated: false, version: "0.5.2" })
+    expect(client.records[0]).toMatchObject({ failures: 4, failure: "release" })
+    expect(client.records[0]!.nextCheckAt).toBeGreaterThanOrEqual(8 * Hour)
+    expect(client.records[0]!.nextCheckAt).toBeLessThanOrEqual(10 * Hour)
   })
 
   it("leaves custom, pinned and local sources out of the release bundle", async () => {

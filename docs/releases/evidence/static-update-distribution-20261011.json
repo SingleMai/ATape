@@ -1,0 +1,177 @@
+{
+  "protocol": "atape.static-update-distribution-evidence.v1",
+  "scope": "Initial public static metadata deployment and current-source discovery Interface; no new npm client publication",
+  "sourceFiles": [
+    {
+      "path": "packages/domain/src/releaseCatalog.ts",
+      "sha256": "78dc1601e7e8128f4aa2b63aa17b9557243fcc7d0d644d072b5dbf3faa56a207"
+    },
+    {
+      "path": "apps/cli/src/runtime/releaseDiscovery.ts",
+      "sha256": "c2c9e5c376ca23cc72673d4603dbb71c481c2d8176940f945a34fb8aaea0b6aa"
+    },
+    {
+      "path": "apps/cli/src/runtime/managedUpdates.ts",
+      "sha256": "94e1e4b32a200fd45fde5545320090a3441d7bb0402dc5bde4e98e2a7696d246"
+    },
+    {
+      "path": "packages/application/src/automaticUpdates.ts",
+      "sha256": "f8a3c904f28e5e1067d95695bf0bfcf164fa086165c8cb92767460919c672da0"
+    },
+    {
+      "path": "scripts/export-static-update-catalog.mjs",
+      "sha256": "48c2e48c59c94534551fea0554cfc11a3b5cbfd7b2bce26444a5bdfd04c77f05"
+    },
+    {
+      "path": "wrangler-updates.jsonc",
+      "sha256": "bb2f646a1a947ab85057a6ed4709b6e66dc56f9b9a826b55320260d2c971de1e"
+    }
+  ],
+  "cdn": {
+    "protocol": "atape.cloudflare-update-distribution-acceptance.v1",
+    "checkedAt": "2026-10-11T02:32:59.921Z",
+    "baseURL": "https://updates.atape.net",
+    "workerName": "atape-updates",
+    "wranglerVersion": "4.149.0",
+    "publicationSha256": "d2881c13a87b416a1f3fe79ba329515d5e5c4447bd457fdc6fd4946e5feda05a",
+    "catalogRevision": 2,
+    "migrationCatalogRevision": 1,
+    "verifiedBundles": [
+      {
+        "version": "0.5.7",
+        "packages": 8
+      }
+    ],
+    "checks": [
+      {
+        "path": "catalog/v1.json",
+        "status": 200,
+        "bytes": 2556,
+        "sha256": "5a9d805f13252e54d460f73fefaf0f96c2d09cb94776b857f61f82be539d3e3c",
+        "expectedSha256": "5a9d805f13252e54d460f73fefaf0f96c2d09cb94776b857f61f82be539d3e3c",
+        "etag": "W/\"d5668c5483dc70273963d6c88e599c56\"",
+        "cacheControl": "no-cache, must-revalidate",
+        "contentType": "application/json; charset=utf-8",
+        "contentTypeOptions": "nosniff",
+        "cfCacheStatus": "HIT",
+        "conditionalStatus": 304,
+        "conditionalBytes": 0,
+        "conditionalEtag": "\"d5668c5483dc70273963d6c88e599c56\"",
+        "pass": true
+      },
+      {
+        "path": "catalog/v2.json",
+        "status": 200,
+        "bytes": 3332,
+        "sha256": "69c71bae4b5b8af836ddd3315cba41388ae8d0400333bb035b06f527836888e5",
+        "expectedSha256": "69c71bae4b5b8af836ddd3315cba41388ae8d0400333bb035b06f527836888e5",
+        "etag": "W/\"3bdf12b9afc698ab4f3576707d667520\"",
+        "cacheControl": "no-cache, must-revalidate",
+        "contentType": "application/json; charset=utf-8",
+        "contentTypeOptions": "nosniff",
+        "cfCacheStatus": "HIT",
+        "conditionalStatus": 304,
+        "conditionalBytes": 0,
+        "conditionalEtag": "\"3bdf12b9afc698ab4f3576707d667520\"",
+        "pass": true
+      },
+      {
+        "path": "manifest.json",
+        "status": 200,
+        "bytes": 443,
+        "sha256": "e69aa3580cd8626f18538f0f0fcf3b13ad92d8a2f78159ddb8caa9dde7b0d5f3",
+        "expectedSha256": "e69aa3580cd8626f18538f0f0fcf3b13ad92d8a2f78159ddb8caa9dde7b0d5f3",
+        "etag": "W/\"5d039fea8ef749eff57d188e883771d2\"",
+        "cacheControl": "no-cache, must-revalidate",
+        "contentType": "application/json; charset=utf-8",
+        "contentTypeOptions": "nosniff",
+        "cfCacheStatus": "HIT",
+        "conditionalStatus": 304,
+        "conditionalBytes": 0,
+        "conditionalEtag": "\"5d039fea8ef749eff57d188e883771d2\"",
+        "pass": true
+      },
+      {
+        "path": "releases/0.5.7/bundle.v1.json",
+        "status": 200,
+        "bytes": 1987,
+        "sha256": "e6da1a70c41aa0421afe11ca8e75a573df14fc093f3c358e18fc1e974085beab",
+        "expectedSha256": "e6da1a70c41aa0421afe11ca8e75a573df14fc093f3c358e18fc1e974085beab",
+        "etag": "W/\"88f2b00da69f9911af0c5ccef4e49469\"",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "contentType": "application/json; charset=utf-8",
+        "contentTypeOptions": "nosniff",
+        "cfCacheStatus": "HIT",
+        "conditionalStatus": 304,
+        "conditionalBytes": 0,
+        "conditionalEtag": "\"88f2b00da69f9911af0c5ccef4e49469\"",
+        "pass": true
+      },
+      {
+        "path": "releases/0.5.7/bundle.v2.json",
+        "status": 200,
+        "bytes": 2153,
+        "sha256": "7d86e61f8277693e2b57f957e01e9c4e4789a7fed9940bda1360b9a7581e0709",
+        "expectedSha256": "7d86e61f8277693e2b57f957e01e9c4e4789a7fed9940bda1360b9a7581e0709",
+        "etag": "W/\"e6ff4a48107025584c8bf895444c840f\"",
+        "cacheControl": "public, max-age=31536000, immutable",
+        "contentType": "application/json; charset=utf-8",
+        "contentTypeOptions": "nosniff",
+        "cfCacheStatus": "HIT",
+        "conditionalStatus": 304,
+        "conditionalBytes": 0,
+        "conditionalEtag": "\"e6ff4a48107025584c8bf895444c840f\"",
+        "pass": true
+      }
+    ],
+    "missing": [
+      {
+        "path": "/_headers",
+        "status": 404,
+        "bytes": 0,
+        "pass": true
+      },
+      {
+        "path": "/releases/999.0.0/bundle.v1.json",
+        "status": 404,
+        "bytes": 0,
+        "pass": true
+      },
+      {
+        "path": "/absent-catalog.json",
+        "status": 404,
+        "bytes": 0,
+        "pass": true
+      }
+    ],
+    "existingHostedInstanceHTTPStatus": 200,
+    "publicByteExact": true,
+    "pass": true,
+    "limits": [
+      "Sampled from one client/network location; multi-region propagation was not separately tested.",
+      "Seed publication contains one public version; preservation of descriptors across future new-version publications is covered by exporter behavior tests, not claimed as a live multi-version test.",
+      "No npm package publication or Server deployment was performed."
+    ]
+  },
+  "caller": {
+    "protocol": "atape.static-discovery-public-acceptance.v1",
+    "checkedAt": "2026-10-11T02:36:34.726Z",
+    "version": "0.5.7",
+    "scope": "current source discovery Interface against actual public CDN and npm; not a published new CLI acceptance",
+    "metadataRequests": 1,
+    "restartedCacheNetworkRequests": 0,
+    "exactReceiptNetworkRequests": 0,
+    "acquiredCLIBytes": 712535,
+    "cliArchiveSHA256": "554a536b958d528813bcde0b7098eb531eff0329f2891465365fd812f4861fbf",
+    "result": "passed",
+    "publicRequests": [
+      "https://updates.atape.net/catalog/v2.json",
+      "https://registry.npmjs.org/@atape/cli/-/cli-0.5.7.tgz"
+    ]
+  },
+  "limits": [
+    "No published new CLI package or cross-version unattended rollout was performed.",
+    "Installed-package acceptance is recorded separately by repository CI; this public probe uses the source discovery Interface.",
+    "Existing manual staging acceptance remains pending; this report changes none of its results."
+  ]
+}

@@ -20,7 +20,7 @@ export class AutomaticUpdatePlatform extends Context.Service<AutomaticUpdatePlat
   recoveryPending(): Effect.Effect<boolean, AutomaticUpdateError>
   supported(): Effect.Effect<boolean, AutomaticUpdateError>
   schedule(): Effect.Effect<{ readonly nextCheckAt: number; readonly failures: number }, AutomaticUpdateError>
-  target(): Effect.Effect<ReleaseBundle, AutomaticUpdateError>
+  target(): Effect.Effect<{ readonly bundle: ReleaseBundle; readonly freshness: "fresh" | "stale" }, AutomaticUpdateError>
   prepare(bundle: ReleaseBundle, adapters: ReadonlyArray<AdapterInstallation>, automatic: boolean): Effect.Effect<PreparedAutomaticUpdate, AutomaticUpdateError, Scope.Scope>
   activate(prepared: PreparedAutomaticUpdate, automatic: boolean): Effect.Effect<void, AutomaticUpdateError>
   record(input: { readonly nextCheckAt: number; readonly failures: number; readonly version?: string; readonly failure?: string }): Effect.Effect<void, AutomaticUpdateError>
@@ -36,6 +36,12 @@ const validSchedule = (schedule: { readonly nextCheckAt: number; readonly failur
 const readSettings = inspectClient().pipe(Effect.mapError(() => new AutomaticUpdateError({
   reason: "state", message: "Could not read automatic update settings."
 })))
+const retrySchedule = (failures: number, failure: AutomaticUpdateError["reason"]) => Effect.gen(function*() {
+  const count = Math.min(failures + 1, Number.MAX_SAFE_INTEGER)
+  const delay = Math.min(24 * Hour, Hour * 2 ** Math.min(count - 1, 5))
+  return { nextCheckAt: (yield* Clock.currentTimeMillis) + delay + (yield* Random.next) * Math.min(6 * Hour, delay / 4),
+    failures: count, failure }
+})
 
 // Opening ATape dispatches a separately owned maintenance process. A failed
 // dispatch is observable in the log and cannot prevent ordinary CLI use.
@@ -67,10 +73,14 @@ export const runAutomaticUpdates = Effect.fn("AutomaticUpdates.run")((current: s
     }
     failures = schedule.failures
     if (!force && now < schedule.nextCheckAt) return { updated: false }
-    const bundle = yield* platform.target().pipe(Effect.flatMap(value => Effect.try({
-      try: () => decodeReleaseBundle(value),
+    const discovered = yield* platform.target()
+    const bundle = yield* Effect.try({
+      try: () => {
+        if (discovered.freshness !== "fresh" && discovered.freshness !== "stale") throw new Error("Unknown discovery freshness")
+        return decodeReleaseBundle(discovered.bundle)
+      },
       catch: () => new AutomaticUpdateError({ reason: "release", message: "The automatic update release bundle is invalid." })
-    })))
+    })
     const version = bundle.version, fingerprint = releaseBundleFingerprint(bundle)
     const adapters = config.adapters.filter(adapter => adapter.upgradeSpec === adapter.packageName &&
       officialSources.some(source => source.id === adapter.adapterId && source.packageName === adapter.packageName))
@@ -94,15 +104,19 @@ export const runAutomaticUpdates = Effect.fn("AutomaticUpdates.run")((current: s
       }
     }
     const installed = updated ? version : current
-    yield* platform.record({ nextCheckAt: (yield* Clock.currentTimeMillis) + 24 * Hour + (yield* Random.next) * 6 * Hour,
-      failures: 0, version: installed })
+    if (discovered.freshness === "stale") {
+      // Previously verified bytes remain eligible, but unavailable discovery
+      // must keep its durable retry instead of hiding behind a daily success.
+      yield* platform.record({ ...yield* retrySchedule(failures, "release"), version: installed })
+      yield* Effect.logWarning("Automatic update discovery deferred; verified cached release retained")
+    } else {
+      yield* platform.record({ nextCheckAt: (yield* Clock.currentTimeMillis) + 24 * Hour + (yield* Random.next) * 6 * Hour,
+        failures: 0, version: installed })
+    }
     return { updated, version: installed }
   })
   return yield* attempt.pipe(Effect.tapError(error => Effect.gen(function*() {
-    const count = Math.min(failures + 1, Number.MAX_SAFE_INTEGER)
-    const delay = Math.min(24 * Hour, Hour * 2 ** Math.min(count - 1, 5))
-    yield* platform.record({ nextCheckAt: (yield* Clock.currentTimeMillis) + delay + (yield* Random.next) * Math.min(6 * Hour, delay / 4),
-      failures: count, failure: error.reason }).pipe(
+    yield* platform.record(yield* retrySchedule(failures, error.reason)).pipe(
       Effect.catch(() => Effect.logWarning("Could not save automatic update retry schedule")))
     yield* Effect.logWarning("Automatic update deferred; collection continues", { reason: error.reason })
   })))

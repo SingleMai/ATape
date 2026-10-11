@@ -1,5 +1,5 @@
 import { CollectorDeviceGateway } from "@atape/application"
-import { emptyClientConfig, releasePackageNames, updateCatalogTag, type ClientConfig } from "@atape/domain"
+import { emptyClientConfig, releaseCatalogURL, releasePackageNames, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -17,15 +17,15 @@ it.each(["codex", "opencode"])("scopes %s device jobs to account and instance, r
   const config: ClientConfig = { ...emptyClientConfig(), projects: [project, { ...project, id: "two", instanceOrigin: "https://two.example", userId: "user-two", name: "Private other project" }],
     enabledAdapterIds: [adapterId], adapters: [{ adapterId: adapterId, packageName: `@atape/adapter-${adapterId}`, displayName: "Codex", upgradeSpec: `@atape/adapter-${adapterId}`, version: "0.4.4", installedAt: project.createdAt, updatedAt: project.createdAt }] }
   const layer = makeDeviceMonitoringLayer(home, Effect.succeed(config), (async input => {
-    if (String(input).endsWith("/tags/atape-update-catalog-v2")) return new Response("Not found", { status: 404 })
+    if (String(input) === releaseCatalogURL("atape.update-catalog.v2")) return new Response("Not found", { status: 404 })
     checks++
-    expect(String(input)).toBe(`https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`)
+    expect(String(input)).toBe(releaseCatalogURL("atape.update-catalog.v1"))
     const version = "0.4.5"
-    return Response.json({ tag_name: updateCatalogTag, prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z", body: JSON.stringify({
+    return Response.json({
       protocol: "atape.update-catalog.v1", revision: 1, bundles: [{ protocol: "atape.release-bundle.v1", version,
         captureStateContract: "atape.client.v3-capture.v2", updateControlProtocol: "atape.update-control.v1", packages: releasePackageNames.map(name => ({ name,
           integrity: `sha512-${Buffer.alloc(64).toString("base64")}`, tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) }]
-    }) })
+    })
   }) as typeof fetch, Effect.succeed({ version: 1, jobs: [{ projectId: "one", adapterId: adapterId, lastAttemptAt: project.createdAt, lastSuccessAt: project.createdAt }] })).pipe(
     Layer.provide(Layer.succeed(AuthenticatedHTTPClient, { request: request => Effect.sync(() => { requests.push(request); return { status: 200 } }) }))
   )

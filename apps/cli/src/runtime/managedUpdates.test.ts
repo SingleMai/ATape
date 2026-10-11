@@ -1,6 +1,6 @@
 import { AdapterPackageError, AdapterPackages, AutomaticUpdatePlatform, ClientConfigStore, CollectorDaemonProcess, runAutomaticUpdates,
   type PreparedAutomaticUpdate } from "@atape/application"
-import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releasePackageNames, releaseBundleSection, managedReleaseBundleFingerprint as releaseBundleFingerprint,
+import { AdapterProtocolVersion, emptyClientConfig, GitAttributionVersion, releaseCatalogURL, releaseMetadataBaseURL, releasePackageNames, managedReleaseBundleFingerprint as releaseBundleFingerprint,
   type ReleaseBundle, type AdapterInstallation, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { createHash, randomUUID } from "node:crypto"
@@ -115,20 +115,19 @@ else if (args[0]==="install") {
   const fetchMetadata: typeof fetch = async url => {
     const address = String(url); fetches.push(address)
     if (behavior.offline) throw new TypeError("Fixture transport unavailable")
-    if (address.startsWith("https://api.github.com/")) {
-      const tag = decodeURIComponent(new URL(address).pathname.split("/").at(-1)!)
-      if (tag === "atape-update-catalog-v2") return new Response("Not found", { status: 404 })
-      if (tag === "atape-update-catalog-v1") {
+    if (address.startsWith(releaseMetadataBaseURL)) {
+      if (address.endsWith("/catalog/v2.json") || address.endsWith("/bundle.v2.json")) return new Response("Not found", { status: 404 })
+      if (address === releaseCatalogURL("atape.update-catalog.v1")) {
         const advertised = bundle(behavior.targetVersion)
-        const incomplete = { ...advertised, packages: advertised.packages.filter(item => item.name !== behavior.missingPackage) }
-        return Response.json({ tag_name: tag, draft: false, prerelease: true, published_at: "2026-10-01T00:00:00.000Z",
-          body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision: behavior.catalogRevision || Number(behavior.targetVersion.split(".").at(-1)) + 1,
-            bundles: [incomplete, ...(behavior.otherFamily ? [{ ...bundle("9.0.0"), captureStateContract: "capture.future" }] : [])] }) })
+        const incomplete = { ...advertised, packages: advertised.packages.filter(item => item.name !== behavior.missingPackage)
+          .map((item, index) => behavior.changedDescriptor && index === 0 ? { ...item, integrity: bundle("0.5.99").packages[0]!.integrity } : item) }
+        return Response.json({ protocol: "atape.update-catalog.v1", revision: behavior.catalogRevision || Number(behavior.targetVersion.split(".").at(-1)) + 1,
+          bundles: [incomplete, ...(behavior.otherFamily ? [{ ...bundle("9.0.0"), captureStateContract: "capture.future" }] : [])] })
       }
-      const descriptor = bundle(tag.slice(1))
+      const descriptor = bundle(new URL(address).pathname.split("/")[2]!)
       const changed = behavior.changedDescriptor ? { ...descriptor, packages: descriptor.packages.map((item, index) => index === 0
         ? { ...item, integrity: bundle("0.5.99").packages[0]!.integrity } : item) } : descriptor
-      return Response.json({ tag_name: tag, draft: false, prerelease: false, published_at: "2026-10-01T00:00:00.000Z", body: releaseBundleSection(changed) })
+      return Response.json(changed)
     }
     const name = releasePackageNames.find(name => address.startsWith(`https://registry.npmjs.org/${name}/-/`))
     if (!name) throw new Error(`Unexpected fixture URL ${address}`)
@@ -192,9 +191,11 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
       await expect(f.activate(await f.prepare())).rejects.toMatchObject({ reason: "handoff" })
       const fallback = await f.daemonRun(f.daemon.inspect()), installs = f.adapterSpecs.length
       f.behavior.catalogRevision = 20; f.behavior.otherFamily = true
+      const cache = join(f.paths.atapeHome, "cache", "release-discovery", "catalog.json")
+      await atomicJSON(cache, { ...JSON.parse(await readFile(cache, "utf8")), checkedAt: 0 })
       expect(await f.run(runAutomaticUpdates("0.5.2").pipe(Effect.provide(store))))
         .toEqual({ updated: false, version: "0.5.2" })
-      expect(f.fetches.at(-1)).toContain("atape-update-catalog-v1")
+      expect(f.fetches.at(-1)).toBe(releaseCatalogURL("atape.update-catalog.v1"))
       expect(f.adapterSpecs).toHaveLength(installs)
       expect((await f.daemonRun(f.daemon.inspect()))?.pid).toBe(fallback?.pid)
       expect(await readFile(join(f.paths.atapeHome, "updates", "state.json"), "utf8").then(JSON.parse))
@@ -317,13 +318,13 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     } finally { await f.daemonRun(f.daemon.stop()) }
   }, 15_000)
 
-  it("discovers a complete catalog bundle and refreshes automatic targets without legacy Latest", async () => {
+  it("discovers a complete static catalog and reuses a fresh validated legacy fallback", async () => {
     const f = await fixture()
     const target = () => f.run(AutomaticUpdatePlatform.use(platform => platform.target()))
-    expect(await target()).toEqual(f.bundle("0.5.3"))
-    expect(await target()).toEqual(f.bundle("0.5.3"))
-    expect(f.fetches).toHaveLength(4)
-    expect(f.fetches.every(address => /\/tags\/atape-update-catalog-v[12]$/.test(address))).toBe(true)
+    expect(await target()).toEqual({ bundle: f.bundle("0.5.3"), freshness: "fresh" })
+    expect(await target()).toEqual({ bundle: f.bundle("0.5.3"), freshness: "fresh" })
+    expect(f.fetches).toHaveLength(3)
+    expect(f.fetches.every(address => /^https:\/\/updates\.atape\.net\/catalog\/v[12]\.json$/.test(address))).toBe(true)
     expect(await f.npmCalls()).toEqual([])
   })
 
@@ -505,11 +506,10 @@ describe.skipIf(process.platform === "win32")("managed update Node Adapter", () 
     const f = await fixture(), prepared = await f.prepare()
     expect(prepared.bundle.version).toBe("0.5.3")
     expect(f.adapterSpecs).toEqual(["@atape/adapter-codex@0.5.3", "@atape/adapter-claude@0.5.3"])
-    expect(f.fetches).toHaveLength(4)
-    expect(f.fetches[0]).toContain("atape-update-catalog-v2")
-    expect(f.fetches[1]).toContain("atape-update-catalog-v1")
-    expect(f.fetches[2]).toContain("/tags/v0.5.3")
-    expect(f.fetches[3]).toBe(f.bundle("0.5.3").packages.find(item => item.name === "@atape/cli")!.tarball)
+    expect(f.fetches).toHaveLength(3)
+    expect(f.fetches[0]).toBe(releaseCatalogURL("atape.update-catalog.v2"))
+    expect(f.fetches[1]).toBe(releaseCatalogURL("atape.update-catalog.v1"))
+    expect(f.fetches[2]).toBe(f.bundle("0.5.3").packages.find(item => item.name === "@atape/cli")!.tarball)
     const installation = (await f.npmCalls()).find(args => args[0] === "install")!
     expect(installation).not.toContain("@atape/cli@0.5.3")
     const archive = installation.at(-1)!

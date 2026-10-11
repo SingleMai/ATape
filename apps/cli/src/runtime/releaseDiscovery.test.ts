@@ -3,11 +3,11 @@ import { createHash } from "node:crypto"
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { managedReleaseBundleFingerprint as releaseBundleFingerprint, releaseBundleSection, releasePackageNames, updateCatalogTag, type ReleaseBundle } from "@atape/domain"
+import { managedReleaseBundleFingerprint as releaseBundleFingerprint, releaseBundleURL, releaseCatalogURL, releasePackageNames, type ReleaseBundle } from "@atape/domain"
 import { createReleaseDiscovery, type ReleaseDiscovery } from "./releaseDiscovery.ts"
 
-const catalogURL = `https://api.github.com/repos/SingleMai/ATape/releases/tags/${updateCatalogTag}`
-const versionURL = (version: string) => `https://api.github.com/repos/SingleMai/ATape/releases/tags/v${version}`
+const catalogURL = releaseCatalogURL("atape.update-catalog.v1")
+const versionURL = (version: string) => releaseBundleURL(version, "atape.release-bundle.v1")
 const bytes = Buffer.from("verified immutable archive bytes")
 const bundle = (version = "1.2.3", contract = "capture.v2", payload = bytes): ReleaseBundle => ({
   protocol: "atape.release-bundle.v1", version, captureStateContract: contract, updateControlProtocol: "atape.update-control.v1",
@@ -20,22 +20,19 @@ const extendedBundle = (version = "1.2.4", extraPayload = Buffer.from("future ad
     integrity: `sha512-${createHash("sha512").update(extraPayload).digest("base64")}`,
     tarball: `https://registry.npmjs.org/@atape/adapter-future/-/adapter-future-${version}.tgz` }]
 })
-const release = (value: ReleaseBundle) => ({ tag_name: `v${value.version}`, body: `Notes\n${releaseBundleSection(value)}`,
-  prerelease: false, draft: false, published_at: "2026-01-01T00:00:00Z" })
-const catalogRelease = (bundles: ReadonlyArray<ReleaseBundle>, revision = 1) => ({ tag_name: updateCatalogTag,
-  body: JSON.stringify({ protocol: "atape.update-catalog.v1", revision, bundles }),
-  prerelease: true, draft: false, published_at: "2026-01-01T00:00:00Z" })
+const release = (value: ReleaseBundle) => value
+const catalogRelease = (bundles: ReadonlyArray<ReleaseBundle>, revision = 1) => ({ protocol: "atape.update-catalog.v1", revision, bundles })
 const signal = () => new AbortController().signal
 const homes: string[] = []
 const makeHome = async () => { const home = await mkdtemp(join(tmpdir(), "atape-release-discovery-")); homes.push(home); return home }
 const discovery = (home: string, fetchMetadata: typeof fetch, runtimeVersion = "1.2.3") => createReleaseDiscovery({
   home, runtimeVersion, captureStateContract: "capture.v2", updateControlProtocol: "atape.update-control.v1", fetchMetadata
 })
-const latest = (client: ReleaseDiscovery) => client.latest({ cached: false, signal: signal() })
+const latest = async (client: ReleaseDiscovery) => (await client.latest({ cached: false, signal: signal() })).bundle
 afterEach(async () => { vi.restoreAllMocks(); vi.useRealTimers(); await Promise.all(homes.splice(0).map(home => rm(home, { recursive: true, force: true }))) })
 
 describe("release discovery caller Interface", () => {
-  it("uses the persistent fixed tag, keeps unknown families and selects its exact pair", async () => {
+  it("uses the fixed static catalog, keeps unknown families and selects its exact pair", async () => {
     const requested: string[] = [], current = bundle(), future = bundle("3.0.0", "capture.v3")
     const client = discovery(await makeHome(), async (url, options) => {
       requested.push(String(url)); expect(options?.redirect).toBe("error"); expect(options?.signal).toBeDefined()
@@ -72,14 +69,27 @@ describe("release discovery caller Interface", () => {
     await expect(latest(discovery(home, async () => Response.json(catalogRelease([changed], 2))))).rejects.toThrow(/rewrote|immutable/)
   })
 
+  it("does not authorize an earlier new bundle when a later catalog bundle conflicts with a known exact receipt", async () => {
+    const home = await makeHome(), current = bundle(), next = bundle("1.2.4")
+    await discovery(home, async () => Response.json(current)).exact({ version: current.version, signal: signal() })
+    const conflicting = bundle(current.version, "future", Buffer.from("changed historical bytes"))
+    await expect(latest(discovery(home, async () => Response.json(catalogRelease([next, conflicting])))))
+      .rejects.toThrow("immutable")
+    await expect(readFile(join(home, "cache", "release-discovery", "bundles", `${next.version}.json`))).rejects.toThrow()
+    await expect(readFile(join(home, "cache", "release-discovery", "catalog.json"))).rejects.toThrow()
+    const unavailable = vi.fn<typeof fetch>(async () => new Response("busy", { status: 503, headers: { "retry-after": "3600" } }))
+    await expect(discovery(home, unavailable).exact({ version: next.version, signal: signal() })).rejects.toThrow("HTTP 503")
+    expect(unavailable).toHaveBeenCalledOnce()
+    expect(String(unavailable.mock.calls[0]![0])).toBe(catalogURL)
+  })
+
   it("preserves additive package byte identity across catalog refreshes and exact version receipts", async () => {
     const home = await makeHome(), current = extendedBundle(), changed = extendedBundle(current.version, Buffer.from("rewritten future adapter"))
     await latest(discovery(home, async () => Response.json(catalogRelease([current]))))
     await expect(latest(discovery(home, async () => Response.json(catalogRelease([changed], 2))))).rejects.toThrow(/rewrote|immutable/)
-    await expect(discovery(home, async () => Response.json(release(changed)))
-      .exact({ version: current.version, signal: signal() })).rejects.toThrow("immutable")
     const neverCalled = vi.fn<typeof fetch>()
-    expect(await discovery(home, neverCalled).latest({ cached: true, signal: signal() })).toEqual(current)
+    expect(await discovery(home, neverCalled).exact({ version: current.version, signal: signal() })).toEqual(current)
+    expect(await discovery(home, neverCalled).latest({ cached: true, signal: signal() })).toEqual({ bundle: current, freshness: "fresh" })
     expect(neverCalled).not.toHaveBeenCalled()
   })
 
@@ -93,7 +103,7 @@ describe("release discovery caller Interface", () => {
     resolveOld(Response.json(catalogRelease([bundle()], 1)))
     await expect(old).rejects.toThrow("regressed")
     const neverCalled = vi.fn<typeof fetch>()
-    expect(await discovery(home, neverCalled).latest({ cached: true, signal: signal() })).toEqual(next)
+    expect(await discovery(home, neverCalled).latest({ cached: true, signal: signal() })).toEqual({ bundle: next, freshness: "fresh" })
     expect(neverCalled).not.toHaveBeenCalled()
   })
 
@@ -103,7 +113,7 @@ describe("release discovery caller Interface", () => {
     const now = Date.now()
     vi.spyOn(Date, "now").mockReturnValue(now + 13 * 60 * 60 * 1_000)
     const offline = discovery(home, async () => { throw new Error("offline") })
-    expect(await offline.latest({ cached: true, signal: signal() })).toEqual(bundle())
+    expect(await offline.latest({ cached: true, signal: signal() })).toEqual({ bundle: bundle(), freshness: "stale" })
     await expect(latest(offline)).rejects.toThrow("transport")
     await expect(discovery(home, async () => Response.json(catalogRelease([bundle()], 1)))
       .latest({ cached: true, signal: signal() })).rejects.toThrow("regressed")
@@ -118,6 +128,81 @@ describe("release discovery caller Interface", () => {
     expect(fetchMetadata).not.toHaveBeenCalled()
   })
 
+  it.each([403, 429, 503])("recovers a transient HTTP %s within a bounded metadata retry", async status => {
+    vi.useFakeTimers(); vi.spyOn(Math, "random").mockReturnValue(0)
+    const requested: string[] = []
+    const client = discovery(await makeHome(), async url => {
+      requested.push(String(url))
+      return requested.length < 3 ? new Response("temporarily unavailable", { status }) : Response.json(catalogRelease([bundle()]))
+    })
+    const pending = latest(client)
+    await vi.waitFor(() => expect(requested).toHaveLength(1))
+    await vi.advanceTimersByTimeAsync(500)
+    expect(requested).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(await pending).toEqual(bundle())
+    expect(requested).toEqual([catalogURL, catalogURL, catalogURL])
+  })
+
+  it("respects a short Retry-After but leaves a long one to the durable caller retry", async () => {
+    vi.useFakeTimers(); vi.spyOn(Math, "random").mockReturnValue(0)
+    const fetchMetadata = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 429, headers: { "retry-after": "2" } }))
+      .mockResolvedValueOnce(Response.json(catalogRelease([bundle()])))
+    const client = discovery(await makeHome(), fetchMetadata), pending = latest(client)
+    await vi.waitFor(() => expect(fetchMetadata).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(1_900)
+    expect(fetchMetadata).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await pending).toEqual(bundle())
+    const long = vi.fn<typeof fetch>(async () => new Response("busy", { status: 429, headers: { "retry-after": "3600" } }))
+    await expect(latest(discovery(await makeHome(), long))).rejects.toThrow("HTTP 429")
+    expect(long).toHaveBeenCalledOnce()
+  })
+
+  it("cancels an in-flight retry delay without beginning another request", async () => {
+    vi.useFakeTimers()
+    const active = new AbortController(), fetchMetadata = vi.fn<typeof fetch>(async () => new Response("busy", { status: 503 }))
+    const client = discovery(await makeHome(), fetchMetadata)
+    const pending = client.latest({ cached: false, signal: active.signal })
+    const rejected = expect(pending).rejects.toThrow("caller cancelled retry")
+    await vi.waitFor(() => expect(fetchMetadata).toHaveBeenCalledOnce())
+    active.abort(new Error("caller cancelled retry")); await rejected
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(fetchMetadata).toHaveBeenCalledOnce()
+  })
+
+  it("does not retry or hide malformed metadata behind an expired validated cache", async () => {
+    const home = await makeHome()
+    await latest(discovery(home, async () => Response.json(catalogRelease([bundle()]))))
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 13 * 60 * 60 * 1_000)
+    const fetchMetadata = vi.fn<typeof fetch>(async () => new Response("broken JSON"))
+    await expect(discovery(home, fetchMetadata).latest({ cached: true, signal: signal() })).rejects.toThrow("not valid JSON")
+    expect(fetchMetadata).toHaveBeenCalledOnce()
+  })
+
+  it("returns verified stale metadata after the first fast transport failure within a short caller deadline", async () => {
+    const home = await makeHome()
+    await latest(discovery(home, async () => Response.json(catalogRelease([bundle()]))))
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 13 * 60 * 60 * 1_000)
+    const fetchMetadata = vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 }))
+    const short = AbortSignal.timeout(1_500)
+    expect(await discovery(home, fetchMetadata).latest({ cached: true, signal: short }))
+      .toEqual({ bundle: bundle(), freshness: "stale" })
+    expect(short.aborted).toBe(false)
+    expect(fetchMetadata).toHaveBeenCalledOnce()
+  })
+
+  it("does not use an exact receipt to bypass corrupt saved bundle state", async () => {
+    const home = await makeHome()
+    await latest(discovery(home, async () => Response.json(catalogRelease([bundle()]))))
+    await writeFile(join(home, "cache", "release-discovery", "bundles", `${bundle().version}.json`), "broken")
+    const never = vi.fn<typeof fetch>()
+    await expect(discovery(home, never).exact({ version: bundle().version, signal: signal() })).rejects.toThrow("state is invalid")
+    await expect(discovery(home, never).latest({ cached: true, signal: signal() })).rejects.toThrow("state is invalid")
+    expect(never).not.toHaveBeenCalled()
+  })
+
   it("does not bypass catalog advertisement with a versioned descriptor for another version", async () => {
     const home = await makeHome(), requested: string[] = []
     const client = discovery(home, async url => {
@@ -128,15 +213,16 @@ describe("release discovery caller Interface", () => {
     expect(requested).toEqual([catalogURL])
   })
 
-  it("pins exact advertised descriptors and refuses changed or missing target descriptors", async () => {
+  it("reuses exact advertised immutable receipts without redundant version requests", async () => {
     const home = await makeHome(), next = bundle("1.2.4")
-    const client = discovery(home, async url => Response.json(String(url) === catalogURL ? catalogRelease([next]) : release(next)))
+    const requests: string[] = []
+    const client = discovery(home, async url => { requests.push(String(url)); return Response.json(catalogRelease([next])) })
     expect(releaseBundleFingerprint(await client.exact({ version: next.version, signal: signal() })))
       .toBe(releaseBundleFingerprint(next))
-    const changed = bundle(next.version, "capture.v2", Buffer.from("changed"))
-    await expect(discovery(home, async () => Response.json(release(changed))).exact({ version: next.version, signal: signal() })).rejects.toThrow("immutable")
-    await expect(discovery(home, async () => Response.json({ ...release(next), body: "only notes" }))
-      .exact({ version: next.version, signal: signal() })).rejects.toThrow("no immutable")
+    expect(requests).toEqual([catalogURL])
+    const neverCalled = vi.fn<typeof fetch>()
+    expect(await discovery(home, neverCalled).exact({ version: next.version, signal: signal() })).toEqual(next)
+    expect(neverCalled).not.toHaveBeenCalled()
   })
 
   it("derives only the actual running version during descriptor propagation, checking every producer exact npm package", async () => {
@@ -155,7 +241,7 @@ describe("release discovery caller Interface", () => {
 
   it("does not hide invalid descriptors or incompatible runtime manifests behind the running-version fallback", async () => {
     const home = await makeHome(), current = bundle()
-    const malformed = vi.fn<typeof fetch>(async () => Response.json({ ...release(current), body: "<!-- atape.release-bundle.v1:start -->broken" }))
+    const malformed = vi.fn<typeof fetch>(async () => new Response("broken"))
     await expect(discovery(home, malformed).exact({ version: current.version, signal: signal() })).rejects.toThrow()
     expect(malformed).toHaveBeenCalledOnce()
     const incompatible: typeof fetch = async url => {
@@ -173,7 +259,7 @@ describe("release discovery caller Interface", () => {
     await latest(client)
     expect(releaseBundleFingerprint(await client.exact({ version: "1.2.3", signal: signal() })))
       .toBe(releaseBundleFingerprint(bundle()))
-    expect(await client.latest({ cached: true, signal: signal() })).toEqual(next)
+    expect(await client.latest({ cached: true, signal: signal() })).toEqual({ bundle: next, freshness: "fresh" })
   })
 })
 
@@ -194,7 +280,7 @@ describe("verified scoped artifact acquisition", () => {
     expect(releaseBundleFingerprint(exact)).toBe(releaseBundleFingerprint(current))
     const archive = await client.acquireArtifact(exact, "@atape/cli", signal())
     expect(await readFile(archive.path)).toEqual(bytes)
-    expect(requested).toEqual([catalogURL, versionURL(current.version), cli.tarball])
+    expect(requested).toEqual([catalogURL, cli.tarball])
     await archive.release()
     await expect(readFile(archive.path)).rejects.toThrow()
   })

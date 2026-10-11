@@ -1,7 +1,7 @@
-import { ReleaseCatalog, decodeReleaseBundle, decodeReleaseCatalog, releaseBundleFingerprint, releaseBundleFromBody,
-  releasePackageNames, selectReleaseBundle, updateCatalogTag, MigrationReleaseCatalog, decodeMigrationReleaseBundle,
-  decodeMigrationReleaseCatalog, managedReleaseBundleFingerprint, migrationReleaseBundleFromBody,
-  migrationReleaseCatalogTag, selectMigrationReleaseBundle, type ManagedReleaseBundle,
+import { ReleaseCatalog, decodeReleaseBundle, decodeReleaseCatalog, releaseBundleFingerprint,
+  releasePackageNames, selectReleaseBundle, MigrationReleaseCatalog, decodeMigrationReleaseBundle,
+  decodeMigrationReleaseCatalog, managedReleaseBundleFingerprint, releaseBundleURL, releaseCatalogURL,
+  selectMigrationReleaseBundle, type ManagedReleaseBundle,
   type MigrationReleaseBundle, type ReleaseBundle } from "@atape/domain"
 import { Schema } from "effect"
 import { createHash } from "node:crypto"
@@ -10,13 +10,10 @@ import { join } from "node:path"
 import { acquireProcessLock } from "./processLock.ts"
 import { atomicJSON, missing, readBoundedJSON } from "./runtimeFiles.ts"
 
-const github = "https://api.github.com/repos/SingleMai/ATape/releases/tags/"
 const registry = "https://registry.npmjs.org/"
 const metadataLimit = 256 * 1024
 const artifactLimit = 16 * 1024 * 1024
 const cacheLifetime = 12 * 60 * 60 * 1_000
-const GithubRelease = Schema.Struct({ tag_name: Schema.String, body: Schema.String,
-  prerelease: Schema.Boolean, draft: Schema.Boolean, published_at: Schema.String })
 const CachedCatalog = Schema.Struct({ checkedAt: Schema.Number, catalog: ReleaseCatalog })
 const CachedMigrationCatalog = Schema.Struct({ checkedAt: Schema.Number, catalog: MigrationReleaseCatalog })
 const MigrationAdoption = Schema.Struct({ protocol: Schema.Literal("atape.update-catalog.v2") })
@@ -27,10 +24,15 @@ const NpmPackage = Schema.Struct({ name: Schema.String, version: Schema.String,
 
 export class ReleaseDiscoveryError extends Error {
   readonly reason: "transport" | "metadata" | "state" | "integrity"
-  constructor(reason: ReleaseDiscoveryError["reason"], message: string) { super(message); this.reason = reason }
+  readonly retryable: boolean
+  readonly retryAfterMs: number | undefined
+  constructor(reason: ReleaseDiscoveryError["reason"], message: string,
+    retry: { readonly retryable?: boolean; readonly retryAfterMs?: number | undefined } = {}) {
+    super(message); this.reason = reason; this.retryable = retry.retryable ?? false; this.retryAfterMs = retry.retryAfterMs
+  }
 }
 class MissingRelease extends ReleaseDiscoveryError {
-  constructor() { super("transport", "The versioned GitHub Release is not publicly available.") }
+  constructor() { super("transport", "The static release metadata is not publicly available.") }
 }
 const stableVersion = (value: string) => /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value) &&
   value.length < 40 && value.split(".").every(part => Number.isSafeInteger(Number(part)))
@@ -76,11 +78,14 @@ const stream = async <A>(url: string, signal: AbortSignal, fetchMetadata: typeof
         headers: { accept: limit === metadataLimit ? "application/json" : "application/octet-stream", "user-agent": "ATape release discovery" } }), requestSignal)
     } catch (cause) {
       requestSignal.throwIfAborted()
-      throw new ReleaseDiscoveryError("transport", "Release transport is unavailable.")
+      throw new ReleaseDiscoveryError("transport", "Release transport is unavailable.", { retryable: true })
     }
     reader = response.body?.getReader()
     if (response.status === 404) throw new MissingRelease()
-    if (!response.ok) throw new ReleaseDiscoveryError("transport", `Release request returned HTTP ${response.status}.`)
+    if (!response.ok) throw new ReleaseDiscoveryError("transport", `Release request returned HTTP ${response.status}.`, {
+      retryable: [403, 408, 425, 429].includes(response.status) || response.status >= 500,
+      retryAfterMs: retryAfter(response.headers.get("retry-after"))
+    })
     if (!reader) throw new ReleaseDiscoveryError("metadata", "Release response has no body.")
     const length = response.headers.get("content-length")
     if (length !== null && (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)) || Number(length) > limit)) {
@@ -92,7 +97,7 @@ const stream = async <A>(url: string, signal: AbortSignal, fetchMetadata: typeof
       try { chunk = await abortable(reader.read(), requestSignal) }
       catch {
         requestSignal.throwIfAborted()
-        throw new ReleaseDiscoveryError("transport", "Release body transport is unavailable.")
+        throw new ReleaseDiscoveryError("transport", "Release body transport is unavailable.", { retryable: true })
       }
       if (chunk.done) break
       bytes += chunk.value.byteLength
@@ -109,12 +114,40 @@ const stream = async <A>(url: string, signal: AbortSignal, fetchMetadata: typeof
   }
 }
 
-const metadata = async (url: string, signal: AbortSignal, fetchMetadata: typeof fetch): Promise<unknown> => {
-  const chunks: Uint8Array[] = []
-  return stream(url, signal, fetchMetadata, metadataLimit, 10_000, async chunk => { chunks.push(chunk) }, async () => {
-    try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))) as unknown }
-    catch { throw new ReleaseDiscoveryError("metadata", "Release response is not valid JSON.") }
-  })
+const retryAfter = (value: string | null): number | undefined => {
+  if (value === null) return undefined
+  const milliseconds = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now()
+  return Number.isFinite(milliseconds) && milliseconds >= 0 ? milliseconds : undefined
+}
+const waitForRetry = (milliseconds: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const cleanup = () => { clearTimeout(timer); signal.removeEventListener("abort", abort) }
+  const abort = () => { cleanup(); reject(signal.reason) }
+  const timer = setTimeout(() => { cleanup(); resolve() }, milliseconds)
+  signal.addEventListener("abort", abort, { once: true })
+  if (signal.aborted) abort()
+})
+const metadata = async (url: string, signal: AbortSignal, fetchMetadata: typeof fetch,
+  options: { readonly retry?: boolean } = {}): Promise<unknown> => {
+  // A request, including retries and complete response bodies, retains the
+  // original ten-second budget. Fast transient failures can recover in place;
+  // a long Retry-After belongs to the durable automatic-update schedule.
+  const deadline = performance.now() + 10_000
+  for (let attempt = 0; ; attempt++) {
+    const chunks: Uint8Array[] = []
+    try {
+      return await stream(url, signal, fetchMetadata, metadataLimit, Math.max(1, deadline - performance.now()),
+        async chunk => { chunks.push(chunk) }, async () => {
+          try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks))) as unknown }
+          catch { throw new ReleaseDiscoveryError("metadata", "Release response is not valid JSON.") }
+        })
+    } catch (cause) {
+      signal.throwIfAborted()
+      if (!(cause instanceof ReleaseDiscoveryError) || !cause.retryable || options.retry === false || attempt >= 2) throw cause
+      const delay = Math.max(cause.retryAfterMs ?? 0, 500 * 2 ** attempt + Math.random() * 250)
+      if (performance.now() + delay >= deadline) throw cause
+      await waitForRetry(delay, signal)
+    }
+  }
 }
 
 export type ReleaseDiscoveryOptions = {
@@ -126,8 +159,9 @@ export type ReleaseDiscoveryOptions = {
   readonly fetchMetadata?: typeof fetch
 }
 export type AcquiredReleaseArtifact = { readonly path: string; readonly release: () => Promise<void> }
+export type DiscoveredRelease = { readonly bundle: ManagedReleaseBundle; readonly freshness: "fresh" | "stale" }
 export type ReleaseDiscovery = {
-  readonly latest: (input: { readonly cached: boolean; readonly signal: AbortSignal }) => Promise<ManagedReleaseBundle>
+  readonly latest: (input: { readonly cached: boolean; readonly signal: AbortSignal }) => Promise<DiscoveredRelease>
   readonly exact: (input: { readonly version: string; readonly signal: AbortSignal }) => Promise<ManagedReleaseBundle>
   readonly acquireArtifact: (bundle: ManagedReleaseBundle, name: string, signal: AbortSignal) => Promise<AcquiredReleaseArtifact>
 }
@@ -170,9 +204,10 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
     if (!Number.isFinite(cached.checkedAt) || cached.checkedAt < 0 || cached.checkedAt > Date.now()) throw new Error("Invalid catalog timestamp")
     return cached
   })
+  const migrationMarker = () => optional(adoptionFile, value =>
+    Schema.decodeUnknownSync(MigrationAdoption, { onExcessProperty: "error" })(value))
   const adoptedMigration = async () => {
-    const [marker, catalog] = await Promise.all([optional(adoptionFile, value =>
-      Schema.decodeUnknownSync(MigrationAdoption, { onExcessProperty: "error" })(value)), cachedMigrationCatalog()])
+    const [marker, catalog] = await Promise.all([migrationMarker(), cachedMigrationCatalog()])
     return marker !== undefined || catalog !== undefined
   }
   const receipt = (version: string, migration = false) => optional(receiptFile(version, migration), value => {
@@ -186,7 +221,7 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
     if (!release) throw new ReleaseDiscoveryError("state", "Release discovery state is busy.")
     try { signal.throwIfAborted(); return await run() } finally { release() }
   }
-  const remember = async (bundle: ManagedReleaseBundle) => {
+  const assertKnownBundle = async (bundle: ManagedReleaseBundle) => {
     const migration = bundle.protocol === "atape.release-bundle.v2"
     const saved = await receipt(bundle.version, migration)
     if (saved && managedReleaseBundleFingerprint(saved) !== managedReleaseBundleFingerprint(bundle)) {
@@ -199,17 +234,28 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
     if (other && baseFingerprint(other) !== baseFingerprint(bundle)) {
       throw new ReleaseDiscoveryError("integrity", "A known release version changed its immutable package bytes across catalog protocols.")
     }
-    if (migration) await atomicJSON(adoptionFile, { protocol: "atape.update-catalog.v2" })
+    return saved
+  }
+  const remember = async (bundle: ManagedReleaseBundle) => {
+    const migration = bundle.protocol === "atape.release-bundle.v2", saved = await assertKnownBundle(bundle)
+    if (migration && !await migrationMarker()) await atomicJSON(adoptionFile, { protocol: "atape.update-catalog.v2" })
     if (!saved) await atomicJSON(receiptFile(bundle.version, migration), bundle)
     return bundle
   }
+  const fromCache = (bundle: ManagedReleaseBundle, freshness: DiscoveredRelease["freshness"], signal: AbortSignal) =>
+    locked(signal, async () => ({ bundle: await remember(compatible(bundle)), freshness }))
   const versionRelease = async (version: string, signal: AbortSignal) => {
-    const release = Schema.decodeUnknownSync(GithubRelease)(await metadata(`${github}v${version}`, signal, fetchMetadata))
-    if (release.tag_name !== `v${version}` || release.prerelease || release.draft || !published(release.published_at)) {
-      throw new ReleaseDiscoveryError("metadata", "The versioned Release is not a published stable release.")
+    if (options.supportedMigrationPlans !== undefined) {
+      try {
+        const bundle = decodeMigrationReleaseBundle(await metadata(releaseBundleURL(version, "atape.release-bundle.v2"), signal, fetchMetadata))
+        if (bundle.version !== version) throw new ReleaseDiscoveryError("metadata", "The static descriptor has a different version.")
+        return bundle
+      } catch (cause) {
+        if (signal.aborted || !(cause instanceof MissingRelease)) throw cause
+      }
     }
-    const bundle = (options.supportedMigrationPlans === undefined ? undefined : migrationReleaseBundleFromBody(release.body)) ?? releaseBundleFromBody(release.body)
-    if (bundle && bundle.version !== version) throw new ReleaseDiscoveryError("metadata", "The Release descriptor has a different version.")
+    const bundle = decodeReleaseBundle(await metadata(releaseBundleURL(version, "atape.release-bundle.v1"), signal, fetchMetadata))
+    if (bundle.version !== version) throw new ReleaseDiscoveryError("metadata", "The static descriptor has a different version.")
     return bundle
   }
   const deriveRunningBundle = async (version: string, signal: AbortSignal) => {
@@ -227,22 +273,19 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
       updateControlProtocol: options.updateControlProtocol, packages })
   }
 
-  const latestLegacy = async ({ cached, signal }: { readonly cached: boolean; readonly signal: AbortSignal }): Promise<ManagedReleaseBundle> => {
+  const latestLegacy = async ({ cached, signal }: { readonly cached: boolean; readonly signal: AbortSignal }): Promise<DiscoveredRelease> => {
       signal.throwIfAborted()
       const saved = await cachedCatalog()
       if (cached && saved && Date.now() - saved.checkedAt < cacheLifetime) {
-        return compatible(selectReleaseBundle(saved.catalog, options))
+        return fromCache(selectReleaseBundle(saved.catalog, options), "fresh", signal)
       }
       let catalog: typeof ReleaseCatalog.Type
       try {
-        const release = Schema.decodeUnknownSync(GithubRelease)(await metadata(`${github}${updateCatalogTag}`, signal, fetchMetadata))
-        if (release.tag_name !== updateCatalogTag || !release.prerelease || release.draft || !published(release.published_at)) {
-          throw new ReleaseDiscoveryError("metadata", "The fixed catalog Release is not a published prerelease.")
-        }
-        catalog = decodeReleaseCatalog(JSON.parse(release.body))
+        catalog = decodeReleaseCatalog(await metadata(releaseCatalogURL("atape.update-catalog.v1"), signal, fetchMetadata,
+          { retry: !(cached && saved !== undefined) }))
       } catch (cause) {
         if (!signal.aborted && cached && saved && cause instanceof ReleaseDiscoveryError && cause.reason === "transport") {
-          return compatible(selectReleaseBundle(saved.catalog, options))
+          return fromCache(selectReleaseBundle(saved.catalog, options), "stale", signal)
         }
         throw cause
       }
@@ -258,24 +301,23 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
               releaseBundleFingerprint(after) !== releaseBundleFingerprint(before)) throw new ReleaseDiscoveryError("integrity", "The release catalog removed or rewrote a known family target.")
           }
         }
+        // Reject the complete catalog before adding any new authority receipt.
+        for (const bundle of catalog.bundles) await assertKnownBundle(bundle)
         for (const bundle of catalog.bundles) await remember(bundle)
         await atomicJSON(cacheFile, { checkedAt: Date.now(), catalog })
-        return selected
+        return { bundle: selected, freshness: "fresh" }
       })
     }
-  const latestMigration = async ({ cached, signal }: { readonly cached: boolean; readonly signal: AbortSignal }): Promise<ManagedReleaseBundle> => {
+  const latestMigration = async ({ cached, signal }: { readonly cached: boolean; readonly signal: AbortSignal }): Promise<DiscoveredRelease> => {
     signal.throwIfAborted()
     const saved = await cachedMigrationCatalog(), adopted = await adoptedMigration()
     if (cached && saved && Date.now() - saved.checkedAt < cacheLifetime) {
-      return compatible(selectMigrationReleaseBundle(saved.catalog, { ...options, supportedMigrationPlans: options.supportedMigrationPlans! }))
+      return fromCache(selectMigrationReleaseBundle(saved.catalog, { ...options, supportedMigrationPlans: options.supportedMigrationPlans! }), "fresh", signal)
     }
     let catalog: MigrationReleaseCatalog
     try {
-      const release = Schema.decodeUnknownSync(GithubRelease)(await metadata(`${github}${migrationReleaseCatalogTag}`, signal, fetchMetadata))
-      if (release.tag_name !== migrationReleaseCatalogTag || !release.prerelease || release.draft || !published(release.published_at)) {
-        throw new ReleaseDiscoveryError("metadata", "The fixed migration catalog Release is not a published prerelease.")
-      }
-      catalog = decodeMigrationReleaseCatalog(JSON.parse(release.body))
+      catalog = decodeMigrationReleaseCatalog(await metadata(releaseCatalogURL("atape.update-catalog.v2"), signal, fetchMetadata,
+        { retry: !(cached && saved !== undefined) }))
     } catch (cause) {
       if (signal.aborted) throw cause
       if (!adopted && cause instanceof MissingRelease) {
@@ -286,7 +328,7 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
         })
       }
       if (cached && saved && cause instanceof ReleaseDiscoveryError && cause.reason === "transport") {
-        return compatible(selectMigrationReleaseBundle(saved.catalog, { ...options, supportedMigrationPlans: options.supportedMigrationPlans! }))
+        return fromCache(selectMigrationReleaseBundle(saved.catalog, { ...options, supportedMigrationPlans: options.supportedMigrationPlans! }), "stale", signal)
       }
       throw cause
     }
@@ -307,10 +349,11 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
       }
       // Receipts include every advertised target, including routes this runtime
       // does not know. A later compatible runtime must see the same bytes.
+      for (const bundle of catalog.bundles) await assertKnownBundle(bundle)
       await atomicJSON(adoptionFile, { protocol: "atape.update-catalog.v2" })
       for (const bundle of catalog.bundles) await remember(bundle)
       await atomicJSON(migrationCacheFile, { checkedAt: Date.now(), catalog })
-      return selected
+      return { bundle: selected, freshness: "fresh" }
     })
   }
 
@@ -322,9 +365,15 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
       if (options.supportedMigrationPlans !== undefined) await adoptedMigration()
       const migrationSaved = options.supportedMigrationPlans === undefined ? undefined : await receipt(version, true)
       const saved = migrationSaved ?? await receipt(version)
+      // A verified immutable receipt is sufficient for preparation and package
+      // repair. Legacy family receipts never authorize a migration route.
+      if (migrationSaved || options.supportedMigrationPlans === undefined && saved) {
+        return locked(signal, () => remember(compatible(saved!)))
+      }
       if (version !== options.runtimeVersion && !saved) {
-        const advertised = await discovery.latest({ cached: false, signal })
+        const { bundle: advertised } = await discovery.latest({ cached: false, signal })
         if (advertised.version !== version) throw new ReleaseDiscoveryError("metadata", "The requested version is not an advertised compatible release.")
+        return locked(signal, () => remember(compatible(advertised)))
       }
       let bundle: ManagedReleaseBundle | undefined
       try { bundle = await versionRelease(version, signal) }
@@ -344,7 +393,7 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
       }
       const selected = compatible(bundle)
       if (selected.protocol === "atape.release-bundle.v2" && version !== options.runtimeVersion && !await receipt(version, true)) {
-        const advertised = await discovery.latest({ cached: false, signal })
+        const { bundle: advertised } = await discovery.latest({ cached: false, signal })
         if (advertised.protocol !== "atape.release-bundle.v2" || managedReleaseBundleFingerprint(advertised) !== managedReleaseBundleFingerprint(selected)) {
           throw new ReleaseDiscoveryError("metadata", "The requested migration version is not an advertised compatible release.")
         }
@@ -388,5 +437,3 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
   }
   return discovery
 }
-
-const published = (value: string) => Number.isFinite(Date.parse(value)) && Date.parse(value) <= Date.now()

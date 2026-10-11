@@ -27,7 +27,7 @@ export const makeDeviceMonitoringLayer = (home: string, config: Effect.Effect<Cl
         const packages = ["@atape/cli", ...local.adapters.map(a => a.packageName)
           .filter(name => officialSources.some(source => source.packageName === name))]
         try {
-          const bundle = await discovery.latest({ cached: true, signal: AbortSignal.any([signal, AbortSignal.timeout(1_500)]) })
+          const { bundle } = await discovery.latest({ cached: true, signal: AbortSignal.any([signal, AbortSignal.timeout(1_500)]) })
           return Object.fromEntries([...new Set(packages)].map(name => [name, bundle.version]))
         } catch { return {} }
       }, catch: () => new Error("Version check unavailable") })
