@@ -105,16 +105,54 @@ EBS can grow online, but it cannot shrink. Check the three independent sources
 of pressure:
 
 ```sh
+cd /opt/atape/app
+export COMPOSE_FILE=/opt/atape/app/compose.yaml:/opt/atape/app/compose.publication.yaml:/opt/atape/app/compose.server-release.yaml:/opt/atape/app/compose.web-release.yaml
 df -h /
 docker system df
-docker compose exec -T database \
+docker compose --env-file /opt/atape/app/.env exec -T database \
   psql -U atape -d atape -Atc "select pg_size_pretty(pg_database_size('atape'));"
 ```
 
-Skipping automated backup is acceptable only while the dogfood data is
-explicitly disposable. Do not mark the staging attestation complete or publish
-a production release until the repository's paired backup and restore gate has
-been exercised.
+Skipping scheduled backup is acceptable only while dogfood data is explicitly
+disposable. The automated isolated paired-restore gate remains mandatory for a
+package release. [ADR-0048](../architecture/adr/0048-release-request-manual-acceptance.md)
+permits an explicitly authorized candidate-bound waiver of incomplete manual
+staging checks, including operational backup/restore. That waiver does not
+complete staging or establish that a production restore happened.
+
+## Server image updates
+
+Server maintenance is separately authorized. Retain the current image and a fresh
+consistent PostgreSQL/Raw recovery point before changing it. Hold
+`/opt/atape/.web-deploy.lock`, shared with automatic Web deployment, while
+resolving the independently serving Web image/revision and changing Server pins.
+The host persists the same verified image for `server` and `server-init` in
+`compose.server-release.yaml`, plus a matching `ATAPE_SERVER_IMAGE` in `.env`.
+Change and verify both pins together. The `.env` pin also protects the base image
+selection during the existing automatic Web-only rollout.
+
+Manual Compose operations must retain the base, publication, Server and Web
+overrides, including backup and restore. Preserve this topology when using
+[the backup/restore scripts](backup-and-restore.md), with
+`ATAPE_COMPOSE_ENV_FILE=/opt/atape/app/.env`. Keep database services running as
+required by those scripts; stop all application writers for the PostgreSQL/Raw
+pair. The ordinary backup script temporarily stops Server/Web and restores their
+previous running state. A maintenance workflow that needs writers to remain
+stopped must retain that boundary through backup and subsequent verification.
+Taking a backup does not prove that restore has been exercised.
+
+V4 adds no database schema migration for 0.5.9. After current readable v4 data is
+accepted, an image-only rollback to a pre-v4 Server cannot promise Reader
+compatibility. A deliberate incompatible rollback needs the matching paired
+PostgreSQL/Raw restore and old image/environment pin; that restore withdraws later
+writes. Readiness failure alone must not trigger a blind data restore. Keep
+writers stopped while the durable-data boundary is uncertain, retain evidence and
+choose a compatible recovery path. An encrypted root-volume snapshot is an
+additional recovery point, not a replacement for the paired-data contract.
+
+[The 0.5.9 delivery record](../releases/evidence/v0.5.9-delivery.json) records the
+actual Server, recovery-point, API smoke and package-distribution outcomes;
+manual staging acceptance remains separately pending.
 
 ## Automatic Web deployment
 
@@ -154,23 +192,34 @@ load their code chunks. Build failure leaves Web untouched; rollout or local
 revision-check failure restores the previous image. A public-edge failure marks
 the workflow failed for investigation rather than repeatedly restarting Web.
 
-Subsequent Compose operations must include the persisted image override:
+Subsequent manual Compose operations must include all persisted overrides:
 
 ```sh
 cd /opt/atape/app
-docker compose -f compose.yaml -f compose.web-release.yaml ps
+export COMPOSE_FILE=/opt/atape/app/compose.yaml:/opt/atape/app/compose.publication.yaml:/opt/atape/app/compose.server-release.yaml:/opt/atape/app/compose.web-release.yaml
+docker compose --env-file /opt/atape/app/.env config --quiet
+docker compose --env-file /opt/atape/app/.env config --images
+docker compose --env-file /opt/atape/app/.env ps
 ```
+
+Verify that `server` and `server-init` resolve to the same reviewed image and that
+the running Server has that image identity. These are host-maintained image pins;
+do not infer their value from a release tag or replace them during Web-only work.
 
 The host records `.last-web-release` and `.previous-web-release` under
 `/opt/atape/`. Images use `atape-web:<sha>`; each attempt retains the prior image
-as `atape-web:rollback-<attempted-sha>`. For an explicit rollback, set the Web image
-in `compose.web-release.yaml` to that rollback tag and run:
+as `atape-web:rollback-<attempted-sha>`. For a compatible Web-only rollback, hold
+the same deployment lock, preserve the complete `COMPOSE_FILE` above and set only
+the Web image in `compose.web-release.yaml` to the retained reviewed tag. Run:
 
 ```sh
-docker compose -f compose.yaml -f compose.web-release.yaml \
+docker compose --env-file /opt/atape/app/.env \
   up -d --no-deps --no-build --wait --wait-timeout 120 web
 curl -fsS http://127.0.0.1:8080/__web-release.json
 ```
+
+This recreates only Web. It does not run init, restart Server, migrate or restore
+data, and it is not a Server rollback procedure.
 
 Automatic rollout does not delete Docker images. Use the storage guardrail above
 and retain the active and rollback images when reclaiming old build cache/images.
