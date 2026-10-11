@@ -75,7 +75,7 @@ const collectProject = () => runtime.runPromise(runCollector({ once: true, proje
 try {
   await run("node", ["scripts/pack-release.mjs"], repositoryRoot)
   await verifyChecksums()
-  await run(process.execPath, ["--test", fileURLToPath(new URL("tool-identity-release-gate.test.mjs", import.meta.url))], repositoryRoot)
+  await run(process.execPath, ["--test", fileURLToPath(new URL("tool-identity-release-gate.node.mjs", import.meta.url))], repositoryRoot)
   await verifyToolIdentityRelease({ version: release.version, releaseDirectory })
   await verifyChecksums()
   await Promise.all([

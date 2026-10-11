@@ -229,5 +229,24 @@
     "realOSRegistration": "not exercised",
     "manualStaging": "pending; separate authorized manual-only waiver is required"
   },
-  "privacy": "Public artifact identities, sanitized synthetic acceptance and provenance metadata only; no credentials, transcript bodies or private user state."
+  "privacy": "Public artifact identities, sanitized synthetic acceptance and provenance metadata only; no credentials, transcript bodies or private user state.",
+  "refreeze": {
+    "previousCandidateCommit": "574a063cd73bc572d34e28d47cdc63d37486083d",
+    "reason": "Rename the standalone node:test suite outside Vitest discovery and update its explicit release verifier caller. Production source and all exact tarball bytes remain unchanged.",
+    "nodeSuiteCommand": "node --test apps/cli/scripts/tool-identity-release-gate.node.mjs",
+    "nodeSuiteTestsPassed": 5,
+    "nodeSuiteLogSha256": "46c482cb296eeab396573e78d446ab534eb8d0aafde88a6a9bc0a9da08e34714",
+    "vitestDiscoveryFiles": 58,
+    "vitestDoesNotCollectNodeSuite": true,
+    "vitestDiscoveryLogSha256": "61f0777ed890d8b1ab3248005f0a117a89cd1414fc759b0c994d63b860089abb",
+    "freshCompleteGates": "Must run on the corrected frozen candidate; prior success does not attest this suite-discovery change."
+  },
+  "initialPRCheck": {
+    "passed": false,
+    "workflowRun": 38118131343,
+    "failedSuite": "apps/cli/scripts/tool-identity-release-gate.test.mjs",
+    "failure": "Vitest collected a Node-only test file and reported No test suite found.",
+    "logSha256": "2ec2c6b43e11caba346029147a0d3fea952c82162097411a88f24e9b36728b46",
+    "failurePreserved": true
+  }
 }
