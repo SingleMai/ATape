@@ -122,7 +122,7 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		typ = typ.Elem()
 	}
 	if alternatives, ok := schema.Type.([]any); ok {
-		primitive := map[reflect.Kind]string{reflect.String: "string", reflect.Int64: "integer", reflect.Struct: "object"}[typ.Kind()]
+		primitive := map[reflect.Kind]string{reflect.String: "string", reflect.Int64: "integer", reflect.Float64: "number", reflect.Struct: "object"}[typ.Kind()]
 		if !nullable || primitive == "" || len(alternatives) != 2 || !slices.Contains(alternatives, any(primitive)) || !slices.Contains(alternatives, any("null")) {
 			return fmt.Errorf("%s: nullable schema does not describe %s", path, typ)
 		}
@@ -134,7 +134,7 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		}
 		return nil
 	}
-	want := map[reflect.Kind]string{reflect.Struct: "object", reflect.Slice: "array", reflect.String: "string", reflect.Int: "integer", reflect.Int64: "integer"}[typ.Kind()]
+	want := map[reflect.Kind]string{reflect.Struct: "object", reflect.Slice: "array", reflect.String: "string", reflect.Int: "integer", reflect.Int64: "integer", reflect.Float64: "number", reflect.Bool: "boolean"}[typ.Kind()]
 	if want == "" || schema.Type != want {
 		return fmt.Errorf("%s: schema type %q does not describe %s", path, schema.Type, typ)
 	}
@@ -183,5 +183,21 @@ func TestReaderSchemaComparisonChecksNullableSourceClocks(t *testing.T) {
 	}
 	if err := compareReaderSchema(reflect.TypeOf(""), schema, nil, "clock"); err == nil {
 		t.Fatal("nullable schema admitted a non-nullable source clock")
+	}
+}
+
+func TestReaderSchemaComparisonChecksActivityNumericAndBooleanFields(t *testing.T) {
+	var span *float64
+	if err := compareReaderSchema(reflect.TypeOf(span), readerSchema{Type: []any{"number", "null"}}, nil, "span"); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareReaderSchema(reflect.TypeOf(span), readerSchema{Type: []any{"integer", "null"}}, nil, "span"); err == nil {
+		t.Fatal("admitted integer span schema for fractional milliseconds")
+	}
+	if err := compareReaderSchema(reflect.TypeOf(true), readerSchema{Type: "boolean"}, nil, "includesEnd"); err != nil {
+		t.Fatal(err)
+	}
+	if err := compareReaderSchema(reflect.TypeOf(true), readerSchema{Type: "integer"}, nil, "includesEnd"); err == nil {
+		t.Fatal("admitted numeric interval inclusion")
 	}
 }

@@ -16,7 +16,7 @@ const analyticsNativeBytes = `-- name: AnalyticsNativeBytes :one
 SELECT COALESCE(sum(source_bytes),0)::bigint AS source_bytes FROM (
  SELECT sum(octet_length(e.id)::bigint+octet_length(e.session_id)+octet_length(e.thread_id)+octet_length(e.source_key)
   +octet_length(e.order_fidelity)+octet_length(e.fidelity)+octet_length(e.kind)+octet_length(e.author)
-  +octet_length(e.text)+octet_length(e.tool_update_json)+octet_length(e.tool_label)
+  +octet_length(e.text)+octet_length(e.tool_update_json)+octet_length(e.tool_label)+octet_length(e.schema_version)
   +octet_length(COALESCE(e.child_thread_id,''))+256) AS source_bytes
  FROM canonical_events e WHERE e.session_id=$1
  UNION ALL
@@ -58,7 +58,7 @@ func (q *Queries) AnalyticsPublicationBytes(ctx context.Context, attemptID pgtyp
 
 const listAnalyticsNativeEvents = `-- name: ListAnalyticsNativeEvents :many
 SELECT id,session_id,thread_id,source_key,revision,projection_revision,
- source_order,event_index,order_fidelity,fidelity,kind,author,occurred_at,tool_label,child_thread_id,
+ source_order,event_index,order_fidelity,fidelity,kind,author,occurred_at,tool_label,child_thread_id,schema_version,
  encode(sha256(convert_to(text,'UTF8')),'hex')::text AS text_digest,
  encode(sha256(convert_to(tool_update_json,'UTF8')),'hex')::text AS tool_digest,
  CASE WHEN tool_update_json='' THEN '' ELSE (tool_update_json::jsonb - 'rawInput' - 'rawOutput')::text END::text AS tool_update_json
@@ -86,6 +86,7 @@ type ListAnalyticsNativeEventsRow struct {
 	OccurredAt         *time.Time
 	ToolLabel          string
 	ChildThreadID      *string
+	SchemaVersion      string
 	TextDigest         string
 	ToolDigest         string
 	ToolUpdateJson     string
@@ -116,6 +117,7 @@ func (q *Queries) ListAnalyticsNativeEvents(ctx context.Context, arg ListAnalyti
 			&i.OccurredAt,
 			&i.ToolLabel,
 			&i.ChildThreadID,
+			&i.SchemaVersion,
 			&i.TextDigest,
 			&i.ToolDigest,
 			&i.ToolUpdateJson,

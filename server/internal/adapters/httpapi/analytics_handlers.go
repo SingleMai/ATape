@@ -1,7 +1,10 @@
 package httpapi
 
 import (
+	"mime"
 	"net/http"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
@@ -16,7 +19,13 @@ func (h *Handler) sessionAnalyticsEvidence(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, evidence bool) {
-	values, ok := strictQuery(w, r, "snapshot", "metric", "thread", "tool", "capability", "server", "cursor", "limit")
+	appendVary(w.Header(), "Accept")
+	version, validAccept := analyticsVersion(r.Header.Values("Accept"))
+	if !validAccept {
+		writeProblem(w, r, problemInvalidRequest, 0, nil)
+		return
+	}
+	values, ok := strictQuery(w, r, "snapshot", "metric", "thread", "tool", "capability", "server", "cursor", "limit", "range")
 	if !ok {
 		return
 	}
@@ -45,10 +54,62 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 	result, err := h.analytics.Open(r.Context(), principalFromContext(r.Context()), r.PathValue("sessionId"), sessionanalytics.Query{
 		Snapshot: values.Get("snapshot"), Metric: values.Get("metric"), Thread: values.Get("thread"),
 		Tool: values.Get("tool"), Capability: values.Get("capability"), Server: values.Get("server"), Cursor: values.Get("cursor"), Limit: limit,
+		AnalyticsVersion: version, Range: values.Get("range"),
 	})
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, result)
+}
+
+// The standard safelisted Accept header allows one request to an older Server:
+// it can ignore this vendor range and return its existing JSON representation.
+func analyticsVersion(values []string) (int, bool) {
+	const vendor = "application/vnd.atape.session-analytics.v3+json"
+	version, size := sessionanalytics.Version, 0
+	for _, field := range values {
+		size += len(field)
+		if size > 4096 {
+			return 0, false
+		}
+		for _, item := range strings.Split(field, ",") {
+			media, parameters, err := mime.ParseMediaType(strings.TrimSpace(item))
+			if err != nil {
+				if strings.EqualFold(strings.TrimSpace(strings.SplitN(item, ";", 2)[0]), vendor) {
+					return 0, false
+				}
+				continue
+			}
+			if media != vendor {
+				continue
+			}
+			quality := 1.0
+			if value, found := parameters["q"]; found {
+				if !validAnalyticsQuality(value) {
+					return 0, false
+				}
+				quality, _ = strconv.ParseFloat(value, 64)
+			}
+			if quality > 0 {
+				version = sessionanalytics.ActivityVersion
+			}
+		}
+	}
+	return version, true
+}
+
+func validAnalyticsQuality(value string) bool {
+	if value == "0" || value == "1" {
+		return true
+	}
+	if len(value) < 2 || len(value) > 5 || value[1] != '.' || value[0] != '0' && value[0] != '1' {
+		return false
+	}
+	for _, digit := range value[2:] {
+		if digit < '0' || digit > '9' || value[0] == '1' && digit != '0' {
+			return false
+		}
+	}
+	return true
 }

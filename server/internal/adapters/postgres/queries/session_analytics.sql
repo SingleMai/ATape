@@ -4,7 +4,7 @@ FROM visible_canonical_threads WHERE session_id=$1 ORDER BY id LIMIT $2;
 
 -- name: ListAnalyticsNativeEvents :many
 SELECT id,session_id,thread_id,source_key,revision,projection_revision,
- source_order,event_index,order_fidelity,fidelity,kind,author,occurred_at,tool_label,child_thread_id,
+ source_order,event_index,order_fidelity,fidelity,kind,author,occurred_at,tool_label,child_thread_id,schema_version,
  encode(sha256(convert_to(text,'UTF8')),'hex')::text AS text_digest,
  encode(sha256(convert_to(tool_update_json,'UTF8')),'hex')::text AS tool_digest,
  CASE WHEN tool_update_json='' THEN '' ELSE (tool_update_json::jsonb - 'rawInput' - 'rawOutput')::text END::text AS tool_update_json
@@ -14,7 +14,7 @@ FROM canonical_events WHERE session_id=$1 ORDER BY id LIMIT $2;
 SELECT COALESCE(sum(source_bytes),0)::bigint AS source_bytes FROM (
  SELECT sum(octet_length(e.id)::bigint+octet_length(e.session_id)+octet_length(e.thread_id)+octet_length(e.source_key)
   +octet_length(e.order_fidelity)+octet_length(e.fidelity)+octet_length(e.kind)+octet_length(e.author)
-  +octet_length(e.text)+octet_length(e.tool_update_json)+octet_length(e.tool_label)
+  +octet_length(e.text)+octet_length(e.tool_update_json)+octet_length(e.tool_label)+octet_length(e.schema_version)
   +octet_length(COALESCE(e.child_thread_id,''))+256) AS source_bytes
  FROM canonical_events e WHERE e.session_id=$1
  UNION ALL

@@ -49,7 +49,7 @@ export const useSessionAnalyticsPresenter = (sessionId: string) => {
       setQuery({ metric: "tools" }); setRevision(value => value + 1)
     },
     filter: (filter: SessionAnalyticsFilter) =>
-      setQuery(selectSessionAnalyticsEvidence(filter, state._tag === "Ready" ? state.value.snapshot : undefined)),
+      setQuery(selectSessionAnalyticsEvidence(filter, state._tag === "Ready" ? state.value.snapshot : undefined, query)),
     next: () => {
       if (state._tag === "Ready" && state.value.evidence.nextCursor) {
         setQuery({ ...query, snapshot: state.value.snapshot, cursor: state.value.evidence.nextCursor })

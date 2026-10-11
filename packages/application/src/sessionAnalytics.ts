@@ -19,11 +19,13 @@ export class SessionAnalyticsGateway extends Context.Service<SessionAnalyticsGat
 export const canFilterSessionAnalyticsTool = (label: string): boolean =>
   new TextEncoder().encode(label).byteLength <= 500
 
-export type SessionAnalyticsFilter = Pick<SessionAnalyticsQuery, "metric" | "thread" | "tool" | "capability" | "server">
+export type SessionAnalyticsFilter = Pick<SessionAnalyticsQuery, "metric" | "thread" | "tool" | "capability" | "server" | "range">
 
-// Changing the evidence metric keeps compatible selections and clears filters
-// that the selected metric cannot accept. Stats remain whole-session reads.
-export const selectSessionAnalyticsEvidence = (filter: SessionAnalyticsFilter, snapshot?: string): SessionAnalyticsQuery => {
+// Changing evidence selection clears incompatible filters and old ranges.
+// Thread selection scopes activity and evidence; summary, tools and usage remain
+// whole-Session reads.
+export const selectSessionAnalyticsEvidence = (filter: SessionAnalyticsFilter, snapshot?: string,
+  previous?: SessionAnalyticsQuery): SessionAnalyticsQuery => {
   const metric = filter.metric ?? "tools"
   return {
     metric,
@@ -31,7 +33,10 @@ export const selectSessionAnalyticsEvidence = (filter: SessionAnalyticsFilter, s
     ...(filter.thread ? { thread: filter.thread } : {}),
     ...(filter.tool && ["tools", "failed_tools", "unknown_tools"].includes(metric) ? { tool: filter.tool } : {}),
     ...(filter.capability && ["mcp_tools", "skills"].includes(metric) ? { capability: filter.capability } : {}),
-    ...(filter.server && metric === "mcp_tools" ? { server: filter.server } : {})
+    ...(filter.server && metric === "mcp_tools" ? { server: filter.server } : {}),
+    ...(filter.range && metric === "records" && snapshot &&
+      (previous === undefined || (previous.thread ?? "") === (filter.thread ?? "") &&
+        (previous.snapshot === undefined || previous.snapshot === snapshot)) ? { range: filter.range } : {})
   }
 }
 
@@ -40,6 +45,12 @@ export const readSessionAnalytics = Effect.fn("SessionAnalytics.read")(function*
     (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100))) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
       message: "Analytics pagination requires a snapshot and a valid page size." }))
+  }
+  if (query.range !== undefined && (!query.snapshot || query.metric !== "records" || query.tool !== undefined ||
+    query.capability !== undefined || query.server !== undefined || query.range.trim() === "" ||
+    new TextEncoder().encode(query.range).byteLength > 512)) {
+    return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
+      message: "Activity ranges require a snapshot and records evidence without tool or capability filters." }))
   }
   const gateway = yield* SessionAnalyticsGateway
   const result = yield* gateway.read(sessionId, query)
@@ -50,6 +61,14 @@ export const readSessionAnalytics = Effect.fn("SessionAnalytics.read")(function*
   if (query.snapshot !== undefined && result.snapshot !== query.snapshot) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 409, code: "refresh_required",
       message: "The conversation changed. Reload its analytics." }))
+  }
+  if (query.metric === "records" && result.analyticsVersion !== 3) {
+    return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
+      message: "This Server does not provide records evidence. Reload its supported analysis." }))
+  }
+  if (result.analyticsVersion === 3 && result.activity.scopeThreadId !== (query.thread ?? null)) {
+    return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "decode",
+      message: "The activity response belongs to a different Thread scope." }))
   }
   return result
 })

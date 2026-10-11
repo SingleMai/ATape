@@ -1,10 +1,27 @@
 import { Schema } from "effect"
 
-export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills"])
+export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills", "records"])
 export type SessionAnalyticsMetric = typeof SessionAnalyticsMetric.Type
 
 const Count = Schema.Number
 const NullableCount = Schema.NullOr(Count)
+const ActivityCount = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))
+const ActivityRange = Schema.String.check(Schema.isMinLength(1),
+  Schema.makeFilter(value => new TextEncoder().encode(value).byteLength <= 512))
+export const SessionAnalyticsClockQuality = Schema.Literals(["recorded", "unknown", "legacy"])
+export type SessionAnalyticsClockQuality = typeof SessionAnalyticsClockQuality.Type
+export const SessionAnalyticsActivity = Schema.Struct({
+  scopeThreadId: Schema.NullOr(Schema.String),
+  eventCount: ActivityCount, recordedTimeEvents: ActivityCount, unknownTimeEvents: ActivityCount, legacyTimeEvents: ActivityCount,
+  firstRecordedAt: Schema.NullOr(Schema.String), lastRecordedAt: Schema.NullOr(Schema.String),
+  recordSpanMilliseconds: Schema.NullOr(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER))),
+  backwardClockTransitions: ActivityCount,
+  buckets: Schema.Array(Schema.Struct({ from: Schema.String, to: Schema.String, includesEnd: Schema.Boolean,
+    records: ActivityCount, messages: ActivityCount, thoughts: ActivityCount, toolCalls: ActivityCount, range: ActivityRange
+  })).check(Schema.isMaxLength(60)),
+  unplacedRange: Schema.NullOr(ActivityRange)
+})
+export type SessionAnalyticsActivity = typeof SessionAnalyticsActivity.Type
 export const SessionAnalyticsTokens = Schema.Struct({
   total: NullableCount, input: NullableCount, output: NullableCount,
   cacheRead: NullableCount, cacheWrite: NullableCount,
@@ -58,7 +75,15 @@ export type SessionAnalyticsCapabilities = typeof SessionAnalyticsCapabilities.T
 // explicit empty arrays and zero counts; omission must not become invented zero.
 export const SessionAnalytics = Schema.Union([
   Schema.Struct({ analyticsVersion: Schema.Literal(1), ...AnalyticsFields }),
-  Schema.Struct({ analyticsVersion: Schema.Literal(2), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities })
+  Schema.Struct({ analyticsVersion: Schema.Literal(2), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities }),
+  Schema.Struct({ analyticsVersion: Schema.Literal(3), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities,
+    activity: SessionAnalyticsActivity,
+    evidence: Schema.Struct({
+      items: Schema.Array(Schema.Struct({ ...AnalyticsFields.evidence.fields.items.value.fields,
+        clockQuality: SessionAnalyticsClockQuality })),
+      nextCursor: Schema.optionalKey(Schema.String)
+    })
+  })
 ])
 export type SessionAnalytics = typeof SessionAnalytics.Type
 
@@ -69,6 +94,7 @@ export type SessionAnalyticsQuery = {
   readonly tool?: string
   readonly capability?: string
   readonly server?: string
+  readonly range?: string
   readonly cursor?: string
   readonly limit?: number
 }
