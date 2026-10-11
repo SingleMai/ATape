@@ -426,5 +426,7 @@
   "cli.start.confirmed": "会话创建已确认：{sourceId}",
   "cli.start.help": "启动受控的编程会话\n\n用法：\n  atape start --tool <id> [--project <id>] [--prompt <原文>] [--lang <语言>]\n\n请在已注册项目内的 macOS 或 Linux 交互式终端运行。\n工具须已安装、启用并支持受控创建。多个 Git 项目匹配时请用 --project 选择。\n提示词按原文传递，最多 64 KiB UTF-8 且不能含 NUL。\n创建凭据确认后，后台采集才能收录这个会话。",
   "cli.start.unconfirmed": "会话已退出，创建尚未确认：{sourceId}",
-  "cli.start.terminalRequired": "启动会话需要 macOS 或 Linux 交互式终端。运行 atape start --help 查看用法。"
+  "cli.start.terminalRequired": "启动会话需要 macOS 或 Linux 交互式终端。运行 atape start --help 查看用法。",
+  "cli.tools.officialAdaptersBehind": " · {count} 个官方集成需要配套更新",
+  "cli.tools.updateMatchingIntegrations": "更新 ATape {version} 的配套官方集成"
 }

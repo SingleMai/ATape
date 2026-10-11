@@ -1,0 +1,307 @@
+{
+  "protocol": "atape.tool-identity-candidate-acceptance.v1",
+  "releaseVersion": "0.5.9",
+  "recordedOn": "2026-10-11",
+  "candidateBaseCommit": "77c755845cf651628e034bd5102f807f466388c2",
+  "artifactBasis": "Locally built exact coordinated candidate tarballs; public publication and CI-produced bytes require separate verification.",
+  "packages": [
+    {
+      "filename": "atape-adapter-claude-0.5.5.tgz",
+      "sha256": "4c7f57a93dbd1e34df62a0639428f29e89ac20f935ec6a340fc5906765f3f149"
+    },
+    {
+      "filename": "atape-adapter-claude-0.5.6.tgz",
+      "sha256": "942799bf5a2d7c9566ba1e38a4a5f56affa4be540afca9f958bfc823ecc80e7f"
+    },
+    {
+      "filename": "atape-adapter-claude-0.5.9.tgz",
+      "sha256": "7906431efacd28d497904a5e8acddbac1be755209ef0b11b692122c77b76d9fa"
+    },
+    {
+      "filename": "atape-adapter-codebuddy-0.5.5.tgz",
+      "sha256": "07fcee258b78ba96e9f0b323e06757b692f228f6d51389ce13e0143024f837c4"
+    },
+    {
+      "filename": "atape-adapter-codebuddy-0.5.6.tgz",
+      "sha256": "f01881d43a1a62b424cd3651449c51d11c532498f17e4b1dadfb5a931153dc8d"
+    },
+    {
+      "filename": "atape-adapter-codebuddy-0.5.9.tgz",
+      "sha256": "8349d4d881f10d4c8b6600a0b3d7478fc76408cf2e7cff434862b6d2dccaeea5"
+    },
+    {
+      "filename": "atape-adapter-codex-0.5.5.tgz",
+      "sha256": "d9f2244602c38177c52e3e4b42261e9029c7973b0a6b045911bab352ee6ecbdf"
+    },
+    {
+      "filename": "atape-adapter-codex-0.5.6.tgz",
+      "sha256": "bbc12f3b4872e0a3b641aebb5a87b582e28c56d4d87eb430ec6a0910ce7ab8a0"
+    },
+    {
+      "filename": "atape-adapter-codex-0.5.9.tgz",
+      "sha256": "0359b3898c026c2792608b910b3215f4af1e94bb44c4a91e3a89466e7e2d7e62"
+    },
+    {
+      "filename": "atape-adapter-cursor-0.5.5.tgz",
+      "sha256": "03b2916d7afca02956902e414b2fafcf6304b9bda4275541508a992cc6ecfbba"
+    },
+    {
+      "filename": "atape-adapter-cursor-0.5.6.tgz",
+      "sha256": "277f545cdc53263d3d14c8ea47903e0bfb32872842af96bd387590f8a18c6225"
+    },
+    {
+      "filename": "atape-adapter-cursor-0.5.9.tgz",
+      "sha256": "503cb3e097886a7f86623c2e53538c9bf3fb9becd293716ab5dde42c44d4c91f"
+    },
+    {
+      "filename": "atape-adapter-grok-0.5.5.tgz",
+      "sha256": "e34b3544792fe6eb139704f7149f0c61946297bfed7a9f1cd1be0fcdd6be82e6"
+    },
+    {
+      "filename": "atape-adapter-grok-0.5.6.tgz",
+      "sha256": "74f5e90f349395604b5ebc9ba7b2ed19885dba1be08cae8bf624d5123f8cc65b"
+    },
+    {
+      "filename": "atape-adapter-grok-0.5.9.tgz",
+      "sha256": "3cec4671bdbe5971ab4078d6185043b8d2e49efb8af5c1c6a933b7bb4969473e"
+    },
+    {
+      "filename": "atape-adapter-kimi-0.5.5.tgz",
+      "sha256": "2502609ae7537acb0ac6bfdff8544c0241009695ee669b386504fb4f60d1558f"
+    },
+    {
+      "filename": "atape-adapter-kimi-0.5.6.tgz",
+      "sha256": "a4bb419f28f9eefd54799c4cf1013cfda8113935b6796d8fa5cd42211b49e2db"
+    },
+    {
+      "filename": "atape-adapter-kimi-0.5.9.tgz",
+      "sha256": "30c7b3135c3837e61d36c38c2caac4973cbf9c0e3932f69eae5fd18f6e6cf3d9"
+    },
+    {
+      "filename": "atape-adapter-opencode-0.5.5.tgz",
+      "sha256": "5aaf80c355212d4b3c479491c1918bd239e68ccb672fba993151787a0343c100"
+    },
+    {
+      "filename": "atape-adapter-opencode-0.5.6.tgz",
+      "sha256": "b671b74ec730350903299f19649dda3f4fa2d6c5ed76354d12d4ec83dcbc61b6"
+    },
+    {
+      "filename": "atape-adapter-opencode-0.5.9.tgz",
+      "sha256": "1ed516b64105a7dd1a85486e76d549205117f09e1b21d33f9375d4c287f89228"
+    },
+    {
+      "filename": "atape-cli-0.5.5.tgz",
+      "sha256": "a653c6348d3f8ebddb2646f34781eb631535f65dfa033368f97b882890026d95"
+    },
+    {
+      "filename": "atape-cli-0.5.6.tgz",
+      "sha256": "a49080386a359b5c6981d69935bb810e29fa641268bd04f56cd9429320046a10"
+    },
+    {
+      "filename": "atape-cli-0.5.9.tgz",
+      "sha256": "36cd746931942502467843e8c5eee1645c6140698b3ccdf16528534fc77b52d6"
+    }
+  ],
+  "genuineOldSourceRecovery": {
+    "recordedFrom": "Fresh completed public SourceCollector test on the candidate with the process-inspection correction.",
+    "command": "rtk proxy pnpm --filter @atape/cli exec vitest run src/runtime/sourceMetadataCompatibility.test.ts --no-file-parallelism --reporter=verbose --disable-console-intercept",
+    "startAtLocal": "2026-10-11 15:12:15",
+    "timezone": "Asia/Singapore",
+    "exitCode": 0,
+    "testFilesPassed": 1,
+    "testsPassed": 1,
+    "durationSeconds": 8.32,
+    "proof": {
+      "test": "genuine-0.5.8-source-free-v4-recovery",
+      "revision": "9b4db957a768b6a7a80ae9f3873a54fe3ea94002",
+      "lockSha256": "c12a7cf11c5273d89e8dc172f299af2528d6f3e2140546d85d55303371aba68c",
+      "dependencyMode": "historical-frozen-lock",
+      "runtime": {
+        "version": "0.5.8",
+        "captureStateContract": "atape.client.v3-capture.v2"
+      },
+      "toolchain": {
+        "node": "v24.18.0",
+        "pnpm": "11.7.0",
+        "esbuild": "0.28.2",
+        "effect": "4.0.0-rc.112"
+      },
+      "bundle": {
+        "bytes": 1402060,
+        "sha256": "d4a1f11748a23c7c546d8e1f9dacc0436803aeb77395cdd0e33a5d99c8a522a2"
+      },
+      "sources": [
+        {
+          "path": "apps/cli/src/runtime/captureJournal.ts",
+          "bytes": 65983,
+          "sha256": "d457fddd7ac54c7ed96297a4e61282e5b07836fce0864586887c4859052ddbbc"
+        },
+        {
+          "path": "packages/application/src/publicationDelivery.ts",
+          "bytes": 39147,
+          "sha256": "8d871c2bd7eb484de23694dad7ae2ea8dac35c4e743451dc925185cf5b946e19"
+        },
+        {
+          "path": "packages/application/src/sourceCollector.ts",
+          "bytes": 29123,
+          "sha256": "882d73c9a9f39bc67c239d4702783533cd269c25fbed9fa1a7293606a056d6b2"
+        },
+        {
+          "path": "packages/application/src/sourceMetadata.ts",
+          "bytes": 3026,
+          "sha256": "463f23d483112036e0f976ce98ef09a31dcc3455512664e42e05b97d7514254d"
+        }
+      ],
+      "sourceOpens": 0,
+      "frozenBytesPreserved": true,
+      "metadataBytesPreserved": true,
+      "pendingCleared": true
+    },
+    "logSha256": "abc428325c0db1b77dba9ee53a2afb6fa6036a6dddc5e6da38ec6726e3a01233"
+  },
+  "genuineInstalledUpgrade": {
+    "baselineVersion": "0.5.8",
+    "baselineIntegrities": {
+      "@atape/cli": "sha512-zSoXd95XwgXVy6ulGbFrtH5uDAPHossC5MU6Sxl3IG85MvxGgFA+Shae9bVMRI7bfX+/AhuCde67Gv9N6sIzlw==",
+      "@atape/adapter-claude": "sha512-oepXN4VV+WtoXd7MonxUIO0+JJbFpwgcVU0okPzjTfEnFWj5QiR5EkMJIoGSoFKpjA4UXWxVPq/N/OYVdzVvjQ=="
+    },
+    "baselineEntrySha256": "2e4e966ac2d9c0ef5cc776e2623bfa522fe0471df142bc71e9578fedd4aa2f78",
+    "candidateVersion": "0.5.9",
+    "candidateEntrySha256": "30fa103b1b2dccd98c7e3f29ae1bcdb0e813f3face74e2718af0c41b7972c42a",
+    "candidateCLIIntegrity": "sha512-w47H6TUqDg9bWLLKvYQ8J6jgMz0zT3MLs/wzKy9ZFCkkoM+2iReNUneYEeDM/YNHb3xzKP2pbrD1jdRcCQeehw==",
+    "candidateClaudeIntegrity": "sha512-UvbgYL796RzxA7gP2XdrBn9Zfkn2HrIZonj591SY9Z6dsfnLS7tK/0w9JNq5/08nv0ufO8HxAsBQtlDc47TOoQ==",
+    "genuineOldAutomaticRejectedBeforePause": true,
+    "genuineOldUIRejectedBeforePause": true,
+    "genuineOldManagedCollectorPreserved": true,
+    "externalRealNpmEntryRefresh": true,
+    "newRuntimeConsoleVerified": true,
+    "installedWholeBundleMenuCompleted": true,
+    "stopIntentPreserved": true,
+    "configAndProgressPreserved": true,
+    "credentialBytesPreserved": true,
+    "readerFloor": {
+      "minimumRuntimeVersion": "0.5.9",
+      "captureStateContract": "atape.client.v3-capture.v2"
+    },
+    "genuineOldRuntimeRejectedByFloor": true,
+    "providerCaptureTested": false,
+    "realOSRegistrationTested": false,
+    "server": "controlled owned HTTP Test Adapter advertising required publication targets; no deployed Instance touched"
+  },
+  "mandatoryReleaseGate": {
+    "command": "node apps/cli/scripts/tool-identity-release-gate.mjs /absolute/frozen/tarballs",
+    "passed": true,
+    "logSha256": "4f9940176bbec82c64cfbac6e4b803fd8cd8f7c7c2a5e2f6a8f84e993f3dee51",
+    "baselineDownloads": "Anonymous immutable npm URLs, fixed SHA-512, maximum 8 MiB and 30-second deadline per archive.",
+    "requiredFor": "0.5.9 POSIX exact-tarball verification; no optional skip"
+  },
+  "candidateImages": {
+    "server": "sha256:7e9ed3f2994dee82c19c0bfd25072cd8586af311d90512be3b5cc22abe93dbff",
+    "web": "sha256:0b104fd66ad82f9655de7de5552240ac1d17ebc855c41f4e088d769218b399ac",
+    "architecture": "arm64",
+    "trivyVersion": "0.74.0",
+    "scanners": [
+      "vuln",
+      "secret",
+      "misconfig"
+    ],
+    "severity": [
+      "HIGH",
+      "CRITICAL"
+    ],
+    "exitCode": 0,
+    "serverScanLogSha256": "b09bdb9c912f3f37b80f05d5064279f168d71259054861490e16bf16cca02efd",
+    "webScanLogSha256": "24092ae2203d9c582537fe782d9bc29e1db78caeff78ffa157b016b4ff00297f"
+  },
+  "initialRepositoryCheck": {
+    "passed": false,
+    "logSha256": "6cd7164a27c68940a34b83d971cba3115c2d968ea7bfd6bc7f184694f98a9538",
+    "failedTest": "rechecks ownership before force termination after a cancelled-partial graceful-tail probe",
+    "observedFailure": "Initial SIGTERM ownership probe returned CollectorDaemonProcessError reason identity; no underlying spawn/timeout cause was recorded.",
+    "originalLimitsSingleCaseAnd70CaseFileRerunPassed": true,
+    "productionOrTestTimeoutChanged": false,
+    "fullFreshRerun": "In progress when this focused evidence was recorded; not attested here."
+  },
+  "scope": {
+    "overallCandidateCI": "not attested by this record",
+    "packagePublication": "not performed when recorded",
+    "serverDeployment": "not performed when recorded",
+    "freshNativeMCPSkillCapture": "unverified; source-specific acceptance uses constructed native-format records",
+    "realOSRegistration": "not exercised",
+    "manualStaging": "pending; separate authorized manual-only waiver is required"
+  },
+  "privacy": "Public artifact identities, sanitized synthetic acceptance and provenance metadata only; no credentials, transcript bodies or private user state.",
+  "refreeze": {
+    "previousCandidateCommit": "574a063cd73bc572d34e28d47cdc63d37486083d",
+    "reason": "Rename the standalone node:test suite outside Vitest discovery and update its explicit release verifier caller. Production source and all exact tarball bytes remain unchanged.",
+    "nodeSuiteCommand": "node --test apps/cli/scripts/tool-identity-release-gate.node.mjs",
+    "nodeSuiteTestsPassed": 5,
+    "nodeSuiteLogSha256": "46c482cb296eeab396573e78d446ab534eb8d0aafde88a6a9bc0a9da08e34714",
+    "vitestDiscoveryFiles": 58,
+    "vitestDoesNotCollectNodeSuite": true,
+    "vitestDiscoveryLogSha256": "61f0777ed890d8b1ab3248005f0a117a89cd1414fc759b0c994d63b860089abb",
+    "freshCompleteGates": "Required on this corrected frozen candidate; completed focused and exact-archive proofs below do not replace complete CI/release gates.",
+    "additionalPreviousCandidateCommit": "c532fbfe54f9ed9696d180ba793e1a1a80eeeea8",
+    "finalReason": "Coordinate concurrent process inspections within the same Collector Process Module after the actual installed Linux Project-opening race was reproduced. Only the CLI production archive changes; earlier candidate bytes are not reused as this candidate acceptance."
+  },
+  "initialPRCheck": {
+    "passed": false,
+    "workflowRun": 38118131343,
+    "failedSuite": "apps/cli/scripts/tool-identity-release-gate.test.mjs",
+    "failure": "Vitest collected a Node-only test file and reported No test suite found.",
+    "logSha256": "2ec2c6b43e11caba346029147a0d3fea952c82162097411a88f24e9b36728b46",
+    "failurePreserved": true
+  },
+  "priorLocalCLIArchive": {
+    "filename": "atape-cli-0.5.9.tgz",
+    "sha256": "1e1e979aa04109eb29edbab74f41806ffbc874cf109723fabd2f94ddba4f5611",
+    "scope": "Superseded unpublished candidate only; retained to identify the reproducible pre-fix installed CLI."
+  },
+  "processInspectionFix": {
+    "failedPRRun": 38118731477,
+    "failedPRLogSha256": "714c9a8c6ece77c6154c0cba8289471ea988d4c8b381cca95e09440213fc0d4f",
+    "observedCIOutcome": "Existing installed PTY could not open Project detail because process inspection returned the lock BUSY recovery screen. The original log did not record the lock holder.",
+    "implementation": "Layer-private shared actual Promise only while inspect is running; cleanup on real success/failure completion. Caller cancellation detaches without releasing the work early. Completed snapshots are not cached; typed failures and independent process locks are preserved.",
+    "publicNodeRegressions": {
+      "newTestsPassed": 5,
+      "completeProcessSuiteTestsPassed": 75,
+      "productionBudgetOrTestTimeoutChanged": false,
+      "focusedLogSha256": "dbf74d362a84bc403b668ac425ea8eb6477c43485c88decd8082bed70841d248"
+    },
+    "linuxProofSha256": "873ad2bd2bfb625bf8972dc1d7ee139cb3993b44fbd07dca417e9b3a6b03cb99",
+    "preFix": {
+      "archiveSha256": "1e1e979aa04109eb29edbab74f41806ffbc874cf109723fabd2f94ddba4f5611",
+      "baseline": "detail opened",
+      "overlap": "same BUSY recovery screen reproduced with real 2-second UI polling and a controlled 400ms delay of real ps output"
+    },
+    "postFix": [
+      {
+        "mode": "baseline",
+        "archiveSha256": "36cd746931942502467843e8c5eee1645c6140698b3ccdf16528534fc77b52d6",
+        "installedBundleEqualsArchive": true,
+        "scope": "Exact fixed installed CLI; controlled native owned process and 400ms real-ps callback delay; no network, no daemon capture source.",
+        "result": "detail_opened",
+        "processRecordBytesPreserved": true,
+        "pidPreserved": true,
+        "schedulePreserved": true,
+        "runtimeKeyPreserved": true,
+        "desiredIntentBytesPreserved": true
+      },
+      {
+        "mode": "overlap-fixed",
+        "archiveSha256": "36cd746931942502467843e8c5eee1645c6140698b3ccdf16528534fc77b52d6",
+        "installedBundleEqualsArchive": true,
+        "scope": "Exact fixed installed CLI; controlled native owned process and 400ms real-ps callback delay; no network, no daemon capture source.",
+        "result": "overlapping_detail_opened",
+        "processRecordBytesPreserved": true,
+        "pidPreserved": true,
+        "schedulePreserved": true,
+        "runtimeKeyPreserved": true,
+        "desiredIntentBytesPreserved": true,
+        "enterAfterPendingProbeMs": 19
+      }
+    ],
+    "providerCaptureTested": false,
+    "realOSRegistrationTested": false
+  }
+}

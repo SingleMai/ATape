@@ -632,7 +632,9 @@ export class ExperiencePresenter {
         t("cli.tools.intro", "Manage ATape and its conversation sync integrations."),
         ...releases.map(release => {
           const older = release.status === "ahead" ? t("cli.tools.releaseOlder", " (older)") : ""
-          const latest = release.commandEntryVersion
+          const latest = release.officialAdapterUpdates
+            ? t("cli.tools.officialAdaptersBehind", " · {count} official integrations need this release", { count: release.officialAdapterUpdates })
+            : release.commandEntryVersion
             ? t("cli.tools.commandEntryBehind", " · command entry {current} → {version}", { current: release.commandEntryVersion, version: release.latest ?? release.version })
             : release.id !== "cli" && release.latest
             ? t("cli.tools.matchingVersion", " · for ATape {version}{older}", { version: release.latest, older })
@@ -650,7 +652,9 @@ export class ExperiencePresenter {
         }),
         t("cli.tools.bundleNotice", "CLI releases are cached for 12 hours. Official integrations match the running ATape version.")
       ], options: [
-        ...updateable.map(release => ({ value: `update:${release.id}`, label: release.commandEntryVersion
+        ...updateable.map(release => ({ value: `update:${release.id}`, label: release.officialAdapterUpdates
+          ? t("cli.tools.updateMatchingIntegrations", "Update matching official integrations for ATape {version}", { version: release.latest ?? release.version })
+          : release.commandEntryVersion
           ? t("cli.tools.refreshCommandEntry", "Refresh ATape command entry to {version}", { version: release.latest ?? "" })
           : release.source === "local"
           ? t("cli.tools.usePublished", "Use published {label} integration {version}", { label: release.label, version: release.latest ?? "" })

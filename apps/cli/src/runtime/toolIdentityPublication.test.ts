@@ -49,7 +49,8 @@ describe("tool identity through publication preparation and recovery", () => {
         source: source().effect })
       const units: Uint8Array[] = []
       for (let ordinal = 0; ordinal < result.units; ordinal++) units.push(yield* journal.read(owner, "identity", "canonical", ordinal))
-      expect(JSON.parse((yield* journal.sourceMetadata(owner, "identity"))!)).toMatchObject({ canonicalProfileVersion: CanonicalProfileVersion4 })
+      expect(JSON.parse((yield* journal.sourceMetadata(owner, "identity"))!)).toMatchObject({ canonicalProfileVersion: CanonicalProfileVersion3,
+        canonicalProfileV4: CanonicalProfileVersion4 })
       return units
     }))
     expect(prepared.length).toBeGreaterThan(1)

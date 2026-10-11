@@ -426,5 +426,7 @@
   "cli.start.confirmed": "Session creation confirmed: {sourceId}",
   "cli.start.help": "Start a controlled coding-agent session\n\nUsage:\n  atape start --tool <id> [--project <id>] [--prompt <literal>] [--lang <locale>]\n\nRun in an interactive macOS or Linux terminal inside a registered Project.\nThe tool must be installed, enabled and support controlled session creation.\nA matching accessible Project is required; use --project when Git matches several Projects.\nThe optional prompt is passed literally (up to 64 KiB UTF-8, without NUL).\nA confirmed creation receipt permits later background collection.",
   "cli.start.unconfirmed": "Session exited without confirmed creation: {sourceId}",
-  "cli.start.terminalRequired": "Starting a session requires an interactive macOS or Linux terminal. Run atape start --help for options."
+  "cli.start.terminalRequired": "Starting a session requires an interactive macOS or Linux terminal. Run atape start --help for options.",
+  "cli.tools.officialAdaptersBehind": " · {count} official integrations need this release",
+  "cli.tools.updateMatchingIntegrations": "Update matching official integrations for ATape {version}"
 }

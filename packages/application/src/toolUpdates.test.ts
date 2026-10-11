@@ -54,6 +54,28 @@ const fixture = (runtimeReleaseVersion = "0.4.4", commandEntryVersion = "0.4.4")
 }
 
 describe("tool releases through the application Interface", () => {
+  it("offers the complete matching bundle after an external CLI refresh without changing configuration", async () => {
+    const client = fixture(), config = client.config()
+    client.edit({ ...config, adapters: [{ ...config.adapters[0]!, upgradeSpec: "@atape/adapter-codex" }] })
+    const before = client.config(), rows = await client.run(inspectToolUpdates("0.4.4"))
+    expect(rows[0]).toMatchObject({ version: "0.4.4", latest: "0.4.4", status: "available", officialAdapterUpdates: 1 })
+    expect(rows[0]).not.toHaveProperty("commandEntryVersion")
+    expect(client.config()).toEqual(before); expect(client.installs).toEqual([])
+    client.edit({ ...before, adapters: [{ ...before.adapters[0]!, version: "0.4.4" }] })
+    expect((await client.run(inspectToolUpdates("0.4.4")))[0]).toMatchObject({ status: "current" })
+  })
+  it("does not offer a bundle replacement for pinned/local/custom or ahead official packages", async () => {
+    const client = fixture(), initial = client.config()
+    for (const adapters of [initial.adapters,
+      [{ ...initial.adapters[0]!, upgradeSpec: "@atape/adapter-codex@0.2.0" }],
+      [{ ...initial.adapters[0]!, packageName: "other-publisher", upgradeSpec: "other-publisher" }],
+      [{ ...initial.adapters[0]!, version: "0.5.0", upgradeSpec: "@atape/adapter-codex" }]]) {
+      client.edit({ ...initial, adapters })
+      const row = (await client.run(inspectToolUpdates("0.4.4")))[0]!
+      expect(row).toMatchObject({ status: "current" }); expect(row).not.toHaveProperty("officialAdapterUpdates")
+    }
+    expect(client.installs).toEqual([])
+  })
   it("keeps command-entry refresh available after the managed runtime has already advanced", async () => {
     const rows = await fixture("0.4.4", "0.4.3").run(inspectToolUpdates("0.4.4"))
     expect(rows[0]).toMatchObject({ version: "0.4.4", latest: "0.4.4", status: "available", commandEntryVersion: "0.4.3" })

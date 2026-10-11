@@ -76,6 +76,15 @@ on a successful source replay, not from an analytics request. No frozen
 publication or Raw receipt is rewritten. See [the v4 ingestion contract](api/canonical-ingestion.md#v4-normalized-tool-identity)
 and [Claude upgrades](adapters/claude.md#recovery-and-upgrades).
 
+Newly frozen v4 source recovery metadata uses a v3-compatible closed field and
+an independent `canonicalProfileV4` fact. New readers normalize the effective
+profile to v4; genuine 0.5.8 SourceCollector recovery has been verified without
+source reads or rewriting frozen bytes. Actual target parts and comparison
+profiles remain v4. Immutable 0.5.8 active-Claude upgrade parents still reject
+the new manifest, so [the release transition](releases/v0.5.9.md#upgrade-and-recovery-boundaries)
+requires a stopped external CLI refresh. See
+[ADR-0121](architecture/adr/0121-tool-identity-release-transition.md).
+
 ## HTTP Interface
 
 Both endpoints require a Web Session Cookie, current `conversation.read` access

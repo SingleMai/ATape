@@ -102,3 +102,7 @@ Current support and remaining work live in [Session Analytics](../../session-ana
 This extends [ADR-0118](0118-session-analytics-current-snapshot.md), the tool
 details contract in [ADR-0030](0030-bounded-tool-details-implementation.md), and
 profile negotiation in [ADR-0114](0114-explicit-unknown-conversation-time.md).
+
+[ADR-0121](0121-tool-identity-release-transition.md) amends the release/recovery
+boundary with a compatible source metadata envelope and an explicit stopped
+transition for immutable 0.5.8 active-Claude upgrade parents.

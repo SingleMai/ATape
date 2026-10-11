@@ -1,0 +1,23 @@
+{
+  "protocol": "atape.manual-release-waiver.v1",
+  "releaseVersion": "0.5.9",
+  "authEpoch": "auth-v1",
+  "status": "authorized",
+  "candidateCommit": "bfbf4ae21b30e873d85ce66dd737b99d51fc0786",
+  "authorizedOn": "2026-10-11",
+  "authorization": "On 2026-10-11 Asia/Singapore, the user replied “继续推进” to the specific recommended next step “升级 Server，再发布配套 CLI/Adapter”. This accepts the matching Server rollout followed by coordinated publication of CLI and all seven official Adapters at 0.5.9. Under ADR-0048, the publication request authorizes waiver of the listed manual staging checks only. Automated repository, installed integration and security gates remain mandatory before publication. Prior release or feature-PR evidence is not reused as this candidate’s acceptance. No new database schema migration or unrelated production data changes are authorized.",
+  "scope": "manual-staging-only",
+  "unverifiedChecks": [
+    "candidate-artifacts",
+    "official-topology",
+    "github-provider-staging-smoke",
+    "official-domain-egress-deny-smoke",
+    "two-user-two-team",
+    "waf-tls-callback",
+    "backup-restore",
+    "observability-secret-sample",
+    "rollback",
+    "release-signoff"
+  ],
+  "riskNotice": "docs/releases/v0.5.9.md"
+}

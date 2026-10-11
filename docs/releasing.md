@@ -99,6 +99,24 @@ Cursor's separate installed contract exercises controlled start, synthetic nativ
 facts, confirmed creation receipts, nullable Reader/Search times, upload-time
 redaction and frozen recovery through authenticated HTTP/PostgreSQL. It does not
 establish authenticated native Cursor acceptance.
+For 0.5.9 on POSIX, the exact tarball release verifier additionally requires the
+[stopped Claude v4 transition](cli/setup-and-adapters.md#claude-v4-058-to-059).
+It downloads the immutable npm-published CLI/Claude 0.5.8 archives anonymously,
+with fixed SHA-512 integrity, an 8 MiB bound and a 30-second deadline for each.
+Unavailable, altered or oversized historical bytes fail this automated gate;
+there is no optional skip. Each run owns a fresh temporary HOME, npm cache and
+installation prefix, and cleans them after joining its CLI/Collector processes.
+The test executes genuine old automatic/UI refusal, external real npm entry
+refresh, actual new console complete-bundle selection and old reader-floor
+refusal. Catalog and Server HTTP are external Test Adapters; Provider live
+capture and OS registration are outside this gate. Other versions and Windows
+retain their existing verification paths. To rerun this exact gate against an
+already frozen artifact directory without building or repacking:
+
+```sh
+node apps/cli/scripts/tool-identity-release-gate.mjs /absolute/frozen/tarballs
+```
+
 The exact checksummed OpenCode, CodeBuddy, Kimi, Grok and Cursor artifacts also run their installed source-capability
 verification outside the checkout with controlled native data. The workflow publishes the exact release
 tarballs and attaches them plus `SHA256SUMS` to the GitHub Release.
@@ -264,6 +282,15 @@ CLI archive; clients validate these capabilities and the installed executable
 version before activation. Do not retain
 the marker across an incompatible state-format change merely to make unattended
 installation pass; design and verify migration/recovery first.
+
+The v4 tool-identity release keeps the actual v8 journal and capture-v2 contract
+only after genuine 0.5.8 SourceCollector recovery of the new compatible metadata
+envelope is verified. This does not prove the old updater can decode a v4
+candidate Adapter manifest. Active official-Claude 0.5.8 installations require
+the stopped external CLI refresh and new-console complete-bundle action recorded
+in [v0.5.9](releases/v0.5.9.md#upgrade-and-recovery-boundaries). Do not describe
+that boundary as universal unattended delivery; source-free frozen recovery,
+candidate acquisition and interactive delivery are distinct checks.
 
 0.5.4 is the first v2 release. The published 0.5.3 updater must reject it before
 candidate execution or maintenance; release evidence must not describe this as
