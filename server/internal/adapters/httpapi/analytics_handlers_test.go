@@ -13,7 +13,10 @@ import (
 
 	"github.com/SingleMai/ATape/server/internal/authentication"
 	"github.com/SingleMai/ATape/server/internal/canonical"
+	"github.com/SingleMai/ATape/server/internal/conversation"
+	"github.com/SingleMai/ATape/server/internal/ingestion"
 	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
+	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 )
 
 func TestSessionAnalyticsHTTPContractAndConditionalReader(t *testing.T) {
@@ -31,7 +34,7 @@ func TestSessionAnalyticsHTTPContractAndConditionalReader(t *testing.T) {
 	const route = "/api/v1/sessions/checkout/analytics"
 	var first, evidence sessionanalytics.Result
 	decodeResponse(t, read(route, 200), &first)
-	if first.Snapshot == "" || first.AnalyticsVersion != 1 || first.SessionID != "checkout" || first.Tools == nil || first.Threads == nil || first.Usage.Models == nil || first.Evidence.Items == nil {
+	if first.Snapshot == "" || first.AnalyticsVersion != sessionanalytics.Version || first.SessionID != "checkout" || first.Tools == nil || first.Threads == nil || first.Usage.Models == nil || first.Evidence.Items == nil || first.Capabilities.MCP == nil || first.Capabilities.Skills == nil {
 		t.Fatalf("incomplete analysis representation: %+v", first)
 	}
 	decodeResponse(t, read(route+"/evidence?snapshot="+url.QueryEscape(first.Snapshot)+"&metric=thoughts&limit=1", 200), &evidence)
@@ -61,6 +64,49 @@ func TestSessionAnalyticsHTTPContractAndConditionalReader(t *testing.T) {
 		assertProblemEnvelope(t, read(path, 422), "validation_failed")
 	}
 	assertProblemEnvelope(t, read("/api/v1/sessions/unknown/analytics", 404), "not_found")
+}
+
+func TestSessionAnalyticsCapabilityHTTPFiltersAndReader(t *testing.T) {
+	store := canonical.NewMemoryStoreWithControlPlane(canonicalcontract.MemoryControlPlane())
+	batch := canonicalcontract.ValidBatch()
+	batch.CanonicalProfileVersion = ingestion.ToolIdentityCanonicalProfileVersion
+	batch.Events[1].Kind = "tool_call"
+	batch.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"call","title":"Tool","status":"completed","_meta":{"atape.dev/tool-identity":{"type":"mcp","server":"mail","name":"send"}}}`
+	created, err := ingestion.NewIngestor(store).ApplyBatch(t.Context(), canonicalcontract.CLIPrincipal(), batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := canonicalcontract.WebPrincipal()
+	h := testHandlerWithConfig(t, Config{InstanceOrigin: "http://127.0.0.1:8080", WebOrigin: "http://127.0.0.1:8080", APIOrigin: "http://127.0.0.1:8080", DevelopmentAllowHTTP: true, DevelopmentPrincipal: &principal})
+	h.analytics, h.memory = sessionanalytics.New(store), conversation.NewMemory(store)
+	read := func(path string, status int) *httptest.ResponseRecorder {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
+		if w.Code != status || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		return w
+	}
+	route := "/api/v1/sessions/" + created.SessionID + "/analytics"
+	var analysis sessionanalytics.Result
+	decodeResponse(t, read(route+"?metric=mcp_tools&capability=send&server=mail", 200), &analysis)
+	if analysis.Capabilities.MCPCalls != 1 || len(analysis.Evidence.Items) != 1 {
+		t.Fatalf("capability HTTP result: %+v", analysis)
+	}
+	item := analysis.Evidence.Items[0]
+	var page conversation.Conversation
+	query := url.Values{"thread": {item.ThreadID}, "limit": {"1"}, "at": {item.EventID}, "snapshot": {analysis.Snapshot}}
+	decodeResponse(t, read("/api/v1/sessions/"+created.SessionID+"?"+query.Encode(), 200), &page)
+	if len(page.Events) != 2 || page.Events[1].Tool.Meta.Identity.Name != "send" {
+		t.Fatalf("legacy conditional capability Reader: %+v", page)
+	}
+	for _, query := range []string{"capability=", "server=mail&server=mail", "metric=mcp_tools&capability=%ff"} {
+		assertProblemEnvelope(t, read(route+"?"+query, 400), "invalid_request")
+	}
+	for _, query := range []string{"capability=send", "metric=skills&server=mail", "metric=mcp_tools&tool=Tool", "metric=mcp_tools&server=missing", "metric=mcp_tools&capability=" + strings.Repeat("界", 167)} {
+		assertProblemEnvelope(t, read(route+"?"+query, 422), "validation_failed")
+	}
 }
 
 // This test Adapter exercises the same snapshot Seam used by production. It

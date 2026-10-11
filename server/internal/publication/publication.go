@@ -86,6 +86,7 @@ type Activation struct {
 const TargetProfile = "atape.publication-target.v1"
 const RetentionTargetProfile = "atape.publication-target.v2"
 const UnknownTimeTargetProfile = "atape.publication-target.v3"
+const ToolIdentityTargetProfile = "atape.publication-target.v4"
 
 type Target struct {
 	Profile           string   `json:"profile"`
@@ -99,7 +100,7 @@ type Target struct {
 // retention declaration, including an honest empty array (null is invalid).
 func (t Target) MarshalJSON() ([]byte, error) {
 	var retained *[]string
-	if t.Profile == RetentionTargetProfile || t.Profile == UnknownTimeTargetProfile || t.RetainedThreadIDs != nil {
+	if t.Profile == RetentionTargetProfile || t.Profile == UnknownTimeTargetProfile || t.Profile == ToolIdentityTargetProfile || t.RetainedThreadIDs != nil {
 		retained = &t.RetainedThreadIDs
 	}
 	return json.Marshal(struct {

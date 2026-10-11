@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type { AcpContentBlock, AdapterObservation } from "@atape/domain"
+import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, ToolIdentityMetaKey, type AcpContentBlock, type AcpToolIdentity, type AdapterObservation } from "@atape/domain"
 import { compileRedactionPolicy, makeRedactionLayer, validateRedactionConfiguration, type RedactionPattern } from "./redaction.ts"
 import { prepareCanonicalSlice, prepareCollectedObservation } from "./collectorPreparation.ts"
 import { rawSourceRecord } from "./rawPreparation.ts"
@@ -18,6 +18,116 @@ const observation = (): AdapterObservation => ({ observationId: "observation", o
     update: { sessionUpdate: "tool_call", toolCallId: "call", title: "fixture", kind: "other", status: "completed", rawInput: { password: "short", token: "has spaces here" } } }], rawSegments: [] })
 
 describe("Redaction Module", () => {
+  const identityObservation = (identity: AcpToolIdentity | null) => {
+    const initial = observation()
+    return { ...initial, events: [{ ...initial.events[0]!, update: { sessionUpdate: "tool_call" as const, toolCallId: "call", title: "Call",
+      _meta: { [ToolIdentityMetaKey]: identity } } }] } satisfies AdapterObservation
+  }
+  it.each([CanonicalProfileVersion, CanonicalProfileVersion3])("rejects identity metadata under %s before redaction or delivery", async profile => {
+    const policy = await compile()
+    await expect(Effect.runPromise(prepareCanonicalSlice("fixture", identityObservation({ type: "skill", name: "review" }), profile)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))).rejects.toMatchObject({ _tag: "CollectionContractError" })
+  })
+  it.each([{ type: "mcp", server: "docs", name: "read" }, { type: "skill", name: "review" }, null] as const)(
+    "retains valid identity metadata under v4 %j", async identity => {
+      const policy = await compile()
+      const result = await Effect.runPromise(prepareCanonicalSlice("fixture", identityObservation(identity), CanonicalProfileVersion4)
+        .pipe(Effect.provide(makeRedactionLayer(policy))))
+      expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: identity })
+      expect(result.replacements).toBe(0)
+    })
+  it.each([
+    { patterns: [], secrets: ["private-server"], identity: { type: "mcp", server: "private-server", name: "read" } },
+    { patterns: [{ name: "name field", type: "local", field_pattern: "^name$" }], secrets: [], identity: { type: "skill", name: "review" } },
+    { patterns: [{ name: "type field", type: "local", field_pattern: "^type$" }], secrets: [], identity: { type: "skill", name: "review" } },
+    { patterns: [{ name: "namespace", type: "local", pattern: "atape\\.dev/tool-identity" }], secrets: [], identity: { type: "skill", name: "review" } },
+    { patterns: [{ name: "key collision", type: "local", pattern: "^(server|name)$" }], secrets: [], identity: { type: "mcp", server: "docs", name: "read" } },
+    { patterns: [{ name: "bound expansion", type: "local", pattern: "x" }], secrets: [], identity: { type: "skill", name: "x".repeat(500) } },
+    { patterns: [], secrets: [], identity: { type: "skill", name: `ghp_${"a".repeat(36)}` } }
+  ])("clears any masked identity instead of leaking or merging names (%#)", async ({ patterns, secrets, identity }) => {
+    const policy = await compile(patterns, secrets)
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", identityObservation(identity as AcpToolIdentity), CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: null })
+    expect(result.observation.events[0]!.fidelity).toBe("redacted")
+    expect(result.replacements).toBeGreaterThan(0)
+    expect(JSON.stringify(result.observation)).not.toContain(JSON.stringify(identity.name))
+    if (identity.type === "mcp") expect(JSON.stringify(result.observation)).not.toContain(JSON.stringify(identity.server))
+  })
+  it("clears unsafe nested JSON identity names and discloses the lost identity", async () => {
+    const policy = await compile()
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", identityObservation({ type: "skill", name: '{"a":1,"a":2}' }), CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: null })
+    expect(result.observation.events[0]!.fidelity).toBe("redacted")
+    expect(JSON.stringify(result.observation)).not.toContain('"a":1')
+  })
+  it.each([
+    { field: "rawInput", source: { skill: "private-workflow" }, patterns: [{ name: "skill source", type: "local", field_pattern: "^skill$" }] },
+    { field: "rawInput", source: { skills: ["private-workflow"] }, patterns: [{ name: "skill array source", type: "local", field_pattern: "^skills$" }] },
+    { field: "rawInput", source: { arguments: '{"skill":"private-workflow"}' }, patterns: [{ name: "JSON TEXT source", type: "local", field_pattern: "^skill$" }] },
+    { field: "rawOutput", source: { tool_name: "private-workflow" }, patterns: [{ name: "output source", type: "local", field_pattern: "^tool_name$" }] }
+  ] as const)("clears an identity copied from a masked source field (%#)", async ({ field, source, patterns }) => {
+    const policy = await compile(patterns), initial = identityObservation({ type: "skill", name: "private-workflow" })
+    const event = initial.events[0]!
+    const input: AdapterObservation = { ...initial, events: [{ ...event, update: { ...event.update, [field]: source } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: null })
+    expect(result.observation.events[0]!.fidelity).toBe("redacted")
+    expect(JSON.stringify(result.observation)).not.toContain("private-workflow")
+    expect(result.replacements).toBeGreaterThan(0)
+  })
+  it("clears copied identity when redaction hides its original parent path", async () => {
+    const policy = await compile([{ name: "parent key", type: "local", pattern: "^private_parent$" }])
+    const initial = identityObservation({ type: "mcp", server: "internal-service", name: "read" }), event = initial.events[0]!
+    const input: AdapterObservation = { ...initial, events: [{ ...event, update: { ...event.update,
+      rawInput: { private_parent: { provider: "internal-service" } } } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: null })
+    expect(result.observation.events[0]!.update).toHaveProperty("rawInput", { "[REDACTED:LOCAL]": { provider: "internal-service" } })
+    expect(JSON.stringify(result.observation)).not.toContain("private_parent")
+  })
+  it("retains public MCP identity when an unrelated input credential is masked", async () => {
+    const policy = await compile(), identity = { type: "mcp", server: "docs", name: "read" } as const
+    const initial = identityObservation(identity), event = initial.events[0]!
+    const input: AdapterObservation = { ...initial, events: [{ ...event, update: { ...event.update,
+      rawInput: { token: "private-token", server: "docs", tool: "read" } } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: identity })
+    expect(result.observation.events[0]!.update).toHaveProperty("rawInput", { token: "[REDACTED]", server: "docs", tool: "read" })
+    expect(JSON.stringify(result.observation)).not.toContain("private-token")
+  })
+  it("compares a copied complete JSON string without exposing its masked contents", async () => {
+    const source = '{"skill":"private-workflow"}'
+    const policy = await compile([{ name: "skill source", type: "local", field_pattern: "^skill$" }])
+    const initial = identityObservation({ type: "skill", name: source }), event = initial.events[0]!
+    const input: AdapterObservation = { ...initial, events: [{ ...event, update: { ...event.update, rawInput: source } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: null })
+    expect(JSON.stringify(result.observation)).not.toContain("private-workflow")
+  })
+  it("preserves absent metadata on a result instead of inferring a retroactive identity clear", async () => {
+    const policy = await compile([{ name: "skill source", type: "local", field_pattern: "^skill$" }])
+    const initial = observation(), event = initial.events[0]!
+    const input: AdapterObservation = { ...initial, events: [{ ...event, update: { sessionUpdate: "tool_call_update", toolCallId: "call",
+      status: "completed", rawOutput: { skill: "private-workflow" } } }] }
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).not.toHaveProperty("_meta")
+    expect(result.observation.events[0]!.update).toHaveProperty("rawOutput", { skill: "[REDACTED:LOCAL]" })
+  })
+  it("keeps tool resource limits when a masked source could clear an identity", async () => {
+    const policy = await compile([{ name: "skill source", type: "local", field_pattern: "^skill$" }])
+    const initial = identityObservation({ type: "skill", name: "private-workflow" }), event = initial.events[0]!
+    const input: AdapterObservation = { ...initial, events: [{ ...event, update: { ...event.update,
+      rawInput: { skill: Array.from({ length: 10_001 }, () => "private-workflow") } } }] }
+    await expect(Effect.runPromise(prepareCanonicalSlice("fixture", input, CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))).rejects.toMatchObject({ _tag: "CollectionContractError" })
+  })
   it.each([
     ["Anthropic", `sk-ant-api03-${"a".repeat(80)}`], ["OpenAI", `sk-proj-${"a".repeat(32)}`], ["AWS access", `AKIA${"A".repeat(16)}`],
     ["GitHub classic", `ghp_${"a".repeat(36)}`], ["GitHub fine", `github_pat_${"a".repeat(22)}`], ["GitHub OAuth", `gho_${"a".repeat(36)}`],

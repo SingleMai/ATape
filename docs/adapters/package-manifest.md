@@ -166,13 +166,23 @@ providers need no profile change. See
 
 SourceCapture v2 packages can declare the static Server minimum as
 `publicationTargetProfile: "atape.publication-target.v2"` or
-`"atape.publication-target.v3"`. Omission retains the v2 minimum. The field is
+`"atape.publication-target.v3"`, or `"atape.publication-target.v4"`. Omission retains the v2 minimum. The field is
 invalid without `sourceCapture: "atape.source-capture.v2"`; unknown profiles are
 rejected. Sources emitting Canonical v3, including Cursor, declare v3 so managed
 migration preflight can negotiate and verify it before pausing collection,
 without importing a factory or reading source history. This declaration is part
 of the candidate manifest fingerprint. Each actual source header still determines
 the frozen publication profile and undergoes the normal Server capability checks.
+
+Canonical v4 extends v3 with the closed ACP `_meta` namespace
+`atape.dev/tool-identity` for explicit MCP server/name or Skill name facts. Earlier
+profiles reject this extension. The new Host supplies supported profiles in
+`open(...).projection.canonicalProfiles`; a v4 Adapter must check for v4 before
+reading source bytes. This explicit local handshake also prevents older Hosts
+that strip unknown optional fields from silently losing identity. Current
+Claude declares the static v4 minimum and selects v4 for its complete target.
+See [v4 ingestion](../api/canonical-ingestion.md#v4-normalized-tool-identity) for
+closed shapes, null/absence semantics, bounds and redaction.
 
 Unlike the paged observation runtime's attribution callback, discovery passes
 source evidence to the Host, which resolves directory/Git membership before

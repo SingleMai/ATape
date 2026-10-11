@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	Version                = 1
+	Version                = 2
 	MaxFacts               = canonical.AnalyticsRecordLimit
 	MaxThreads             = canonical.AnalyticsThreadLimit
 	MaxTools               = 2000
@@ -46,8 +46,8 @@ type Module struct{ store Store }
 func New(store Store) *Module { return &Module{store: store} }
 
 type Query struct {
-	Snapshot, Metric, Thread, Tool, Cursor string
-	Limit                                  int
+	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor string
+	Limit                                                      int
 }
 type InvalidQueryError struct{ Field, Reason string }
 
@@ -88,6 +88,32 @@ type Tool struct {
 	InProgress int    `json:"inProgress"`
 	Unknown    int    `json:"unknown"`
 }
+type MCPTool struct {
+	Server     string `json:"server"`
+	Name       string `json:"name"`
+	Calls      int    `json:"calls"`
+	Completed  int    `json:"completed"`
+	Failed     int    `json:"failed"`
+	Pending    int    `json:"pending"`
+	InProgress int    `json:"inProgress"`
+	Unknown    int    `json:"unknown"`
+}
+type Skill struct {
+	Name       string `json:"name"`
+	Calls      int    `json:"calls"`
+	Completed  int    `json:"completed"`
+	Failed     int    `json:"failed"`
+	Pending    int    `json:"pending"`
+	InProgress int    `json:"inProgress"`
+	Unknown    int    `json:"unknown"`
+}
+type Capabilities struct {
+	MCPCalls          int       `json:"mcpCalls"`
+	SkillCalls        int       `json:"skillCalls"`
+	UnclassifiedCalls int       `json:"unclassifiedCalls"`
+	MCP               []MCPTool `json:"mcp"`
+	Skills            []Skill   `json:"skills"`
+}
 type Thread struct {
 	ID             string  `json:"id"`
 	Label          string  `json:"label"`
@@ -119,16 +145,17 @@ type Evidence struct {
 	NextCursor string         `json:"nextCursor,omitempty"`
 }
 type Result struct {
-	Snapshot         string   `json:"snapshot"`
-	Head             string   `json:"head,omitempty"`
-	AnalyticsVersion int      `json:"analyticsVersion"`
-	SessionID        string   `json:"sessionId"`
-	CaptureStatus    string   `json:"captureStatus"`
-	Summary          Summary  `json:"summary"`
-	Tools            []Tool   `json:"tools"`
-	Threads          []Thread `json:"threads"`
-	Usage            Usage    `json:"usage"`
-	Evidence         Evidence `json:"evidence"`
+	Snapshot         string       `json:"snapshot"`
+	Head             string       `json:"head,omitempty"`
+	AnalyticsVersion int          `json:"analyticsVersion"`
+	SessionID        string       `json:"sessionId"`
+	CaptureStatus    string       `json:"captureStatus"`
+	Summary          Summary      `json:"summary"`
+	Tools            []Tool       `json:"tools"`
+	Capabilities     Capabilities `json:"capabilities"`
+	Threads          []Thread     `json:"threads"`
+	Usage            Usage        `json:"usage"`
+	Evidence         Evidence     `json:"evidence"`
 }
 
 // Open always rechecks authorization at the snapshot Seam. Query filters only
@@ -192,12 +219,12 @@ type pageCursor struct {
 }
 
 func binding(sessionID string, q Query) string {
-	encoded, _ := json.Marshal([]any{Version, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool})
+	encoded, _ := json.Marshal([]any{Version, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server})
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
 func validateQuery(sessionID string, q Query) (Query, int, error) {
-	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool} {
+	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server} {
 		limit := 500
 		if field == "snapshot" {
 			limit = 200
@@ -213,12 +240,18 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 		q.Metric = "tools"
 	}
 	switch q.Metric {
-	case "tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads":
+	case "tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills":
 	default:
 		return q, 0, &InvalidQueryError{"metric", "is not supported"}
 	}
 	if q.Tool != "" && q.Metric != "tools" && q.Metric != "failed_tools" && q.Metric != "unknown_tools" {
 		return q, 0, &InvalidQueryError{"tool", "only applies to tool metrics"}
+	}
+	if q.Capability != "" && q.Metric != "mcp_tools" && q.Metric != "skills" {
+		return q, 0, &InvalidQueryError{"capability", "only applies to MCP or Skill metrics"}
+	}
+	if q.Server != "" && q.Metric != "mcp_tools" {
+		return q, 0, &InvalidQueryError{"server", "only applies to MCP metrics"}
 	}
 	if q.Limit == 0 {
 		q.Limit = 20
@@ -249,6 +282,7 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 type callKey struct{ thread, id string }
 type toolCall struct {
 	name, kind, status string
+	identity           *canonical.ToolIdentity
 	event              canonical.EventRecord
 }
 type inputKey struct {
@@ -256,12 +290,27 @@ type inputKey struct {
 	order  int64
 }
 
+func incrementOutcome(status string, completed, failed, pending, inProgress, unknown *int) {
+	switch status {
+	case "completed":
+		*completed++
+	case "failed":
+		*failed++
+	case "pending":
+		*pending++
+	case "in_progress":
+		*inProgress++
+	default:
+		*unknown++
+	}
+}
+
 func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset int) (Result, error) {
 	if len(s.Events) > MaxFacts || len(s.Usage) > MaxFacts || len(s.Threads) > MaxThreads {
 		return Result{}, ErrCapacity
 	}
 	r := Result{Snapshot: s.SnapshotToken, Head: s.Head, AnalyticsVersion: Version, SessionID: s.Session.ID, CaptureStatus: s.Session.CaptureStatus,
-		Tools: []Tool{}, Threads: []Thread{}, Usage: Usage{Models: []ModelUsage{}}, Evidence: Evidence{Items: []EvidenceItem{}}}
+		Tools: []Tool{}, Capabilities: Capabilities{MCP: []MCPTool{}, Skills: []Skill{}}, Threads: []Thread{}, Usage: Usage{Models: []ModelUsage{}}, Evidence: Evidence{Items: []EvidenceItem{}}}
 	threads := make(map[string]*Thread, len(s.Threads))
 	threadTokens := make(map[string]*tokenSum, len(s.Threads))
 	for _, source := range s.Threads {
@@ -381,10 +430,16 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 				call.status = *update.Status
 			}
 		}
+		if update.Meta != nil {
+			call.identity = update.Meta.Identity
+		}
 		call.event = event
 	}
 	groups := make(map[[2]string]*Tool)
 	toolNames := make(map[string]bool)
+	mcpGroups := make(map[[2]string]*MCPTool)
+	skillGroups := make(map[string]*Skill)
+	capabilityNames, serverNames := make(map[string]bool), make(map[string]bool)
 	for key, call := range calls {
 		groupKey := [2]string{call.name, call.kind}
 		group := groups[groupKey]
@@ -399,26 +454,89 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		group.Calls++
 		r.Summary.ToolCalls++
 		threads[key.thread].ToolCalls++
-		switch call.status {
-		case "completed":
-			group.Completed++
-		case "failed":
-			group.Failed++
-		case "pending":
-			group.Pending++
-		case "in_progress":
-			group.InProgress++
-		default:
-			group.Unknown++
-		}
+		incrementOutcome(call.status, &group.Completed, &group.Failed, &group.Pending, &group.InProgress, &group.Unknown)
 		matches := q.Metric == "tools" || q.Metric == "failed_tools" && call.status == "failed" || q.Metric == "unknown_tools" && call.status == ""
 		if matches && (q.Tool == "" || q.Tool == call.name) {
 			candidates[call.event.ID] = evidence(call.event, call.name)
+		}
+		identity := call.identity
+		if identity == nil {
+			r.Capabilities.UnclassifiedCalls++
+			continue
+		}
+		switch identity.Type {
+		case "mcp":
+			r.Capabilities.MCPCalls++
+			key := [2]string{identity.Server, identity.Name}
+			group := mcpGroups[key]
+			if group == nil {
+				if len(mcpGroups)+len(skillGroups) >= MaxTools {
+					return Result{}, ErrCapacity
+				}
+				group = &MCPTool{Server: identity.Server, Name: identity.Name}
+				mcpGroups[key] = group
+			}
+			group.Calls++
+			incrementOutcome(call.status, &group.Completed, &group.Failed, &group.Pending, &group.InProgress, &group.Unknown)
+			serverNames[identity.Server] = true
+			if q.Metric == "mcp_tools" {
+				capabilityNames[identity.Name] = true
+				if (q.Server == "" || q.Server == identity.Server) && (q.Capability == "" || q.Capability == identity.Name) {
+					candidates[call.event.ID] = evidence(call.event, identity.Server+"/"+identity.Name)
+				}
+			}
+		case "skill":
+			r.Capabilities.SkillCalls++
+			group := skillGroups[identity.Name]
+			if group == nil {
+				if len(mcpGroups)+len(skillGroups) >= MaxTools {
+					return Result{}, ErrCapacity
+				}
+				group = &Skill{Name: identity.Name}
+				skillGroups[identity.Name] = group
+			}
+			group.Calls++
+			incrementOutcome(call.status, &group.Completed, &group.Failed, &group.Pending, &group.InProgress, &group.Unknown)
+			if q.Metric == "skills" {
+				capabilityNames[identity.Name] = true
+				if q.Capability == "" || q.Capability == identity.Name {
+					candidates[call.event.ID] = evidence(call.event, identity.Name)
+				}
+			}
 		}
 	}
 	if q.Tool != "" && !toolNames[q.Tool] {
 		return Result{}, &InvalidQueryError{"tool", "is outside this snapshot"}
 	}
+	if q.Capability != "" && !capabilityNames[q.Capability] {
+		return Result{}, &InvalidQueryError{"capability", "is outside this snapshot"}
+	}
+	if q.Server != "" && !serverNames[q.Server] {
+		return Result{}, &InvalidQueryError{"server", "is outside this snapshot"}
+	}
+	for _, group := range mcpGroups {
+		r.Capabilities.MCP = append(r.Capabilities.MCP, *group)
+	}
+	for _, group := range skillGroups {
+		r.Capabilities.Skills = append(r.Capabilities.Skills, *group)
+	}
+	sort.Slice(r.Capabilities.MCP, func(i, j int) bool {
+		a, b := r.Capabilities.MCP[i], r.Capabilities.MCP[j]
+		if a.Calls != b.Calls {
+			return a.Calls > b.Calls
+		}
+		if a.Server != b.Server {
+			return a.Server < b.Server
+		}
+		return a.Name < b.Name
+	})
+	sort.Slice(r.Capabilities.Skills, func(i, j int) bool {
+		a, b := r.Capabilities.Skills[i], r.Capabilities.Skills[j]
+		if a.Calls != b.Calls {
+			return a.Calls > b.Calls
+		}
+		return a.Name < b.Name
+	})
 	for _, group := range groups {
 		r.Tools = append(r.Tools, *group)
 	}

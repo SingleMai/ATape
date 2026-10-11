@@ -1,4 +1,4 @@
-import { SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
+import { CanonicalProfileVersion4, ToolIdentityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
   type AdapterOpenContext, type SourceOpenRequestV2, type SourceCaptureFrame } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
@@ -17,7 +17,7 @@ type Row = Record<string, any>
 let directory: string, file: string, context: AdapterOpenContext & { signal: AbortSignal }
 const sid = "generated-capture-session", encode = (rows: Row[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 10000, threads: 100, durationMs: 300000 }
-const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024 }
+const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion4] }
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "atape-claude-capture-")); file = join(directory, "session.jsonl")
   vi.stubEnv("ATAPE_CLAUDE_SESSION_FILE", file)
@@ -41,7 +41,7 @@ const capture = async (input = request()) => {
           await Effect.runPromise(prepareCanonicalSlice("claude", { observationId: "capture", observedAt: header.session.updatedAt,
             session: { ...header.session, revision: 1 }, threads: header.threads.map(thread => ({ ...thread, revision: 1 })),
             events: frame.events.map(event => ({ ...event, revision: 1, projectionRevision: 1, rawRef: { _tag: "unavailable", reason: "test" } })),
-            usage: frame.usage.map(sample => ({ ...sample, revision: 1 })), rawSegments: [] }).pipe(Effect.provide(makeSecretRedactorLayer())))
+            usage: frame.usage.map(sample => ({ ...sample, revision: 1 })), rawSegments: [] }, header.canonicalProfileVersion).pipe(Effect.provide(makeSecretRedactorLayer())))
         }
         frames.push(...page.frames)
         if (page.done) {
@@ -83,6 +83,57 @@ const nativeFamily = async () => {
   const childFile = join(directory, proof.sessionId, "subagents", `agent-${proof.agentId}.jsonl`)
   return { proof, sources, childFile, childId: `claude-agent:${proof.agentId}` }
 }
+
+it.each([undefined, ["atape.acp-centered.v2"] as const])("requires an explicit Host v4 capability before opening source bytes (%s)", async canonicalProfiles => {
+  // The source does not exist: capability failure must precede discovery/read.
+  const { canonicalProfiles: _profiles, ...legacyProjection } = projection
+  await expect(capture(request({ projection: { ...legacyProjection, ...(canonicalProfiles ? { canonicalProfiles } : {}) } }))).rejects.toThrow("Upgrade the ATape CLI")
+})
+
+it("retains only explicit native MCP and Skill identities without changing source bodies or outcomes", async () => {
+  const blocks = [
+    { type: "tool_use", id: "mcp", name: "mcp__docs__read_page", input: { id: "page" } },
+    { type: "tool_use", id: "skill", name: "Skill", input: { skill: "plugin:review", args: "private input" } },
+    { type: "tool_use", id: "file", name: "Read", input: { file_path: "/tmp/SKILL.md", skill: "not-an-invocation" } },
+    { type: "tool_use", id: "mention", name: "Run Skill workflow", input: { skill: "not-an-invocation" } },
+    { type: "tool_use", id: "empty", name: "Skill", input: { skill: "" } },
+    { type: "tool_use", id: "space", name: "Skill", input: { skill: " review " } },
+    { type: "tool_use", id: "bom", name: "Skill", input: { skill: "\uFEFFreview" } },
+    { type: "tool_use", id: "nel", name: "Skill", input: { skill: "review\u0085" } },
+    { type: "tool_use", id: "large", name: "Skill", input: { skill: "界".repeat(167) } },
+    { type: "tool_use", id: "omitted-input", name: "Skill", input: { skill: "private-workflow", args: "x".repeat(65536) } },
+    { type: "tool_use", id: "boundary", name: "Skill", input: { skill: "界".repeat(166) } },
+    { type: "tool_use", id: "malformed-mcp", name: "mcp__docs", input: {} }
+  ]
+  const common = { sessionId: sid, cwd: directory, isSidechain: false, timestamp: "2026-10-11T00:00:00Z" }
+  const source = encode([
+    { ...common, type: "user", uuid: "root", parentUuid: null, message: { role: "user", content: "Skill and MCP are mentioned here." } },
+    { ...common, type: "assistant", uuid: "calls", parentUuid: "root", message: { role: "assistant", content: blocks } },
+    { ...common, type: "user", uuid: "results", parentUuid: "calls", message: { role: "user", content: [
+      { type: "tool_result", tool_use_id: "mcp", content: "read body" },
+      { type: "tool_result", tool_use_id: "skill", is_error: true, content: "load failed" }
+    ] } }
+  ])
+  await writeFile(file, source)
+  const actual = await capture()
+  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.2", canonicalProfileVersion: CanonicalProfileVersion4 })
+  const calls = actual.events.filter(event => event.update.sessionUpdate === "tool_call")
+  expect(calls.filter(event => "_meta" in event.update).map(event => event.update)).toMatchObject([
+    { toolCallId: "mcp", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "mcp", server: "docs", name: "read_page" } } },
+    { toolCallId: "skill", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "skill", name: "plugin:review" } } },
+    { toolCallId: "boundary", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "skill", name: "界".repeat(166) } } }
+  ])
+  expect(calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "skill")?.update)
+    .toMatchObject({ rawInput: { skill: "plugin:review", args: "private input" } })
+  const omitted = calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "omitted-input")!.update
+  expect(omitted).not.toHaveProperty("rawInput"); expect(omitted).not.toHaveProperty("_meta")
+  expect(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").map(event => event.update)).toMatchObject([
+    { toolCallId: "mcp", status: "completed" }, { toolCallId: "skill", status: "failed" }
+  ])
+  expect(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").every(event => !("_meta" in event.update))).toBe(true)
+  expect(rawText(actual.frames)).toBe(source)
+  expect(await capture(request({ rawEnabled: false }))).toMatchObject({ header: actual.header, events: actual.events })
+})
 
 it("selects a generated truncating-resume branch and retains all physical Raw", async () => {
   const source = encode(rows()); await writeFile(file, source)

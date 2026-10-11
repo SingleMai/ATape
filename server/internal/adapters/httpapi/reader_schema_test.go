@@ -122,7 +122,7 @@ func compareReaderSchema(typ reflect.Type, schema readerSchema, schemas map[stri
 		typ = typ.Elem()
 	}
 	if alternatives, ok := schema.Type.([]any); ok {
-		primitive := map[reflect.Kind]string{reflect.String: "string", reflect.Int64: "integer"}[typ.Kind()]
+		primitive := map[reflect.Kind]string{reflect.String: "string", reflect.Int64: "integer", reflect.Struct: "object"}[typ.Kind()]
 		if !nullable || primitive == "" || len(alternatives) != 2 || !slices.Contains(alternatives, any(primitive)) || !slices.Contains(alternatives, any("null")) {
 			return fmt.Errorf("%s: nullable schema does not describe %s", path, typ)
 		}

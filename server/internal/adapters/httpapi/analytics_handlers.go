@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"unicode/utf8"
 
 	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 )
@@ -15,9 +16,15 @@ func (h *Handler) sessionAnalyticsEvidence(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, evidence bool) {
-	values, ok := strictQuery(w, r, "snapshot", "metric", "thread", "tool", "cursor", "limit")
+	values, ok := strictQuery(w, r, "snapshot", "metric", "thread", "tool", "capability", "server", "cursor", "limit")
 	if !ok {
 		return
+	}
+	for _, value := range values {
+		if !utf8.ValidString(value[0]) {
+			writeProblem(w, r, problemInvalidRequest, 0, nil)
+			return
+		}
 	}
 	if evidence && !values.Has("snapshot") {
 		writeProblem(w, r, problemInvalidRequest, 0, nil)
@@ -37,7 +44,7 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 	}
 	result, err := h.analytics.Open(r.Context(), principalFromContext(r.Context()), r.PathValue("sessionId"), sessionanalytics.Query{
 		Snapshot: values.Get("snapshot"), Metric: values.Get("metric"), Thread: values.Get("thread"),
-		Tool: values.Get("tool"), Cursor: values.Get("cursor"), Limit: limit,
+		Tool: values.Get("tool"), Capability: values.Get("capability"), Server: values.Get("server"), Cursor: values.Get("cursor"), Limit: limit,
 	})
 	if err != nil {
 		writeError(w, r, err)

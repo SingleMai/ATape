@@ -18,8 +18,8 @@ locator; the server resolves its Team and current Membership before accepting
 the batch.
 
 The `atape.canonical.v1` transport accepts `atape.acp-centered.v1`,
-`atape.acp-centered.v2` and the explicit-unknown-time `atape.acp-centered.v3`
-profile. It accepts the shared
+`atape.acp-centered.v2`, explicit-unknown-time `atape.acp-centered.v3`, and
+normalized-tool-identity `atape.acp-centered.v4` profiles. It accepts the shared
 event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`,
 `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol
 carries an explicit extension schema and version.
@@ -202,6 +202,50 @@ profile for an entire candidate. Hosts request that advertisement with
 request without opt-in retains the older v1/v2 response. Unknown header tokens
 are ignored, including in comma-separated or repeated header fields. See
 [ADR-0114](../architecture/adr/0114-explicit-unknown-conversation-time.md).
+
+## v4 normalized tool identity
+
+V4 retains v3's unknown source-clock semantics and adds the normalized identity
+extension to the admitted ACP tool profile. V1/v2/v3 reject `_meta`. V4 permits
+one closed object with the required key `atape.dev/tool-identity`; arbitrary
+Provider metadata, extra fields and `_meta: null` are invalid.
+
+```json
+{
+  "sessionUpdate": "tool_call",
+  "toolCallId": "read-page-1",
+  "title": "mcp__docs__read_page",
+  "_meta": {"atape.dev/tool-identity": {"type": "mcp", "server": "docs", "name": "read_page"}}
+}
+```
+
+A Skill identity is `{"type":"skill","name":"plugin:review"}`. Names and
+MCP servers must already be trimmed, nonempty, well-formed Unicode strings of
+at most 500 UTF-8 bytes. Unpaired surrogate escapes are rejected.
+The Server validates rather than normalizes their values. An absent `_meta`
+preserves the previous call identity; a null namespace value explicitly clears
+it. A successful tool result does not establish successful completion of the
+Skill's requested task.
+
+Provider knowledge stays in the Adapter. The Host applies upload redaction to
+the extension. Any masked identity key or value clears identity, preventing
+leaks and accidental grouping of different secrets under one replacement.
+The Host also clears a copied identity string when its original tool
+input/output field is masked or hidden; a field rule cannot be bypassed by
+copying the same value into metadata. Unrelated masked arguments do not clear
+public identities.
+The full tool update retains its existing byte/depth/node limits. Identity
+travels with tool details in Canonical storage and publication hashes; there is
+no separate identity table, Raw read or database migration.
+
+Source-capture targets require `atape.publication-target.v4`, advertised only
+for requests opting in with `ATape-Accept-Publication-Target`. The Host requests
+v3 and v4 together; the old v3-only opt-in still receives its original profiles.
+Every part's Canonical profile must agree with the frozen target profile.
+The new Claude Adapter declares a static v4 minimum and checks the Host's
+`projection.canonicalProfiles` before opening source bytes. Unsupported Hosts
+and Servers refuse the path explicitly. See [Session Analytics](../session-analytics.md)
+and [ADR-0120](../architecture/adr/0120-normalized-tool-identity.md).
 
 ## Structured usage
 

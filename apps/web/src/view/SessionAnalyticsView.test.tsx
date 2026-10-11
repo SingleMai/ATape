@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { analyticsFixture } from "../../test/sessionAnalyticsFixture"
+import { analyticsFixture, capabilitiesFixture } from "../../test/sessionAnalyticsFixture"
 import { initializeWebI18n } from "../i18n"
 import { SessionAnalyticsView } from "./SessionAnalyticsView"
 
@@ -25,6 +25,33 @@ describe("Session analysis view", () => {
     expect(html).not.toContain('dateTime=""')
     expect(html).toContain('href="/reader?snapshot=snapshot-one&amp;thread=root&amp;event=tool-1&amp;head=head-one"')
     expect(html).not.toContain("Estimated cost")
+  })
+  it("discloses an old Server without showing fabricated MCP or Skill zeros", () => {
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value: analyticsFixture, refreshing: false }} />)
+    expect(html).toContain("This Server does not provide MCP or Skills reports yet.")
+    expect(html).not.toContain("Recorded MCP calls")
+    expect(html).not.toContain('value="mcp_tools"')
+    expect(html).not.toContain('value="skills"')
+  })
+  it("shows zero recorded capability calls separately from unclassified calls", () => {
+    const value = { ...analyticsFixture, analyticsVersion: 2 as const,
+      capabilities: { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 2, mcp: [], skills: [] } }
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value, refreshing: false }} />)
+    expect(html).toContain("<dt>Recorded MCP calls</dt><dd>0</dd>")
+    expect(html).toContain("<dt>Recorded Skill calls</dt><dd>0</dd>")
+    expect(html).toContain("<dt>Calls without capability identity</dt><dd>2</dd>")
+    expect(html).toContain("Their presence does not prove that MCP or Skills were unused.")
+    expect(html).toContain("No MCP calls with structured identity were recorded.")
+    expect(html).not.toContain("This Server does not provide")
+  })
+  it("shows explicit outcomes and names while excluding tool input/output bodies", () => {
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value: capabilitiesFixture, refreshing: false }} />)
+    expect(html).toContain("MCP evidence: docs / lookup")
+    expect(html).toContain("MCP evidence: repo / lookup")
+    expect(html).toContain("Skill evidence: review-code")
+    expect(html).toContain("Completed means the tool finished, not that a Skill task succeeded.")
+    expect(html).not.toContain("rawInput")
+    expect(html).not.toContain("rawOutput")
   })
   it("offers explicit refresh after replacement and does not render prior statistics", () => {
     const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Failed", messageKey: "problems.refresh_required", retryable: true, refreshRequired: true }} />)

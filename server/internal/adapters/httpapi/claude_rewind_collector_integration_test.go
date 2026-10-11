@@ -29,6 +29,7 @@ import (
 	"github.com/SingleMai/ATape/server/internal/projectsearch"
 	"github.com/SingleMai/ATape/server/internal/publication"
 	"github.com/SingleMai/ATape/server/internal/rawarchive"
+	"github.com/SingleMai/ATape/server/internal/sessionanalytics"
 	"github.com/SingleMai/ATape/server/internal/testsupport/canonicalcontract"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -889,6 +890,63 @@ func assertClaudeRewindCollectorContract(t *testing.T, modules Modules, pool *pg
 			t.Fatal("background rewind invalidated available historical Raw content links")
 		}
 	}
+	// A separate generated source verifies current installed Adapter -> Host ->
+	// v4 publication -> Analytics -> conditional original-Event Reader. Native
+	// historical fixtures and their exact migration/rewind assertions stay intact.
+	identityRun := run("identity")
+	if identityRun.Observations == 0 || len(identityRun.SourceFailures) != 0 || len(identityRun.Pending) != 0 {
+		t.Fatalf("identity source did not publish: %+v", identityRun)
+	}
+	var identityMemory conversation.ProjectMemory
+	decodeResponse(t, send("GET", "/api/v1/projects/"+project.ID+"/memory", "", 200), &identityMemory)
+	identitySession := ""
+	for _, session := range append(identityMemory.Active, identityMemory.Trail...) {
+		if session.Title == "ATAPE_GENERATED_IDENTITY_SESSION" {
+			identitySession = session.ID
+		}
+	}
+	if identitySession == "" {
+		t.Fatal("installed identity Session missing from Memory")
+	}
+	identityReader := read(identitySession, "root", 8)
+	var identityAnalysis sessionanalytics.Result
+	decodeResponse(t, send("GET", "/api/v1/sessions/"+identitySession+"/analytics", "", 200), &identityAnalysis)
+	capabilities := identityAnalysis.Capabilities
+	if identityAnalysis.AnalyticsVersion != 2 || identityAnalysis.Snapshot == "" || identityAnalysis.Head != identityReader.Head || identityAnalysis.Summary.ToolCalls != 4 ||
+		capabilities.MCPCalls != 1 || capabilities.SkillCalls != 1 || capabilities.UnclassifiedCalls != 2 || len(capabilities.MCP) != 1 || len(capabilities.Skills) != 1 ||
+		capabilities.MCP[0].Server != "docs" || capabilities.MCP[0].Name != "read_page" || capabilities.MCP[0].Completed != 1 ||
+		capabilities.Skills[0].Name != "plugin:review" || capabilities.Skills[0].Failed != 1 {
+		t.Fatalf("installed identity analysis: %+v", identityAnalysis)
+	}
+	for _, metric := range []string{"mcp_tools", "skills"} {
+		var evidence sessionanalytics.Result
+		query := url.Values{"metric": {metric}, "snapshot": {identityAnalysis.Snapshot}, "limit": {"1"}}
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+identitySession+"/analytics/evidence?"+query.Encode(), "", 200), &evidence)
+		if len(evidence.Evidence.Items) != 1 || !reflect.DeepEqual(evidence.Capabilities, capabilities) {
+			t.Fatalf("installed %s evidence: %+v", metric, evidence)
+		}
+		item := evidence.Evidence.Items[0]
+		query = url.Values{"thread": {item.ThreadID}, "limit": {"1"}, "at": {item.EventID}, "snapshot": {identityAnalysis.Snapshot}}
+		var page conversation.Conversation
+		decodeResponse(t, send("GET", "/api/v1/sessions/"+identitySession+"?"+query.Encode(), "", 200), &page)
+		if page.Snapshot != identityAnalysis.Snapshot || len(page.Events) != 1 || page.Events[0].ID != item.EventID || page.Events[0].Tool == nil || page.Events[0].Tool.ToolCallID == "" {
+			t.Fatalf("installed identity Reader anchor: %+v", page)
+		}
+	}
+	// Field/path redaction of identity must clear it rather than omit the update
+	// and accidentally inherit its previous value. The outcome remains recorded.
+	clearedIdentity := false
+	for _, event := range identityReader.Events {
+		if event.Tool != nil && event.Tool.Meta != nil && event.Tool.Meta.Identity == nil {
+			clearedIdentity = true
+		}
+	}
+	if !clearedIdentity {
+		t.Fatal("redacted identity was not explicitly cleared in Canonical")
+	}
+	send("DELETE", "/api/v1/sessions/"+identitySession, "", 204)
+	send("GET", "/api/v1/sessions/"+identitySession+"/analytics/evidence?snapshot="+url.QueryEscape(identityAnalysis.Snapshot)+"&metric=mcp_tools", "", 404)
+	send("GET", "/api/v1/sessions/"+identitySession+"?limit=1&snapshot="+url.QueryEscape(identityAnalysis.Snapshot), "", 404)
 	faults.Lock()
 	leaked, redacted := wireLeak, redactedThought
 	faults.Unlock()
@@ -905,8 +963,8 @@ func assertClaudeRewindCollectorContract(t *testing.T, modules Modules, pool *pg
 			}
 		}
 	}
-	if runs != 26 {
-		t.Fatalf("installed rewind/background stages=%d want=26", runs)
+	if runs != 27 {
+		t.Fatalf("installed rewind/background/identity stages=%d want=27", runs)
 	}
 	t.Logf("Claude rewind installed contract PASS: %d independently restarted stages; genuine legacy SHA256=%s; no skips", runs, hex.EncodeToString(legacyHash[:]))
 }

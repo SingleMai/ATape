@@ -1,5 +1,5 @@
 import type { AcpContentBlock, AcpSessionUpdate } from "@atape/domain"
-import { AdapterObservation, ToolUpdateBytes } from "@atape/domain"
+import { AcpToolMetadata, AdapterObservation, ToolIdentityMetaKey, ToolUpdateBytes } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { SecretRedactor, type RedactedText, type SecretRedactorService } from "./collectorContracts.ts"
 import { ContentBytes, createEngine, report, stats, UnsafeRedaction, type Engine, type Report } from "./redaction/engine.ts"
@@ -212,10 +212,41 @@ export const prepareRawRedaction = (redactor: SecretRedactorService, input: unkn
   } catch (cause) { return { gap: contentFailure(cause).reason } }
 }
 
+// A normalized name can copy a value whose original field policy hid it.
+// Compare only changed tool values, keeping source paths and decoded JSON TEXT
+// private instead of teaching the shared Module any Provider field names.
+const maskedIdentitySource = (original: unknown, masked: unknown, names: ReadonlySet<string>) => {
+  const pending = [{ before: original, after: masked, depth: 0 }]
+  let nodes = 0, bytes = 0
+  const parse = (value: unknown): unknown => {
+    if (typeof value !== "string") return undefined
+    bytes += byteLength(value)
+    if (bytes > ContentBytes) throw new UnsafeRedaction("limit")
+    try { return JSON.parse(value) } catch { return undefined }
+  }
+  while (pending.length > 0) {
+    const { before, after, depth } = pending.pop()!
+    if (++nodes > 100_000 || depth > 32) throw new UnsafeRedaction("limit")
+    if (typeof before === "string") {
+      if (before === after) continue
+      if (names.has(before)) return true
+      const decoded = parse(before)
+      if (decoded !== undefined) pending.push({ before: decoded, after: parse(after), depth: depth + 1 })
+    } else if (Array.isArray(before) || isObject(before)) {
+      const retained = Array.isArray(after) || isObject(after) ? after : undefined
+      for (const [key, value] of Object.entries(before)) {
+        const present = retained !== undefined && Object.hasOwn(retained, key)
+        if (!Array.isArray(before) && names.has(key) && !present) return true
+        pending.push({ before: value, after: present ? (retained as Record<string, unknown>)[key] : undefined, depth: depth + 1 })
+      }
+    }
+  }
+  return false
+}
+
 const canonical = (observation: AdapterObservation, engine: Engine, output: Report): AdapterObservation => {
   const visitor = traversal(engine, output)
   const text = (value: string) => visitor.walk(value).value as string
-  const tool = (input: unknown) => visitor.walk(input).value
   const content = (value: AcpContentBlock): AcpContentBlock => {
     switch (value.type) {
       case "text": return { ...value, text: text(value.text) }
@@ -229,8 +260,32 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
   const title = (value: string) => { let result = "", size = 0; for (const char of text(value)) { const length = byteLength(char); if (size + length > 500) break; result += char; size += length }; return result }
   const update = (value: AcpSessionUpdate): AcpSessionUpdate => {
     if (value.sessionUpdate === "user_message_chunk" || value.sessionUpdate === "agent_message_chunk" || value.sessionUpdate === "agent_thought_chunk") return { ...value, content: content(value.content) }
+    const input = Object.hasOwn(value, "rawInput") ? visitor.walk(value.rawInput) : undefined
+    const outputValue = Object.hasOwn(value, "rawOutput") ? visitor.walk(value.rawOutput) : undefined
+    const metadata = () => {
+      let masked: ReturnType<typeof visitor.walk>
+      try { masked = visitor.walk(value._meta) }
+      catch (cause) {
+        if (cause instanceof UnsafeRedaction && cause.reason === "redaction") return { [ToolIdentityMetaKey]: null }
+        throw cause
+      }
+      // Names are grouping identities. Any masking must clear the complete
+      // fact rather than merge distinct secret names into one replacement.
+      if (masked.changed) return { [ToolIdentityMetaKey]: null }
+      let decoded: AcpToolMetadata
+      try { decoded = Schema.decodeUnknownSync(AcpToolMetadata)(masked.value) }
+      catch { return { [ToolIdentityMetaKey]: null } }
+      const identity = decoded[ToolIdentityMetaKey]
+      if (identity !== null) {
+        const names = new Set([identity.name, ...(identity.type === "mcp" ? [identity.server] : [])])
+        if (input?.changed && maskedIdentitySource(value.rawInput, input.value, names) ||
+          outputValue?.changed && maskedIdentitySource(value.rawOutput, outputValue.value, names)) return { [ToolIdentityMetaKey]: null }
+      }
+      return decoded
+    }
     const result = { ...value, ...(typeof value.title === "string" ? { title: title(value.title) } : {}),
-      ...(Object.hasOwn(value, "rawInput") ? { rawInput: tool(value.rawInput) } : {}), ...(Object.hasOwn(value, "rawOutput") ? { rawOutput: tool(value.rawOutput) } : {}) }
+      ...(Object.hasOwn(value, "_meta") ? { _meta: metadata() } : {}),
+      ...(input === undefined ? {} : { rawInput: input.value }), ...(outputValue === undefined ? {} : { rawOutput: outputValue.value }) }
     if (byteLength(JSON.stringify(result)) > ToolUpdateBytes) throw new UnsafeRedaction("limit")
     return result
   }
@@ -239,7 +294,8 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
     threads: observation.threads.map(value => ({ ...value, label: text(value.label), summary: text(value.summary) })),
     events: observation.events.map(event => { const before = output.matches, masked = update(event.update), rawRef = event.rawRef._tag === "object" ?
       { ...event.rawRef, ...(event.rawRef.fragment === undefined ? {} : { fragment: text(event.rawRef.fragment) }) } : { ...event.rawRef, reason: text(event.rawRef.reason) };
-      return { ...event, update: masked, rawRef, fidelity: output.matches > before ? "redacted" : event.fidelity } }),
+      const metadataChanged = "_meta" in event.update && "_meta" in masked && JSON.stringify(event.update._meta) !== JSON.stringify(masked._meta)
+      return { ...event, update: masked, rawRef, fidelity: output.matches > before || metadataChanged ? "redacted" : event.fidelity } }),
     ...(observation.usage === undefined ? {} : { usage: observation.usage.map(value => ({ ...value, model: text(value.model) })) }),
     rawSegments: observation.rawSegments.map(value => ({ ...value, sourceName: text(value.sourceName), content: (() => {
       if (!/^(?:application\/(?:json|x-ndjson|[A-Za-z0-9.+-]+\+json))$/i.test(value.mediaType)) return text(value.content)

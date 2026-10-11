@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { AdapterManifest, AdapterProtocolVersion, SourceCaptureVersion, SourceCaptureVersion2 } from "./client.ts"
-import { PublicationTargetProfile2, PublicationTargetProfile3 } from "./publication.ts"
+import { PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4 } from "./publication.ts"
 
 const manifest = { protocolVersion: AdapterProtocolVersion, adapterId: "fixture", displayName: "Fixture",
   entry: "./index.js", harnesses: ["fixture"] }
@@ -16,7 +16,7 @@ describe("Adapter publication prerequisites", () => {
     }
   })
 
-  it.each([PublicationTargetProfile2, PublicationTargetProfile3])("accepts source v2's declared %s minimum", publicationTargetProfile => {
+  it.each([PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4])("accepts source v2's declared %s minimum", publicationTargetProfile => {
     const source = { ...manifest, sourceCapture: SourceCaptureVersion2, publicationTargetProfile }
     expect(decode(source)).toEqual(source)
   })
@@ -26,7 +26,7 @@ describe("Adapter publication prerequisites", () => {
       publicationTargetProfile: PublicationTargetProfile3 })).toThrow()
   })
 
-  it.each([null, 3, {}, "atape.publication-target.v1", "atape.publication-target.v4"])("rejects unsupported profile declarations %j", publicationTargetProfile => {
+  it.each([null, 3, {}, "atape.publication-target.v1", "atape.publication-target.v5"])("rejects unsupported profile declarations %j", publicationTargetProfile => {
     expect(() => decode({ ...manifest, sourceCapture: SourceCaptureVersion2, publicationTargetProfile })).toThrow()
   })
 })

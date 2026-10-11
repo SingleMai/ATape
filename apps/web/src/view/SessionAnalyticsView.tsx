@@ -1,4 +1,4 @@
-import { canFilterSessionAnalyticsTool } from "@atape/application"
+import { canFilterSessionAnalyticsTool, type SessionAnalyticsFilter } from "@atape/application"
 import type { SessionAnalytics, SessionAnalyticsMetric, SessionAnalyticsQuery, SessionAnalyticsTokens } from "@atape/domain"
 import { Button } from "@atape/ui"
 import { useEffect, useId, useRef } from "react"
@@ -22,19 +22,67 @@ type Props = Navigation & {
   readonly state: LoadableView<SessionAnalytics>
   readonly query: SessionAnalyticsQuery
   readonly onReload: () => void
-  readonly onFilter: (filter: { metric?: SessionAnalyticsMetric; thread?: string; tool?: string }) => void
+  readonly onFilter: (filter: SessionAnalyticsFilter) => void
   readonly onNext: () => void
   readonly onFirst: () => void
 }
 const metrics: ReadonlyArray<readonly [SessionAnalyticsMetric, WebMessageKey]> = [
   ["tools", "analytics.metric.tools"], ["failed_tools", "analytics.metric.failed_tools"],
   ["unknown_tools", "analytics.metric.unknown_tools"], ["user_inputs", "analytics.metric.user_inputs"],
-  ["thoughts", "analytics.metric.thoughts"], ["threads", "analytics.metric.threads"]
+  ["thoughts", "analytics.metric.thoughts"], ["threads", "analytics.metric.threads"],
+  ["mcp_tools", "analytics.metric.mcp_tools"], ["skills", "analytics.metric.skills"]
 ]
 const token = (value: number | null) => value === null ? t("analytics.unknown", "Unknown") : formatNumber(value)
 const capture = (value: string) => value === "healthy" ? t("analytics.capture.healthy", "Capture healthy") : value === "complete" ? t("analytics.capture.complete", "Complete") :
   value === "partial" ? t("analytics.capture.partial", "Partial") :
   value === "degraded" ? t("analytics.capture.degraded", "Degraded") : t("analytics.unknown", "Unknown")
+
+type CapabilityReport = Extract<SessionAnalytics, { analyticsVersion: 2 }>["capabilities"]
+function CapabilityReports({ report, thread, onFilter }: {
+  readonly report: CapabilityReport | undefined
+  readonly thread?: string
+  readonly onFilter: (filter: SessionAnalyticsFilter) => void
+}) {
+  const id = useId()
+  if (report === undefined) return <section aria-labelledby={`${id}-capabilities`}>
+    <h2 id={`${id}-capabilities`}>{t("analytics.capabilities", "MCP and Skills")}</h2>
+    <p>{t("analytics.capabilitiesUnavailable", "This Server does not provide MCP or Skills reports yet.")}</p>
+  </section>
+  const headers = ["analytics.calls", "analytics.completed", "analytics.failed", "analytics.pending", "analytics.inProgress", "analytics.statusUnknown"] as const
+  const counts = (item: CapabilityReport["skills"][number]) => [item.calls, item.completed, item.failed, item.pending, item.inProgress, item.unknown]
+  return <section aria-labelledby={`${id}-capabilities`}>
+    <h2 id={`${id}-capabilities`}>{t("analytics.capabilities", "MCP and Skills")}</h2>
+    <dl className="analytics-summary">
+      <div><dt>{t("analytics.mcpCalls", "Recorded MCP calls")}</dt><dd>{formatNumber(report.mcpCalls)}</dd></div>
+      <div><dt>{t("analytics.skillCalls", "Recorded Skill calls")}</dt><dd>{formatNumber(report.skillCalls)}</dd></div>
+      <div><dt>{t("analytics.unclassifiedCalls", "Calls without capability identity")}</dt><dd>{formatNumber(report.unclassifiedCalls)}</dd></div>
+    </dl>
+    <p className="analytics-note">{t("analytics.capabilityCoverage", "Calls without capability identity include ordinary tools and calls from older or unsupported Adapters. Their presence does not prove that MCP or Skills were unused.")}</p>
+    <p className="analytics-note">{t("analytics.skillOutcome", "These are recorded invocations. Completed means the tool finished, not that a Skill task succeeded. Installed or loaded capabilities are not counted.")}</p>
+    <h3>{t("analytics.mcp", "MCP tools")}</h3>
+    {report.mcp.length === 0 ? <p>{t("analytics.noMcp", "No MCP calls with structured identity were recorded.")}</p> :
+      <div className="analytics-table-scroll"><table><thead><tr>
+        <th scope="col">{t("analytics.mcpServer", "MCP server")}</th><th scope="col">{t("analytics.capabilityName", "Name")}</th>
+        {headers.map(label => <th key={label} scope="col">{t(label)}</th>)}
+      </tr></thead><tbody>{report.mcp.map(item => <tr key={JSON.stringify([item.server, item.name])}>
+        <td>{item.server}</td><th scope="row"><button type="button" className="analytics-link"
+          disabled={!canFilterSessionAnalyticsTool(item.server) || !canFilterSessionAnalyticsTool(item.name)}
+          aria-label={t("analytics.mcpEvidence", "MCP evidence: {server} / {name}", { server: item.server, name: item.name })}
+          onClick={() => onFilter({ metric: "mcp_tools", capability: item.name, server: item.server, ...(thread ? { thread } : {}) })}>{item.name}</button></th>
+        {counts(item).map((count, index) => <td key={headers[index]}>{formatNumber(count)}</td>)}
+      </tr>)}</tbody></table></div>}
+    <h3>{t("analytics.skills", "Skills")}</h3>
+    {report.skills.length === 0 ? <p>{t("analytics.noSkills", "No Skill calls with structured identity were recorded.")}</p> :
+      <div className="analytics-table-scroll"><table><thead><tr>
+        <th scope="col">{t("analytics.capabilityName", "Name")}</th>{headers.map(label => <th key={label} scope="col">{t(label)}</th>)}
+      </tr></thead><tbody>{report.skills.map(item => <tr key={item.name}>
+        <th scope="row"><button type="button" className="analytics-link" disabled={!canFilterSessionAnalyticsTool(item.name)}
+          aria-label={t("analytics.skillEvidence", "Skill evidence: {name}", { name: item.name })}
+          onClick={() => onFilter({ metric: "skills", capability: item.name, ...(thread ? { thread } : {}) })}>{item.name}</button></th>
+        {counts(item).map((count, index) => <td key={headers[index]}>{formatNumber(count)}</td>)}
+      </tr>)}</tbody></table></div>}
+  </section>
+}
 
 function Tokens({ value }: { readonly value: SessionAnalyticsTokens }) {
   return <dl className="analytics-token-grid">
@@ -94,6 +142,7 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
             <td><button type="button" className="analytics-link" disabled={!canFilterSessionAnalyticsTool(tool.name)} onClick={() => onFilter({ metric: "unknown_tools", tool: tool.name })} aria-label={t("analytics.unknownFor", "Calls with unknown status: {label}", { label: tool.name })}>{formatNumber(tool.unknown)}</button></td>
           </tr>)}</tbody></table></div>}
       </section>
+      <CapabilityReports report={state.value.analyticsVersion === 2 ? state.value.capabilities : undefined} {...(query.thread ? { thread: query.thread } : {})} onFilter={onFilter} />
       <section aria-labelledby={`${id}-usage`}>
         <h2 id={`${id}-usage`}>{t("analytics.recordedTokens", "Recorded tokens")}</h2>
         <p>{t("analytics.samples", "{recorded} recorded samples · {incomplete} incomplete samples · {samples} usage events", {
@@ -118,15 +167,28 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
       <section aria-labelledby={`${id}-evidence`} className="analytics-evidence">
         <h2 id={`${id}-evidence`}>{t("analytics.evidence", "Evidence")}</h2>
         <div className="analytics-filters">
-          <label>{t("analytics.evidenceType", "Evidence type")}<select aria-label={t("analytics.evidenceType", "Evidence type")} value={query.metric ?? "tools"} onChange={event => onFilter({ ...query, metric: event.currentTarget.value as SessionAnalyticsMetric })}>
-            {metrics.map(([metric, label]) => <option key={metric} value={metric}>{t(label)}</option>)}
+          <label>{t("analytics.evidenceType", "Evidence type")}<select aria-label={t("analytics.evidenceType", "Evidence type")} value={query.metric ?? "tools"} onChange={event => onFilter({ metric: event.currentTarget.value as SessionAnalyticsMetric, ...(query.thread ? { thread: query.thread } : {}) })}>
+            {metrics.filter(([metric]) => state.value.analyticsVersion === 2 || !["mcp_tools", "skills"].includes(metric)).map(([metric, label]) => <option key={metric} value={metric}>{t(label)}</option>)}
           </select></label>
           <label>{t("analytics.thread", "Thread")}<select aria-label={t("analytics.thread", "Thread")} value={query.thread ?? ""} onChange={event => onFilter({ ...query, thread: event.currentTarget.value })}>
             <option value="">{t("analytics.allThreads", "All threads")}</option>{state.value.threads.map(thread => <option key={thread.id} value={thread.id}>{thread.label}</option>)}
           </select></label>
-          <label>{t("analytics.toolLabel", "Tool label")}<select aria-label={t("analytics.toolLabel", "Tool label")} value={query.tool ?? ""} disabled={!["tools", "failed_tools", "unknown_tools"].includes(query.metric ?? "tools")} onChange={event => onFilter({ ...query, tool: event.currentTarget.value })}>
+          {!["mcp_tools", "skills"].includes(query.metric ?? "tools") && <label>{t("analytics.toolLabel", "Tool label")}<select aria-label={t("analytics.toolLabel", "Tool label")} value={query.tool ?? ""} disabled={!["tools", "failed_tools", "unknown_tools"].includes(query.metric ?? "tools")} onChange={event => onFilter({ ...query, tool: event.currentTarget.value })}>
             <option value="">{t("analytics.allTools", "All labels")}</option>{[...new Set(state.value.tools.map(tool => tool.name))].filter(canFilterSessionAnalyticsTool).map(name => <option key={name} value={name}>{name === "unknown" ? t("analytics.unknown", "Unknown") : name}</option>)}
-          </select></label>
+          </select></label>}
+          {state.value.analyticsVersion === 2 && ["mcp_tools", "skills"].includes(query.metric ?? "tools") && <>
+            {query.metric === "mcp_tools" && <label>{t("analytics.mcpServer", "MCP server")}<select aria-label={t("analytics.mcpServer", "MCP server")} value={query.server ?? ""}
+              onChange={event => { const { capability: _capability, ...selection } = query; onFilter({ ...selection, server: event.currentTarget.value }) }}>
+              <option value="">{t("analytics.allServers", "All servers")}</option>
+              {[...new Set(state.value.capabilities.mcp.map(item => item.server))].filter(canFilterSessionAnalyticsTool).map(server => <option key={server} value={server}>{server}</option>)}
+            </select></label>}
+            <label>{t("analytics.capabilityName", "Name")}<select aria-label={t("analytics.capabilityName", "Name")} value={query.capability ?? ""}
+              onChange={event => onFilter({ ...query, capability: event.currentTarget.value })}>
+              <option value="">{t("analytics.allCapabilities", "All names")}</option>
+              {[...new Set((query.metric === "mcp_tools" ? state.value.capabilities.mcp.filter(item => !query.server || item.server === query.server) : state.value.capabilities.skills).map(item => item.name))]
+                .filter(canFilterSessionAnalyticsTool).map(name => <option key={name} value={name}>{name}</option>)}
+            </select></label>
+          </>}
         </div>
         {state.value.evidence.items.length === 0 ? <p>{t("analytics.noEvidence", "No evidence matches these filters.")}</p> :
           <ol className="analytics-evidence-list">{state.value.evidence.items.map(item => {

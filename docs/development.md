@@ -53,6 +53,11 @@ Web browser tests, Codex/Claude E2E and Go unit suites. It does not include ever
 release or PostgreSQL check. `pnpm test:go:integration` also runs installed
 Claude, OpenCode, CodeBuddy, Kimi, Grok and synthetic Cursor contracts; its name is narrower than its coverage.
 
+The Go installed-Collector contracts pack existing production `dist` outputs
+with npm lifecycle scripts disabled. Run `pnpm build` after implementation
+changes before invoking those local contracts so the packaged Host and Adapter
+match the source being verified.
+
 Genuine historical Claude and capture-journal fixtures install their pinned
 revision's dependency lock in an isolated temporary workspace and verify source
 and toolchain provenance. They never borrow current dependencies. Installation

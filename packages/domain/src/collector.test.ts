@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { AdapterCollectionPage, AdapterProtocolVersion, CanonicalBatch, CanonicalProfileVersion, CanonicalProfileVersion3 } from "./index.ts"
+import { AdapterCollectionPage, AdapterProtocolVersion, CanonicalBatch, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "./index.ts"
 
 const page = {
   protocolVersion: AdapterProtocolVersion,
@@ -51,9 +51,9 @@ const page = {
 }
 
 describe("Adapter collection protocol", () => {
-  it("requires explicit nullable source times only in Canonical v3", async () => {
+  it.each([CanonicalProfileVersion3, CanonicalProfileVersion4])("requires explicit nullable source times in Canonical %s", async canonicalProfileVersion => {
     const observation = page.observations[0]!
-    const batch = { protocolVersion: "atape.canonical.v1", canonicalProfileVersion: CanonicalProfileVersion3,
+    const batch = { protocolVersion: "atape.canonical.v1", canonicalProfileVersion,
       batchId: "unknown-time", observedAt: observation.observedAt,
       source: { adapterId: "fixture", adapterVersion: "0.0.0", installationId: "installation" }, projectId: "project",
       session: { ...observation.session, updatedAt: null }, threads: observation.threads,

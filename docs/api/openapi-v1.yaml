@@ -1012,9 +1012,11 @@ paths:
       security: [{webSession: []}]
       parameters:
         - {name: snapshot, in: query, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
-        - {name: tool, in: query, schema: {type: string, maxLength: 500}}
+        - {name: tool, in: query, description: Exact display label; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
+        - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
+        - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
         - {name: cursor, in: query, description: Opaque evidence cursor bound to the Session, snapshot, analytics version and filters; requires snapshot., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -1034,9 +1036,11 @@ paths:
       security: [{webSession: []}]
       parameters:
         - {name: snapshot, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
-        - {name: tool, in: query, schema: {type: string, maxLength: 500}}
+        - {name: tool, in: query, description: Exact display label; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
+        - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
+        - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
         - {name: cursor, in: query, description: Opaque cursor for the same snapshot and filters., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -1152,7 +1156,7 @@ paths:
           name: ATape-Accept-Publication-Target
           required: false
           schema: {type: string}
-          description: Comma-separated accepted extension profiles; repeated fields are combined. Exact atape.publication-target.v3 opts into v3 advertisement. Missing, empty and unknown tokens retain the v1/v2 response; unknown tokens are ignored.
+          description: Comma-separated accepted extension profiles; repeated fields are combined. Exact atape.publication-target.v3 or atape.publication-target.v4 opts into that profile advertisement. Missing, empty and unknown tokens retain the v1/v2 response; unknown tokens are ignored.
       description: Requires explicitly configured publication capacity. Each call performs one bounded operation. Unknown proof never establishes non-activation; activation retries return the original receipt. See the OpenCode Adapter guide for recovery and manifest rules.
       x-atape-authorization-actions: []
       x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
@@ -2004,6 +2008,25 @@ components:
         summary: {type: string}
         captureStatus: {type: string, enum: [healthy, partial, complete, degraded]}
         eventCount: {type: integer}
+    NormalizedToolIdentity:
+      type: [object, "null"]
+      additionalProperties: false
+      required: [type, name]
+      description: Adapter-normalized recorded tool identity. Strings are nonempty, trimmed and at most 500 UTF-8 bytes; null explicitly clears the preceding identity.
+      allOf:
+        - if: {properties: {type: {const: mcp}}}
+          then: {required: [server]}
+          else: {not: {required: [server]}}
+      properties:
+        type: {type: string, enum: [mcp, skill]}
+        server: {type: string, minLength: 1, maxLength: 500}
+        name: {type: string, minLength: 1, maxLength: 500}
+    NormalizedToolIdentityMeta:
+      type: object
+      additionalProperties: false
+      required: [atape.dev/tool-identity]
+      properties:
+        atape.dev/tool-identity: {$ref: "#/components/schemas/NormalizedToolIdentity"}
     ReaderToolUpdate:
       type: object
       additionalProperties: false
@@ -2016,6 +2039,7 @@ components:
         status: {type: string, enum: [pending, in_progress, completed, failed]}
         rawInput: {}
         rawOutput: {}
+        _meta: {$ref: "#/components/schemas/NormalizedToolIdentityMeta"}
       description: Decoded admitted ACP tool details. rawInput/rawOutput preserve arbitrary bounded JSON, including null; absence is distinct. Each value is limited to 65536 UTF-8 bytes, depth 32 and 10000 nodes before storage.
       if:
         properties: {sessionUpdate: {const: tool_call}}
@@ -2084,6 +2108,43 @@ components:
         pending: {type: integer}
         inProgress: {type: integer}
         unknown: {type: integer}
+    SessionAnalyticsMCPTool:
+      type: object
+      additionalProperties: false
+      required: [server, name, calls, completed, failed, pending, inProgress, unknown]
+      properties:
+        server: {type: string}
+        name: {type: string}
+        calls: {type: integer}
+        completed: {type: integer}
+        failed: {type: integer}
+        pending: {type: integer}
+        inProgress: {type: integer}
+        unknown: {type: integer}
+    SessionAnalyticsSkill:
+      type: object
+      additionalProperties: false
+      required: [name, calls, completed, failed, pending, inProgress, unknown]
+      description: Completed describes the Skill tool result, not success of the requested task.
+      properties:
+        name: {type: string}
+        calls: {type: integer}
+        completed: {type: integer}
+        failed: {type: integer}
+        pending: {type: integer}
+        inProgress: {type: integer}
+        unknown: {type: integer}
+    SessionAnalyticsCapabilities:
+      type: object
+      additionalProperties: false
+      required: [mcpCalls, skillCalls, unclassifiedCalls, mcp, skills]
+      description: Recorded normalized identities only; ordinary tools, old records and unsupported signals are unclassified. Zero identified calls does not prove none were used.
+      properties:
+        mcpCalls: {type: integer}
+        skillCalls: {type: integer}
+        unclassifiedCalls: {type: integer}
+        mcp: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsMCPTool"}}
+        skills: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsSkill"}}
     SessionAnalyticsThread:
       type: object
       additionalProperties: false
@@ -2132,15 +2193,16 @@ components:
     SessionAnalytics:
       type: object
       additionalProperties: false
-      required: [snapshot, analyticsVersion, sessionId, captureStatus, summary, tools, threads, usage, evidence]
+      required: [snapshot, analyticsVersion, sessionId, captureStatus, summary, tools, capabilities, threads, usage, evidence]
       properties:
         snapshot: {type: string, description: Opaque conditional token for the current Canonical input; not historical retention or authorization.}
         head: {type: string, description: Selected publication head when normalized publication is active.}
-        analyticsVersion: {type: integer, const: 1}
+        analyticsVersion: {type: integer, const: 2}
         sessionId: {type: string}
         captureStatus: {type: string}
         summary: {$ref: "#/components/schemas/SessionAnalyticsSummary"}
         tools: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsTool"}}
+        capabilities: {$ref: "#/components/schemas/SessionAnalyticsCapabilities"}
         threads: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsThread"}}
         usage: {$ref: "#/components/schemas/SessionAnalyticsUsage"}
         evidence: {$ref: "#/components/schemas/SessionAnalyticsEvidence"}
@@ -2294,7 +2356,7 @@ components:
       properties:
         protocol: {type: string, const: atape.publication.v1}
         targetProfile: {type: string, const: atape.publication-target.v1}
-        targetProfiles: {type: array, items: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2, atape.publication-target.v3]}}
+        targetProfiles: {type: array, items: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2, atape.publication-target.v3, atape.publication-target.v4]}}
         legacyAdoption: {type: boolean, const: true}
         limits: {$ref: "#/components/schemas/PublicationCapacity"}
         statusPageSize: {type: integer, const: 100}
@@ -2304,13 +2366,13 @@ components:
       additionalProperties: false
       required: [profile, events, usage, threads]
       allOf:
-        - if: {properties: {profile: {enum: [atape.publication-target.v2, atape.publication-target.v3]}}}
+        - if: {properties: {profile: {enum: [atape.publication-target.v2, atape.publication-target.v3, atape.publication-target.v4]}}}
           then: {required: [retainedThreadIds]}
           else: {not: {required: [retainedThreadIds]}}
       properties:
-        profile: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2, atape.publication-target.v3]}
+        profile: {type: string, enum: [atape.publication-target.v1, atape.publication-target.v2, atape.publication-target.v3, atape.publication-target.v4]}
         retainedThreadIds:
-          description: Required for v2/v3 (including an empty array); source-local nonroot Thread IDs retained from the bound base. v1 does not support retention. Events and usage counts include only explicit projection.
+          description: Required for v2/v3/v4 (including an empty array); source-local nonroot Thread IDs retained from the bound base. v1 does not support retention. Events and usage counts include only explicit projection.
           type: array
           maxItems: 100
           uniqueItems: true
@@ -2322,7 +2384,7 @@ components:
       type: object
       additionalProperties: false
       required: [target, batch]
-      description: Target v3 requires canonical v3; target v1/v2 require canonical v1/v2. Every part in one candidate must repeat the same target and canonical profile.
+      description: Target v3 requires canonical v3; target v4 requires canonical v4; target v1/v2 require canonical v1/v2. Every part in one candidate must repeat the same target and canonical profile.
       allOf:
         - if:
             properties:
@@ -2332,7 +2394,16 @@ components:
               batch: {properties: {canonicalProfileVersion: {const: atape.acp-centered.v3}}}
           else:
             properties:
-              batch: {properties: {canonicalProfileVersion: {enum: [atape.acp-centered.v1, atape.acp-centered.v2]}}}
+              batch: {properties: {canonicalProfileVersion: {enum: [atape.acp-centered.v1, atape.acp-centered.v2, atape.acp-centered.v4]}}}
+        - if:
+            properties:
+              target: {properties: {profile: {const: atape.publication-target.v4}}}
+          then:
+            properties:
+              batch: {properties: {canonicalProfileVersion: {const: atape.acp-centered.v4}}}
+          else:
+            properties:
+              batch: {properties: {canonicalProfileVersion: {enum: [atape.acp-centered.v1, atape.acp-centered.v2, atape.acp-centered.v3]}}}
       properties:
         target: {$ref: "#/components/schemas/PublicationTarget"}
         batch: {$ref: "#/components/schemas/CanonicalBatch"}
@@ -2681,13 +2752,13 @@ components:
         toolUpdateJson:
           type: string
           maxLength: 140000
-          description: "v2/v3 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). Maximum 140000 bytes; each JSON value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
+          description: "v2/v3/v4 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). V4 alone additionally admits _meta with exactly the atape.dev/tool-identity key whose value is a closed normalized MCP/Skill identity or null to clear; missing _meta preserves identity. Maximum 140000 bytes; each input/output value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
         childSourceThreadId: {type: [string, "null"]}
     CanonicalBatch:
       type: object
       additionalProperties: false
       required: [protocolVersion, canonicalProfileVersion, batchId, observedAt, source, projectId, session, threads, events]
-      description: v3 alone permits explicit null occurrence/update times. Missing, empty and invalid timestamps remain invalid; observedAt and usage times are always known. A known timestamp that truncates to Go zero time at microsecond storage precision is invalid.
+      description: v3/v4 permit explicit null occurrence/update times. V4 alone admits normalized tool identity metadata. Missing, empty and invalid timestamps remain invalid; observedAt and usage times are always known. A known timestamp that truncates to Go zero time at microsecond storage precision is invalid.
       allOf:
         - if: {properties: {canonicalProfileVersion: {enum: [atape.acp-centered.v1, atape.acp-centered.v2]}}}
           then:
@@ -2701,7 +2772,7 @@ components:
                     occurredAt: {$ref: "#/components/schemas/Timestamp"}
       properties:
         protocolVersion: {const: atape.canonical.v1}
-        canonicalProfileVersion: {type: string, enum: [atape.acp-centered.v1, atape.acp-centered.v2, atape.acp-centered.v3]}
+        canonicalProfileVersion: {type: string, enum: [atape.acp-centered.v1, atape.acp-centered.v2, atape.acp-centered.v3, atape.acp-centered.v4]}
         batchId: {type: string, minLength: 1, maxLength: 200}
         observedAt: {$ref: "#/components/schemas/Timestamp"}
         source: {$ref: "#/components/schemas/CanonicalSource"}

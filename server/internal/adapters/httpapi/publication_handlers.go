@@ -96,17 +96,20 @@ func (h *Handler) publicationCapabilities(w http.ResponseWriter, r *http.Request
 // profiles are advertised only when the caller opts in; unknown tokens remain
 // harmless so a future Host can negotiate with this Server.
 func negotiatedPublicationCapabilities(capabilities publication.Capabilities, accepted []string) publication.Capabilities {
-	allowV3 := false
+	allowV3, allowV4 := false, false
 	for _, field := range accepted {
 		for _, token := range strings.Split(field, ",") {
 			if strings.TrimSpace(token) == publication.UnknownTimeTargetProfile {
 				allowV3 = true
 			}
+			if strings.TrimSpace(token) == publication.ToolIdentityTargetProfile {
+				allowV4 = true
+			}
 		}
 	}
 	selected := make([]string, 0, len(capabilities.TargetProfiles))
 	for _, profile := range capabilities.TargetProfiles {
-		if profile == publication.TargetProfile || profile == publication.RetentionTargetProfile || allowV3 && profile == publication.UnknownTimeTargetProfile {
+		if profile == publication.TargetProfile || profile == publication.RetentionTargetProfile || allowV3 && profile == publication.UnknownTimeTargetProfile || allowV4 && profile == publication.ToolIdentityTargetProfile {
 			selected = append(selected, profile)
 		}
 	}

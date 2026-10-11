@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { analyticsFixture } from "../test/sessionAnalyticsFixture"
+import { analyticsFixture, capabilitiesFixture } from "../test/sessionAnalyticsFixture"
 
 const path = "/teams/team-id/projects/project-1/sessions/session-reader?thread=root"
 test.beforeEach(async ({ context, request }) => {
@@ -22,6 +22,8 @@ test("analysis separates unknown counters, filters only evidence and pins every 
   const panel = page.getByRole("region", { name: "Session analysis", exact: true })
   await expect(panel.getByRole("heading", { name: "Session analysis", exact: true })).toBeFocused()
   await expect(panel.getByText("Capture: Partial", { exact: true })).toBeVisible()
+  await expect(panel.getByText("This Server does not provide MCP or Skills reports yet.", { exact: true })).toBeVisible()
+  await expect(panel.getByLabel("Evidence type", { exact: true }).locator('option[value="mcp_tools"]')).toHaveCount(0)
   await expect(panel.locator(".analytics-token-grid").first()).toContainText("TotalUnknownInput10OutputUnknownCache read0Cache writeUnknown")
   await expect(panel.locator("time")).toHaveCount(0)
   await expect(panel.getByRole("button", { name: "界".repeat(167), exact: true })).toBeDisabled()
@@ -169,4 +171,85 @@ test("returning to the Reader revalidates without old content and offers retry a
   await page.getByRole("button", { name: "Try again", exact: true }).click()
   await expect(page.getByText("Freshly revalidated Reader body", { exact: true })).toBeVisible()
   await expect(page.getByText("Previously authorized Reader body", { exact: true })).toHaveCount(0)
+})
+
+
+test("MCP and Skills filters retain identity, snapshot and page across Reader evidence navigation", async ({ page }) => {
+  let mode = "ready"
+  const reads: URL[] = []
+  await page.route("**/api/v1/sessions/session-reader/analytics*", async route => {
+    const url = new URL(route.request().url()); reads.push(url)
+    if (mode === "changed") {
+      await route.fulfill({ status: 409, json: { code: "refresh_required", detail: "Changed" } }); return
+    }
+    if (mode === "replacement") {
+      if (url.searchParams.has("capability") || url.searchParams.has("server") || url.searchParams.has("thread")) {
+        await route.fulfill({ status: 422, json: { code: "validation_failed", detail: "Selection was removed." } }); return
+      }
+      await route.fulfill({ json: { ...capabilitiesFixture, snapshot: "snapshot-two", capabilities: {
+        mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 5, mcp: [], skills: [] }, evidence: { items: [] } } }); return
+    }
+    await route.fulfill({ json: { ...capabilitiesFixture, evidence: {
+      items: [{ eventId: "tool-capability", threadId: "child", kind: "tool_result", label: "Capability invocation evidence", occurredAt: null }], nextCursor: "next-capability" } } })
+  })
+  await page.route("**/api/v1/sessions/session-reader?*", async route => {
+    const url = new URL(route.request().url())
+    const response = await route.fetch({ url: `${url.origin}${url.pathname}?thread=root` }); const value = await response.json()
+    value.thread = { ...value.thread, id: url.searchParams.get("thread") ?? "root" }
+    value.head = "head-one"; value.snapshot = "snapshot-one"
+    if (url.searchParams.get("at") === "tool-capability") value.events = [{
+      id: "tool-capability", kind: "tool_result", author: "Agent", text: "The recorded invocation finished", occurredAt: null,
+      tool: { sessionUpdate: "tool_call_update", toolCallId: "call-capability", title: "Skill", status: "completed" }
+    }]
+    await route.fulfill({ json: value })
+  })
+  await page.goto(path)
+  await page.getByRole("button", { name: "Session analysis", exact: true }).click()
+  const panel = page.getByRole("region", { name: "Session analysis", exact: true })
+  await expect(panel.getByText("Completed means the tool finished, not that a Skill task succeeded.", { exact: false })).toBeVisible()
+  await panel.getByRole("button", { name: "MCP evidence: repo / lookup", exact: true }).click()
+  await expect(panel.getByLabel("Evidence type", { exact: true })).toHaveValue("mcp_tools")
+  await expect(panel.getByLabel("MCP server", { exact: true })).toHaveValue("repo")
+  await expect(panel.getByLabel("Name", { exact: true })).toHaveValue("lookup")
+  expect(Object.fromEntries(reads.at(-1)!.searchParams)).toMatchObject({ metric: "mcp_tools", server: "repo", capability: "lookup", snapshot: "snapshot-one" })
+  await panel.getByLabel("Thread", { exact: true }).selectOption("child")
+  await expect(panel.getByLabel("Thread", { exact: true })).toHaveValue("child")
+  expect(reads.at(-1)!.searchParams.get("server")).toBe("repo")
+  await panel.getByRole("button", { name: "Next evidence page", exact: true }).click()
+  await expect(panel.getByRole("button", { name: "First evidence page", exact: true })).toBeEnabled()
+  expect(Object.fromEntries(reads.at(-1)!.searchParams)).toMatchObject({ metric: "mcp_tools", server: "repo", capability: "lookup", thread: "child", snapshot: "snapshot-one", cursor: "next-capability" })
+  await expect(panel.locator(".analytics-summary").first()).toContainText("Linked tool calls5")
+  await panel.getByRole("link", { name: "Capability invocation evidence", exact: true }).click()
+  await expect(page.locator("#event-tool-capability")).toBeFocused()
+  await expect(page).toHaveURL(/snapshot=snapshot-one/)
+  await page.getByRole("button", { name: "Session analysis", exact: true }).click()
+  await expect(panel.getByLabel("MCP server", { exact: true })).toHaveValue("repo")
+  await expect(panel.getByLabel("Name", { exact: true })).toHaveValue("lookup")
+  await expect(panel.getByRole("button", { name: "First evidence page", exact: true })).toBeEnabled()
+  await panel.getByRole("button", { name: "Skill evidence: review-code", exact: true }).click()
+  await expect(panel.getByLabel("Evidence type", { exact: true })).toHaveValue("skills")
+  await expect(panel.getByLabel("Name", { exact: true })).toHaveValue("review-code")
+  await expect(panel.getByLabel("MCP server", { exact: true })).toHaveCount(0)
+  expect(Object.fromEntries(reads.at(-1)!.searchParams)).toMatchObject({ metric: "skills", capability: "review-code", thread: "child", snapshot: "snapshot-one" })
+  expect(reads.at(-1)!.searchParams.has("server")).toBe(false)
+  expect(reads.at(-1)!.searchParams.has("tool")).toBe(false)
+  expect(reads.at(-1)!.searchParams.has("cursor")).toBe(false)
+  await panel.getByLabel("Evidence type", { exact: true }).selectOption("thoughts")
+  await expect(panel.getByLabel("Name", { exact: true })).toHaveCount(0)
+  expect(reads.at(-1)!.searchParams.has("capability")).toBe(false)
+  expect(reads.at(-1)!.searchParams.has("server")).toBe(false)
+  await panel.getByRole("button", { name: "MCP evidence: docs / lookup", exact: true }).click()
+  await expect(panel.getByLabel("MCP server", { exact: true })).toHaveValue("docs")
+  await panel.getByLabel("MCP server", { exact: true }).selectOption("repo")
+  await expect(panel.getByLabel("Name", { exact: true })).toHaveValue("")
+  expect(reads.at(-1)!.searchParams.has("capability")).toBe(false)
+  await panel.getByLabel("Name", { exact: true }).selectOption("lookup")
+  await expect(panel.getByLabel("Name", { exact: true })).toHaveValue("lookup")
+  mode = "changed"
+  await panel.getByRole("button", { name: "Next evidence page", exact: true }).click()
+  await expect(panel.getByRole("heading", { name: "Conversation has changed", exact: true })).toBeVisible()
+  mode = "replacement"
+  await panel.getByRole("button", { name: "Reload analysis", exact: true }).first().click()
+  await expect(panel.getByText("No MCP calls with structured identity were recorded.", { exact: true })).toBeVisible()
+  expect(Object.fromEntries(reads.at(-1)!.searchParams)).toEqual({ metric: "tools" })
 })

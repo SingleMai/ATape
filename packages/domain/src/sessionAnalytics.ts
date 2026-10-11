@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads"])
+export const SessionAnalyticsMetric = Schema.Literals(["tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills"])
 export type SessionAnalyticsMetric = typeof SessionAnalyticsMetric.Type
 
 const Count = Schema.Number
@@ -12,10 +12,9 @@ export const SessionAnalyticsTokens = Schema.Struct({
 })
 export type SessionAnalyticsTokens = typeof SessionAnalyticsTokens.Type
 
-export const SessionAnalytics = Schema.Struct({
+const AnalyticsFields = {
   snapshot: Schema.String,
   head: Schema.optionalKey(Schema.String),
-  analyticsVersion: Schema.Literal(1),
   sessionId: Schema.String,
   captureStatus: Schema.String,
   summary: Schema.Struct({
@@ -42,7 +41,25 @@ export const SessionAnalytics = Schema.Struct({
     })),
     nextCursor: Schema.optionalKey(Schema.String)
   })
+}
+const Outcomes = {
+  calls: Count, completed: Count, failed: Count, pending: Count, inProgress: Count, unknown: Count
+}
+export const SessionAnalyticsCapabilities = Schema.Struct({
+  mcpCalls: Count,
+  skillCalls: Count,
+  unclassifiedCalls: Count,
+  mcp: Schema.Array(Schema.Struct({ server: Schema.String, name: Schema.String, ...Outcomes })),
+  skills: Schema.Array(Schema.Struct({ name: Schema.String, ...Outcomes }))
 })
+export type SessionAnalyticsCapabilities = typeof SessionAnalyticsCapabilities.Type
+
+// A v1 Server cannot supply this report. A v2 Server must supply it, including
+// explicit empty arrays and zero counts; omission must not become invented zero.
+export const SessionAnalytics = Schema.Union([
+  Schema.Struct({ analyticsVersion: Schema.Literal(1), ...AnalyticsFields }),
+  Schema.Struct({ analyticsVersion: Schema.Literal(2), ...AnalyticsFields, capabilities: SessionAnalyticsCapabilities })
+])
 export type SessionAnalytics = typeof SessionAnalytics.Type
 
 export type SessionAnalyticsQuery = {
@@ -50,6 +67,8 @@ export type SessionAnalyticsQuery = {
   readonly metric?: SessionAnalyticsMetric
   readonly thread?: string
   readonly tool?: string
+  readonly capability?: string
+  readonly server?: string
   readonly cursor?: string
   readonly limit?: number
 }

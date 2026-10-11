@@ -8,7 +8,7 @@ import { dirname, join } from "node:path"
 export async function verifyClaudePackage(adapter, context, paths) {
   const { packageRoot, sourceHome, projectDirectory, temporaryRoot } = paths
   const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 100_000, threads: 100, durationMs: 60_000 }
-  const projection = { events: 100_000, usage: 100_000, pageItems: 1, pageBytes: 32 * 1024 * 1024 }
+  const projection = { events: 100_000, usage: 100_000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: ["atape.acp-centered.v4"] }
   const jsonl = rows => rows.map(row => JSON.stringify(row) + "\n").join("")
   const parse = source => source.trimEnd().split("\n").filter(Boolean).map(line => JSON.parse(line))
   const relocate = (source, cwd) => source.replaceAll(JSON.stringify(cwd).slice(1, -1), JSON.stringify(projectDirectory).slice(1, -1))
@@ -23,6 +23,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
       const view = await runtime.sourceCapture.open(request)
       try {
         const header = JSON.parse(JSON.stringify(view)), frames = [], keys = new Set(), offsets = new Map()
+        assert.equal(header.canonicalProfileVersion, "atape.acp-centered.v4")
         assert.equal(header.origin.sourceId, sourceId); assert.equal(header.session.sourceSessionId, sourceId)
         assert.equal(typeof header.sourceCheckpoint, "string"); assert.ok(Buffer.byteLength(header.sourceCheckpoint) <= 1024 * 1024)
         assert.ok(Array.isArray(header.target.retainedThreadIds)); assert.ok(Array.isArray(header.sourceFailures))
@@ -79,6 +80,39 @@ export async function verifyClaudePackage(adapter, context, paths) {
       sources: [], cursor: null, done: true, sourceFailures: [], sourceFailuresTruncated: false
     })
   } finally { await runtime.close() }
+
+  // Synthetic explicit native tool envelopes; no real account or private
+  // conversation is used to validate the new identity projection.
+  {
+    const sourceId = "generated-tool-identities", file = await fileFor("tool-identities")
+    selected(file)
+    const common = { sessionId: sourceId, cwd: projectDirectory, isSidechain: false, timestamp: "2026-10-11T00:00:00Z" }
+    const source = jsonl([
+      { ...common, type: "user", uuid: "identity-root", parentUuid: null, message: { role: "user", content: "Exercise tools" } },
+      { ...common, type: "assistant", uuid: "identity-calls", parentUuid: "identity-root", message: { role: "assistant", content: [
+        { type: "tool_use", id: "mcp-call", name: "mcp__docs__read_page", input: { id: "fixture" } },
+        { type: "tool_use", id: "skill-call", name: "Skill", input: { skill: "plugin:review" } },
+        { type: "tool_use", id: "file-call", name: "Read", input: { file_path: "/tmp/SKILL.md" } }
+      ] } },
+      { ...common, type: "user", uuid: "identity-results", parentUuid: "identity-calls", message: { role: "user", content: [
+        { type: "tool_result", tool_use_id: "mcp-call", content: "read body" },
+        { type: "tool_result", tool_use_id: "skill-call", is_error: true, content: "load failed" }
+      ] } }
+    ])
+    await writeFile(file, source)
+    const actual = await capture(sourceId)
+    const identities = actual.events.filter(event => event.update._meta).map(event => event.update._meta["atape.dev/tool-identity"])
+    assert.deepEqual(identities, [{ type: "mcp", server: "docs", name: "read_page" }, { type: "skill", name: "plugin:review" }])
+    assert.deepEqual(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").map(event => event.update.status), ["completed", "failed"])
+    assert.equal(rawText(actual), source)
+    unchanged(actual, await capture(sourceId, { rawEnabled: false }))
+    const oldHost = await adapter.createAtapeAdapter({ ...context, signal: AbortSignal.timeout(60_000) })
+    try {
+      const { canonicalProfiles: _profiles, ...legacyProjection } = projection
+      await assert.rejects(oldHost.sourceCapture.open({ sourceId, rawEnabled: false, limits, projection: legacyProjection,
+        priorThreads: [], signal: AbortSignal.timeout(60_000) }), /Upgrade the ATape CLI/)
+    } finally { await oldHost.close() }
+  }
 
   const family = async fixtureName => {
     const folder = join(packageRoot, "fixtures", fixtureName), metadata = JSON.parse(await readFile(join(folder, "provenance.json"), "utf8"))
@@ -350,7 +384,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
     }
   }
   process.env.ATAPE_CLAUDE_SESSION_FILE = ""; process.env.ATAPE_CLAUDE_HOME = sourceHome
-  process.stdout.write(`Verified installed Claude sourceCapture v2: ${roots + 3} native root snapshots, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
+  process.stdout.write(`Verified installed Claude sourceCapture v2 with Canonical v4: ${roots + 3} native root snapshots, explicit MCP/Skill identities and old Host refusal, 9 rewind stages, ${scenarioCount} compaction scenarios, foreground/thinking families, direct background lifecycle and child-only append, child retention/removal, Raw off/backfill and 8 unlinked cases\n`)
 
   // Generated broad cycles prove one reducer, independently of native profile
   // counts. Bodies and bridge templates are controlled fixture data.

@@ -1,6 +1,6 @@
 import { rm } from "node:fs/promises"
 import { CaptureJournal, PublicationTransport, beginPublicationCapture, beginRawObservation, publicationPreparationContext, preparePublicationCanonical, prepareRawObservation, comparePublicationSource, type PublicationDraftView } from "@atape/application"
-import { CanonicalBatch, CanonicalProfileVersion, CanonicalProfileVersion3, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, type CanonicalProfile, type PublicationCapabilities } from "@atape/domain"
+import { CanonicalBatch, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, type CanonicalProfile, type PublicationCapabilities } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import { fixture, directories, scope, timestamp } from "./fixtures/publication-test-support.ts"
@@ -92,9 +92,9 @@ describe("Unknown conversation times through the Host", () => {
     }))
   })
 
-  it.each([CanonicalProfileVersion, CanonicalProfileVersion3])("keeps Raw-only identity compatible with Canonical+Raw under %s", async profile => {
-    const f = await fixture(16_000, {}, { v3: true })
-    const input = { profile, unknownSession: profile === CanonicalProfileVersion3, unknownEvents: profile === CanonicalProfileVersion3,
+  it.each([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])("keeps Raw-only identity compatible with Canonical+Raw under %s", async profile => {
+    const f = await fixture(16_000, {}, profile === CanonicalProfileVersion4 ? { v4: true } : { v3: true })
+    const input = { profile, unknownSession: profile !== CanonicalProfileVersion, unknownEvents: profile !== CanonicalProfileVersion,
       checkpoint: "native-prefix" }
     f.policy(false)
     await f.run(Effect.gen(function*() {

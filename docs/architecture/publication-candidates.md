@@ -95,6 +95,14 @@ the header digest. Host preparation requires the advertised v3 capability before
 freezing content. Fixed normalized JSON preserves null clocks for Reader,
 Search, Overview and backfill. Usage and observation clocks remain required.
 
+`atape.publication-target.v4` pairs only with `atape.acp-centered.v4`, retaining
+v3's clocks and v2's explicit retention rules while admitting normalized tool
+identities in ACP `_meta`. Earlier profiles reject this extension. The Host
+negotiates and freezes v4 as a separate fact outside older durable capability
+arrays; all parts and comparison metadata retain the selected profile. Old
+frozen units remain recoverable without rewriting their bytes. See
+[v4 identity](../api/canonical-ingestion.md#v4-normalized-tool-identity).
+
 After validating wire parts, Validate copies retained membership in bounded
 derived units. These private units do not alter wire ordinals, manifest digests
 or immutable Put receipts. Status reports `retainedParts` separately; a validation
@@ -252,7 +260,7 @@ implicitly retries or performs multiple validation steps.
 
 | Method and path under `/api/v1/publications` | Input / result |
 | --- | --- |
-| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. HTTP defaults to v1/v2 for older Hosts; `ATape-Accept-Publication-Target: atape.publication-target.v3` additionally negotiates v3. Unknown header tokens are ignored. |
+| `GET /capabilities` | Protocol, target profile and actual configured byte/count/lifetime bounds; status maximum 100, reclaim maximum 32. HTTP defaults to v1/v2 for older Hosts; `ATape-Accept-Publication-Target` explicitly negotiates v3 and/or v4 by token, including repeated or comma-separated values. Unknown header tokens are ignored. |
 | `POST /reservations` | Project, installation, Adapter, source Session and Origin; finite server reservation. |
 | `POST /adopt-legacy` | Same scope; explicitly fenced legacy adoption with reservation, `revisionFloor` and `baselineThreads`. |
 | `POST /attempts` | Reservation ID, capture ID, base head, transform version; immutable attempt. |

@@ -27,8 +27,10 @@ of the earlier implementation.
 
 The factory exposes only `atape.source-capture.v2`, with explicit
 `atape.legacy-migration.v1` support for acknowledged earlier checkpoints. A compatible
-Host and publication-enabled Server with v2 targets and legacy adoption are required.
-Older Hosts reject this manifest instead of treating it as legacy capture.
+Host and publication-enabled Server with v4 targets and legacy adoption are required.
+The Host must explicitly advertise Canonical v4 when opening a source; older
+Hosts are rejected before source reads instead of dropping normalized identities.
+This checkout requirement is separate from any published Adapter version.
 
 The Adapter selects the current root path from validated native graph/leaf evidence.
 Rewind withdraws abandoned Canonical Events, usage and child membership when the
@@ -42,6 +44,11 @@ assistant acknowledgements and later user turns remain conversation. A missing
 captured child can retain prior stored history with a diagnostic while the root
 advances. Raw-enabled capture also archives available historical child sources
 proved by admitted root receipts outside the selected path.
+
+Explicit MCP and `Skill` tool invocations preserve bounded identities for
+[Session Analytics](../../docs/session-analytics.md). Skill file reads and command
+expansions are not counted as Skill tools. The Server does not infer identity
+from labels or Raw, and upload redaction can explicitly clear a sensitive identity.
 
 Discovery uses `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an absolute
 alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects an absolute

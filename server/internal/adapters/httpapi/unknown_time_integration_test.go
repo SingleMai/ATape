@@ -55,16 +55,18 @@ func assertHTTPUnknownTimeContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 		name    string
 		headers []string
 		v3      bool
+		v4      bool
 	}{
 		{name: "legacy default"},
 		{name: "empty", headers: []string{""}},
 		{name: "v2 only", headers: []string{publication.RetentionTargetProfile}},
-		{name: "future unknown", headers: []string{"atape.publication-target.v4"}},
+		{name: "future unknown", headers: []string{"atape.publication-target.v5"}},
+		{name: "exact v4", headers: []string{publication.ToolIdentityTargetProfile}, v4: true},
 		{name: "unknown syntax", headers: []string{publication.UnknownTimeTargetProfile + ";q=1"}},
 		{name: "exact v3", headers: []string{publication.UnknownTimeTargetProfile}, v3: true},
-		{name: "token list", headers: []string{"atape.publication-target.v4, " + publication.UnknownTimeTargetProfile}, v3: true},
+		{name: "token list", headers: []string{publication.ToolIdentityTargetProfile + ", " + publication.UnknownTimeTargetProfile}, v3: true, v4: true},
 		{name: "empty list tokens", headers: []string{" , " + publication.UnknownTimeTargetProfile + " , , "}, v3: true},
-		{name: "duplicate header fields", headers: []string{"atape.publication-target.v4", publication.UnknownTimeTargetProfile}, v3: true},
+		{name: "duplicate header fields", headers: []string{publication.ToolIdentityTargetProfile, publication.UnknownTimeTargetProfile}, v3: true, v4: true},
 	} {
 		r := httptest.NewRequest("GET", "/api/v1/publications/capabilities", nil)
 		r.Header.Set("Authorization", "Bearer "+credential)
@@ -82,7 +84,10 @@ func assertHTTPUnknownTimeContract(t *testing.T, h *Handler, pool *pgxpool.Pool,
 		if negotiation.v3 {
 			want = append(want, publication.UnknownTimeTargetProfile)
 		}
-		if !slices.Equal(caps.TargetProfiles, want) || caps.TargetProfile != publication.TargetProfile || strings.Contains(w.Body.String(), "atape.publication-target.v4") {
+		if negotiation.v4 {
+			want = append(want, publication.ToolIdentityTargetProfile)
+		}
+		if !slices.Equal(caps.TargetProfiles, want) || caps.TargetProfile != publication.TargetProfile {
 			t.Fatalf("%s capabilities: %s", negotiation.name, w.Body.String())
 		}
 	}
