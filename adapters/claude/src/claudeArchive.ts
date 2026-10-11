@@ -1,7 +1,7 @@
 import type { AcpSessionUpdate, AdapterEvent, AdapterOpenContext, AdapterUsage,
   SourceCaptureFrame, SourceCaptureLimits, SourceDiscoveryPage, SourceOpenRequestV2, SourceCaptureViewV2, SourceLegacyMigrationRequest } from "@atape/domain"
 import { Effect, Schema } from "effect"
-import { GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
+import { AcpToolIdentity, CanonicalProfileVersion4, GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, ToolIdentityMetaKey, type AdapterSourceFailure } from "@atape/domain"
 import { createHash } from "node:crypto"
 import { constants } from "node:fs"
 import { lstat, open, readdir, realpath } from "node:fs/promises"
@@ -565,7 +565,7 @@ function rootTitle(root: RecordValue): string {
 }
 
 function projectRecord(record: RecordValue, order: number, revision: number, sourceObjectId: string,
-  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 = ProjectionRevision): { events: Array<AdapterEvent & { readonly occurredAt: string }>; partial: boolean } {
+  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 = ProjectionRevision, includeIdentity = false): { events: Array<AdapterEvent & { readonly occurredAt: string }>; partial: boolean } {
   const events: Array<AdapterEvent & { readonly occurredAt: string }> = []
   let partial = false
   if (!record.uuid || record.isMeta === true || record.type !== "user" && record.type !== "assistant") return { events, partial }
@@ -589,8 +589,13 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
       } else if (block?.type === "tool_use" && record.type === "assistant" && typeof block.id === "string" && typeof block.name === "string") {
         if (calls.has(block.id)) fail("unsupported", "Claude tool IDs are ambiguous in this session.")
         calls.set(block.id, sourceCall(record.uuid as string, block))
+        const admittedInput = isBoundedToolValue(block.input)
+        // A copied Skill name needs its original field at the redaction
+        // boundary. An omitted oversized input cannot justify a new copy.
+        const identity = includeIdentity && (block.name !== "Skill" || admittedInput) ? toolIdentity(block) : undefined
         update = { sessionUpdate: "tool_call", toolCallId: block.id, title: block.name, status: "pending", kind: toolKind(block.name),
-          ...(isBoundedToolValue(block.input) ? { rawInput: block.input } : {}) }
+          ...(admittedInput ? { rawInput: block.input } : {}),
+          ...(identity ? { _meta: { [ToolIdentityMetaKey]: identity } } : {}) }
         partial = true; fidelity = "partial"
       } else if (block?.type === "tool_result" && record.type === "user" && typeof block.tool_use_id === "string") {
         const call = calls.get(block.tool_use_id)
@@ -817,6 +822,21 @@ async function belongsToProject(archive: Archive, root: RecordValue, signal: Abo
 const toolKind = (name: string): "read" | "edit" | "execute" | "search" | "other" =>
   name === "Read" ? "read" : ["Write", "Edit", "MultiEdit"].includes(name) ? "edit" : name === "Bash" ? "execute" : ["Grep", "Glob"].includes(name) ? "search" : "other"
 
+// Only explicit native tool invocations establish an identity. Reading a Skill
+// file, mentioning a tool, or retaining an injected command envelope does not.
+const isToolIdentity = Schema.is(AcpToolIdentity)
+function toolIdentity(block: RecordValue): AcpToolIdentity | undefined {
+  if (block.name === "Skill") {
+    const identity = { type: "skill", name: object(block.input)?.skill }
+    return isToolIdentity(identity) ? identity : undefined
+  }
+  if (typeof block.name !== "string" || !block.name.startsWith("mcp__")) return undefined
+  const separator = block.name.indexOf("__", 5)
+  if (separator < 0) return undefined
+  const identity = { type: "mcp", server: block.name.slice(5, separator), name: block.name.slice(separator + 2) }
+  return isToolIdentity(identity) ? identity : undefined
+}
+
 // The legacy cursor remains a migration input, not a second publication writer.
 // These private indexes contain locators and source facts, never transcript bodies.
 type SourceProof = { threadId: string; bytes: number; digest: string; rootUuid: string }
@@ -826,7 +846,7 @@ type CaptureStream = {
   file: string; threadId: string; root: RecordValue; refs: RecordRef[]; nodes: Map<string, CaptureNode>; selected: Set<number>
   latestUsage: Map<string, number>; children: Child[]; proof: SourceProof; events: number; usage: number; observedAt: string
 }
-const captureProfile = "claude.jsonl.active-path.1"
+const captureProfile = "claude.jsonl.active-path.2"
 const emptyNormalization = (): Normalization => ({ records: new Map(), calls: new Map(), leaf: null, order: 0, continuation: undefined, response: undefined })
 const captureFailure = (cause: unknown) => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "io", message: "Could not read the selected Claude source view." })
 function captureCheckpoint(value: string | undefined): CaptureCheckpoint | undefined {
@@ -1053,6 +1073,8 @@ async function indexCaptureStream(file: string, rootIdentity: RecordValue | unde
  * publication. Provider branch selection and source integrity stay here. */
 export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2): Effect.Effect<SourceCaptureViewV2, ClaudeArchiveError> => Effect.tryPromise({
   try: async () => {
+    if (!request.projection.canonicalProfiles?.includes(CanonicalProfileVersion4))
+      fail("unsupported", "Upgrade the ATape CLI to retain normalized tool identities with Canonical v4.")
     let readSignal: AbortSignal | undefined
     const started = performance.now(), check = () => {
       request.signal.throwIfAborted()
@@ -1125,7 +1147,7 @@ export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2
     const sourceCheckpoint = JSON.stringify({ v: 1, sessionId: origin.sourceId, origin: origin.cwd, rootUuid: origin.originKey, streams: [...proofs.values()] } satisfies CaptureCheckpoint)
     if (Buffer.byteLength(sourceCheckpoint) > MaxCursorBytes) fail("limit", "Claude source checkpoint exceeds its metadata capacity.")
     const observedAt = streams.filter(stream => linkedThreads.has(stream.threadId)).map(stream => stream.observedAt).sort().at(-1)!
-    const header = { profile: captureProfile, origin, sourceCheckpoint,
+    const header = { profile: captureProfile, canonicalProfileVersion: CanonicalProfileVersion4, origin, sourceCheckpoint,
       session: { sourceSessionId: origin.sourceId, title: rootTitle(root.root), summary: "Claude Code conversation", insight: "",
         actor: { name: "User", harness: "Claude Code" }, branch: string(root.root.gitBranch) ?? "", status: "active" as const,
         captureStatus: "partial" as const, updatedAt: observedAt, reportedEventCount: eventCount },
@@ -1150,7 +1172,7 @@ export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2
       const node = byStart[streamIndex]!.get(ref.start)
       let events: SourceCaptureFrame["events"][number][] = [], usage: SourceCaptureFrame["usage"][number][] = []
       if (node && stream.selected.has(ref.start) && !node.rawOnly) {
-        const record = parseSourceRecord(bytes), projected = projectRecord(record, 0, ref.end, "source-view", calls)
+        const record = parseSourceRecord(bytes), projected = projectRecord(record, 0, ref.end, "source-view", calls, ProjectionRevision, true)
         events = projected.events.map(event => {
           const { revision: _revision, projectionRevision: _projection, rawRef: _raw, ...draft } = event
           return { ...draft, sourceThreadId: stream.threadId, sourceOrder: order, eventIndex: order++, orderFidelity: "derived" as const,

@@ -12,7 +12,7 @@ import (
 )
 
 func TestSourceTimeRequiresExplicitNullAndV3(t *testing.T) {
-	for _, profile := range []string{ingestion.LegacyCanonicalProfileVersion, ingestion.CanonicalProfileVersion, ingestion.UnknownTimeCanonicalProfileVersion} {
+	for _, profile := range []string{ingestion.LegacyCanonicalProfileVersion, ingestion.CanonicalProfileVersion, ingestion.UnknownTimeCanonicalProfileVersion, ingestion.ToolIdentityCanonicalProfileVersion} {
 		for _, field := range []string{"updatedAt", "occurredAt"} {
 			for _, value := range []string{"known", "null", "missing", "empty", "invalid", "zero", "zero-fraction", "zero-offset", "microsecond", "epoch-nanosecond", "number"} {
 				t.Run(profile+"/"+field+"/"+value, func(t *testing.T) {
@@ -55,7 +55,7 @@ func TestSourceTimeRequiresExplicitNullAndV3(t *testing.T) {
 					if err == nil {
 						_, err = ingestion.PrepareBatch(cliPrincipal(), decoded)
 					}
-					accepted := value == "known" || value == "microsecond" || value == "epoch-nanosecond" || (value == "null" && profile == ingestion.UnknownTimeCanonicalProfileVersion)
+					accepted := value == "known" || value == "microsecond" || value == "epoch-nanosecond" || (value == "null" && (profile == ingestion.UnknownTimeCanonicalProfileVersion || profile == ingestion.ToolIdentityCanonicalProfileVersion))
 					if (err == nil) != accepted {
 						t.Fatalf("accepted=%t, err=%v", accepted, err)
 					}

@@ -1,5 +1,5 @@
 import { CLICredentialStore } from "@atape/application"
-import { AdapterManifest, AdapterProtocolVersion, PublicationTargetProfile2, PublicationTargetProfile3, SourceCaptureVersion, SourceCaptureVersion2,
+import { AdapterManifest, AdapterProtocolVersion, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion, SourceCaptureVersion2,
   emptyClientConfig, type ClientConfig, type StoredCLICredential } from "@atape/domain"
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -166,6 +166,64 @@ describe("capture migration read-only prerequisite Interface", () => {
     expect(f.requests.map(item => new Headers(item.init?.headers).get("ATape-Accept-Publication-Target"))).toEqual([null, null])
   })
 
+  it.each([false, true])("requires a v4 manifest minimum without source I/O or local mutation (Server supports v4: %s)", async supported => {
+    const f = await fixture(); await f.saveCredential(credential())
+    await f.saveManifest(SourceCaptureVersion2, PublicationTargetProfile4)
+    const before = await snapshot(f.home)
+    const fetch = (async (input, init) => {
+      const original = await f.fetch(input, init)
+      if (!String(input).endsWith("/capabilities")) return original
+      const opted = new Headers(init?.headers).get("ATape-Accept-Publication-Target") === PublicationTargetProfiles34
+      return response({ ...capabilities, targetProfiles: [...capabilities.targetProfiles, PublicationTargetProfile3,
+        ...(supported && opted ? [PublicationTargetProfile4] : [])] })
+    }) as typeof globalThis.fetch
+    const result = f.run(undefined, fetch)
+    if (supported) await expect(result).resolves.toMatchObject({ prerequisiteScopeFingerprint: expect.any(String) })
+    else await expect(result).rejects.toMatchObject({ reason: "capability" })
+    const request = f.requests.find(item => item.url.endsWith("/publications/capabilities"))
+    expect(new Headers(request?.init?.headers).get("ATape-Accept-Publication-Target")).toBe(PublicationTargetProfiles34)
+    expect(f.requests.every(item => item.init?.method === "GET" && item.init.body === undefined)).toBe(true)
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+
+  it("selects the highest enabled v4 minimum when a v3 Adapter also participates", async () => {
+    const f = await fixture(), cursor = await fixture("cursor")
+    await f.saveCredential(credential()); await f.saveManifest(SourceCaptureVersion2, PublicationTargetProfile4)
+    await cp(cursor.root, join(f.paths.adapterDirectory, "node_modules", "@atape", "adapter-cursor"), { recursive: true })
+    const config = { ...f.config, adapters: [...f.config.adapters, ...cursor.config.adapters], enabledAdapterIds: ["claude", "cursor"] }
+    const before = await snapshot(f.home)
+    await expect(f.run({ candidateConfig: config, wanted: true })).rejects.toMatchObject({ reason: "capability" })
+    const request = f.requests.find(item => item.url.endsWith("/publications/capabilities"))
+    expect(new Headers(request?.init?.headers).get("ATape-Accept-Publication-Target")).toBe(PublicationTargetProfiles34)
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+
+  it.each([
+    { cursorEnabled: false, serverV3: false, allowed: true },
+    { cursorEnabled: true, serverV3: false, allowed: false },
+    { cursorEnabled: true, serverV3: true, allowed: true }
+  ])("checks every enabled declared target instead of treating v4 as v3 ($cursorEnabled/$serverV3)", async ({ cursorEnabled, serverV3, allowed }) => {
+    const f = await fixture(), cursor = await fixture("cursor")
+    await f.saveCredential(credential()); await f.saveManifest(SourceCaptureVersion2, PublicationTargetProfile4)
+    await cp(cursor.root, join(f.paths.adapterDirectory, "node_modules", "@atape", "adapter-cursor"), { recursive: true })
+    const config = { ...f.config, adapters: [...f.config.adapters, ...cursor.config.adapters],
+      enabledAdapterIds: cursorEnabled ? ["claude", "cursor"] : ["claude"] }
+    const before = await snapshot(f.home)
+    const fetch = (async (input, init) => {
+      const original = await f.fetch(input, init)
+      if (!String(input).endsWith("/capabilities")) return original
+      return response({ ...capabilities, targetProfiles: [...capabilities.targetProfiles,
+        ...(serverV3 ? [PublicationTargetProfile3] : []), PublicationTargetProfile4] })
+    }) as typeof globalThis.fetch
+    const result = f.run({ candidateConfig: config, wanted: true }, fetch)
+    if (allowed) await expect(result).resolves.toMatchObject({ prerequisiteScopeFingerprint: expect.any(String) })
+    else await expect(result).rejects.toMatchObject({ reason: "capability" })
+    const request = f.requests.find(item => item.url.endsWith("/publications/capabilities"))
+    expect(new Headers(request?.init?.headers).get("ATape-Accept-Publication-Target")).toBe(PublicationTargetProfiles34)
+    expect(f.requests.every(item => item.init?.method === "GET" && item.init.body === undefined)).toBe(true)
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+
   it.each([false, true])("requires an installed v3 Adapter's minimum only when enabled (%s)", async enabled => {
     const f = await fixture(), cursor = await fixture("cursor")
     await f.saveCredential(credential())
@@ -181,7 +239,7 @@ describe("capture migration read-only prerequisite Interface", () => {
     expect(await snapshot(f.home)).toEqual(before)
   })
 
-  it.each([null, "atape.publication-target.v4", PublicationTargetProfile3])(
+  it.each([null, "atape.publication-target.v5", PublicationTargetProfile3])(
     "rejects an unsupported or misplaced manifest declaration before remote work (%j)", async publicationTargetProfile => {
       const f = await fixture(); await f.saveCredential(credential())
       await f.saveManifest(publicationTargetProfile === PublicationTargetProfile3 ? SourceCaptureVersion : SourceCaptureVersion2,

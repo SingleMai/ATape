@@ -10,7 +10,8 @@ import { AdapterProtocolVersion } from "./client.ts"
 export const CanonicalIngestionProtocolVersion = "atape.canonical.v1" as const
 export const CanonicalProfileVersion = "atape.acp-centered.v2" as const
 export const CanonicalProfileVersion3 = "atape.acp-centered.v3" as const
-export const CanonicalProfile = Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3])
+export const CanonicalProfileVersion4 = "atape.acp-centered.v4" as const
+export const CanonicalProfile = Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])
 export type CanonicalProfile = typeof CanonicalProfile.Type
 export const RawIngestionProtocolVersion = "atape.raw.v1" as const
 // Three decoded MiB expands to four MiB of Base64, leaving room for metadata
@@ -148,6 +149,23 @@ const AcpToolKind = Schema.Literals([
 ])
 const AcpToolStatus = Schema.Literals(["pending", "in_progress", "completed", "failed"])
 
+export const ToolIdentityMetaKey = "atape.dev/tool-identity" as const
+// JS and Go differ on BOM/NEL trimming; reject both at the edges so the
+// admitted identity remains the same across preparation and ingestion.
+const toolIdentityName = Schema.String.check(Schema.makeFilter(value => value.trim() === value && value !== "" && !/^\u0085|\u0085$/.test(value) &&
+  !/[\uD800-\uDFFF]/u.test(value) &&
+  new TextEncoder().encode(value).byteLength <= 500))
+export const AcpToolIdentity = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("mcp"), server: toolIdentityName, name: toolIdentityName })
+    .annotate({ parseOptions: { onExcessProperty: "error" } }),
+  Schema.Struct({ type: Schema.Literal("skill"), name: toolIdentityName })
+    .annotate({ parseOptions: { onExcessProperty: "error" } })
+])
+export type AcpToolIdentity = typeof AcpToolIdentity.Type
+export const AcpToolMetadata = Schema.Struct({ [ToolIdentityMetaKey]: Schema.NullOr(AcpToolIdentity) })
+  .annotate({ parseOptions: { onExcessProperty: "error" } })
+export type AcpToolMetadata = typeof AcpToolMetadata.Type
+
 const AcpUserMessageChunk = Schema.Struct({
   sessionUpdate: Schema.Literal("user_message_chunk"),
   content: AcpContentBlock,
@@ -173,7 +191,8 @@ const AcpToolCall = Schema.Struct({
   kind: Schema.optionalKey(AcpToolKind),
   status: Schema.optionalKey(AcpToolStatus),
   rawInput: Schema.optionalKey(Schema.Unknown),
-  rawOutput: Schema.optionalKey(Schema.Unknown)
+  rawOutput: Schema.optionalKey(Schema.Unknown),
+  _meta: Schema.optionalKey(AcpToolMetadata)
 })
 
 const AcpToolCallUpdate = Schema.Struct({
@@ -183,7 +202,8 @@ const AcpToolCallUpdate = Schema.Struct({
   kind: Schema.optionalKey(Schema.NullOr(AcpToolKind)),
   status: Schema.optionalKey(Schema.NullOr(AcpToolStatus)),
   rawInput: Schema.optionalKey(Schema.Unknown),
-  rawOutput: Schema.optionalKey(Schema.Unknown)
+  rawOutput: Schema.optionalKey(Schema.Unknown),
+  _meta: Schema.optionalKey(AcpToolMetadata)
 })
 
 export const AcpToolUpdate = Schema.Union([AcpToolCall, AcpToolCallUpdate])
@@ -526,7 +546,7 @@ export const CanonicalBatch = Schema.Struct({
   threads: Schema.Array(AdapterThread),
   events: Schema.Array(CanonicalIngestionEvent),
   usage: Schema.optionalKey(Schema.Array(AdapterUsage))
-}).check(Schema.makeFilter(batch => batch.canonicalProfileVersion === CanonicalProfileVersion3 ||
+}).check(Schema.makeFilter(batch => batch.canonicalProfileVersion === CanonicalProfileVersion3 || batch.canonicalProfileVersion === CanonicalProfileVersion4 ||
   batch.session.updatedAt !== null && batch.events.every(event => event.occurredAt !== null)))
 export type CanonicalBatch = typeof CanonicalBatch.Type
 

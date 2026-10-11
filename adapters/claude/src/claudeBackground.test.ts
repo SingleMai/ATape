@@ -1,4 +1,4 @@
-import { AdapterCollectionLimits, SourceCaptureHeaderV2, SourceCapturePage, type AdapterOpenContext, type SourceCaptureFrame, type SourceOpenRequestV2 } from "@atape/domain"
+import { CanonicalProfileVersion4, AdapterCollectionLimits, SourceCaptureHeaderV2, SourceCapturePage, type AdapterOpenContext, type SourceCaptureFrame, type SourceOpenRequestV2 } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -16,7 +16,7 @@ const nativeRoot = await readFile(new URL("root.jsonl", folder), "utf8")
 const nativeChild = await readFile(new URL("child.jsonl", folder), "utf8")
 const childId = `claude-agent:${proof.agentId}`, launchId = `${proof.call.receiptUuid}:0`
 const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 10000, threads: 100, durationMs: 300000 }
-const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024 }
+const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion4] }
 const encode = (rows: Row[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const decode = (text: string): Row[] => text.trimEnd().split("\n").map(line => JSON.parse(line))
 let directory: string, file: string, childFile: string, context: AdapterOpenContext & { signal: AbortSignal }
@@ -58,7 +58,7 @@ const capture = async (extra: Partial<SourceOpenRequestV2> = {}) => {
         for (const frame of page.frames) await Effect.runPromise(prepareCanonicalSlice("claude", { observationId: "background", observedAt: header.session.updatedAt,
           session: { ...header.session, revision: 1 }, threads: header.threads.map(thread => ({ ...thread, revision: 1 })),
           events: frame.events.map(event => ({ ...event, revision: 1, projectionRevision: 1, rawRef: { _tag: "unavailable", reason: "test" } })),
-          usage: frame.usage.map(sample => ({ ...sample, revision: 1 })), rawSegments: [] }).pipe(Effect.provide(makeSecretRedactorLayer())))
+          usage: frame.usage.map(sample => ({ ...sample, revision: 1 })), rawSegments: [] }, header.canonicalProfileVersion).pipe(Effect.provide(makeSecretRedactorLayer())))
         frames.push(...page.frames)
         if (page.done) {
           const events = frames.flatMap(frame => frame.events), usage = frames.flatMap(frame => frame.usage)

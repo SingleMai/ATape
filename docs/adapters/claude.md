@@ -127,6 +127,18 @@ deduplicated per source/reason.
 
 ## Bounds and Raw policy
 
+Current source profile `claude.jsonl.active-path.2` selects Canonical v4. Explicit
+native `mcp__server__tool` names provide MCP identities; `Skill` tool calls with
+a nonempty, trimmed `input.skill` provide Skill names. Names and servers are
+bounded to 500 UTF-8 bytes; invalid or missing identities remain unclassified.
+An oversized or otherwise unadmitted Skill input also omits identity: the Host
+needs the original `skill` field to preserve existing field-redaction rules.
+The original bounded tool input/output and explicit result status retain their
+existing meaning. Result updates without identity preserve the call's earlier
+fact. Command expansion, Skill mentions and reads of `SKILL.md` are not fabricated
+as Skill calls. This applies to captured root and child Threads. See
+[Session Analytics](../session-analytics.md#recorded-mcp-and-skill-calls).
+
 The source parser admits complete records up to 16 MiB including LF. Default v2
 source-page admission is 32 MiB; explicit caller limits still apply. The complete
 plan is bounded by 20 Threads, 100,000 records, 20,000 Events and Usage samples and
@@ -163,7 +175,7 @@ The first release with this v2 path, 0.5.4, requires a stopped manual CLI upgrad
 from 0.5.3 or older; see
 [the transition steps](../cli/setup-and-adapters.md#explicit-maintenance-and-external-replacement).
 Before opening or migrating the account journal or replacing a legacy global
-checkpoint, the Host checks Server publication v2 target and legacy-adoption
+checkpoint, the Host checks the Adapter's declared Server publication target minimum and legacy-adoption
 capabilities. Missing support reports unsupported capture and leaves that local
 state unchanged. Package publication does not deploy these Server capabilities.
 After journal v8 migration or remote adoption, recover through a v2 runtime:

@@ -531,8 +531,10 @@ the capability check. Fresh local intent/configuration/inventory checks prevent
 Start or account changes from reusing an obsolete preflight.
 SourceCapture v2 manifests can declare `publicationTargetProfile`; older packages
 default to Profile2. Enabled Profile3 candidates, including Cursor, require a
-negotiated Profile3 capability before pause. Other Adapters retain the existing
-Profile2 requirement. This static minimum does not replace runtime header checks.
+negotiated Profile3 capability before pause. Current Claude candidates declare
+Profile4 for normalized tool identities and require a negotiated Profile4.
+Other Adapters retain the existing Profile2 requirement. This static minimum
+does not replace runtime header and explicit Host capability checks.
 
 An active controlled-session creation proof defers reader-floor advancement until
 it is confirmed or abandoned. The proof holds a separate OS lease, not the global

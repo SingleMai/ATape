@@ -20,7 +20,7 @@ const phases = ["legacy-seed", "migration-lost-activate", "recover-deleted", "re
   "native-continue", "root-invalid", "root-repair", "raw-backfill", "abandon-child-and-empty", "abandoned-raw-backfill",
   "empty-idle", "fresh-after-empty", "final-idle", "native-compact-seed", "native-compact-continue", "native-compact-idle",
   "background-running", "background-child-only", "background-retained-progress", "background-retained-idle",
-  "background-completed", "background-raw-backfill", "background-rewind", "background-rewind-idle"]
+  "background-completed", "background-raw-backfill", "background-rewind", "background-rewind-idle", "identity"]
 assert.ok(phases.includes(input.phase), "Unknown rewind contract phase")
 const legacy = input.phase === "legacy-seed", adapterId = "claude"
 const workspace = join(input.home, "workspace"), sourceHome = join(input.home, "source")
@@ -138,6 +138,25 @@ if (input.phase === "background-completed") {
 }
 if (input.phase === "background-rewind") append(background, [{ type: "last-prompt", sessionId: backgroundId,
   leafUuid: rows(background).find(row => row.type === "user")!.uuid, explicit: true, rewound: true }])
+if (input.phase === "identity") {
+  const sourceId = "generated-claude-identity-session", file = join(directory, `${sourceId}.jsonl`)
+  const common = { sessionId: sourceId, cwd: workspace, isSidechain: false, timestamp: "2026-10-11T00:00:00Z" }
+  append(file, [
+    { ...common, type: "user", uuid: "identity-root", parentUuid: null,
+      message: { role: "user", content: "ATAPE_GENERATED_IDENTITY_SESSION" } },
+    { ...common, type: "assistant", uuid: "identity-calls", parentUuid: "identity-root", message: { role: "assistant", content: [
+      { type: "tool_use", id: "mcp-call", name: "mcp__docs__read_page", input: { id: "fixture" } },
+      { type: "tool_use", id: "skill-call", name: "Skill", input: { skill: "plugin:review" } },
+      { type: "tool_use", id: "read-call", name: "Read", input: { file_path: "/tmp/SKILL.md" } },
+      { type: "tool_use", id: "secret-skill-call", name: "Skill", input: { skill: "SENSITIVE_TEST_TOKEN" } }
+    ] } },
+    { ...common, type: "user", uuid: "identity-results", parentUuid: "identity-calls", message: { role: "user", content: [
+      { type: "tool_result", tool_use_id: "mcp-call", content: "read body" },
+      { type: "tool_result", tool_use_id: "skill-call", is_error: true, content: "load failed" },
+      { type: "tool_result", tool_use_id: "secret-skill-call", content: "loaded" }
+    ] } }
+  ])
+}
 const layer = Layer.merge(makeNodeClientLayer(paths, environment), makeNodeCollectorDaemonLayer(paths, binary, environment))
 const result = await Effect.runPromise(Effect.gen(function*() {
   if (legacy) {

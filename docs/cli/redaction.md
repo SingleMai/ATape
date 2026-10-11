@@ -230,6 +230,15 @@ must keep secrets out of Canonical identifiers. Raw fields are content even when
 named `id`. Field rules mask strings and matching numeric values; booleans/null
 retain their type. Binary image/audio/resource bodies are not decoded or inspected.
 
+Canonical v4's normalized MCP/Skill identity metadata is content, not a
+conversation identifier. The same detectors and field/path rules inspect it.
+If any identity key or value changes, the Host emits an explicit null identity;
+it does not retain the original value or group distinct secrets under a shared
+replacement name. Other tool fields retain their existing masking behavior.
+If a field rule hides a tool input/output string copied into identity, the Host
+also clears that identity. Masking unrelated arguments does not clear a public
+name or server.
+
 The configuration admits at most 128 KiB, 128 custom rules, 2048 UTF-8 bytes per
 expression and 64 KiB of expressions overall. Exact literals admit at most 2048
 distinct values and 1 MiB overall. Content processing admits 32 MiB, depth 32,

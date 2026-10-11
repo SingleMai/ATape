@@ -1,5 +1,5 @@
-import { readSessionAnalytics } from "@atape/application"
-import type { SessionAnalytics, SessionAnalyticsMetric, SessionAnalyticsQuery } from "@atape/domain"
+import { readSessionAnalytics, selectSessionAnalyticsEvidence, type SessionAnalyticsFilter } from "@atape/application"
+import type { SessionAnalytics, SessionAnalyticsQuery } from "@atape/domain"
 import { useAtomValue } from "@effect/atom-react"
 import { AsyncResult, Atom } from "effect/unstable/reactivity"
 import { createContext, createElement, useContext, useState, type Dispatch, type ReactNode, type SetStateAction } from "react"
@@ -41,7 +41,6 @@ export const useSessionAnalyticsPresenter = (sessionId: string) => {
     onDefect: () => ({ _tag: "Failed" as const, messageKey: "analytics.unavailable" as const, retryable: false }),
     onSuccess: success => ({ _tag: "Ready" as const, value: success.value, refreshing: success.waiting })
   })
-  const pin = () => state._tag === "Ready" ? { snapshot: state.value.snapshot } : {}
   return {
     state, query,
     reload: () => {
@@ -49,10 +48,8 @@ export const useSessionAnalyticsPresenter = (sessionId: string) => {
       // and cannot reuse a cached read of the previous default query.
       setQuery({ metric: "tools" }); setRevision(value => value + 1)
     },
-    filter: (filter: { metric?: SessionAnalyticsMetric; thread?: string; tool?: string }) =>
-      setQuery({ metric: filter.metric ?? "tools", ...pin(),
-        ...(filter.thread ? { thread: filter.thread } : {}),
-        ...(filter.tool && ["tools", "failed_tools", "unknown_tools"].includes(filter.metric ?? "tools") ? { tool: filter.tool } : {}) }),
+    filter: (filter: SessionAnalyticsFilter) =>
+      setQuery(selectSessionAnalyticsEvidence(filter, state._tag === "Ready" ? state.value.snapshot : undefined)),
     next: () => {
       if (state._tag === "Ready" && state.value.evidence.nextCursor) {
         setQuery({ ...query, snapshot: state.value.snapshot, cursor: state.value.evidence.nextCursor })

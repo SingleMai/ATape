@@ -92,8 +92,8 @@ func decodeSourceTime(data json.RawMessage) (string, bool, error) {
 
 func sourceTimestamp(field, value string, unknown bool, profile string) (time.Time, error) {
 	if unknown {
-		if profile != UnknownTimeCanonicalProfileVersion || value != "" {
-			return time.Time{}, invalid(field, "null requires the v3 profile")
+		if profile != UnknownTimeCanonicalProfileVersion && profile != ToolIdentityCanonicalProfileVersion || value != "" {
+			return time.Time{}, invalid(field, "null requires the v3 or v4 profile")
 		}
 		return time.Time{}, nil
 	}

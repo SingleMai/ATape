@@ -140,7 +140,7 @@ func TestOpenFoldsStructuredCallsWithoutInventingLegacySuccess(t *testing.T) {
 	if r.Threads[0].ID != "child" || r.Threads[0].ToolCalls != 1 || r.Threads[1].ID != "root" || r.Threads[1].ToolCalls != 5 {
 		t.Fatalf("threads = %+v", r.Threads)
 	}
-	if r.CaptureStatus != "partial" || r.Snapshot != s.SnapshotToken || r.AnalyticsVersion != 1 {
+	if r.CaptureStatus != "partial" || r.Snapshot != s.SnapshotToken || r.AnalyticsVersion != sessionanalytics.Version {
 		t.Fatalf("metadata = %+v", r)
 	}
 	body, err := json.Marshal(r)

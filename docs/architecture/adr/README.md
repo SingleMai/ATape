@@ -145,6 +145,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0117](0117-cursor-local-first-publication.md) | Local first publication of Cursor 0.5.6 |
 | [0118](0118-session-analytics-current-snapshot.md) | Session Analytics from one current Canonical snapshot |
 | [0119](0119-static-update-distribution.md) | Static release discovery and explicit cache freshness |
+| [0120](0120-normalized-tool-identity.md) | Normalized tool identity for Session Analytics |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

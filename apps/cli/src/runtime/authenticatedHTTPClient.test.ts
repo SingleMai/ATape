@@ -3,7 +3,7 @@ import {
   CLIAuthenticationGateway,
   CLICredentialStore
 } from "@atape/application"
-import { PublicationTargetProfile3, type InstanceMetadata, type StoredCLICredential } from "@atape/domain"
+import { PublicationTargetProfile3, PublicationTargetProfiles34, type InstanceMetadata, type StoredCLICredential } from "@atape/domain"
 import { Effect, Layer, Logger } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -99,10 +99,25 @@ describe("authenticated CLI HTTP boundary", () => {
     expect(headers[2]?.has("ATape-Accept-Publication-Target")).toBe(false)
   })
 
+  it("opts into the canonical v3 and v4 target list only on the capability request", async () => {
+    const client = fixture()
+    await client.run(AuthenticatedHTTPClient.use(http => http.request({ instanceOrigin: credential.instanceOrigin,
+      expectedUserId: credential.user.id, method: "GET", path: "/api/v1/publications/capabilities",
+      acceptPublicationTarget: PublicationTargetProfiles34 })))
+    expect(client.fetches).toHaveLength(1)
+    const headers = new Headers(client.fetches[0]?.init?.headers)
+    expect(headers.get("ATape-Accept-Publication-Target")).toBe("atape.publication-target.v3, atape.publication-target.v4")
+    expect(headers.get("Authorization")).toBe(`Bearer ${credential.credential}`)
+  })
+
   it.each([
     { method: "POST", path: "/api/v1/publications/capabilities", acceptPublicationTarget: PublicationTargetProfile3 },
     { method: "GET", path: "/api/v1/workspace", acceptPublicationTarget: PublicationTargetProfile3 },
-    { method: "GET", path: "/api/v1/publications/capabilities", acceptPublicationTarget: "atape.publication-target.v4" }
+    { method: "GET", path: "/api/v1/publications/capabilities", acceptPublicationTarget: "atape.publication-target.v4" },
+    { method: "POST", path: "/api/v1/publications/capabilities", acceptPublicationTarget: PublicationTargetProfiles34 },
+    { method: "GET", path: "/api/v1/workspace", acceptPublicationTarget: PublicationTargetProfiles34 },
+    { method: "GET", path: "/api/v1/publications/capabilities", acceptPublicationTarget: "atape.publication-target.v3,atape.publication-target.v4" },
+    { method: "GET", path: "/api/v1/publications/capabilities", acceptPublicationTarget: "atape.publication-target.v4, atape.publication-target.v3" }
   ] as const)("rejects publication negotiation outside the private transport contract (%#)", async input => {
     const client = fixture()
     await expect(client.run(AuthenticatedHTTPClient.use(http => http.request({

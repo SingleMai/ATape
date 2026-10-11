@@ -17,3 +17,17 @@ export const analyticsFixture: SessionAnalytics = {
       tokens: { total: null, input: 10, output: null, cacheRead: 0, cacheWrite: null, recordedSamples: 1, incompleteSamples: 1 } }] },
   evidence: { items: [{ eventId: "tool-1", threadId: "root", kind: "tool_call", label: "Read failing file", occurredAt: null }], nextCursor: "page-two" }
 }
+
+
+export const capabilitiesFixture: SessionAnalytics = {
+  ...analyticsFixture, analyticsVersion: 2,
+  summary: { ...analyticsFixture.summary, toolCalls: 5 },
+  capabilities: {
+    mcpCalls: 2, skillCalls: 1, unclassifiedCalls: 2,
+    mcp: [
+      { server: "docs", name: "lookup", calls: 1, completed: 1, failed: 0, pending: 0, inProgress: 0, unknown: 0 },
+      { server: "repo", name: "lookup", calls: 1, completed: 0, failed: 1, pending: 0, inProgress: 0, unknown: 0 }
+    ],
+    skills: [{ name: "review-code", calls: 1, completed: 1, failed: 0, pending: 0, inProgress: 0, unknown: 0 }]
+  }
+}

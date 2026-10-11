@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { CanonicalProfile, CanonicalProfileVersion, CanonicalProfileVersion3, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage, type AdapterSourceFailure, type SourceCaptureFrame } from "@atape/domain"
+import { CanonicalProfile, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, type AdapterEvent, type AdapterSession, type AdapterThread, type AdapterUsage, type AdapterSourceFailure, type SourceCaptureFrame } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner } from "./captureJournal.ts"
 import { prepareCanonicalSlice } from "./collectorPreparation.ts"
 import { projectCanonicalSubmission } from "./canonicalProjection.ts"
@@ -35,7 +35,7 @@ export const sourceProjectionProfile = (view: Pick<PublicationDraftView, "profil
     Effect.mapError(() => fail("invalid", "Source Canonical profile is unsupported.")))
   if (typeof view.profile !== "string" || !view.profile || view.profile.length > 500)
     return yield* fail("invalid", "Source profile exceeds its bound.")
-  const profile = `${canonicalProfileVersion === CanonicalProfileVersion3 ? "atape.host-canonical.v2" : PublicationPreparationVersion}:${transformVersion}:${view.profile}`
+  const profile = `${canonicalProfileVersion === CanonicalProfileVersion4 ? "atape.host-canonical.v3" : canonicalProfileVersion === CanonicalProfileVersion3 ? "atape.host-canonical.v2" : PublicationPreparationVersion}:${transformVersion}:${view.profile}`
   if (profile.length > 500) return yield* fail("invalid", "Capture projection profile exceeds its bound.")
   return { canonicalProfileVersion, profile }
 })

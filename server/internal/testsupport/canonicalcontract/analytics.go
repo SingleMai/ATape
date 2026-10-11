@@ -15,12 +15,13 @@ func runAnalyticsSnapshot(t *testing.T, store Store) {
 	ctx := t.Context()
 	writer := ingestion.NewIngestor(store)
 	batch := ValidBatch()
+	batch.CanonicalProfileVersion = ingestion.ToolIdentityCanonicalProfileVersion
 	batch.Session.SourceSessionID = "analytics-contract"
 	count := func(n int64) *int64 { return &n }
 	batch.Usage = []ingestion.Usage{{SourceUsageID: "u", SourceThreadID: "provider-root", Revision: 1, OccurredAt: batch.Events[1].OccurredAt, Model: "test-model", InputTokens: count(100), OutputTokens: count(10)}}
 	tool := batch.Events[1]
 	tool.SourceEventID, tool.SourceOrder = "tool", 3
-	tool.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"call","title":"Read","status":"pending","rawInput":{"path":"fixture-input"}}`
+	tool.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"call","title":"Read","status":"pending","_meta":{"atape.dev/tool-identity":{"type":"mcp","server":"fixture-server","name":"read"}},"rawInput":{"path":"fixture-input"}}`
 	parsed, err := canonical.ParseToolUpdate(tool.ToolUpdateJSON)
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +48,19 @@ func runAnalyticsSnapshot(t *testing.T, store Store) {
 		if event.Text != "" || strings.Contains(event.ToolUpdateJSON, "rawInput") || strings.Contains(event.ToolUpdateJSON, "fixture-input") {
 			t.Fatal("analysis exposed content payload")
 		}
+	}
+	foundIdentity := false
+	for _, event := range first.Events {
+		if event.ToolUpdateJSON == "" {
+			continue
+		}
+		value, e := canonical.ParseToolUpdate(event.ToolUpdateJSON)
+		if e == nil && value.Meta != nil && value.Meta.Identity != nil && value.Meta.Identity.Server == "fixture-server" {
+			foundIdentity = true
+		}
+	}
+	if !foundIdentity {
+		t.Fatal("analysis snapshot lost normalized identity")
 	}
 	page, ok, err := store.ConversationPage(ctx, WebPrincipal(), created.SessionID, "root", canonical.ConversationPageRequest{Limit: 100, Snapshot: first.SnapshotToken, AtEventID: first.Events[0].ID})
 	if err != nil || !ok || page.SnapshotToken != first.SnapshotToken {
@@ -110,9 +124,22 @@ func runAnalyticsSnapshot(t *testing.T, store Store) {
 	if fourth.SnapshotToken == third.SnapshotToken || len(fourth.Events) != len(third.Events) {
 		t.Fatal("same-count rewrite identity is wrong")
 	}
+	correction.BatchID = "analytics-identity-only"
+	correction.Events = []ingestion.Event{tool}
+	correction.Events[0].Revision++
+	correction.Events[0].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"call","title":"Read","status":"pending","_meta":{"atape.dev/tool-identity":{"type":"skill","name":"review"}},"rawInput":{"path":"fixture-input"}}`
+	if _, err = writer.ApplyBatch(ctx, CLIPrincipal(), correction); err != nil {
+		t.Fatal(err)
+	}
+	fifth := read("")
+	if fifth.SnapshotToken == fourth.SnapshotToken || len(fifth.Events) != len(fourth.Events) {
+		t.Fatal("identity-only rewrite kept snapshot")
+	}
+	_, _, err = store.SessionAnalytics(ctx, WebPrincipal(), created.SessionID, fourth.SnapshotToken)
+	assertRefresh(err)
 	outsider := WebPrincipal()
 	outsider.UserID = "01991b70-4d2b-7c96-a532-5818faba2e72"
-	if _, visible, err := store.SessionAnalytics(ctx, outsider, created.SessionID, fourth.SnapshotToken); err != nil || visible {
+	if _, visible, err := store.SessionAnalytics(ctx, outsider, created.SessionID, fifth.SnapshotToken); err != nil || visible {
 		t.Fatalf("token bypassed authorization: %v %v", visible, err)
 	}
 	cancelled, cancel := context.WithCancel(ctx)
@@ -123,7 +150,7 @@ func runAnalyticsSnapshot(t *testing.T, store Store) {
 	if err := store.DeleteSession(ctx, WebPrincipal(), created.SessionID, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, visible, err := store.SessionAnalytics(ctx, WebPrincipal(), created.SessionID, fourth.SnapshotToken); err != nil || visible {
+	if _, visible, err := store.SessionAnalytics(ctx, WebPrincipal(), created.SessionID, fifth.SnapshotToken); err != nil || visible {
 		t.Fatalf("deleted analysis visible: %v %v", visible, err)
 	}
 }

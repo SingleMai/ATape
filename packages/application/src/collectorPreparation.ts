@@ -1,6 +1,6 @@
 import type { AcpContentBlock, AcpSessionUpdate, AdapterCollectionPage, CanonicalProfile } from "@atape/domain"
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, AdapterSourceFailure,
-  MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes, CanonicalProfileVersion, CanonicalProfileVersion3 } from "@atape/domain"
+  MaxSourceFailures, isBoundedToolValue, ToolUpdateBytes, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { CollectionContractError, SecretRedactor } from "./collectorContracts.ts"
 import { legacySecretRedactor, prepareCanonicalRedaction } from "./redaction.ts"
@@ -108,7 +108,7 @@ export const validatePage = (
         !threadIds.has(event.sourceThreadId) || !positiveInteger(event.revision) ||
         !positiveInteger(event.projectionRevision) || !nonNegativeInteger(event.sourceOrder) ||
         !nonNegativeInteger(event.eventIndex) || !validSourceTimestamp(event.occurredAt, canonicalProfileVersion) ||
-        !validAcpUpdate(event.update) ||
+        !validAcpUpdate(event.update, canonicalProfileVersion) ||
         (event.childSourceThreadId !== undefined && !threadIds.has(event.childSourceThreadId)) ||
         (event.rawRef._tag === "object"
           ? !boundedIdentity(event.rawRef.sourceObjectId, 200) ||
@@ -175,7 +175,7 @@ const validTimestamp = (value: string) => {
   return !Number.isNaN(millis) && (millis !== zeroTimestampMillis || /[1-9]/.test((match[1] ?? "").slice(0, 6)))
 }
 const validSourceTimestamp = (value: string | null, profile: CanonicalProfile) =>
-  value === null ? profile === CanonicalProfileVersion3 : validTimestamp(value)
+  value === null ? profile === CanonicalProfileVersion3 || profile === CanonicalProfileVersion4 : validTimestamp(value)
 const boundedIdentity = (value: string, max: number) => value.trim() !== "" && utf8Bytes(value) <= max
 const boundedText = (value: string, max: number, empty: boolean) =>
   (empty || value.trim() !== "") && utf8Bytes(value) <= max
@@ -196,7 +196,7 @@ const hasThreadCycle = (threads: AdapterObservation["threads"]) => {
 }
 
 
-const validAcpUpdate = (update: AcpSessionUpdate) => {
+const validAcpUpdate = (update: AcpSessionUpdate, profile: CanonicalProfile = CanonicalProfileVersion) => {
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk":
@@ -204,9 +204,10 @@ const validAcpUpdate = (update: AcpSessionUpdate) => {
       return (update.messageId === undefined || update.messageId === null || boundedIdentity(update.messageId, 500)) &&
         validAcpContentBlock(update.content)
     case "tool_call":
-      return validToolValues(update) && boundedIdentity(update.toolCallId, 500) && boundedText(update.title, 500, false)
+      return (profile === CanonicalProfileVersion4 || !Object.hasOwn(update, "_meta")) &&
+        validToolValues(update) && boundedIdentity(update.toolCallId, 500) && boundedText(update.title, 500, false)
     case "tool_call_update":
-      return validToolValues(update) && boundedIdentity(update.toolCallId, 500) &&
+      return (profile === CanonicalProfileVersion4 || !Object.hasOwn(update, "_meta")) && validToolValues(update) && boundedIdentity(update.toolCallId, 500) &&
         (update.title === undefined || update.title === null || boundedText(update.title, 500, true))
   }
 }

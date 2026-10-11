@@ -1,6 +1,6 @@
 import { AdapterRuntimeError, type HostedSourceCapture } from "@atape/application"
 import { SourceCaptureHeader, SourceCaptureHeaderV2, SourceCapturePriorThread, SourceCapturePage, SourceDiscoveryPage, SourceCaptureLimits, SourceProjectionLimits, SourceCaptureVersion, SourceCaptureVersion2,
-  CanonicalProfileVersion3, type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
+  CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, type SourceCaptureRuntime, type SourceCaptureView } from "@atape/domain"
 import { Effect, Schema } from "effect"
 
 const failure = (adapterId: string, reason: AdapterRuntimeError["reason"], message: string) =>
@@ -66,6 +66,7 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       const admitted = yield* limits(request.limits)
       const projection = yield* Schema.decodeUnknownEffect(SourceProjectionLimits)(request.projection).pipe(
         Effect.mapError(() => failure(adapterId, "contract", "Source projection requires valid explicit admission.")))
+      const supportedProjection = { ...projection, canonicalProfiles: [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4] as const }
       yield* Effect.try({ try: () => bounded(request.priorThreads ?? [], 2 * 1024 * 1024), catch: () => failure(adapterId, "contract", "Prior Thread metadata exceeds its byte bound.") })
       const priorThreads = yield* Schema.decodeUnknownEffect(Schema.Array(SourceCapturePriorThread).check(Schema.isMaxLength(1000)))(request.priorThreads ?? []).pipe(
         Effect.mapError(() => failure(adapterId, "contract", "Source capture requires valid prior Thread metadata.")))
@@ -79,13 +80,13 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
         catch: () => failure(adapterId, "close", "Adapter source view failed to close.")
       }).pipe(Effect.catch(error => Effect.logWarning(error.message)))
       const view = yield* Effect.acquireRelease(call(signal => foreign.protocolVersion === SourceCaptureVersion2
-        ? foreign.open({ ...request, priorThreads, limits: admitted, projection, signal })
-        : foreign.open({ ...request, limits: admitted, projection, signal }), admitted.durationMs, close), release)
+        ? foreign.open({ ...request, priorThreads, limits: admitted, projection: supportedProjection, signal })
+        : foreign.open({ ...request, limits: admitted, projection: supportedProjection, signal }), admitted.durationMs, close), release)
       if (typeof view?.read !== "function" || typeof view?.close !== "function")
         return yield* failure(adapterId, "contract", "Adapter source must return a readable closeable view.")
       const header = yield* decode(foreign.protocolVersion === SourceCaptureVersion2 ? SourceCaptureHeaderV2 : SourceCaptureHeader, view, projection.pageBytes)
-      if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && header.session.updatedAt === null)
-        return yield* failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 profile.")
+      if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && header.canonicalProfileVersion !== CanonicalProfileVersion4 && header.session.updatedAt === null)
+        return yield* failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 or v4 profile.")
       if ("sourceCheckpoint" in header && Buffer.byteLength(header.sourceCheckpoint as string) > 1024 * 1024)
         return yield* failure(adapterId, "contract", "Source checkpoint exceeds its opaque byte bound.")
       if (header.origin.sourceId !== request.sourceId || header.session.sourceSessionId !== request.sourceId ||
@@ -99,8 +100,10 @@ export const hostSourceCapture = (adapterId: string, foreign: SourceCaptureRunti
       }, catch: cause => cause as AdapterRuntimeError }), () => call(signal => view.read(signal), deadline - performance.now()).pipe(
         Effect.flatMap(value => decode(SourceCapturePage, value, projection.pageBytes)),
         Effect.flatMap(page => {
-          if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && page.frames.some(frame => frame.events.some(event => event.occurredAt === null)))
-            return Effect.fail(failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 profile."))
+          if (header.canonicalProfileVersion !== CanonicalProfileVersion3 && header.canonicalProfileVersion !== CanonicalProfileVersion4 && page.frames.some(frame => frame.events.some(event => event.occurredAt === null)))
+            return Effect.fail(failure(adapterId, "contract", "Unknown source times require an explicit Canonical v3 or v4 profile."))
+          if (header.canonicalProfileVersion !== CanonicalProfileVersion4 && page.frames.some(frame => frame.events.some(event => "_meta" in event.update)))
+            return Effect.fail(failure(adapterId, "contract", "Tool identities require an explicit Canonical v4 profile."))
           if (page.frames.length > projection.pageItems || !page.done && page.frames.length === 0 || !request.rawEnabled && page.frames.some(frame => frame.raw !== undefined))
             return Effect.fail(failure(adapterId, "contract", "Adapter source frame page violates its admission or Raw policy."))
           finished = page.done

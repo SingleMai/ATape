@@ -1,5 +1,5 @@
 import { Effect, Scope } from "effect"
-import { CanonicalProfileVersion, CanonicalProfileVersion3, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, type AdapterEvent, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
+import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, type AdapterEvent, type AdapterThread, type AdapterUsage, type AdapterRawReference } from "@atape/domain"
 import { CaptureJournal, type CaptureOwner, type CaptureRecordKey } from "./captureJournal.ts"
 import { canonicalMaterializationBound, projectCanonicalSubmission } from "./canonicalProjection.ts"
 import { publicationPreparationContext, rawObservationPreparationContext, sealPublicationCapture, sealRawObservation } from "./publicationDelivery.ts"
@@ -33,13 +33,13 @@ export const preparePublicationCanonical = <E, R>(owner: CaptureOwner, captureId
   const limits = context.intent.capabilities.limits
   const prepared = yield* Effect.scoped(Effect.gen(function*() {
     const view = yield* input.source
-    const targetProfile = view.canonicalProfileVersion === CanonicalProfileVersion3 ? PublicationTargetProfile3 :
+    const targetProfile = view.canonicalProfileVersion === CanonicalProfileVersion4 ? PublicationTargetProfile4 : view.canonicalProfileVersion === CanonicalProfileVersion3 ? PublicationTargetProfile3 :
       view.sourceCheckpoint === undefined ? PublicationTargetProfile : PublicationTargetProfile2
     if (targetProfile !== PublicationTargetProfile && !context.targetProfiles.includes(targetProfile))
       return yield* fail("unsupported", "This source requires a publication target profile unavailable on the Server.")
     const projection = yield* canonicalSourceProjection(owner, view, { ...input, captureId, transformVersion: context.intent.begin.transformVersion })
     const { profile, canonicalProfileVersion, placeholder, masked } = projection
-    if (view.sourceCheckpoint !== undefined || canonicalProfileVersion === CanonicalProfileVersion3)
+    if (view.sourceCheckpoint !== undefined || canonicalProfileVersion === CanonicalProfileVersion3 || canonicalProfileVersion === CanonicalProfileVersion4)
       yield* journal.setSourceMetadata(owner, captureId, yield* sourceMetadataJson(view, masked.threads))
     const version = (kind: CaptureRecordKey["kind"], key: string, fingerprint: string, rawReference: AdapterRawReference = placeholder) => Effect.gen(function*() {
       return yield* journal.record(owner, captureId, { kind, key, fingerprint, projectionVersion: profile,

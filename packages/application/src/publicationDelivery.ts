@@ -1,6 +1,6 @@
 import { Context, Effect, Schema } from "effect"
 import {
-  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3,
+  PublicationActivation, PublicationAttempt, PublicationBegin, PublicationBinding, PublicationCapabilities, PublicationLegacyAdoption, PublicationTargetProfile, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4,
   PublicationManifest, PublicationProtocol, PublicationScope, RawAuthority, RawPublicationChunk, RawPublicationWireBytes, sameRawAuthority,
   type RawPublicationReceipt,
   type PublicationPart, type PublicationReservation
@@ -33,6 +33,7 @@ export class PublicationTransport extends Context.Service<PublicationTransport, 
 const Intent = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), binding: PublicationBinding,
   scope: PublicationScope, sessionId: Schema.String, begin: PublicationBegin, capabilities: PublicationCapabilities,
   targetProfileV3: Schema.optionalKey(Schema.Literal(PublicationTargetProfile3)),
+  targetProfileV4: Schema.optionalKey(Schema.Literal(PublicationTargetProfile4)),
   adoption: Schema.optionalKey(Schema.Struct({ revisionFloor: PublicationLegacyAdoption.fields.revisionFloor })),
   rawAuthority: Schema.optionalKey(RawAuthority) })
 const Seal = Schema.Struct({ protocol: Schema.Literal(PublicationProtocol), fence: PublicationAttempt.fields.fence, manifest: PublicationManifest })
@@ -109,6 +110,7 @@ export const beginPublicationCapture = (owner: CaptureClaim, input: {
     baseHead: input.baseHead, transformVersion: input.transformVersion })
   const intent: Intent = { protocol: PublicationProtocol, binding, scope, sessionId: reservation.sessionId, begin, capabilities: durableCapabilities,
     ...(capabilities.targetProfiles?.includes(PublicationTargetProfile3) ? { targetProfileV3: PublicationTargetProfile3 } : {}),
+    ...(capabilities.targetProfiles?.includes(PublicationTargetProfile4) ? { targetProfileV4: PublicationTargetProfile4 } : {}),
     ...(adoption === undefined ? {} : { adoption: { revisionFloor: adoption.revisionFloor } }),
     ...(rawAuthority === undefined ? {} : { rawAuthority }) }
   yield* journal.reserve(owner, { id: input.captureId, expectedCheckpoint: owner.checkpoint,
@@ -131,8 +133,9 @@ export const publicationPreparationContext = (owner: CaptureOwner, id: string) =
     return yield* failure("conflict", "An interrupted source preparation must be abandoned before opening a fresh source.")
   const targetProfiles = intent.capabilities.targetProfiles ?? [intent.capabilities.targetProfile]
   return { intent, rawEnabled: capture.rawEnabled,
-    targetProfiles: intent.targetProfileV3 === PublicationTargetProfile3 && !targetProfiles.includes(PublicationTargetProfile3)
-      ? [...targetProfiles, PublicationTargetProfile3] : targetProfiles }
+    targetProfiles: [...new Set([...targetProfiles,
+      ...(intent.targetProfileV3 === PublicationTargetProfile3 ? [PublicationTargetProfile3] : []),
+      ...(intent.targetProfileV4 === PublicationTargetProfile4 ? [PublicationTargetProfile4] : [])])] }
 })
 
 const hashManifestText = (value: string) => Effect.tryPromise({

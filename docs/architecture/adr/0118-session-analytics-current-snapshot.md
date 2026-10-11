@@ -68,3 +68,6 @@ limits and remaining product work live in
 This complements the indexed Team Overview facts selected in
 [ADR-0085](0085-overview-indexed-facts-and-aggregation.md); it does not change
 their scope or make them the authority for full Session analysis.
+
+[ADR-0120](0120-normalized-tool-identity.md) extends this Interface with
+Adapter-normalized MCP and Skill tool identities and analytics version 2.

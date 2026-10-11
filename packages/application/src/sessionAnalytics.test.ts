@@ -1,7 +1,7 @@
 import type { SessionAnalytics, SessionAnalyticsQuery } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { canFilterSessionAnalyticsTool, readSessionAnalytics, SessionAnalyticsGateway } from "./sessionAnalytics"
+import { canFilterSessionAnalyticsTool, selectSessionAnalyticsEvidence, readSessionAnalytics, SessionAnalyticsGateway } from "./sessionAnalytics"
 
 const value: SessionAnalytics = {
   snapshot: "one", analyticsVersion: 1, sessionId: "session", captureStatus: "complete",
@@ -25,6 +25,22 @@ describe("SessionAnalytics Module", () => {
       expect(id).toBe("session"); expect(request).toEqual(query); return Effect.succeed(value)
     } }))
     expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer)))).toEqual(value)
+  })
+  it("reads a snapshot-bound MCP selection through the same remote Interface", async () => {
+    const query = selectSessionAnalyticsEvidence({ metric: "mcp_tools", capability: "lookup", server: "docs", thread: "child" }, "one")
+    const report: SessionAnalytics = { ...value, analyticsVersion: 2,
+      capabilities: { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 0, mcp: [], skills: [] } }
+    const layer = Layer.succeed(SessionAnalyticsGateway, SessionAnalyticsGateway.of({ read: (_id, request) => {
+      expect(request).toEqual({ metric: "mcp_tools", snapshot: "one", capability: "lookup", server: "docs", thread: "child" })
+      return Effect.succeed(report)
+    } }))
+    expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer)))).toEqual(report)
+  })
+  it("removes incompatible evidence filters while retaining the selected snapshot and thread", () => {
+    expect(selectSessionAnalyticsEvidence({ metric: "skills", capability: "review", server: "docs", tool: "Skill", thread: "root" }, "one"))
+      .toEqual({ metric: "skills", capability: "review", thread: "root", snapshot: "one" })
+    expect(selectSessionAnalyticsEvidence({ metric: "thoughts", capability: "review", server: "docs", tool: "Skill", thread: "root" }, "one"))
+      .toEqual({ metric: "thoughts", thread: "root", snapshot: "one" })
   })
   it("rejects a different session response", async () => {
     const error = await Effect.runPromise(readSessionAnalytics("other").pipe(Effect.provide(provide()), Effect.flip))

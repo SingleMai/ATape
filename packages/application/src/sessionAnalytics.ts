@@ -19,6 +19,22 @@ export class SessionAnalyticsGateway extends Context.Service<SessionAnalyticsGat
 export const canFilterSessionAnalyticsTool = (label: string): boolean =>
   new TextEncoder().encode(label).byteLength <= 500
 
+export type SessionAnalyticsFilter = Pick<SessionAnalyticsQuery, "metric" | "thread" | "tool" | "capability" | "server">
+
+// Changing the evidence metric keeps compatible selections and clears filters
+// that the selected metric cannot accept. Stats remain whole-session reads.
+export const selectSessionAnalyticsEvidence = (filter: SessionAnalyticsFilter, snapshot?: string): SessionAnalyticsQuery => {
+  const metric = filter.metric ?? "tools"
+  return {
+    metric,
+    ...(snapshot === undefined ? {} : { snapshot }),
+    ...(filter.thread ? { thread: filter.thread } : {}),
+    ...(filter.tool && ["tools", "failed_tools", "unknown_tools"].includes(metric) ? { tool: filter.tool } : {}),
+    ...(filter.capability && ["mcp_tools", "skills"].includes(metric) ? { capability: filter.capability } : {}),
+    ...(filter.server && metric === "mcp_tools" ? { server: filter.server } : {})
+  }
+}
+
 export const readSessionAnalytics = Effect.fn("SessionAnalytics.read")(function*(sessionId: string, query: SessionAnalyticsQuery = {}) {
   if ((query.cursor !== undefined && !query.snapshot) ||
     (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100))) {
