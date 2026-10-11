@@ -2,6 +2,7 @@ import {
   AdapterCollectionLimits,
   AdapterProtocolVersion,
   RawTransportChunkBytes,
+  CanonicalProfileVersion3,
   emptyClientConfig,
   type AdapterCollectionPage,
   type ClientConfig,
@@ -178,6 +179,8 @@ const clientConfig = (): ClientConfig => ({
 })
 
 const fixture = (options: {
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
+  readonly admissionFailure?: CollectionTransportError
   readonly rawEnabled?: boolean
   readonly policyFailure?: CollectionTransportError
   readonly config?: () => ClientConfig
@@ -193,6 +196,8 @@ const fixture = (options: {
   let pageIndex = 0
   let rawAttempts = 0
   let rawBlocked = options.rawFailureAtServerOffset !== undefined
+  const admission: Array<string> = []
+  let sourceReads = 0
   const canonical: Array<CanonicalSubmission> = []
   const raw: Array<RawSubmission> = []
   const layer = Layer.mergeAll(
@@ -212,9 +217,14 @@ const fixture = (options: {
       })
     })),
     Layer.succeed(AdapterRuntimes, AdapterRuntimes.of({
-      open: () => Effect.succeed({ collect: () => Effect.succeed(options.pages?.[pageIndex++] ?? options.page ?? collectionPage()) })
+      open: () => Effect.succeed({
+        ...(options.canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion: options.canonicalProfileVersion }),
+        collect: () => Effect.sync(() => { sourceReads++; return options.pages?.[pageIndex++] ?? options.page ?? collectionPage() }) })
     })),
     Layer.succeed(CollectorTransport, CollectorTransport.of({
+      ensureCanonicalProfile: (_project, profile) => options.canonicalProfileVersion === undefined
+        ? Effect.die("Legacy v2 must not request Canonical profile admission")
+        : Effect.sync(() => { admission.push(profile) }).pipe(Effect.andThen(options.admissionFailure ? Effect.fail(options.admissionFailure) : Effect.void)),
       rawCaptureEnabled: () => options.policyFailure ? Effect.fail(options.policyFailure) : Effect.succeed(options.rawEnabled ?? true),
       submitCanonical: (submission) => Effect.sync(() => {
         canonical.push(structuredClone(submission))
@@ -260,6 +270,8 @@ const fixture = (options: {
     run,
     canonical,
     raw,
+    admission,
+    sourceReads: () => sourceReads,
     checkpoint: () => checkpoint,
     commits: () => commits,
     rawAttempts: () => rawAttempts,
@@ -269,6 +281,30 @@ const fixture = (options: {
 }
 
 describe("Collector Module", () => {
+  it("keeps one admitted v3 profile through mixed clocks and client redaction", async () => {
+    const page = collectionPage(), observation = page.observations[0]!
+    const capture = fixture({ canonicalProfileVersion: CanonicalProfileVersion3, page: { ...page, observations: [{ ...observation,
+      session: { ...observation.session, updatedAt: null },
+      events: observation.events.map((event, index) => ({ ...event, occurredAt: index === 0 ? null : event.occurredAt }))
+    }] } })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures).toEqual([])
+    expect(capture.admission).toEqual([CanonicalProfileVersion3])
+    expect(capture.canonical[0]).toMatchObject({ canonicalProfileVersion: CanonicalProfileVersion3,
+      observation: { session: { updatedAt: null }, events: [{ occurredAt: null }, { occurredAt: now }] } })
+    expect(JSON.stringify(capture.canonical)).not.toContain("supersecret")
+    expect(capture.checkpoint()?.cursor).toBe("cursor-1")
+  })
+  it("rejects an old Server before reading a v3 source or writing legacy state", async () => {
+    const capture = fixture({ canonicalProfileVersion: CanonicalProfileVersion3,
+      admissionFailure: new CollectionTransportError({ reason: "rejected", operation: "canonical", retryable: false,
+        message: "Server did not affirm support for the selected profile" }) })
+    const report = await capture.run(runCollectionCycle())
+    expect(report.failures[0]).toMatchObject({ reason: "transport", retryable: false })
+    expect(capture.sourceReads()).toBe(0)
+    expect(capture.canonical).toEqual([]); expect(capture.raw).toEqual([])
+    expect(capture.commits()).toBe(0); expect(capture.checkpoint()).toBeUndefined()
+  })
   it.each(["session", "event"] as const)("rejects unknown %s time on the legacy observation path before content upload", async field => {
     const page = collectionPage(), observation = page.observations[0]!
     const capture = fixture({ page: { ...page, observations: [{ ...observation,
@@ -457,6 +493,7 @@ describe("Collector Module", () => {
           canonicalBatches: 0, rawChunks: 0, redactions: 0, hasMore: false }
       }) }),
       Effect.provideService(CollectorTransport, {
+        ensureCanonicalProfile: () => Effect.die("Source capture must not use legacy admission"),
         rawCaptureEnabled: () => Effect.die("Source capture must not read legacy policy"),
         submitCanonical: () => Effect.die("Source capture must not submit legacy Canonical"),
         appendRaw: () => Effect.die("Source capture must not append legacy Raw")

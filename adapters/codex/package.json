@@ -56,6 +56,7 @@
     "protocolVersion": "atape.adapter.v1alpha1",
     "gitAttribution": "atape.git-attribution.v1",
     "rawCapturePolicy": "atape.raw-capture.v1",
+    "legacyCanonicalProfile": "atape.acp-centered.v3",
     "adapterId": "codex",
     "displayName": "Codex",
     "entry": "./dist/index.js",

@@ -3,7 +3,7 @@ import type {
   AdapterCollectionPage, AdapterCollectionProgress, AdapterCollectionLimitValues, AdapterInstallation,
   CanonicalApplyReceipt, CollectorCheckpoint, LocalProject, RawAppendReceipt, NewSessionResult
 } from "@atape/domain"
-import { AdapterObservation, AdapterProtocolVersion, AdapterSourceFailure } from "@atape/domain"
+import { AdapterObservation, AdapterProtocolVersion, AdapterSourceFailure, CanonicalProfileVersion3 } from "@atape/domain"
 import { Context, Effect, Schema, Scope } from "effect"
 import type { CompiledRedactionPolicy } from "./redaction.ts"
 import type { PublicationDraftView } from "./publicationPreparation.ts"
@@ -99,6 +99,7 @@ export type HostedNewSession = {
   }) => Effect.Effect<NewSessionResult, AdapterRuntimeError>
 }
 export type HostedAdapter = { readonly newSession?: HostedNewSession } & ({
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
   readonly collect: (request: HostedCollectRequest) => Effect.Effect<AdapterCollectionPage, AdapterRuntimeError>
 } | {
   readonly sourceCapture: HostedSourceCapture
@@ -114,6 +115,7 @@ export class AdapterRuntimes extends Context.Service<AdapterRuntimes, {
 }>()("atape/application/AdapterRuntimes") {}
 
 export type CanonicalSubmission = {
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
   readonly instanceOrigin: string
   readonly userId: string
   readonly installationId: string
@@ -142,6 +144,9 @@ export type RawSubmission = {
 }
 
 export type CollectorTransportService = {
+  /** Affirmative admission before nullable-clock source collection or state writes. */
+  ensureCanonicalProfile(project: Pick<LocalProject, "instanceOrigin" | "userId" | "id">,
+    profile: typeof CanonicalProfileVersion3): Effect.Effect<void, CollectionTransportError>
   rawCaptureEnabled(project: Pick<LocalProject, "instanceOrigin" | "userId" | "id">): Effect.Effect<boolean, CollectionTransportError>
   submitCanonical(submission: CanonicalSubmission): Effect.Effect<CanonicalApplyReceipt, CollectionTransportError>
   appendRaw(submission: RawSubmission): Effect.Effect<RawAppendReceipt, CollectionTransportError>

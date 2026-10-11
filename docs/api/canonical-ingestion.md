@@ -24,6 +24,23 @@ event kinds `message`, `thought`, `tool_call`, `tool_result`, `artifact`,
 `spawn`, and `lifecycle`. Extension kinds remain closed until the protocol
 carries an explicit extension schema and version.
 
+## Read-only Canonical profile admission
+
+`GET /api/v1/ingestion/canonical/capabilities` requires a CLI Credential and
+returns `Cache-Control: no-store`. Its `atape.canonical-capabilities.v1`
+representation includes a nonempty, unique `canonicalProfiles` list of modern
+v2/v3/v4 profiles. This describes direct ingestion independently of Publication;
+legacy v1 remains a historical write-compatibility path, not a discovery target.
+Query parameters are invalid.
+
+A legacy v3 Collector requires affirmative support before reading the source or
+writing checkpoint/pending progress. On an older Server only an explicit
+404/405/501 permits fallback to the existing negotiated publication-target-v3
+capability as proof. An authoritative negative or malformed capability, failed
+authentication or transient error cannot trigger that fallback. SourceCapture
+still requires its own declared Publication targets and adoption capabilities.
+The [OpenAPI schema](openapi-v1.yaml) specifies this Interface.
+
 ## Batch and publication write modes
 
 Legacy Adapter collection uses this batch endpoint. Source-capture capabilities

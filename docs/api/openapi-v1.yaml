@@ -1093,6 +1093,23 @@ paths:
         "200": {$ref: "#/components/responses/GenericJSON"}
         "4XX": {$ref: "#/components/responses/Problem"}
         default: {$ref: "#/components/responses/Problem"}
+  /api/v1/ingestion/canonical/capabilities:
+    get:
+      operationId: getCanonicalCapabilities
+      x-atape-authorization-actions: []
+      tags: [Ingestion]
+      summary: Read supported modern Canonical profiles independently of Publication
+      description: CLI-authenticated read-only admission. Historical v1 writes remain a compatibility path and are not advertised. Missing or malformed capabilities do not affirm nullable-clock support.
+      x-atape-route: {class: cli_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
+      security: [{cliCredential: []}]
+      responses:
+        "200":
+          description: Supported modern Canonical profiles.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CanonicalCapabilities"}
+        "4XX": {$ref: "#/components/responses/Problem"}
+        default: {$ref: "#/components/responses/Problem"}
   /api/v1/ingestion/canonical/batches:
     post:
       operationId: ingestCanonicalBatch
@@ -2349,6 +2366,17 @@ components:
         reservations: {type: integer}
         reservationLifetimeMs: {type: integer}
         leaseLifetimeMs: {type: integer}
+    CanonicalCapabilities:
+      type: object
+      required: [protocol, canonicalProfiles]
+      properties:
+        protocol: {const: atape.canonical-capabilities.v1}
+        canonicalProfiles:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: {type: string, enum: [atape.acp-centered.v2, atape.acp-centered.v3, atape.acp-centered.v4]}
     PublicationCapabilities:
       type: object
       additionalProperties: false

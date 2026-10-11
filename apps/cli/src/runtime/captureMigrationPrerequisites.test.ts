@@ -1,5 +1,5 @@
 import { CLICredentialStore } from "@atape/application"
-import { AdapterManifest, AdapterProtocolVersion, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion, SourceCaptureVersion2,
+import { AdapterManifest, AdapterProtocolVersion, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion, SourceCaptureVersion2, CanonicalCapabilitiesProtocol, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4,
   emptyClientConfig, type ClientConfig, type StoredCLICredential } from "@atape/domain"
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -22,6 +22,8 @@ const capabilities = {
   limits: { partBytes: 4096, targetBytes: 1_000_000, userPendingBytes: 2_000_000, parts: 100,
     reservations: 16, reservationLifetimeMs: 60_000, leaseLifetimeMs: 30_000 }, statusPageSize: 100, reclaimPageSize: 32
 }
+const canonicalCapabilities = { protocol: CanonicalCapabilitiesProtocol,
+  canonicalProfiles: [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4] }
 const credential = (origin = "https://atape.net", id = "user-1"): StoredCLICredential => ({
   version: 1, instanceOrigin: origin, apiOrigin: origin.replace("https://", "https://api."),
   credential: "atc_v1_private-preflight", credentialId: `credential-${id}`, capabilityVersion: "atape-cli.v1",
@@ -47,22 +49,28 @@ const snapshot = async (directory: string): Promise<Record<string, string>> => {
   return files
 }
 
-const fixture = async (adapterId: "claude" | "cursor" = "claude") => {
+const fixture = async (adapterId: "claude" | "cursor" | "codex" = "claude") => {
   const home = await mkdtemp(join(tmpdir(), "atape-capture-prerequisites-"))
   temporaryDirectories.push(home)
   const paths = defaultNodeClientPaths({ ATAPE_HOME: home })
   const packageName = `@atape/adapter-${adapterId}`
   const root = join(paths.adapterDirectory, "node_modules", "@atape", `adapter-${adapterId}`)
   await mkdir(root, { recursive: true, mode: 0o700 })
-  const manifest = adapterId === "cursor" ? { ...Schema.decodeUnknownSync(AdapterManifest)(
-    (JSON.parse(await readFile(new URL("../../../../adapters/cursor/package.json", import.meta.url), "utf8")) as { atapeAdapter: unknown }).atapeAdapter),
+  const manifest = adapterId !== "claude" ? { ...Schema.decodeUnknownSync(AdapterManifest)(
+    (JSON.parse(await readFile(new URL(`../../../../adapters/${adapterId}/package.json`, import.meta.url), "utf8")) as { atapeAdapter: unknown }).atapeAdapter),
     entry: "./index.mjs" } : { protocolVersion: AdapterProtocolVersion, adapterId: "claude", displayName: "Claude",
     entry: "./index.mjs", harnesses: ["claude"], sourceCapture: SourceCaptureVersion2 }
-  const saveManifest = async (sourceCapture: typeof SourceCaptureVersion | typeof SourceCaptureVersion2 = SourceCaptureVersion2,
+  const saveManifest = async (sourceCapture: typeof SourceCaptureVersion | typeof SourceCaptureVersion2 | undefined = adapterId === "codex" ? undefined : SourceCaptureVersion2,
     publicationTargetProfile: unknown = "publicationTargetProfile" in manifest ? manifest.publicationTargetProfile : undefined) =>
     writeFile(join(root, "package.json"), JSON.stringify({ name: packageName, version: "0.5.6",
       atapeAdapter: { ...manifest, sourceCapture, publicationTargetProfile } }), { mode: 0o600 })
   await saveManifest()
+  const saveLegacyProfile = async (legacyCanonicalProfile: unknown = CanonicalProfileVersion3) => {
+    const { sourceCapture: _source, publicationTargetProfile: _target, legacyCanonicalProfile: _profile, ...metadata } =
+      Schema.decodeUnknownSync(AdapterManifest)(manifest)
+    await writeFile(join(root, "package.json"), JSON.stringify({ name: packageName, version: "0.5.6",
+      atapeAdapter: { ...metadata, ...(legacyCanonicalProfile === null ? {} : { legacyCanonicalProfile }) } }), { mode: 0o600 })
+  }
   await writeFile(join(root, "index.mjs"), 'throw new Error("Preflight must never import a provider factory")', { mode: 0o600 })
   const project = { id: "project-1", instanceOrigin: "https://atape.net", userId: "user-1", teamId: "team-1",
     teamSlug: "team", teamName: "Team", name: "Project", type: "directory" as const,
@@ -84,16 +92,126 @@ const fixture = async (adapterId: "claude" | "cursor" = "claude") => {
     requests.push({ url, init })
     const stored = credentials.find(item => url === `${item.instanceOrigin}/api/v1/instance`)
     if (stored) return response(metadata(stored))
+    if (credentials.some(item => url === `${item.apiOrigin}/api/v1/ingestion/canonical/capabilities`)) return response(canonicalCapabilities)
     if (credentials.some(item => url === `${item.apiOrigin}/api/v1/publications/capabilities`)) return response(capabilities)
     throw new Error("Unexpected request outside read-only prerequisites")
   }) as typeof globalThis.fetch
   const run = (scope: CaptureMigrationScope = { candidateConfig: config, wanted: true }, implementation = fetch) =>
     preflightCaptureMigrationPrerequisites(paths, scope).pipe(
       Effect.provide(makeCaptureMigrationPrerequisitesLayer(paths, {}, implementation)), Effect.runPromise)
-  return { home, paths, root, config, project, credentials, requests, fetch, run, saveManifest, saveCredential }
+  return { home, paths, root, config, project, credentials, requests, fetch, run, saveManifest, saveLegacyProfile, saveCredential }
 }
 
 describe("capture migration read-only prerequisite Interface", () => {
+  it.each([false, true])("admits an active legacy v3 candidate only after explicit Server affirmation (%s)", async supported => {
+    const f = await fixture("codex"); await f.saveCredential(credential())
+    const before = await snapshot(f.home)
+    const fetch = (async (input, init) => {
+      const original = await f.fetch(input, init)
+      if (!String(input).endsWith("/ingestion/canonical/capabilities")) return original
+      return response({ ...canonicalCapabilities, canonicalProfiles: supported ? [CanonicalProfileVersion3] : [CanonicalProfileVersion] })
+    }) as typeof globalThis.fetch
+    const result = f.run(undefined, fetch)
+    if (supported) await expect(result).resolves.toMatchObject({ prerequisiteScopeFingerprint: expect.any(String) })
+    else await expect(result).rejects.toMatchObject({ reason: "capability" })
+    expect(f.requests.map(item => item.url)).toEqual(["https://atape.net/api/v1/instance",
+      "https://api.atape.net/api/v1/ingestion/canonical/capabilities"])
+    expect(f.requests.map(item => new Headers(item.init?.headers).get("ATape-Accept-Publication-Target"))).toEqual([null, null])
+    expect(f.requests.every(item => item.init?.method === "GET" && item.init.body === undefined)).toBe(true)
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+  it.each([404, 405, 501])("admits an older Server only through genuine target-v3 support when its direct route is absent (%s)", async status => {
+    const f = await fixture("codex"); await f.saveCredential(credential())
+    const before = await snapshot(f.home)
+    const fetch = (async (input, init) => {
+      const original = await f.fetch(input, init)
+      if (String(input).endsWith("/ingestion/canonical/capabilities")) return response({}, status)
+      if (String(input).endsWith("/publications/capabilities")) return response({ ...capabilities,
+        targetProfiles: [...capabilities.targetProfiles, PublicationTargetProfile3] })
+      return original
+    }) as typeof globalThis.fetch
+    await f.run(undefined, fetch)
+    expect(f.requests.map(item => item.url)).toEqual(["https://atape.net/api/v1/instance",
+      "https://api.atape.net/api/v1/ingestion/canonical/capabilities", "https://api.atape.net/api/v1/publications/capabilities"])
+    expect(f.requests.map(item => new Headers(item.init?.headers).get("ATape-Accept-Publication-Target")))
+      .toEqual([null, null, PublicationTargetProfile3])
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+  it.each([
+    [200, {}, "capability"], [200, { ...canonicalCapabilities, canonicalProfiles: [CanonicalProfileVersion] }, "capability"],
+    [401, {}, "authentication"], [403, {}, "authentication"], [429, {}, "network"], [503, {}, "network"]
+  ])("does not fallback after an authoritative direct capability failure (%s/%j)", async (status, body, reason) => {
+    const f = await fixture("codex"); await f.saveCredential(credential())
+    const before = await snapshot(f.home)
+    const fetch = (async (input, init) => {
+      const original = await f.fetch(input, init)
+      return String(input).endsWith("/ingestion/canonical/capabilities") ? response(body, Number(status)) : original
+    }) as typeof globalThis.fetch
+    await expect(f.run(undefined, fetch)).rejects.toMatchObject({ reason })
+    expect(f.requests.map(item => item.url)).toEqual(["https://atape.net/api/v1/instance",
+      "https://api.atape.net/api/v1/ingestion/canonical/capabilities"])
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+
+  it.each(["stopped", "disabled", "unconfigured", "no-projects", "v2"] as const)(
+    "does no credential or remote work for %s legacy capture", async mode => {
+      const f = await fixture("codex"); await f.saveLegacyProfile(mode === "v2" ? null : CanonicalProfileVersion3)
+      const before = await snapshot(f.home)
+      await f.run({ candidateConfig: { ...f.config,
+        ...(mode === "disabled" ? { enabledAdapterIds: [] } : {}),
+        ...(mode === "unconfigured" ? { toolsConfigured: false } : {}),
+        ...(mode === "no-projects" ? { projects: [] } : {}) }, wanted: mode !== "stopped" })
+      expect(f.requests).toEqual([]); expect(await snapshot(f.home)).toEqual(before)
+    })
+
+  it("checks legacy v3 for every active Project account while leaving provider entry and local state inert", async () => {
+    const f = await fixture("codex"), other = credential("https://other.example", "user-2")
+    await f.saveLegacyProfile(); f.credentials.push(other)
+    await f.saveCredential(credential()); await f.saveCredential(other)
+    const config = { ...f.config, projects: [f.project, { ...f.project, id: "same-account" },
+      { ...f.project, id: "other-account", instanceOrigin: other.instanceOrigin, userId: other.user.id }] }
+    const before = await snapshot(f.home)
+    await f.run({ candidateConfig: config, wanted: true })
+    expect(f.requests.filter(item => item.url.endsWith("/ingestion/canonical/capabilities")).map(item => item.url).sort())
+      .toEqual(["https://api.atape.net/api/v1/ingestion/canonical/capabilities", "https://api.other.example/api/v1/ingestion/canonical/capabilities"])
+    expect(f.requests.some(item => item.url.endsWith("/publications/capabilities"))).toBe(false)
+    expect(await snapshot(f.home)).toEqual(before)
+  })
+
+  it("binds the legacy v3 declaration into the parent scope fingerprint", async () => {
+    const f = await fixture("codex"); await f.saveLegacyProfile(null); await f.saveCredential(credential())
+    const scope = { candidateConfig: f.config, wanted: true }
+    const initial = await inspectCaptureMigrationPrerequisitesScope(f.paths, scope)
+    await f.saveLegacyProfile()
+    expect(await inspectCaptureMigrationPrerequisitesScope(f.paths, scope)).not.toEqual(initial)
+    expect(f.requests).toEqual([])
+  })
+  it.each([
+    { canonical: false, publication: true }, { canonical: true, publication: false }, { canonical: true, publication: true }
+  ])("requires direct Codex legacy v3 and the independent v4 publication capability ($canonical/$publication)", async ({ canonical, publication }) => {
+    const f = await fixture(), codex = await fixture("codex")
+    await f.saveCredential(credential()); await f.saveManifest(SourceCaptureVersion2, PublicationTargetProfile4)
+    await cp(codex.root, join(f.paths.adapterDirectory, "node_modules", "@atape", "adapter-codex"), { recursive: true })
+    const config = { ...f.config, adapters: [...f.config.adapters, ...codex.config.adapters], enabledAdapterIds: ["claude", "codex"] }
+    const before = await snapshot(f.home)
+    const fetch = (async (input, init) => {
+      const original = await f.fetch(input, init)
+      if (String(input).endsWith("/ingestion/canonical/capabilities")) return response({ ...canonicalCapabilities,
+        canonicalProfiles: canonical ? canonicalCapabilities.canonicalProfiles : [CanonicalProfileVersion] })
+      return String(input).endsWith("/publications/capabilities") ? response({ ...capabilities,
+        targetProfiles: [...capabilities.targetProfiles, ...(publication ? [PublicationTargetProfile4] : [])] }) : original
+    }) as typeof globalThis.fetch
+    const result = f.run({ candidateConfig: config, wanted: true }, fetch)
+    if (canonical && publication) await expect(result).resolves.toMatchObject({ prerequisiteScopeFingerprint: expect.any(String) })
+    else await expect(result).rejects.toMatchObject({ reason: "capability" })
+    const request = f.requests.find(item => item.url.endsWith("/publications/capabilities"))
+    if (canonical) {
+      expect(new Headers(request?.init?.headers).get("ATape-Accept-Publication-Target")).toBe(PublicationTargetProfiles34)
+      expect(f.requests.map(item => item.url)).toEqual(["https://atape.net/api/v1/instance",
+        "https://api.atape.net/api/v1/ingestion/canonical/capabilities", "https://api.atape.net/api/v1/publications/capabilities"])
+    } else expect(request).toBeUndefined()
+    expect(await snapshot(f.home)).toEqual(before)
+  })
   it("checks v2 capabilities through pinned GET authentication without loading source or mutating local files", async () => {
     const f = await fixture()
     await f.saveCredential(credential())

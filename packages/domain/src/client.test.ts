@@ -2,12 +2,21 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { AdapterManifest, AdapterProtocolVersion, SourceCaptureVersion, SourceCaptureVersion2 } from "./client.ts"
 import { PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4 } from "./publication.ts"
+import { CanonicalProfileVersion3 } from "./collector.ts"
 
 const manifest = { protocolVersion: AdapterProtocolVersion, adapterId: "fixture", displayName: "Fixture",
   entry: "./index.js", harnesses: ["fixture"] }
 const decode = Schema.decodeUnknownSync(AdapterManifest)
 
 describe("Adapter publication prerequisites", () => {
+  it("admits nullable legacy clocks only through a declared v3 runtime", () => {
+    expect(decode({ ...manifest, legacyCanonicalProfile: CanonicalProfileVersion3 }))
+      .toEqual({ ...manifest, legacyCanonicalProfile: CanonicalProfileVersion3 })
+    for (const sourceCapture of [SourceCaptureVersion, SourceCaptureVersion2])
+      expect(() => decode({ ...manifest, sourceCapture, legacyCanonicalProfile: CanonicalProfileVersion3 })).toThrow()
+    for (const legacyCanonicalProfile of [null, 3, {}, "atape.acp-centered.v2", "atape.acp-centered.v4"])
+      expect(() => decode({ ...manifest, legacyCanonicalProfile })).toThrow()
+  })
   it("preserves undeclared legacy and source manifests without adding a new requirement", () => {
     expect(decode(manifest)).toEqual(manifest)
     for (const sourceCapture of [SourceCaptureVersion, SourceCaptureVersion2]) {

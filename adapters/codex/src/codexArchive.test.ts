@@ -2,6 +2,7 @@ import {
   AdapterCollectionLimits,
   type AdapterCollectionLimitValues,
   AdapterProtocolVersion,
+  CanonicalProfileVersion3,
   type AdapterCollectionPage,
   type AdapterSourceProgress,
   type LegacyAdapterRuntime
@@ -24,6 +25,327 @@ afterEach(async () => {
 })
 
 describe("Codex Adapter", () => {
+  it("refuses a Host without explicit nullable-clock support before opening sources", async () => {
+    await expect(createAtapeAdapter({ protocolVersion: AdapterProtocolVersion,
+      adapter: { id: "codex", version: "0.1.0" }, project: { id: "project", type: "directory", path: "/missing-atape-clock-test" },
+      signal: AbortSignal.timeout(5_000) })).rejects.toThrow("explicit source clock quality")
+  })
+
+  it("opens lazily and retries a failed or cancelled first collection", async () => {
+    const root = await makeEmptyFixture()
+    const laterProject = join(root.workspace, "later-project")
+    await writeJsonl(join(root.sessionsDirectory, "lazy.jsonl"), [sessionMeta({ id: "lazy", cwd: laterProject }),
+      itemCompleted("2026-09-05T00:01:00Z", "lazy", { type: "AgentMessage", id: "answer", content: [{ type: "output_text", text: "ready" }] })])
+    const runtime = await openAdapter(laterProject, "directory")
+    expect(runtime.canonicalProfileVersion).toBe(CanonicalProfileVersion3)
+    await expect(collect(runtime)).rejects.toThrow("Could not open the Codex archive")
+    await mkdir(laterProject)
+    const cancellation = new AbortController()
+    cancellation.abort()
+    await expect(runtime.collect({ protocolVersion: AdapterProtocolVersion, cursor: null, limits: AdapterCollectionLimits,
+      rawProgress: [], signal: cancellation.signal })).rejects.toBeDefined()
+    expect(requiredObservation(await collect(runtime)).events.map(event => event.sourceEventId)).toEqual(["answer"])
+    await runtime.close?.()
+    await expect(collect(runtime)).rejects.toBeDefined()
+  })
+
+  it("cancels an in-flight first source read and retries through the same runtime", async () => {
+    const root = await makeEmptyFixture()
+    await writeJsonl(join(root.sessionsDirectory, "cancel.jsonl"), [sessionMeta({ id: "cancel", cwd: root.project }),
+      itemCompleted("2026-09-05T00:01:00Z", "cancel", { type: "AgentMessage", id: "answer", content: [{ type: "output_text", text: "ready" }] })])
+    let announceStarted: () => void = () => undefined
+    const started = new Promise<void>(resolve => { announceStarted = resolve })
+    let firstRead = true, cancelledSource = false
+    const runtime = await openAdapter(root.project, "git", { version: "atape.git-attribution.v1", resolve: async (_source, signal) => {
+      if (!firstRead) return "included"
+      firstRead = false
+      announceStarted()
+      await new Promise<void>(resolve => signal.addEventListener("abort", () => { cancelledSource = true; resolve() }, { once: true }))
+      return "excluded"
+    } })
+    const cancellation = new AbortController()
+    const first = runtime.collect({ protocolVersion: AdapterProtocolVersion, cursor: null, limits: AdapterCollectionLimits,
+      rawProgress: [], signal: cancellation.signal })
+    await started
+    cancellation.abort()
+    await expect(first).rejects.toBeDefined()
+    expect(cancelledSource).toBe(true)
+    expect(requiredObservation(await collect(runtime)).events.map(event => event.sourceEventId)).toEqual(["answer"])
+  })
+
+  it.each(["item_completed", "response_item", "event_msg"] as const)(
+    "keeps missing and invalid clocks in %s records in physical source order", async format => {
+      const root = await makeEmptyFixture()
+      const message = (id: string, timestamp: unknown) => format === "item_completed"
+        ? { timestamp, type: "event_msg", payload: { type: "item_completed", thread_id: "clock", item: { type: "AgentMessage", id, content: [{ type: "output_text", text: id }] } } }
+        : format === "response_item"
+          ? { timestamp, type: "response_item", payload: { type: "message", id, role: "assistant", content: [{ type: "output_text", text: id }] } }
+          : { timestamp, type: "event_msg", payload: { type: "agent_message", id, message: id } }
+      const path = join(root.sessionsDirectory, "clock.jsonl")
+      await writeJsonl(path, [sessionMeta({ id: "clock", cwd: root.project, timestamp: "invalid metadata clock" }),
+        message("first", "2026-09-05T00:03:00Z"), message("missing", undefined), message("null", null),
+        message("invalid", "bad clock"), message("number", 100), message("empty", ""),
+        message("calendar", "2026-02-30T00:00:00Z"), message("zero", "0001-01-01T00:00:00.000000999Z"),
+        message("last", "2026-09-05T00:01:00Z")])
+      const filesystemClock = new Date("2000-01-01T00:00:00Z")
+      await utimes(path, filesystemClock, filesystemClock)
+      const runtime = await openAdapter(root.project, "directory")
+      let cursor: string | null = null
+      const events: AdapterCollectionPage["observations"][number]["events"][number][] = []
+      let progress: ReadonlyArray<AdapterSourceProgress> = []
+      for (let i = 0; i < 30; i++) {
+        const page = await collect(runtime, cursor, progress, { ...AdapterCollectionLimits, eventsPerObservation: 2 })
+        for (const observation of page.observations) {
+          events.push(...observation.events)
+          expect(observation.session.updatedAt).toBe("2026-09-05T00:03:00Z")
+          expect(observation.observedAt).toBe(filesystemClock.toISOString())
+          progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments)
+        }
+        cursor = page.nextCursor
+        if (!page.hasMore) break
+      }
+      expect(events.map(event => event.sourceEventId)).toEqual(["first", "missing", "null", "invalid", "number", "empty", "calendar", "zero", "last"])
+      expect(events.map(event => event.occurredAt)).toEqual(["2026-09-05T00:03:00Z", null, null, null, null, null, null, null, "2026-09-05T00:01:00Z"])
+      expect([...events].sort((a, b) => a.sourceOrder - b.sourceOrder || a.eventIndex - b.eventIndex).map(event => event.sourceEventId))
+        .toEqual(events.map(event => event.sourceEventId))
+      expect(events.every(event => event.orderFidelity === "native" && event.fidelity === "native" && event.rawRef._tag === "object")).toBe(true)
+      const laterFilesystemClock = new Date("2001-01-01T00:00:00Z")
+      await utimes(path, laterFilesystemClock, laterFilesystemClock)
+      const changed = requiredObservation(await collect(await openAdapter(root.project, "directory"), cursor, progress))
+      expect(changed.session.updatedAt).toBe("2026-09-05T00:03:00Z")
+      expect(changed.rawSegments).toEqual([])
+    }
+  )
+
+  it("keeps wholly unknown Session and spawn clocks null and preserves original attribution metadata", async () => {
+    const root = await makeEmptyFixture()
+    const meta = sessionMeta({ id: "unknown", cwd: root.project, timestamp: "broken source time" })
+    const child = sessionMeta({ id: "child", sessionId: "unknown", parentThreadId: "unknown", cwd: root.project })
+    await writeJsonl(join(root.sessionsDirectory, "unknown.jsonl"), [meta,
+      { ...itemCompleted("unused", "unknown", { type: "AgentMessage", id: "unknown-message", content: [{ type: "output_text", text: "retained" }] }), timestamp: undefined }])
+    await writeJsonl(join(root.sessionsDirectory, "child.jsonl"), [{ ...child, timestamp: undefined, payload: { ...child.payload, timestamp: undefined } }])
+    const origins = new Map<string, string>()
+    const runtime = await openAdapter(root.project, "git", { version: "atape.git-attribution.v1",
+      resolve: async source => { origins.set(source.sourceId, source.originKey); return "included" } })
+    const observation = requiredObservation(await collect(runtime))
+    expect(observation.session.updatedAt).toBeNull()
+    expect(observation.events.find(event => event.sourceEventId === "unknown-message")?.occurredAt).toBeNull()
+    expect(observation.events.find(event => event.sourceEventId === "spawn-child")).toMatchObject({ occurredAt: null, fidelity: "derived", orderFidelity: "derived" })
+    expect(origins.get("unknown")).toBe(JSON.stringify(["unknown", "broken source time"]))
+    expect(origins.get("child")).toBe(JSON.stringify(["unknown", null]))
+  })
+
+  it("freezes Session recency and the provider title clock while continuing an unchanged snapshot", async () => {
+    const root = await makeEmptyFixture()
+    await writeJsonl(join(root.sessionsDirectory, "frozen.jsonl"), [sessionMeta({ id: "frozen", cwd: root.project }),
+      ...[1, 2, 3].map(index => itemCompleted(`2026-09-05T00:0${index}:00Z`, "frozen", { type: "AgentMessage", id: `event-${index}`, content: [{ type: "output_text", text: "answer" }] }))])
+    const titleIndex = join(root.codexHome, "session_index.jsonl")
+    await writeJsonl(titleIndex, [sessionTitle("frozen", "Frozen title", "2026-09-05T00:04:00Z")])
+    const runtime = await openAdapter(root.project, "directory")
+    const first = await collect(runtime, null, [], { ...AdapterCollectionLimits, eventsPerObservation: 1 })
+    const initial = requiredObservation(first)
+    expect(initial.session.updatedAt).toBe("2026-09-05T00:04:00Z")
+    await appendFile(titleIndex, JSON.stringify(sessionTitle("frozen", "Later title", "2026-09-05T00:05:00Z")) + "\n")
+    const continued = requiredObservation(await collect(await openAdapter(root.project, "directory"), first.nextCursor, [],
+      { ...AdapterCollectionLimits, eventsPerObservation: 1 }))
+    expect(continued.session).toMatchObject({ revision: initial.session.revision, title: "Frozen title", updatedAt: "2026-09-05T00:04:00Z" })
+  })
+
+  it("retains known source clocks at microsecond precision instead of the unknown zero instant", async () => {
+    const root = await makeEmptyFixture()
+    await writeJsonl(join(root.sessionsDirectory, "precision.jsonl"), [sessionMeta({ id: "precision", cwd: root.project, timestamp: "unknown" }),
+      ...["0001-01-01T00:00:00.000001Z", "0001-01-01T00:00:00.000002Z"].map((at, index) => itemCompleted(at, "precision",
+        { type: "AgentMessage", id: `event-${index}`, content: [{ type: "output_text", text: "known" }] }))])
+    const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
+    expect(observation.session.updatedAt).toBe("0001-01-01T00:00:00.000002Z")
+    expect(observation.events.map(event => event.occurredAt)).toEqual(["0001-01-01T00:00:00.000001Z", "0001-01-01T00:00:00.000002Z"])
+  })
+
+  it("keeps assigned file namespaces when metadata changes the derived scan order", async () => {
+    const root = await makeEmptyFixture()
+    const firstPath = join(root.sessionsDirectory, "first-part.jsonl")
+    const secondPath = join(root.sessionsDirectory, "second-part.jsonl")
+    const records = (id: string, at: string) => [sessionMeta({ id: "many", cwd: root.project, timestamp: at }),
+      itemCompleted("2026-09-05T00:03:00Z", "many", { type: "AgentMessage", id, content: [{ type: "output_text", text: id }] })]
+    await writeJsonl(firstPath, records("first", "2026-09-05T00:01:00Z"))
+    await writeJsonl(secondPath, records("second", "2026-09-05T00:02:00Z"))
+    const runtime = await openAdapter(root.project, "directory")
+    const first = await collect(runtime, null, [], AdapterCollectionLimits, false)
+    const initialEvents = requiredObservation(first).events
+    expect(initialEvents.map(event => event.sourceEventId)).toEqual(["first", "second"])
+    await writeJsonl(secondPath, records("second", "2026-09-05T00:00:00Z"))
+    const changedTime = new Date(Date.now() + 1_000)
+    await utimes(secondPath, changedTime, changedTime)
+    const changed = requiredObservation(await collect(await openAdapter(root.project, "directory"), first.nextCursor, [], AdapterCollectionLimits, false))
+    expect(changed.events.map(event => event.sourceEventId)).toEqual(["second", "first"])
+    expect(changed.events.map(event => event.sourceOrder)).toEqual([initialEvents[1]?.sourceOrder, initialEvents[0]?.sourceOrder])
+    expect([...changed.events].sort((a, b) => a.sourceOrder - b.sourceOrder).map(event => event.sourceEventId)).toEqual(["first", "second"])
+    expect(changed.events.every(event => event.orderFidelity === "derived" && event.fidelity === "native")).toBe(true)
+  })
+
+  it("gives separate UserMessage records distinct stable input group orders", async () => {
+    const root = await makeEmptyFixture()
+    const path = join(root.sessionsDirectory, "inputs.jsonl")
+    const input = (id: string) => ({ ...itemCompleted("ignored", "inputs",
+      { type: "UserMessage", id, content: [{ type: "input_text", text: id }] }), timestamp: null })
+    await writeJsonl(path, [sessionMeta({ id: "inputs", cwd: root.project }), input("one"), input("two")])
+    const runtime = await openAdapter(root.project, "directory")
+    const first = await collect(runtime, null, [], AdapterCollectionLimits, false)
+    const events = requiredObservation(first).events
+    expect(events.map(event => event.update.sessionUpdate)).toEqual(["user_message_chunk", "user_message_chunk"])
+    expect(new Set(events.map(event => event.sourceOrder)).size).toBe(2)
+    expect(events[0]!.sourceOrder).toBeLessThan(events[1]!.sourceOrder)
+    expect(events.every(event => Number.isSafeInteger(event.sourceOrder) && event.orderFidelity === "native")).toBe(true)
+    await appendFile(path, JSON.stringify(input("three")) + "\n")
+    const changedTime = new Date(Date.now() + 1_000)
+    await utimes(path, changedTime, changedTime)
+    const appended = requiredObservation(await collect(await openAdapter(root.project, "directory"), first.nextCursor, [], AdapterCollectionLimits, false))
+    expect(appended.events.map(event => event.sourceEventId)).toEqual(["three"])
+    expect(appended.events[0]!.sourceOrder).toBeGreaterThan(events[1]!.sourceOrder)
+    const replay = requiredObservation(await collect(await openAdapter(root.project, "directory"), null, [], AdapterCollectionLimits, false))
+    expect(replay.events.slice(0, 2).map(event => event.sourceOrder)).toEqual(events.map(event => event.sourceOrder))
+  })
+
+  it("reconstructs the same legacy Raw capture basis from an unacknowledged cursor", async () => {
+    const root = await makeEmptyFixture()
+    const path = join(root.sessionsDirectory, "raw-retry.jsonl")
+    await writeJsonl(path, [sessionMeta({ id: "raw-retry", cwd: root.project }), itemCompleted("2026-09-05T00:01:00Z", "raw-retry",
+      { type: "AgentMessage", id: "answer", content: [{ type: "output_text", text: "same bytes" }] })])
+    const snapshotBasis = new Date("2020-01-01T00:00:00Z")
+    await utimes(path, snapshotBasis, snapshotBasis)
+    const canonical = await collect(await openAdapter(root.project, "directory"))
+    const first = requiredObservation(await collect(await openAdapter(root.project, "directory"), canonical.nextCursor))
+    // A server may have accepted these bytes without its reply reaching the
+    // Host. Reconstruct from the last acknowledged cursor and no invented receipt.
+    const retried = requiredObservation(await collect(await openAdapter(root.project, "directory"), canonical.nextCursor))
+    expect(first.rawSegments.length).toBeGreaterThan(0)
+    expect(retried.rawSegments).toEqual(first.rawSegments)
+    expect(first.observedAt).toBe(snapshotBasis.toISOString())
+    expect(retried.observedAt).toBe(first.observedAt)
+    expect(retried.session.updatedAt).toBe("2026-09-05T00:01:00Z")
+  })
+
+  it("retains deleted file namespaces and never reuses them for new sources", async () => {
+    const root = await makeEmptyFixture()
+    const firstPath = join(root.sessionsDirectory, "retained-first.jsonl")
+    const secondPath = join(root.sessionsDirectory, "retained-second.jsonl")
+    const records = (id: string, at: string) => [sessionMeta({ id: "retained", cwd: root.project, timestamp: at }),
+      itemCompleted(at, "retained", { type: "UserMessage", id, content: [{ type: "input_text", text: id }] })]
+    await writeJsonl(firstPath, records("first", "2026-09-05T00:01:00Z"))
+    await writeJsonl(secondPath, records("second", "2026-09-05T00:02:00Z"))
+    const first = await collect(await openAdapter(root.project, "directory"), null, [], AdapterCollectionLimits, false)
+    const initialEvents = requiredObservation(first).events
+    const firstRegistry = JSON.parse(Buffer.from(first.nextCursor!, "base64url").toString("utf8")).sourceRanks
+    await rm(firstPath)
+    const thirdPath = join(root.sessionsDirectory, "new-first-in-scan.jsonl")
+    await writeJsonl(thirdPath, records("third", "2026-09-05T00:00:00Z"))
+    const changedTime = new Date(Date.now() + 1_000)
+    await utimes(thirdPath, changedTime, changedTime)
+    const changed = await collect(await openAdapter(root.project, "directory"), first.nextCursor, [], AdapterCollectionLimits, false)
+    const changedEvents = requiredObservation(changed).events
+    expect(changedEvents.find(event => event.sourceEventId === "second")?.sourceOrder).toBe(initialEvents[1]?.sourceOrder)
+    expect(changedEvents.find(event => event.sourceEventId === "third")!.sourceOrder).toBeGreaterThan(Math.max(...initialEvents.map(event => event.sourceOrder)))
+    const nextRegistry = JSON.parse(Buffer.from(changed.nextCursor!, "base64url").toString("utf8")).sourceRanks
+    expect(nextRegistry[0].sources).toHaveLength(3)
+    expect(nextRegistry[0].sources.slice(0, 2)).toEqual(firstRegistry[0].sources)
+    expect(new Set(nextRegistry[0].sources.map((source: { rank: number }) => source.rank)).size).toBe(3)
+  })
+
+  it("allocates a new namespace when the same basename is recreated with a new source generation", async () => {
+    const root = await makeEmptyFixture()
+    const path = join(root.sessionsDirectory, "recreated.jsonl")
+    const replacementPath = join(root.sessionsDirectory, "replacement.jsonl")
+    const records = (id: string) => [sessionMeta({ id: "recreated", cwd: root.project }),
+      { ...itemCompleted("unused", "recreated", { type: "UserMessage", id, content: [{ type: "input_text", text: id }] }), timestamp: null }]
+    await writeJsonl(path, records("before"))
+    const first = await collect(await openAdapter(root.project, "directory"), null, [], AdapterCollectionLimits, false)
+    const previous = requiredObservation(first).events[0]!
+    // Both files exist together, so the replacement has a distinct inode even
+    // on a filesystem which quickly reuses removed files' inode numbers.
+    await writeJsonl(replacementPath, records("after"))
+    await rm(path)
+    await rename(replacementPath, path)
+    const changedTime = new Date(Date.now() + 1_000)
+    await utimes(path, changedTime, changedTime)
+    const changed = await collect(await openAdapter(root.project, "directory"), first.nextCursor, [], AdapterCollectionLimits, false)
+    const replacement = requiredObservation(changed).events[0]!
+    expect(replacement.sourceEventId).toBe("after")
+    expect(replacement.rawRef).toEqual(previous.rawRef)
+    expect(replacement.sourceOrder).toBe(previous.sourceOrder + 2 ** 39)
+    expect(replacement.orderFidelity).toBe("derived")
+    const registry = JSON.parse(Buffer.from(changed.nextCursor!, "base64url").toString("utf8")).sourceRanks[0].sources
+    expect(registry).toHaveLength(2)
+    expect(registry[0].sourceObjectId).toBe(registry[1].sourceObjectId)
+    expect(registry[0].generation).not.toBe(registry[1].generation)
+  })
+
+  it("reports an exhausted retained namespace without emitting colliding records", async () => {
+    const root = await makeEmptyFixture()
+    const records = (id: string) => [sessionMeta({ id: "full", cwd: root.project }), itemCompleted("2026-09-05T00:01:00Z", "full",
+      { type: "UserMessage", id, content: [{ type: "input_text", text: id }] })]
+    await writeJsonl(join(root.sessionsDirectory, "full.jsonl"), records("first"))
+    const first = await collect(await openAdapter(root.project, "directory"), null, [], AdapterCollectionLimits, false)
+    const state = JSON.parse(Buffer.from(first.nextCursor!, "base64url").toString("utf8"))
+    state.sourceRanks[0].sources.push(...Array.from({ length: 9_999 }, (_, index) => ({ sourceObjectId: `retained-${index}`, generation: `generation-${index}`, rank: index + 2 })))
+    const secondPath = join(root.sessionsDirectory, "second-full.jsonl")
+    await writeJsonl(secondPath, records("second"))
+    const changedTime = new Date(Date.now() + 1_000)
+    await utimes(secondPath, changedTime, changedTime)
+    const rejected = await collect(await openAdapter(root.project, "directory"), Buffer.from(JSON.stringify(state)).toString("base64url"), [], AdapterCollectionLimits, false)
+    expect(rejected.observations).toEqual([])
+    expect(rejected.sourceFailures).toContainEqual(expect.objectContaining({ reason: "limit" }))
+    await writeJsonl(join(root.sessionsDirectory, "healthy.jsonl"), [sessionMeta({ id: "healthy", cwd: root.project }),
+      itemCompleted("2026-09-05T00:01:00Z", "healthy", { type: "AgentMessage", id: "healthy-answer", content: [{ type: "output_text", text: "still eligible" }] })])
+    const continued = await collect(await openAdapter(root.project, "directory"), rejected.nextCursor, [], AdapterCollectionLimits, false)
+    expect(requiredObservation(continued).session.sourceSessionId).toBe("healthy")
+  })
+
+  it("rejects a source snapshot beyond the fixed byte namespace before projecting it", async () => {
+    const root = await makeEmptyFixture()
+    await writeJsonl(join(root.sessionsDirectory, "offset-limit.jsonl"), [sessionMeta({ id: "offset-limit", cwd: root.project }),
+      itemCompleted("2026-09-05T00:01:00Z", "offset-limit", { type: "UserMessage", id: "input", content: [{ type: "input_text", text: "bounded" }] })])
+    const stalled = await collect(await openAdapter(root.project, "directory"), null, [], { ...AdapterCollectionLimits, eventsPerObservation: 0 }, false)
+    const state = JSON.parse(Buffer.from(stalled.nextCursor!, "base64url").toString("utf8"))
+    state.active.files[0].size = 2 ** 39
+    const rejected = await collect(await openAdapter(root.project, "directory"), Buffer.from(JSON.stringify(state)).toString("base64url"), [], AdapterCollectionLimits, false)
+    expect(rejected.observations).toEqual([])
+    expect(rejected.sourceFailures).toContainEqual(expect.objectContaining({ reason: "limit" }))
+  })
+
+  it.each(["canonical", "raw"] as const)("upgrades an active projection 4 %s cursor without losing its Raw receipt", async phase => {
+    const root = await makeEmptyFixture()
+    const path = join(root.sessionsDirectory, "upgrade.jsonl")
+    await writeJsonl(path, [sessionMeta({ id: "upgrade", cwd: root.project }),
+      ...[1, 2, 3].map(index => itemCompleted(`2026-09-05T00:0${index}:00Z`, "upgrade",
+        { type: "AgentMessage", id: `event-${index}`, content: [{ type: "output_text", text: "answer".repeat(100) }] }))])
+    const runtime = await openAdapter(root.project, "directory")
+    const limits = { ...AdapterCollectionLimits, eventsPerObservation: phase === "canonical" ? 1 : 500,
+      rawBytesPerObservation: 1200, rawSegmentBytes: 1200 }
+    const first = await collect(runtime, null, [], limits)
+    const page = phase === "canonical" ? first : await collect(runtime, first.nextCursor, [], limits)
+    const state = JSON.parse(Buffer.from(page.nextCursor!, "base64url").toString("utf8"))
+    expect(state.active.phase).toBe(phase)
+    state.eventProjectionVersion = 4
+    state.active.revision += 100
+    const previousRevision = state.active.revision
+    delete state.active.sourceUpdatedAt
+    delete state.active.providerTitleUpdatedAt
+    const observation = requiredObservation(page)
+    const progress = rawProgress(observation.session.sourceSessionId, observation.rawSegments)
+    const upgraded = requiredObservation(await collect(await openAdapter(root.project, "directory"),
+      Buffer.from(JSON.stringify(state)).toString("base64url"), progress, limits))
+    expect(upgraded.session.revision).toBeGreaterThan(previousRevision)
+    expect(upgraded.session.updatedAt).toBe("2026-09-05T00:03:00Z")
+    if (phase === "canonical") {
+      expect(upgraded.events.map(event => event.sourceEventId)).toEqual(["event-1"])
+      expect(upgraded.events[0]?.projectionRevision).toBe(5)
+    } else {
+      expect(upgraded.events).toEqual([])
+      expect(upgraded.rawSegments[0]?.sourceOffset).toBe(progress[0]?.sourceOffset)
+      expect(upgraded.rawSegments[0]?.sourceGeneration).toBe(observation.rawSegments[0]?.sourceGeneration)
+    }
+  })
+
   it("reads owned per-response usage without summing repeated or cumulative snapshots", async () => {
     const root = await makeEmptyFixture()
     const counters = { input_tokens: 100, output_tokens: 10, cached_input_tokens: 40, cache_write_input_tokens: 60, reasoning_output_tokens: 5, total_tokens: 110 }
@@ -648,7 +970,7 @@ describe("Codex Adapter", () => {
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
     expect(firstObservation.rawSegments).toEqual([])
-    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 10)
+    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 12)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
     const secondObservation = requiredObservation(second)
@@ -717,8 +1039,8 @@ describe("Codex Adapter", () => {
     const observation = requiredObservation(await collect(await openAdapter(root.project, "directory")))
 
     expect(observation.session.title).toBe("Checkout accessibility review")
-    expect(observation.session.updatedAt).toBe("2026-09-05T00:03:00.000Z")
-    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 10)
+    expect(observation.session.updatedAt).toBe("2026-09-05T00:02:00.000Z")
+    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 12)
   })
 
   it("collects a title-only rename without new rollout or Raw bytes", async () => {
@@ -750,6 +1072,7 @@ describe("Codex Adapter", () => {
     const observation = requiredObservation(renamed)
 
     expect(observation.session.title).toBe("Renamed in Codex")
+    expect(observation.session.updatedAt).toBe("2026-09-05T00:02:00.000Z")
     expect(observation.session.revision).toBeGreaterThan(initial.session.revision)
     expect(observation.rawSegments).toEqual([])
     const raw = await collect(runtime, renamed.nextCursor, progress)
@@ -882,6 +1205,7 @@ describe("Codex Adapter", () => {
     const canonical = await collect(runtime)
     expect(canonical.sourceFailures).toBeUndefined()
     expect(requiredObservation(canonical).events.map(event => event.sourceEventId)).toEqual(["original-event", "segment-event"])
+    expect(requiredObservation(canonical).events.every(event => event.orderFidelity === "derived")).toBe(true)
     expect(sources.size).toBe(2)
     expect(sources.has("shared-thread")).toBe(true)
     const raw = await collect(runtime, canonical.nextCursor)
@@ -1078,10 +1402,13 @@ describe("Codex Adapter", () => {
     const observation = requiredObservation(raw)
     const progress = rawProgress(observation.session.sourceSessionId, observation.rawSegments)
     const state = JSON.parse(Buffer.from(raw.nextCursor!, "base64url").toString("utf8"))
-    state.eventProjectionVersion = 3
+    state.eventProjectionVersion = 4
+    const priorRevision = state.canonicalProgress[0].revision + 100
+    state.canonicalProgress[0].revision = priorRevision
     let page = await collect(await openAdapter(fixture.project, "directory"), Buffer.from(JSON.stringify(state)).toString("base64url"), progress)
     expect(requiredObservation(page).events.map(e => e.sourceEventId)).toEqual(requiredObservation(first).events.map(e => e.sourceEventId))
-    expect(requiredObservation(page).events.every(event => event.projectionRevision === 4)).toBe(true)
+    expect(requiredObservation(page).events.every(event => event.projectionRevision === 5)).toBe(true)
+    expect(requiredObservation(page).session.revision).toBeGreaterThan(priorRevision)
     for (let i = 0; i < 10; i++) {
       expect(page.observations.flatMap(o => o.rawSegments)).toEqual([])
       if (!page.hasMore) break
@@ -1386,6 +1713,7 @@ const makeEmptyFixture = async () => {
 }
 
 const openAdapter = (project: string, type: "git" | "directory", gitAttribution?: import("@atape/domain").AdapterOpenContext["gitAttribution"]) => createAtapeAdapter({
+  legacyCanonicalProfiles: [CanonicalProfileVersion3],
   ...(gitAttribution === undefined ? {} : { gitAttribution }),
   protocolVersion: AdapterProtocolVersion,
   adapter: { id: "codex", version: "0.1.0" },

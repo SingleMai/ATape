@@ -168,7 +168,59 @@ selected-source attribution. Title-index changes, missing sources and idle cache
 inventories trigger complete discovery. Cached diagnostics are bounded discovery
 observations; they never authorize source reads.
 
-Projection v4 retains the cumulative item repair described in
+## Source clock quality and replay
+
+The current Codex paged runtime explicitly declares legacy Canonical v3. A new
+Host must acknowledge that capability; the genuine published 0.5.9 Host refuses
+the factory. Collection also requires affirmative Server support for nullable
+Canonical ingestion. This is a checkout capability and is not evidence that a
+new package version has been published. See
+[the package contract](package-manifest.md#paged-observation-runtime-export).
+
+The first managed update from the genuine published 0.5.9 parent with active
+Codex collection and this new Adapter candidate is rejected during read-only
+preflight, before the Collector is paused. The older parent does not bind the
+new manifest capability into the same scope as the target. This applies even
+when both runtimes use the unchanged capture-state contract. Stop sync before
+upgrading the CLI and matching Adapter bundle; retain checkpoints and Raw
+acknowledgements. The genuine old and current prerequisite Interfaces have been
+verified to agree on the stopped scope and disagree on this active scope. The
+complete stopped 0.5.9 managed handoff has not been executed for this increment;
+the scope evidence is not a full upgrade acceptance result. Other older-parent
+boundaries remain governed by the [upgrade guide](../cli/setup-and-adapters.md#upgrade-the-cli-and-adapters).
+
+Supported records with missing, null or invalid source timestamps remain
+captured with `occurredAt: null`. Session `updatedAt` is the maximum admitted
+source clock in its selected frozen metadata/title/record snapshot, or null.
+Filesystem modification time supports discovery, revision and the stable legacy
+observation/Raw capture basis; it never fills Session or Event occurrence clocks.
+Retrying an unacknowledged Raw chunk reconstructs the same capture metadata.
+Derived spawn clocks use available child
+metadata or null, and their order fidelity is derived. Ordering records in one
+JSONL file follows physical byte order even when clocks are missing or reversed;
+ordering separate files in one Thread is derived. A bounded, persisted per-Session
+source-object/generation registry gives each file generation a disjoint numeric namespace and each record its
+byte-offset coordinate. Append and discovery reordering preserve coordinates;
+removed files retain their ranks so later files cannot reuse them. Capacity
+exhaustion fails explicitly rather than folding distinct records together.
+
+Projection v5 replays supported older Canonical cursors once with stable Event
+IDs and a higher revision floor, including old active Canonical/Raw pages and
+completed progress. Saved Raw acknowledgements are retained. Later pages freeze
+Session source recency and title at that revision. Unavailable source history
+cannot be repaired; previously accepted epochs are not guessed away by the
+Server. Keep checkpoints and use the updated Adapter for forward recovery;
+older Adapters cannot read its projection-v5 cursor.
+
+First projection of a changed snapshot makes an additional bounded record scan
+to compute source recency after final ownership/format selection. Continuations
+reuse the bounded projection cache. This legacy path does not acquire frozen
+sourceCapture recovery or complete-target publication merely by changing its
+Canonical profile. Existing uncertain-delivery and redaction-policy constraints
+continue to apply. [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md)
+records the choice and alternatives.
+
+Projection v5 retains v4's cumulative item repair described in
 [ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md) and preserves
 unknown tool outcomes. A missing or unrecognized provider status is omitted;
 it does not mean success or failure. Explicit provider outcomes and numeric

@@ -66,10 +66,13 @@ export const AdapterManifest = Schema.Struct({
   gitAttribution: Schema.optionalKey(Schema.Literal(GitAttributionVersion)),
   rawCapturePolicy: Schema.optionalKey(Schema.Literal("atape.raw-capture.v1")),
   sourceCapture: Schema.optionalKey(Schema.Literals([SourceCaptureVersion, SourceCaptureVersion2])),
+  legacyCanonicalProfile: Schema.optionalKey(Schema.Literal("atape.acp-centered.v3")),
   publicationTargetProfile: Schema.optionalKey(Schema.Literals([PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4])),
   legacyMigration: Schema.optionalKey(Schema.Literal(LegacyMigrationVersion)),
   newSession: Schema.optionalKey(Schema.Literal(NewSessionVersion))
-}).check(Schema.makeFilter(manifest => manifest.publicationTargetProfile === undefined || manifest.sourceCapture === SourceCaptureVersion2))
+}).check(Schema.makeFilter(manifest =>
+  (manifest.publicationTargetProfile === undefined || manifest.sourceCapture === SourceCaptureVersion2) &&
+  (manifest.legacyCanonicalProfile === undefined || manifest.sourceCapture === undefined)))
 export type AdapterManifest = typeof AdapterManifest.Type
 
 export const emptyClientConfig = (): ClientConfig => ({

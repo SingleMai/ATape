@@ -1,7 +1,7 @@
 import type { AdapterCollectionProgress, AdapterInstallation, AdapterRawSegment,
   CollectorCheckpoint, CollectorRawObjectProgress, LocalProject } from "@atape/domain"
 import { AdapterObservation, AdapterCollectionLimits, AdapterProtocolVersion, AdapterSourceFailure,
-  MaxSourceFailures, RawTransportChunkBytes } from "@atape/domain"
+  MaxSourceFailures, RawTransportChunkBytes, CanonicalProfileVersion, CanonicalProfileVersion3 } from "@atape/domain"
 import { Clock, Effect, Random, Semaphore } from "effect"
 import { CollectorStateStore, CollectorTransport, CollectionContractError, CollectionTransportError, AdapterRuntimeError,
   type CollectorStateSnapshot, type CollectorStateError, type CollectorTransportService,
@@ -14,6 +14,9 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
   const states = yield* CollectorStateStore
   const transport = yield* CollectorTransport
   const redactor = yield* SecretRedactor
+  const canonicalProfileVersion = runtime.canonicalProfileVersion ?? CanonicalProfileVersion
+  if (canonicalProfileVersion === CanonicalProfileVersion3)
+    yield* retryTransport(transport.ensureCanonicalProfile(project, canonicalProfileVersion))
   let rawCaptureEnabled = yield* retryTransport(transport.rawCaptureEnabled(project))
   let checkpoint = snapshot.checkpoint?.projectCreatedAt === project.createdAt
     ? snapshot.checkpoint
@@ -95,7 +98,7 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
       ...(checkpoint?.adapterVersion ? { previousAdapterVersion: checkpoint.adapterVersion } : {})
     }
     const page = yield* runtime.collect(request)
-    yield* validatePage(adapter.adapterId, cursor, page)
+    yield* validatePage(adapter.adapterId, cursor, page, canonicalProfileVersion)
     progress = page.progress ? { ...page.progress, rawCaptureEnabled } : undefined
     pages++
     sourceFailuresTruncated ||= page.sourceFailuresTruncated === true
@@ -132,7 +135,7 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
 
     for (const observation of page.observations) {
       const redacted = yield* prepareCollectedObservation(adapter.adapterId,
-        rawCaptureEnabled ? observation : { ...observation, rawSegments: [] })
+        rawCaptureEnabled ? observation : { ...observation, rawSegments: [] }, canonicalProfileVersion)
       redactions += redacted.replacements
       const canonical = yield* retryTransport(transport.submitCanonical({
         instanceOrigin: project.instanceOrigin,
@@ -141,6 +144,7 @@ export const collectLegacyAdapter = (project: LocalProject, adapter: AdapterInst
         projectId: project.id,
         adapterId: adapter.adapterId,
         adapterVersion: adapter.version,
+        ...(canonicalProfileVersion === CanonicalProfileVersion3 ? { canonicalProfileVersion } : {}),
         observation: {
           observedAt: redacted.observation.observedAt,
           session: redacted.observation.session,

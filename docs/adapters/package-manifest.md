@@ -28,6 +28,9 @@ The fields mean:
 - `gitAttribution` is required for Git capture and declares use of the Host's
   `atape.git-attribution.v1` callback. It may be omitted for directory-only capture.
   The Host checks this capability before importing a Git Adapter.
+- `legacyCanonicalProfile: "atape.acp-centered.v3"` explicitly opts a paged
+  legacy runtime into nullable source clocks. It is mutually exclusive with
+  `sourceCapture`; omission retains the default v2 profile.
 
 The package itself must also have valid `name` and `version` fields. Its installed name must match the requested package. npm lifecycle scripts are disabled, so build artifacts must already be present in the published or local package.
 
@@ -89,7 +92,27 @@ See [ADR-0037](../architecture/adr/0037-shared-git-source-attribution.md).
 - `rawProgress`, the Host's acknowledged provider generation and source offset for this Project/Adapter
 - `signal`, interrupted on cancellation
 
-An Adapter returns no more than the requested limits. When it emits observations it must advance to a non-empty replacement cursor. `hasMore: true` requires a non-empty replacement cursor different from the requested cursor, but may have no observations when traversal advances without new content. The Host commits that progress without uploading fabricated observations and continues within its per-cycle page limit. Given the same committed cursor, an Adapter must reproduce the same observation identities, revisions, timestamps, segmentation, and source bytes until the Host advances it.
+An Adapter returns no more than the requested limits. When it emits observations it must advance to a non-empty replacement cursor. `hasMore: true` requires a non-empty replacement cursor different from the requested cursor, but may have no observations when traversal advances without new content. The Host commits that progress without uploading fabricated observations and continues within its per-cycle page limit. Given the same committed cursor, an Adapter must reproduce the same observation identities, revisions, source clocks, segmentation, and source bytes until the Host advances it. Observation metadata used by Raw receipts must also remain reconstructible across retries; it cannot fill missing source clocks.
+
+A nullable-clock legacy factory must require the Host's
+`context.legacyCanonicalProfiles` to include v3 before source access, return
+`canonicalProfileVersion: "atape.acp-centered.v3"`, and defer source opening until
+`collect`. The Host verifies the manifest/runtime agreement and affirms the
+Server's Canonical profile before collecting or mutating progress. Neither an
+unknown field ignored by an old Host nor a null value implicitly selects v3.
+The genuine published 0.5.9 Host refuses the new Codex factory; use a Host release
+that implements this capability. Checkout behavior does not establish package
+publication. See [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md).
+
+For the first managed update from the genuine published 0.5.9 parent, an active
+Codex candidate declaring this capability causes the target and parent to
+disagree on their read-only prerequisite scope. The update is rejected before
+pausing collection, including when the capture-state contract is unchanged.
+Stop sync before upgrading the CLI and matching bundle, preserving existing
+capture state. Genuine old/current prerequisite Interface checks establish the
+stopped scope agreement; a complete stopped managed handoff was not exercised
+in this increment. See [Codex clock upgrades](codex.md#source-clock-quality-and-replay)
+for the precise support and replay limits.
 
 Pages may include local `sourceFailures: [{ source, reason }]` diagnostics and
 `sourceFailuresTruncated: true` when further failures were omitted. Reasons are

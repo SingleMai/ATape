@@ -138,6 +138,13 @@ func (h *Handler) projectSearch(response http.ResponseWriter, request *http.Requ
 	writeJSON(response, request, http.StatusOK, page)
 }
 
+func (h *Handler) canonicalCapabilities(response http.ResponseWriter, request *http.Request) {
+	if _, ok := strictQuery(response, request); !ok {
+		return
+	}
+	writeJSON(response, request, http.StatusOK, h.ingestor.Capabilities())
+}
+
 func (h *Handler) canonicalBatch(response http.ResponseWriter, request *http.Request) {
 	var batch ingestion.Batch
 	if !decodeJSON(response, request, &batch) {

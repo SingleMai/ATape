@@ -35,6 +35,10 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
     server = startServer(port)
     await waitUntilHealthy(serverUrl, server)
 
+    const capabilities = await getJSON<{ protocol: string; canonicalProfiles: string[] }>(serverUrl, "/api/v1/ingestion/canonical/capabilities")
+    expect(capabilities).toMatchObject({ protocol: "atape.canonical-capabilities.v1" })
+    expect(capabilities.canonicalProfiles).toContain("atape.acp-centered.v3")
+
     const started = await startCollector(fixture, serverUrl)
     expect(started).toMatchObject({ created: true, intervalMs: 10_000, concurrency: 2 })
     expect(await startCollector(fixture, serverUrl)).toMatchObject({ created: false, pid: started.pid })
@@ -63,7 +67,17 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
       serverUrl,
       `/api/v1/sessions/${encodeURIComponent(sessionId)}?thread=root`
     )
-    expect(rootBefore.events).toHaveLength(3)
+    expect(rootBefore.events).toHaveLength(5)
+    expect(rootBefore.session.updatedAt).toBe(fixture.sourceUpdatedAt)
+    expect(rootBefore.events.filter(event => event.kind === "message").map(event => [event.text, event.occurredAt])).toEqual([
+      ["Find e2e-search-needle", fixture.sourceCreatedAt],
+      ["Keep each user input distinct", fixture.sourceCreatedAt],
+      ["A retained record without a source clock", null],
+      ["Use one idempotency key for e2e-search-needle", fixture.sourceUpdatedAt]
+    ])
+    const analytics = await getJSON<{ summary: { knownTimeEvents: number; unknownTimeEvents: number; rootUserInputs: number } }>(serverUrl,
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/analytics`)
+    expect(analytics.summary).toMatchObject({ knownTimeEvents: 5, unknownTimeEvents: 1, rootUserInputs: 2 })
     expect(JSON.stringify(rootBefore)).not.toContain("Copied parent history")
     const childRef = required(
       rootBefore.events.find((event) => event.childThread !== undefined)?.childThread,
@@ -133,7 +147,7 @@ it("collects Codex into the real Go APIs and retains finalized history", async (
       `/api/v1/sessions/${encodeURIComponent(sessionId)}?thread=root`
     )
     expect(retained.session.status).toBe("ended")
-    expect(retained.events).toHaveLength(4)
+    expect(retained.events).toHaveLength(6)
   } finally {
     if (serverUrl !== undefined) await stopCollector(fixture, serverUrl).catch(() => undefined)
     await stopServer(server)
@@ -163,25 +177,33 @@ const createFixture = async () => {
   const rootSessionId = "e2e-root-session"
   const childThreadId = "e2e-child"
   const secret = "e2e-private-secret"
+  // The Reader's existing source-clock representation has second precision.
+  const sourceAnchor = Math.floor(Date.now() / 1_000) * 1_000
+  const sourceCreatedAt = new Date(sourceAnchor - 3_000).toISOString().replace(".000Z", "Z")
+  const sourceUpdatedAt = new Date(sourceAnchor - 1_000).toISOString().replace(".000Z", "Z")
+  const { timestamp: _missingClock, ...untimed } = completedItem("agent-untimed", rootSessionId, "A retained record without a source clock", "AgentMessage")
   await Promise.all([
     mkdir(projectDirectory, { recursive: true }),
     mkdir(sessionsDirectory, { recursive: true }),
     mkdir(archivedDirectory, { recursive: true })
   ])
   await writeFile(rootFile, jsonLines([
-    sessionMetadata(rootSessionId, projectDirectory),
-    completedItem("user-1", rootSessionId, "Find e2e-search-needle", "UserMessage"),
-    completedItem("agent-1", rootSessionId, "Use one idempotency key for e2e-search-needle", "AgentMessage"),
+    sessionMetadata(rootSessionId, projectDirectory, { timestamp: sourceCreatedAt }),
+    completedItem("user-1", rootSessionId, "Find e2e-search-needle", "UserMessage", sourceCreatedAt),
+    completedItem("user-2", rootSessionId, "Keep each user input distinct", "UserMessage", sourceCreatedAt),
+    untimed,
+    completedItem("agent-1", rootSessionId, "Use one idempotency key for e2e-search-needle", "AgentMessage", sourceUpdatedAt),
     { type: "provider_private", payload: { secret, blob: "x".repeat(RawTransportChunkBytes + 64 * 1024) } }
   ]))
   await writeFile(childFile, jsonLines([
     sessionMetadata(childThreadId, projectDirectory, {
       sessionId: rootSessionId,
       parentThreadId: rootSessionId,
-      nickname: "reviewer"
+      nickname: "reviewer",
+      timestamp: sourceCreatedAt
     }),
-    completedItem("copied-parent", rootSessionId, "Copied parent history", "AgentMessage"),
-    completedItem("child-1", childThreadId, "child-e2e-result", "AgentMessage")
+    completedItem("copied-parent", rootSessionId, "Copied parent history", "AgentMessage", sourceUpdatedAt),
+    completedItem("child-1", childThreadId, "child-e2e-result", "AgentMessage", sourceUpdatedAt)
   ]))
   const initialTime = new Date(Date.now() - 5_000)
   await Promise.all([rootFile, childFile].map((path) => utimes(path, initialTime, initialTime)))
@@ -199,6 +221,8 @@ const createFixture = async () => {
     rootFile,
     childFile,
     rootSessionId,
+    sourceCreatedAt,
+    sourceUpdatedAt,
     secret
   }
 }
@@ -457,9 +481,9 @@ const readRaw = async (serverUrl: string, archive: RawArchive) => {
 const sessionMetadata = (
   id: string,
   cwd: string,
-  options: { readonly sessionId?: string; readonly parentThreadId?: string; readonly nickname?: string } = {}
+  options: { readonly sessionId?: string; readonly parentThreadId?: string; readonly nickname?: string; readonly timestamp?: string } = {}
 ) => {
-  const timestamp = new Date().toISOString()
+  const timestamp = options.timestamp ?? new Date().toISOString()
   return {
     timestamp,
     type: "session_meta",
@@ -484,9 +508,10 @@ const completedItem = (
   id: string,
   threadId: string,
   text: string,
-  type: "UserMessage" | "AgentMessage"
+  type: "UserMessage" | "AgentMessage",
+  timestamp = new Date().toISOString()
 ) => ({
-  timestamp: new Date().toISOString(),
+  timestamp,
   type: "event_msg",
   payload: {
     type: "item_completed",

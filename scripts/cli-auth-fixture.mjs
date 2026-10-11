@@ -46,6 +46,15 @@ export async function startCLIAuthFixture(options = {}) {
     }
 
     switch (`${request.method} ${request.url}`) {
+      case "GET /api/v1/ingestion/canonical/capabilities":
+        if (!options.capture) { send(404, { status: 404, code: "not_found" }); return }
+        if (request.headers.authorization !== `Bearer ${credential}`) {
+          send(401, { status: 401, code: "unauthenticated" }); return
+        }
+        response.setHeader("Cache-Control", "no-store")
+        send(200, { protocol: "atape.canonical-capabilities.v1",
+          canonicalProfiles: ["atape.acp-centered.v2", "atape.acp-centered.v3", "atape.acp-centered.v4"] })
+        return
       case `GET /api/v1/projects/${projectId}/raw-capture`:
         if (request.headers.authorization !== `Bearer ${credential}`) {
           send(401, { status: 401, code: "unauthenticated" }); return

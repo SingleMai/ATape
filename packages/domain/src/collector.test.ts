@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { AdapterCollectionPage, AdapterProtocolVersion, CanonicalBatch, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "./index.ts"
+import { AdapterCollectionPage, AdapterProtocolVersion, CanonicalBatch, CanonicalCapabilities, CanonicalCapabilitiesProtocol, CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4 } from "./index.ts"
 
 const page = {
   protocolVersion: AdapterProtocolVersion,
@@ -51,6 +51,19 @@ const page = {
 }
 
 describe("Adapter collection protocol", () => {
+  it("decodes bounded explicit Canonical ingestion capabilities", () => {
+    const capabilities = { protocol: CanonicalCapabilitiesProtocol,
+      canonicalProfiles: [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4] }
+    expect(Schema.decodeUnknownSync(CanonicalCapabilities)(capabilities)).toEqual(capabilities)
+    expect(Schema.decodeUnknownSync(CanonicalCapabilities)({ protocol: CanonicalCapabilitiesProtocol,
+      canonicalProfiles: [CanonicalProfileVersion3] }).canonicalProfiles).toEqual([CanonicalProfileVersion3])
+  })
+  it.each([undefined, null, [], [CanonicalProfileVersion3, CanonicalProfileVersion3],
+    [CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion3],
+    ["atape.acp-centered.v1"], ["atape.acp-centered.v5"], [3]])("rejects invalid Canonical capability lists %j", canonicalProfiles => {
+    expect(() => Schema.decodeUnknownSync(CanonicalCapabilities)({ protocol: CanonicalCapabilitiesProtocol,
+      ...(canonicalProfiles === undefined ? {} : { canonicalProfiles }) })).toThrow()
+  })
   it.each([CanonicalProfileVersion3, CanonicalProfileVersion4])("requires explicit nullable source times in Canonical %s", async canonicalProfileVersion => {
     const observation = page.observations[0]!
     const batch = { protocolVersion: "atape.canonical.v1", canonicalProfileVersion,

@@ -1,4 +1,4 @@
-import { PublicationCapabilities, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion2,
+import { PublicationCapabilities, PublicationTargetProfile2, PublicationTargetProfile3, PublicationTargetProfile4, PublicationTargetProfiles34, SourceCaptureVersion2, CanonicalProfileVersion3,
   ClientConfig as ClientConfigSchema, AdapterManifest as AdapterManifestSchema, type ClientConfig } from "@atape/domain"
 import { createHash } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
@@ -9,6 +9,8 @@ import { AuthenticatedHTTPClient, makeAuthenticatedHTTPClientLayer, type Authent
 import { inspectExistingCredentialIdentity, makeCredentialStoreLayer, makeHTTPAuthenticationGatewayLayer } from "./authenticationLayers.ts"
 import type { NodeClientPaths } from "./clientPaths.ts"
 import { readBoundedJSON } from "./runtimeFiles.ts"
+import { ensureCanonicalProfile } from "./canonicalProfileAdmission.ts"
+import { CollectionTransportError } from "@atape/application"
 
 export type CaptureMigrationScope = { readonly candidateConfig: ClientConfig; readonly wanted: boolean }
 export type CaptureMigrationPrerequisiteReceipt = { readonly prerequisiteScopeFingerprint: string }
@@ -51,19 +53,24 @@ const inspectScope = async (paths: NodeClientPaths, scope: CaptureMigrationScope
       adapters.push({ id, root, manifest })
     }
     const sourcesV2 = adapters.filter(adapter => adapter.manifest.sourceCapture === SourceCaptureVersion2)
-    const requiredTargetProfiles = [...new Set<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4>([PublicationTargetProfile2, ...sourcesV2.map(adapter =>
-      adapter.manifest.publicationTargetProfile ?? PublicationTargetProfile2)])]
+    const legacyV3 = adapters.some(adapter => adapter.manifest.legacyCanonicalProfile === CanonicalProfileVersion3)
+    const declaredTargetProfiles: Array<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4> =
+      sourcesV2.map(adapter => adapter.manifest.publicationTargetProfile ?? PublicationTargetProfile2)
+    if (sourcesV2.length > 0) declaredTargetProfiles.push(PublicationTargetProfile2)
+    const requiredTargetProfiles = [...new Set(declaredTargetProfiles)]
     const publicationTargetProfile = sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile4)
       ? PublicationTargetProfile4 : sourcesV2.some(adapter => adapter.manifest.publicationTargetProfile === PublicationTargetProfile3)
       ? PublicationTargetProfile3 : PublicationTargetProfile2
     const required = new Map<string, { readonly instanceOrigin: string; readonly userId: string;
       readonly publicationTargetProfile: typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4;
+      readonly canonicalV3Required: boolean;
       readonly requiredTargetProfiles: ReadonlyArray<typeof PublicationTargetProfile2 | typeof PublicationTargetProfile3 | typeof PublicationTargetProfile4> }>()
-    if (sourcesV2.length > 0) {
+    if (sourcesV2.length > 0 || legacyV3) {
       // activeInstanceOrigin is a console preference; every configured Project
       // participates in collection with the global enabled Adapter selection.
       for (const project of config.projects) required.set(JSON.stringify([project.instanceOrigin, project.userId]),
-        { instanceOrigin: project.instanceOrigin, userId: project.userId, publicationTargetProfile, requiredTargetProfiles })
+        { instanceOrigin: project.instanceOrigin, userId: project.userId, publicationTargetProfile,
+          canonicalV3Required: legacyV3, requiredTargetProfiles })
     }
     const bindings = ordered([...required.values()])
     const credentials = []
@@ -94,13 +101,20 @@ const httpFailure = (error: AuthenticatedHTTPError) => failure(error.reason === 
   error.reason === "unauthenticated" ? "authentication" :
   error.reason === "identity_changed" || error.reason === "metadata_drift" ? "binding" : "capability",
   "Could not verify Server capture prerequisites. Migration is deferred before pausing collection.")
+const canonicalFailure = (error: AuthenticatedHTTPError | CollectionTransportError) => error instanceof CollectionTransportError
+  ? failure(error.reason === "unauthenticated" ? "authentication" : error.reason === "network" || error.retryable ? "network" : "capability",
+    "The Server did not affirm the required Canonical profile. Migration is deferred before pausing collection.")
+  : httpFailure(error)
 
 export const preflightCaptureMigrationPrerequisites = (paths: NodeClientPaths, scope: CaptureMigrationScope):
   Effect.Effect<CaptureMigrationPrerequisiteReceipt, CaptureMigrationPrerequisiteError, AuthenticatedHTTPClient> => Effect.gen(function*() {
     const before = yield* Effect.tryPromise({ try: () => inspectScope(paths, scope), catch: localFailure })
     if (before.bindings.length === 0) return { prerequisiteScopeFingerprint: before.prerequisiteScopeFingerprint }
     const http = yield* AuthenticatedHTTPClient
-    yield* Effect.forEach(before.bindings, binding => http.request({ instanceOrigin: binding.instanceOrigin,
+    yield* Effect.forEach(before.bindings, binding => Effect.gen(function*() {
+      if (binding.canonicalV3Required) yield* ensureCanonicalProfile(http, binding, CanonicalProfileVersion3).pipe(Effect.mapError(canonicalFailure))
+      if (binding.requiredTargetProfiles.length === 0) return
+      yield* http.request({ instanceOrigin: binding.instanceOrigin,
       expectedUserId: binding.userId, method: "GET", path: "/api/v1/publications/capabilities",
       ...(binding.publicationTargetProfile === PublicationTargetProfile4 ? { acceptPublicationTarget: PublicationTargetProfiles34 } :
         binding.publicationTargetProfile === PublicationTargetProfile3 ? { acceptPublicationTarget: PublicationTargetProfile3 } : {}) }).pipe(
@@ -112,8 +126,9 @@ export const preflightCaptureMigrationPrerequisites = (paths: NodeClientPaths, s
           Effect.mapError(() => failure("capability", "The Server returned invalid capture capabilities. Migration is deferred.")),
           Effect.flatMap(capabilities => capabilities.legacyAdoption === true &&
             binding.requiredTargetProfiles.every(profile => capabilities.targetProfiles?.includes(profile))
-            ? Effect.void : Effect.fail(failure("capability", "SourceCapture v2 requires its declared Server publication target, v2 targets and legacy adoption. Migration is deferred."))))
-      })), { concurrency: 2, discard: true })
+            ? Effect.void : Effect.fail(failure("capability", "Capture requires every declared Server profile and applicable legacy adoption. Migration is deferred."))))
+      }))
+    }), { concurrency: 2, discard: true })
     const after = yield* Effect.tryPromise({ try: () => inspectScope(paths, scope), catch: localFailure })
     if (before.prerequisiteScopeFingerprint !== after.prerequisiteScopeFingerprint) return yield* failure("changed",
       "The capture account or candidate source scope changed during preflight. Retry before pausing collection.")

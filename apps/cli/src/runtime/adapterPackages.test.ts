@@ -1,5 +1,5 @@
 import { AdapterPackages } from "@atape/application"
-import { releaseBundleURL, releasePackageNames, type ReleaseBundle } from "@atape/domain"
+import { CanonicalProfileVersion3, SourceCaptureVersion2, releaseBundleURL, releasePackageNames, type ReleaseBundle } from "@atape/domain"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { execFile } from "node:child_process"
@@ -15,14 +15,14 @@ import { createReleaseDiscovery, type ReleaseDiscovery } from "./releaseDiscover
 const exec = promisify(execFile), roots: string[] = []
 afterEach(async () => { vi.unstubAllEnvs(); vi.restoreAllMocks(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 const root = async () => { const path = await mkdtemp(join(tmpdir(), "atape-official-adapter-")); roots.push(path); return path }
-const packed = async (home: string, version = "1.2.3", adapterId = "codex", packageName = "@atape/adapter-codex") => {
+const packed = async (home: string, version = "1.2.3", adapterId = "codex", packageName = "@atape/adapter-codex", manifestFields: Record<string, unknown> = {}) => {
   const source = join(home, "source"), destination = join(home, "archives")
   await mkdir(source); await mkdir(destination)
   await writeFile(join(source, "index.js"), "export const adapter = { version: 'verified' }\n")
   await writeFile(join(source, "package.json"), JSON.stringify({ name: packageName, version, type: "module",
     scripts: { install: "node -e \"require('fs').writeFileSync('lifecycle-ran','true')\"" },
     atapeAdapter: { protocolVersion: "atape.adapter.v1alpha1", adapterId, displayName: "Fixture Codex",
-      entry: "./index.js", harnesses: [adapterId] } }))
+      entry: "./index.js", harnesses: [adapterId], ...manifestFields } }))
   const result = JSON.parse((await exec("npm", ["pack", "--json", "--ignore-scripts", "--pack-destination", destination], { cwd: source })).stdout)
   return { source, archive: join(destination, result[0].filename as string) }
 }
@@ -46,6 +46,20 @@ const install = (directory: string, spec: string, discovery?: ReleaseDiscovery, 
   ), active ? { signal: active } : undefined)
 
 describe("official Adapter release installation", () => {
+  it("retains the declared legacy v3 profile in its immutable installation and caller result", async () => {
+    const home = await root(), source = await packed(home, "1.2.3", "codex", "@atape/adapter-codex",
+      { legacyCanonicalProfile: CanonicalProfileVersion3 }), directory = join(home, "adapters")
+    const installed = await install(directory, source.archive)
+    expect(installed.manifest.legacyCanonicalProfile).toBe(CanonicalProfileVersion3)
+    const metadata = JSON.parse(await readFile(join(adapterPackageRoot(directory, installed), "package.json"), "utf8"))
+    expect(metadata.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion3)
+  }, 20_000)
+  it("rejects a source runtime's legacy profile declaration before creating an installation slot", async () => {
+    const home = await root(), source = await packed(home, "1.2.3", "codex", "@atape/adapter-codex",
+      { sourceCapture: SourceCaptureVersion2, legacyCanonicalProfile: CanonicalProfileVersion3 }), directory = join(home, "adapters")
+    await expect(install(directory, source.archive)).rejects.toMatchObject({ reason: "manifest" })
+    await expect(stat(directory)).rejects.toMatchObject({ code: "ENOENT" })
+  }, 20_000)
   it("installs a real verified archive, preserves canonical upgradeSpec and disables lifecycle scripts", async () => {
     const home = await root(), source = await packed(home), release = await releaseFixture(home, source.archive), directory = join(home, "adapters")
     const installed = await install(directory, "@atape/adapter-codex@1.2.3", release.discovery)

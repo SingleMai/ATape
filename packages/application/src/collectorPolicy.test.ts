@@ -1,4 +1,4 @@
-import { AdapterProtocolVersion, emptyClientConfig, type AdapterCollectionPage, type CollectorCheckpoint, type ClientConfig } from "@atape/domain"
+import { AdapterProtocolVersion, CanonicalProfileVersion3, emptyClientConfig, type AdapterCollectionPage, type CollectorCheckpoint, type ClientConfig } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import { ClientConfigStore } from "./clientManagement.ts"
@@ -45,6 +45,7 @@ const fixture = async () => {
   let selected = a, saved: CollectorCheckpoint | undefined, opens = 0, reads = 0, lostRaw = false, lostCanonical = false
   let disabledRaw = false, retryBeforeDisable = false, openFailure = false
   let rawEnabled = true
+  let canonicalProfileVersion: typeof CanonicalProfileVersion3 | undefined
   let duringOpen: (() => void) | undefined
   let currentPage = (request: HostedCollectRequest) => request.cursor === "cursor-1" ? page(2, bytes(content)) : page(1)
   const canonical: CanonicalSubmission[] = [], raw: RawSubmission[] = [], accepted = new Map<string, string>()
@@ -65,10 +66,15 @@ const fixture = async () => {
       recordCycle: () => Effect.void, recordCollectorFailure: () => Effect.void,
       recordRedactionJob: event => Effect.sync(() => { events.push(structuredClone(event)) }) }),
     Layer.succeed(AdapterRuntimes, { open: () => Effect.sync(() => { opens++; duringOpen?.(); return {
+      ...(canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion }),
       collect: (request: HostedCollectRequest) => Effect.sync(() => { reads++; return currentPage(request) }) } }).pipe(Effect.flatMap(runtime => openFailure
         ? Effect.fail(new AdapterRuntimeError({ adapterId: "fixture", reason: "load", retryable: false, message: `Source error ${secret}` })) : Effect.succeed(runtime))) }),
     Layer.succeed(SourceCaptureCollector, { collect: () => Effect.die("Unexpected sourceCapture runtime") }),
-    Layer.succeed(CollectorTransport, { rawCaptureEnabled: () => Effect.succeed(rawEnabled),
+    Layer.succeed(CollectorTransport, { ensureCanonicalProfile: () => canonicalProfileVersion === undefined
+      ? Effect.die("Legacy v2 must not request Canonical profile admission")
+      : Effect.fail(new CollectionTransportError({ operation: "canonical", reason: "rejected", retryable: false,
+          message: "Server did not affirm nullable-clock capture" })),
+      rawCaptureEnabled: () => Effect.succeed(rawEnabled),
       submitCanonical: submission => Effect.suspend(() => {
         expect(saved?.deliveryPending).toBe(true)
         canonical.push(structuredClone(submission))
@@ -95,10 +101,21 @@ const fixture = async () => {
     loseRaw: () => { lostRaw = true }, loseCanonical: () => { lostCanonical = true },
     disableRaw: () => { disabledRaw = true }, loseThenDisableRaw: () => { lostRaw = true; retryBeforeDisable = true },
     rawPolicy: (enabled: boolean) => { rawEnabled = enabled },
+    requireV3: () => { canonicalProfileVersion = CanonicalProfileVersion3 },
     failOpen: () => { openFailure = true } }
 }
 
 describe("legacy policy-bound collection admission", () => {
+  it.each([false, true])("rejects unsupported v3 before changing policy-bound progress (prior checkpoint: %s)", async prior => {
+    const f = await fixture(), saved = prior ? { ...checkpoint([oldRaw()]), policyId: f.a.policyId!, deliveryPending: true } : undefined
+    if (saved !== undefined) f.seed(saved)
+    f.requireV3()
+    const report = await f.cycle()
+    expect(report.failures[0]).toMatchObject({ reason: "transport", retryable: false })
+    expect(f.reads()).toBe(0)
+    expect(f.canonical).toEqual([]); expect(f.raw).toEqual([])
+    expect(f.saved()).toEqual(saved)
+  })
   it("pins one compiled policy before runtime acquisition and reloads on the next job", async () => {
     const f = await fixture(); f.duringOpen(() => f.select("b"))
     expect((await f.cycle()).failures).toEqual([])

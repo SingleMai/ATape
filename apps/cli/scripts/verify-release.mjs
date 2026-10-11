@@ -124,6 +124,9 @@ try {
   assert.ok(!JSON.stringify(remote.requests).includes(projectDirectory), "setup uploaded a local filesystem path")
   const collected = await collectProject()
   assert.equal(collected.failures.length, 0)
+  assert.ok(remote.requests.some(request => request.method === "GET" &&
+    request.url === "/api/v1/ingestion/canonical/capabilities" &&
+    request.authorization === "Bearer atc_v1_release-secret"), "Codex did not affirm its nullable profile")
   assert.deepEqual(collected.jobs.map((job) => ({
     projectId: job.projectId,
     adapterId: job.adapterId,
