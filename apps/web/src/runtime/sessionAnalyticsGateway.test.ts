@@ -1,7 +1,7 @@
 import { readSessionAnalytics } from "@atape/application"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { analyticsFixture, capabilitiesFixture } from "../../test/sessionAnalyticsFixture"
+import { activityFixture, analyticsFixture, capabilitiesFixture } from "../../test/sessionAnalyticsFixture"
 import { BrowserSessionAnalyticsGatewayLayer } from "./sessionAnalyticsGateway"
 
 const run = <A, E>(effect: Effect.Effect<A, E, import("@atape/application").SessionAnalyticsGateway>) =>
@@ -17,6 +17,9 @@ describe("Session analytics browser Adapter", () => {
     expect(url.pathname).toBe("/api/v1/sessions/session-reader/analytics")
     expect(Object.fromEntries(url.searchParams)).toEqual({ snapshot: "snapshot-one", metric: "failed_tools", thread: "child/one", tool: "read & write", cursor: "opaque+=", limit: "20" })
     expect(result.usage.tokens).toMatchObject({ total: null, cacheRead: 0 })
+    const headers = new Headers(fetchMock.mock.calls[0]![1]?.headers)
+    expect(headers.get("Accept")).toBe("application/vnd.atape.session-analytics.v3+json, application/json")
+    expect(headers.has("ATape-Accept-Analytics-Version")).toBe(false)
   })
   it("reads v1 without inventing a capability report, and v2 with a required report", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>()
@@ -38,6 +41,23 @@ describe("Session analytics browser Adapter", () => {
     const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
     expect(Object.fromEntries(url.searchParams)).toEqual({ snapshot: "snapshot-one", metric: "mcp_tools", capability: "read & write", server: "repo/docs", thread: "root", cursor: "next+=", limit: "20" })
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it("reads v3 opaque range evidence with required activity and clock qualities", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(activityFixture)))
+    vi.stubGlobal("fetch", fetchMock)
+    const query = { metric: "records" as const, range: "opaque+=range", snapshot: "snapshot-one", cursor: "record-page", limit: 4 }
+    const report = await run(readSessionAnalytics("session-reader", query))
+    const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
+    expect(Object.fromEntries(url.searchParams)).toEqual({ metric: "records", range: "opaque+=range", snapshot: "snapshot-one", cursor: "record-page", limit: "4" })
+    expect(report).toEqual(activityFixture)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it("rejects a v3 representation missing its required activity or clock quality", async () => {
+    const { activity: _activity, ...missing } = activityFixture
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(JSON.stringify(missing)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...activityFixture, evidence: analyticsFixture.evidence }))))
+    expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
+    expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
   })
   it("keeps refresh-required and unavailable problems typed", async () => {
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "refresh_required", detail: "Changed" }), { status: 409 })))

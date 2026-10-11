@@ -63,6 +63,7 @@ const SessionSearch = Schema.Struct({
   event: Schema.optionalKey(Schema.String),
   from: Schema.optionalKey(Schema.Literal("search")),
   q: Schema.optionalKey(Schema.String),
+  analysis: Schema.optionalKey(Schema.Literal("open")),
   raw: Schema.optionalKey(Schema.Literal("open")),
   rawCursor: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048)))
 })
@@ -75,6 +76,7 @@ type SessionLocationSearch = {
   readonly event?: string
   readonly from?: "search"
   readonly q?: string
+  readonly analysis?: "open"
   readonly raw?: "open"
   readonly rawCursor?: string
 }
@@ -90,6 +92,7 @@ const parseSessionSearch = (input: unknown): SessionLocationSearch =>
       ...(value.after ? { after: value.after } : {}),
       ...(value.from ? { from: value.from } : {}),
       ...(value.q ? { q: value.q } : {}),
+      ...(value.analysis ? { analysis: value.analysis } : {}),
       ...(value.raw ? { raw: value.raw, ...(value.rawCursor ? { rawCursor: value.rawCursor } : {}) } : {})
     })
   })
@@ -431,21 +434,38 @@ function SessionRoute() {
   const navigate = useNavigate()
   const { openSearch, hasSearch } = useSearchOverlay()
   const restart = () => {
-    const { head: _head, snapshot: _snapshot, after: _after, event: _event, ...first } = search
+    // The hidden Reader's existing auto-refresh must not leave analysis.
+    if (search.analysis === "open") return
+    const { head: _head, snapshot: _snapshot, after: _after, event: _event, analysis: _analysis, ...first } = search
     void navigate({ to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params, search: first, replace: true })
   }
   const page = { ...(search.head ? { head: search.head } : {}),
     ...(search.snapshot ? { snapshot: search.snapshot } : {}),
     ...(search.after ? { after: search.after } : search.event ? { at: search.event } : {}) }
   const presenter = useConversationPresenter(params.sessionId, search.thread, page, restart)
+  const previouslyAnalyzing = useRef(search.analysis === "open")
+  useLayoutEffect(() => {
+    const returning = previouslyAnalyzing.current && search.analysis !== "open"
+    previouslyAnalyzing.current = search.analysis === "open"
+    // Browser history and the visible Back button share the Reader's existing
+    // revalidation Interface. A new uncached Event read already owns its check.
+    if (returning && presenter.state._tag === "Ready") presenter.revalidate()
+  }, [search.analysis, presenter.state, presenter.revalidate])
   return (
     <>
       <SessionAnalyticsScope key={params.sessionId}>
       <SessionReaderWorkspace
         key={`${params.sessionId}:${search.thread}`}
         sessionId={params.sessionId}
+        analysis={search.analysis === "open"}
+        onOpenAnalysis={() => void navigate({
+          to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params, search: { ...search, analysis: "open" }
+        })}
         state={presenter.state}
-        onReturnFromAnalysis={presenter.revalidate}
+        onReturnFromAnalysis={() => {
+          const { analysis: _analysis, ...readerSearch } = search
+          void navigate({ to: "/teams/$teamId/projects/$projectId/sessions/$sessionId", params, search: readerSearch, replace: true })
+        }}
         evidenceHref={target => {
           const query = new URLSearchParams({ snapshot: target.snapshot, thread: target.threadId, event: target.eventId })
           if (target.head) query.set("head", target.head)

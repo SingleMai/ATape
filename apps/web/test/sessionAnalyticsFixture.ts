@@ -31,3 +31,22 @@ export const capabilitiesFixture: SessionAnalytics = {
     skills: [{ name: "review-code", calls: 1, completed: 1, failed: 0, pending: 0, inProgress: 0, unknown: 0 }]
   }
 }
+
+export const activityFixture: Extract<SessionAnalytics, { analyticsVersion: 3 }> = {
+  ...capabilitiesFixture, analyticsVersion: 3,
+  activity: { scopeThreadId: null, eventCount: 12, recordedTimeEvents: 6, unknownTimeEvents: 4, legacyTimeEvents: 2,
+    firstRecordedAt: "2026-10-12T00:00:00Z", lastRecordedAt: "2026-10-12T00:02:00Z", recordSpanMilliseconds: 120_000,
+    backwardClockTransitions: 1,
+    buckets: [
+      { from: "2026-10-12T00:00:00Z", to: "2026-10-12T00:01:00Z", includesEnd: false,
+        records: 4, messages: 2, thoughts: 1, toolCalls: 1, range: "opaque-first-bucket" },
+      { from: "2026-10-12T00:01:00Z", to: "2026-10-12T00:02:00Z", includesEnd: true,
+        records: 2, messages: 1, thoughts: 1, toolCalls: 0, range: "opaque-final-bucket" }
+    ], unplacedRange: "opaque-unplaced" },
+  evidence: { items: [
+    { eventId: "recorded-event", threadId: "root", kind: "message", label: "Recorded event",
+      occurredAt: "2026-10-12T00:00:00Z", clockQuality: "recorded" },
+    { eventId: "unknown-event", threadId: "child", kind: "message", label: "Unknown event", occurredAt: null, clockQuality: "unknown" },
+    { eventId: "legacy-event", threadId: "root", kind: "message", label: "Legacy event", occurredAt: "1970-01-01T00:00:00Z", clockQuality: "legacy" }
+  ], nextCursor: "opaque-record-page" }
+}

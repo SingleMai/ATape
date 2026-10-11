@@ -6,6 +6,7 @@ import type { LoadableView } from "../presenters/memoryPresenter"
 import { useSessionAnalyticsPresenter } from "../presenters/sessionAnalyticsPresenter"
 import { formatNumber, t, type WebMessageKey } from "../i18n"
 import { ConversationTime } from "./ConversationTime"
+import { SessionActivityView } from "./SessionActivityView"
 
 export type AnalyticsEvidenceTarget = {
   readonly snapshot: string
@@ -30,7 +31,7 @@ const metrics: ReadonlyArray<readonly [SessionAnalyticsMetric, WebMessageKey]> =
   ["tools", "analytics.metric.tools"], ["failed_tools", "analytics.metric.failed_tools"],
   ["unknown_tools", "analytics.metric.unknown_tools"], ["user_inputs", "analytics.metric.user_inputs"],
   ["thoughts", "analytics.metric.thoughts"], ["threads", "analytics.metric.threads"],
-  ["mcp_tools", "analytics.metric.mcp_tools"], ["skills", "analytics.metric.skills"]
+  ["mcp_tools", "analytics.metric.mcp_tools"], ["skills", "analytics.metric.skills"], ["records", "analytics.metric.records"]
 ]
 const token = (value: number | null) => value === null ? t("analytics.unknown", "Unknown") : formatNumber(value)
 const capture = (value: string) => value === "healthy" ? t("analytics.capture.healthy", "Capture healthy") : value === "complete" ? t("analytics.capture.complete", "Complete") :
@@ -127,6 +128,11 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
         ] as const).map(([label, count]) => <div key={label}><dt>{t(label)}</dt><dd>{formatNumber(count)}</dd></div>)}
       </dl>
       <p className="analytics-note">{t("analytics.countMeaning", "Message fragments are stored pieces, not original message counts or conversation turns. Tool calls are linked by their recorded call ID within each thread.")}</p>
+      <SessionActivityView activity={state.value.analyticsVersion === 3 ? state.value.activity : undefined}
+        threads={state.value.threads} {...(query.thread ? { thread: query.thread } : {})}
+        {...(query.range ? { range: query.range } : {})} refreshing={state.refreshing}
+        onThread={thread => onFilter({ ...query, thread })}
+        onRange={range => onFilter({ metric: "records", range, ...(query.thread ? { thread: query.thread } : {}) })} />
       <section aria-labelledby={`${id}-tools`}>
         <h2 id={`${id}-tools`}>{t("analytics.tools", "Tool call labels")}</h2>
         <p className="analytics-note">{t("analytics.toolMeaning", "Labels and kinds come from captured tool updates. A label may describe a command rather than a stable tool name.")}</p>
@@ -142,7 +148,7 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
             <td><button type="button" className="analytics-link" disabled={!canFilterSessionAnalyticsTool(tool.name)} onClick={() => onFilter({ metric: "unknown_tools", tool: tool.name })} aria-label={t("analytics.unknownFor", "Calls with unknown status: {label}", { label: tool.name })}>{formatNumber(tool.unknown)}</button></td>
           </tr>)}</tbody></table></div>}
       </section>
-      <CapabilityReports report={state.value.analyticsVersion === 2 ? state.value.capabilities : undefined} {...(query.thread ? { thread: query.thread } : {})} onFilter={onFilter} />
+      <CapabilityReports report={state.value.analyticsVersion !== 1 ? state.value.capabilities : undefined} {...(query.thread ? { thread: query.thread } : {})} onFilter={onFilter} />
       <section aria-labelledby={`${id}-usage`}>
         <h2 id={`${id}-usage`}>{t("analytics.recordedTokens", "Recorded tokens")}</h2>
         <p>{t("analytics.samples", "{recorded} recorded samples · {incomplete} incomplete samples · {samples} usage events", {
@@ -168,7 +174,8 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
         <h2 id={`${id}-evidence`}>{t("analytics.evidence", "Evidence")}</h2>
         <div className="analytics-filters">
           <label>{t("analytics.evidenceType", "Evidence type")}<select aria-label={t("analytics.evidenceType", "Evidence type")} value={query.metric ?? "tools"} onChange={event => onFilter({ metric: event.currentTarget.value as SessionAnalyticsMetric, ...(query.thread ? { thread: query.thread } : {}) })}>
-            {metrics.filter(([metric]) => state.value.analyticsVersion === 2 || !["mcp_tools", "skills"].includes(metric)).map(([metric, label]) => <option key={metric} value={metric}>{t(label)}</option>)}
+            {metrics.filter(([metric]) => (state.value.analyticsVersion !== 1 || !["mcp_tools", "skills"].includes(metric)) &&
+              (metric !== "records" || state.value.analyticsVersion === 3)).map(([metric, label]) => <option key={metric} value={metric}>{t(label)}</option>)}
           </select></label>
           <label>{t("analytics.thread", "Thread")}<select aria-label={t("analytics.thread", "Thread")} value={query.thread ?? ""} onChange={event => onFilter({ ...query, thread: event.currentTarget.value })}>
             <option value="">{t("analytics.allThreads", "All threads")}</option>{state.value.threads.map(thread => <option key={thread.id} value={thread.id}>{thread.label}</option>)}
@@ -176,7 +183,7 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
           {!["mcp_tools", "skills"].includes(query.metric ?? "tools") && <label>{t("analytics.toolLabel", "Tool label")}<select aria-label={t("analytics.toolLabel", "Tool label")} value={query.tool ?? ""} disabled={!["tools", "failed_tools", "unknown_tools"].includes(query.metric ?? "tools")} onChange={event => onFilter({ ...query, tool: event.currentTarget.value })}>
             <option value="">{t("analytics.allTools", "All labels")}</option>{[...new Set(state.value.tools.map(tool => tool.name))].filter(canFilterSessionAnalyticsTool).map(name => <option key={name} value={name}>{name === "unknown" ? t("analytics.unknown", "Unknown") : name}</option>)}
           </select></label>}
-          {state.value.analyticsVersion === 2 && ["mcp_tools", "skills"].includes(query.metric ?? "tools") && <>
+          {state.value.analyticsVersion !== 1 && ["mcp_tools", "skills"].includes(query.metric ?? "tools") && <>
             {query.metric === "mcp_tools" && <label>{t("analytics.mcpServer", "MCP server")}<select aria-label={t("analytics.mcpServer", "MCP server")} value={query.server ?? ""}
               onChange={event => { const { capability: _capability, ...selection } = query; onFilter({ ...selection, server: event.currentTarget.value }) }}>
               <option value="">{t("analytics.allServers", "All servers")}</option>
@@ -198,6 +205,7 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
               event.preventDefault(); onOpenEvidence(target)
             }}>{item.label || t("analytics.openEvent", "Open event")}</a>
               <span>{state.value.threads.find(thread => thread.id === item.threadId)?.label ?? item.threadId} · <ConversationTime value={item.occurredAt} options={{ dateStyle: "medium", timeStyle: "short" }} /></span>
+              {"clockQuality" in item && <span className="analytics-clock-quality">{t(`analytics.clockQuality.${item.clockQuality}`)}</span>}
             </li>
           })}</ol>}
         <nav className="analytics-pages" aria-label={t("analytics.evidencePages", "Evidence pages")}>

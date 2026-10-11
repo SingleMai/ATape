@@ -3,7 +3,7 @@
 Session Analytics derives deterministic statistics and a bounded evidence page
 from the current authorized Canonical Session. The Go Module owns metric rules;
 the HTTP Adapter exposes its `Open` Interface. The analysis view connects
-statistics, normalized MCP/Skill identities and conditional reader evidence links. This
+statistics, normalized MCP/Skill identities, recorded activity ranges and conditional reader evidence links. This
 guide describes checkout behavior and does not claim publication or deployment.
 
 ## Metrics and evidence
@@ -24,12 +24,66 @@ reasoning where the Provider reports them. Total is input plus output when both
 classifications are complete; cache columns are not added again. `recordedSamples`
 and `incompleteSamples` describe recorded samples, not completeness of the source
 conversation. Session and Thread `captureStatus` retain partial-capture disclosure.
-No duration, cost, productivity score, inferred outcome or generated summary is
-provided. Codex projection v5 corrects fabricated clocks and retains v4's
+No work time, tool execution duration, cost, productivity score, inferred outcome
+or generated summary is provided. Record span describes the first and last
+eligible stored source clocks. Codex projection v5 corrects fabricated clocks and retains v4's
 historical missing-status correction on successful source replay. Unreplayed
 historical records can still carry an older Adapter's epoch or outcome; saved
 non-null clock coverage alone does not establish clock quality. See
 [Codex source clocks](adapters/codex.md#source-clock-quality-and-replay).
+
+## Recorded activity and range evidence
+
+Analytics version 3 requires an `activity` report. It selects every Thread or one
+Thread using `thread`; summary, tools, capabilities and usage still describe the
+full Session. Counts describe Canonical records, including fragments and tool
+updates, rather than inferred conversational turns.
+
+| Activity field | Meaning |
+| --- | --- |
+| `scopeThreadId` | Selected Thread ID, or null for the complete Session |
+| `eventCount` | All Canonical Event records in that scope |
+| `recordedTimeEvents` | Non-null clocks under the explicit nullable Canonical v3/v4 contract |
+| `unknownTimeEvents` | Explicit null clocks, regardless of profile |
+| `legacyTimeEvents` | Other non-null clocks; retained as evidence but excluded from dated activity |
+| `firstRecordedAt`, `lastRecordedAt` | Earliest and latest recorded clocks, or null when there are none |
+| `recordSpanMilliseconds` | Last minus first; null with no recorded clock, zero for one instant |
+| `backwardClockTransitions` | Per-Thread source-order transitions to an earlier recorded clock; unknown/legacy records are skipped and Threads are never compared with each other |
+| `buckets` | At most 60 uniform dated intervals, including empty ones, with record/message/thought counts, folded tool calls and an opaque evidence `range` |
+| `unplacedRange` | Opaque selection for unknown and legacy records, or null when there are none |
+
+“Recorded” is a source-contract category, not an independent clock verification.
+Legacy v1/v2 required a clock, and older Adapters could fill one without a source
+fact. The Server cannot distinguish a legitimate old date from that substitution.
+It therefore keeps those dates visible with a legacy category, outside the span
+and dated buckets. Source replay under a nullable profile can admit corrected
+clocks; unavailable history remains unrepaired. Existing summary known/unknown
+counts retain their earlier non-null/null meaning and are not clock-quality
+counts. No provider name or epoch heuristic selects clock quality.
+
+Dated intervals are `[from,to)`, except the final interval includes the maximum.
+An identical instant has one inclusive point bucket. Nonzero spans shorter than
+60 nanoseconds use fewer bins so boundaries remain distinct. Every Canonical
+Event enters the records count; a structured tool call enters the tool-call count
+at its final folded update, with existing explicit-outcome semantics. Missing
+clocks never acquire an upload, filesystem or observation time.
+
+Select a bucket or the unplaced group to view its `records` evidence page. The
+range binds Session, snapshot, analytics version and Thread scope. It only
+selects an interval produced by the Server; arbitrary client time bounds and
+granularity controls are not provided. Pagination retains that range, and each
+Event opens the existing conditional Reader target. Browser Back returns to the
+analysis view with its range, Thread and page selection. A full refresh clears
+range, cursor, snapshot and filters together.
+
+New Web requests v3 with the standard safelisted header
+`Accept: application/vnd.atape.session-analytics.v3+json, application/json`.
+The response remains `application/json`, with `Vary: Accept` and `no-store`.
+Without a v3 opt-in, new Server retains v2 behavior and its cursor contract.
+Older Servers may ignore the vendor range and return v1/v2; Web shows existing
+statistics and explicitly marks activity unavailable. Missing activity is never
+presented as zero. This avoids a new custom-header CORS requirement for separate
+Web/API-origin deployments. See [ADR-0123](architecture/adr/0123-recorded-activity-ranges.md).
 
 ## Recorded MCP and Skill calls
 
@@ -45,7 +99,7 @@ A completed Skill tool does not establish that the requested task succeeded.
 Unclassified calls include ordinary tools, old projections and unsupported
 source signals. Zero identified calls does not establish that no MCP or Skill
 was used. The Web accepts an older version-1 Server response and shows this
-report as unavailable; a version-2 response must include it, even when empty.
+report as unavailable; version-2 and version-3 responses must include it, even when empty.
 Only distinct structured calls enter these counts. Older Events without a tool
 call ID remain separately disclosed by `unlinkedToolEvents`.
 
@@ -102,17 +156,19 @@ GET /api/v1/sessions/{sessionId}/analytics/evidence?snapshot={snapshot}&metric=f
 Both return the named `SessionAnalytics` representation in
 [OpenAPI](api/openapi-v1.yaml): `snapshot`, optional publication `head`,
 `analyticsVersion`, `sessionId`, `captureStatus`, `summary`, `tools`, `threads`,
-`usage`, version-2 `capabilities` and `evidence`. Collection fields are arrays, including when empty.
-Statistics always describe the full selected Session; filters only select
-evidence. Each tool evidence anchor is its last structured update. Thought and
+`usage`, version-2/3 `capabilities`, version-3 `activity` and `evidence`.
+Collection fields are arrays, including when empty. The selected version is
+explicit in the body. All statistics except scoped v3 activity describe the full
+selected Session; other filters only select evidence. Each tool evidence anchor is its last structured update. Thought and
 user-input evidence anchors identify the matching Canonical fragment; Thread
 evidence anchors identify the first stored Event in a captured child Thread.
 
 | Query | Contract |
 | --- | --- |
-| `snapshot` | Opaque conditional current-source token, at most 200 bytes; required on `/evidence` and when using `cursor` |
-| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools` or `skills` |
-| `thread` | Select evidence from one captured Thread, at most 500 bytes |
+| `snapshot` | Opaque conditional current-source token, at most 200 bytes; required on `/evidence` and when using `cursor` or `range` |
+| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, or v3-only `records` |
+| `thread` | Select evidence and v3 activity from one captured Thread, at most 500 bytes |
+| `range` | V3-only opaque server interval or unplaced selection, at most 512 bytes; requires `records` and the same snapshot/Thread scope |
 | `tool` | Exact displayed tool label for one of the three tool metrics, at most 500 bytes |
 | `capability` | Exact normalized name for `mcp_tools` or `skills`, at most 500 bytes |
 | `server` | Exact normalized server for `mcp_tools`, at most 500 bytes |
@@ -125,6 +181,8 @@ Unknown, duplicate, empty or malformed query values fail with
 is invalid; `capability` requires `mcp_tools` or `skills`, and `server` requires
 `mcp_tools`. A server/name combination selects that MCP identity. All evidence
 filters, including server and capability, bind the cursor.
+V3 ranges also bind it. V3 evidence items require `clockQuality` as `recorded`,
+`unknown` or `legacy`; `occurredAt` preserves the stored date or explicit null.
 `evidence.nextCursor` is absent at the end; continuation retains the same source
 token and filters. Each request rechecks authorization.
 
@@ -133,7 +191,8 @@ token and filters. Each request rechecks authorization.
 All Session, Thread, Event metadata and Usage inputs are read in one authorized
 repeatable-read PostgreSQL transaction. Activated normalized publication reads
 reuse `current_head`; source rows without an active head read legacy Canonical
-data. A legacy token fingerprints the complete actual input, including Usage and
+data. A legacy token fingerprints the complete actual input, including Event
+profile metadata, Usage and
 Thread changes that do not advance the Session revision. `analyticsVersion`
 versions metric semantics separately from source identity.
 
@@ -188,7 +247,7 @@ this acceptance entered the Reader directly and does not validate that sidebar.
 The Web view handles loading, failure, manual refresh and evidence navigation;
 it preserves analysis state when returning from the reader. Changes to the
 selected Canonical content require an explicit full refresh. Reloading analysis
-resets the metric to tools and clears Thread, tool, cursor and snapshot filters
+resets the metric to tools and clears Thread, tool, range, cursor and snapshot filters
 before reading the latest content, including when a previously selected item
 was removed. Tool labels over 500 UTF-8 bytes remain visible in full; individual
 label filtering is disabled, while metric and Thread filters remain available.
@@ -201,4 +260,5 @@ or persisted derivation. Any future derived read model must bind
 both source token and analytics version and validate current authorization and
 freshness. The rationale is recorded in
 [ADR-0118](architecture/adr/0118-session-analytics-current-snapshot.md) and
-[ADR-0120](architecture/adr/0120-normalized-tool-identity.md).
+[ADR-0120](architecture/adr/0120-normalized-tool-identity.md), with recorded ranges
+in [ADR-0123](architecture/adr/0123-recorded-activity-ranges.md).

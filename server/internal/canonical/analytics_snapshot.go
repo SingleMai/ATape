@@ -47,7 +47,7 @@ func AnalyticsBodyDigest(event EventRecord) EventBodyDigest {
 func AnalyticsEventMetadataBytes(event EventRecord) int {
 	bytes := len(event.ID) + len(event.SessionID) + len(event.ThreadID) + len(event.SourceKey) +
 		len(event.OrderFidelity) + len(event.Fidelity) + len(event.Kind) + len(event.Author) +
-		len(event.ToolLabel) + len(event.ToolUpdateJSON) + 256
+		len(event.ToolLabel) + len(event.ToolUpdateJSON) + len(event.SchemaVersion) + 256
 	if event.ChildThreadID != nil {
 		bytes += len(*event.ChildThreadID)
 	}
@@ -57,7 +57,7 @@ func AnalyticsEventMetadataBytes(event EventRecord) int {
 // AnalyticsEvent removes payloads without changing tool identity or state.
 func AnalyticsEvent(event EventRecord) (EventRecord, error) {
 	event.Text, event.RawRef = "", ""
-	event.Digest, event.AdapterVersion, event.SchemaVersion = "", "", ""
+	event.Digest, event.AdapterVersion = "", ""
 	event.ObservedAt, event.ReceivedAt, event.IngestSeq = time.Time{}, time.Time{}, 0
 	if event.ToolUpdateJSON != "" {
 		_, err := ParseToolUpdate(event.ToolUpdateJSON)
@@ -103,13 +103,13 @@ func AnalyticsSnapshotToken(snapshot AnalyticsSnapshot, bodies map[string]EventB
 	sort.Slice(events, func(i, j int) bool { return events[i].ID < events[j].ID })
 	for _, event := range events {
 		_ = encoder.Encode(struct {
-			ID, Session, Thread, Source                        string
-			Revision, Projection, Order                        int64
-			Index                                              int
-			OrderFidelity, Fidelity, Kind, Author, Time, Label string
-			Child                                              *string
-			Body                                               EventBodyDigest
-		}{event.ID, event.SessionID, event.ThreadID, event.SourceKey, event.Revision, event.ProjectionRevision, event.SourceOrder, event.EventIndex, event.OrderFidelity, event.Fidelity, event.Kind, event.Author, event.OccurredAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), event.ToolLabel, event.ChildThreadID, bodies[event.ID]})
+			ID, Session, Thread, Source                                 string
+			Revision, Projection, Order                                 int64
+			Index                                                       int
+			OrderFidelity, Fidelity, Kind, Author, Time, Label, Profile string
+			Child                                                       *string
+			Body                                                        EventBodyDigest
+		}{event.ID, event.SessionID, event.ThreadID, event.SourceKey, event.Revision, event.ProjectionRevision, event.SourceOrder, event.EventIndex, event.OrderFidelity, event.Fidelity, event.Kind, event.Author, event.OccurredAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"), event.ToolLabel, event.SchemaVersion, event.ChildThreadID, bodies[event.ID]})
 	}
 	usage := append([]UsageRecord(nil), snapshot.Usage...)
 	sort.Slice(usage, func(i, j int) bool { return usage[i].SourceKey < usage[j].SourceKey })

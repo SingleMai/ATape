@@ -10,7 +10,7 @@ export const BrowserSessionAnalyticsGatewayLayer = Layer.succeed(SessionAnalytic
       if (value !== undefined) query.set(key, String(value))
     }
     const suffix = query.size ? `?${query}` : ""
-    return browserRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/analytics${suffix}`).pipe(
+    return browserRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/analytics${suffix}`, { acceptAnalyticsVersion: 3 }).pipe(
       Effect.mapError(cause => new SessionAnalyticsGatewayError({
         reason: cause.reason, message: cause.message,
         ...(cause.status === undefined ? {} : { status: cause.status }),

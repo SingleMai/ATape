@@ -8,6 +8,8 @@ import { SessionAnalyticsPanel, type AnalyticsEvidenceTarget } from "./SessionAn
 
 type Props = Omit<SessionReaderProps, "onOpenThread" | "embedded" | "onOpenAnalysis"> & {
   readonly sessionId: string
+  readonly analysis: boolean
+  readonly onOpenAnalysis: () => void
   readonly evidenceHref: (target: AnalyticsEvidenceTarget) => string
   readonly onOpenEvidence: (target: AnalyticsEvidenceTarget) => void
   readonly onReturnFromAnalysis: () => void
@@ -16,9 +18,8 @@ type ThreadTab = { readonly id: string; readonly label: string }
 
 // Only ephemeral reading state lives here. The existing Effect presenter owns
 // each thread's remote data, refresh workflow, and subscription lifetime.
-export function SessionReaderWorkspace({ sessionId, evidenceHref, onOpenEvidence, onReturnFromAnalysis, ...reader }: Props) {
-  const [analysis, setAnalysis] = useState(false)
-  const [analysisOpened, setAnalysisOpened] = useState(false)
+export function SessionReaderWorkspace({ sessionId, analysis, onOpenAnalysis, evidenceHref, onOpenEvidence, onReturnFromAnalysis, ...reader }: Props) {
+  const [analysisOpened, setAnalysisOpened] = useState(analysis)
   const [tabs, setTabs] = useState<ReadonlyArray<ThreadTab>>([])
   const [active, setActive] = useState<string>()
   const [phase, setPhase] = useState<"closed" | "opening" | "open" | "closing">("closed")
@@ -29,6 +30,12 @@ export function SessionReaderWorkspace({ sessionId, evidenceHref, onOpenEvidence
   const size = useRef({ horizontal: 48, vertical: 52 })
   const expanded = phase === "opening" || phase === "open"
   const direction = vertical ? "vertical" : "horizontal"
+
+  useEffect(() => {
+    if (!analysis) return
+    setAnalysisOpened(true); setPhase("closed"); setTabs([]); setActive(undefined)
+    requestAnimationFrame(() => main.current?.querySelector<HTMLElement>(".session-analytics h1")?.focus({ preventScroll: true }))
+  }, [analysis])
 
   useEffect(() => {
     const compact = window.matchMedia("(max-width: 1100px)")
@@ -132,16 +139,13 @@ export function SessionReaderWorkspace({ sessionId, evidenceHref, onOpenEvidence
       <div className="session-main-reader" ref={main} tabIndex={-1}>
         <div className="session-main-content">
           <div hidden={analysis}><SessionReaderView {...reader}
-            onOpenThread={openThread} onOpenAnalysis={() => {
-              setAnalysisOpened(true); setAnalysis(true); setPhase("closed"); setTabs([]); setActive(undefined)
-              requestAnimationFrame(() => main.current?.querySelector<HTMLElement>(".session-analytics h1")?.focus({ preventScroll: true }))
-            }} /></div>
+            onOpenThread={openThread} onOpenAnalysis={onOpenAnalysis} /></div>
           {analysisOpened && <div hidden={!analysis} inert={!analysis}><SessionAnalyticsPanel sessionId={sessionId} evidenceHref={evidenceHref}
             onBack={() => {
-              onReturnFromAnalysis(); setAnalysis(false)
+              onReturnFromAnalysis()
               requestAnimationFrame(() => main.current?.focus({ preventScroll: true }))
             }}
-            onOpenEvidence={target => { setAnalysis(false); onOpenEvidence(target) }} /></div>}
+            onOpenEvidence={onOpenEvidence} /></div>}
         </div>
       </div>
     </Panel>

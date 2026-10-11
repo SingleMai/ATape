@@ -148,6 +148,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0120](0120-normalized-tool-identity.md) | Normalized tool identity for Session Analytics |
 | [0121](0121-tool-identity-release-transition.md) | Tool identity release transition and frozen source recovery |
 | [0122](0122-explicit-legacy-source-clocks.md) | Explicit nullable source clocks in legacy collection |
+| [0123](0123-recorded-activity-ranges.md) | Recorded activity ranges in Session Analytics v3 |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

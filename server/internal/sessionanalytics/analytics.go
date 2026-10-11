@@ -25,6 +25,7 @@ import (
 
 const (
 	Version                = 2
+	ActivityVersion        = 3
 	MaxFacts               = canonical.AnalyticsRecordLimit
 	MaxThreads             = canonical.AnalyticsThreadLimit
 	MaxTools               = 2000
@@ -46,8 +47,8 @@ type Module struct{ store Store }
 func New(store Store) *Module { return &Module{store: store} }
 
 type Query struct {
-	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor string
-	Limit                                                      int
+	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor, Range string
+	Limit, AnalyticsVersion                                           int
 }
 type InvalidQueryError struct{ Field, Reason string }
 
@@ -134,11 +135,12 @@ type Usage struct {
 	Models  []ModelUsage `json:"models"`
 }
 type EvidenceItem struct {
-	EventID    string  `json:"eventId"`
-	ThreadID   string  `json:"threadId"`
-	Kind       string  `json:"kind"`
-	Label      string  `json:"label"`
-	OccurredAt *string `json:"occurredAt"`
+	EventID      string  `json:"eventId"`
+	ThreadID     string  `json:"threadId"`
+	Kind         string  `json:"kind"`
+	Label        string  `json:"label"`
+	OccurredAt   *string `json:"occurredAt"`
+	ClockQuality string  `json:"clockQuality,omitempty"`
 }
 type Evidence struct {
 	Items      []EvidenceItem `json:"items"`
@@ -156,10 +158,12 @@ type Result struct {
 	Threads          []Thread     `json:"threads"`
 	Usage            Usage        `json:"usage"`
 	Evidence         Evidence     `json:"evidence"`
+	Activity         *Activity    `json:"activity,omitempty"`
 }
 
-// Open always rechecks authorization at the snapshot Seam. Query filters only
-// the evidence page; statistics describe the complete selected snapshot.
+// Open always rechecks authorization at the snapshot Seam. Thread selects v3
+// activity scope; summary, tools, capabilities and usage remain Session-wide.
+// Other filters select only the evidence page.
 func (m *Module) Open(ctx context.Context, principal authentication.Principal, sessionID string, query Query) (result Result, err error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
@@ -220,14 +224,26 @@ type pageCursor struct {
 
 func binding(sessionID string, q Query) string {
 	encoded, _ := json.Marshal([]any{Version, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server})
+	if q.AnalyticsVersion == ActivityVersion {
+		encoded, _ = json.Marshal([]any{ActivityVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range})
+	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
 func validateQuery(sessionID string, q Query) (Query, int, error) {
-	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server} {
+	if q.AnalyticsVersion == 0 {
+		q.AnalyticsVersion = Version
+	}
+	if q.AnalyticsVersion != Version && q.AnalyticsVersion != ActivityVersion {
+		return q, 0, &InvalidQueryError{"analyticsVersion", "is not supported"}
+	}
+	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server, "range": q.Range} {
 		limit := 500
 		if field == "snapshot" {
 			limit = 200
+		}
+		if field == "range" {
+			limit = 512
 		}
 		if len(value) > limit || !utf8.ValidString(value) {
 			return q, 0, &InvalidQueryError{field, "must be bounded UTF-8"}
@@ -241,8 +257,15 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	}
 	switch q.Metric {
 	case "tools", "failed_tools", "unknown_tools", "user_inputs", "thoughts", "threads", "mcp_tools", "skills":
+	case "records":
+		if q.AnalyticsVersion != ActivityVersion {
+			return q, 0, &InvalidQueryError{"metric", "records requires analytics version 3"}
+		}
 	default:
 		return q, 0, &InvalidQueryError{"metric", "is not supported"}
+	}
+	if q.Range != "" && (q.AnalyticsVersion != ActivityVersion || q.Metric != "records" || q.Snapshot == "") {
+		return q, 0, &InvalidQueryError{"range", "requires version 3 records and snapshot"}
 	}
 	if q.Tool != "" && q.Metric != "tools" && q.Metric != "failed_tools" && q.Metric != "unknown_tools" {
 		return q, 0, &InvalidQueryError{"tool", "only applies to tool metrics"}
@@ -309,7 +332,7 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 	if len(s.Events) > MaxFacts || len(s.Usage) > MaxFacts || len(s.Threads) > MaxThreads {
 		return Result{}, ErrCapacity
 	}
-	r := Result{Snapshot: s.SnapshotToken, Head: s.Head, AnalyticsVersion: Version, SessionID: s.Session.ID, CaptureStatus: s.Session.CaptureStatus,
+	r := Result{Snapshot: s.SnapshotToken, Head: s.Head, AnalyticsVersion: q.AnalyticsVersion, SessionID: s.Session.ID, CaptureStatus: s.Session.CaptureStatus,
 		Tools: []Tool{}, Capabilities: Capabilities{MCP: []MCPTool{}, Skills: []Skill{}}, Threads: []Thread{}, Usage: Usage{Models: []ModelUsage{}}, Evidence: Evidence{Items: []EvidenceItem{}}}
 	threads := make(map[string]*Thread, len(s.Threads))
 	threadTokens := make(map[string]*tokenSum, len(s.Threads))
@@ -364,6 +387,9 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 			return Result{}, ErrCapacity
 		}
 		thread.EventCount++
+		if q.Metric == "records" {
+			candidates[event.ID] = evidence(event, "Record")
+		}
 		if event.OccurredAt.IsZero() {
 			r.Summary.UnknownTimeEvents++
 		} else {
@@ -591,11 +617,26 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		r.Threads = append(r.Threads, *thread)
 	}
 	sort.Slice(r.Threads, func(i, j int) bool { return r.Threads[i].ID < r.Threads[j].ID })
+	var activity *activitySelection
+	if q.AnalyticsVersion == ActivityVersion {
+		var err error
+		activity, err = deriveActivity(ctx, s, events, calls, q)
+		if err != nil {
+			return Result{}, err
+		}
+		r.Activity = activity.report
+	}
 	matched := 0
 	for _, event := range events {
 		item, ok := candidates[event.ID]
 		if !ok || q.Thread != "" && q.Thread != event.ThreadID {
 			continue
+		}
+		if activity != nil && !activity.matches(event) {
+			continue
+		}
+		if q.AnalyticsVersion == ActivityVersion {
+			item.ClockQuality = clockQuality(event)
 		}
 		if matched >= offset && len(r.Evidence.Items) < q.Limit {
 			r.Evidence.Items = append(r.Evidence.Items, item)

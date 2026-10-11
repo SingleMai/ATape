@@ -103,7 +103,7 @@ func readAnalyticsSnapshot(ctx context.Context, q *db.Queries, p authentication.
 			event := canonical.EventRecord{ID: row.ID, SessionID: row.SessionID, ThreadID: row.ThreadID, SourceKey: row.SourceKey,
 				Revision: row.Revision, ProjectionRevision: row.ProjectionRevision, SourceOrder: row.SourceOrder, EventIndex: int(row.EventIndex),
 				OrderFidelity: row.OrderFidelity, Fidelity: row.Fidelity, Kind: row.Kind, Author: row.Author, OccurredAt: domainTime(row.OccurredAt),
-				ToolLabel: row.ToolLabel, ToolUpdateJSON: row.ToolUpdateJson, ChildThreadID: row.ChildThreadID}
+				ToolLabel: row.ToolLabel, ToolUpdateJSON: row.ToolUpdateJson, ChildThreadID: row.ChildThreadID, SchemaVersion: row.SchemaVersion}
 			if err := appendEvent(event, canonical.EventBodyDigest{Text: row.TextDigest, Tool: row.ToolDigest}); err != nil {
 				return result, false, err
 			}

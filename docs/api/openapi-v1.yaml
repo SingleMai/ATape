@@ -1007,16 +1007,18 @@ paths:
       x-atape-authorization-actions: [conversation.read]
       tags: [Captured sessions]
       summary: Analyze one current Canonical Session
-      description: Statistics and evidence share one authorized snapshot. Filters affect evidence only. Resource bounds fail explicitly with 422 analytics_capacity.
+      description: Statistics and evidence share one authorized snapshot. Thread selects the v3 activity scope; summary, tools, capabilities and usage remain Session-wide. Other filters affect evidence only. Resource bounds fail explicitly with 422 analytics_capacity.
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
+        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. An acceptable application/vnd.atape.session-analytics.v3+json range opts into version 3; q=0 declines it. Older Servers may ignore this range and return version 1/2. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
         - {name: tool, in: query, description: Exact display label; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
         - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
         - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
+        - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
         - {name: cursor, in: query, description: Opaque evidence cursor bound to the Session, snapshot, analytics version and filters; requires snapshot., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -1035,12 +1037,14 @@ paths:
       x-atape-route: {class: web_only, requestBodyPolicy: none, requestBodyLimit: 0, cachePolicy: no-store, originPolicy: none, freshAuthentication: false, requiresIdempotencyKey: false}
       security: [{webSession: []}]
       parameters:
+        - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. An acceptable application/vnd.atape.session-analytics.v3+json range opts into version 3; q=0 declines it. Older Servers may ignore this range and return version 1/2. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
         - {name: tool, in: query, description: Exact display label; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
         - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
         - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
+        - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
         - {name: cursor, in: query, description: Opaque cursor for the same snapshot and filters., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
       responses:
@@ -2200,6 +2204,7 @@ components:
         kind: {type: string}
         label: {type: string}
         occurredAt: {type: [string, "null"]}
+        clockQuality: {type: string, enum: [recorded, unknown, legacy], description: Required in version 3; recorded is an admitted source clock and is not independently verified.}
     SessionAnalyticsEvidence:
       type: object
       additionalProperties: false
@@ -2207,6 +2212,35 @@ components:
       properties:
         items: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsEvidenceItem"}}
         nextCursor: {type: string}
+    SessionAnalyticsActivityBucket:
+      type: object
+      additionalProperties: false
+      required: [from, to, includesEnd, records, messages, thoughts, toolCalls, range]
+      properties:
+        from: {type: string, format: date-time}
+        to: {type: string, format: date-time}
+        includesEnd: {type: boolean}
+        records: {type: integer, minimum: 0}
+        messages: {type: integer, minimum: 0}
+        thoughts: {type: integer, minimum: 0}
+        toolCalls: {type: integer, minimum: 0}
+        range: {type: string, maxLength: 512}
+    SessionAnalyticsActivity:
+      type: object
+      additionalProperties: false
+      required: [scopeThreadId, eventCount, recordedTimeEvents, unknownTimeEvents, legacyTimeEvents, firstRecordedAt, lastRecordedAt, recordSpanMilliseconds, backwardClockTransitions, buckets, unplacedRange]
+      properties:
+        scopeThreadId: {type: [string, "null"]}
+        eventCount: {type: integer, minimum: 0}
+        recordedTimeEvents: {type: integer, minimum: 0}
+        unknownTimeEvents: {type: integer, minimum: 0}
+        legacyTimeEvents: {type: integer, minimum: 0}
+        firstRecordedAt: {type: [string, "null"], format: date-time}
+        lastRecordedAt: {type: [string, "null"], format: date-time}
+        recordSpanMilliseconds: {type: [number, "null"], minimum: 0, description: Max minus min admitted recorded source clocks; not work time or a sum of parallel Thread spans.}
+        backwardClockTransitions: {type: integer, minimum: 0, description: Per-Thread decreases between consecutive recorded source-order clocks; not proof of a bad clock.}
+        buckets: {type: array, maxItems: 60, items: {$ref: "#/components/schemas/SessionAnalyticsActivityBucket"}}
+        unplacedRange: {type: [string, "null"], maxLength: 512}
     SessionAnalytics:
       type: object
       additionalProperties: false
@@ -2214,7 +2248,7 @@ components:
       properties:
         snapshot: {type: string, description: Opaque conditional token for the current Canonical input; not historical retention or authorization.}
         head: {type: string, description: Selected publication head when normalized publication is active.}
-        analyticsVersion: {type: integer, const: 2}
+        analyticsVersion: {type: integer, enum: [2, 3]}
         sessionId: {type: string}
         captureStatus: {type: string}
         summary: {$ref: "#/components/schemas/SessionAnalyticsSummary"}
@@ -2223,6 +2257,19 @@ components:
         threads: {type: array, items: {$ref: "#/components/schemas/SessionAnalyticsThread"}}
         usage: {$ref: "#/components/schemas/SessionAnalyticsUsage"}
         evidence: {$ref: "#/components/schemas/SessionAnalyticsEvidence"}
+        activity: {$ref: "#/components/schemas/SessionAnalyticsActivity"}
+      allOf:
+        - if: {properties: {analyticsVersion: {const: 3}}, required: [analyticsVersion]}
+          then:
+            required: [activity]
+            properties:
+              evidence:
+                properties:
+                  items:
+                    items: {required: [clockQuality]}
+        - if: {properties: {analyticsVersion: {const: 2}}, required: [analyticsVersion]}
+          then:
+            not: {required: [activity]}
     SearchResult:
       type: object
       additionalProperties: false
