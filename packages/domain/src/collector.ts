@@ -13,6 +13,13 @@ export const CanonicalProfileVersion3 = "atape.acp-centered.v3" as const
 export const CanonicalProfileVersion4 = "atape.acp-centered.v4" as const
 export const CanonicalProfile = Schema.Literals([CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4])
 export type CanonicalProfile = typeof CanonicalProfile.Type
+export const CanonicalCapabilitiesProtocol = "atape.canonical-capabilities.v1" as const
+export const CanonicalCapabilities = Schema.Struct({
+  protocol: Schema.Literal(CanonicalCapabilitiesProtocol),
+  canonicalProfiles: Schema.Array(CanonicalProfile).check(Schema.isMinLength(1), Schema.isMaxLength(3),
+    Schema.makeFilter(profiles => new Set(profiles).size === profiles.length))
+})
+export type CanonicalCapabilities = typeof CanonicalCapabilities.Type
 export const RawIngestionProtocolVersion = "atape.raw.v1" as const
 // Three decoded MiB expands to four MiB of Base64, leaving room for metadata
 // beneath the five MiB HTTP and reverse-proxy request ceiling.
@@ -310,6 +317,8 @@ export type AdapterCollectionPage = typeof AdapterCollectionPage.Type
 
 export type AdapterOpenContext = {
   readonly creationReceipts?: CreationReceiptReader
+  /** Explicit Host support for nullable clocks on the paged legacy runtime. */
+  readonly legacyCanonicalProfiles?: readonly [typeof CanonicalProfileVersion3]
   readonly protocolVersion: typeof AdapterProtocolVersion
   readonly adapter: {
     readonly id: string
@@ -355,6 +364,7 @@ export type AdapterCollectRequest = {
 }
 
 export type LegacyAdapterRuntime = {
+  readonly canonicalProfileVersion?: typeof CanonicalProfileVersion3
   readonly newSession?: NewSessionRuntime
   readonly collect: (request: AdapterCollectRequest) => unknown | PromiseLike<unknown>
   readonly close?: () => unknown | PromiseLike<unknown>

@@ -168,7 +168,8 @@ const collection = (projects = 1) => {
       return { projectId: project.id, adapterId: adapter.adapterId, pages: 1, observations: 0, canonicalBatches: 0,
         rawChunks: 0, redactions: 0, hasMore: false }
     }) }),
-    Layer.succeed(CollectorTransport, { rawCaptureEnabled: () => Effect.die("Unexpected legacy transport"),
+    Layer.succeed(CollectorTransport, { ensureCanonicalProfile: () => Effect.die("Unexpected legacy transport"),
+      rawCaptureEnabled: () => Effect.die("Unexpected legacy transport"),
       submitCanonical: () => Effect.die("Unexpected legacy transport"), appendRaw: () => Effect.die("Unexpected legacy transport") }),
     Layer.succeed(CollectorRunStatusStore, { read: () => Effect.succeed({ version: 1, jobs: [] }),
       recordCycle: () => Effect.void, recordCollectorFailure: () => Effect.void,

@@ -117,3 +117,6 @@ conversation, Search, Overview and Cursor feature guides.
 Cursor factory/collection, stable source identity and trustworthy creation
 attribution are subsequent increments. Synthetic fixtures remain compatibility
 evidence; native Cursor CLI/IDE acceptance is still deferred.
+
+[ADR-0122](0122-explicit-legacy-source-clocks.md) extends explicit profile admission
+to Codex legacy collection. Default legacy v2 behavior remains unchanged.

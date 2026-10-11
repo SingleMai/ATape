@@ -25,9 +25,11 @@ classifications are complete; cache columns are not added again. `recordedSample
 and `incompleteSamples` describe recorded samples, not completeness of the source
 conversation. Session and Thread `captureStatus` retain partial-capture disclosure.
 No duration, cost, productivity score, inferred outcome or generated summary is
-provided. Codex projection v4 corrects historical missing-status assumptions on
-the next successful source replay; an unreplayed historical record can still
-carry an outcome created by an older Adapter.
+provided. Codex projection v5 corrects fabricated clocks and retains v4's
+historical missing-status correction on successful source replay. Unreplayed
+historical records can still carry an older Adapter's epoch or outcome; saved
+non-null clock coverage alone does not establish clock quality. See
+[Codex source clocks](adapters/codex.md#source-clock-quality-and-replay).
 
 ## Recorded MCP and Skill calls
 

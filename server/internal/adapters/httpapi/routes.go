@@ -194,6 +194,7 @@ func (h *Handler) registerRoutes() error {
 		{RouteSpec: RouteSpec{http.MethodDelete, "/api/v1/sessions/{sessionId}", WebOnly}, handler: h.deleteCapturedSession, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.CapturedSessionDeleteOwn, authorization.CapturedSessionDeleteAny}},
 		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/sessions/{sessionId}/raw", WebOnly}, handler: h.rawSession, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.RawSessionList}},
 		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/raw-objects/{objectId}/content", WebOnly}, handler: h.rawContent, body: noRequestBody, cache: noStore, actions: []authorization.Action{authorization.RawObjectRead}},
+		{RouteSpec: RouteSpec{http.MethodGet, "/api/v1/ingestion/canonical/capabilities", CLIOnly}, handler: h.canonicalCapabilities, body: noRequestBody, cache: noStore},
 		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/ingestion/canonical/batches", CLIOnly}, handler: h.canonicalBatch, body: canonicalJSONRequest, cache: noStore, actions: []authorization.Action{authorization.CanonicalIngest}},
 		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/ingestion/raw/chunks", CLIOnly}, handler: h.rawChunk, body: rawJSONRequest, cache: noStore, actions: []authorization.Action{authorization.RawIngest}},
 		{RouteSpec: RouteSpec{http.MethodPost, "/api/v1/ingestion/raw/receipts/lookup", CLIOnly}, handler: h.rawReceipt, body: controlPlaneJSONRequest, cache: noStore, actions: []authorization.Action{authorization.RawIngest}},

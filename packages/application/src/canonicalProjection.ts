@@ -16,7 +16,7 @@ export const canonicalMaterializationBound = (batch: CanonicalBatch, userId: str
   return goJSONBytes(batch) + 4096 + (records + 2) * goJSONBytes(scope) + records * 2048
 }
 
-export const projectCanonicalSubmission = (submission: Omit<CanonicalSubmission, "userId">, canonicalProfileVersion: CanonicalProfile = CanonicalProfileVersion): Omit<CanonicalBatch, "batchId"> => {
+export const projectCanonicalSubmission = (submission: Omit<CanonicalSubmission, "userId">, canonicalProfileVersion: CanonicalProfile = submission.canonicalProfileVersion ?? CanonicalProfileVersion): Omit<CanonicalBatch, "batchId"> => {
   const source = {
     adapterId: submission.adapterId,
     adapterVersion: submission.adapterVersion,

@@ -1,6 +1,6 @@
 import { AdapterRuntimeError, AdapterRuntimes, GitSourceAttribution, GitAttributionError, ProjectLocator, type HostedAdapter } from "@atape/application"
 import { AdapterCollectionPage as AdapterCollectionPageSchema, AdapterManifest as AdapterManifestSchema,
-  AdapterProtocolVersion, GitAttributionVersion, GitSource, NewSessionVersion,
+  AdapterProtocolVersion, GitAttributionVersion, GitSource, NewSessionVersion, CanonicalProfileVersion3,
   type AdapterInstallation, type AdapterManifest, type AtapeAdapterModule, type AtapeAdapterRuntime } from "@atape/domain"
 import { lstat, readFile, realpath, stat } from "node:fs/promises"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -134,6 +134,7 @@ const loadAdapterRuntime = (
   const foreign = yield* Effect.tryPromise({
     try: (signal) => Promise.resolve(module.createAtapeAdapter?.({
       protocolVersion: AdapterProtocolVersion,
+      legacyCanonicalProfiles: [CanonicalProfileVersion3],
       creationReceipts: { readConfirmed: (input, signal) => receipts.reader.readConfirmed(input, AbortSignal.any([signal, lifetime.signal])) },
       adapter: { id: adapter.adapterId, version: adapter.version },
       project: { id: project.id, type: project.type, path: project.path },
@@ -160,8 +161,10 @@ const loadAdapterRuntime = (
   const validNewSession = !hasNewSession || typeof foreign.newSession === "object" && foreign.newSession !== null &&
     foreign.newSession.protocolVersion === NewSessionVersion && typeof foreign.newSession.start === "function" && typeof foreign.close === "function"
   if ((manifest.newSession !== undefined) !== hasNewSession || !validNewSession || manifest.legacyMigration !== undefined && manifest.sourceCapture !== "atape.source-capture.v2" || typeof foreign !== "object" || foreign === null || (manifest.sourceCapture === undefined
-    ? !("collect" in foreign) || typeof foreign.collect !== "function" || "sourceCapture" in foreign
-    : !("sourceCapture" in foreign) || !isSourceCaptureRuntime(foreign.sourceCapture) || foreign.sourceCapture.protocolVersion !== manifest.sourceCapture ||
+    ? !("collect" in foreign) || typeof foreign.collect !== "function" || "sourceCapture" in foreign ||
+      foreign.canonicalProfileVersion !== manifest.legacyCanonicalProfile
+    : "canonicalProfileVersion" in foreign && foreign.canonicalProfileVersion !== undefined ||
+      !("sourceCapture" in foreign) || !isSourceCaptureRuntime(foreign.sourceCapture) || foreign.sourceCapture.protocolVersion !== manifest.sourceCapture ||
       (manifest.legacyMigration !== undefined) !== ("legacyMigration" in foreign.sourceCapture && typeof foreign.sourceCapture.legacyMigration === "function") ||
       typeof foreign.close !== "function" || "collect" in foreign)) {
     lifetime.abort()
@@ -226,6 +229,7 @@ const loadAdapterRuntime = (
   } satisfies HostedAdapter }
   const hosted: HostedAdapter = {
     ...newSession,
+    ...(foreign.canonicalProfileVersion === undefined ? {} : { canonicalProfileVersion: foreign.canonicalProfileVersion }),
     collect: (request) => Effect.suspend(() => {
       if (request.rawCaptureEnabled === false && manifest.rawCapturePolicy !== "atape.raw-capture.v1") {
         return Effect.fail(runtimeFailure(adapter.adapterId, "contract", false,

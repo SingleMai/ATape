@@ -4,12 +4,15 @@ import { CanonicalApplyReceipt as CanonicalApplyReceiptSchema, RawAppendReceipt 
 import { createHash } from "node:crypto"
 import { Effect, Layer, Schema } from "effect"
 import { AuthenticatedHTTPClient, AuthenticatedHTTPError } from "./authenticatedHTTPClient.ts"
+import { ensureCanonicalProfile } from "./canonicalProfileAdmission.ts"
 
 export const makeCollectorTransportLayer = () => Layer.effect(
   CollectorTransport,
   Effect.gen(function*() {
     const client = yield* AuthenticatedHTTPClient
     return CollectorTransport.of({
+    ensureCanonicalProfile: (project, profile) => ensureCanonicalProfile(client, project, profile).pipe(
+      Effect.mapError(error => error instanceof CollectionTransportError ? error : transportError("canonical", error))),
     rawCaptureEnabled: project => client.request({
       instanceOrigin: project.instanceOrigin, expectedUserId: project.userId,
       path: `/api/v1/projects/${encodeURIComponent(project.id)}/raw-capture`, method: "GET"

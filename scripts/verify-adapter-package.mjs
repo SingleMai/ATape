@@ -63,7 +63,12 @@ try {
     project: { id: "package-project", type: "directory", path: projectDirectory }
   }
   if (adapterId === "codex") {
-    const runtime = await adapter.createAtapeAdapter({ ...context, signal: AbortSignal.timeout(5_000) })
+    assert.equal(packageManifest.atapeAdapter.legacyCanonicalProfile, "atape.acp-centered.v3")
+    await assert.rejects(() => adapter.createAtapeAdapter({ ...context, signal: AbortSignal.timeout(5_000) }),
+      /Upgrade the ATape CLI to collect Codex with explicit source clock quality/)
+    const runtime = await adapter.createAtapeAdapter({ ...context,
+      legacyCanonicalProfiles: ["atape.acp-centered.v3"], signal: AbortSignal.timeout(5_000) })
+    assert.equal(runtime.canonicalProfileVersion, "atape.acp-centered.v3")
     try {
       const page = await runtime.collect({ protocolVersion: context.protocolVersion, cursor: null, rawProgress: [],
         limits: { observations: 10, threadsPerObservation: 100, eventsPerObservation: 500, canonicalBytesPerObservation: 3 * 1024 * 1024,

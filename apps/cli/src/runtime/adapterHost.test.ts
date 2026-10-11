@@ -1,5 +1,5 @@
 import { AdapterRuntimes, GitSourceAttribution } from "@atape/application"
-import { AdapterProtocolVersion, NewSessionVersion, type LocalProject, type AdapterInstallation } from "@atape/domain"
+import { AdapterProtocolVersion, NewSessionVersion, CanonicalProfileVersion3, type LocalProject, type AdapterInstallation } from "@atape/domain"
 import { Effect, Layer } from "effect"
 import { mkdtemp, mkdir, realpath, rm, writeFile, readFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -49,6 +49,33 @@ describe("Adapter Host controlled start", () => {
     const f = await fixture("", null, null)
     expect(await f.run(Effect.scoped(AdapterRuntimes.use(r => r.open(f.project, f.adapter).pipe(Effect.map(runtime => runtime.newSession)))))).toBeUndefined()
   })
+  it("advertises nullable-clock Host support and retains an explicitly selected legacy profile", async () => {
+    const f = await fixture("", null, null)
+    const packageRoot = join(f.home, "adapters", "node_modules", "test-adapter")
+    const metadata = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"))
+    metadata.atapeAdapter.legacyCanonicalProfile = CanonicalProfileVersion3
+    await writeFile(join(packageRoot, "package.json"), JSON.stringify(metadata))
+    await writeFile(join(packageRoot, "index.mjs"), `export const createAtapeAdapter = context => {
+      if (JSON.stringify(context.legacyCanonicalProfiles) !== '["${CanonicalProfileVersion3}"]') throw Error("Host profile missing");
+      return {canonicalProfileVersion:"${CanonicalProfileVersion3}", collect:()=>({})};
+    };`)
+    const runtime = await f.run(Effect.scoped(AdapterRuntimes.use(r => r.open(f.project, f.adapter))))
+    expect("collect" in runtime && runtime.canonicalProfileVersion).toBe(CanonicalProfileVersion3)
+  })
+  it.each([[CanonicalProfileVersion3, undefined], [undefined, CanonicalProfileVersion3],
+    [CanonicalProfileVersion3, "atape.acp-centered.v2"], [CanonicalProfileVersion3, "atape.acp-centered.v4"]])(
+    "rejects and closes mismatched legacy profiles %s/%s", async (manifestProfile, runtimeProfile) => {
+      const f = await fixture("", null, null)
+      const packageRoot = join(f.home, "adapters", "node_modules", "test-adapter")
+      const metadata = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"))
+      if (manifestProfile !== undefined) metadata.atapeAdapter.legacyCanonicalProfile = manifestProfile
+      await writeFile(join(packageRoot, "package.json"), JSON.stringify(metadata))
+      await writeFile(join(packageRoot, "index.mjs"), `import {writeFile} from "node:fs/promises";
+        export const createAtapeAdapter = () => ({canonicalProfileVersion:${JSON.stringify(runtimeProfile)},
+          collect:()=>{throw Error("Source must not be collected")}, close:()=>writeFile(${JSON.stringify(join(f.home, "closed"))},"closed")});`)
+      await expect(f.run(Effect.scoped(AdapterRuntimes.use(r => r.open(f.project, f.adapter))))).rejects.toMatchObject({ reason: "contract" })
+      expect(await readFile(join(f.home, "closed"), "utf8")).toBe("closed")
+    })
   it("rejects a provider claim unsupported by its receipt facts and abandons pending attempts", async () => {
     const f = await fixture('await request.creation.recordAttempt({sourceId:"fresh",stateDirectory:process.env.HOST_TEST_ROOT,sourcePath:process.env.HOST_TEST_ROOT+"/fresh.jsonl",profile:"test.v1"},request.signal); return {sourceId:"fresh",creation:"confirmed",exitCode:0};')
     const previous = process.env.HOST_TEST_ROOT; process.env.HOST_TEST_ROOT = f.root

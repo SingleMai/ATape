@@ -74,7 +74,7 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 	if batch.ProtocolVersion != ProtocolVersion {
 		return canonical.WriteBatch{}, invalid("protocolVersion", "must be "+ProtocolVersion)
 	}
-	if batch.CanonicalProfileVersion != CanonicalProfileVersion && batch.CanonicalProfileVersion != LegacyCanonicalProfileVersion && batch.CanonicalProfileVersion != UnknownTimeCanonicalProfileVersion && batch.CanonicalProfileVersion != ToolIdentityCanonicalProfileVersion {
+	if !supportedCanonicalProfile(batch.CanonicalProfileVersion) {
 		return canonical.WriteBatch{}, invalid("canonicalProfileVersion", "must be a supported Canonical profile")
 	}
 	if err := required("batchId", batch.BatchID, 200); err != nil {

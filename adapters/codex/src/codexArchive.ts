@@ -30,8 +30,12 @@ const MaxTitleScanBytes = 4 * 1024 * 1024
 const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
 const MaxFilesPerSession = 100
-const EventProjectionVersion = 4
-const CanonicalProjectionRevisionOffset = 10
+const EventProjectionVersion = 5
+const CanonicalProjectionRevisionOffset = 12
+const SourceOrderStride = 2 ** 39
+// Keep the new coordinate domain beyond legacy four-digit RFC 3339 clocks.
+const SourceOrderBase = 2 ** 48
+const MaxSourceRanksPerSession = 10_000
 
 export class CodexArchiveError extends Schema.TaggedError<CodexArchiveError>()("CodexArchiveError", {
   reason: Schema.Literals(["configuration", "io", "format", "cursor", "limit"]),
@@ -58,7 +62,9 @@ type RolloutMetadata = {
   readonly parentThreadId?: string
   readonly nickname?: string
   readonly cwd: string
-  readonly timestamp: string
+  readonly timestamp: string | null
+  // Attribution binds original provider metadata, independently of clock quality.
+  readonly originTimestamp: string | null
   readonly repository?: string
   readonly branch?: string
 }
@@ -85,6 +91,7 @@ type CodexSession = {
 type SessionTitle = {
   readonly value: string
   readonly modifiedMs: number
+  readonly updatedAt: string
 }
 
 type CursorFile = {
@@ -96,7 +103,11 @@ type CursorFile = {
   readonly threadId: string
   readonly startOffset?: number
   readonly modifiedMs?: number
+  readonly sourceRank?: number
 }
+
+type SourceRanks = ReadonlyArray<{ readonly sessionId: string;
+  readonly sources: ReadonlyArray<{ readonly sourceObjectId: string; readonly generation: string; readonly rank: number }> }>
 
 type ActiveCursor = {
   readonly frozenThreads?: ReadonlyArray<AdapterThread>
@@ -107,7 +118,9 @@ type ActiveCursor = {
   readonly selectedModifiedMs: number
   readonly revision: number
   readonly providerTitle?: string
+  readonly providerTitleUpdatedAt?: string
   readonly resolvedTitle?: string
+  readonly sourceUpdatedAt?: string | null
   readonly files: ReadonlyArray<CursorFile>
   readonly spawnOffset: number
   readonly eventFileIndex: number
@@ -134,6 +147,7 @@ type CodexCursor = {
   readonly baselineModifiedMs?: number
   readonly baselineSessionId?: string
   readonly canonicalProgress?: ReadonlyArray<{ readonly sessionId: string; readonly modifiedMs: number; readonly revision?: number; readonly files: ReadonlyArray<CursorFile> }>
+  readonly sourceRanks?: SourceRanks
 }
 
 const CursorFileSchema = Schema.Struct({
@@ -144,7 +158,8 @@ const CursorFileSchema = Schema.Struct({
   archived: Schema.Boolean,
   threadId: Schema.String,
   startOffset: Schema.optionalKey(Schema.Number),
-  modifiedMs: Schema.optionalKey(Schema.Number)
+  modifiedMs: Schema.optionalKey(Schema.Number),
+  sourceRank: Schema.optionalKey(Schema.Number)
 })
 
 const ActiveCursorSchema = Schema.Struct({
@@ -156,7 +171,9 @@ const ActiveCursorSchema = Schema.Struct({
   selectedModifiedMs: Schema.Number,
   revision: Schema.Number,
   providerTitle: Schema.optionalKey(Schema.String),
+  providerTitleUpdatedAt: Schema.optionalKey(Schema.String),
   resolvedTitle: Schema.optionalKey(Schema.String),
+  sourceUpdatedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   files: Schema.Array(CursorFileSchema),
   spawnOffset: Schema.Number,
   eventFileIndex: Schema.Number,
@@ -183,7 +200,9 @@ const CursorSchema = Schema.Struct({
   lastPhase: Schema.optionalKey(Schema.Literals(["canonical", "raw"])),
   baselineModifiedMs: Schema.optionalKey(Schema.Number),
   baselineSessionId: Schema.optionalKey(Schema.String),
-  canonicalProgress: Schema.optionalKey(Schema.Array(Schema.Struct({ sessionId: Schema.String, modifiedMs: Schema.Number, revision: Schema.optionalKey(Schema.Number), files: Schema.Array(CursorFileSchema) })))
+  canonicalProgress: Schema.optionalKey(Schema.Array(Schema.Struct({ sessionId: Schema.String, modifiedMs: Schema.Number, revision: Schema.optionalKey(Schema.Number), files: Schema.Array(CursorFileSchema) }))),
+  sourceRanks: Schema.optionalKey(Schema.Array(Schema.Struct({ sessionId: Schema.String,
+    sources: Schema.Array(Schema.Struct({ sourceObjectId: Schema.String, generation: Schema.String, rank: Schema.Number })) })))
 })
 
 const PreviousActiveCursorSchema = Schema.Struct({
@@ -222,12 +241,12 @@ const SessionTitleIndexRecordSchema = Schema.Struct({
 })
 
 const SessionMetaEnvelopeSchema = Schema.Struct({
-  timestamp: Schema.String,
+  timestamp: Schema.optionalKey(Schema.Unknown),
   type: Schema.Literal("session_meta"),
   payload: Schema.Struct({
     id: Schema.String,
     session_id: Schema.optionalKey(Schema.String),
-    timestamp: Schema.optionalKey(Schema.String),
+    timestamp: Schema.optionalKey(Schema.Unknown),
     cwd: Schema.String,
     thread_source: Schema.optionalKey(Schema.Unknown),
     history_mode: Schema.optionalKey(Schema.Unknown),
@@ -239,7 +258,7 @@ const SessionMetaEnvelopeSchema = Schema.Struct({
 })
 
 const CompletedItemEnvelopeSchema = Schema.Struct({
-  timestamp: Schema.String,
+  timestamp: Schema.optionalKey(Schema.Unknown),
   type: Schema.Literal("event_msg"),
   payload: Schema.Struct({
     type: Schema.Literal("item_completed"),
@@ -249,13 +268,13 @@ const CompletedItemEnvelopeSchema = Schema.Struct({
 })
 
 const ResponseItemEnvelopeSchema = Schema.Struct({
-  timestamp: Schema.String,
+  timestamp: Schema.optionalKey(Schema.Unknown),
   type: Schema.Literal("response_item"),
   payload: Schema.Unknown
 })
 
 const EventMessageEnvelopeSchema = Schema.Struct({
-  timestamp: Schema.String,
+  timestamp: Schema.optionalKey(Schema.Unknown),
   type: Schema.Literal("event_msg"),
   payload: Schema.Unknown
 })
@@ -315,11 +334,14 @@ const collectPage = async (
   archive.inventoryPages = (archive.inventoryPages ?? 0) + 1
   const decoded = decodeCursor(request.cursor)
   const projectionUpgrade = decoded.eventProjectionVersion !== EventProjectionVersion || decoded.usageVersion !== 1
-  const rewindCanonical = (active: ActiveCursor): ActiveCursor => active.phase !== "canonical" ? active : {
-    ...active, spawnOffset: 0, eventFileIndex: 0, eventOffset: 0, emitted: false, step: 0, quantum: 0,
+  const rewindCanonical = (active: ActiveCursor): ActiveCursor => active.phase !== "canonical" ? { ...active, revision: active.revision + 2 } : {
+    ...active, revision: active.revision + 2, spawnOffset: 0, eventFileIndex: 0, eventOffset: 0, emitted: false, step: 0, quantum: 0,
     files: active.files.map(({ startOffset: _start, ...file }) => file)
   }
   let cursor: CodexCursor = { ...decoded,
+    sourceRanks: decoded.sourceRanks ?? assignSourceRanks(undefined, [
+      ...(decoded.canonicalProgress ?? []), ...(decoded.active ? [decoded.active] : []), ...(decoded.pending ?? [])
+    ]),
     eventProjectionVersion: EventProjectionVersion,
     usageVersion: 1,
     ...(projectionUpgrade ? { pending: decoded.pending?.map(rewindCanonical) ?? [],
@@ -328,7 +350,11 @@ const collectPage = async (
       ? { active: { ...(projectionUpgrade ? rewindCanonical(decoded.active) : decoded.active), revision: decoded.active.revision + 2 } } : {}),
     baselineModifiedMs: projectionUpgrade ? 0 : decoded.baselineModifiedMs ?? decoded.watermarkModifiedMs,
     baselineSessionId: projectionUpgrade ? "" : decoded.baselineSessionId ?? decoded.watermarkSessionId,
-    canonicalProgress: projectionUpgrade ? [] : decoded.canonicalProgress ?? [] }
+    // Replay every source extent while retaining the previously published
+    // revision floor, including multiple appends with an unchanged mtime.
+    canonicalProgress: projectionUpgrade ? (decoded.canonicalProgress ?? []).map(item => ({
+      sessionId: item.sessionId, modifiedMs: 0, files: [], ...(item.revision === undefined ? {} : { revision: item.revision })
+    })) : decoded.canonicalProgress ?? [] }
   if (request.rawCaptureEnabled === false) {
     const { active, ...rest } = cursor
     cursor = { ...rest, ...(active?.phase === "canonical" ? { active } : {}),
@@ -433,7 +459,8 @@ const collectPage = async (
   if (!resumed && completed?.revision !== undefined) {
     active = { ...active, revision: Math.max(active.revision, completed.revision + (active.phase === "canonical" ? 1 : 0)) }
   }
-  if (!resumed && active.phase === "canonical" && completed && canonicalSourceKey(completed.files) === canonicalSourceKey(active.files)) {
+  if (!resumed && active.phase === "canonical" && completed && canonicalSourceKey(completed.files) === canonicalSourceKey(active.files) &&
+    completed.files.every((file, index) => file.sourceObjectId === active.files[index]?.sourceObjectId)) {
     active = { ...active, files: active.files.map(file => {
       const previous = completed.files.find(item => item.sourceObjectId === file.sourceObjectId)
       return { ...file, startOffset: previous && previous.generation === file.generation && (previous.size < file.size || previous.size === file.size && previous.modifiedMs === file.modifiedMs) ? previous.size : 0 }
@@ -469,9 +496,39 @@ const quarantineSession = (request: AdapterCollectRequest, cursor: CodexCursor, 
 const collectSafeSession = async (archive: CodexArchive, request: AdapterCollectRequest,
   cursor: CodexCursor & { readonly active: ActiveCursor }, session: CodexSession,
   diagnostics: { failures: AdapterSourceFailure[]; truncated: boolean }) => {
-  try { return await collectActiveSession(archive, request, { ...cursor, failed: cursor.failed?.filter(item => item.sessionId !== session.id) ?? [] }, session) }
+  try {
+    for (const file of cursor.active.files) if (file.size >= SourceOrderStride) throw new CodexArchiveError({ reason: "limit",
+      message: `Codex rollout ${file.sourceName} reaches the 512 GiB source order coordinate limit.` })
+    const sourceRanks = assignSourceRanks(cursor.sourceRanks, [cursor.active])
+    const ranks = new Map(sourceRanks.find(item => item.sessionId === session.id)?.sources.map(source => [sourceRankKey(source), source.rank]))
+    return await collectActiveSession(archive, request, { ...cursor, sourceRanks,
+      active: { ...cursor.active, files: cursor.active.files.map(file => ({ ...file, sourceRank: ranks.get(sourceRankKey(file))! })) },
+      failed: cursor.failed?.filter(item => item.sessionId !== session.id) ?? [] }, session)
+  }
   catch (cause) { return quarantineSession(request, cursor, session, diagnostics, cause) }
 }
+
+const assignSourceRanks = (prior: SourceRanks | undefined, snapshots: ReadonlyArray<{
+  readonly sessionId: string; readonly files: ReadonlyArray<Pick<CursorFile, "sourceObjectId" | "generation">>
+}>): SourceRanks => {
+  const sessions = new Map((prior ?? []).map(item => [item.sessionId, [...item.sources]]))
+  for (const snapshot of snapshots) {
+    const sources = sessions.get(snapshot.sessionId) ?? []
+    const known = new Set(sources.map(sourceRankKey))
+    let nextRank = sources.reduce((rank, source) => Math.max(rank, source.rank), 0) + 1
+    for (const file of snapshot.files) {
+      if (known.has(sourceRankKey(file))) continue
+      if (nextRank > MaxSourceRanksPerSession) throw new CodexArchiveError({ reason: "limit",
+        message: `Codex Session ${snapshot.sessionId} exceeds the retained source order namespace limit.` })
+      sources.push({ sourceObjectId: file.sourceObjectId, generation: file.generation, rank: nextRank++ })
+      known.add(sourceRankKey(file))
+    }
+    sessions.set(snapshot.sessionId, sources)
+    if (sessions.size > 10_000) throw new CodexArchiveError({ reason: "limit", message: "The Codex retained Session order registry exceeds its Session limit." })
+  }
+  return [...sessions].map(([sessionId, sources]) => ({ sessionId, sources }))
+}
+const sourceRankKey = (source: Pick<CursorFile, "sourceObjectId" | "generation">) => JSON.stringify([source.sourceObjectId, source.generation])
 
 const refreshActiveSession = async (archive: CodexArchive, session: CodexSession, signal: AbortSignal) => {
   const diagnostics: { failures: AdapterSourceFailure[]; truncated: boolean } = { failures: [], truncated: false }
@@ -520,9 +577,11 @@ const collectActiveSession = async (
     })
   }
 
+  // Legacy Raw retries compare capturedAt as part of their immutable identity.
+  // This stable snapshot basis is independent of all conversation source clocks.
   const observedAt = new Date(active.selectedModifiedMs).toISOString()
   const childCount = threads.length - 1
-  const projection = active.phase === "canonical" || active.resolvedTitle === undefined
+  const projection = active.phase === "canonical" || active.resolvedTitle === undefined || active.sourceUpdatedAt === undefined
     ? await sessionProjection(archive, active, currentFiles, request.signal)
     : undefined
   const title = active.resolvedTitle ?? await deriveSessionTitle(
@@ -542,7 +601,7 @@ const collectActiveSession = async (
     branch: active.frozenBranch ?? selectedFiles.find((file) => file.metadata.branch)?.metadata.branch ?? "",
     status: active.files.every((file) => file.archived) ? "ended" : "active",
     captureStatus: active.files.every((file) => file.archived) ? "complete" : "healthy",
-    updatedAt: observedAt,
+    updatedAt: active.sourceUpdatedAt === undefined ? (projection as CanonicalProjection).sourceUpdatedAt : active.sourceUpdatedAt,
     reportedEventCount: 0
   }
   const canonicalBaseBytes = Buffer.byteLength(JSON.stringify({ session, threads, events: [] }))
@@ -558,6 +617,7 @@ const collectActiveSession = async (
       threads,
       currentFiles,
       projection as CanonicalProjection,
+      cursor.sourceRanks ?? [],
       request.limits.eventsPerObservation,
       request.limits.canonicalBytesPerObservation - canonicalBaseBytes,
       request.signal
@@ -584,6 +644,7 @@ const collectActiveSession = async (
           ...active,
           frozenThreads: threads,
           frozenBranch: session.branch,
+          sourceUpdatedAt: session.updatedAt,
           quantum: (active.quantum ?? 0) + 1,
           spawnOffset: eventPage.spawnOffset,
           eventFileIndex: eventPage.fileIndex,
@@ -656,6 +717,8 @@ const startSession = async (
   const files: Array<CursorFile> = []
   for (const file of session.files) {
     throwIfAborted(signal)
+    if (file.size >= SourceOrderStride) throw new CodexArchiveError({ reason: "limit",
+      message: `Codex rollout ${file.sourceName} reaches the 512 GiB source order coordinate limit.` })
     const completeSize = await completeJsonlSize(file.path, file.size, file.archived, signal)
     files.push({
       sourceObjectId: file.sourceObjectId,
@@ -674,7 +737,7 @@ const startSession = async (
     sessionId: session.id,
     selectedModifiedMs: session.modifiedMs,
     revision: modifiedMicros * 2 + CanonicalProjectionRevisionOffset + (allArchived ? 1 : 0),
-    ...(session.providerTitle === undefined ? {} : { providerTitle: session.providerTitle.value }),
+    ...(session.providerTitle === undefined ? {} : { providerTitle: session.providerTitle.value, providerTitleUpdatedAt: session.providerTitle.updatedAt }),
     files,
     spawnOffset: 0,
     eventFileIndex: 0,
@@ -716,7 +779,7 @@ const discoverSessions = async (archive: CodexArchive, signal: AbortSignal, diag
     return {
       id,
       files: files.sort((left, right) =>
-        left.metadata.timestamp.localeCompare(right.metadata.timestamp) || left.relativePath.localeCompare(right.relativePath)),
+        compareSourceTimes(left.metadata.timestamp, right.metadata.timestamp) || left.relativePath.localeCompare(right.relativePath)),
       modifiedMs: Math.max(...files.map((file) => file.modifiedMs), providerTitle?.modifiedMs ?? 0),
       ...(providerTitle === undefined ? {} : { providerTitle })
     }
@@ -748,9 +811,9 @@ const readSessionTitles = async (
     const decoded = Schema.decodeUnknownOption(SessionTitleIndexRecordSchema)(parseJSON(line.content))
     if (Option.isNone(decoded)) continue
     const value = normalizeTitle(decoded.value.thread_name)
-    const modifiedMs = Date.parse(decoded.value.updated_at)
-    if (value === "" || Number.isNaN(modifiedMs)) continue
-    titles.set(decoded.value.id, { value, modifiedMs })
+    const updatedAt = sourceTimestamp(decoded.value.updated_at)
+    if (value === "" || updatedAt === null) continue
+    titles.set(decoded.value.id, { value, modifiedMs: Date.parse(updatedAt), updatedAt })
   }
   return titles
 }
@@ -799,6 +862,7 @@ const decodeMetadata = (line: Buffer): RolloutMetadata | undefined => {
   const git = record(payload.git)
   const parentThreadId = stringValue(spawn?.parent_thread_id) ?? stringValue(payload.parent_thread_id)
   const nickname = stringValue(spawn?.agent_nickname) ?? stringValue(payload.agent_nickname)
+  const originTimestamp = payload.timestamp ?? envelope.timestamp
   return {
     threadId: payload.id,
     paginated: payload.history_mode === "paginated",
@@ -806,7 +870,8 @@ const decodeMetadata = (line: Buffer): RolloutMetadata | undefined => {
     ...(parentThreadId === undefined ? {} : { parentThreadId }),
     ...(nickname === undefined ? {} : { nickname }),
     cwd: payload.cwd,
-    timestamp: payload.timestamp ?? envelope.timestamp,
+    timestamp: sourceTimestamp(originTimestamp),
+    originTimestamp: typeof originTimestamp === "string" ? originTimestamp : null,
     ...(stringValue(git?.repository_url) === undefined ? {} : { repository: stringValue(git?.repository_url) as string }),
     ...(stringValue(git?.branch) === undefined ? {} : { branch: stringValue(git?.branch) as string })
   }
@@ -817,7 +882,7 @@ const matchesProject = async (archive: CodexArchive, metadata: RolloutMetadata, 
   if (archive.context.project.type === "git") {
     return archive.context.gitAttribution!.resolve({
       sourceId: metadata.paginated ? `rollout-${digest(basename(path)).slice(0, 32)}` : metadata.threadId,
-      originKey: JSON.stringify([metadata.sessionId, metadata.timestamp]),
+      originKey: JSON.stringify([metadata.sessionId, metadata.originTimestamp]),
       cwd: metadata.cwd,
       ...(metadata.repository === undefined ? {} : { repositoryRemote: metadata.repository })
     }, signal)
@@ -837,11 +902,12 @@ const buildThreads = (session: CodexSession, revision: number): ReadonlyArray<Ad
       paginated: false,
       sessionId: session.id,
       cwd: session.files[0]?.metadata.cwd ?? "",
-      timestamp: session.files[0]?.metadata.timestamp ?? new Date(session.modifiedMs).toISOString()
+      timestamp: session.files[0]?.metadata.timestamp ?? null,
+      originTimestamp: session.files[0]?.metadata.originTimestamp ?? null
     })
   }
   return [...metadataByThread.values()]
-    .sort((left, right) => left.timestamp.localeCompare(right.timestamp) || left.threadId.localeCompare(right.threadId))
+    .sort((left, right) => compareSourceTimes(left.timestamp, right.timestamp) || left.threadId.localeCompare(right.threadId))
     .map((metadata) => ({
       sourceThreadId: metadata.threadId,
       ...(metadata.threadId === session.id
@@ -878,6 +944,7 @@ type EventPage = {
 type ProjectionFormat = "item_completed" | "event_msg" | "response_item"
 
 type CanonicalProjection = {
+  readonly sourceUpdatedAt: string | null
   readonly usageByCoordinate: ReadonlyMap<string, AdapterUsage>
   readonly completedItemOwnerById: ReadonlyMap<string, { sourceObjectId: string; offset: number; order: number }>
   readonly formatBySourceObjectId: ReadonlyMap<string, ProjectionFormat>
@@ -891,7 +958,7 @@ const sessionProjection = async (
   currentFiles: ReadonlyMap<string, RolloutFile>,
   signal: AbortSignal
 ): Promise<CanonicalProjection> => {
-  const key = JSON.stringify([active.sessionId, active.files, active.files.map(file => {
+  const key = JSON.stringify([active.sessionId, active.providerTitleUpdatedAt ?? null, active.files, active.files.map(file => {
     const current = currentFiles.get(file.sourceObjectId)
     return current === undefined ? null : [current.generation, current.size, current.modifiedMs]
   })])
@@ -1013,7 +1080,21 @@ const inspectCanonicalProjection = async (
       if (!responseItemOwnerById.has(itemId)) responseItemOwnerById.set(itemId, { sourceObjectId: file.sourceObjectId, offset })
     }
   }
-  return { formatBySourceObjectId, responseItemOwnerById, completedItemOwnerById, legacyMessageOwnerById, usageByCoordinate }
+  const projection: CanonicalProjection = { sourceUpdatedAt: null, formatBySourceObjectId, responseItemOwnerById,
+    completedItemOwnerById, legacyMessageOwnerById, usageByCoordinate }
+  let sourceUpdatedAt = sourceTimestamp(active.providerTitleUpdatedAt)
+  for (const snapshot of active.files) {
+    const current = currentFiles.get(snapshot.sourceObjectId)
+    if (current === undefined || current.generation !== snapshot.generation) continue
+    sourceUpdatedAt = latestSourceTime(sourceUpdatedAt, current.metadata.timestamp)
+    // Ownership and format choice precede recency: copied history and omitted
+    // provider records must not make this Session look more recently active.
+    for await (const line of readLines(current.path, 0, snapshot.size, signal)) {
+      const event = mapProjectedItem(line.content, line.start, snapshot, active.sessionId, projection)
+      if (event !== undefined) sourceUpdatedAt = latestSourceTime(sourceUpdatedAt, event.occurredAt)
+    }
+  }
+  return { ...projection, sourceUpdatedAt }
 }
 
 const collectEvents = async (
@@ -1021,12 +1102,18 @@ const collectEvents = async (
   threads: ReadonlyArray<AdapterThread>,
   currentFiles: ReadonlyMap<string, RolloutFile>,
   projection: CanonicalProjection,
+  sourceRanks: SourceRanks,
   limit: number,
   byteLimit: number,
   signal: AbortSignal
 ): Promise<EventPage> => {
   const events: Array<AdapterEvent> = []
   const usage: Array<AdapterUsage> = []
+  const threadFiles = new Map<string, number>()
+  for (const file of active.files) threadFiles.set(file.threadId, (threadFiles.get(file.threadId) ?? 0) + 1)
+  const sourceGenerations = new Map<string, number>()
+  for (const source of sourceRanks.find(item => item.sessionId === active.sessionId)?.sources ?? [])
+    sourceGenerations.set(source.sourceObjectId, (sourceGenerations.get(source.sourceObjectId) ?? 0) + 1)
   let eventBytes = 0
   const appendEvent = (event: AdapterEvent) => {
     const additionalBytes = Buffer.byteLength(JSON.stringify(event)) + (events.length === 0 ? 0 : 1)
@@ -1049,15 +1136,15 @@ const collectEvents = async (
     const child = children[spawnOffset]
     if (child === undefined || child.parentSourceThreadId === undefined) break
     const metadata = [...currentFiles.values()].find((file) => file.metadata.threadId === child.sourceThreadId)?.metadata
-    const occurredAt = metadata?.timestamp ?? new Date(active.selectedModifiedMs).toISOString()
+    const occurredAt = metadata?.timestamp ?? null
     const spawnEvent: AdapterEvent = {
       sourceEventId: `spawn-${child.sourceThreadId}`,
       sourceThreadId: child.parentSourceThreadId,
       revision: active.revision,
       projectionRevision: EventProjectionVersion,
-      sourceOrder: timestampOrder(occurredAt),
-      eventIndex: 0,
-      orderFidelity: "native",
+      sourceOrder: 0,
+      eventIndex: spawnOffset,
+      orderFidelity: "derived",
       fidelity: "derived",
       rawRef: { _tag: "unavailable", reason: "Derived from Codex session metadata" },
       occurredAt,
@@ -1096,7 +1183,12 @@ const collectEvents = async (
         usage.push(sample); eventBytes += bytes
       }
       const mapped = mapProjectedItem(line.content, line.start, snapshot, active.sessionId, projection)
-      const event = mapped ? { ...mapped, revision: active.revision } : undefined
+      const event = mapped ? { ...mapped, revision: active.revision,
+        sourceOrder: SourceOrderBase + snapshot.sourceRank! * SourceOrderStride + line.start,
+        // A JSONL generation supplies native record order. Separate physical
+        // sources or replacement generations have no provider-owned total order.
+        orderFidelity: threadFiles.get(snapshot.threadId) === 1 && sourceGenerations.get(snapshot.sourceObjectId) === 1
+          ? "native" as const : "derived" as const } : undefined
       if (event === undefined) {
         offset = line.end
         continue
@@ -1197,7 +1289,7 @@ const mapCompletedItem = (
     orderFidelity: "native",
     fidelity: "native",
     rawRef: { _tag: "object", sourceObjectId: file.sourceObjectId, fragment: `#byte=${byteOffset}` },
-    occurredAt: validTimestamp(envelope.timestamp) ? envelope.timestamp : new Date(0).toISOString(),
+    occurredAt: sourceTimestamp(envelope.timestamp),
     update
   }
 }
@@ -1234,7 +1326,7 @@ const mapResponseItem = (
     orderFidelity: "native",
     fidelity: "native",
     rawRef: { _tag: "object", sourceObjectId: file.sourceObjectId, fragment: `#byte=${byteOffset}` },
-    occurredAt: validTimestamp(envelope.value.timestamp) ? envelope.value.timestamp : new Date(0).toISOString(),
+    occurredAt: sourceTimestamp(envelope.value.timestamp),
     update
   }
 }
@@ -1269,7 +1361,7 @@ const mapLegacyMessage = (
     orderFidelity: "native",
     fidelity: "native",
     rawRef: { _tag: "object", sourceObjectId: file.sourceObjectId, fragment: `#byte=${byteOffset}` },
-    occurredAt: validTimestamp(envelope.value.timestamp) ? envelope.value.timestamp : new Date(0).toISOString(),
+    occurredAt: sourceTimestamp(envelope.value.timestamp),
     update
   }
 }
@@ -1844,13 +1936,25 @@ const decodeCursor = (value: string | null): CodexCursor => {
 
 const nonNegative = (value: number) => Number.isSafeInteger(value) && value >= 0
 const validFile = (file: CursorFile) => nonNegative(file.size) && file.sourceObjectId.length <= 500 && file.sourceName.length <= 4096 &&
-  file.generation.length <= 500 && file.threadId.length <= 500 && (file.modifiedMs === undefined || Number.isFinite(file.modifiedMs) && file.modifiedMs >= 0) && (file.startOffset === undefined || nonNegative(file.startOffset) && file.startOffset <= file.size)
+  file.generation.length <= 500 && file.threadId.length <= 500 && (file.modifiedMs === undefined || Number.isFinite(file.modifiedMs) && file.modifiedMs >= 0) &&
+  (file.sourceRank === undefined || nonNegative(file.sourceRank) && file.sourceRank >= 1 && file.sourceRank <= MaxSourceRanksPerSession) &&
+  (file.startOffset === undefined || nonNegative(file.startOffset) && file.startOffset <= file.size)
+const validSourceRanks = (registry: SourceRanks) => {
+  if (registry.length > 10_000 || new Set(registry.map(item => item.sessionId)).size !== registry.length) return false
+  return registry.every(item => item.sessionId.length <= 500 && item.sources.length <= MaxSourceRanksPerSession &&
+    new Set(item.sources.map(sourceRankKey)).size === item.sources.length &&
+    new Set(item.sources.map(source => source.rank)).size === item.sources.length && item.sources.every(source =>
+      source.sourceObjectId.length > 0 && source.sourceObjectId.length <= 500 && source.generation.length > 0 && source.generation.length <= 500 &&
+      nonNegative(source.rank) && source.rank >= 1 && source.rank <= MaxSourceRanksPerSession))
+}
 const validActive = (active: ActiveCursor) => nonNegative(active.revision) && active.revision >= 1 &&
   nonNegative(active.spawnOffset) && nonNegative(active.eventFileIndex) && nonNegative(active.eventOffset) && nonNegative(active.step) &&
   (active.quantum === undefined || nonNegative(active.quantum)) && active.sessionId.length <= 500 &&
   active.files.length <= 10_000 && active.files.every(validFile) && active.eventFileIndex <= active.files.length &&
+  (active.providerTitleUpdatedAt === undefined || sourceTimestamp(active.providerTitleUpdatedAt) !== null) &&
+  (active.sourceUpdatedAt === undefined || active.sourceUpdatedAt === null || sourceTimestamp(active.sourceUpdatedAt) !== null) &&
   (active.frozenThreads === undefined || active.frozenThreads.length <= 100)
-const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === undefined || cursor.eventProjectionVersion === 2 || cursor.eventProjectionVersion === 3 || cursor.eventProjectionVersion === EventProjectionVersion) && Number.isFinite(cursor.watermarkModifiedMs) &&
+const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === undefined || cursor.eventProjectionVersion === 2 || cursor.eventProjectionVersion === 3 || cursor.eventProjectionVersion === 4 || cursor.eventProjectionVersion === EventProjectionVersion) && Number.isFinite(cursor.watermarkModifiedMs) &&
   cursor.watermarkModifiedMs >= 0 && cursor.watermarkSessionId.length <= 500 &&
   (cursor.lastCanonicalSessionId === undefined || cursor.lastCanonicalSessionId.length <= 500) &&
   (cursor.lastCanonicalSourceKey === undefined || /^[a-f0-9]{64}$/.test(cursor.lastCanonicalSourceKey)) &&
@@ -1858,6 +1962,7 @@ const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === 
   (cursor.active === undefined || validActive(cursor.active)) &&
   (cursor.baselineModifiedMs === undefined || Number.isFinite(cursor.baselineModifiedMs) && cursor.baselineModifiedMs >= 0) &&
   (cursor.canonicalTurns === undefined || nonNegative(cursor.canonicalTurns)) &&
+  (cursor.sourceRanks === undefined || validSourceRanks(cursor.sourceRanks)) &&
   (cursor.pending === undefined || cursor.pending.length <= 10_000 && cursor.pending.every(validActive)) &&
   (cursor.failed === undefined || cursor.failed.length <= 10_000 && cursor.failed.every(item => item.sessionId.length <= 500 && /^[a-f0-9]{64}$/.test(item.fingerprint) && nonNegative(item.retryAt))) &&
   (cursor.canonicalProgress === undefined || cursor.canonicalProgress.length <= 10_000 && cursor.canonicalProgress.every(item =>
@@ -1911,8 +2016,31 @@ const record = (value: unknown): Record<string, unknown> | undefined =>
     : undefined
 
 const stringValue = (value: unknown) => typeof value === "string" && value !== "" ? value : undefined
-const timestampOrder = (value: string) => Math.max(0, Number.isNaN(Date.parse(value)) ? 0 : Date.parse(value))
-const validTimestamp = (value: string) => !Number.isNaN(Date.parse(value))
+const timestampOrder = (value: unknown) => {
+  const timestamp = sourceTimestamp(value)
+  return timestamp === null ? 0 : Math.max(0, Date.parse(timestamp))
+}
+const compareSourceTimes = (left: string | null, right: string | null) =>
+  left === null ? right === null ? 0 : 1 : right === null ? -1 : Date.parse(left) - Date.parse(right) || submillisecondNanos(left) - submillisecondNanos(right)
+const latestSourceTime = (left: string | null, right: string | null) =>
+  left === null ? right : right === null ? left : compareSourceTimes(left, right) < 0 ? right : left
+const submillisecondNanos = (value: string) => Number((/\.(\d{1,9})/.exec(value)?.[1] ?? "").padEnd(9, "0").slice(3))
+const sourceTimestamp = (value: unknown): string | null => {
+  if (typeof value !== "string") return null
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value)
+  if (match === null) return null
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3])
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  if (month < 1 || month > 12 || day < 1 || day > (days[month - 1] ?? 0) ||
+    Number(match[4]) > 23 || Number(match[5]) > 59 || Number(match[6]) > 59 ||
+    Number(match[9] ?? 0) > 23 || Number(match[10] ?? 0) > 59) return null
+  const millis = Date.parse(value)
+  if (!Number.isFinite(millis)) return null
+  // Storage truncates to microseconds; the first microsecond is a known clock.
+  if (millis === Date.parse("0001-01-01T00:00:00Z") && !/[1-9]/.test((match[7] ?? "").slice(0, 6))) return null
+  return value
+}
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
 
 const truncateUtf8 = (value: string, maxBytes: number) => {

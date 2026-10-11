@@ -148,12 +148,13 @@ export const prepareCanonicalSlice = (adapterId: string, input: unknown, canonic
 })
 
 /** Mask a validated legacy observation and enforce limits on the emitted values. */
-export const prepareCollectedObservation = (adapterId: string, observation: AdapterObservation) => Effect.gen(function*() {
+export const prepareCollectedObservation = (adapterId: string, observation: AdapterObservation,
+  canonicalProfileVersion: CanonicalProfile = CanonicalProfileVersion) => Effect.gen(function*() {
   const redactor = yield* SecretRedactor
   const prepared = yield* prepareCanonicalRedaction(redactor, observation).pipe(
     Effect.mapError(() => new CollectionContractError({ adapterId, message: "Content cannot be safely redacted within its bounds." })))
   const result = { observation: prepared.value, replacements: prepared.replacements }
-  if (!result.observation.events.every(event => validAcpUpdate(event.update))) {
+  if (!result.observation.events.every(event => validAcpUpdate(event.update, canonicalProfileVersion))) {
     return yield* contractFailure(adapterId, "contains tool or content values exceeding limits after redaction.")
   }
   return result
