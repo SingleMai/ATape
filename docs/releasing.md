@@ -139,7 +139,13 @@ gates merely by checking the index.
 
 ## First publication bootstrap
 
-npm Trusted Publishing can only be configured after a package already exists. For each package's first release (currently the Cursor Adapter):
+npm Trusted Publishing can only be configured after a package already exists.
+For a newly introduced package that does not yet exist in npm, bootstrap its
+first publication before configuring trust. Existing packages continue through
+their configured OIDC route; a new version does not require repeating package
+bootstrap or account authorization. Cursor's one-version 0.5.6 exception is
+recorded in [ADR-0117](architecture/adr/0117-cursor-local-first-publication.md).
+The ordinary new-package bootstrap procedure is:
 
 1. Enable two-factor authentication on the npm owner account.
 2. Create a short-lived granular access token (GAT) scoped to the `@atape` packages being bootstrapped and with bypass-2FA enabled.

@@ -1,0 +1,134 @@
+{
+  "releaseVersion": "0.5.9",
+  "status": "automated_delivery_verified",
+  "source": {"candidateCommit": "bfbf4ae21b30e873d85ce66dd737b99d51fc0786", "waiverCommit": "be6bfbeeff1ddb2bfa53428bf56939b3a5bd7d1d", "mergeCommit": "f05b3db36a6220f02c84d2a62a061cf882edca40", "tagCommit": "f05b3db36a6220f02c84d2a62a061cf882edca40", "pullRequest": "https://github.com/SingleMai/ATape/pull/226"},
+  "releaseTag": "v0.5.9",
+  "links": {"candidateEvidence": "v0.5.9-tool-identity-acceptance.json", "manualWaiver": "v0.5.9-manual-waiver.json", "staging": "v0.5.9-staging.json"},
+  "checks": {
+    "ci": {"url": "https://github.com/SingleMai/ATape/actions/runs/38120707207", "testedCommit": "be6bfbeeff1ddb2bfa53428bf56939b3a5bd7d1d", "result": "passed"},
+    "security": {"url": "https://github.com/SingleMai/ATape/actions/runs/38120707199", "testedCommit": "be6bfbeeff1ddb2bfa53428bf56939b3a5bd7d1d", "result": "passed"},
+    "testedAndMergeTree": "6b2bc1d513dbd71752ba1b0d76abbe6da877f295",
+    "release": {"url": "https://github.com/SingleMai/ATape/actions/runs/38123621461", "headSha": "f05b3db36a6220f02c84d2a62a061cf882edca40", "status": "completed", "conclusion": "success", "attempt": 1, "path": ".github/workflows/release.yml", "event": "push"},
+    "mainCi": {"url": "https://github.com/SingleMai/ATape/actions/runs/38122689612", "headSha": "f05b3db36a6220f02c84d2a62a061cf882edca40", "result": "success"},
+    "webDeployment": {"url": "https://github.com/SingleMai/ATape/actions/runs/38124303716", "headSha": "f05b3db36a6220f02c84d2a62a061cf882edca40", "result": "success", "scope": "deploy job and workflow public-edge step passed; actual running Web independently verified"},
+    "mainSecurity": {"url": "https://github.com/SingleMai/ATape/actions/runs/38122689546", "headSha": "f05b3db36a6220f02c84d2a62a061cf882edca40", "result": "success"},
+    "previousWebRun": {"url": "https://github.com/SingleMai/ATape/actions/runs/38122806756", "eligibleConclusion": "success", "deployConclusion": "skipped", "scope": "Eligibility succeeded but deployment was skipped; not evidence of Web delivery."}
+  },
+  "server": {
+    "sourceCommit": "f05b3db36a6220f02c84d2a62a061cf882edca40",
+    "imageReference": "atape-server:f05b3db36a6220f02c84d2a62a061cf882edca40",
+    "imageId": "sha256:f3c38bd3ceeeb29fbf6037816b7c616c3391c21d42cfbd904de750231ed8c845",
+    "architecture": "arm64",
+    "previousImageId": "sha256:12b2e67af7d33e5fb81cd270efc7daf96387dcd31ddde665e27265e2f3fd22f7",
+    "rollbackImageRetained": true,
+    "startedAt": "2026-10-11T07:55:06.254993679Z",
+    "verifiedAt": "2026-10-11T08:05:00.944845+00:00",
+    "completedAt": "2026-10-11T08:05:33.733298+00:00",
+    "scan": {
+      "passed": true,
+      "severities": ["HIGH", "CRITICAL"],
+      "counts": {"Vulnerabilities": 0, "Secrets": 0, "Misconfigurations": 0},
+      "reportSha256": "baec14e51b22ff85e03505f48ff8656b370bbef3b8f504f22ed67a6d50ad0791"
+    },
+    "secureRuntimeVerified": true,
+    "composeFiles": ["compose.yaml", "compose.publication.yaml", "compose.server-release.yaml", "compose.web-release.yaml"],
+    "serverAndInitPin": "same reviewed image; .env ATAPE_SERVER_IMAGE and server/init override both persist it",
+    "effectivePinReadbackProof": {"result": "passed", "verifiedAt": "2026-10-11T08:20:22.055007+00:00", "effectiveServerImage": "atape-server:f05b3db36a6220f02c84d2a62a061cf882edca40", "effectiveServerInitImage": "atape-server:f05b3db36a6220f02c84d2a62a061cf882edca40", "envServerImage": "atape-server:f05b3db36a6220f02c84d2a62a061cf882edca40", "runningServerImageId": "sha256:f3c38bd3ceeeb29fbf6037816b7c616c3391c21d42cfbd904de750231ed8c845", "runningServerRevision": "f05b3db36a6220f02c84d2a62a061cf882edca40", "serverAndInitPinned": true, "environmentPinned": true, "runningImageMatchesCandidate": true, "onlySelectedNonSecretFieldsReadBack": true, "completeComposeFilesMatched": true, "earlierVerifiedAt": "2026-10-11T08:14:37.138276+00:00", "scope": "Only selected non-secret Compose image fields, .env ATAPE_SERVER_IMAGE and running-image identity were read. The first probe rejected a depends_on output shape; its corrected read-only rerun passed, with no observed production pin failure."},
+    "schemaBefore": 24,
+    "schemaAfter": 24,
+    "explicitMigrationExecuted": false,
+    "dataRestoreExecuted": false,
+    "operatorEvidenceSha256": "5fd3217a28bb53f79cbbecddcfaca7197d4f57b7037c1969946e6a105699b1d9"
+  },
+  "backup": {
+    "serverWriterStoppedThroughout": true,
+    "format": "atape.backup.v1",
+    "createdAt": "2026-10-11T07:54:07Z",
+    "schemaVersion": 24,
+    "cutoverPhase": "completed",
+    "normalServingStartedAtPresent": true,
+    "manifestSha256": "6f7270916c3b40ac5b203d838d881d3bd5a986e907d9c9d0b9b9ce8d8a5a699a",
+    "postgresSha256": "055ee3bae0b35f231ebd19551dcf6b70fd1afda02b1f133ed5a407a45c44fdc4",
+    "rawSha256": "3a94215b210c97df6b513f1d44403a798ec825b5a2e37722b0dbc3d4622f7654",
+    "bytes": {"postgres.dump": 262711066, "raw.tar.gz": 4747, "manifest.txt": 350},
+    "verification": "operator script validated hashes, PostgreSQL archive listing and gzip integrity; no restore performed",
+    "writerStoppedAt": "2026-10-11T07:53:32Z",
+    "postBackupSyncCompletedAt": "2026-10-11T07:54:09Z"
+  },
+  "snapshot": {"encrypted": true, "requestedAt": "2026-10-11T07:54:59.155000+00:00", "state": "completed", "progress": "100%", "completionCheckedAt": "2026-10-11T08:04:26.612259+00:00", "backupManifestSha256": "6f7270916c3b40ac5b203d838d881d3bd5a986e907d9c9d0b9b9ce8d8a5a699a", "operatorReceiptSha256": "2298c3710cc9a8d58b3a2dfc6c64e32760f5eb34f2dd5ae27ffe1b60bc0cbc0b", "sanitizedReceiptSha256": "a269dee1bdb5770146d06e9decf00c9bd66c12edc1d1ed8e3735430688dce38b", "sanitizedReceiptDigestEncoding": "UTF-8 JSON, sorted keys, separators comma/colon, no final newline", "scope": "fresh root-volume recovery point after paired backup and sync; no restore performed; private resource identifiers omitted"},
+  "webObservations": [
+    {"verifiedAt": "2026-10-11T08:05:00.944845+00:00", "imageId": "sha256:13b71395aaeaaffcf3d8db15b6eefb1e716452b47b3fd88f3fd8fe4c45c7884d", "revision": "77c755845cf651628e034bd5102f807f466388c2", "versionLabel": "0.5.8", "unchangedDuringServerRollout": true},
+    {"verifiedAt": "2026-10-11T08:20:22.055007+00:00", "imageId": "sha256:ddb3c9433bda3bd5d8f2b27ac1a64526ff82276430de42fe4e2e7a843ca92cbd", "revision": "f05b3db36a6220f02c84d2a62a061cf882edca40", "versionLabel": "0.5.9", "startedAt": "2026-10-11T08:18:43.652139767Z", "independentAutomaticDeployment": "https://github.com/SingleMai/ATape/actions/runs/38124303716", "serverImageAndStartedAtUnchanged": true, "credentialSentToPublicEdge": false, "operatorEvidenceSha256": "7493aa1def5e5e3eec389ac44066718410743442a4ed3074992acc10fd984c45"}
+  ],
+  "loopbackSmoke": {"passed": true, "syntheticPublicationV4Activated": true, "analyticsVersion": 2, "mcpCalls": 1, "mcpCompleted": 1, "skillCalls": 1, "skillFailed": 1, "conditionalEventLinks": 2, "snapshotReplacementRejected": true, "scope": "authenticated synthetic Canonical v4 HTTP/API and Reader checks on loopback; no real GitHub OAuth or live Provider capture", "sessionDeleted": true, "projectDeleted": true, "cliCredentialRevoked": true, "webSessionRevoked": true, "retainedMetadata": "Synthetic identity/User, Team and audit rows are retained; cleanup uses public Session/Project deletion and CLI/Web revocation, with no SQL teardown."},
+  "edge": {"passed": true, "verifiedAt": "2026-10-11T08:04:41.533492+00:00", "releaseVersion": "0.5.9", "authEpoch": "auth-v1", "minimumCliVersion": "0.5.9", "ready": true, "cutoverMode": "normal", "webRevision": "77c755845cf651628e034bd5102f807f466388c2", "unauthenticatedAnalyticsStatus": 401, "credentialSent": false, "originalEvidenceSha256": "7a1f84857eac9d9b67ce82ae03037ad2c6f297361981c75bbc20a9c34f6c463f"},
+  "publication": {
+    "status": "verified",
+    "verifiedAt": "2026-10-11T08:48:39.119Z",
+    "acceptanceSha256": "3c148d80bf60ee6180ca63989c12b49b4f1c15dea250b3c3e1f34d4a1e81529b",
+    "workflowArtifact": {
+      "id": 11697545278,
+      "name": "release-tarballs-v0.5.9",
+      "createdAt": "2026-10-11T08:38:09Z",
+      "digest": "sha256:3b43f702cec9ccac42088b56035a14cd62185bf3a2c47bae8aa4badd0584ecc5",
+      "files": [
+        {"filename": "atape-cli-0.5.9.tgz", "bytes": 715781, "sha256": "36cd746931942502467843e8c5eee1645c6140698b3ccdf16528534fc77b52d6"},
+        {"filename": "atape-adapter-codex-0.5.9.tgz", "bytes": 154899, "sha256": "0359b3898c026c2792608b910b3215f4af1e94bb44c4a91e3a89466e7e2d7e62"},
+        {"filename": "atape-adapter-claude-0.5.9.tgz", "bytes": 158084, "sha256": "7906431efacd28d497904a5e8acddbac1be755209ef0b11b692122c77b76d9fa"},
+        {"filename": "atape-adapter-codebuddy-0.5.9.tgz", "bytes": 152051, "sha256": "8349d4d881f10d4c8b6600a0b3d7478fc76408cf2e7cff434862b6d2dccaeea5"},
+        {"filename": "atape-adapter-kimi-0.5.9.tgz", "bytes": 150196, "sha256": "30c7b3135c3837e61d36c38c2caac4973cbf9c0e3932f69eae5fd18f6e6cf3d9"},
+        {"filename": "atape-adapter-opencode-0.5.9.tgz", "bytes": 149701, "sha256": "1ed516b64105a7dd1a85486e76d549205117f09e1b21d33f9375d4c287f89228"},
+        {"filename": "atape-adapter-grok-0.5.9.tgz", "bytes": 146175, "sha256": "3cec4671bdbe5971ab4078d6185043b8d2e49efb8af5c1c6a933b7bb4969473e"},
+        {"filename": "atape-adapter-cursor-0.5.9.tgz", "bytes": 150089, "sha256": "503cb3e097886a7f86623c2e53538c9bf3fb9becd293716ab5dde42c44d4c91f"},
+        {"filename": "SHA256SUMS", "bytes": 765, "sha256": "a6977954b540164ad35ff90b666521b6895c3322cb70a4daa1e4ea554a0fec2a"}
+      ]
+    },
+    "localBaselineSha256": "a0983cfa4a91f5a33499e7d784d10e90a886c8c24f3e4d6b0a28b0c073bfa50f",
+    "localBaselineCapturedAt": "2026-10-11T07:14:32.694Z",
+    "allNineLocalAndGithubFilesEqual": true,
+    "githubRelease": {"url": "https://github.com/SingleMai/ATape/releases/tag/v0.5.9", "tag": "v0.5.9", "publishedAt": "2026-10-11T08:45:44Z", "draft": false, "prerelease": false, "latestTag": "v0.5.9", "assetCount": 9},
+    "npmVerifiedAt": "2026-10-11T08:47:49.987Z",
+    "npm": [
+      {"name": "@atape/cli", "version": "0.5.9", "latest": "0.5.9", "bytes": 715781, "sha256": "36cd746931942502467843e8c5eee1645c6140698b3ccdf16528534fc77b52d6", "integrity": "sha512-w47H6TUqDg9bWLLKvYQ8J6jgMz0zT3MLs/wzKy9ZFCkkoM+2iReNUneYEeDM/YNHb3xzKP2pbrD1jdRcCQeehw==", "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "a26cf522-9bcd-461c-add5-904d8ba6e619"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fcli@0.5.9", "statementSha256": "a53df9784198f7cbc99cf3c85552a04a535e82a7deb7ffa268ae0ec9dec3f904", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-codex", "version": "0.5.9", "latest": "0.5.9", "bytes": 154899, "sha256": "0359b3898c026c2792608b910b3215f4af1e94bb44c4a91e3a89466e7e2d7e62", "integrity": "sha512-caOzjllMYtbhyM4dU99AodrNrl48X63f3NedW09otADLyCiR5IpkpLMnNp6DOpLqiXvYVgOBs7Zha0O61RGlEw==", "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "b7728180-251c-4b69-ae2b-8eb9a2cfdc3b"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-codex@0.5.9", "statementSha256": "535ff85a2af686370b2cb2a4f2cf6211d88c55c76dfe79a1eefff7b6f6f2ff3c", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-claude", "version": "0.5.9", "latest": "0.5.9", "bytes": 158084, "sha256": "7906431efacd28d497904a5e8acddbac1be755209ef0b11b692122c77b76d9fa", "integrity": "sha512-UvbgYL796RzxA7gP2XdrBn9Zfkn2HrIZonj591SY9Z6dsfnLS7tK/0w9JNq5/08nv0ufO8HxAsBQtlDc47TOoQ==", "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "38c17d6d-7b4c-4cb8-96cb-73b5ac802103"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-claude@0.5.9", "statementSha256": "938c8577a1a2680cef5321322580c3443d3de45ab1b0fa7b89514d98588d9d57", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-codebuddy", "version": "0.5.9", "latest": "0.5.9", "bytes": 152051, "sha256": "8349d4d881f10d4c8b6600a0b3d7478fc76408cf2e7cff434862b6d2dccaeea5", "integrity": "sha512-DeMBhUg61bJ687IZIsiY/3cePTnlQSvMYGPW9nk5jiGGE3nQGiNDUDDRKDQbgHXSZMuFNPjklohc2/W7AnTUmw==", "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "22af3c5a-d43e-4dc2-b13f-3c489ed93574"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-codebuddy@0.5.9", "statementSha256": "940572af0fc6370602b7292cbe4fb14a9b4f37caf70bde97cfabf4b527f34934", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-kimi", "version": "0.5.9", "latest": "0.5.9", "bytes": 150196, "sha256": "30c7b3135c3837e61d36c38c2caac4973cbf9c0e3932f69eae5fd18f6e6cf3d9", "integrity": "sha512-oOHmn69TfDbxK5rAVTbU0oqsgiHYp/M/GOagAmJGlXltuWhDebWjbOd8FdE0F24e4Kav/lgS6jlpmT7/qELBog==", "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "d442f15e-44c4-4e7e-9de0-444a7e7b151d"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-kimi@0.5.9", "statementSha256": "93560d5d64c759d5f35f3ec307d85aa4e31356af517cecc6446389b84da79d4f", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-opencode", "version": "0.5.9", "latest": "0.5.9", "bytes": 149701, "sha256": "1ed516b64105a7dd1a85486e76d549205117f09e1b21d33f9375d4c287f89228", "integrity": "sha512-1n7RIjNmv9lTBYQJWISAxYl1Z5LFh3zp7VezannzzJdXrjOjsCxJ3dkb2cU2/DKJ2ksFh1tdIfCN89CqDH/Z7w==", "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "499fa995-306c-44ed-9aec-98dc61163cb8"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-opencode@0.5.9", "statementSha256": "d9a541ece67e9a336dc6cefc7243f1d73ddb9a33965781aae4ebeb89c027dd23", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-grok", "version": "0.5.9", "latest": "0.5.9", "bytes": 146175, "sha256": "3cec4671bdbe5971ab4078d6185043b8d2e49efb8af5c1c6a933b7bb4969473e", "integrity": "sha512-PiMD2OBaFcAtbF8zTIoIbE5BicfMNGwT+z6/3UyQrAhCQwdPnnp7AKkW234uq7uX2NDjsqtk3vToFru7Q7JEFA==", "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "ba8961b9-e6c9-4cf2-bfcf-7792f6566f13"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-grok@0.5.9", "statementSha256": "fa1edcbbcc8adc7ddda47314328df5b1632563c5ff7b59d23e65288a107e1630", "subjectSha512MatchesCI": true},
+      {"name": "@atape/adapter-cursor", "version": "0.5.9", "latest": "0.5.9", "bytes": 150089, "sha256": "503cb3e097886a7f86623c2e53538c9bf3fb9becd293716ab5dde42c44d4c91f", "integrity": "sha512-b56jltp7o0cFBbu6Qy+gpcnQe1hz160vgxkQDotPsHT5rb1u70I0C8RDCnqfvOYtMu14IcGc1AOn2UMFeRQSdA==", "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.9.tgz", "ciGithubLocalBytesEqual": true, "trustedPublisher": {"id": "github", "oidcConfigId": "94eb9f60-3399-463c-98d9-6e3f05f28ed7"}, "attestations": "https://registry.npmjs.org/-/npm/v1/attestations/@atape%2fadapter-cursor@0.5.9", "statementSha256": "f62fb34cbfd63cc1a060c3e0945bb4adc76d79c085aa19198b343a3f40c4b092", "subjectSha512MatchesCI": true}
+    ],
+    "provenance": {"repository": "https://github.com/SingleMai/ATape", "workflow": ".github/workflows/release.yml", "ref": "refs/tags/v0.5.9", "commit": "f05b3db36a6220f02c84d2a62a061cf882edca40", "run": "https://github.com/SingleMai/ATape/actions/runs/38123621461/attempts/1", "allEightSubjectSha512MatchCI": true, "cryptographicSignatureVerified": false, "scope": "Exact public tarball bytes and decoded provenance statement content; no signature, certificate-chain or transparency-proof verification."},
+    "catalogs": {
+      "baseURL": "https://updates.atape.net",
+      "catalogRevision": 4,
+      "migrationCatalogRevision": 3,
+      "publiclyVerifiedAt": "2026-10-11T08:48:38.895Z",
+      "verifiedBundles": [
+        {"version": "0.5.9", "packages": 8}
+      ],
+      "files": [
+        {"path": "catalog/v1.json", "sha256": "736a7a0506f4efa3574ab54192f381b441f1921b1f1c0cd5c53095c1cb0747c3", "bytes": 2556},
+        {"path": "catalog/v2.json", "sha256": "84da9d68b9de6f154cda15a067431ed73c9a61b2d9658a02e79ce0bf7cc7e531", "bytes": 3332},
+        {"path": "manifest.json", "sha256": "c25b3cbfee778564fddcd744f574a4c7cc6b81fd0d920cda20c16c7874637a3b", "bytes": 839},
+        {"path": "releases/0.5.7/bundle.v1.json", "sha256": "e6da1a70c41aa0421afe11ca8e75a573df14fc093f3c358e18fc1e974085beab", "bytes": 1987},
+        {"path": "releases/0.5.7/bundle.v2.json", "sha256": "7d86e61f8277693e2b57f957e01e9c4e4789a7fed9940bda1360b9a7581e0709", "bytes": 2153},
+        {"path": "releases/0.5.8/bundle.v1.json", "sha256": "79db01cfd636a845263ea5f4f7d8e4c859cbc83a08b4253078331971256ea1af", "bytes": 1987},
+        {"path": "releases/0.5.8/bundle.v2.json", "sha256": "29e1a0880133f2c0560b4bb07f9f4d1778d625154765455fe83fd351943282e2", "bytes": 2153},
+        {"path": "releases/0.5.9/bundle.v1.json", "sha256": "f65d1acc8675003fbd2afeb64495b23ddd3db40e73339696afcec83c9cafff7b", "bytes": 1987},
+        {"path": "releases/0.5.9/bundle.v2.json", "sha256": "53353a6cdeea060235bcf6496a71cbcf44e7bbcb95c7eda7247c11d793000e56", "bytes": 2153}
+      ],
+      "historicalDescriptorsPreserved": [
+        {"path": "releases/0.5.7/bundle.v1.json", "bytes": 1987, "sha256": "e6da1a70c41aa0421afe11ca8e75a573df14fc093f3c358e18fc1e974085beab", "preserved": true},
+        {"path": "releases/0.5.7/bundle.v2.json", "bytes": 2153, "sha256": "7d86e61f8277693e2b57f957e01e9c4e4789a7fed9940bda1360b9a7581e0709", "preserved": true},
+        {"path": "releases/0.5.8/bundle.v1.json", "bytes": 1987, "sha256": "79db01cfd636a845263ea5f4f7d8e4c859cbc83a08b4253078331971256ea1af", "preserved": true},
+        {"path": "releases/0.5.8/bundle.v2.json", "bytes": 2153, "sha256": "29e1a0880133f2c0560b4bb07f9f4d1778d625154765455fe83fd351943282e2", "preserved": true}
+      ]
+    },
+    "publishedInstallSmoke": {"status": "not_run", "scope": "This acceptance anonymously retrieved and compared public bytes; no npm installation or provider execution."}
+  },
+  "remainingLimits": ["Original staging attestation and all ten manual checks remain pending under the unchanged candidate-bound manual-only waiver.", "Fresh native MCP/Skill capture remains unverified; constructed native-format source tests and synthetic API smoke are separate evidence.", "No production restore/rollback, actual GitHub OAuth or authenticated public-edge fixture was performed.", "Legacy default/v3 capability negotiation, old existing Session Reader and Raw upload were not additional live rollout checks.", "Provenance/DSSE inspection is not cryptographic signature verification."],
+  "sanitization": "No credentials, fixture identities, transcript/tool bodies, private account/resource identifiers or raw operator logs.",
+  "edgeAfterAutomaticWeb": {"passed": true, "verifiedAt": "2026-10-11T08:20:19.724169+00:00", "webRevision": "f05b3db36a6220f02c84d2a62a061cf882edca40", "serverReleaseVersion": "0.5.9", "ready": true, "health": "ok", "analyticsUnauthenticatedStatus": 401, "credentialSent": false, "operatorEvidenceSha256": "7493aa1def5e5e3eec389ac44066718410743442a4ed3074992acc10fd984c45"},
+  "verifiedAt": "2026-10-11T08:48:39.119Z"
+}
