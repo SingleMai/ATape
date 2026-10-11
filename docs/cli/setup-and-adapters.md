@@ -100,6 +100,13 @@ subsequent cycles; an in-flight upload may finish. Stop in Settings requires a
 review because it affects all local Projects. Esc returns without a duplicate
 Back menu row. The cassette remains in the shared responsive header.
 
+Concurrent status reads in one CLI share the process inspection already in
+progress, so opening a Project during background refresh does not compete with
+that refresh for the process lock. A completed inspection is not cached; the
+next read checks current state again. Cancelling one caller does not release the
+shared work's lock early. Other CLI commands still use the existing process
+exclusion, and status inspection does not change sync timing or Stop intent.
+
 Use arrows and Enter to navigate, Space to select sources, Escape to go back or
 cancel, and Ctrl+C to exit. Path input supports paste, Unicode, Home/End and
 Ctrl+A/E/U/K. PgUp/PgDn pages long details on narrow screens. Exiting restores the

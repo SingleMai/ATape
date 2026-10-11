@@ -309,6 +309,113 @@ setInterval(() => {}, 1000);
       } }
   }
 
+  const inspectionFixture = async () => {
+    const f = await fixture(), root = dirname(f.entry), originalPath = process.env.PATH
+    const started = await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+    await f.started("original", started.pid)
+    const bin = join(root, "bin"), trace = join(root, "inspection-probes"), release = join(root, "release-probe"), failure = join(root, "fail-probe")
+    await mkdir(bin)
+    // The native command is a real external Seam. Gate one real ps result to
+    // exercise overlapping public inspections without replacing Module logic.
+    const quoted = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    await writeFile(join(bin, "ps"), `#!/bin/sh
+printf 'probe\\n' >> ${quoted(trace)}
+while [ ! -f ${quoted(release)} ]; do sleep 0.01; done
+[ ! -f ${quoted(failure)} ] || exit 1
+exec /bin/ps "$@"
+`)
+    await chmod(join(bin, "ps"), 0o700)
+    process.env.PATH = `${bin}:${originalPath}`
+    const calls = async () => (await readFile(trace, "utf8").catch(() => "")).split("\n").filter(Boolean).length
+    return { ...f, started, failure, calls,
+      entered: () => expect.poll(calls).toBe(1),
+      release: () => writeFile(release, "released"),
+      async close() {
+        try {
+          await writeFile(release, "released")
+          // Caller interruption may leave the actual owned inspection alive.
+          // Join it before cleaning up its real process and native TestAdapter.
+          await f.run(f.daemon.inspect()).catch(() => undefined)
+        } finally { process.env.PATH = originalPath; await f.run(f.daemon.stop()) }
+      }
+    }
+  }
+
+  it("shares an in-flight inspection across callers of the same process Module", async () => {
+    const f = await inspectionFixture()
+    try {
+      const inspected = Promise.all(Array.from({ length: 6 }, () => f.run(f.daemon.inspect())))
+      await f.entered()
+      await f.release()
+      expect((await inspected).map(result => result?.pid)).toEqual(Array(6).fill(f.started.pid))
+      expect(await f.calls()).toBe(1)
+    } finally { await f.close() }
+  })
+
+  it("detaches a cancelled inspection caller while another caller joins the actual pending work", async () => {
+    const f = await inspectionFixture(), controller = new AbortController()
+    try {
+      const cancelled = Effect.runPromise(f.daemon.inspect(), { signal: controller.signal }).then(
+        () => "completed", () => "cancelled")
+      await f.entered()
+      controller.abort()
+      expect(await cancelled).toBe("cancelled")
+      const competing = await acquireProcessLock(`${f.collectorProcessFile}.lock.sqlite`)
+      competing?.()
+      expect(competing).toBeUndefined()
+      const joined = f.run(f.daemon.inspect())
+      await f.release()
+      expect((await joined)?.pid).toBe(f.started.pid)
+      expect(await f.calls()).toBe(1)
+    } finally { controller.abort(); await f.close() }
+  })
+
+  it("shares inspection failures only until completion and then performs a fresh inspection", async () => {
+    const f = await inspectionFixture()
+    try {
+      await writeFile(f.failure, "failed native probe")
+      const inspected = Promise.allSettled([f.run(f.daemon.inspect()), f.run(f.daemon.inspect())])
+      await f.entered()
+      await f.release()
+      expect(await inspected).toEqual([
+        { status: "rejected", reason: expect.objectContaining({ reason: "identity" }) },
+        { status: "rejected", reason: expect.objectContaining({ reason: "identity" }) }
+      ])
+      expect(await f.calls()).toBe(1)
+      await rm(f.failure)
+      expect((await f.run(f.daemon.inspect()))?.pid).toBe(f.started.pid)
+      expect(await f.calls()).toBe(2)
+    } finally { await f.close() }
+  })
+
+  it("does not reuse a completed inspection snapshot after process metadata changes", async () => {
+    const f = await inspectionFixture()
+    try {
+      const first = f.run(f.daemon.inspect())
+      await f.entered()
+      await f.release()
+      expect((await first)?.startedAt).toBe(f.started.startedAt)
+      const record = JSON.parse(await readFile(f.collectorProcessFile, "utf8")), startedAt = "2026-10-11T00:00:00.000Z"
+      await writeFile(f.collectorProcessFile, JSON.stringify({ ...record, startedAt }))
+      expect((await f.run(f.daemon.inspect()))?.startedAt).toBe(startedAt)
+      expect(await f.calls()).toBe(2)
+    } finally { await f.close() }
+  })
+
+  it("still refuses inspection while an independent owner holds the process lock", async () => {
+    const f = await fixture()
+    try {
+      await f.run(f.daemon.start({ intervalMs: 45000, concurrency: 2 }))
+      const release = (await acquireProcessLock(`${f.collectorProcessFile}.lock.sqlite`))!
+      try {
+        await expect(f.run(f.daemon.inspect())).rejects.toMatchObject({
+          reason: "io", message: "Another ATape command is changing the Collector process."
+        })
+      } finally { release() }
+      expect(await f.run(f.daemon.inspect())).toBeDefined()
+    } finally { await f.run(f.daemon.stop()) }
+  })
+
   it("observes an absent process without creating files or locks", async () => {
     const root = await mkdtemp(join(tmpdir(), "atape-process-observe-"))
     temporaryDirectories.push(root)

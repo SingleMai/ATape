@@ -339,18 +339,32 @@ const makeCollectorDaemonProcessLayer = (
   paths: NodeCollectorDaemonPaths,
   entryFile: CollectorEntry,
   environment: NodeJS.ProcessEnv
-) => Layer.succeed(
-  CollectorDaemonProcess,
-  CollectorDaemonProcess.of({
-    start: (options) => processStart(paths, entryFile, environment, options),
-    resume: () => processResume(paths, entryFile, environment),
-    pause: () => processPause(paths.collectorProcessFile),
-    refresh: () => processRefresh(paths, entryFile, environment),
-    stop: () => processStop(paths.collectorProcessFile),
-    inspect: () => processInspect(paths.collectorProcessFile),
-    observe: () => processObserve(paths.collectorProcessFile)
-  })
-)
+) => {
+  let inspection: ReturnType<typeof processInspect> | undefined
+  return Layer.succeed(
+    CollectorDaemonProcess,
+    CollectorDaemonProcess.of({
+      start: (options) => processStart(paths, entryFile, environment, options),
+      resume: () => processResume(paths, entryFile, environment),
+      pause: () => processPause(paths.collectorProcessFile),
+      refresh: () => processRefresh(paths, entryFile, environment),
+      stop: () => processStop(paths.collectorProcessFile),
+      inspect: () => Effect.tryPromise({
+        try: () => {
+          // Polling and navigation can inspect the same process concurrently.
+          // Share only the actual in-flight work: caller cancellation detaches
+          // that Effect, while this Promise retains the lock until completion.
+          if (inspection === undefined) inspection = processInspect(paths.collectorProcessFile).finally(() => { inspection = undefined })
+          return inspection
+        },
+        catch: cause => cause instanceof CollectorDaemonProcessError ? cause : new CollectorDaemonProcessError({
+          reason: "io", message: errorMessage("Could not manage the Collector process", cause)
+        })
+      }),
+      observe: () => processObserve(paths.collectorProcessFile)
+    })
+  )
+}
 
 const processStart = (
   paths: NodeCollectorDaemonPaths,
@@ -568,9 +582,9 @@ const stopOwnedProcess = async (processFile: string, record: CollectorProcessRec
   return true
 }
 
-const processInspect = (processFile: string) => {
-  if (process.platform === "win32") return Effect.fail(unsupportedManagedProcessPlatform())
-  return withProcessLock(processFile, async () => {
+const processInspect = async (processFile: string) => {
+  if (process.platform === "win32") throw unsupportedManagedProcessPlatform()
+  return withProcessLockPromise(processFile, async () => {
     const record = await readProcessRecord(processFile)
     const desired = await desiredState(processFile, record, await readMaintenance(processFile))
     if (record === undefined) return undefined
