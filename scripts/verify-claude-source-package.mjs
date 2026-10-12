@@ -24,7 +24,7 @@ export async function verifyClaudePackage(adapter, context, paths) {
       try {
         const header = JSON.parse(JSON.stringify(view)), frames = [], keys = new Set(), offsets = new Map()
         assert.equal(header.canonicalProfileVersion, "atape.acp-centered.v5")
-        assert.equal(header.profile, "claude.jsonl.active-path.3")
+        assert.equal(header.profile, "claude.jsonl.active-path.4")
         assert.equal(header.origin.sourceId, sourceId); assert.equal(header.session.sourceSessionId, sourceId)
         assert.equal(typeof header.sourceCheckpoint, "string"); assert.ok(Buffer.byteLength(header.sourceCheckpoint) <= 1024 * 1024)
         assert.ok(Array.isArray(header.target.retainedThreadIds)); assert.ok(Array.isArray(header.sourceFailures))
@@ -104,6 +104,8 @@ export async function verifyClaudePackage(adapter, context, paths) {
     const actual = await capture(sourceId)
     const identities = actual.events.filter(event => event.update._meta).map(event => event.update._meta["atape.dev/tool-identity"])
     assert.deepEqual(identities, [{ type: "mcp", server: "docs", name: "read_page" }, { type: "skill", name: "plugin:review" }, { type: "tool", name: "Read" }])
+    assert.deepEqual(actual.events.find(event => event.update.toolCallId === "file-call").update._meta["atape.dev/file-activity"],
+      [{ operation: "read", path: "/tmp/SKILL.md" }])
     assert.deepEqual(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").map(event => event.update.status), ["completed", "failed"])
     assert.equal(rawText(actual), source)
     unchanged(actual, await capture(sourceId, { rawEnabled: false }))

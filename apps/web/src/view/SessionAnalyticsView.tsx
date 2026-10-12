@@ -7,6 +7,7 @@ import { useSessionAnalyticsPresenter } from "../presenters/sessionAnalyticsPres
 import { formatNumber, t, type WebMessageKey } from "../i18n"
 import { ConversationTime } from "./ConversationTime"
 import { SessionActivityView } from "./SessionActivityView"
+import { SessionFileActivityView } from "./SessionFileActivityView"
 
 export type AnalyticsEvidenceTarget = {
   readonly snapshot: string
@@ -31,7 +32,8 @@ const metrics: ReadonlyArray<readonly [SessionAnalyticsMetric, WebMessageKey]> =
   ["tools", "analytics.metric.tools"], ["failed_tools", "analytics.metric.failed_tools"],
   ["unknown_tools", "analytics.metric.unknown_tools"], ["user_inputs", "analytics.metric.user_inputs"],
   ["thoughts", "analytics.metric.thoughts"], ["threads", "analytics.metric.threads"],
-  ["mcp_tools", "analytics.metric.mcp_tools"], ["skills", "analytics.metric.skills"], ["records", "analytics.metric.records"]
+  ["mcp_tools", "analytics.metric.mcp_tools"], ["skills", "analytics.metric.skills"], ["records", "analytics.metric.records"],
+  ["files", "analytics.metric.files"]
 ]
 const token = (value: number | null) => value === null ? t("analytics.unknown", "Unknown") : formatNumber(value)
 const capture = (value: string) => value === "healthy" ? t("analytics.capture.healthy", "Capture healthy") : value === "complete" ? t("analytics.capture.complete", "Complete") :
@@ -167,6 +169,8 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
           </tr>)}</tbody></table></div>}
       </section>
       <CapabilityReports report={state.value.analyticsVersion !== 1 ? state.value.capabilities : undefined} {...(query.thread ? { thread: query.thread } : {})} onFilter={onFilter} />
+      <SessionFileActivityView report={state.value.analyticsVersion === 4 ? state.value.fileActivity : undefined}
+        {...(query.thread ? { thread: query.thread } : {})} onFilter={onFilter} />
       <section aria-labelledby={`${id}-usage`}>
         <h2 id={`${id}-usage`}>{t("analytics.recordedTokens", "Recorded tokens")}</h2>
         <p>{t("analytics.samples", "{recorded} recorded samples · {incomplete} incomplete samples · {samples} usage events", {
@@ -193,12 +197,13 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
         <div className="analytics-filters">
           <label>{t("analytics.evidenceType", "Evidence type")}<select aria-label={t("analytics.evidenceType", "Evidence type")} value={query.metric ?? "tools"} onChange={event => onFilter({ metric: event.currentTarget.value as SessionAnalyticsMetric, ...(query.thread ? { thread: query.thread } : {}) })}>
             {metrics.filter(([metric]) => (state.value.analyticsVersion !== 1 || !["mcp_tools", "skills"].includes(metric)) &&
+              (metric !== "files" || state.value.analyticsVersion === 4) &&
               (metric !== "records" || state.value.analyticsVersion === 3 || state.value.analyticsVersion === 4)).map(([metric, label]) => <option key={metric} value={metric}>{t(label)}</option>)}
           </select></label>
           <label>{t("analytics.thread", "Thread")}<select aria-label={t("analytics.thread", "Thread")} value={query.thread ?? ""} onChange={event => onFilter({ ...query, thread: event.currentTarget.value })}>
             <option value="">{t("analytics.allThreads", "All threads")}</option>{state.value.threads.map(thread => <option key={thread.id} value={thread.id}>{thread.label}</option>)}
           </select></label>
-          {!["mcp_tools", "skills"].includes(query.metric ?? "tools") && <label>{toolFilterLabel}<select aria-label={toolFilterLabel} value={query.tool ?? ""} disabled={!["tools", "failed_tools", "unknown_tools"].includes(query.metric ?? "tools")} onChange={event => onFilter({ ...query, tool: event.currentTarget.value })}>
+          {!["mcp_tools", "skills", "files"].includes(query.metric ?? "tools") && <label>{toolFilterLabel}<select aria-label={toolFilterLabel} value={query.tool ?? ""} disabled={!["tools", "failed_tools", "unknown_tools"].includes(query.metric ?? "tools")} onChange={event => onFilter({ ...query, tool: event.currentTarget.value })}>
             <option value="">{stableTools ? t("analytics.allToolNames", "All tools") : t("analytics.allTools", "All labels")}</option>{selections.filter(({ filter }, index, all) => filter !== null && all.findIndex(item => item.filter === filter) === index).map(({ tool, filter }) => <option key={filter} value={filter!}>{stableTools ? `${toolName(tool)} · ${tool.kind} · ${toolIdentityType(tool)}` : toolName(tool)}</option>)}
           </select></label>}
           {state.value.analyticsVersion !== 1 && ["mcp_tools", "skills"].includes(query.metric ?? "tools") && <>
@@ -212,6 +217,22 @@ export function SessionAnalyticsView({ state, query, onReload, onFilter, onNext,
               <option value="">{t("analytics.allCapabilities", "All names")}</option>
               {[...new Set((query.metric === "mcp_tools" ? state.value.capabilities.mcp.filter(item => !query.server || item.server === query.server) : state.value.capabilities.skills).map(item => item.name))]
                 .filter(canFilterSessionAnalyticsTool).map(name => <option key={name} value={name}>{name}</option>)}
+            </select></label>
+          </>}
+          {state.value.analyticsVersion === 4 && query.metric === "files" && <>
+            <label>{t("analytics.filePath", "Path")}<select aria-label={t("analytics.filePath", "Path")} value={query.file ?? ""}
+              onChange={event => onFilter({ ...query, file: event.currentTarget.value })}>
+              <option value="">{t("analytics.allFilePaths", "All paths")}</option>
+              {state.value.fileActivity.paths.map(item => <option key={item.key} value={item.key}>{item.path}</option>)}
+            </select></label>
+            <label>{t("analytics.fileOperation", "File operation")}<select aria-label={t("analytics.fileOperation", "File operation")} value={query.operation ?? ""}
+              onChange={event => {
+                const { operation: _operation, ...selection } = query
+                onFilter(event.currentTarget.value === "" ? selection :
+                  { ...selection, operation: event.currentTarget.value as NonNullable<SessionAnalyticsQuery["operation"]> })
+              }}>
+              <option value="">{t("analytics.allFileOperations", "All operations")}</option>
+              {(["read", "edit", "search"] as const).map(operation => <option key={operation} value={operation}>{t(`analytics.fileOperation.${operation}`)}</option>)}
             </select></label>
           </>}
         </div>

@@ -1013,11 +1013,13 @@ paths:
       parameters:
         - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v4+json and v3+json ranges opt into versions 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
         - {name: tool, in: query, description: Exact returned group key in version 4, or display label in version 2/3; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
         - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
         - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
+        - {name: file, in: query, description: Version 4 returned opaque file path key; only applies to files and combines with operation., schema: {type: string, maxLength: 500}}
+        - {name: operation, in: query, description: Version 4 explicit file operation; search paths describe scope rather than matching files., schema: {type: string, enum: [read, edit, search]}}
         - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3 or 4, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
         - {name: cursor, in: query, description: Opaque evidence cursor bound to the Session, snapshot, analytics version and filters; requires snapshot., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
@@ -1039,11 +1041,13 @@ paths:
       parameters:
         - {name: Accept, in: header, description: "Absent the vendor media range, returns version 2. Acceptable application/vnd.atape.session-analytics.v4+json and v3+json ranges opt into versions 4 and 3; the highest admitted nonzero version wins. q=0 declines that range. Older Servers may ignore newer ranges and return their supported representation. Responses retain application/json.", schema: {type: string, maxLength: 4096, default: application/json}}
         - {name: snapshot, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 200}}
-        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records]}}
+        - {name: metric, in: query, schema: {type: string, default: tools, enum: [tools, failed_tools, unknown_tools, user_inputs, thoughts, threads, mcp_tools, skills, records, files]}}
         - {name: thread, in: query, schema: {type: string, maxLength: 500}}
         - {name: tool, in: query, description: Exact returned group key in version 4, or display label in version 2/3; only applies to tools/failed_tools/unknown_tools., schema: {type: string, maxLength: 500}}
         - {name: capability, in: query, description: Exact normalized MCP tool or Skill name; only applies to mcp_tools/skills., schema: {type: string, maxLength: 500}}
         - {name: server, in: query, description: Exact normalized MCP server; only applies to mcp_tools and can be selected independently., schema: {type: string, maxLength: 500}}
+        - {name: file, in: query, description: Version 4 returned opaque file path key; only applies to files and combines with operation., schema: {type: string, maxLength: 500}}
+        - {name: operation, in: query, description: Version 4 explicit file operation; search paths describe scope rather than matching files., schema: {type: string, enum: [read, edit, search]}}
         - {name: range, in: query, description: "Opaque Server-generated dated bucket or unplaced selection; requires version 3 or 4, records metric and snapshot. Bound to Session and Thread scope.", schema: {type: string, minLength: 1, maxLength: 512}}
         - {name: cursor, in: query, description: Opaque cursor for the same snapshot and filters., schema: {type: string, maxLength: 1024}}
         - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
@@ -2054,6 +2058,18 @@ components:
       required: [atape.dev/tool-identity]
       properties:
         atape.dev/tool-identity: {$ref: "#/components/schemas/NormalizedToolIdentity"}
+        atape.dev/file-activity:
+          description: Canonical v5 only. Absent inherits the prior call fact; null or an empty array clears it. At most 4096 UTF-8 bytes when the decoded array is encoded as JSON.stringify. No paths are inferred from titles or payloads.
+          oneOf:
+            - {type: "null"}
+            - {type: array, maxItems: 64, items: {$ref: "#/components/schemas/NormalizedFileActivityEntry"}}
+    NormalizedFileActivityEntry:
+      type: object
+      additionalProperties: false
+      required: [operation, path]
+      properties:
+        operation: {type: string, enum: [read, edit, search], description: Search paths are recorded scopes rather than matching files.}
+        path: {type: string, minLength: 1, maxLength: 2048, description: Exact nonempty well-formed Unicode path; at most 2048 UTF-8 bytes, with no Unicode control characters. No trimming, resolution or normalization.}
     ReaderToolUpdate:
       type: object
       additionalProperties: false
@@ -2252,6 +2268,29 @@ components:
         backwardClockTransitions: {type: integer, minimum: 0, description: Per-Thread decreases between consecutive recorded source-order clocks; not proof of a bad clock.}
         buckets: {type: array, maxItems: 60, items: {$ref: "#/components/schemas/SessionAnalyticsActivityBucket"}}
         unplacedRange: {type: [string, "null"], maxLength: 512}
+    SessionAnalyticsFilePath:
+      type: object
+      additionalProperties: false
+      required: [key, path, calls, readCalls, editCalls, searchCalls]
+      properties:
+        key: {type: string, pattern: "^file:[0-9a-f]{64}$", description: Opaque selector derived from the exact recorded path.}
+        path: {type: string, minLength: 1, maxLength: 2048}
+        calls: {type: integer, minimum: 0, description: Distinct folded calls involving this exact path.}
+        readCalls: {type: integer, minimum: 0}
+        editCalls: {type: integer, minimum: 0}
+        searchCalls: {type: integer, minimum: 0, description: Distinct calls with this recorded search scope.}
+    SessionAnalyticsFileActivity:
+      type: object
+      additionalProperties: false
+      required: [callsWithActivity, callsWithoutActivity, readCalls, editCalls, searchCalls, uniquePaths, paths]
+      properties:
+        callsWithActivity: {type: integer, minimum: 0, description: Folded structured calls with nonempty explicit file facts.}
+        callsWithoutActivity: {type: integer, minimum: 0, description: Folded structured calls without retained file facts; does not establish absence of file use.}
+        readCalls: {type: integer, minimum: 0, description: Distinct folded calls with a recorded read path.}
+        editCalls: {type: integer, minimum: 0, description: Distinct folded calls with a recorded edit path.}
+        searchCalls: {type: integer, minimum: 0, description: Distinct folded calls with a recorded search scope.}
+        uniquePaths: {type: integer, minimum: 0, maximum: 2000}
+        paths: {type: array, maxItems: 2000, items: {$ref: "#/components/schemas/SessionAnalyticsFilePath"}}
     SessionAnalytics:
       type: object
       additionalProperties: false
@@ -2269,6 +2308,7 @@ components:
         usage: {$ref: "#/components/schemas/SessionAnalyticsUsage"}
         evidence: {$ref: "#/components/schemas/SessionAnalyticsEvidence"}
         activity: {$ref: "#/components/schemas/SessionAnalyticsActivity"}
+        fileActivity: {$ref: "#/components/schemas/SessionAnalyticsFileActivity"}
       allOf:
         - if: {properties: {analyticsVersion: {enum: [3, 4]}}, required: [analyticsVersion]}
           then:
@@ -2280,11 +2320,13 @@ components:
                     items: {required: [clockQuality]}
         - if: {properties: {analyticsVersion: {const: 4}}, required: [analyticsVersion]}
           then:
+            required: [fileActivity]
             properties:
               summary: {required: [identifiedToolCalls, unidentifiedToolCalls]}
               tools:
                 items: {required: [key, identity]}
           else:
+            not: {required: [fileActivity]}
             properties:
               summary:
                 not:
@@ -2862,7 +2904,7 @@ components:
         toolUpdateJson:
           type: string
           maxLength: 140000
-          description: "v2/v3/v4/v5 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). V4/v5 additionally admit _meta with exactly the atape.dev/tool-identity key whose value is a closed normalized MCP/Skill identity or null to clear; V5 also admits ordinary tool identity {type: tool, name: native-name}; missing _meta preserves identity. Maximum 140000 bytes; each input/output value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
+          description: "v2/v3/v4/v5 only. UTF-8 JSON string containing an admitted ACP tool_call/tool_call_update (toolCallId, title, kind, status, rawInput, rawOutput). V4/v5 admit _meta with required atape.dev/tool-identity whose value is a closed normalized MCP/Skill identity or null to clear; V5 also admits ordinary tool identity and optional atape.dev/file-activity (null or at most 64 operation/path entries, at most 4096 UTF-8 bytes under JSON.stringify of the decoded array, exact nonempty paths at most 2048 UTF-8 bytes without Unicode control characters). Missing file activity inherits; null/[] clears. V4 rejects file activity. Maximum 140000 bytes; each input/output value is bounded to 65536 bytes, depth 32 and 10000 nodes. Null and absence are distinct. Conversation reads expose decoded tool details; text/toolLabel are derived summaries."
         childSourceThreadId: {type: [string, "null"]}
     CanonicalBatch:
       type: object

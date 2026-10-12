@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5, ToolIdentityMetaKey, type AcpContentBlock, type AcpToolIdentity, type AdapterObservation } from "@atape/domain"
+import { CanonicalProfileVersion, CanonicalProfileVersion3, CanonicalProfileVersion4, CanonicalProfileVersion5, FileActivityMetaKey, ToolIdentityMetaKey, type AcpContentBlock, type AcpToolIdentity, type AdapterObservation } from "@atape/domain"
 import { compileRedactionPolicy, makeRedactionLayer, validateRedactionConfiguration, type RedactionPattern } from "./redaction.ts"
 import { prepareCanonicalSlice, prepareCollectedObservation } from "./collectorPreparation.ts"
 import { rawSourceRecord } from "./rawPreparation.ts"
@@ -51,6 +51,69 @@ describe("Redaction Module", () => {
       .pipe(Effect.provide(makeRedactionLayer(policy))))
     expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: { type: "tool", name: "CommandExecution" } })
     expect(JSON.stringify(result.observation)).not.toContain("private-command-argument")
+  })
+  const fileObservation = (rawInput: unknown, path = "/private-project/file.ts"): AdapterObservation => {
+    const initial = observation(), event = initial.events[0]!
+    return { ...initial, events: [{ ...event, update: { sessionUpdate: "tool_call", toolCallId: "call",
+      title: `Read ${path}`, rawInput, _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Read" },
+        [FileActivityMetaKey]: [{ operation: "read", path }] } } }] }
+  }
+  it("rejects file metadata under v4 before preparation", async () => {
+    const policy = await compile()
+    await expect(Effect.runPromise(prepareCanonicalSlice("fixture", fileObservation({ file_path: "/private-project/file.ts" }), CanonicalProfileVersion4)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))).rejects.toMatchObject({ _tag: "CollectionContractError" })
+  })
+  it.each([
+    { rawInput: { file_path: "/private-project/file.ts" }, patterns: [{ name: "original path", type: "local", field_pattern: "^file_path$" }], secrets: [] },
+    { rawInput: { changes: { "/private-project/file.ts": { type: "update" } } }, patterns: [], secrets: ["/private-project"] },
+    { rawInput: { arguments: '{"file_path":"/private-project/file.ts"}' }, patterns: [{ name: "JSON path", type: "local", field_pattern: "^file_path$" }], secrets: [] },
+    { rawInput: { native_path: "/private-project/file.ts" }, patterns: [{ name: "namespace", type: "local", pattern: "atape\\.dev/file-activity" }], secrets: [] },
+    { rawInput: { native_path: "/private-project/file.ts" }, patterns: [{ name: "metadata path", type: "local", field_pattern: "^path$" }], secrets: [] }
+  ])("clears private path copies and titles while retaining public tool identity (%#)", async ({ rawInput, patterns, secrets }) => {
+    const policy = await compile(patterns, secrets)
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", fileObservation(rawInput), CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]",
+      _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Read" }, [FileActivityMetaKey]: null } })
+    expect(result.observation.events[0]!.fidelity).toBe("redacted")
+    const prepared = result.observation.events[0]!.update
+    expect(JSON.stringify("_meta" in prepared ? prepared._meta : undefined)).not.toContain("private-project")
+  })
+  it("clears copied map-key paths when their original parent key is hidden", async () => {
+    const policy = await compile([{ name: "map parent", type: "local", pattern: "^changes$" }])
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", fileObservation({ changes: { "/private-project/file.ts": { type: "update" } } }), CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]",
+      _meta: { [FileActivityMetaKey]: null, [ToolIdentityMetaKey]: { type: "tool", name: "Read" } } })
+  })
+  it("keeps path facts when only unrelated input or identity fields are masked", async () => {
+    const policy = await compile([{ name: "identity", type: "local", field_pattern: "^name$" }])
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", fileObservation({ file_path: "/private-project/file.ts", token: "private-token" }), CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED] /private-project/file.ts",
+      _meta: { [ToolIdentityMetaKey]: null, [FileActivityMetaKey]: [{ operation: "read", path: "/private-project/file.ts" }] } })
+  })
+  it.each(["cat /private\\ project/file.ts", "cat '/private project/file.ts'", "View image file.ts"])(
+    "hides derived path title forms without parsing source syntax %s", async title => {
+      const policy = await compile([{ name: "native path", type: "local", field_pattern: "^path$" }])
+      const initial = fileObservation({ parsed_cmd: [{ type: "read", path: "/private project/file.ts" }] }, "/private project/file.ts")
+      const result = await Effect.runPromise(prepareCanonicalSlice("fixture", { ...initial,
+        events: [{ ...initial.events[0]!, update: { ...initial.events[0]!.update, title } }] }, CanonicalProfileVersion5)
+        .pipe(Effect.provide(makeRedactionLayer(policy))))
+      expect(result.observation.events[0]!.update).toMatchObject({ title: "[REDACTED]",
+        _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Read" }, [FileActivityMetaKey]: null } })
+      expect(JSON.stringify(result.observation.events[0]!.update)).not.toContain("file.ts")
+    })
+  it("clears a complete multi-path fact when one copied path is masked", async () => {
+    const policy = await compile([{ name: "native path", type: "local", field_pattern: "^private_path$" }])
+    const initial = fileObservation({ private_path: "/private-project/file.ts", public_path: "public.ts" })
+    const update = initial.events[0]!.update
+    if (update.sessionUpdate !== "tool_call") throw new Error("fixture")
+    const result = await Effect.runPromise(prepareCanonicalSlice("fixture", { ...initial,
+      events: [{ ...initial.events[0]!, update: { ...update, _meta: { ...update._meta!, [FileActivityMetaKey]: [
+        { operation: "read", path: "/private-project/file.ts" }, { operation: "edit", path: "public.ts" }] } } }] }, CanonicalProfileVersion5)
+      .pipe(Effect.provide(makeRedactionLayer(policy))))
+    expect(result.observation.events[0]!.update).toHaveProperty("_meta", { [ToolIdentityMetaKey]: { type: "tool", name: "Read" }, [FileActivityMetaKey]: null })
   })
   it.each([
     { patterns: [], secrets: ["private-native-tool"], source: undefined },

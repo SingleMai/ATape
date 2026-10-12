@@ -128,6 +128,147 @@ func TestToolIdentityPublicationContract(t *testing.T) {
 		t.Fatal(e)
 	}
 	assertView(native.SessionID, "")
+	t.Run("file activity v5 native and publication", func(t *testing.T) {
+		b := batch("file-native")
+		b.CanonicalProfileVersion = ingestion.StableToolCanonicalProfileVersion
+		b.Events[0].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"one","title":"Read first display","_meta":{"atape.dev/tool-identity":{"type":"tool","name":"Read"},"atape.dev/file-activity":[{"operation":"read","path":"src/a.go"},{"operation":"read","path":"src/a.go"},{"operation":"edit","path":"src/a.go"},{"operation":"search","path":"src"}]},"rawInput":{"private":"source-only"}}`
+		b.Events[1].ToolUpdateJSON = `{"sessionUpdate":"tool_call_update","toolCallId":"one","title":"Last first display","status":"completed"}`
+		b.Events[2].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"two","title":"Read second display","_meta":{"atape.dev/tool-identity":null,"atape.dev/file-activity":[{"operation":"read","path":"src/a.go"}]}}`
+		unknown := b.Events[0]
+		unknown.SourceEventID, unknown.SourceOrder = "file-unknown", 4
+		unknown.ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"unknown","title":"Read secret-title.go","kind":"read"}`
+		b.Events = append(b.Events, unknown)
+		b.Session.ReportedEventCount = len(b.Events)
+		module := sessionanalytics.New(reader)
+		assertFiles := func(session, head string) sessionanalytics.Result {
+			t.Helper()
+			view, err := module.Open(ctx, web, session, sessionanalytics.Query{AnalyticsVersion: 4, Metric: "files", Limit: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := view.FileActivity
+			if view.Head != head || f == nil || f.CallsWithActivity != 2 || f.CallsWithoutActivity != 1 || f.ReadCalls != 2 || f.EditCalls != 1 || f.SearchCalls != 1 || f.UniquePaths != 2 || f.Paths[0].Path != "src/a.go" || f.Paths[0].Calls != 2 || len(view.Evidence.Items) != 1 || view.Evidence.Items[0].Label != "Last first display" || view.Evidence.NextCursor == "" {
+				t.Fatalf("file facts: %+v", view)
+			}
+			wire, _ := json.Marshal(view)
+			if strings.Contains(string(wire), "source-only") || strings.Contains(string(wire), "secret-title.go") || strings.Contains(string(wire), "rawInput") {
+				t.Fatal("file analysis inferred title path or exposed source body")
+			}
+			facts, ok, err := reader.SessionAnalytics(ctx, web, session, view.Snapshot)
+			if err != nil || !ok {
+				t.Fatalf("file snapshot: %v %v", ok, err)
+			}
+			found := false
+			for _, event := range facts.Events {
+				if event.Text != "" || strings.Contains(event.ToolUpdateJSON, "source-only") {
+					t.Fatal("file snapshot exposed payload")
+				}
+				tool, err := canonical.ParseToolUpdate(event.ToolUpdateJSON)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tool.Meta != nil && tool.Meta.FileActivity != nil {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatal("snapshot stripped file namespace")
+			}
+			q := sessionanalytics.Query{AnalyticsVersion: 4, Metric: "files", File: f.Paths[0].Key, Operation: "read", Limit: 1, Snapshot: view.Snapshot}
+			first, err := module.Open(ctx, web, session, q)
+			if err != nil || len(first.Evidence.Items) != 1 || first.Evidence.Items[0].Label != "Last first display" || first.Evidence.NextCursor == "" {
+				t.Fatalf("file page: %+v %v", first.Evidence, err)
+			}
+			q.Cursor = first.Evidence.NextCursor
+			last, err := module.Open(ctx, web, session, q)
+			if err != nil || len(last.Evidence.Items) != 1 || last.Evidence.Items[0].Label != "Read second display" {
+				t.Fatalf("file continuation: %+v %v", last.Evidence, err)
+			}
+			q.Operation = "edit"
+			if _, err := module.Open(ctx, web, session, q); err == nil {
+				t.Fatal("file cursor ignored changed operation")
+			}
+			item := first.Evidence.Items[0]
+			page, ok, err := reader.ConversationPage(ctx, web, session, item.ThreadID, canonical.ConversationPageRequest{Limit: 1, Snapshot: view.Snapshot, AtEventID: item.EventID})
+			if err != nil || !ok || page.SnapshotToken != view.Snapshot {
+				t.Fatalf("file original target: %v %v", ok, err)
+			}
+			anchor := false
+			for _, event := range page.Events {
+				if event.ID == item.EventID && event.ToolLabel == item.Label {
+					anchor = true
+				}
+			}
+			if !anchor {
+				t.Fatal("file evidence did not open original last update")
+			}
+			old, err := module.Open(ctx, web, session, sessionanalytics.Query{AnalyticsVersion: 3})
+			if err != nil || old.FileActivity != nil {
+				t.Fatalf("old file report appeared: %+v %v", old, err)
+			}
+			outsider := web
+			outsider.UserID = "00000000-0000-4000-8000-000000000099"
+			_, err = module.Open(ctx, outsider, session, sessionanalytics.Query{AnalyticsVersion: 4, Metric: "files", Snapshot: view.Snapshot})
+			var concealed *sessionanalytics.NotFoundError
+			if !errors.As(err, &concealed) {
+				t.Fatalf("file token bypassed membership: %v", err)
+			}
+			return view
+		}
+		nativeWriter := ingestion.NewIngestor(reader)
+		native, err := nativeWriter.ApplyBatch(ctx, cli, b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nativeView := assertFiles(native.SessionID, "")
+		b.BatchID = "native-file-change"
+		b.Events[0].Revision++
+		b.Events[0].ToolUpdateJSON = strings.ReplaceAll(b.Events[0].ToolUpdateJSON, "src/a.go", "src/changed.go")
+		if _, err := nativeWriter.ApplyBatch(ctx, cli, b); err != nil {
+			t.Fatal(err)
+		}
+		_, err = module.Open(ctx, web, native.SessionID, sessionanalytics.Query{AnalyticsVersion: 4, Metric: "files", Snapshot: nativeView.Snapshot})
+		var stale *canonical.RefreshRequiredError
+		if !errors.As(err, &stale) {
+			t.Fatalf("file-only native edit retained token: %v", err)
+		}
+		b.Events[0].ToolUpdateJSON = strings.ReplaceAll(b.Events[0].ToolUpdateJSON, "src/changed.go", "src/a.go")
+		b.Session.SourceSessionID = "file-publication"
+		a := stage(b, publication.StableToolTargetProfile, "")
+		if _, err := writer.Validate(ctx, cli, a.ID); err != nil {
+			t.Fatal(err)
+		}
+		active, err := writer.Activate(ctx, cli, a.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view := assertFiles(a.SessionID, active.Head)
+		b.Events[0].Revision++
+		b.Events[0].ToolUpdateJSON = `{"sessionUpdate":"tool_call","toolCallId":"one","title":"Read first display","_meta":{"atape.dev/tool-identity":{"type":"tool","name":"Read"},"atape.dev/file-activity":null}}`
+		replacement := stage(b, publication.StableToolTargetProfile, active.Head)
+		if _, err := writer.Validate(ctx, cli, replacement.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writer.Activate(ctx, cli, replacement.ID); err != nil {
+			t.Fatal(err)
+		}
+		_, err = module.Open(ctx, web, a.SessionID, sessionanalytics.Query{AnalyticsVersion: 4, Metric: "files", Snapshot: view.Snapshot})
+		if !errors.As(err, &stale) {
+			t.Fatalf("file head replacement retained token: %v", err)
+		}
+		fresh, err := module.Open(ctx, web, a.SessionID, sessionanalytics.Query{AnalyticsVersion: 4, Metric: "files"})
+		if err != nil || fresh.FileActivity.CallsWithActivity != 1 || fresh.FileActivity.CallsWithoutActivity != 2 || fresh.FileActivity.ReadCalls != 1 || fresh.FileActivity.EditCalls != 0 || fresh.FileActivity.SearchCalls != 0 || fresh.FileActivity.UniquePaths != 1 || len(fresh.Evidence.Items) != 1 {
+			t.Fatalf("file clear did not replace old fact: %+v %v", fresh, err)
+		}
+		b.Session.SourceSessionID = "file-reject-v4"
+		b.CanonicalProfileVersion = ingestion.ToolIdentityCanonicalProfileVersion
+		// Identity is null so the only v5 fact is the file namespace itself.
+		b.Events[0].ToolUpdateJSON = strings.Replace(b.Events[0].ToolUpdateJSON, `{"type":"tool","name":"Read"}`, `null`, 1)
+		old := stage(b, publication.ToolIdentityTargetProfile, "")
+		if _, err := writer.Validate(ctx, cli, old.ID); err == nil {
+			t.Fatal("v4 publication admitted file namespace")
+		}
+	})
 	// V5 ordinary identities travel through the same admitted publication and
 	// authorized snapshot Interfaces; display commands never select the group.
 	t.Run("stable tool v5", func(t *testing.T) {

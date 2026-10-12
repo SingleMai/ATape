@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -25,6 +26,10 @@ type ToolUpdate struct {
 }
 
 const ToolIdentityNamespace = "atape.dev/tool-identity"
+const FileActivityNamespace = "atape.dev/file-activity"
+const MaxFileActivityEntries = 64
+const MaxFileActivityBytes = 4096
+const MaxFilePathBytes = 2048
 
 // ToolIdentity is an Adapter-normalized identity, never inferred from labels or
 // tool payloads. A nil identity in a present Meta explicitly clears the fact.
@@ -34,7 +39,15 @@ type ToolIdentity struct {
 	Name   string `json:"name"`
 }
 type ToolIdentityMeta struct {
-	Identity *ToolIdentity `json:"atape.dev/tool-identity"`
+	Identity     *ToolIdentity   `json:"atape.dev/tool-identity"`
+	FileActivity json.RawMessage `json:"atape.dev/file-activity,omitempty"`
+}
+
+// FileActivityEntry is an explicit Adapter fact. Search paths describe scope,
+// not matching files. Paths retain their exact spelling and are never resolved.
+type FileActivityEntry struct {
+	Operation string `json:"operation"`
+	Path      string `json:"path"`
 }
 
 var errTool = errors.New("invalid bounded ACP tool update")
@@ -77,8 +90,18 @@ func ParseToolUpdate(text string) (*ToolUpdate, error) {
 	}
 	if data, present := fields["_meta"]; present {
 		var envelope map[string]json.RawMessage
-		if json.Unmarshal(data, &envelope) != nil || len(envelope) != 1 || envelope[ToolIdentityNamespace] == nil {
+		if json.Unmarshal(data, &envelope) != nil || envelope[ToolIdentityNamespace] == nil {
 			return nil, errTool
+		}
+		for key := range envelope {
+			if key != ToolIdentityNamespace && key != FileActivityNamespace {
+				return nil, errTool
+			}
+		}
+		if activity, present := envelope[FileActivityNamespace]; present {
+			if !validFileActivity(activity) {
+				return nil, errTool
+			}
 		}
 		identity := envelope[ToolIdentityNamespace]
 		if !bytes.Equal(bytes.TrimSpace(identity), []byte("null")) {
@@ -104,6 +127,37 @@ func ParseToolUpdate(text string) (*ToolUpdate, error) {
 		}
 	}
 	return &tool, nil
+}
+
+func validFileActivity(data json.RawMessage) bool {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return true
+	}
+	var entries []map[string]json.RawMessage
+	if json.Unmarshal(data, &entries) != nil || entries == nil || len(entries) > MaxFileActivityEntries {
+		return false
+	}
+	encodedBytes := 2 // JSON.stringify's array brackets, independent of wire escapes.
+	for index, fields := range entries {
+		var entry FileActivityEntry
+		encoded, _ := json.Marshal(fields)
+		if len(fields) != 2 || fields["operation"] == nil || fields["path"] == nil || json.Unmarshal(encoded, &entry) != nil || !stringIn(entry.Operation, "read", "edit", "search") || !validIdentityUnicode(fields["path"]) || entry.Path == "" || len(entry.Path) > MaxFilePathBytes {
+			return false
+		}
+		for _, char := range entry.Path {
+			if unicode.IsControl(char) {
+				return false
+			}
+			if char == '"' || char == '\\' {
+				encodedBytes++
+			}
+		}
+		encodedBytes += len(`{"operation":"","path":""}`) + len(entry.Operation) + len(entry.Path)
+		if index != 0 {
+			encodedBytes++
+		}
+	}
+	return encodedBytes <= MaxFileActivityBytes
 }
 
 func identityText(value string) bool {

@@ -69,6 +69,10 @@ File activity, costs, response timing, new non-tool Skill signals and a derived
 analytics cache are outside this increment. Current support, compatibility and
 remaining work belong to [Session Analytics](../../session-analytics.md).
 
+[ADR-0125](0125-recorded-file-activity.md) completes the unpublished v5/v4
+contracts with explicit file activity; published Canonical v4 and Analytics v3
+remain unchanged.
+
 ## Verification
 
 Tests use the Adapter, preparation, admission/publication and `Open` Interfaces.

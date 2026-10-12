@@ -28,7 +28,7 @@ export const sessionAnalyticsToolSelections = (report: SessionAnalytics): Readon
   ? report.tools.map(tool => ({ tool, filter: tool.key }))
   : report.tools.map(tool => ({ tool, filter: canFilterSessionAnalyticsTool(tool.name) ? tool.name : null }))
 
-export type SessionAnalyticsFilter = Pick<SessionAnalyticsQuery, "metric" | "thread" | "tool" | "capability" | "server" | "range">
+export type SessionAnalyticsFilter = Pick<SessionAnalyticsQuery, "metric" | "thread" | "tool" | "capability" | "server" | "range" | "file" | "operation">
 
 // Changing evidence selection clears incompatible filters and old ranges.
 // Thread selection scopes activity and evidence; summary, tools and usage remain
@@ -43,6 +43,8 @@ export const selectSessionAnalyticsEvidence = (filter: SessionAnalyticsFilter, s
     ...(filter.tool && ["tools", "failed_tools", "unknown_tools"].includes(metric) ? { tool: filter.tool } : {}),
     ...(filter.capability && ["mcp_tools", "skills"].includes(metric) ? { capability: filter.capability } : {}),
     ...(filter.server && metric === "mcp_tools" ? { server: filter.server } : {}),
+    ...(filter.file && metric === "files" ? { file: filter.file } : {}),
+    ...(filter.operation && metric === "files" ? { operation: filter.operation } : {}),
     ...(filter.range && metric === "records" && snapshot &&
       (previous === undefined || (previous.thread ?? "") === (filter.thread ?? "") &&
         (previous.snapshot === undefined || previous.snapshot === snapshot)) ? { range: filter.range } : {})
@@ -56,10 +58,17 @@ export const readSessionAnalytics = Effect.fn("SessionAnalytics.read")(function*
       message: "Analytics pagination requires a snapshot and a valid page size." }))
   }
   if (query.range !== undefined && (!query.snapshot || query.metric !== "records" || query.tool !== undefined ||
-    query.capability !== undefined || query.server !== undefined || query.range.trim() === "" ||
+    query.capability !== undefined || query.server !== undefined || query.file !== undefined || query.operation !== undefined || query.range.trim() === "" ||
     new TextEncoder().encode(query.range).byteLength > 512)) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
       message: "Activity ranges require a snapshot and records evidence without tool or capability filters." }))
+  }
+  if (((query.file !== undefined || query.operation !== undefined) && query.metric !== "files") ||
+    (query.file !== undefined && !/^file:[0-9a-f]{64}$/.test(query.file)) ||
+    (query.operation !== undefined && !["read", "edit", "search"].includes(query.operation)) ||
+    (query.metric === "files" && (query.tool !== undefined || query.capability !== undefined || query.server !== undefined || query.range !== undefined))) {
+    return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
+      message: "File evidence requires a returned file key and supported operation, without tool, capability or activity range filters." }))
   }
   const gateway = yield* SessionAnalyticsGateway
   const result = yield* gateway.read(sessionId, query)
@@ -74,6 +83,10 @@ export const readSessionAnalytics = Effect.fn("SessionAnalytics.read")(function*
   if (query.metric === "records" && result.analyticsVersion !== 3 && result.analyticsVersion !== 4) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
       message: "This Server does not provide records evidence. Reload its supported analysis." }))
+  }
+  if (query.metric === "files" && result.analyticsVersion !== 4) {
+    return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "http", status: 422,
+      message: "This Server does not provide file activity evidence. Reload its supported analysis." }))
   }
   if ((result.analyticsVersion === 3 || result.analyticsVersion === 4) && result.activity.scopeThreadId !== (query.thread ?? null)) {
     return yield* Effect.fail(new SessionAnalyticsGatewayError({ reason: "decode",

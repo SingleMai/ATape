@@ -25,7 +25,11 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 		writeProblem(w, r, problemInvalidRequest, 0, nil)
 		return
 	}
-	values, ok := strictQuery(w, r, "snapshot", "metric", "thread", "tool", "capability", "server", "cursor", "limit", "range")
+	queryFields := []string{"snapshot", "metric", "thread", "tool", "capability", "server", "cursor", "limit", "range"}
+	if version == sessionanalytics.StableToolVersion {
+		queryFields = append(queryFields, "file", "operation")
+	}
+	values, ok := strictQuery(w, r, queryFields...)
 	if !ok {
 		return
 	}
@@ -54,7 +58,7 @@ func (h *Handler) readSessionAnalytics(w http.ResponseWriter, r *http.Request, e
 	result, err := h.analytics.Open(r.Context(), principalFromContext(r.Context()), r.PathValue("sessionId"), sessionanalytics.Query{
 		Snapshot: values.Get("snapshot"), Metric: values.Get("metric"), Thread: values.Get("thread"),
 		Tool: values.Get("tool"), Capability: values.Get("capability"), Server: values.Get("server"), Cursor: values.Get("cursor"), Limit: limit,
-		AnalyticsVersion: version, Range: values.Get("range"),
+		AnalyticsVersion: version, Range: values.Get("range"), File: values.Get("file"), Operation: values.Get("operation"),
 	})
 	if err != nil {
 		writeError(w, r, err)

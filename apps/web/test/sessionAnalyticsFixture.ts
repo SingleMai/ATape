@@ -56,6 +56,7 @@ export const unknownToolKey = `tool:${"b".repeat(64)}`
 export const stableToolsFixture: Extract<SessionAnalytics, { analyticsVersion: 4 }> = {
   ...activityFixture, analyticsVersion: 4,
   summary: { ...activityFixture.summary, toolCalls: 3, identifiedToolCalls: 2, unidentifiedToolCalls: 1 },
+  fileActivity: { callsWithActivity: 0, callsWithoutActivity: 3, uniquePaths: 0, readCalls: 0, editCalls: 0, searchCalls: 0, paths: [] },
   capabilities: { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 3, mcp: [], skills: [] },
   threads: activityFixture.threads.map(thread => ({ ...thread, toolCalls: thread.id === "root" ? 2 : 1 })),
   tools: [
@@ -73,6 +74,7 @@ export const stableToolsFixture: Extract<SessionAnalytics, { analyticsVersion: 4
 export const literalUnknownToolFixture = (identityType: "tool" | "skill"): Extract<SessionAnalytics, { analyticsVersion: 4 }> => ({
   ...stableToolsFixture,
   summary: { ...stableToolsFixture.summary, toolCalls: 2, identifiedToolCalls: 1, unidentifiedToolCalls: 1 },
+  fileActivity: { ...stableToolsFixture.fileActivity, callsWithoutActivity: 2 },
   threads: stableToolsFixture.threads.map(thread => ({ ...thread, toolCalls: thread.id === "root" ? 2 : 0 })),
   capabilities: { mcpCalls: 0, skillCalls: identityType === "skill" ? 1 : 0, unclassifiedCalls: identityType === "skill" ? 1 : 2, mcp: [],
     skills: identityType === "skill" ? [{ name: "unknown", calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 }] : [] },
@@ -86,3 +88,23 @@ export const literalUnknownToolFixture = (identityType: "tool" | "skill"): Extra
     { eventId: "missing-identity", threadId: "root", kind: "tool_call", label: "Call without identity", occurredAt: null, clockQuality: "unknown" }
   ] }
 })
+
+export const sourceFileKey = `file:${"c".repeat(64)}`
+export const searchScopeKey = `file:${"d".repeat(64)}`
+export const fileActivityFixture: Extract<SessionAnalytics, { analyticsVersion: 4 }> = {
+  ...stableToolsFixture,
+  summary: { ...stableToolsFixture.summary, toolCalls: 5, identifiedToolCalls: 4, unidentifiedToolCalls: 1 },
+  threads: stableToolsFixture.threads.map(thread => ({ ...thread, toolCalls: thread.id === "child" ? 2 : 3 })),
+  capabilities: { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 5, mcp: [], skills: [] },
+  tools: [{ ...stableToolsFixture.tools[0]!, calls: 4, unknown: 3 }, stableToolsFixture.tools[1]!],
+  fileActivity: { callsWithActivity: 3, callsWithoutActivity: 2, uniquePaths: 2, readCalls: 2, editCalls: 1, searchCalls: 1,
+    paths: [
+      { key: sourceFileKey, path: "/work/src/app.ts", calls: 2, readCalls: 2, editCalls: 1, searchCalls: 0 },
+      { key: searchScopeKey, path: "src", calls: 1, readCalls: 0, editCalls: 0, searchCalls: 1 }
+    ] },
+  evidence: { items: [
+    { eventId: "file-read", threadId: "child", kind: "tool_call", label: "Read source file", occurredAt: null, clockQuality: "unknown" },
+    { eventId: "file-edit", threadId: "child", kind: "tool_result", label: "Failed file modification", occurredAt: null, clockQuality: "unknown" },
+    { eventId: "file-search", threadId: "root", kind: "tool_call", label: "Search source scope", occurredAt: null, clockQuality: "unknown" }
+  ], nextCursor: "file-evidence-next" }
+}

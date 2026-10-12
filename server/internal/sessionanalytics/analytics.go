@@ -48,8 +48,8 @@ type Module struct{ store Store }
 func New(store Store) *Module { return &Module{store: store} }
 
 type Query struct {
-	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor, Range string
-	Limit, AnalyticsVersion                                           int
+	Snapshot, Metric, Thread, Tool, Capability, Server, Cursor, Range, File, Operation string
+	Limit, AnalyticsVersion                                                            int
 }
 type InvalidQueryError struct{ Field, Reason string }
 
@@ -166,18 +166,19 @@ type Evidence struct {
 	NextCursor string         `json:"nextCursor,omitempty"`
 }
 type Result struct {
-	Snapshot         string       `json:"snapshot"`
-	Head             string       `json:"head,omitempty"`
-	AnalyticsVersion int          `json:"analyticsVersion"`
-	SessionID        string       `json:"sessionId"`
-	CaptureStatus    string       `json:"captureStatus"`
-	Summary          Summary      `json:"summary"`
-	Tools            []Tool       `json:"tools"`
-	Capabilities     Capabilities `json:"capabilities"`
-	Threads          []Thread     `json:"threads"`
-	Usage            Usage        `json:"usage"`
-	Evidence         Evidence     `json:"evidence"`
-	Activity         *Activity    `json:"activity,omitempty"`
+	Snapshot         string        `json:"snapshot"`
+	Head             string        `json:"head,omitempty"`
+	AnalyticsVersion int           `json:"analyticsVersion"`
+	SessionID        string        `json:"sessionId"`
+	CaptureStatus    string        `json:"captureStatus"`
+	Summary          Summary       `json:"summary"`
+	Tools            []Tool        `json:"tools"`
+	Capabilities     Capabilities  `json:"capabilities"`
+	Threads          []Thread      `json:"threads"`
+	Usage            Usage         `json:"usage"`
+	Evidence         Evidence      `json:"evidence"`
+	Activity         *Activity     `json:"activity,omitempty"`
+	FileActivity     *FileActivity `json:"fileActivity,omitempty"`
 }
 
 // Open always rechecks authorization at the snapshot Seam. Thread selects v3
@@ -246,6 +247,9 @@ func binding(sessionID string, q Query) string {
 	if q.AnalyticsVersion >= ActivityVersion {
 		encoded, _ = json.Marshal([]any{q.AnalyticsVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range})
 	}
+	if q.AnalyticsVersion == StableToolVersion {
+		encoded, _ = json.Marshal([]any{q.AnalyticsVersion, sessionID, q.Snapshot, q.Metric, q.Thread, q.Tool, q.Capability, q.Server, q.Range, q.File, q.Operation})
+	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:])
 }
@@ -256,7 +260,7 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	if q.AnalyticsVersion != Version && q.AnalyticsVersion != ActivityVersion && q.AnalyticsVersion != StableToolVersion {
 		return q, 0, &InvalidQueryError{"analyticsVersion", "is not supported"}
 	}
-	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server, "range": q.Range} {
+	for field, value := range map[string]string{"sessionId": sessionID, "snapshot": q.Snapshot, "thread": q.Thread, "tool": q.Tool, "capability": q.Capability, "server": q.Server, "range": q.Range, "file": q.File, "operation": q.Operation} {
 		limit := 500
 		if field == "snapshot" {
 			limit = 200
@@ -280,6 +284,10 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 		if q.AnalyticsVersion < ActivityVersion {
 			return q, 0, &InvalidQueryError{"metric", "records requires analytics version 3 or 4"}
 		}
+	case "files":
+		if q.AnalyticsVersion != StableToolVersion {
+			return q, 0, &InvalidQueryError{"metric", "files requires analytics version 4"}
+		}
 	default:
 		return q, 0, &InvalidQueryError{"metric", "is not supported"}
 	}
@@ -294,6 +302,12 @@ func validateQuery(sessionID string, q Query) (Query, int, error) {
 	}
 	if q.Server != "" && q.Metric != "mcp_tools" {
 		return q, 0, &InvalidQueryError{"server", "only applies to MCP metrics"}
+	}
+	if q.File != "" && q.Metric != "files" {
+		return q, 0, &InvalidQueryError{"file", "only applies to file activity"}
+	}
+	if q.Operation != "" && (q.Metric != "files" || q.Operation != "read" && q.Operation != "edit" && q.Operation != "search") {
+		return q, 0, &InvalidQueryError{"operation", "requires file activity and read, edit or search"}
 	}
 	if q.Limit == 0 {
 		q.Limit = 20
@@ -325,6 +339,7 @@ type callKey struct{ thread, id string }
 type toolCall struct {
 	name, kind, status string
 	identity           *canonical.ToolIdentity
+	fileActivity       []canonical.FileActivityEntry
 	event              canonical.EventRecord
 }
 type inputKey struct {
@@ -480,6 +495,11 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 		}
 		if update.Meta != nil {
 			call.identity = update.Meta.Identity
+			if update.Meta.FileActivity != nil {
+				if err := json.Unmarshal(update.Meta.FileActivity, &call.fileActivity); err != nil {
+					return Result{}, err
+				}
+			}
 		}
 		call.event = event
 	}
@@ -620,6 +640,13 @@ func derive(ctx context.Context, s canonical.AnalyticsSnapshot, q Query, offset 
 			if threads[id].ParentThreadID != nil {
 				candidates[event.ID] = evidence(event, threads[id].Label)
 			}
+		}
+	}
+	if q.AnalyticsVersion == StableToolVersion {
+		var err error
+		r.FileActivity, err = deriveFileActivity(ctx, calls, q, candidates)
+		if err != nil {
+			return Result{}, err
 		}
 	}
 	var allTokens tokenSum

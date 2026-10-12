@@ -209,6 +209,10 @@ See [v4 ingestion](../api/canonical-ingestion.md#v4-normalized-tool-identity) fo
 closed shapes, null/absence semantics, bounds and redaction.
 
 Canonical v5 adds `{"type":"tool","name":"native-name"}` to that namespace.
+The unpublished v5 contract also admits optional `atape.dev/file-activity`
+with bounded explicit read/edit/search path entries; v4 continues rejecting it.
+Copied source fields must remain admitted for upload redaction. See
+[recorded file activity](../session-analytics.md#recorded-file-activity).
 V4 still accepts only MCP/Skill identities. Current checkout Claude declares
 publication target v5 and checks explicit v5 Host support; Codex declares the
 paged legacy Canonical v5 profile and checks its local Host advertisement.
