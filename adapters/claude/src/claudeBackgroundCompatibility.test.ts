@@ -1,4 +1,4 @@
-import { CanonicalProfileVersion5, SourceCaptureHeaderV2, SourceCapturePage, type AdapterOpenContext, type SourceCaptureFrame,
+import { CanonicalProfileVersion4, SourceCaptureHeaderV2, SourceCapturePage, type AdapterOpenContext, type SourceCaptureFrame,
   type SourceOpenRequestV2 } from "@atape/domain"
 import { Schema } from "effect"
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -13,7 +13,7 @@ const folder = new URL("../fixtures/native-background-child-2.1.263/", import.me
 const proof = JSON.parse(await readFile(new URL("provenance.json", folder), "utf8")) as Row
 const root = await readFile(new URL("root.jsonl", folder), "utf8"), child = await readFile(new URL("child.jsonl", folder), "utf8")
 const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 10000, threads: 100, durationMs: 300000 }
-const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion5] }
+const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion4] }
 const childId = `claude-agent:${proof.agentId}`, notificationId = `${proof.notification.uuid}:0`, launchId = `${proof.call.receiptUuid}:0`
 let historical: Awaited<ReturnType<typeof historicalSourceCaptureFactory>>
 let directory: string, file: string, childFile: string, context: AdapterOpenContext & { signal: AbortSignal }

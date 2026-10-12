@@ -11,6 +11,8 @@ import { acquireProcessLock } from "./processLock.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
 import { assertRuntimeDataAdmission, runtimeContext } from "./runtimeAdmission.ts"
 import { createUpdateControl, updateControlProtocol } from "./updateControl.ts"
+import { readCaptureMigrationPair } from "./captureMigrationAdmission.ts"
+import { readTargetUpdateHandoff, validateTargetUpdateExecutable } from "./targetUpdate.ts"
 import { applyRuntimeSelection, atomicJSON, decodeLegacyRuntimeSelection, decodeRuntimeSelection,
   legacyBridgeCaptureContract, missing, readBoundedJSON, resolveRuntimeEntry, runtimeSelectionFile, updateDirectory } from "./runtimeSelection.ts"
 
@@ -124,8 +126,26 @@ const validateControlHandoff = async (paths: NodeClientPaths, record: typeof Pro
     throw refused("metadata", "The update handoff no longer has an owning updater.")
   }
   const control = createUpdateControl(paths.atapeHome)
-  if (!(await control.recoveryPending())) throw refused("metadata", "No independent update handoff admits this Collector.")
-  const runtime = await control.handoffRuntime()
+  let runtime
+  if (await control.recoveryPending()) runtime = await control.handoffRuntime()
+  else {
+    // A target-owned handoff settles public execution before private migration.
+    // It admits this readiness child only after the exact capture requirement
+    // completes; the stable handoff still gates ordinary collection separately.
+    const job = await readTargetUpdateHandoff(paths.atapeHome), pair = await readCaptureMigrationPair(paths.atapeHome)
+    if (!job || job.phase !== "activating" || !isDeepStrictEqual(job.paths, paths) ||
+      pair.ledger?.phase !== "completed" || !pair.ledger.receipt)
+      throw refused("metadata", "No completed target execution handoff admits this Collector.")
+    const requirement = pair.ledger.required.requirement, boundary = await control.migrationBoundary(requirement.outerKey)
+    if (boundary.phase !== "completed" || !boundary.forwardOnly || !isDeepStrictEqual(boundary.selection, boundary.target) ||
+      !isDeepStrictEqual(boundary.target, requirement.target) || !isDeepStrictEqual(requirement.paths, paths) ||
+      job.bootstrapEntry !== boundary.target.bootstrapEntry || job.bundle.version !== boundary.target.version ||
+      job.bundle.captureStateContract !== boundary.target.captureStateContract ||
+      job.bundle.updateControlProtocol !== boundary.target.protocol || !isDeepStrictEqual(job.bundle.packages, requirement.bundle.packages))
+      throw refused("metadata", "The completed execution boundary differs from this target handoff.")
+    await validateTargetUpdateExecutable(job)
+    runtime = boundary.target
+  }
   if (!runtime || runtime.captureStateContract !== legacyBridgeCaptureContract) {
     throw refused("metadata", "The update handoff does not preserve this Collector's capture contract.")
   }

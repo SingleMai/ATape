@@ -82,3 +82,13 @@ it("accepts only bounded token-bound migration entries without filesystem argume
     ["__capture-migration-apply", token, token, token, fingerprint, "/private/state"]])
     expect(() => parseCLI(args)).toThrow("Unsupported arguments")
 })
+
+it("accepts only request-bound target operations without caller filesystem arguments", () => {
+  const id = "e859003d-90b4-44f6-ae5a-c14aa3c8ede7"
+  for (const action of ["prepare", "activate", "recover", "owner-recover", "owner-protected"])
+    expect(parseCLI(["__update-target", id, id, action, ...(action.startsWith("owner-") ? [id] : [])])).toEqual({
+      kind: "__update-target", options: { id, token: id, action, ...(action.startsWith("owner-") ? { nonce: id } : {}) } })
+  for (const args of [["__update-target", id, id], ["__update-target", id, id, "rollback"],
+    ["__update-target", "/private/state", id, "prepare"], ["__update-target", id, id, "recover", "--version"],
+    ["__update-target", id, id, "owner-protected", "/private/state"]]) expect(() => parseCLI(args)).toThrow()
+})

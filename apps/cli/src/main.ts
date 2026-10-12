@@ -24,6 +24,7 @@ import { cliVersion, captureStateContract } from "./version.ts"
 import { assertManualStateUpgradeReady, prepareManualStateUpgrade, recordV2CollectorAdmission } from "./runtime/manualStateUpgrade.ts"
 import { applyCaptureMigrationEntry, preflightCaptureMigrationEntry } from "./runtime/captureMigration.ts"
 import { makeCaptureMigrationPrerequisitesLayer } from "./runtime/captureMigrationPrerequisites.ts"
+import { executeTargetUpdateEntry } from "./runtime/targetUpdateEntry.ts"
 
 const main = async () => {
   let command
@@ -35,6 +36,21 @@ const main = async () => {
     return
   }
 
+  if (command.kind === "__update-target") {
+    const cancellation = new AbortController(), deadline = setTimeout(() => cancellation.abort(), 600_000)
+    const stop = () => cancellation.abort()
+    process.once("SIGINT", stop); process.once("SIGTERM", stop)
+    try {
+      const receipt = await executeTargetUpdateEntry(defaultNodeClientPaths(), command.options, process.env, cancellation.signal)
+      process.stdout.write(`${JSON.stringify(receipt)}\n`)
+    } catch {
+      process.stderr.write("ATape target-owned update could not settle. Recovery will retry.\n")
+      process.exitCode = 1
+    } finally {
+      clearTimeout(deadline); process.removeListener("SIGINT", stop); process.removeListener("SIGTERM", stop)
+    }
+    return
+  }
   if (command.kind === "__capture-migration-preflight" || command.kind === "__capture-migration-apply") {
     const paths = defaultNodeClientPaths(), context = runtimeContext(paths.atapeHome)
     const signal = AbortSignal.timeout(20_000)
@@ -94,11 +110,6 @@ const main = async () => {
 
   if ((requestsGuidedExperience(command) || command.kind === "start") && supportsInteractiveExperience()) {
     const paths = defaultNodeClientPaths()
-    const controlRecovery = await createUpdateControl(paths.atapeHome).recoveryPending()
-    if (captureStateContract === legacyBridgeCaptureContract && !controlRecovery && !await createUpdateControl(paths.atapeHome).readSelection()) {
-      await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
-      await Effect.runPromise(prepareManualStateUpgrade(paths))
-    }
     if (await needsUpdateRecovery(paths)) {
       const release = await acquireUpdateWorker(paths.atapeHome)
       if (release) {
@@ -107,6 +118,11 @@ const main = async () => {
         const delegated = await delegateManagedRuntime(process.argv[1]!, process.argv.slice(2), { ...process.env, ATAPE_RUNTIME_DIRECT: "" })
         if (delegated !== undefined) { process.exitCode = delegated; return }
       }
+    }
+    const controlRecovery = await createUpdateControl(paths.atapeHome).recoveryPending()
+    if (captureStateContract === legacyBridgeCaptureContract && !controlRecovery && !await createUpdateControl(paths.atapeHome).readSelection()) {
+      await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
+      await Effect.runPromise(prepareManualStateUpgrade(paths))
     }
     await assertRuntimeDataAdmission(runtimeContext(paths.atapeHome))
     if (captureStateContract === legacyBridgeCaptureContract) await Effect.runPromise(prepareManualStateUpgrade(paths))
@@ -220,11 +236,15 @@ const main = async () => {
           try: async () => recoverPendingUpdate(paths, await selectedBootstrap(paths.atapeHome, process.env.ATAPE_BOOTSTRAP_ENTRY ?? process.argv[1]!), process.env),
           catch: cause => new Error(String(cause))
         }).pipe(Effect.uninterruptible, Effect.andThen(Effect.gen(function*() {
+          const selected = yield* Effect.tryPromise({ try: () => readEffectiveRuntimeSelection(paths.atapeHome), catch: cause => new Error(String(cause)) })
+          // A copied worker may settle its stable target handoff, but only the
+          // selected executable owns another capture-dependent update cycle.
+          if (selected && selected.version !== cliVersion) return
           // The copied old worker may repair control state, but must not begin
           // another capture-dependent update using the selected runtime's name.
           yield* Effect.tryPromise({ try: () => assertRuntimeDataAdmission(runtimeContext(paths.atapeHome)),
             catch: cause => cause instanceof Error ? cause : new Error(String(cause)) })
-          const current = (yield* Effect.tryPromise({ try: () => readEffectiveRuntimeSelection(paths.atapeHome), catch: cause => new Error(String(cause)) }))?.version ?? cliVersion
+          const current = selected?.version ?? cliVersion
           yield* runAutomaticUpdates(current)
         }))),
         release => Effect.sync(() => release?.())

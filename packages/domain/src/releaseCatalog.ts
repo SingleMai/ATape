@@ -4,10 +4,10 @@ export const releaseBundleProtocol = "atape.release-bundle.v1"
 export const updateCatalogProtocol = "atape.update-catalog.v1"
 export const updateCatalogTag = "atape-update-catalog-v1"
 export const releaseMetadataBaseURL = "https://updates.atape.net"
-export const releaseCatalogURL = (protocol: "atape.update-catalog.v1" | "atape.update-catalog.v2") =>
-  `${releaseMetadataBaseURL}/catalog/${protocol === "atape.update-catalog.v2" ? "v2" : "v1"}.json`
-export const releaseBundleURL = (version: string, protocol: "atape.release-bundle.v1" | "atape.release-bundle.v2") =>
-  `${releaseMetadataBaseURL}/releases/${version}/bundle.${protocol === "atape.release-bundle.v2" ? "v2" : "v1"}.json`
+export const releaseCatalogURL = (protocol: "atape.update-catalog.v1" | "atape.update-catalog.v2" | "atape.update-catalog.v3") =>
+  `${releaseMetadataBaseURL}/catalog/${protocol.slice(-2)}.json`
+export const releaseBundleURL = (version: string, protocol: "atape.release-bundle.v1" | "atape.release-bundle.v2" | "atape.release-bundle.v3") =>
+  `${releaseMetadataBaseURL}/releases/${version}/bundle.${protocol.slice(-2)}.json`
 // The v1 reader always requires this original base. Future producer packages
 // must extend releasePackageNames without growing this immutable reader floor.
 const requiredBundlePackages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude",
@@ -135,8 +135,6 @@ export const MigrationReleaseBundle = Schema.Struct({
   } catch { return false }
 }))
 export type MigrationReleaseBundle = typeof MigrationReleaseBundle.Type
-export const ManagedReleaseBundle = Schema.Union([ReleaseBundle, MigrationReleaseBundle])
-export type ManagedReleaseBundle = typeof ManagedReleaseBundle.Type
 
 const MigrationReleaseRoute = Schema.Struct({ fromCaptureStateContract: OpaqueProtocol,
   updateControlProtocol: OpaqueProtocol, migrationProtocol: OpaqueProtocol, migrationId: OpaqueProtocol, version: StableVersion })
@@ -175,7 +173,8 @@ export const migrationReleaseBundleFingerprint = (value: MigrationReleaseBundle)
 }
 export const managedReleaseBundleFingerprint = (value: ManagedReleaseBundle): string => {
   const bundle = decodeManagedReleaseBundle(value)
-  return bundle.protocol === releaseBundleProtocol ? releaseBundleFingerprint(bundle) : migrationReleaseBundleFingerprint(bundle)
+  return bundle.protocol === releaseBundleProtocol ? releaseBundleFingerprint(bundle) :
+    bundle.protocol === migrationReleaseBundleProtocol ? migrationReleaseBundleFingerprint(bundle) : targetReleaseBundleFingerprint(bundle)
 }
 
 export const selectMigrationReleaseBundle = (value: MigrationReleaseCatalog, compatibility: {
@@ -236,5 +235,112 @@ export const migrationReleaseBundleFromBody = (body: string): MigrationReleaseBu
   if (legacy && releaseBundleFingerprint(legacy) !== releaseBundleFingerprint({ protocol: releaseBundleProtocol,
     version: bundle.version, captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol,
     packages: bundle.packages })) throw new Error("Legacy and migration release descriptors disagree.")
+  return bundle
+}
+
+// Target-owned execution has a distinct discovery namespace. Its supported
+// source contracts are authority, rather than a parent-interpreted SQL plan.
+export const updateTargetProtocol = "atape.update-target.v1" as const
+export const targetReleaseBundleProtocol = "atape.release-bundle.v3" as const
+export const targetReleaseCatalogProtocol = "atape.update-catalog.v3" as const
+export const targetReleaseCatalogTag = "atape-update-catalog-v3" as const
+export const TargetReleaseBundle = Schema.Struct({
+  protocol: Schema.Literal(targetReleaseBundleProtocol), version: StableVersion,
+  captureStateContract: OpaqueProtocol, updateControlProtocol: OpaqueProtocol,
+  updateTargetProtocol: Schema.Literal(updateTargetProtocol),
+  fromCaptureStateContracts: Schema.Array(OpaqueProtocol).check(Schema.isLengthBetween(1, 16)),
+  packages: Schema.Array(ReleasePackage).check(Schema.isLengthBetween(7, 32))
+}).check(Schema.makeFilter(bundle => {
+  try {
+    decodeReleaseBundle({ protocol: releaseBundleProtocol, version: bundle.version,
+      captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol, packages: bundle.packages })
+    return new Set(bundle.fromCaptureStateContracts).size === bundle.fromCaptureStateContracts.length &&
+      bundle.fromCaptureStateContracts.includes(bundle.captureStateContract)
+  } catch { return false }
+}))
+export type TargetReleaseBundle = typeof TargetReleaseBundle.Type
+export const ManagedReleaseBundle = Schema.Union([ReleaseBundle, MigrationReleaseBundle, TargetReleaseBundle])
+export type ManagedReleaseBundle = typeof ManagedReleaseBundle.Type
+export const decodeTargetReleaseBundle = (value: unknown): TargetReleaseBundle =>
+  Schema.decodeUnknownSync(TargetReleaseBundle, { onExcessProperty: "error" })(value)
+export const targetReleaseBundleFingerprint = (value: TargetReleaseBundle): string => {
+  const bundle = decodeTargetReleaseBundle(value)
+  const base = JSON.parse(releaseBundleFingerprint({ protocol: releaseBundleProtocol, version: bundle.version,
+    captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol,
+    packages: bundle.packages })) as Record<string, unknown>
+  return JSON.stringify({ ...base, protocol: targetReleaseBundleProtocol, updateTargetProtocol: bundle.updateTargetProtocol,
+    fromCaptureStateContracts: [...bundle.fromCaptureStateContracts].sort() })
+}
+const TargetReleaseRoute = Schema.Struct({ fromCaptureStateContract: OpaqueProtocol, updateControlProtocol: OpaqueProtocol,
+  updateTargetProtocol: Schema.Literal(updateTargetProtocol), version: StableVersion })
+const targetRouteKey = (route: typeof TargetReleaseRoute.Type) => JSON.stringify([
+  route.fromCaptureStateContract, route.updateControlProtocol, route.updateTargetProtocol])
+export const TargetReleaseCatalog = Schema.Struct({
+  protocol: Schema.Literal(targetReleaseCatalogProtocol),
+  revision: Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)),
+  bundles: Schema.Array(TargetReleaseBundle).check(Schema.isMaxLength(64)),
+  routes: Schema.Array(TargetReleaseRoute).check(Schema.isMaxLength(256))
+}).check(Schema.makeFilter(catalog => {
+  if (new Set(catalog.bundles.map(bundle => bundle.version)).size !== catalog.bundles.length ||
+    new Set(catalog.routes.map(targetRouteKey)).size !== catalog.routes.length) return false
+  return catalog.routes.every(route => {
+    const bundle = catalog.bundles.find(item => item.version === route.version)
+    return bundle !== undefined && bundle.updateControlProtocol === route.updateControlProtocol &&
+      bundle.updateTargetProtocol === route.updateTargetProtocol && bundle.fromCaptureStateContracts.includes(route.fromCaptureStateContract)
+  }) && catalog.bundles.every(bundle => catalog.routes.some(route => route.version === bundle.version))
+}))
+export type TargetReleaseCatalog = typeof TargetReleaseCatalog.Type
+export const decodeTargetReleaseCatalog = (value: unknown): TargetReleaseCatalog =>
+  Schema.decodeUnknownSync(TargetReleaseCatalog, { onExcessProperty: "error" })(value)
+export const selectTargetReleaseBundle = (value: TargetReleaseCatalog, compatibility: {
+  readonly captureStateContract: string; readonly updateControlProtocol: string; readonly updateTargetProtocol: string
+}): TargetReleaseBundle => {
+  const catalog = decodeTargetReleaseCatalog(value)
+  const route = catalog.routes.find(route => route.fromCaptureStateContract === compatibility.captureStateContract &&
+    route.updateControlProtocol === compatibility.updateControlProtocol && route.updateTargetProtocol === compatibility.updateTargetProtocol)
+  if (!route) throw new Error("The target catalog does not support this source/control/target-execution combination.")
+  return catalog.bundles.find(bundle => bundle.version === route.version)!
+}
+export const mergeTargetReleaseBundle = (previous: TargetReleaseCatalog | undefined, value: TargetReleaseBundle): TargetReleaseCatalog => {
+  const bundle = decodeTargetReleaseBundle(value), catalog = previous ? decodeTargetReleaseCatalog(previous) :
+    { protocol: targetReleaseCatalogProtocol, revision: 0, bundles: [], routes: [] } as const
+  const existing = catalog.bundles.find(item => item.version === bundle.version)
+  if (existing && targetReleaseBundleFingerprint(existing) !== targetReleaseBundleFingerprint(bundle))
+    throw new Error("A release version cannot change its immutable target bundle.")
+  const routes = [...catalog.routes]
+  let changed = false
+  for (const fromCaptureStateContract of bundle.fromCaptureStateContracts) {
+    const route = { fromCaptureStateContract, updateControlProtocol: bundle.updateControlProtocol,
+      updateTargetProtocol: bundle.updateTargetProtocol, version: bundle.version }
+    const index = routes.findIndex(item => targetRouteKey(item) === targetRouteKey(route))
+    if (index < 0) { routes.push(route); changed = true }
+    else if (compareVersion(bundle.version, routes[index]!.version) > 0) { routes[index] = route; changed = true }
+  }
+  if (!changed) return decodeTargetReleaseCatalog(catalog)
+  if (catalog.revision === Number.MAX_SAFE_INTEGER) throw new Error("Target catalog revision exhausted.")
+  const bundles = [...catalog.bundles.filter(item => item.version !== bundle.version), bundle]
+    .filter(item => routes.some(route => route.version === item.version))
+  return decodeTargetReleaseCatalog({ protocol: targetReleaseCatalogProtocol, revision: catalog.revision + 1, bundles, routes })
+}
+const targetSectionProtocol = "atape.target-release-bundle.v1"
+const targetSectionStart = `<!-- ${targetSectionProtocol}:start -->`, targetSectionEnd = `<!-- ${targetSectionProtocol}:end -->`
+export const targetReleaseBundleSection = (bundle: TargetReleaseBundle): string =>
+  `${targetSectionStart}\n${JSON.stringify(JSON.parse(targetReleaseBundleFingerprint(bundle)), null, 2)}\n${targetSectionEnd}`
+export const targetReleaseBundleFromBody = (body: string): TargetReleaseBundle | undefined => {
+  if (/<!--\s*atape\.target-release-bundle\.(?!v1:(?:start|end) -->)/.test(body))
+    throw new Error("Release body contains an unsupported target bundle section.")
+  const markers = body.match(/<!--\s*atape\.target-release-bundle\./g)?.length ?? 0
+  if (markers === 0) return undefined
+  if (body.split(targetSectionStart).length !== 2 || body.split(targetSectionEnd).length !== 2 || markers !== 2)
+    throw new Error("Release body must contain one complete target bundle section.")
+  const start = body.indexOf(targetSectionStart) + targetSectionStart.length, end = body.indexOf(targetSectionEnd)
+  if (end < start) throw new Error("Release target bundle section is malformed.")
+  const bundle = decodeTargetReleaseBundle(JSON.parse(body.slice(start, end).trim()))
+  const legacy = releaseBundleFromBody(body), migration = migrationReleaseBundleFromBody(body)
+  for (const other of [legacy, migration]) if (other && releaseBundleFingerprint({ protocol: releaseBundleProtocol,
+    version: other.version, captureStateContract: other.captureStateContract, updateControlProtocol: other.updateControlProtocol, packages: other.packages }) !==
+    releaseBundleFingerprint({ protocol: releaseBundleProtocol, version: bundle.version, captureStateContract: bundle.captureStateContract,
+      updateControlProtocol: bundle.updateControlProtocol, packages: bundle.packages }))
+    throw new Error("Legacy and target release descriptors disagree.")
   return bundle
 }

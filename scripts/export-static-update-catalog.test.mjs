@@ -6,7 +6,8 @@ import { join } from "node:path"
 import test from "node:test"
 import { releaseBundleProtocol, migrationReleaseBundleProtocol, releasePackageNames, releaseBundleSection,
   migrationReleaseBundleSection, mergeReleaseBundle, mergeMigrationReleaseBundle, updateCatalogTag,
-  migrationReleaseCatalogTag, releaseMetadataBaseURL } from "../packages/domain/src/releaseCatalog.ts"
+  migrationReleaseCatalogTag, releaseMetadataBaseURL, targetReleaseBundleProtocol, targetReleaseBundleSection,
+  mergeTargetReleaseBundle, targetReleaseCatalogTag, updateTargetProtocol } from "../packages/domain/src/releaseCatalog.ts"
 import { createPublicReleaseRegistry } from "./public-release-visibility.mjs"
 import { createStaticUpdateSite, exportStaticUpdateCatalog, verifyStaticUpdateCatalog } from "./export-static-update-catalog.mjs"
 
@@ -31,17 +32,23 @@ function artifacts(version = "0.5.7", { historical = false, sources = [legacyCap
 }
 function fixture() {
   const releases = new Map(), assets = new Map(), events = [], verified = []
-  let id = 0, catalog, migrationCatalog, latest
+  let id = 0, catalog, migrationCatalog, targetCatalog, latest
   const seed = local => {
-    const version = local.legacy.version
-    catalog = mergeReleaseBundle(catalog, local.legacy)
-    migrationCatalog = mergeMigrationReleaseBundle(migrationCatalog, local.migration)
-    releases.set(updateCatalogTag, { tag_name: updateCatalogTag, draft: false, prerelease: true, body: JSON.stringify(catalog) })
-    releases.set(migrationReleaseCatalogTag, { tag_name: migrationReleaseCatalogTag, draft: false, prerelease: true, body: JSON.stringify(migrationCatalog) })
+    const version = (local.target ?? local.legacy).version
+    if (local.legacy) {
+      catalog = mergeReleaseBundle(catalog, local.legacy)
+      migrationCatalog = mergeMigrationReleaseBundle(migrationCatalog, local.migration)
+      releases.set(updateCatalogTag, { tag_name: updateCatalogTag, draft: false, prerelease: true, body: JSON.stringify(catalog) })
+      releases.set(migrationReleaseCatalogTag, { tag_name: migrationReleaseCatalogTag, draft: false, prerelease: true, body: JSON.stringify(migrationCatalog) })
+      latest = `v${version}`
+    }
+    if (local.target) {
+      targetCatalog = mergeTargetReleaseBundle(targetCatalog, local.target)
+      releases.set(targetReleaseCatalogTag, { tag_name: targetReleaseCatalogTag, draft: false, prerelease: true, body: JSON.stringify(targetCatalog) })
+    }
     releases.set(`v${version}`, { tag_name: `v${version}`, draft: false, prerelease: false,
-      body: `Release notes.\n${releaseBundleSection(local.legacy)}\n${migrationReleaseBundleSection(local.migration)}\n`,
+      body: `Release notes.\n${local.legacy ? releaseBundleSection(local.legacy) : ""}\n${local.migration ? migrationReleaseBundleSection(local.migration) : ""}\n${local.target ? targetReleaseBundleSection(local.target) : ""}\n`,
       assets: local.files.map(file => { const asset = { id: ++id, name: file.filename, size: file.bytes.length }; assets.set(asset.id, file.bytes); return asset }) })
-    latest = `v${version}`
   }
   const github = {
     async readRelease(tag) { events.push(`read:${tag}`); return structuredClone(releases.get(tag)) },
@@ -62,6 +69,67 @@ async function outputSite(directory, publication) {
 async function absent(path) { await assert.rejects(access(path), { code: "ENOENT" }) }
 const input = (remote, directory, files = new Map(), bootstrap = true) => ({ github: remote.github, registry: remote.registry,
   staticSite: site(files), outputDirectory: directory, bootstrap })
+function targetArtifacts(version, targetOnly = false) {
+  const local = artifacts(version)
+  local.target = { ...local.legacy, protocol: targetReleaseBundleProtocol, updateTargetProtocol,
+    fromCaptureStateContracts: [legacyCapture, capture] }
+  if (targetOnly) { delete local.legacy; delete local.migration }
+  return local
+}
+
+test("a legacy index migrates to index v2 and target-only versions preserve every legacy route and historical descriptor byte", async () => withDirectory(async root => {
+  const remote = fixture(); remote.seed(artifacts("0.5.10"))
+  const oldDirectory = join(root, "old"), old = await exportStaticUpdateCatalog(input(remote, oldDirectory))
+  const oldFiles = await outputSite(oldDirectory, old), oldIndex = JSON.parse(oldFiles.get("manifest.json"))
+  oldIndex.protocol = "atape.static-release-index.v1"
+  oldFiles.set("manifest.json", json(oldIndex))
+  remote.seed(targetArtifacts("0.5.11"))
+  const bridgeDirectory = join(root, "bridge"), bridge = await exportStaticUpdateCatalog(input(remote, bridgeDirectory, oldFiles, false))
+  const bridgeFiles = await outputSite(bridgeDirectory, bridge), bridgeIndex = JSON.parse(bridgeFiles.get("manifest.json"))
+  assert.equal(bridgeIndex.protocol, "atape.static-release-index.v2")
+  assert.equal(bridgeIndex.catalogs.v3, digest(bridgeFiles.get("catalog/v3.json")))
+  assert.ok(bridgeIndex.bundles.find(item => item.version === "0.5.11").v3)
+  remote.seed(targetArtifacts("0.5.12", true))
+  remote.events.length = 0
+  const featureDirectory = join(root, "feature"), feature = await exportStaticUpdateCatalog(input(remote, featureDirectory, bridgeFiles, false))
+  const files = await outputSite(featureDirectory, feature), index = JSON.parse(files.get("manifest.json"))
+  assert.equal(feature.targetCatalogRevision, 2)
+  assert.deepEqual(files.get("catalog/v1.json"), bridgeFiles.get("catalog/v1.json"))
+  assert.deepEqual(files.get("catalog/v2.json"), bridgeFiles.get("catalog/v2.json"))
+  for (const [path, bytes] of bridgeFiles) if (path.startsWith("releases/")) assert.deepEqual(files.get(path), bytes, path)
+  assert.deepEqual(Object.keys(index.bundles.find(item => item.version === "0.5.12")).sort(), ["v3", "version"])
+  assert.equal(files.has("releases/0.5.12/bundle.v1.json"), false)
+  assert.equal(files.has("releases/0.5.12/bundle.v2.json"), false)
+  assert.ok(!remote.events.includes("read:v0.5.10"))
+  const catalog = JSON.parse(files.get("catalog/v3.json"))
+  assert.ok(catalog.routes.every(route => route.version === "0.5.12"))
+  assert.ok((await verifyStaticUpdateCatalog({ staticSite: site(files), publication: feature })).publiclyVerifiedAt)
+}))
+
+test("adopted static v3 cannot disappear, lose a route or change immutable target bytes", async () => withDirectory(async root => {
+  const remote = fixture(); remote.seed(targetArtifacts("0.5.11"))
+  const firstDirectory = join(root, "current"), first = await exportStaticUpdateCatalog(input(remote, firstDirectory))
+  const original = await outputSite(firstDirectory, first)
+  for (const kind of ["catalog-removed", "route-removed", "bundle-changed", "unindexed", "missing-file"]) {
+    const next = fixture(); next.seed(targetArtifacts("0.5.11"))
+    const files = new Map(original)
+    if (kind === "catalog-removed") next.releases.delete(targetReleaseCatalogTag)
+    if (kind === "route-removed" || kind === "bundle-changed") {
+      const catalog = JSON.parse(next.releases.get(targetReleaseCatalogTag).body)
+      if (kind === "route-removed") { catalog.revision++; catalog.routes.shift() }
+      else catalog.bundles[0].packages[0].integrity = artifacts("0.5.10").legacy.packages[0].integrity
+      next.releases.get(targetReleaseCatalogTag).body = JSON.stringify(catalog)
+    }
+    if (kind === "unindexed") {
+      const index = JSON.parse(files.get("manifest.json")); delete index.catalogs.v3
+      files.set("manifest.json", json(index))
+    }
+    if (kind === "missing-file") files.delete("releases/0.5.11/bundle.v3.json")
+    const directory = join(root, kind)
+    await assert.rejects(exportStaticUpdateCatalog(input(next, directory, files, false)), /removed|immutable|unindexed|differs|disappear/, kind)
+    await absent(directory)
+  }
+}))
 
 test("caller exports both protocols and canonical immutable descriptors only after all public package bytes verify", async () => withDirectory(async root => {
   const remote = fixture(), local = artifacts(), directory = join(root, "site")
@@ -255,7 +323,9 @@ test("anonymous static Adapter restricts canonical paths, rejects redirects/erro
   assert.equal(calls[0].url, `${releaseMetadataBaseURL}/catalog/v1.json`)
   assert.equal(calls[0].options.redirect, "error")
   assert.deepEqual(calls[0].options.headers, { accept: "application/json", "cache-control": "no-cache" })
-  for (const path of ["../secret", "releases/0.5.7/bundle.v3.json", "https://evil.test/manifest.json", "catalog/v1.json?x=1"])
+  assert.deepEqual(await adapter.read("catalog/v3.json"), bytes)
+  assert.deepEqual(await adapter.read("releases/0.5.12/bundle.v3.json"), bytes)
+  for (const path of ["../secret", "releases/0.5.7/bundle.v4.json", "https://evil.test/manifest.json", "catalog/v1.json?x=1"])
     await assert.rejects(adapter.read(path), /Unexpected/)
   for (const status of [403, 429, 500]) {
     const failed = createStaticUpdateSite({ fetch: async () => new Response("", { status }) })

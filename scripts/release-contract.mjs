@@ -54,6 +54,7 @@ export const loadReleaseContract = async (repositoryRoot) => {
     tag: `v${root.version}`,
     authEpoch: identity.authEpoch,
     minimumCliVersion: identity.minimumCliVersion,
+    releaseChannel: identity.releaseChannel,
     releaseDirectory: join(repositoryRoot, "release"),
     packages
   }
@@ -68,11 +69,16 @@ const readManifest = async (repositoryRoot, relativePath) =>
 const readReleaseIdentity = async (repositoryRoot) => {
   const path = join(repositoryRoot, "specs/auth-v1-release.json")
   const identity = JSON.parse(await readFile(path, "utf8"))
-  requireExactKeys(identity, ["protocol", "releaseVersion", "authEpoch", "minimumCliVersion"], path)
+  requireExactKeys(identity, ["protocol", "releaseVersion", "authEpoch", "minimumCliVersion", "releaseChannel"], path)
   requireValue(identity.protocol === "atape.auth-release.v1", `${path} has an unsupported protocol.`)
   requireVersion(identity.releaseVersion, "auth release")
   requireVersion(identity.minimumCliVersion, "minimum CLI")
   requireValue(identity.authEpoch === "auth-v1", `${path} must identify the auth-v1 epoch.`)
+  requireValue(["legacy-bridge", "target-owned"].includes(identity.releaseChannel), "Release publication channel must be explicit.")
+  const cli = await readManifest(repositoryRoot, "apps/cli/package.json")
+  requireValue(cli.atapeRuntime?.releaseChannel === identity.releaseChannel, "The packaged CLI must declare the release publication channel.")
+  requireValue(cli.atapeRuntime?.updateTargetProtocol === "atape.update-target.v1" &&
+    cli.atapeRuntime?.targetReleaseCatalogProtocol === "atape.update-catalog.v3", "The CLI must implement target-owned update discovery and execution.")
   requireValue(identity.minimumCliVersion === identity.releaseVersion,
     "The first authenticated release must require its matching CLI version.")
 

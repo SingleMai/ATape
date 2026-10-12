@@ -63,12 +63,15 @@ try {
     project: { id: "package-project", type: "directory", path: projectDirectory }
   }
   if (adapterId === "codex") {
-    assert.equal(packageManifest.atapeAdapter.legacyCanonicalProfile, "atape.acp-centered.v5")
+    const { releaseChannel } = JSON.parse(await readFile(new URL("../specs/auth-v1-release.json", import.meta.url), "utf8"))
+    assert.ok(["legacy-bridge", "target-owned"].includes(releaseChannel), "Codex package acceptance requires an explicit publication channel")
+    const canonicalProfile = releaseChannel === "legacy-bridge" ? "atape.acp-centered.v3" : "atape.acp-centered.v5"
+    assert.equal(packageManifest.atapeAdapter.legacyCanonicalProfile, canonicalProfile)
     await assert.rejects(() => adapter.createAtapeAdapter({ ...context, signal: AbortSignal.timeout(5_000) }),
       /Upgrade the ATape CLI to collect Codex with explicit source clock quality/)
     const runtime = await adapter.createAtapeAdapter({ ...context,
-      legacyCanonicalProfiles: ["atape.acp-centered.v5"], signal: AbortSignal.timeout(5_000) })
-    assert.equal(runtime.canonicalProfileVersion, "atape.acp-centered.v5")
+      legacyCanonicalProfiles: [canonicalProfile], signal: AbortSignal.timeout(5_000) })
+    assert.equal(runtime.canonicalProfileVersion, canonicalProfile)
     try {
       const page = await runtime.collect({ protocolVersion: context.protocolVersion, cursor: null, rawProgress: [],
         limits: { observations: 10, threadsPerObservation: 100, eventsPerObservation: 500, canonicalBytesPerObservation: 3 * 1024 * 1024,

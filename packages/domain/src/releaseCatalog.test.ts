@@ -4,7 +4,9 @@ import { decodeReleaseBundle, decodeReleaseCatalog, mergeReleaseBundle, releaseB
   decodeMigrationReleaseBundle, decodeMigrationReleaseCatalog, decodeManagedReleaseBundle,
   managedReleaseBundleFingerprint, migrationReleaseBundleFingerprint, mergeMigrationReleaseBundle,
   selectMigrationReleaseBundle, migrationReleaseBundleSection, migrationReleaseBundleFromBody,
-  type MigrationReleaseBundle } from "./releaseCatalog.ts"
+  type MigrationReleaseBundle, type TargetReleaseBundle, decodeTargetReleaseBundle, decodeTargetReleaseCatalog,
+  mergeTargetReleaseBundle, selectTargetReleaseBundle, targetReleaseBundleFingerprint, targetReleaseBundleSection,
+  targetReleaseBundleFromBody, updateTargetProtocol } from "./releaseCatalog.ts"
 
 const bundle = (version = "1.2.3", contract = "capture.v2", control = "control.v1"): ReleaseBundle => ({
   protocol: "atape.release-bundle.v1", version, captureStateContract: contract, updateControlProtocol: control,
@@ -161,6 +163,48 @@ const migrationBundle = (version = "1.2.3", sources = ["capture.v1", "capture.v2
 })
 const identity = { captureStateContract: "capture.v2", updateControlProtocol: "control.v1",
   supportedMigrationPlans: [{ protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8" }] }
+
+const targetBundle = (version = "1.2.3", sources = ["capture.v1", "capture.v2"]): TargetReleaseBundle => ({
+  ...bundle(version), protocol: "atape.release-bundle.v3", updateTargetProtocol, fromCaptureStateContracts: sources
+})
+describe("target-owned release discovery", () => {
+  it("binds explicit execution permission and complete immutable bytes without a migration plan", () => {
+    const value = targetBundle()
+    expect(decodeManagedReleaseBundle(value)).toEqual(value)
+    expect(targetReleaseBundleFingerprint({ ...value, fromCaptureStateContracts: [...value.fromCaptureStateContracts].reverse(),
+      packages: [...value.packages].reverse() })).toBe(managedReleaseBundleFingerprint(value))
+    for (const changed of [{ ...value, migration: migrationBundle().migration }, { ...value, updateTargetProtocol: "unknown" },
+      { ...value, fromCaptureStateContracts: [] }, { ...value, fromCaptureStateContracts: ["capture.v1"] },
+      { ...value, fromCaptureStateContracts: ["capture.v2", "capture.v2"] }, { ...value, fromCaptureStateContracts: ["bad\nsource", "capture.v2"] }])
+      expect(() => decodeTargetReleaseBundle(changed)).toThrow()
+    expect(() => decodeReleaseBundle(value)).toThrow()
+    expect(() => decodeMigrationReleaseBundle(value)).toThrow()
+  })
+  it("retains offline source routes while advancing supported sources with monotonic immutable identity", () => {
+    const first = mergeTargetReleaseBundle(undefined, targetBundle())
+    const next = mergeTargetReleaseBundle(first, targetBundle("1.2.4", ["capture.v2"]))
+    const supported = { ...identity, updateTargetProtocol }
+    expect(selectTargetReleaseBundle(next, supported).version).toBe("1.2.4")
+    expect(selectTargetReleaseBundle(next, { ...supported, captureStateContract: "capture.v1" }).version).toBe("1.2.3")
+    expect(() => selectTargetReleaseBundle(next, { ...supported, updateTargetProtocol: "unknown" })).toThrow()
+    expect(mergeTargetReleaseBundle(next, targetBundle())).toEqual(next)
+    expect(() => mergeTargetReleaseBundle(next, { ...targetBundle("1.2.4", ["capture.v2"]), packages: bundle().packages })).toThrow()
+    for (const changed of [{ ...next, routes: [] }, { ...next, routes: [...next.routes, next.routes[0]] },
+      { ...next, routes: [{ ...next.routes[0], version: "9.0.0" }] }, { ...next, revision: 0 }])
+      expect(() => decodeTargetReleaseCatalog(changed)).toThrow()
+  })
+  it("supports v3-only version bodies and a genuine bridge without breaking strict historical descriptors", () => {
+    const value = targetBundle(), only = targetReleaseBundleSection(value)
+    expect(targetReleaseBundleFingerprint(targetReleaseBundleFromBody(only)!)).toBe(targetReleaseBundleFingerprint(value))
+    expect(releaseBundleFromBody(only)).toBeUndefined()
+    expect(migrationReleaseBundleFromBody(only)).toBeUndefined()
+    const bridge = `${releaseBundleSection(bundle())}\n${migrationReleaseBundleSection(migrationBundle())}\n${only}`
+    expect(targetReleaseBundleFingerprint(targetReleaseBundleFromBody(bridge)!)).toBe(targetReleaseBundleFingerprint(value))
+    expect(releaseBundleFingerprint(releaseBundleFromBody(bridge)!)).toBe(releaseBundleFingerprint(bundle()))
+    for (const invalid of [only + only, only.replace(":end", ":missing"), only.replace(".v1:start", ".v2:start"),
+      `${releaseBundleSection(bundle("1.2.4"))}\n${only}`]) expect(() => targetReleaseBundleFromBody(invalid)).toThrow()
+  })
+})
 
 describe("explicit migration release bundles", () => {
   it("keeps the original seven-package migration reader floor when producers add Cursor", () => {

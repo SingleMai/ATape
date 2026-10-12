@@ -7,6 +7,8 @@ mechanism described by [ADR-0104](0104-capture-v2-state-upgrade.md). The publish
 0.5.3 → 0.5.4 manual boundary remains historical fact. The
 [setup guide](../../cli/setup-and-adapters.md#upgrade-the-cli-and-adapters) owns
 implemented scope; acceptance of this design does not establish publication.
+Target-owned preparation and recovery extend this decision in
+[ADR-0126](0126-target-owned-managed-updates.md).
 
 ## Problem and alternatives
 

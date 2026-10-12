@@ -1,10 +1,14 @@
 {
   "name": "@atape/cli",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "CLI and background Collector for ATape shared agent conversation history",
   "license": "MIT",
   "type": "module",
   "atapeRuntime": {
+    "releaseChannel": "legacy-bridge",
+    "updateTargetProtocol": "atape.update-target.v1",
+    "targetReleaseCatalogProtocol": "atape.update-catalog.v3",
+    "fromCaptureStateContracts": ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"],
     "protocol": "atape.runtime.v1",
     "stateContract": "atape.client.v3-capture.v2",
     "loginStartupProtocol": "atape.login-startup.v1",

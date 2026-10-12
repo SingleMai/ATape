@@ -10,18 +10,10 @@ import { releaseBundleProtocol, releasePackageNames, migrationReleaseBundleProto
 import { createPublicReleaseRegistry, loadPublicationArtifacts, publicationCaptureContract,
   publicationControlProtocol, publicationBundles, isLegacyLatestBridge, publicationMigrationProtocol,
   publicationMigrationId } from "./public-release-visibility.mjs"
+import { releaseArtifacts, manifestTarball } from "./fixtures/release-artifacts.mjs"
 
 const hash = (algorithm, bytes, encoding) => createHash(algorithm).update(bytes).digest(encoding)
-function artifacts(version = "0.5.6") {
-  const files = releasePackageNames.map(name => {
-    const bytes = Buffer.from(`${name}@${version}`)
-    return { name, filename: `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`, bytes,
-      integrity: `sha512-${hash("sha512", bytes, "base64")}`, sha256: hash("sha256", bytes, "hex") }
-  })
-  return { files, bundle: { protocol: releaseBundleProtocol, version, captureStateContract: publicationCaptureContract,
-    updateControlProtocol: publicationControlProtocol, packages: files.map(file => ({ name: file.name, integrity: file.integrity,
-      tarball: `https://registry.npmjs.org/${file.name}/-/${file.name.slice("@atape/".length)}-${version}.tgz` })) } }
-}
+const artifacts = version => { const local = releaseArtifacts(version); local.files = local.files.filter(file => file.name); return local }
 function registryTransport(local, change = () => undefined) {
   const calls = []
   return { calls, fetch: async (url, options) => {
@@ -88,14 +80,15 @@ test("exact lookup treats only a 404 as absent; unknown metadata remains an erro
   await assert.rejects(createPublicReleaseRegistry({ fetch: async () => Response.json({ version: "0.5.6" }) }).read("@atape/cli", "latest"), /Invalid/)
 })
 
-async function localRelease(t, contract = publicationCaptureContract, protocol = "atape.runtime.v1", capabilities = {}) {
+async function localRelease(t, contract = publicationCaptureContract, protocol = "atape.runtime.v1", capabilities = {}, channel = "legacy-bridge") {
   const directory = await mkdtemp(join(tmpdir(), "atape-publication-"))
   t.after(() => rm(directory, { recursive: true, force: true }))
-  const local = artifacts()
+  const local = releaseArtifacts("0.5.6", { channel })
+  local.files = local.files.filter(file => file.name)
   const packageDirectory = join(directory, "package")
   await mkdir(packageDirectory)
   await writeFile(join(packageDirectory, "package.json"), JSON.stringify({ name: "@atape/cli", version: local.bundle.version,
-    atapeRuntime: { protocol, stateContract: contract, updateControlProtocol: publicationControlProtocol,
+    atapeRuntime: { releaseChannel: channel, protocol, stateContract: contract, updateControlProtocol: publicationControlProtocol,
       releaseCatalogProtocol: "atape.update-catalog.v1", ...capabilities } }))
   const packages = []
   for (const file of local.files) {
@@ -109,7 +102,7 @@ async function localRelease(t, contract = publicationCaptureContract, protocol =
     sums.push(`${hash("sha256", await readFile(join(directory, item.artifactName)), "hex")}  ${item.artifactName}\n`)
   }
   await writeFile(join(directory, "SHA256SUMS"), sums.join(""))
-  return { version: local.bundle.version, releaseDirectory: directory, packages }
+  return { version: local.bundle.version, releaseChannel: channel, releaseDirectory: directory, packages }
 }
 
 test("local artifacts bind exact checksums and the actual packaged CLI capabilities", async t => {
@@ -166,4 +159,31 @@ test("anonymous visibility validates all exact package bytes for a migration bun
   assert.equal(result.bundle.protocol, migrationReleaseBundleProtocol)
   assert.equal(result.packages.length, releasePackageNames.length)
   assert.equal(remote.calls.length, releasePackageNames.length * 2)
+})
+
+const targetCapabilities = { updateTargetProtocol: "atape.update-target.v1", targetReleaseCatalogProtocol: "atape.update-catalog.v3",
+  fromCaptureStateContracts: ["atape.client.v3-capture.v1", publicationCaptureContract] }
+
+test("loading actual packed bridge and feature bytes produces truthful separate descriptors", async t => {
+  const bridge = await loadPublicationArtifacts(await localRelease(t, publicationCaptureContract, "atape.runtime.v1", {
+    ...migrationCapabilities, ...targetCapabilities }))
+  assert.equal(bridge.bundle.protocol, migrationReleaseBundleProtocol)
+  assert.equal(bridge.targetBundle.protocol, "atape.release-bundle.v3")
+  const feature = await loadPublicationArtifacts(await localRelease(t, publicationCaptureContract, "atape.runtime.v1", targetCapabilities, "target-owned"))
+  assert.equal(feature.bundle.protocol, "atape.release-bundle.v3")
+  assert.equal(feature.targetBundle, undefined)
+  await assert.rejects(loadPublicationArtifacts(await localRelease(t, publicationCaptureContract, "atape.runtime.v1", {}, "target-owned")), /actual target execution capability/)
+})
+
+test("artifact loader rejects honest checksums for official Adapter profiles that conflict with the channel", async t => {
+  for (const channel of ["legacy-bridge", "target-owned"]) {
+    const release = await localRelease(t, publicationCaptureContract, "atape.runtime.v1", targetCapabilities, channel)
+    const codex = release.packages.find(item => item.name === "@atape/adapter-codex")
+    await writeFile(join(release.releaseDirectory, codex.artifactName), manifestTarball({ name: codex.name, version: release.version,
+      atapeAdapter: { adapterId: "codex", legacyCanonicalProfile: channel === "legacy-bridge" ? "atape.acp-centered.v5" : "atape.acp-centered.v3" } }))
+    const sums = await Promise.all([...release.packages].sort((a, b) => a.artifactName < b.artifactName ? -1 : 1).map(async item =>
+      `${hash("sha256", await readFile(join(release.releaseDirectory, item.artifactName)), "hex")}  ${item.artifactName}\n`))
+    await writeFile(join(release.releaseDirectory, "SHA256SUMS"), sums.join(""))
+    await assert.rejects(loadPublicationArtifacts(release), /Actual packed official Adapter profiles/)
+  }
 })

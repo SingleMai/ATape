@@ -2,7 +2,8 @@ import { createHash } from "node:crypto"
 import { decodeReleaseCatalog, mergeReleaseBundle, releaseBundleFingerprint, managedReleaseBundleFingerprint,
   releaseBundleFromBody, releaseBundleSection, updateCatalogTag, decodeMigrationReleaseCatalog,
   mergeMigrationReleaseBundle, migrationReleaseBundleFingerprint, migrationReleaseBundleFromBody,
-  migrationReleaseBundleSection, migrationReleaseCatalogTag } from "../packages/domain/src/releaseCatalog.ts"
+  migrationReleaseBundleSection, migrationReleaseCatalogTag, decodeTargetReleaseCatalog, mergeTargetReleaseBundle,
+  targetReleaseBundleFingerprint, targetReleaseBundleFromBody, targetReleaseBundleSection, targetReleaseCatalogTag } from "../packages/domain/src/releaseCatalog.ts"
 import { publicationBundles, isLegacyLatestBridge, validatePublicationArtifacts } from "./public-release-visibility.mjs"
 
 const repository = "SingleMai/ATape"
@@ -83,19 +84,23 @@ const requireReadableBody = body => {
 
 // Preflight is pure so the npm coordinator applies the same advertisement
 // limits before the first irreversible package publication.
-export function preparePublicationMetadata(bundle, notes, previous, previousMigration) {
-  const { legacyBundle, migrationBundle } = publicationBundles(bundle)
-  if (typeof notes !== "string" || releaseBundleFromBody(notes) !== undefined || migrationReleaseBundleFromBody(notes) !== undefined)
+export function preparePublicationMetadata(bundle, notes, previous, previousMigration, previousTarget,
+  releaseChannel = "legacy-bridge", targetValue) {
+  const { legacyBundle, migrationBundle, targetBundle } = publicationBundles(bundle, releaseChannel, targetValue)
+  if (typeof notes !== "string" || releaseBundleFromBody(notes) !== undefined || migrationReleaseBundleFromBody(notes) !== undefined || targetReleaseBundleFromBody(notes) !== undefined)
     throw new Error("Invalid release notes or reserved bundle section.")
-  const versionBody = `${notes.trimEnd()}\n\n${releaseBundleSection(legacyBundle)}\n${migrationBundle ? `\n${migrationReleaseBundleSection(migrationBundle)}\n` : ""}`
-  const catalog = mergeReleaseBundle(previous, legacyBundle)
-  const catalogBody = `${JSON.stringify(catalog, null, 2)}\n`
+  const versionBody = `${notes.trimEnd()}\n\n${legacyBundle ? `${releaseBundleSection(legacyBundle)}\n` : ""}${migrationBundle ? `\n${migrationReleaseBundleSection(migrationBundle)}\n` : ""}${targetBundle ? `\n${targetReleaseBundleSection(targetBundle)}\n` : ""}`
+  const catalog = legacyBundle ? mergeReleaseBundle(previous, legacyBundle) : previous
+  const catalogBody = catalog ? `${JSON.stringify(catalog, null, 2)}\n` : undefined
   const migrationCatalog = migrationBundle ? mergeMigrationReleaseBundle(previousMigration, migrationBundle) : undefined
   const migrationCatalogBody = migrationCatalog ? `${JSON.stringify(migrationCatalog, null, 2)}\n` : undefined
+  const targetCatalog = targetBundle ? mergeTargetReleaseBundle(previousTarget, targetBundle) : undefined
+  const targetCatalogBody = targetCatalog ? `${JSON.stringify(targetCatalog, null, 2)}\n` : undefined
   requireReadableBody(versionBody)
-  requireReadableBody(catalogBody)
+  if (catalogBody) requireReadableBody(catalogBody)
   if (migrationCatalogBody) requireReadableBody(migrationCatalogBody)
-  return { versionBody, catalog, catalogBody, migrationCatalog, migrationCatalogBody }
+  if (targetCatalogBody) requireReadableBody(targetCatalogBody)
+  return { versionBody, catalog, catalogBody, migrationCatalog, migrationCatalogBody, targetCatalog, targetCatalogBody }
 }
 
 function checkCatalogRelease(release) {
@@ -107,12 +112,19 @@ function checkCatalogRelease(release) {
 }
 
 export async function readPublicationTargets(github) {
-  const [release, migrationRelease, latest] = await Promise.all([github.readRelease(updateCatalogTag),
-    github.readRelease(migrationReleaseCatalogTag), github.readLatest()])
+  const [release, migrationRelease, targetRelease, latest] = await Promise.all([github.readRelease(updateCatalogTag),
+    github.readRelease(migrationReleaseCatalogTag), github.readRelease(targetReleaseCatalogTag), github.readLatest()])
   const catalog = checkCatalogRelease(release)
   const migrationCatalog = checkMigrationCatalogRelease(migrationRelease)
   if (latest && (!versionPattern.test(latest.tag_name) || latest.draft || latest.prerelease)) throw new Error("GitHub Latest has an unknown release identity.")
-  return { catalog, migrationCatalog, latestVersion: latest?.tag_name.slice(1) }
+  return { catalog, migrationCatalog, targetCatalog: checkTargetCatalogRelease(targetRelease), latestVersion: latest?.tag_name.slice(1) }
+}
+
+function checkTargetCatalogRelease(release) {
+  if (!release) return undefined
+  if (release.tag_name !== targetReleaseCatalogTag || release.draft !== false || release.prerelease !== true || typeof release.body !== "string")
+    throw new Error("Existing target update catalog is not the fixed public prerelease.")
+  return decodeTargetReleaseCatalog(JSON.parse(release.body))
 }
 
 function checkMigrationCatalogRelease(release) {
@@ -124,18 +136,19 @@ function checkMigrationCatalogRelease(release) {
 
 // Immutable version descriptors outlive their catalog routes. The npm caller
 // shares this preflight so an old-version conflict is found before publishing.
-export async function preflightVersionRelease(github, value, notes) {
-  const { bundle, legacyBundle, migrationBundle } = publicationBundles(value)
+export async function preflightVersionRelease(github, value, notes, releaseChannel = "legacy-bridge", targetValue) {
+  const { bundle, legacyBundle, migrationBundle, targetBundle } = publicationBundles(value, releaseChannel, targetValue)
   const tag = `v${bundle.version}`, release = await github.readRelease(tag)
   if (!release) return undefined
   if (release.tag_name !== tag || release.prerelease !== false || typeof release.body !== "string")
     throw new Error("Existing version release has an unexpected identity.")
   requireReadableBody(release.body)
-  const existing = releaseBundleFromBody(release.body), existingMigration = migrationReleaseBundleFromBody(release.body)
-  if (existing && releaseBundleFingerprint(existing) !== releaseBundleFingerprint(legacyBundle) || existingMigration &&
-    (!migrationBundle || migrationReleaseBundleFingerprint(existingMigration) !== migrationReleaseBundleFingerprint(migrationBundle)))
+  const existing = releaseBundleFromBody(release.body), existingMigration = migrationReleaseBundleFromBody(release.body), existingTarget = targetReleaseBundleFromBody(release.body)
+  if (existing && (!legacyBundle || releaseBundleFingerprint(existing) !== releaseBundleFingerprint(legacyBundle)) || existingMigration &&
+    (!migrationBundle || migrationReleaseBundleFingerprint(existingMigration) !== migrationReleaseBundleFingerprint(migrationBundle)) || existingTarget &&
+    (!targetBundle || targetReleaseBundleFingerprint(existingTarget) !== targetReleaseBundleFingerprint(targetBundle)))
     throw new Error("Existing Release bundle differs; refusing replacement.")
-  if (!existing && !existingMigration && release.body.trim() !== notes.trim()) throw new Error("Existing release notes differ; refusing replacement.")
+  if (!existing && !existingMigration && !existingTarget && release.body.trim() !== notes.trim()) throw new Error("Existing release notes differ; refusing replacement.")
   return release
 }
 
@@ -143,15 +156,17 @@ export async function preflightVersionRelease(github, value, notes) {
 // anonymous verification of the complete producer bundle has succeeded.
 export async function publishUpdateCatalog({ artifacts, notes, commit, github }) {
   const bundle = validatePublicationArtifacts(artifacts)
-  const { migrationBundle } = publicationBundles(bundle)
+  const { migrationBundle, targetBundle, legacyBundle } = publicationBundles(bundle, artifacts.releaseChannel, artifacts.targetBundle)
   if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error("Publication requires an exact commit.")
-  preparePublicationMetadata(bundle, notes)
+  const metadata = (previous, previousMigration, previousTarget) => preparePublicationMetadata(bundle, notes, previous,
+    previousMigration, previousTarget, artifacts.releaseChannel, artifacts.targetBundle)
+  metadata()
   const tag = `v${bundle.version}`
   await github.verifyVersionTag(tag, commit)
   // Read malformed catalog metadata before creating or modifying a version.
   const preflight = await readPublicationTargets(github)
-  const { versionBody: body } = preparePublicationMetadata(bundle, notes, preflight.catalog, preflight.migrationCatalog)
-  let release = await preflightVersionRelease(github, bundle, notes)
+  const { versionBody: body } = metadata(preflight.catalog, preflight.migrationCatalog, preflight.targetCatalog)
+  let release = await preflightVersionRelease(github, bundle, notes, artifacts.releaseChannel, artifacts.targetBundle)
   if (!release) {
     release = await github.create({ tag_name: tag, target_commitish: commit, name: `ATape ${tag}`,
       body, draft: true, prerelease: false, make_latest: "false" })
@@ -167,24 +182,25 @@ export async function publishUpdateCatalog({ artifacts, notes, commit, github })
   }
   for (const file of artifacts.files) if (!seen.has(file.filename)) await github.upload(release, file)
   const targets = await readPublicationTargets(github)
-  const makeLatest = isLegacyLatestBridge(bundle) && (!targets.latestVersion || compareReleaseVersions(bundle.version, targets.latestVersion) > 0)
+  const makeLatest = isLegacyLatestBridge(bundle, artifacts.releaseChannel) && (!targets.latestVersion || compareReleaseVersions(bundle.version, targets.latestVersion) > 0)
   // Preserve existing human notes when a rerun already has its exact descriptor.
-  let finalBody = releaseBundleFromBody(release.body ?? "") ? release.body : body
+  let finalBody = releaseBundleFromBody(release.body ?? "") || targetReleaseBundleFromBody(release.body ?? "") ? release.body : body
   if (migrationBundle && !migrationReleaseBundleFromBody(finalBody)) finalBody = `${finalBody.trimEnd()}\n\n${migrationReleaseBundleSection(migrationBundle)}\n`
+  if (targetBundle && !targetReleaseBundleFromBody(finalBody)) finalBody = `${finalBody.trimEnd()}\n\n${targetReleaseBundleSection(targetBundle)}\n`
   requireReadableBody(finalBody)
   if (release.draft || release.body !== finalBody || makeLatest) {
     release = await github.edit(release.id, { body: finalBody, draft: false, prerelease: false,
-      make_latest: isLegacyLatestBridge(bundle) && (makeLatest || targets.latestVersion === bundle.version) ? "true" : "false" })
+      make_latest: isLegacyLatestBridge(bundle, artifacts.releaseChannel) && (makeLatest || targets.latestVersion === bundle.version) ? "true" : "false" })
   }
   if (release.draft !== false || release.prerelease !== false ||
-    managedReleaseBundleFingerprint(migrationBundle ? migrationReleaseBundleFromBody(release.body) : releaseBundleFromBody(release.body)) !==
+    managedReleaseBundleFingerprint(bundle.protocol === "atape.release-bundle.v3" ? targetReleaseBundleFromBody(release.body) : migrationBundle ? migrationReleaseBundleFromBody(release.body) : releaseBundleFromBody(release.body)) !==
       managedReleaseBundleFingerprint(bundle)) throw new Error("Version Release advertisement was not confirmed.")
   // A fresh read immediately before merge prevents a stale local snapshot from
   // regressing another completed run. Workflow concurrency serializes writers.
   const catalogRelease = await github.readRelease(updateCatalogTag)
   const previous = checkCatalogRelease(catalogRelease)
-  const { catalog: next, catalogBody } = preparePublicationMetadata(bundle, notes, previous)
-  if (!previous || JSON.stringify(next) !== JSON.stringify(previous)) {
+  const { catalog: next, catalogBody } = metadata(previous)
+  if (legacyBundle && (!previous || JSON.stringify(next) !== JSON.stringify(previous))) {
     if (catalogRelease) await github.edit(catalogRelease.id, { body: catalogBody, draft: false, prerelease: true, make_latest: "false" })
     else await github.create({ tag_name: updateCatalogTag, target_commitish: commit, name: "ATape compatible update catalog",
       body: catalogBody, draft: false, prerelease: true, make_latest: "false" })
@@ -197,7 +213,7 @@ export async function publishUpdateCatalog({ artifacts, notes, commit, github })
     // old discovery path; rerunning verifies identical bytes and completes v2.
     const catalogRelease = await github.readRelease(migrationReleaseCatalogTag)
     const previous = checkMigrationCatalogRelease(catalogRelease)
-    const { migrationCatalog: next, migrationCatalogBody: body } = preparePublicationMetadata(bundle, notes, confirmed, previous)
+    const { migrationCatalog: next, migrationCatalogBody: body } = metadata(confirmed, previous)
     if (!previous || JSON.stringify(next) !== JSON.stringify(previous)) {
       if (catalogRelease) await github.edit(catalogRelease.id, { body, draft: false, prerelease: true, make_latest: "false" })
       else await github.create({ tag_name: migrationReleaseCatalogTag, target_commitish: commit, name: "ATape migration update catalog",
@@ -207,6 +223,20 @@ export async function publishUpdateCatalog({ artifacts, notes, commit, github })
     if (JSON.stringify(confirmedMigration) !== JSON.stringify(next)) throw new Error("Migration update catalog publication was not confirmed.")
     migrationCatalogRevision = confirmedMigration.revision
   }
-  return { version: bundle.version, catalogRevision: confirmed.revision,
+  let targetCatalogRevision
+  if (targetBundle) {
+    const catalogRelease = await github.readRelease(targetReleaseCatalogTag), previous = checkTargetCatalogRelease(catalogRelease)
+    const { targetCatalog: next, targetCatalogBody: body } = metadata(confirmed, undefined, previous)
+    if (!previous || JSON.stringify(next) !== JSON.stringify(previous)) {
+      if (catalogRelease) await github.edit(catalogRelease.id, { body, draft: false, prerelease: true, make_latest: "false" })
+      else await github.create({ tag_name: targetReleaseCatalogTag, target_commitish: commit, name: "ATape target-owned update catalog",
+        body, draft: false, prerelease: true, make_latest: "false" })
+    }
+    const targetConfirmed = checkTargetCatalogRelease(await github.readRelease(targetReleaseCatalogTag))
+    if (JSON.stringify(targetConfirmed) !== JSON.stringify(next)) throw new Error("Target update catalog publication was not confirmed.")
+    targetCatalogRevision = targetConfirmed.revision
+  }
+  return { version: bundle.version, releaseChannel: artifacts.releaseChannel, catalogRevision: confirmed?.revision,
+    ...(targetCatalogRevision !== undefined ? { targetCatalogRevision } : {}),
     ...(migrationCatalogRevision !== undefined ? { migrationCatalogRevision } : {}), releaseUrl: release.html_url }
 }

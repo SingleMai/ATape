@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto"
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import { lstat, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { archiveName } from "./release-contract.mjs"
 import { decodeManagedReleaseBundle, decodeReleaseBundle, decodeMigrationReleaseBundle, releaseBundleProtocol,
   migrationReleaseBundleProtocol, releasePackageNames } from "../packages/domain/src/releaseCatalog.ts"
+import { decodeTargetReleaseBundle, targetReleaseBundleProtocol, updateTargetProtocol, releaseBundleFingerprint,
+  migrationReleaseBundleFingerprint, targetReleaseBundleFingerprint } from "../packages/domain/src/releaseCatalog.ts"
 
 const execute = promisify(execFile)
 const registry = "https://registry.npmjs.org"
@@ -20,28 +22,98 @@ const sha256 = bytes => createHash("sha256").update(bytes).digest("hex")
 const integrity = bytes => `sha512-${createHash("sha512").update(bytes).digest("base64")}`
 const canonicalTarball = (name, version) => `${registry}/${name}/-/${name.slice("@atape/".length)}-${version}.tgz`
 
-// Historical 0.5.4 reads unversioned latest forever. Only an actual v2 bridge
-// may advance it. An incompatible future publication needs a separately tested
-// compiled plan/policy and always uses a non-latest npm/GitHub advertisement.
-export const isLegacyLatestBridge = bundle => bundle.captureStateContract === publicationCaptureContract &&
-  bundle.updateControlProtocol === publicationControlProtocol
-export function publicationBundles(value) {
+// The channel is only routing authority. Packed producer declarations are
+// independently checked before either publication caller can write anything.
+export const isLegacyLatestBridge = (bundle, releaseChannel = "legacy-bridge") =>
+  releaseChannel === "legacy-bridge" && bundle.protocol !== targetReleaseBundleProtocol &&
+    bundle.captureStateContract === publicationCaptureContract && bundle.updateControlProtocol === publicationControlProtocol
+export function publicationBundles(value, releaseChannel = "legacy-bridge", targetValue) {
   const bundle = decodeManagedReleaseBundle(value)
-  if (!isLegacyLatestBridge(bundle)) throw new Error("This publication policy cannot advertise future capture/control contracts; incompatible targets must remain nonlatest.")
-  if (bundle.protocol === releaseBundleProtocol) return { bundle, legacyBundle: bundle }
+  if (releaseChannel === "target-owned") {
+    if (bundle.protocol !== targetReleaseBundleProtocol) throw new Error("Target-owned publication requires a v3 bundle.")
+    if (targetValue !== undefined) throw new Error("A target-owned release has only its v3 descriptor.")
+    return { bundle, targetBundle: bundle }
+  }
+  if (!isLegacyLatestBridge(bundle, releaseChannel)) throw new Error("This publication policy cannot advance legacy routes for an incompatible contract; future targets must remain nonlatest.")
+  const targetBundle = targetValue === undefined ? undefined : decodeTargetReleaseBundle(targetValue)
+  if (targetBundle && releaseBundleFingerprint({ protocol: releaseBundleProtocol, version: targetBundle.version,
+    captureStateContract: targetBundle.captureStateContract, updateControlProtocol: targetBundle.updateControlProtocol,
+    packages: targetBundle.packages }) !== releaseBundleFingerprint({
+    protocol: releaseBundleProtocol, version: bundle.version, captureStateContract: bundle.captureStateContract,
+    updateControlProtocol: bundle.updateControlProtocol, packages: bundle.packages })) throw new Error("Bridge target descriptor differs from its legacy package bytes.")
+  if (bundle.protocol === releaseBundleProtocol) return { bundle, legacyBundle: bundle, ...(targetBundle ? { targetBundle } : {}) }
   if (bundle.migration.protocol !== publicationMigrationProtocol || bundle.migration.id !== publicationMigrationId ||
     bundle.migration.fromCaptureStateContracts.some(contract => ![legacyCaptureContract, publicationCaptureContract].includes(contract))) {
     throw new Error("This publication policy does not support that compiled migration plan.")
   }
-  return { bundle, migrationBundle: bundle, legacyBundle: decodeReleaseBundle({ protocol: releaseBundleProtocol,
+  return { bundle, migrationBundle: bundle, ...(targetBundle ? { targetBundle } : {}), legacyBundle: decodeReleaseBundle({ protocol: releaseBundleProtocol,
     version: bundle.version, captureStateContract: bundle.captureStateContract, updateControlProtocol: bundle.updateControlProtocol,
     packages: bundle.packages }) }
+}
+
+function packedManifest(file, version) {
+  let manifest
+  try {
+    manifest = JSON.parse(execFileSync("tar", ["-xzOf", "-", "package/package.json"], {
+      input: file.bytes, timeout: 10_000, maxBuffer: maximumMetadataBytes, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }))
+  } catch (cause) { throw new Error(`Cannot inspect actual packed manifest for ${file.name}.`, { cause }) }
+  if (manifest.name !== file.name || manifest.version !== version) throw new Error(`Packed package identity differs for ${file.name}.`)
+  return manifest
+}
+
+export function isTargetCapableLegacyRuntime(runtime) {
+  return runtime?.protocol === "atape.runtime.v1" && runtime.releaseChannel === "legacy-bridge" &&
+    runtime.stateContract === publicationCaptureContract && runtime.updateControlProtocol === publicationControlProtocol &&
+    runtime.releaseCatalogProtocol === "atape.update-catalog.v1" && runtime.updateTargetProtocol === updateTargetProtocol &&
+    runtime.targetReleaseCatalogProtocol === "atape.update-catalog.v3" && Array.isArray(runtime.fromCaptureStateContracts) &&
+    runtime.fromCaptureStateContracts.includes(publicationCaptureContract)
+}
+
+function validatePackedCapabilities(artifacts, bundle, files) {
+  const manifests = new Map(["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude"]
+    .map(name => [name, packedManifest(files.find(file => file.name === name), bundle.version)]))
+  const runtime = manifests.get("@atape/cli").atapeRuntime
+  if (runtime?.protocol !== "atape.runtime.v1" || runtime.releaseChannel !== artifacts.releaseChannel ||
+    runtime.stateContract !== bundle.captureStateContract || runtime.updateControlProtocol !== bundle.updateControlProtocol ||
+    artifacts.releaseChannel === "legacy-bridge" && runtime.releaseCatalogProtocol !== "atape.update-catalog.v1")
+    throw new Error("Actual packed CLI runtime differs from the publication channel or bundle.")
+  const canonical = artifacts.releaseChannel === "legacy-bridge" ? "atape.acp-centered.v3" : "atape.acp-centered.v5"
+  const publication = artifacts.releaseChannel === "legacy-bridge" ? "atape.publication-target.v4" : "atape.publication-target.v5"
+  const codex = manifests.get("@atape/adapter-codex").atapeAdapter
+  const claude = manifests.get("@atape/adapter-claude").atapeAdapter
+  if (codex?.adapterId !== "codex" || codex.legacyCanonicalProfile !== canonical || claude?.adapterId !== "claude" ||
+    claude.sourceCapture !== "atape.source-capture.v2" || claude.publicationTargetProfile !== publication)
+    throw new Error("Actual packed official Adapter profiles are incompatible with the publication channel.")
+  const common = { version: bundle.version, captureStateContract: runtime.stateContract,
+    updateControlProtocol: runtime.updateControlProtocol, packages: bundle.packages }
+  const target = bundle.protocol === targetReleaseBundleProtocol ? bundle : artifacts.targetBundle
+  const declaresTarget = runtime.updateTargetProtocol !== undefined || runtime.targetReleaseCatalogProtocol !== undefined ||
+    runtime.fromCaptureStateContracts !== undefined
+  if (declaresTarget || target) {
+    if (!target || runtime.updateTargetProtocol !== updateTargetProtocol || runtime.targetReleaseCatalogProtocol !== "atape.update-catalog.v3")
+      throw new Error("Actual packed target capability requires its matching v3 descriptor.")
+    const actual = decodeTargetReleaseBundle({ ...common, protocol: targetReleaseBundleProtocol,
+      updateTargetProtocol: runtime.updateTargetProtocol, fromCaptureStateContracts: runtime.fromCaptureStateContracts })
+    if (targetReleaseBundleFingerprint(actual) !== targetReleaseBundleFingerprint(target))
+      throw new Error("Actual packed target capability differs from the v3 descriptor.")
+  }
+  if (artifacts.releaseChannel === "target-owned" && !declaresTarget) throw new Error("Target-owned publication requires the actual target execution capability.")
+  if (artifacts.releaseChannel === "legacy-bridge" && (bundle.protocol === migrationReleaseBundleProtocol ||
+    runtime.migrationReleaseCatalogProtocol !== undefined || runtime.captureMigrationProtocol !== undefined || runtime.captureMigration !== undefined)) {
+    if (bundle.protocol !== migrationReleaseBundleProtocol || runtime.migrationReleaseCatalogProtocol !== "atape.update-catalog.v2" ||
+      runtime.captureMigrationProtocol !== publicationMigrationProtocol || runtime.updateWakeProtocol !== "atape.update-wake.v1")
+      throw new Error("Actual packed migration capability differs from the legacy descriptor.")
+    const actual = decodeMigrationReleaseBundle({ ...common, protocol: migrationReleaseBundleProtocol, migration: runtime.captureMigration })
+    if (migrationReleaseBundleFingerprint(actual) !== migrationReleaseBundleFingerprint(bundle))
+      throw new Error("Actual packed migration capability differs from the legacy descriptor.")
+  }
 }
 
 // Both publication callers validate the same immutable local inputs before any
 // external write, including npm writes which precede GitHub advertisement.
 export function validatePublicationArtifacts(artifacts) {
-  const { bundle } = publicationBundles(artifacts.bundle)
+  if (!["legacy-bridge", "target-owned"].includes(artifacts.releaseChannel)) throw new Error("Publication requires an explicit release channel.")
+  const { bundle } = publicationBundles(artifacts.bundle, artifacts.releaseChannel, artifacts.targetBundle)
   if (bundle.packages.length !== releasePackageNames.length ||
     releasePackageNames.some(name => !bundle.packages.some(item => item.name === name))) {
     throw new Error("Publication requires the complete current producer package set.")
@@ -68,6 +140,7 @@ export function validatePublicationArtifacts(artifacts) {
   if (checksums.name !== undefined || checksums.bytes.toString("utf8") !== expectedChecksums) {
     throw new Error("Verified publication artifacts no longer match SHA256SUMS.")
   }
+  validatePackedCapabilities(artifacts, bundle, packages)
   return bundle
 }
 
@@ -98,26 +171,43 @@ export async function loadPublicationArtifacts(release) {
   const manifest = JSON.parse((await execute("tar", ["-xOf", cli.path, "package/package.json"],
     { timeout: 10_000, maxBuffer: maximumMetadataBytes, encoding: "utf8" })).stdout)
   if (!(await readFile(cli.path)).equals(cli.bytes)) throw new Error("Packaged CLI changed during inspection.")
+  if (!["legacy-bridge", "target-owned"].includes(release.releaseChannel) || manifest.atapeRuntime?.releaseChannel !== release.releaseChannel)
+    throw new Error("The actual packaged CLI publication channel must match the release contract.")
   if (manifest.name !== "@atape/cli" || manifest.version !== release.version ||
     manifest.atapeRuntime?.protocol !== "atape.runtime.v1" ||
-    manifest.atapeRuntime?.stateContract !== publicationCaptureContract ||
-    manifest.atapeRuntime?.updateControlProtocol !== publicationControlProtocol ||
-    manifest.atapeRuntime?.releaseCatalogProtocol !== "atape.update-catalog.v1") {
+    typeof manifest.atapeRuntime?.stateContract !== "string" ||
+    typeof manifest.atapeRuntime?.updateControlProtocol !== "string" ||
+    release.releaseChannel === "legacy-bridge" && (manifest.atapeRuntime?.stateContract !== publicationCaptureContract ||
+      manifest.atapeRuntime?.updateControlProtocol !== publicationControlProtocol || manifest.atapeRuntime?.releaseCatalogProtocol !== "atape.update-catalog.v1")) {
     throw new Error("This publisher supports only catalog-capable capture.v2/control.v1 CLI bundles; future contracts require a separate publication policy.")
   }
   const common = { version: release.version,
     captureStateContract: manifest.atapeRuntime.stateContract, updateControlProtocol: manifest.atapeRuntime.updateControlProtocol,
     packages: files.map(item => ({ name: item.name, integrity: item.integrity, tarball: canonicalTarball(item.name, release.version) })) }
   let bundle
-  if (manifest.atapeRuntime.migrationReleaseCatalogProtocol !== undefined || manifest.atapeRuntime.captureMigrationProtocol !== undefined ||
+  let targetBundle
+  if (manifest.atapeRuntime.updateTargetProtocol !== undefined || manifest.atapeRuntime.targetReleaseCatalogProtocol !== undefined ||
+    manifest.atapeRuntime.fromCaptureStateContracts !== undefined) {
+    if (manifest.atapeRuntime.updateTargetProtocol !== updateTargetProtocol || manifest.atapeRuntime.targetReleaseCatalogProtocol !== "atape.update-catalog.v3")
+      throw new Error("Packaged target execution/catalog capabilities are incomplete.")
+    targetBundle = decodeTargetReleaseBundle({ ...common, protocol: targetReleaseBundleProtocol,
+      updateTargetProtocol, fromCaptureStateContracts: manifest.atapeRuntime.fromCaptureStateContracts })
+  }
+  if (release.releaseChannel === "target-owned") {
+    if (!targetBundle) throw new Error("Target-owned publication requires the actual target execution capability.")
+    bundle = targetBundle
+  } else if (manifest.atapeRuntime.migrationReleaseCatalogProtocol !== undefined || manifest.atapeRuntime.captureMigrationProtocol !== undefined ||
     manifest.atapeRuntime.captureMigration !== undefined) {
     if (manifest.atapeRuntime.migrationReleaseCatalogProtocol !== "atape.update-catalog.v2" ||
       manifest.atapeRuntime.captureMigrationProtocol !== publicationMigrationProtocol ||
       manifest.atapeRuntime.updateWakeProtocol !== "atape.update-wake.v1") throw new Error("Packaged migration/catalog/wake capabilities are incomplete.")
     bundle = decodeMigrationReleaseBundle({ ...common, protocol: migrationReleaseBundleProtocol, migration: manifest.atapeRuntime.captureMigration })
   } else bundle = decodeReleaseBundle({ ...common, protocol: releaseBundleProtocol })
-  publicationBundles(bundle)
-  return { bundle, files: [...files, { filename: "SHA256SUMS", path: checksumsPath, bytes: checksums, sha256: sha256(checksums) }] }
+  publicationBundles(bundle, release.releaseChannel, release.releaseChannel === "legacy-bridge" ? targetBundle : undefined)
+  const artifacts = { bundle, releaseChannel: release.releaseChannel, ...(release.releaseChannel === "legacy-bridge" && targetBundle ? { targetBundle } : {}),
+    files: [...files, { filename: "SHA256SUMS", path: checksumsPath, bytes: checksums, sha256: sha256(checksums) }] }
+  validatePublicationArtifacts(artifacts)
+  return artifacts
 }
 
 class PropagationError extends Error {}

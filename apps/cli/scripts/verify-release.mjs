@@ -13,6 +13,7 @@ import { startCLIAuthFixture } from "../../../scripts/cli-auth-fixture.mjs"
 import { loadReleaseContract } from "../../../scripts/release-contract.mjs"
 import { verifyToolIdentityRelease } from "./tool-identity-release-gate.mjs"
 import { verifyCodexClockRelease } from "./codex-clock-release-gate.mjs"
+import { verifyActiveBridgeRelease } from "./active-bridge-release-gate.mjs"
 
 const execute = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url))
@@ -81,6 +82,9 @@ try {
   await run(process.execPath, ["--test", fileURLToPath(new URL("codex-clock-release-gate.node.mjs", import.meta.url))], repositoryRoot)
   const clockTransition = await verifyCodexClockRelease({ version: release.version, releaseDirectory })
   process.stdout.write(`Codex clock release gate: ${JSON.stringify(clockTransition)}\n`)
+  await run(process.execPath, ["--test", fileURLToPath(new URL("active-bridge-release-gate.node.mjs", import.meta.url))], repositoryRoot)
+  const activeBridge = await verifyActiveBridgeRelease({ version: release.version, releaseChannel: release.releaseChannel, releaseDirectory })
+  process.stdout.write(`Active bridge release gate: ${JSON.stringify(activeBridge)}\n`)
   await verifyChecksums()
   await Promise.all([
     mkdir(projectDirectory, { recursive: true }),
@@ -128,10 +132,16 @@ try {
   assert.ok(!JSON.stringify(remote.requests).includes(projectDirectory), "setup uploaded a local filesystem path")
   const collected = await collectProject()
   assert.equal(collected.failures.length, 0)
+  assert.ok(["legacy-bridge", "target-owned"].includes(release.releaseChannel), "Release gates require an explicit publication channel")
+  const expectedCanonicalProfile = release.releaseChannel === "legacy-bridge" ? "atape.acp-centered.v3" : "atape.acp-centered.v5"
+  assert.equal(JSON.parse((await run("tar", ["-xOf", adapterArtifact, "package/package.json"], temporaryRoot)).stdout)
+    .atapeAdapter.legacyCanonicalProfile, expectedCanonicalProfile)
   assert.ok(remote.requests.some(request => request.method === "GET" &&
     request.url === "/api/v1/ingestion/canonical/capabilities" &&
-    request.authorization === "Bearer atc_v1_release-secret" &&
-    request.acceptCanonicalProfile === "atape.acp-centered.v5"), "Codex did not explicitly negotiate its stable tool profile")
+    request.authorization === "Bearer atc_v1_release-secret"), "Codex did not affirm its nullable profile")
+  assert.ok(remote.requests.filter(request => request.url === "/api/v1/ingestion/canonical/capabilities")
+    .every(request => request.acceptCanonicalProfile === (release.releaseChannel === "legacy-bridge" ? undefined : "atape.acp-centered.v5")),
+    "Installed Codex negotiation must match the declared bridge or feature release channel")
   assert.deepEqual(collected.jobs.map((job) => ({
     projectId: job.projectId,
     adapterId: job.adapterId,

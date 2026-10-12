@@ -150,7 +150,7 @@ def verify_privacy_rules():
     client.write_text(json.dumps({"version": 3, "projects": [], "adapters": [],
                                   "toolsConfigured": True, "enabledAdapterIds": [],
                                   "autoUpdateEnabled": False, "autoStartEnabled": False}))
-    for source_cache in (cache, migration_cache):
+    for source_cache in (cache, migration_cache, target_cache):
         privacy_cache = home / source_cache.relative_to(root / "home")
         privacy_cache.parent.mkdir(mode=0o700, parents=True)
         privacy_cache.write_bytes(source_cache.read_bytes())
@@ -316,6 +316,18 @@ try:
                     "migrationProtocol": runtime["captureMigration"]["protocol"],
                     "migrationId": runtime["captureMigration"]["id"], "version": available}
                    for source in runtime["captureMigration"]["fromCaptureStateContracts"]]}}))
+    # Target-capable UI readers start in their own namespace. Keep this fixture
+    # metadata-only and exercise Skip; no fake executable is installed or run.
+    target_bundle = dict(bundle, protocol="atape.release-bundle.v3",
+                         updateTargetProtocol=runtime["updateTargetProtocol"],
+                         fromCaptureStateContracts=runtime["fromCaptureStateContracts"])
+    target_cache = root / "home/cache/release-discovery-v3/catalog.json"
+    target_cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target_cache.write_text(json.dumps({"checkedAt": int(time.time() * 1000), "catalog": {
+        "protocol": "atape.update-catalog.v3", "revision": 1, "bundles": [target_bundle],
+        "routes": [{"fromCaptureStateContract": source, "updateControlProtocol": runtime["updateControlProtocol"],
+                    "updateTargetProtocol": runtime["updateTargetProtocol"], "version": available}
+                   for source in runtime["fromCaptureStateContracts"]]}}))
     terminal = Terminal(skip_updates=False)
     terminals.append(terminal)
     terminal.drain(.5)

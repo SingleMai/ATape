@@ -151,6 +151,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0123](0123-recorded-activity-ranges.md) | Recorded activity ranges in Session Analytics v3 |
 | [0124](0124-stable-native-tool-identity.md) | Stable native tool identity and Analytics v4 |
 | [0125](0125-recorded-file-activity.md) | Recorded file activity and conditional evidence |
+| [0126](0126-target-owned-managed-updates.md) | Target-owned managed update preparation and recovery |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

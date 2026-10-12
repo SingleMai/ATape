@@ -7,6 +7,9 @@ Extends [ADR-0104](0104-capture-v2-state-upgrade.md),
 [ADR-0107](0107-independent-update-control.md),
 [ADR-0108](0108-compatible-release-bundle-discovery.md), and
 [ADR-0110](0110-runtime-writer-admission.md).
+The target executable's ownership of preparation and recovery is extended by
+[ADR-0126](0126-target-owned-managed-updates.md); actual migration plans remain
+separate from executable delivery capability.
 
 ## Decision
 

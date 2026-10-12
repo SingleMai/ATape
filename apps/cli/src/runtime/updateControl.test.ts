@@ -40,6 +40,128 @@ const fixture = async () => {
 }
 
 describe("independent update control through its durable caller Interface", () => {
+  it("hands execution directly to a completed forward-only target without exposing public capture recovery", async () => {
+    const f = await fixture(), control = f.control(), next = await f.generation("0.6.0", "capture.v3"), key = randomUUID()
+    await atomicJSON(f.pointer, f.previous)
+    const ticket = await control.handoffTarget({ key, next, previous: f.previous })
+    expect(ticket).toEqual({ key })
+    expect(await f.readLedger()).toEqual({ protocol: updateControlProtocol, key, phase: "completed", forwardOnly: true,
+      baseline: f.previous, previous: f.previous, target: next,
+      floor: { minimumRuntimeVersion: next.version, captureStateContract: next.captureStateContract } })
+    expect(await control.readSelection()).toEqual(next)
+    expect(await control.recoveryPending()).toBe(false)
+    expect(await control.handoffRuntime()).toBeUndefined()
+    expect(await control.migrationBoundary(key)).toMatchObject({ phase: "completed", forwardOnly: true, target: next, selection: next })
+    await expect(control.acquireRuntimeWrite(f.previous, 0)).rejects.toMatchObject({ reason: "admission" })
+    const release = await control.acquireRuntimeWrite(next, 0); release()
+  })
+
+  it("waits for source writes before committing target execution and rejects a changed baseline after the wait", async () => {
+    const f = await fixture(), control = f.control(), later = await f.generation("0.5.6")
+    await atomicJSON(f.pointer, f.previous)
+    const release = await control.acquireRuntimeWrite(f.previous)
+    const handoff = control.handoffTarget({ key: randomUUID(), next: f.next, previous: f.previous })
+    const rejected = expect(handoff).rejects.toMatchObject({ reason: "conflict" })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      await expect(readFile(f.ledger, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+      await atomicJSON(f.pointer, later)
+    } finally { release() }
+    await rejected
+    expect(await control.readSelection()).toEqual(later)
+    await expect(readFile(f.ledger, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+    const cleanup = await control.acquireRuntimeWriteBarrier(0); cleanup()
+  })
+
+  it("defers execution handoff for pending creation proofs without changing control or selecting the target", async () => {
+    const f = await fixture(), control = f.control(), key = randomUUID()
+    await atomicJSON(f.pointer, f.previous)
+    const pending = await createCreationReceiptAdmission(f.home).acquirePending()
+    try {
+      await expect(control.handoffTarget({ key, next: f.next, previous: f.previous })).rejects.toMatchObject({ reason: "conflict" })
+      expect(await control.readSelection()).toEqual(f.previous)
+      await expect(readFile(f.ledger, "utf8")).rejects.toMatchObject({ code: "ENOENT" })
+      const admitted = await control.acquireRuntimeWrite(f.previous, 0); admitted()
+    } finally { pending() }
+    await control.handoffTarget({ key, next: f.next, previous: f.previous })
+    expect(await control.readSelection()).toEqual(f.next)
+  })
+
+  it.each(["control-synced", "pointer-synced"])("repairs the %s execution crash state using only its exact completed boundary", async point => {
+    const f = await fixture(), control = f.control(), key = randomUUID()
+    await atomicJSON(f.pointer, f.previous)
+    const ticket = await control.handoffTarget({ key, next: f.next, previous: f.previous })
+    // Recreate the two durable states at process interruption, without mocking
+    // filesystem calls or treating a completed execution handoff as capture readiness.
+    if (point === "control-synced") await atomicJSON(f.pointer, f.previous)
+    const ledger = await readFile(f.ledger, "utf8")
+    expect(await f.control().recoveryPending()).toBe(false)
+    expect(await f.control().handoffRuntime()).toBeUndefined()
+    await expect(f.control().assertRuntimeAdmission(f.previous)).rejects.toMatchObject({ reason: "admission" })
+    const pending = await createCreationReceiptAdmission(f.home).acquirePending()
+    try {
+      expect(await f.control().repairTargetPointer(ticket)).toEqual(f.next)
+      expect(await f.control().handoffTarget({ key, next: f.next, previous: f.previous })).toEqual(ticket)
+    } finally { pending() }
+    expect(await f.control().readSelection()).toEqual(f.next)
+    expect(await readFile(f.ledger, "utf8")).toBe(ledger)
+  })
+
+  it("refuses malformed, reused or stale execution authority and never overwrites a newer selection", async () => {
+    const f = await fixture(), control = f.control(), key = randomUUID(), later = await f.generation("0.5.6")
+    await atomicJSON(f.pointer, f.previous)
+    await expect(control.handoffTarget({ key: "invalid", next: f.next })).rejects.toMatchObject({ reason: "metadata" })
+    await expect(control.handoffTarget({ key, next: f.next, previous: later })).rejects.toMatchObject({ reason: "conflict" })
+    const ticket = await control.handoffTarget({ key, next: f.next, previous: f.previous })
+    const ledger = await readFile(f.ledger, "utf8")
+    await expect(control.handoffTarget({ key, next: later })).rejects.toMatchObject({ reason: "conflict" })
+    await expect(control.handoffTarget({ key, next: f.next, previous: later })).rejects.toMatchObject({ reason: "conflict" })
+    await expect(control.repairTargetPointer({ key: randomUUID() })).rejects.toMatchObject({ reason: "conflict" })
+    expect(await readFile(f.ledger, "utf8")).toBe(ledger)
+    await atomicJSON(f.pointer, later)
+    await expect(control.repairTargetPointer(ticket)).rejects.toMatchObject({ reason: "conflict" })
+    expect(await control.readSelection()).toEqual(later)
+    await atomicJSON(f.pointer, f.next)
+    await control.handoffTarget({ key: randomUUID(), next: later })
+    const newerLedger = await readFile(f.ledger, "utf8")
+    await expect(control.repairTargetPointer(ticket)).rejects.toMatchObject({ reason: "conflict" })
+    expect(await readFile(f.ledger, "utf8")).toBe(newerLedger)
+    expect(await control.readSelection()).toEqual(later)
+  })
+
+  it("rechecks completed execution authority after waiting for pointer repair exclusion", async () => {
+    const f = await fixture(), control = f.control(), key = randomUUID(), later = await f.generation("0.5.6")
+    await atomicJSON(f.pointer, f.previous)
+    const ticket = await control.handoffTarget({ key, next: f.next })
+    await atomicJSON(f.pointer, f.previous)
+    const release = await control.acquireRuntimeWriteBarrier(), repair = f.control().repairTargetPointer(ticket)
+    const rejected = expect(repair).rejects.toMatchObject({ reason: "conflict" })
+    try {
+      await new Promise(resolve => setTimeout(resolve, 50))
+      await atomicJSON(f.ledger, { ...await f.readLedger(), key: randomUUID(), target: later,
+        floor: { minimumRuntimeVersion: later.version, captureStateContract: later.captureStateContract } })
+      await atomicJSON(f.pointer, later)
+    } finally { release() }
+    await rejected
+    expect(await control.readSelection()).toEqual(later)
+    const cleanup = await control.acquireRuntimeWriteBarrier(0); cleanup()
+  })
+
+  it("requires actual target capability and preserves an established source floor on rejected handoffs", async () => {
+    const f = await fixture(), control = f.control(), key = randomUUID()
+    await atomicJSON(f.pointer, f.previous)
+    await expect(control.handoffTarget({ key, next: f.previous })).rejects.toMatchObject({ reason: "generation" })
+    await expect(control.handoffTarget({ key, next: { ...f.next, captureStateContract: "wrong.contract" } })).rejects.toMatchObject({ reason: "generation" })
+    const ticket = await control.handoffTarget({ key, next: f.next })
+    const ledger = await readFile(f.ledger, "utf8")
+    await expect(control.handoffTarget({ key: randomUUID(), next: f.previous })).rejects.toMatchObject({ reason: "admission" })
+    await rm(join(f.home, "releases", f.next.version), { recursive: true })
+    await expect(control.repairTargetPointer(ticket)).rejects.toMatchObject({ reason: "generation" })
+    expect(await readFile(f.ledger, "utf8")).toBe(ledger)
+    expect(await control.readSelection()).toEqual(f.next)
+    await expect(control.assertRuntimeAdmission(f.previous)).rejects.toMatchObject({ reason: "admission" })
+  })
+
   it("finishes an admitted write before advancing a same-contract reader floor", async () => {
     const f = await fixture(), control = f.control(), order: string[] = []
     const ticket = await control.prepare({ next: f.next, previous: f.previous })

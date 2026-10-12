@@ -506,6 +506,37 @@ Published 0.5.3 and 0.5.4 both use the same GitHub
 one bridge package cannot serve both. A temporary release window cannot cover
 indefinitely offline installations. The 0.5.3 manual boundary below remains.
 
+### Target-owned updates
+
+The target-owned update Interface is `atape.update-target.v1`, with separate
+catalog and immutable bundle v3 metadata. A capable parent verifies and installs
+the exact target CLI, then asks that executable to prepare and activate its own
+release. The target owns Adapter manifest parsing, server prerequisite checks,
+actual capture migration and recovery. Provider profile changes no longer
+require an old updater to understand the new provider Schema.
+
+A bounded durable handoff is saved before target preparation. The parent owns
+the update worker; the target owns a separate execution lock. Interrupted work
+delegates to that recorded executable before any parent capture-state decoder.
+Preparation keeps the existing Collector running. Activation retains current
+preference, configuration and credential checks, existing maintenance/fences,
+and the current Stop intent. Recovery after a fence moves forward with that
+same target even if automatic updates have since been disabled.
+
+Published 0.5.10 cannot directly parse the new v5 official Adapter manifests.
+The 0.5.11 bridge therefore retains the actual old Codex v3 and Claude v4
+Adapter behavior while adding the new updater. Legacy catalog v1/v2 routes and
+npm `latest` retain that bridge. Subsequent feature packages use catalog v3 and
+the managed npm channel. A returning old client can still follow the automatic
+bridge and then feature path; publication order alone is insufficient.
+
+The bridge does not produce the later file-activity facts. Controlled v5 Host
+support, feature implementation, authentic installed upgrade acceptance, npm
+publication and deployment are separate evidence. Release notes record which
+candidate has completed those steps. The v3 capability does not remove Node,
+platform, update-control or executable-protocol compatibility requirements.
+See [ADR-0126](../architecture/adr/0126-target-owned-managed-updates.md).
+
 ### Explicit capture migration
 
 Migration-capable clients prefer static `/catalog/v2.json`; older published
@@ -764,30 +795,35 @@ acceptance, OS registration or an upgrade of a personal installation.
 
 ### Stable native tool identity: checkout increment
 
-The current checkout adds Canonical/publication v5 and Analytics v4 for explicit
-Claude and Codex tool identities. It has not been published or deployed; package
-versions still read 0.5.10. The published 0.5.10 Server does not advertise v5,
-and its CLI/Adapters cannot collect this revision. Do not install these new
-Adapters by themselves into that published Host.
+The Host, Server and reader implement Canonical/publication v5 and Analytics v4
+for explicit native identities and recorded file activity. The 0.5.11 candidate
+is a genuine update bridge with older official v3/v4 providers; the subsequent
+target-owned feature release restores the complete v5 provider increment.
+The published 0.5.10 Server does not advertise v5. Implementation in this
+checkout is not evidence of publication or deployment.
 
-When a supporting release is available, update the Server and complete
-CLI/Adapter bundle together. Each configured Instance must affirm Canonical v5
-for Codex and publication target v5 for Claude, in addition to the existing
-capture/adoption requirements. New CLI discovery explicitly opts into v5;
+Upgrade the Server before advertising the v5 feature target. Each configured
+Instance must affirm Canonical v5 for Codex and publication target v5 for Claude,
+in addition to existing capture/adoption requirements. The automatic path then
+updates the complete CLI/Adapter bundle through the retained bridge and new
+target-owned route. Users need not manually stop sync or replace npm merely
+because a provider profile changes. New CLI discovery explicitly opts into v5;
 the Server's default Canonical capability list remains v2/v3/v4 so the published
 0.5.10 CLI remains compatible with a newer Server. Local Host support is also
 checked before opening source bytes. An unsupported or malformed capability
 refuses capture before checkpoint or pending progress changes; it cannot discard
 identity facts to continue under v3/v4.
 
-Finish pending recovery, choose **Stop sync**, close older consoles and preserve
-the same `ATAPE_HOME`, credentials, configuration, capture journals and Raw
-receipts during the transition. Select a complete compatible bundle before
-**Start sync**. Available source history replays once using stable Event IDs and
-higher projection revisions. Unavailable history remains unidentified; accepted
-frozen publications and Raw acknowledgements are not rewritten.
+The target performs preflight before pause and retains the same `ATAPE_HOME`,
+credentials, configuration, capture journals, Raw receipts and current sync
+intent. Interrupted work recovers through its exact executable. Available source
+history replays once using stable Event IDs and higher projection revisions.
+Unavailable history remains unidentified; accepted frozen publications and Raw
+acknowledgements are not rewritten. An already-open older console may require
+reopening after it loses reader admission; the independent updater/Collector
+can continue without that console.
 
-Codex writes a v6 cursor after the new projection. An older Codex Adapter cannot
+The feature's Codex writes a v7 cursor after the new projection. An older Codex Adapter cannot
 read it, so recover forward through the compatible runtime and retained progress.
 New Claude v5 source recovery metadata also carries an explicit v5 profile that
 older Hosts reject. The earlier v4 encoding/0.5.8 recovery evidence does not
@@ -800,6 +836,8 @@ read fallback does not authorize v5 source capture against an older Server.
 See [Session Analytics](../session-analytics.md#stable-tool-grouping),
 [the v5 ingestion contract](../api/canonical-ingestion.md#v5-stable-native-tool-identity)
 and [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
+Executable delivery and retained bridge routing follow
+[ADR-0126](../architecture/adr/0126-target-owned-managed-updates.md).
 
 ### Built-in CLI updates
 

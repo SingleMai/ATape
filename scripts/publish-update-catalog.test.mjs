@@ -5,25 +5,17 @@ import test from "node:test"
 import { mergeReleaseBundle, releaseBundleProtocol, releaseBundleSection, releaseBundleFingerprint, releasePackageNames,
   updateCatalogTag, migrationReleaseBundleProtocol, migrationReleaseCatalogTag, releaseBundleFromBody,
   migrationReleaseBundleFromBody, migrationReleaseBundleFingerprint, mergeMigrationReleaseBundle } from "../packages/domain/src/releaseCatalog.ts"
+import { targetReleaseBundleProtocol, targetReleaseCatalogTag, targetReleaseBundleFromBody,
+  targetReleaseBundleFingerprint, updateTargetProtocol } from "../packages/domain/src/releaseCatalog.ts"
 import { publicationCaptureContract, publicationControlProtocol, publicationMigrationProtocol,
   publicationMigrationId } from "./public-release-visibility.mjs"
 import { createGitHubPublication, publishUpdateCatalog } from "./publish-update-catalog.mjs"
 import { publishRelease } from "./publish-npm-release.mjs"
+import { releaseArtifacts } from "./fixtures/release-artifacts.mjs"
 
 const commit = "a".repeat(40)
 const digest = bytes => createHash("sha256").update(bytes).digest("hex")
-function artifacts(version = "0.5.6") {
-  const files = releasePackageNames.map(name => {
-    const bytes = Buffer.from(`${name}@${version}`)
-    return { name, filename: `${name.replace(/^@/, "").replace("/", "-")}-${version}.tgz`, path: "/unused/source.tgz", bytes,
-      integrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}`, sha256: digest(bytes) }
-  })
-  const checksums = Buffer.from([...files].sort((a, b) => a.filename < b.filename ? -1 : 1).map(file => `${file.sha256}  ${file.filename}\n`).join(""))
-  return { files: [...files, { filename: "SHA256SUMS", bytes: checksums, sha256: digest(checksums) }],
-    bundle: { protocol: releaseBundleProtocol, version, captureStateContract: publicationCaptureContract,
-      updateControlProtocol: publicationControlProtocol, packages: files.map(file => ({ name: file.name, integrity: file.integrity,
-        tarball: `https://registry.npmjs.org/${file.name}/-/${file.name.slice("@atape/".length)}-${version}.tgz` })) } }
-}
+const artifacts = releaseArtifacts
 function githubFixture() {
   const releases = new Map(), bytes = new Map(), events = []
   let id = 0, latest
@@ -168,7 +160,7 @@ test("tag identity mismatch prevents any publication", async () => {
 
 function publicationFixture(local, remote, { published = false, latest = "0.5.5", visibilityFailure = false } = {}) {
   const events = [], staging = []
-  return { events, staging, input: { release: { version: local.bundle.version, tag: `v${local.bundle.version}`, repositoryRoot: "/unused" },
+  return { events, staging, input: { release: { version: local.bundle.version, releaseChannel: local.releaseChannel, tag: `v${local.bundle.version}`, repositoryRoot: "/unused" },
     artifacts: local, notes: "Release notes.", commit, github: remote.github, log: () => {},
     registry: {
       read: async (name, version) => version === "latest" ? { version: latest } : published ? { dist: { integrity: local.bundle.packages.find(item => item.name === name).integrity } } : undefined,
@@ -253,7 +245,7 @@ test("immutable npm mismatch and future contract fail before first external writ
   await assert.rejects(publishRelease(fixture.input), /different tarball integrity/)
   assert.equal(fixture.events.length, 0)
   fixture.input.artifacts.bundle.captureStateContract = "future.v3"
-  await assert.rejects(publishRelease(fixture.input), /future capture\/control/)
+  await assert.rejects(publishRelease(fixture.input), /cannot advance legacy routes/)
   assert.equal(writes(remote).length, 0)
 })
 
@@ -307,10 +299,7 @@ test("an existing version body above the client budget cannot become an automati
 })
 
 function migrationArtifacts(version = "0.5.6", sources = ["atape.client.v3-capture.v1", publicationCaptureContract]) {
-  const local = artifacts(version)
-  local.bundle = { ...local.bundle, protocol: migrationReleaseBundleProtocol,
-    migration: { protocol: publicationMigrationProtocol, id: publicationMigrationId, fromCaptureStateContracts: sources } }
-  return local
+  return artifacts(version, { migration: { protocol: publicationMigrationProtocol, id: publicationMigrationId, fromCaptureStateContracts: sources } })
 }
 
 test("eight-package publication preserves a seven-package offline source route and v1 bridge compatibility", async () => {
@@ -430,11 +419,91 @@ test("mutated local publication bytes fail before the first npm or GitHub write"
 
 test("a genuine bridge original v1 section and notes survive addition of its verified migration descriptor", async () => {
   const remote = githubFixture(), local = migrationArtifacts()
-  const originalBody = `Original human notes.\n${releaseBundleSection(artifacts().bundle)}\n`
+  const { migration: _, ...common } = local.bundle
+  const originalBody = `Original human notes.\n${releaseBundleSection({ ...common, protocol: releaseBundleProtocol })}\n`
   remote.seed("v0.5.6", originalBody, local.files)
   await publish(remote, local)
   const body = remote.releases.get("v0.5.6").body
   assert.ok(body.startsWith(originalBody.trimEnd()))
   assert.equal(migrationReleaseBundleFingerprint(migrationReleaseBundleFromBody(body)), migrationReleaseBundleFingerprint(local.bundle))
   assert.equal(releaseBundleFromBody(body).version, local.bundle.version)
+})
+
+test("actual packed channel, producer profiles and target capabilities fail closed before any publication write", async () => {
+  for (const channel of ["legacy-bridge", "target-owned"]) for (const mismatch of ["codex", "claude", "runtime", "target"]) {
+    const remote = githubFixture()
+    const local = artifacts("0.5.12", { channel, target: true, manifestChange: manifest => {
+      if (mismatch === "codex" && manifest.name === "@atape/adapter-codex")
+        manifest.atapeAdapter.legacyCanonicalProfile = channel === "legacy-bridge" ? "atape.acp-centered.v5" : "atape.acp-centered.v3"
+      if (mismatch === "claude" && manifest.name === "@atape/adapter-claude")
+        manifest.atapeAdapter.publicationTargetProfile = channel === "legacy-bridge" ? "atape.publication-target.v5" : "atape.publication-target.v4"
+      if (mismatch === "runtime" && manifest.name === "@atape/cli") manifest.atapeRuntime.releaseChannel = "wrong"
+      if (mismatch === "target" && manifest.name === "@atape/cli") manifest.atapeRuntime.fromCaptureStateContracts = [publicationCaptureContract]
+      return manifest
+    } })
+    const fixture = publicationFixture(local, remote)
+    await assert.rejects(publishRelease(fixture.input), /Actual packed/, `${channel}/${mismatch}`)
+    await assert.rejects(publish(remote, local), /Actual packed/, `${channel}/${mismatch} direct GitHub caller`)
+    assert.deepEqual(fixture.events, [])
+    assert.deepEqual(remote.events, [])
+  }
+})
+
+const targetBridge = version => artifacts(version, { target: true, migration: {
+  protocol: publicationMigrationProtocol, id: publicationMigrationId,
+  fromCaptureStateContracts: ["atape.client.v3-capture.v1", publicationCaptureContract] } })
+
+test("a target-owned release advances only v3 and managed npm while retaining the actual bridge latest and legacy bytes", async () => {
+  // A genuine compatible bridge hotfix is selected by capability, never a numeric cap.
+  const remote = githubFixture(), bridge = targetBridge("0.5.13"), local = artifacts("0.5.14", { channel: "target-owned" })
+  await publish(remote, bridge)
+  const legacyBytes = remote.releases.get(updateCatalogTag).body, migrationBytes = remote.releases.get(migrationReleaseCatalogTag).body
+  const bridgeBody = remote.releases.get("v0.5.13").body
+  remote.events.length = 0
+  const fixture = publicationFixture(local, remote, { latest: bridge.bundle.version })
+  fixture.input.registry.read = async (name, version) => version === "latest" ? {
+    ...bridge.files.find(file => file.name === name).manifest,
+    dist: { integrity: bridge.bundle.packages.find(item => item.name === name).integrity } } : undefined
+  const result = await publishRelease(fixture.input)
+  assert.equal(result.npmTag, "atape-managed")
+  assert.equal(result.targetCatalogRevision, 2)
+  assert.ok(fixture.events.filter(event => typeof event === "object").every(event => event.tag === "atape-managed"))
+  assert.equal(remote.releases.get(updateCatalogTag).body, legacyBytes)
+  assert.equal(remote.releases.get(migrationReleaseCatalogTag).body, migrationBytes)
+  assert.equal(remote.releases.get("v0.5.13").body, bridgeBody)
+  assert.equal((await remote.github.readLatest()).tag_name, "v0.5.13")
+  const body = remote.releases.get("v0.5.14").body
+  assert.equal(releaseBundleFromBody(body), undefined)
+  assert.equal(migrationReleaseBundleFromBody(body), undefined)
+  assert.equal(targetReleaseBundleFingerprint(targetReleaseBundleFromBody(body)), targetReleaseBundleFingerprint(local.bundle))
+  const target = JSON.parse(remote.releases.get(targetReleaseCatalogTag).body)
+  assert.ok(target.routes.every(route => route.version === "0.5.14" && route.updateTargetProtocol === updateTargetProtocol))
+  const protectedIds = [remote.releases.get(updateCatalogTag).id, remote.releases.get(migrationReleaseCatalogTag).id,
+    remote.releases.get("v0.5.13").id]
+  assert.ok(writes(remote).every(event => event.body?.make_latest !== "true" &&
+    !protectedIds.some(id => event.route === `/releases/${id}`)))
+  remote.events.length = 0
+  await publish(remote, local)
+  assert.equal(writes(remote).length, 0)
+})
+
+test("target-owned npm publication requires consensus on a real target-capable immutable legacy bridge", async () => {
+  for (const kind of ["absent", "old-runtime", "split-npm", "wrong-bytes", "split-github", "missing-v2"]) {
+    const remote = githubFixture(), bridge = targetBridge("0.5.11"), local = artifacts("0.5.12", { channel: "target-owned" })
+    if (kind !== "absent") await publish(remote, bridge)
+    if (kind === "split-github") remote.seed("v0.5.10", "Historical notes.", [], { isLatest: true })
+    if (kind === "missing-v2") remote.releases.delete(migrationReleaseCatalogTag)
+    remote.events.length = 0
+    const fixture = publicationFixture(local, remote)
+    fixture.input.registry.read = async (name, version) => {
+      if (version !== "latest") return undefined
+      const manifest = structuredClone(bridge.files.find(file => file.name === name).manifest)
+      if (kind === "old-runtime" && name === "@atape/cli") delete manifest.atapeRuntime.updateTargetProtocol
+      if (kind === "split-npm" && name === "@atape/adapter-claude") manifest.version = "0.5.10"
+      return { ...manifest, dist: { integrity: kind === "wrong-bytes" ? "wrong" : bridge.bundle.packages.find(item => item.name === name).integrity } }
+    }
+    await assert.rejects(publishRelease(fixture.input), /retained target-capable/, kind)
+    assert.deepEqual(fixture.events, [], kind)
+    assert.equal(writes(remote).length, 0, kind)
+  }
 })

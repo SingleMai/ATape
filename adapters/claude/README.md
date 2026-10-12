@@ -1,7 +1,12 @@
 # Claude Code Adapter
 
-Capture Project-scoped Claude Code JSONL through ATape's normal Collector,
-shared ACP profile, Server and conversation reader.
+
+The 0.5.11 `legacy-bridge` release retains the published 0.5.10 capture
+Implementation while the CLI gains target-owned automatic updates.
+The Claude Adapter keeps Canonical/publication v4 and source profile
+`claude.jsonl.active-path.2`. Ordinary native-tool identity and file-activity capture are
+planned for the subsequent `target-owned` release. See
+[ADR-0126](../../docs/architecture/adr/0126-target-owned-managed-updates.md).
 
 ```sh
 pnpm --filter @atape/adapter-claude build
@@ -27,8 +32,8 @@ of the earlier implementation.
 
 The factory exposes only `atape.source-capture.v2`, with explicit
 `atape.legacy-migration.v1` support for acknowledged earlier checkpoints. A compatible
-Host and publication-enabled Server with v5 targets and legacy adoption are required.
-The Host must explicitly advertise Canonical v5 when opening a source; older
+Host and publication-enabled Server with v4 targets and legacy adoption are required.
+The Host must explicitly advertise Canonical v4 when opening a source; older
 Hosts are rejected before source reads instead of dropping normalized identities.
 This checkout requirement is separate from any published Adapter version.
 
@@ -45,21 +50,10 @@ captured child can retain prior stored history with a diagnostic while the root
 advances. Raw-enabled capture also archives available historical child sources
 proved by admitted root receipts outside the selected path.
 
-Explicit native tool names, MCP and `Skill` tool invocations preserve bounded identities for
+Explicit MCP and `Skill` tool invocations preserve bounded identities for
 [Session Analytics](../../docs/session-analytics.md). Skill file reads and command
 expansions are not counted as Skill tools. The Server does not infer identity
 from labels or Raw, and upload redaction can explicitly clear a sensitive identity.
-The effective source profile is `claude.jsonl.active-path.4`; existing v1 source
-proof checkpoints remain readable. The Host replaces available older Canonical
-projections once and retains existing Raw receipts. Replay, new identities and file activity
-require available source bytes; a lost source does not erase captured history.
-
-The current unpublished v5 projection adds explicit file activity: `Read`
-`file_path`, `Write`/`Edit`/`MultiEdit` `file_path`, and `Grep`/`Glob` `path` scopes.
-Paths retain their original spelling; searches do not claim matching files.
-Missing, malformed, oversized or hidden paths remain unknown. Shell commands,
-MCP inputs and search patterns are not parsed for paths. Upload redaction clears
-sensitive copied facts. See the [Adapter guide](../../docs/adapters/claude.md#explicit-file-activity).
 
 Discovery uses `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an absolute
 alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects an absolute

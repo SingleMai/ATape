@@ -12,7 +12,7 @@ import { defaultNodeClientPaths } from "./clientPaths.ts"
 import { executeOwnedProcess } from "./ownedProcess.ts"
 import { atomicJSON, managedStateContract, runtimeEntry, selectRuntime } from "./runtimeSelection.ts"
 import { acquireUpdateWorker } from "./updateOwnership.ts"
-import { admitUpdateWake, makeUpdateWakePlatformLayer } from "./updateWake.ts"
+import { admitUpdateWake, makeUpdateWakePlatformLayer, prepareUpdateWakeRecoveryRuntime } from "./updateWake.ts"
 import { createUpdateControl, updateControlProtocol, type UpdateRuntimeSelection } from "./updateControl.ts"
 
 const roots: string[] = []
@@ -78,6 +78,88 @@ const disable = async (client: Awaited<ReturnType<typeof fixture>>) => {
   await atomicJSON(client.paths.configFile, { ...emptyClientConfig(), toolsConfigured: true, autoUpdateEnabled: false })
   return client.run(reconcile(false))
 }
+
+const selectRecoveryBridge = async (client: Awaited<ReturnType<typeof fixture>>, capabilities = true) => {
+  const entry = runtimeEntry(client.home, "0.5.11")
+  await mkdir(dirname(entry), { recursive: true })
+  await writeFile(entry, "// immutable target-capable selected bridge\n")
+  await atomicJSON(join(dirname(dirname(entry)), "package.json"), { name: "@atape/cli", version: "0.5.11",
+    atapeRuntime: { protocol: "atape.runtime.v1", stateContract: managedStateContract, updateWakeProtocol: "atape.update-wake.v1",
+      ...(capabilities ? { updateTargetProtocol: "atape.update-target.v1" } : {}) } })
+  await selectRuntime(client.home, { protocol: "atape.runtime.v1", stateContract: managedStateContract, version: "0.5.11",
+    bootstrapEntry: client.entry, bootstrapIdentity: createHash("sha256").update(await readFile(client.entry)).digest("hex"), adapters: [] })
+  return entry
+}
+
+describe("existing wake recovery executable preparation through the Node Interface", () => {
+  it("leaves an installation with no native registration entirely unregistered", async () => {
+    const client = await fixture()
+    await prepareUpdateWakeRecoveryRuntime(client.paths, client.entry, new AbortController().signal)
+    expect(client.calls).toHaveLength(0)
+    await expect(lstat(join(client.home, "updates"))).rejects.toMatchObject({ code: "ENOENT" })
+  })
+  it.each(["darwin", "linux"] as const)("refreshes only the owned %s launcher under existing update ownership with no manager access", async platform => {
+    const client = await fixture(platform)
+    await client.run(reconcile(true))
+    const previous = await client.metadata(), config = await readFile(client.paths.configFile), bootstrap = await readFile(client.entry)
+    const descriptors = await Promise.all(previous.descriptors.map(item => readFile(item.file)))
+    const bridge = await selectRecoveryBridge(client)
+    client.state.available = false
+    client.calls.length = 0
+    const release = await acquireUpdateWorker(client.home)
+    try { await prepareUpdateWakeRecoveryRuntime(client.paths, client.entry, new AbortController().signal) } finally { release?.() }
+    const next = await client.metadata()
+    expect(await readFile(next.launcher)).toEqual(await readFile(bridge))
+    expect(next).toEqual({ ...previous, launcherHash: createHash("sha256").update(await readFile(bridge)).digest("hex") })
+    expect(await readFile(client.entry)).toEqual(bootstrap)
+    expect(await readFile(client.paths.configFile)).toEqual(config)
+    expect(await Promise.all(next.descriptors.map(item => readFile(item.file)))).toEqual(descriptors)
+    expect(client.calls).toHaveLength(0)
+    expect(await admitUpdateWake(client.paths, next.token, next.launcher, {})).toBeDefined()
+    const saved = await readFile(client.metadataFile)
+    await prepareUpdateWakeRecoveryRuntime(client.paths, client.entry, new AbortController().signal)
+    expect(await readFile(client.metadataFile)).toEqual(saved)
+  })
+  it.each(["metadata-first", "launcher-replaced"] as const)("recovers the durable %s interruption without changing native descriptors or token", async phase => {
+    const client = await fixture("linux")
+    await client.run(reconcile(true))
+    const previous = await client.metadata(), old = await readFile(previous.launcher), bridge = await selectRecoveryBridge(client)
+    const current = await readFile(bridge), hash = createHash("sha256").update(current).digest("hex")
+    await atomicJSON(client.metadataFile, { ...previous, launcherHash: hash, precedingLauncherHash: previous.launcherHash })
+    if (phase === "launcher-replaced") await writeFile(previous.launcher, current)
+    // The first synced record accepts either genuine owned byte identity while
+    // no future ledger has yet been exposed; the caller must finish before v3.
+    expect(await admitUpdateWake(client.paths, previous.token, previous.launcher, {})).toBeDefined()
+    expect(await readFile(previous.launcher)).toEqual(phase === "metadata-first" ? old : current)
+    client.calls.length = 0
+    await prepareUpdateWakeRecoveryRuntime(client.paths, client.entry, new AbortController().signal)
+    expect(await client.metadata()).toEqual({ ...previous, launcherHash: hash })
+    expect(await readFile(previous.launcher)).toEqual(current)
+    expect(client.calls).toHaveLength(0)
+  })
+  it.each(["descriptor", "launcher", "metadata", "bootstrap", "paths", "capability", "source-symlink"] as const)("refuses %s tampering or another installation before changing owned files", async kind => {
+    const client = await fixture("linux")
+    await client.run(reconcile(true))
+    const previous = await client.metadata(), bridge = await selectRecoveryBridge(client, kind !== "capability")
+    let paths = client.paths, bootstrap = client.entry
+    if (kind === "descriptor") await writeFile(previous.descriptors[0]!.file, "foreign descriptor\n")
+    if (kind === "launcher") await writeFile(previous.launcher, "foreign launcher\n")
+    if (kind === "metadata") await atomicJSON(client.metadataFile, { ...previous, unexpected: true })
+    if (kind === "bootstrap") { bootstrap = join(client.root, "another-bootstrap.js"); await writeFile(bootstrap, "foreign bootstrap\n") }
+    if (kind === "paths") paths = { ...paths, collectorStateFile: join(client.root, "another-state.json") }
+    if (kind === "source-symlink") {
+      const outside = join(client.root, "outside-target.js"); await writeFile(outside, "foreign source\n")
+      await rm(bridge); await symlink(outside, bridge)
+    }
+    const before = await readFile(client.metadataFile), copied = await readFile(previous.launcher)
+    client.calls.length = 0
+    await expect(prepareUpdateWakeRecoveryRuntime(paths, bootstrap, new AbortController().signal))
+      .rejects.toMatchObject({ reason: kind === "source-symlink" ? "state" : "identity" })
+    expect(await readFile(client.metadataFile)).toEqual(before)
+    expect(await readFile(previous.launcher)).toEqual(copied)
+    expect(client.calls).toHaveLength(0)
+  })
+})
 
 describe("independent native update wake Adapter", () => {
   it("leaves disabled unfinished setup unregistered", async () => {

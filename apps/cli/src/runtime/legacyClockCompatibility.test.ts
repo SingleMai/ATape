@@ -4,7 +4,7 @@ import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { AdapterCollectionLimits, AdapterProtocolVersion, CanonicalProfileVersion5,
+import { AdapterCollectionLimits, AdapterProtocolVersion, CanonicalProfileVersion3, CanonicalProfileVersion5,
   type AdapterInstallation, type AtapeAdapterModule, type CollectorCheckpoint, type LocalProject } from "@atape/domain"
 import { expect, it } from "vitest"
 import { legacyClockHostV059 } from "./fixtures/legacy-clock-host-v059.ts"
@@ -13,7 +13,7 @@ const repository = fileURLToPath(new URL("../../../..", import.meta.url))
 const timestamp = "2026-10-11T00:00:00Z"
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex")
 
-it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before source access or checkpoint changes", async () => {
+it("the genuine 0.5.9 Node Host refuses the declared current clock profile before source access or checkpoint changes", async () => {
   const historical = await legacyClockHostV059()
   const home = await realpath(await mkdtemp(join(tmpdir(), "atape-old-host-codex-clock-")))
   const previousHome = process.env.ATAPE_CODEX_HOME
@@ -35,7 +35,10 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
     const manifest = JSON.parse(manifestBytes.toString("utf8")) as {
       name: string; version: string; atapeAdapter: { entry: string; legacyCanonicalProfile: string }
     }
-    expect(manifest.atapeAdapter.legacyCanonicalProfile).toBe(CanonicalProfileVersion5)
+    const channel = JSON.parse(await readFile(join(repository, "apps/cli/package.json"), "utf8")).atapeRuntime.releaseChannel
+    expect(["legacy-bridge", "target-owned"]).toContain(channel)
+    const profile = channel === "legacy-bridge" ? CanonicalProfileVersion3 : CanonicalProfileVersion5
+    expect(manifest.atapeAdapter.legacyCanonicalProfile).toBe(profile)
     const adapterDirectory = join(home, "adapters"), packageRoot = join(adapterDirectory, "node_modules", "@atape", "adapter-codex")
     const entry = resolve(packageRoot, manifest.atapeAdapter.entry)
     await mkdir(dirname(entry), { recursive: true })
@@ -74,7 +77,9 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
     const refusal = await old.runPromise(old.scoped(historical.AdapterRuntimes.use(runtimes => runtimes.open(project, adapter))).pipe(
       old.provide(runtimeLayer), old.flip))
     expect(refusal).toMatchObject({ reason: "load", retryable: false,
-      message: expect.stringContaining("Upgrade the ATape CLI to collect Codex with explicit source clock quality and stable tool identities.") })
+      message: expect.stringContaining(channel === "legacy-bridge"
+        ? "Upgrade the ATape CLI to collect Codex with explicit source clock quality."
+        : "Upgrade the ATape CLI to collect Codex with explicit source clock quality and stable tool identities.") })
     expect(refusal.message).not.toContain("Could not open the Codex archive")
     expect(await readCheckpoint()).toEqual(before)
     expect(await readFile(stateFile)).toEqual(frozenState)
@@ -83,7 +88,7 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
     // public factory receives the new Host fact and the caller starts collect.
     const current = await import(pathToFileURL(entry).href) as AtapeAdapterModule
     const admitted = await current.createAtapeAdapter({ protocolVersion: AdapterProtocolVersion,
-      legacyCanonicalProfiles: [CanonicalProfileVersion5], adapter: { id: adapter.adapterId, version: adapter.version },
+      legacyCanonicalProfiles: [profile], adapter: { id: adapter.adapterId, version: adapter.version },
       project: { id: project.id, type: project.type, path: project.path }, signal: AbortSignal.timeout(5000) })
     try {
       expect("collect" in admitted).toBe(true)
@@ -101,7 +106,7 @@ it("the genuine 0.5.9 Node Host refuses the current Codex clock profile before s
       host: historical.proof.inputs.filter(input => ["apps/cli/src/runtime/adapterHost.ts", "packages/domain/src/collector.ts",
         "apps/cli/src/runtime/collectorState.ts"].includes(input.path)),
       adapter: { manifestSha256: digest(manifestBytes), bundleSha256: digest(await readFile(entry)), inputs: sourceProof },
-      oldHostRefusedBeforeSourcePathError: true, checkpointBytesPreserved: true,
+      releaseChannel: channel, oldHostRefusedBeforeSourcePathError: true, checkpointBytesPreserved: true,
       sourceIOCount: "not-instrumented", acceptanceScope: "selected-upgrade-preflight" }))
   } finally {
     if (previousHome === undefined) delete process.env.ATAPE_CODEX_HOME

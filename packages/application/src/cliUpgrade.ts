@@ -56,11 +56,11 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
     return yield* new CLIUpgradeError({ reason: "installation", message: "An official Adapter is ahead of this release. Reopen ATape and check versions again." })
   }
   const updateEntry = newer(version, installed)
-  // A migration release must settle local state even after a user disconnects
-  // all tools. Replacing only the npm entry would bypass its durable fence.
-  const migrationRelease = bundle.protocol === "atape.release-bundle.v2"
-  const updateRuntime = (config.toolsConfigured || migrationRelease) &&
-    (newer(version, current) || adapters.some(adapter => adapter.version !== version) || (migrationRelease && updateEntry))
+  // Both explicit migration and target-owned releases must settle retained
+  // capture state after tools are disconnected, before replacing the npm entry.
+  const managedActivation = bundle.protocol === "atape.release-bundle.v2" || bundle.protocol === "atape.release-bundle.v3"
+  const updateRuntime = (config.toolsConfigured || managedActivation) &&
+    (newer(version, current) || adapters.some(adapter => adapter.version !== version) || (managedActivation && updateEntry))
   if (!updateRuntime && !updateEntry) return { version: current, updated: false, resumed: yield* refreshManagedCollector() }
   const process = yield* CollectorDaemonProcess
   const running = yield* process.inspect()

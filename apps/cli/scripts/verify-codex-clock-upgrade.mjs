@@ -61,9 +61,11 @@ export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory
       tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` } } }
   }
   const candidateProfile = publicPackages["@atape/adapter-codex"].manifest.atapeAdapter.legacyCanonicalProfile
-  assert.ok(["atape.acp-centered.v3", "atape.acp-centered.v5"].includes(candidateProfile), "Clock transition requires an explicitly admitted nullable-clock profile")
-  const candidateProjection = candidateProfile === "atape.acp-centered.v5" ? 7 : 5
   const cliManifest = publicPackages["@atape/cli"].manifest
+  const channel = cliManifest.atapeRuntime.releaseChannel
+  assert.ok(["legacy-bridge", "target-owned"].includes(channel), "Clock transition requires an explicit packaged publication channel")
+  assert.equal(candidateProfile, channel === "legacy-bridge" ? "atape.acp-centered.v3" : "atape.acp-centered.v5", "Clock projection must match the actual release channel")
+  const candidateProjection = channel === "legacy-bridge" ? 5 : 7
   const bundle = { protocol: "atape.release-bundle.v2", version, captureStateContract: cliManifest.atapeRuntime.stateContract,
     updateControlProtocol: cliManifest.atapeRuntime.updateControlProtocol, migration: cliManifest.atapeRuntime.captureMigration,
     packages: packages.map(name => ({ name, ...publicPackages[name].manifest.dist })) }
@@ -104,6 +106,7 @@ globalThis.fetch=async (input,init)=> {
  if(address.startsWith("data:"))return realFetch(input,init);
  const fixture=JSON.parse(readFileSync(${JSON.stringify(publicRelease)},"utf8"));
  appendFileSync(${JSON.stringify(requests)},JSON.stringify({address,pid:process.pid})+"\n");
+ if(address===${JSON.stringify(releaseCatalogURL("atape.update-catalog.v3"))}||address===${JSON.stringify(releaseBundleURL(version,"atape.release-bundle.v3"))})return new Response(null,{status:404});
  for (const protocol of ["atape.release-bundle.v2","atape.release-bundle.v1"]) {
    const migration=protocol.endsWith("v2");
    const catalogURL=migration?${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))}:${JSON.stringify(releaseCatalogURL("atape.update-catalog.v1"))};
@@ -319,7 +322,7 @@ else if(args[0]==="install") {
       installedStoppedWholeBundleMenuCompleted:true,stopIntentPreserved:true,projectsAndToolsPreserved:true,credentialBytesPreserved:true,
       checkpointBytesPreservedAtSelection:true,rawReceiptsPreservedAcrossReplay:true,explicitNullReplayed:true,eventIDsPreserved:true,
       revisionsAdvanced:true,noOpContinuationPassed:true,appendedContinuationPassed:true,[`genuineOldAdapterRejectedProjection${candidateProjection}`]:true,
-      candidateCanonicalProfile:candidateProfile,candidateProjectionVersion:candidateProjection,
+      releaseChannel:channel,candidateCanonicalProfile:candidateProfile,candidateProjectionVersion:candidateProjection,
       ...(candidateProjection >= 7 ? { installedNativeFileActivityReplayed: true } : {}),
       installedCandidateDaemonCycles:3,upgradeServerRelease:version,upgradeServerMinimumCLI:version,
       readerFloor:control.floor,retainedRuntimeRollbackAfterNewCursor:"unsupported; recover forward with target runtime",

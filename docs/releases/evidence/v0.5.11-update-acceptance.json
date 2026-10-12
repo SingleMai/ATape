@@ -1,0 +1,544 @@
+{
+  "protocol": "atape.target-update-acceptance.v1",
+  "releaseVersion": "0.5.11",
+  "releaseChannel": "legacy-bridge",
+  "scope": "Local candidate working tree and exact installed tarballs. This is neither npm publication nor production deployment evidence. Pull-request CI and Security must pass at the exact frozen head before integration/publication.",
+  "recordedAt": "2026-10-12T18:10:59.930206+00:00",
+  "sourceBaseline": "7061967c97ce45fe90503dbfc98fa254792ff2ce",
+  "bridgeImplementationSource": "79a8b3ee49a4c13df7f1730fa3e8ebb5ecc7aaa3",
+  "genuineBridgeSources": [
+    {
+      "path": "adapters/codex/src/index.ts",
+      "sha256": "bae3f0d702185cda07f4238b27298a71b48427be5b5198acff00354a38cb18f4",
+      "matchesReleasedSource": true
+    },
+    {
+      "path": "adapters/codex/src/codexArchive.ts",
+      "sha256": "20d8b1e566c756f72b2b07c60db0777892fa718ca37a77f81f2705aee45f9b6b",
+      "matchesReleasedSource": true
+    },
+    {
+      "path": "adapters/claude/src/claudeArchive.ts",
+      "sha256": "08c66c2ca91a8f5ddd311d17329466a0bdef0487c56fc6f5ab5638c132790382",
+      "matchesReleasedSource": true
+    }
+  ],
+  "localChecks": [
+    {
+      "command": "pnpm check",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-settled-check.log",
+      "sha256": "0053d0c7a0bcf71454d4fcfb7424518004e9a217d474b83850c5e0d8e5159888"
+    },
+    {
+      "command": "pnpm build",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-settled-build.log",
+      "sha256": "8cf6768f881d3342cccf0e073f5a2a0a540380a0d12dc919ae07655f38908623"
+    },
+    {
+      "command": "pnpm test:release",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-settled-release-3.log",
+      "sha256": "1acf4e15a83d28b5daa233b90f06dcb0c661d68e1ab280f3fcbffdcf5d663ba7"
+    },
+    {
+      "command": "pnpm test:go:race",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-go-race.log",
+      "sha256": "df870c871f4184804bb83e64dc94a1ee342313a463b404cbf06de65ac9d7b5cb"
+    },
+    {
+      "command": "pnpm test:go:fuzz",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-go-fuzz.log",
+      "sha256": "da4f85c41cf35934d358b00fd3480ef70c101d52d3181d6fee316d1cdf57b5b9"
+    },
+    {
+      "command": "pnpm test:security:dependencies",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-dependency-security.log",
+      "sha256": "0c71734e765f42056c7a7421a00962372457e64f6ec3fec9f02d103f09357e57"
+    },
+    {
+      "command": "pnpm test:self-hosting:config",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-selfhost-config.log",
+      "sha256": "0144975c9e7b744a74af27e1dcf63ee1a1076b4fe958f91bcf38c28d14a37875"
+    },
+    {
+      "command": "pnpm test:self-hosting:restore",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-paired-restore.log",
+      "sha256": "0de4068b85bfa671645088ccdc83471ddd48c70316fcfee9940bd2cbb81bc39f"
+    },
+    {
+      "command": "pnpm test:release:gates",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-final-release-gates.log",
+      "sha256": "a9dd0c4bea23f3e4d5950481493285227ac2774fe7bf203f5ecbaa783d73dce2"
+    },
+    {
+      "command": "pnpm build:release:images candidate",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-release-images.log",
+      "sha256": "5760d304ca12b8c96f82c120cb4069da732bc29401ea6ac901a8c2fc30ea571f"
+    },
+    {
+      "command": "pnpm test:collector-disk",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-final-collector-disk.log",
+      "sha256": "1dd8cbb1905dfa6c527cc8ea6aec7fdeeee8a4fe2faee9e27af46546cb4e0108",
+      "scope": "Actual 16MiB Linux tmpfs exhaustion, capacity failure, atomic rollback and fresh-process recovery."
+    },
+    {
+      "command": "pnpm check:docs",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-final-docs-2.log",
+      "sha256": "8180385bca52ff117321751e90767f20a5d15f8bbdc48bab9e68e12753409da5"
+    },
+    {
+      "command": "pnpm check:architecture",
+      "result": "passed",
+      "exitCode": 0,
+      "log": "atape-target-bridge-final-architecture-2.log",
+      "sha256": "e104cef67c6c27cbb29e12b8f481ccaa2d09d1e0f6938d073579247064c699f1"
+    }
+  ],
+  "repositoryCheck": {
+    "cliPassed": 1151,
+    "cliSkipped": 2,
+    "browserScenariosPassed": 100,
+    "scope": "Docs/architecture, workspace typechecks and tests, browser scenarios, real Go/CLI E2E and Go unit suites. The Linux systemd parser test is platform-inapplicable on macOS; the native macOS wake lifecycle is opt-in and skipped. Installed required compatibility gates separately executed."
+  },
+  "goIntegration": {
+    "command": "pnpm test:go:integration",
+    "result": "failed",
+    "exitCode": 1,
+    "failedCase": "TestAuthenticationPostgresContract/maintenance_is_bounded_and_idempotent",
+    "failure": "ExpiredWebSessions was 0 instead of 1 after the existing 1500ms sleep with a 1s idle threshold. Exact cause not established by this log.",
+    "httpInstalledCorpus": {
+      "result": "passed",
+      "durationSeconds": 871.707
+    },
+    "unchangedBudgets": true,
+    "log": "atape-final-go-integration.log",
+    "sha256": "4ad30485ec6f0eec5d8d6f62d488de383bbf2bc8b65483fd365c721a1f89d514",
+    "resolution": "The unchanged original-budget isolated maintenance contract passed. Initial full-run failure retained; its exact cause is not established. Fresh complete exact-head Linux CI integration remains mandatory before merge/publication; no automated waiver.",
+    "isolatedDiagnostic": {
+      "result": "failed",
+      "case": "same maintenance contract, earlier expired-login/CLI-authorization deletion assertion",
+      "databaseClockObservation": {
+        "preceding": "2026-10-12T18:11:12.169696Z",
+        "following": "2026-10-12T18:11:11.391143Z",
+        "backwardSeconds": 0.778553,
+        "scope": "External PostgreSQL wall-clock sampling demonstrated a local Docker database clock reversal. It does not by itself establish the exact cause of the earlier complete-run Session assertion."
+      },
+      "log": "atape-final-auth-maintenance-isolated.log",
+      "logSha256": "7495e6f57b1f5d3b48bf8975b8c080d8b9ea71fa0767b558ae4b5d435778f107",
+      "clockLogSha256": "3ab6ef821a01abdddc13a5e0e42fd5430aa35d8a70219b49a01c4aeba71fc398",
+      "productionAndTestTimingChanged": false
+    },
+    "isolatedRerun": {
+      "result": "passed",
+      "exitCode": 0,
+      "maintenanceDurationSeconds": 7.76,
+      "packageDurationSeconds": 9.506,
+      "log": "atape-final-auth-maintenance-isolated-2.log",
+      "logSha256": "5b19ae46945104d0259efa9b56ec78f8e454d18bdc53ecb8fa77ebb55ed79903",
+      "externalClockSampleSha256": "35d43d2fa9db20c148b903d39e17707c29c67fc78d4feb83bd4a5d8ec46d7a3b",
+      "observedSessionIdleAgeSeconds": 1.575127,
+      "idleThresholdSeconds": 1,
+      "productionAndTestTimingChanged": false
+    }
+  },
+  "installedAutomaticChain": {
+    "required": true,
+    "evidence": {
+      "baselineVersion": "0.5.10",
+      "baselineIntegrities": {
+        "@atape/cli": "sha512-edQJ66nr0VMaKgxYaRDOCiSwJeueEVRTRtBQFk815skIPt7sBOR8ZCfFNhMhOHQ+nU/iY8BEsUxQHoO/LPSCJQ==",
+        "@atape/adapter-codex": "sha512-tgiD29qMmiH+3DlXtm94XOYBZlVT/N8uXTgX739r9FruGG0Xi4T4M705xbNmhpnrigH9KtzLmyEinEaVHMvfKA==",
+        "@atape/adapter-claude": "sha512-VDtK5uXgp2vSyhfqKNedpDxFa91R4nfJgrOXH2Hs0O16LhT7RS1dKxiFPhao1q3UReD31xHPnXQcmC8v4oUWYw=="
+      },
+      "baselineEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+      "bridgeVersion": "0.5.11",
+      "bridgeEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+      "bridgeCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+      "bridgeBundle": {
+        "protocol": "atape.release-bundle.v2",
+        "version": "0.5.11",
+        "captureStateContract": "atape.client.v3-capture.v2",
+        "updateControlProtocol": "atape.update-control.v1",
+        "migration": {
+          "protocol": "atape.capture-migration.v1",
+          "id": "journal-v7-to-v8",
+          "fromCaptureStateContracts": [
+            "atape.client.v3-capture.v1",
+            "atape.client.v3-capture.v2"
+          ]
+        },
+        "packages": [
+          {
+            "name": "@atape/cli",
+            "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+            "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-codex",
+            "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-claude",
+            "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-opencode",
+            "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-codebuddy",
+            "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-kimi",
+            "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-grok",
+            "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-cursor",
+            "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+          }
+        ]
+      },
+      "actualPublishedOldAutomaticWorker": true,
+      "oldManifestDecoderAcceptedActualBridgePackages": true,
+      "activeCollectorContinued": true,
+      "wantedPreserved": true,
+      "bootstrapBytesPreservedAtFirstHandoff": true,
+      "globalBootstrapBytesPreserved": true,
+      "globalNPMPrefixReadOnly": true,
+      "automaticGlobalInstallForbidden": true,
+      "projectsAndToolsPreserved": true,
+      "credentialBytesPreserved": true,
+      "acknowledgedCaptureProgressPreserved": true,
+      "canonicalBridgeNoReplay": true,
+      "rawReceiptsPreserved": true,
+      "appendedContinuation": true,
+      "stopAndUpdatesOffPreserved": true,
+      "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+      "fullChain": "passed-with-controlled-installed-candidate-artifacts",
+      "feature": {
+        "version": "0.5.12",
+        "entrySha256": "9c06f2d1ff59744cc02db6b5f2abf72eb8869c6fa53a9bdf3b79b6fc332e9a8c",
+        "cliIntegrity": "sha512-TNVbXXYRnoVRr7e0XcNdZPQJ060gXD+lD2tLEGVRyL6E5M/VKTUCtNAuNE/F4o36HApP7j3aTdiZdN36xcvhaw==",
+        "bundle": {
+          "protocol": "atape.release-bundle.v3",
+          "version": "0.5.12",
+          "captureStateContract": "atape.client.v3-capture.v2",
+          "updateControlProtocol": "atape.update-control.v1",
+          "updateTargetProtocol": "atape.update-target.v1",
+          "fromCaptureStateContracts": [
+            "atape.client.v3-capture.v1",
+            "atape.client.v3-capture.v2"
+          ],
+          "packages": [
+            {
+              "name": "@atape/cli",
+              "integrity": "sha512-TNVbXXYRnoVRr7e0XcNdZPQJ060gXD+lD2tLEGVRyL6E5M/VKTUCtNAuNE/F4o36HApP7j3aTdiZdN36xcvhaw==",
+              "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-codex",
+              "integrity": "sha512-iZ6wAl95QxbrPAbtd9tjJzyxc1Olh4lo0wdxKtrZKg8FqdIK3HlD/wFhlRcz2ow8J36p8xYwlQ00NNT4sSB1Mg==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-claude",
+              "integrity": "sha512-kBDGVIpq6StQiBb0A5itGyoHjgpFxzmFYPH95wli46j6FolZlFH2FkFjFXf0NNnCML4bCL8hO6Hm2arxnF/wwQ==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-opencode",
+              "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-codebuddy",
+              "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-kimi",
+              "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-grok",
+              "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-cursor",
+              "integrity": "sha512-6szdVyB36tBhWPm8OC4CE6eKAGRkveQGGDmibEkIBlwYpNIM35A50ny2jPy3J/jgbNQ49VkrTZdxfhg5YX6Fqw==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+            }
+          ]
+        },
+        "actualBridgeAutomaticWorker": true,
+        "actualTargetPrepareAndActivate": true,
+        "nativeV5Replay": true,
+        "eventIDsPreserved": true,
+        "revisionsAdvanced": true,
+        "rawReceiptsPreservedAcrossReplay": true,
+        "nativeFileActivityReplayed": true,
+        "appendedContinuation": true,
+        "lateOfflineLegacyRoutesRetained": true,
+        "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+        "globalBootstrapBytesPreserved": true
+      },
+      "providerCaptureTested": "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",
+      "realOSRegistrationTested": false,
+      "server": "owned authenticated HTTP Test Adapter; no deployed Instance touched"
+    },
+    "logReceipt": {
+      "log": "atape-target-bridge-fullchain-repacked-2.log",
+      "sha256": "03c2909fdd396b199ce209f325d2448b5d378c92c5ea67a10cf171833098da69"
+    },
+    "evidenceReceipt": {
+      "log": "atape-target-bridge-fullchain-repacked-evidence.json",
+      "sha256": "018fc938223cfe3a2a16a00ea775d2c05b0db839fbc555cdbfb2c0d17626ef03"
+    }
+  },
+  "installedFaults": [
+    {
+      "point": "control-synced",
+      "result": "passed",
+      "exitCode": 0,
+      "receipt": {
+        "point": "control-synced",
+        "actualTargetEntrySha256": "9c06f2d1ff59744cc02db6b5f2abf72eb8869c6fa53a9bdf3b79b6fc332e9a8c",
+        "actualParentSIGKILL": true,
+        "actualOrphanSIGKILL": true,
+        "actualOldPublicBootstrapRecovery": true,
+        "completedControlThroughout": true
+      },
+      "rejectedReadOnlyManagerProbes": 1,
+      "logReceipt": {
+        "log": "atape-target-bridge-fault-control-synced-4.log",
+        "sha256": "33aedb391228c2b0d09a34e143e07f766bee5b2ae038b5c89e526d6ec6535c75"
+      },
+      "evidenceReceipt": {
+        "log": "atape-target-bridge-fault-control-synced-evidence.json",
+        "sha256": "8138696c5f3d23c04746f0a2eb03bdb562bd103f07d3bf22ac3a7f69a74386b8"
+      }
+    },
+    {
+      "point": "first-private-ledger",
+      "result": "passed",
+      "exitCode": 0,
+      "receipt": {
+        "point": "first-private-ledger",
+        "actualTargetEntrySha256": "9c06f2d1ff59744cc02db6b5f2abf72eb8869c6fa53a9bdf3b79b6fc332e9a8c",
+        "actualParentSIGKILL": true,
+        "actualOrphanSIGKILL": true,
+        "actualOldPublicBootstrapRecovery": true,
+        "completedControlThroughout": true
+      },
+      "rejectedReadOnlyManagerProbes": 1,
+      "logReceipt": {
+        "log": "atape-target-bridge-fault-first-private-ledger.log",
+        "sha256": "464d890f71a5c2fe4a0d26d0f12e8e68697c492005c2edf976f8030a3c3410f8"
+      },
+      "evidenceReceipt": {
+        "log": "atape-target-bridge-fault-first-private-ledger-evidence.json",
+        "sha256": "fb0d590478a483a381d96e92caddb7ce6cd4bab45bb2cd35de23ce079f8fdba2"
+      }
+    },
+    {
+      "point": "before-readiness",
+      "result": "passed",
+      "exitCode": 0,
+      "receipt": {
+        "point": "before-readiness",
+        "actualTargetEntrySha256": "9c06f2d1ff59744cc02db6b5f2abf72eb8869c6fa53a9bdf3b79b6fc332e9a8c",
+        "actualParentSIGKILL": true,
+        "actualOrphanSIGKILL": true,
+        "actualOldPublicBootstrapRecovery": true,
+        "completedControlThroughout": true
+      },
+      "rejectedReadOnlyManagerProbes": 1,
+      "logReceipt": {
+        "log": "atape-target-bridge-fault-before-readiness.log",
+        "sha256": "7ede512969fce92d9e5f966b85cefddd28811c24cfeec037ec20987a80f2e3d9"
+      },
+      "evidenceReceipt": {
+        "log": "atape-target-bridge-fault-before-readiness-evidence.json",
+        "sha256": "84b5ac7af30c4388e9c114437ea176628651882bd0d8bead2ed5c7f670e92c24"
+      }
+    },
+    {
+      "point": "orphan-apply",
+      "result": "passed",
+      "exitCode": 0,
+      "receipt": {
+        "point": "orphan-apply",
+        "actualTargetEntrySha256": "9c06f2d1ff59744cc02db6b5f2abf72eb8869c6fa53a9bdf3b79b6fc332e9a8c",
+        "actualParentSIGKILL": true,
+        "actualOrphanSIGKILL": true,
+        "actualOldPublicBootstrapRecovery": true,
+        "completedControlThroughout": true,
+        "queuedOldWorker": {
+          "actualEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+          "attemptSuperseded": true,
+          "orphanApplyExclusionPreserved": true,
+          "exit": 1
+        },
+        "stopPreservedAcrossRecovery": true
+      },
+      "rejectedReadOnlyManagerProbes": 2,
+      "logReceipt": {
+        "log": "atape-target-bridge-fault-orphan-apply.log",
+        "sha256": "127b549254a5faabfd479830bca8b559c1c5d3c8747f76ea7a4e41eaf361d714"
+      },
+      "evidenceReceipt": {
+        "log": "atape-target-bridge-fault-orphan-apply-evidence.json",
+        "sha256": "425837eefe038ff62479104f83c4d04d3a725957fcc4f632a23427dcd5c48d73"
+      }
+    }
+  ],
+  "localImages": {
+    "protocol": "atape.local-release-image-build.v1",
+    "scope": "Current frozen local working tree; not final candidate SHA security evidence or deployment.",
+    "command": "pnpm build:release:images candidate",
+    "exitCode": 0,
+    "log": "/tmp/atape-target-bridge-release-images.log",
+    "release": {
+      "version": "0.5.11",
+      "authEpoch": "auth-v1",
+      "minimumCliVersion": "0.5.11",
+      "releaseChannel": "legacy-bridge"
+    },
+    "images": [
+      {
+        "id": "sha256:25f86fa5640cce5ac41f365115e1806a9535484908961a572446c30db08cabd3",
+        "repositoryTags": [
+          "atape-server:candidate"
+        ],
+        "repositoryDigests": [
+          "atape-server@sha256:25f86fa5640cce5ac41f365115e1806a9535484908961a572446c30db08cabd3"
+        ],
+        "architecture": "arm64",
+        "os": "linux",
+        "labels": {
+          "dev.atape.auth-epoch": "auth-v1",
+          "dev.atape.minimum-cli-version": "0.5.11",
+          "org.opencontainers.image.title": "ATape Server",
+          "org.opencontainers.image.version": "0.5.11"
+        }
+      },
+      {
+        "id": "sha256:6e06ae62e593fed1422ed73c3f970449773e46dbb2d4502eab0b7d63cc0669c2",
+        "repositoryTags": [
+          "atape-web:candidate"
+        ],
+        "repositoryDigests": [
+          "atape-web@sha256:6e06ae62e593fed1422ed73c3f970449773e46dbb2d4502eab0b7d63cc0669c2"
+        ],
+        "architecture": "arm64",
+        "os": "linux",
+        "labels": {
+          "dev.atape.auth-epoch": "auth-v1",
+          "dev.atape.minimum-cli-version": "0.5.11",
+          "org.opencontainers.image.title": "ATape Web",
+          "org.opencontainers.image.version": "0.5.11"
+        }
+      }
+    ],
+    "serverRuntimeVersion": {
+      "version": "0.5.11",
+      "authEpoch": "auth-v1",
+      "minimumCliVersion": "0.5.11"
+    },
+    "checks": {
+      "serverImmutableVersion": true,
+      "webStaticIndexPresent": true,
+      "remoteActions": 0,
+      "finalCandidateTrivy": false
+    },
+    "recordedAt": "2026-10-12T18:07:58.601242+00:00",
+    "logSha256": "5760d304ca12b8c96f82c120cb4069da732bc29401ea6ac901a8c2fc30ea571f"
+  },
+  "verificationHistory": [
+    {
+      "phase": "first genuine full chain",
+      "result": "failed",
+      "cause": "The target Collector was still admitted only through the legacy public pending transaction; completed target execution authority was missing from the admission Interface.",
+      "resolution": "Production admission now requires exact activating stable handoff, completed capture receipt, completed public boundary and immutable target identity. Caller negative cases and fresh real full chain passed.",
+      "budgetsChanged": false
+    },
+    {
+      "phase": "subsequent genuine full chain",
+      "result": "failed",
+      "cause": "The external gate expected the old worker to fetch v2 itself, although the genuine old Collector already fetched the exact digest and the worker used its verified cache.",
+      "resolution": "Assert the actual old Collector-or-worker immutable request and retain independent old-worker execution/handoff proof.",
+      "budgetsChanged": false
+    },
+    {
+      "phase": "first repository check",
+      "result": "failed",
+      "cause": "Two historical clock tests assumed every candidate used v5 rather than the genuine bridge v3 implementation.",
+      "resolution": "Assert actual packaged release channel and declared profile, retain genuine .9 refusal and stopped migration requirements. Fresh complete check passed.",
+      "budgetsChanged": false
+    },
+    {
+      "phase": "installed package fixture updates",
+      "result": "failed",
+      "cause": "Controlled v1/v2 HTTP and UI cache fixtures did not model the newly supported v3 namespace.",
+      "resolution": "Missing v3 HTTP descriptors explicitly return 404; UI Skip fixture seeds strict metadata-only v3 cache. Full ordinary release verification passed with public fetch still forbidden.",
+      "budgetsChanged": false
+    },
+    {
+      "phase": "fault acceptance harness",
+      "result": "failed",
+      "cause": "Early PTY keys reached a loading screen; final bookkeeping also rejected blocked read-only manager probes and initially omitted a basename import.",
+      "resolution": "Wait for the existing ready action, record full rejected probe args, still reject every native mutation/browser operation; four clean final attempts passed.",
+      "productionChanged": false,
+      "budgetsChanged": false
+    }
+  ],
+  "remainingLimits": [
+    "The real automatic compatibility baseline is 0.5.10; the historical 0.5.9 clock transition still requires stopped entry replacement.",
+    "The .12 feature tarballs are built from real source with restored v5 provider implementations; they are acceptance artifacts, not published .12 packages.",
+    "Constructed native Codex source and authenticated HTTP Test Adapter do not establish live Claude/Cursor/provider or production PostgreSQL acceptance.",
+    "No native OS registration, real login or Windows managed process lifecycle was accepted.",
+    "Ten manual staging checks remain pending under the publication-request policy. CI, integration and security remain mandatory.",
+    "Local images are working-tree build evidence; exact final commit image scan and Server deployment remain separate.",
+    "Stable executable transport, Node requirements and public control/protocol changes can still require a genuine compatible bridge.",
+    "No npm publication, tag push, Server upgrade, production data/schema mutation or production restore was performed for this candidate.",
+    "Pending-update Stop is installed-tested; updates-off is installed-tested after completion and covered by caller tests during preparation, not by a pending-off installed scenario."
+  ],
+  "sanitization": "Only public package identities, synthetic acceptance outcomes and log/evidence hashes; no credentials, private transcripts or raw operator logs."
+}

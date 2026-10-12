@@ -2,6 +2,7 @@ import { ReleaseCatalog, decodeReleaseBundle, decodeReleaseCatalog, releaseBundl
   releasePackageNames, selectReleaseBundle, MigrationReleaseCatalog, decodeMigrationReleaseBundle,
   decodeMigrationReleaseCatalog, managedReleaseBundleFingerprint, releaseBundleURL, releaseCatalogURL,
   selectMigrationReleaseBundle, type ManagedReleaseBundle,
+  TargetReleaseCatalog, decodeTargetReleaseBundle, decodeTargetReleaseCatalog, selectTargetReleaseBundle,
   type MigrationReleaseBundle, type ReleaseBundle } from "@atape/domain"
 import { Schema } from "effect"
 import { createHash } from "node:crypto"
@@ -17,6 +18,8 @@ const cacheLifetime = 12 * 60 * 60 * 1_000
 const CachedCatalog = Schema.Struct({ checkedAt: Schema.Number, catalog: ReleaseCatalog })
 const CachedMigrationCatalog = Schema.Struct({ checkedAt: Schema.Number, catalog: MigrationReleaseCatalog })
 const MigrationAdoption = Schema.Struct({ protocol: Schema.Literal("atape.update-catalog.v2") })
+const CachedTargetCatalog = Schema.Struct({ checkedAt: Schema.Number, catalog: TargetReleaseCatalog })
+const TargetAdoption = Schema.Struct({ protocol: Schema.Literal("atape.update-catalog.v3") })
 const NpmPackage = Schema.Struct({ name: Schema.String, version: Schema.String,
   dist: Schema.Struct({ integrity: Schema.String, tarball: Schema.String }),
   atapeRuntime: Schema.optionalKey(Schema.Struct({ protocol: Schema.String, stateContract: Schema.String,
@@ -50,6 +53,11 @@ const migrationRouteKey = (route: MigrationReleaseCatalog["routes"][number]) => 
 const canonicalMigrationCatalog = (catalog: MigrationReleaseCatalog) => JSON.stringify({ ...catalog,
   bundles: [...catalog.bundles].sort((a, b) => compare(a.version, b.version)).map(managedReleaseBundleFingerprint),
   routes: [...catalog.routes].sort((a, b) => migrationRouteKey(a).localeCompare(migrationRouteKey(b))) })
+const targetRouteKey = (route: TargetReleaseCatalog["routes"][number]) => JSON.stringify([
+  route.fromCaptureStateContract, route.updateControlProtocol, route.updateTargetProtocol])
+const canonicalTargetCatalog = (catalog: TargetReleaseCatalog) => JSON.stringify({ ...catalog,
+  bundles: [...catalog.bundles].sort((a, b) => compare(a.version, b.version)).map(managedReleaseBundleFingerprint),
+  routes: [...catalog.routes].sort((a, b) => targetRouteKey(a).localeCompare(targetRouteKey(b))) })
 
 const abortable = <A>(pending: Promise<A>, signal: AbortSignal): Promise<A> => {
   if (signal.aborted) { void pending.catch(() => {}); return Promise.reject(signal.reason) }
@@ -155,6 +163,7 @@ export type ReleaseDiscoveryOptions = {
   readonly captureStateContract: string
   readonly runtimeVersion: string
   readonly updateControlProtocol: string
+  readonly updateTargetProtocol?: string
   readonly supportedMigrationPlans?: ReadonlyArray<{ readonly protocol: string; readonly id: string }>
   readonly fetchMetadata?: typeof fetch
 }
@@ -172,13 +181,21 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
   const fetchMetadata = options.fetchMetadata ?? globalThis.fetch
   const directory = join(options.home, "cache", "release-discovery")
   const migrationDirectory = join(options.home, "cache", "release-discovery-v2")
+  const targetDirectory = join(options.home, "cache", "release-discovery-v3")
   const cacheFile = join(directory, "catalog.json")
   const migrationCacheFile = join(migrationDirectory, "catalog.json")
   const adoptionFile = join(migrationDirectory, "adopted.json")
-  const receiptFile = (version: string, migration = false) => join(migration ? migrationDirectory : directory, "bundles", `${version}.json`)
+  const targetCacheFile = join(targetDirectory, "catalog.json"), targetAdoptionFile = join(targetDirectory, "adopted.json")
+  type Namespace = boolean | "target"
+  const namespace = (bundle: ManagedReleaseBundle): Namespace => bundle.protocol === "atape.release-bundle.v3" ? "target" : bundle.protocol === "atape.release-bundle.v2"
+  const namespaceDirectory = (value: Namespace) => value === "target" ? targetDirectory : value ? migrationDirectory : directory
+  const receiptFile = (version: string, value: Namespace = false) => join(namespaceDirectory(value), "bundles", `${version}.json`)
   const compatible = (value: ManagedReleaseBundle): ManagedReleaseBundle => {
-    const bundle = value.protocol === "atape.release-bundle.v2" ? decodeMigrationReleaseBundle(value) : decodeReleaseBundle(value)
-    const captureCompatible = bundle.protocol === "atape.release-bundle.v2" ?
+    const bundle = value.protocol === "atape.release-bundle.v3" ? decodeTargetReleaseBundle(value) :
+      value.protocol === "atape.release-bundle.v2" ? decodeMigrationReleaseBundle(value) : decodeReleaseBundle(value)
+    const captureCompatible = bundle.protocol === "atape.release-bundle.v3" ?
+      options.updateTargetProtocol === bundle.updateTargetProtocol && bundle.fromCaptureStateContracts.includes(options.captureStateContract) :
+      bundle.protocol === "atape.release-bundle.v2" ?
       options.supportedMigrationPlans !== undefined && bundle.migration.fromCaptureStateContracts.includes(options.captureStateContract) &&
       options.supportedMigrationPlans.some(plan => plan.protocol === bundle.migration.protocol && plan.id === bundle.migration.id) :
       bundle.captureStateContract === options.captureStateContract
@@ -210,8 +227,18 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
     const [marker, catalog] = await Promise.all([migrationMarker(), cachedMigrationCatalog()])
     return marker !== undefined || catalog !== undefined
   }
-  const receipt = (version: string, migration = false) => optional(receiptFile(version, migration), value => {
-    const bundle = migration ? decodeMigrationReleaseBundle(value) : decodeReleaseBundle(value)
+  const cachedTargetCatalog = async () => optional(targetCacheFile, value => {
+    const cached = Schema.decodeUnknownSync(CachedTargetCatalog, { onExcessProperty: "error" })(value)
+    if (!Number.isFinite(cached.checkedAt) || cached.checkedAt < 0 || cached.checkedAt > Date.now()) throw new Error("Invalid target catalog timestamp")
+    return cached
+  })
+  const targetMarker = () => optional(targetAdoptionFile, value => Schema.decodeUnknownSync(TargetAdoption, { onExcessProperty: "error" })(value))
+  const adoptedTarget = async () => {
+    const [marker, catalog] = await Promise.all([targetMarker(), cachedTargetCatalog()])
+    return marker !== undefined || catalog !== undefined
+  }
+  const receipt = (version: string, value: Namespace = false) => optional(receiptFile(version, value), input => {
+    const bundle = value === "target" ? decodeTargetReleaseBundle(input) : value ? decodeMigrationReleaseBundle(input) : decodeReleaseBundle(input)
     if (bundle.version !== version) throw new Error("Mismatched bundle receipt")
     return bundle
   })
@@ -222,29 +249,40 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
     try { signal.throwIfAborted(); return await run() } finally { release() }
   }
   const assertKnownBundle = async (bundle: ManagedReleaseBundle) => {
-    const migration = bundle.protocol === "atape.release-bundle.v2"
-    const saved = await receipt(bundle.version, migration)
+    const ownNamespace = namespace(bundle), saved = await receipt(bundle.version, ownNamespace)
     if (saved && managedReleaseBundleFingerprint(saved) !== managedReleaseBundleFingerprint(bundle)) {
       throw new ReleaseDiscoveryError("integrity", "A known release version changed its immutable bundle.")
     }
-    const other = await receipt(bundle.version, !migration)
     const baseFingerprint = (value: ManagedReleaseBundle) => releaseBundleFingerprint({ protocol: "atape.release-bundle.v1",
       version: value.version, captureStateContract: value.captureStateContract, updateControlProtocol: value.updateControlProtocol,
       packages: value.packages })
-    if (other && baseFingerprint(other) !== baseFingerprint(bundle)) {
-      throw new ReleaseDiscoveryError("integrity", "A known release version changed its immutable package bytes across catalog protocols.")
+    for (const otherNamespace of [false, true, "target"] as const) if (otherNamespace !== ownNamespace) {
+      const other = await receipt(bundle.version, otherNamespace)
+      if (other && baseFingerprint(other) !== baseFingerprint(bundle))
+        throw new ReleaseDiscoveryError("integrity", "A known release version changed its immutable package bytes across catalog protocols.")
     }
     return saved
   }
   const remember = async (bundle: ManagedReleaseBundle) => {
-    const migration = bundle.protocol === "atape.release-bundle.v2", saved = await assertKnownBundle(bundle)
-    if (migration && !await migrationMarker()) await atomicJSON(adoptionFile, { protocol: "atape.update-catalog.v2" })
-    if (!saved) await atomicJSON(receiptFile(bundle.version, migration), bundle)
+    const ownNamespace = namespace(bundle), saved = await assertKnownBundle(bundle)
+    if (ownNamespace === "target" && !await targetMarker()) await atomicJSON(targetAdoptionFile, { protocol: "atape.update-catalog.v3" })
+    else if (ownNamespace === true && !await migrationMarker()) await atomicJSON(adoptionFile, { protocol: "atape.update-catalog.v2" })
+    if (!saved) await atomicJSON(receiptFile(bundle.version, ownNamespace), bundle)
     return bundle
   }
   const fromCache = (bundle: ManagedReleaseBundle, freshness: DiscoveredRelease["freshness"], signal: AbortSignal) =>
     locked(signal, async () => ({ bundle: await remember(compatible(bundle)), freshness }))
   const versionRelease = async (version: string, signal: AbortSignal) => {
+    if (options.updateTargetProtocol !== undefined) {
+      try {
+        const bundle = decodeTargetReleaseBundle(await metadata(releaseBundleURL(version, "atape.release-bundle.v3"), signal, fetchMetadata))
+        if (bundle.version !== version) throw new ReleaseDiscoveryError("metadata", "The static target descriptor has a different version.")
+        return bundle
+      } catch (cause) {
+        if (signal.aborted || !(cause instanceof MissingRelease)) throw cause
+        if (await adoptedTarget()) throw new ReleaseDiscoveryError("metadata", "An adopted target catalog no longer has this immutable target descriptor.")
+      }
+    }
     if (options.supportedMigrationPlans !== undefined) {
       try {
         const bundle = decodeMigrationReleaseBundle(await metadata(releaseBundleURL(version, "atape.release-bundle.v2"), signal, fetchMetadata))
@@ -357,11 +395,60 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
     })
   }
 
+  const latestTarget = async ({ cached, signal }: { readonly cached: boolean; readonly signal: AbortSignal }): Promise<DiscoveredRelease> => {
+    signal.throwIfAborted()
+    const saved = await cachedTargetCatalog(), adopted = await adoptedTarget()
+    const compatibility = { ...options, updateTargetProtocol: options.updateTargetProtocol! }
+    if (cached && saved && Date.now() - saved.checkedAt < cacheLifetime)
+      return fromCache(selectTargetReleaseBundle(saved.catalog, compatibility), "fresh", signal)
+    let catalog: TargetReleaseCatalog
+    try {
+      catalog = decodeTargetReleaseCatalog(await metadata(releaseCatalogURL("atape.update-catalog.v3"), signal, fetchMetadata,
+        { retry: !(cached && saved !== undefined) }))
+    } catch (cause) {
+      if (signal.aborted) throw cause
+      if (!adopted && cause instanceof MissingRelease) {
+        const fallback = await (options.supportedMigrationPlans === undefined ? latestLegacy({ cached, signal }) : latestMigration({ cached, signal }))
+        return locked(signal, async () => {
+          if (await adoptedTarget()) throw new ReleaseDiscoveryError("integrity", "The target catalog was adopted while a legacy fallback was in flight.")
+          return fallback
+        })
+      }
+      if (cached && saved && cause instanceof ReleaseDiscoveryError && cause.reason === "transport")
+        return fromCache(selectTargetReleaseBundle(saved.catalog, compatibility), "stale", signal)
+      throw cause
+    }
+    const selected = compatible(selectTargetReleaseBundle(catalog, compatibility))
+    return locked(signal, async () => {
+      const previous = await cachedTargetCatalog()
+      if (previous) {
+        if (catalog.revision < previous.catalog.revision || catalog.revision === previous.catalog.revision &&
+          canonicalTargetCatalog(catalog) !== canonicalTargetCatalog(previous.catalog))
+          throw new ReleaseDiscoveryError("integrity", "The target catalog regressed or rewrote its revision.")
+        for (const before of previous.catalog.routes) {
+          const after = catalog.routes.find(item => targetRouteKey(item) === targetRouteKey(before))
+          if (!after || compare(after.version, before.version) < 0)
+            throw new ReleaseDiscoveryError("integrity", "The target catalog removed or regressed a known route.")
+        }
+      }
+      for (const bundle of catalog.bundles) await assertKnownBundle(bundle)
+      for (const bundle of catalog.bundles) await remember(bundle)
+      await atomicJSON(targetCacheFile, { checkedAt: Date.now(), catalog })
+      return { bundle: selected, freshness: "fresh" }
+    })
+  }
+
   const discovery: ReleaseDiscovery = {
-    latest: input => options.supportedMigrationPlans === undefined ? latestLegacy(input) : latestMigration(input),
+    latest: input => options.updateTargetProtocol !== undefined ? latestTarget(input) :
+      options.supportedMigrationPlans === undefined ? latestLegacy(input) : latestMigration(input),
     exact: async ({ version, signal }: { readonly version: string; readonly signal: AbortSignal }): Promise<ManagedReleaseBundle> => {
       signal.throwIfAborted()
       if (!stableVersion(version)) throw new ReleaseDiscoveryError("metadata", "An exact release requires a stable version.")
+      if (options.updateTargetProtocol !== undefined) {
+        await adoptedTarget()
+        const saved = await receipt(version, "target")
+        if (saved) return locked(signal, () => remember(compatible(saved)))
+      }
       if (options.supportedMigrationPlans !== undefined) await adoptedMigration()
       const migrationSaved = options.supportedMigrationPlans === undefined ? undefined : await receipt(version, true)
       const saved = migrationSaved ?? await receipt(version)
@@ -392,6 +479,11 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
         bundle = await deriveRunningBundle(version, signal)
       }
       const selected = compatible(bundle)
+      if (selected.protocol === "atape.release-bundle.v3" && version !== options.runtimeVersion && !await receipt(version, "target")) {
+        const { bundle: advertised } = await discovery.latest({ cached: false, signal })
+        if (advertised.protocol !== "atape.release-bundle.v3" || managedReleaseBundleFingerprint(advertised) !== managedReleaseBundleFingerprint(selected))
+          throw new ReleaseDiscoveryError("metadata", "The requested target version is not an advertised compatible release.")
+      }
       if (selected.protocol === "atape.release-bundle.v2" && version !== options.runtimeVersion && !await receipt(version, true)) {
         const { bundle: advertised } = await discovery.latest({ cached: false, signal })
         if (advertised.protocol !== "atape.release-bundle.v2" || managedReleaseBundleFingerprint(advertised) !== managedReleaseBundleFingerprint(selected)) {
@@ -399,6 +491,8 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
         }
       }
       return locked(signal, async () => {
+        if (options.updateTargetProtocol !== undefined && selected.protocol !== "atape.release-bundle.v3" && await receipt(version, "target"))
+          throw new ReleaseDiscoveryError("integrity", "A known target release changed its immutable descriptor protocol.")
         if (options.supportedMigrationPlans !== undefined && selected.protocol !== "atape.release-bundle.v2" && await receipt(version, true)) {
           throw new ReleaseDiscoveryError("integrity", "A known migration release changed its immutable descriptor protocol.")
         }
@@ -410,13 +504,14 @@ export const createReleaseDiscovery = (options: ReleaseDiscoveryOptions): Releas
       const bundle = compatible(value), package_ = bundle.packages.find(item => item.name === name)
       if (!package_) throw new ReleaseDiscoveryError("metadata", "The package is not part of this official release.")
       await locked(signal, async () => {
-        if (bundle.protocol === "atape.release-bundle.v2") await adoptedMigration()
-        const saved = await receipt(bundle.version, bundle.protocol === "atape.release-bundle.v2")
+        if (bundle.protocol === "atape.release-bundle.v3") await adoptedTarget()
+        else if (bundle.protocol === "atape.release-bundle.v2") await adoptedMigration()
+        const saved = await receipt(bundle.version, namespace(bundle))
         if (!saved || managedReleaseBundleFingerprint(saved) !== managedReleaseBundleFingerprint(bundle)) {
           throw new ReleaseDiscoveryError("integrity", "Artifact acquisition requires a previously discovered immutable bundle.")
         }
       })
-      const artifacts = join(bundle.protocol === "atape.release-bundle.v2" ? migrationDirectory : directory, "artifacts")
+      const artifacts = join(namespaceDirectory(namespace(bundle)), "artifacts")
       await mkdir(artifacts, { recursive: true, mode: 0o700 })
       const staging = await mkdtemp(join(artifacts, ".lease-")), path = join(staging, "package.tgz")
       const release = () => rm(staging, { recursive: true, force: true })

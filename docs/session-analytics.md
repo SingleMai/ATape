@@ -6,10 +6,13 @@ the HTTP Adapter exposes its `Open` Interface. The analysis view connects
 statistics, normalized tool identities, recorded activity ranges and conditional
 reader evidence links. This
 guide describes checkout behavior and does not claim publication or deployment.
-The native-tool and file-activity increments complete the unpublished Canonical/publication v5 and Analytics v4 contracts.
-It is not included in the published 0.5.10 packages or deployed 0.5.10 Server;
-package versions in this checkout remain 0.5.10 until a separately authorized
-release. Server, CLI and the affected Adapters require a coordinated update.
+The native-tool and file-activity increments implement the unpublished
+Canonical/publication v5 and Analytics v4 contracts. The published/deployed
+0.5.10 Server does not implement these contracts. The 0.5.11 release candidate
+is an automatic-update bridge: its Host, Server and reader retain v5 support,
+while official Codex/Claude Adapters keep their actual older v3/v4 behavior.
+The subsequent target-owned feature release restores v5 provider projection.
+See [target-owned updates](cli/setup-and-adapters.md#target-owned-updates).
 
 ## Metrics and evidence
 
@@ -32,8 +35,8 @@ and `incompleteSamples` describe recorded samples, not completeness of the sourc
 conversation. Session and Thread `captureStatus` retain partial-capture disclosure.
 No work time, tool execution duration, cost, productivity score, inferred outcome
 or generated summary is provided. Record span describes the first and last
-eligible stored source clocks. Codex projection v7 retains projection v5's
-correction of fabricated clocks and v4's historical missing-status correction
+eligible stored source clocks. The bridge's Codex projection v5 corrects
+fabricated clocks and retains v4's historical missing-status correction
 on successful source replay. Unreplayed
 historical records can still carry an older Adapter's epoch or outcome; saved
 non-null clock coverage alone does not establish clock quality. See
@@ -219,15 +222,15 @@ corpus verifies other capture behavior but contains no corresponding MCP or
 Skill invocation; a fresh recorded live invocation has not been validated.
 That earlier acceptance does not establish the new v5 capture transition.
 
-Current Claude capture requires explicit Host Canonical v5 support and a Server
-advertising publication target v5. Current Codex paged capture requires explicit
+The later v5 Claude capture requires explicit Host Canonical v5 support and a
+Server advertising publication target v5. V5 Codex paged capture requires explicit
 Host and Server Canonical v5 support. The published 0.5.10 Server does not
 advertise either v5 path. Unsupported Hosts/Servers refuse before source reads
 or progress writes; they do not silently downgrade identities. Upgrade the
 Server and CLI/Adapter together when a supporting release is available.
 
-Available source history can replay with stable Event IDs and higher projection
-revisions. The new Codex cursor is v7; an older Adapter cannot read it. Recovery
+In that feature release, available source history can replay with stable Event
+IDs and higher projection revisions. Its Codex cursor is v7; an older Adapter cannot read it. Recovery
 continues forward using a compatible runtime and retained progress, rather than
 deleting checkpoints. Claude's new projection similarly requires a compatible
 reader. Missing source history remains unidentified. Already frozen accepted
@@ -235,7 +238,9 @@ publication bytes, manifests and Raw acknowledgements are never rewritten.
 See [the v5 ingestion contract](api/canonical-ingestion.md#v5-stable-native-tool-identity)
 and [the upgrade boundary](cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
-No compatibility is claimed between intermediate development-checkout v5/v4 artifacts; their coordinated first release must include the complete file-activity contract.
+No compatibility is claimed between intermediate development-checkout v5/v4
+artifacts. The first target-owned v5 feature release must include the complete
+file-activity contract; the bridge does not produce it.
 
 The earlier v4 source-metadata compatibility encoding and its genuine 0.5.8
 recovery evidence apply only to v4 captures. V5 recovery metadata carries explicit
