@@ -11,13 +11,15 @@ const bundle = (version: string): ReleaseBundle => ({ protocol: "atape.release-b
   captureStateContract: "atape.client.v3-capture.v2", updateControlProtocol: "atape.update-control.v1",
   packages: releasePackageNames.map(name => ({ name, integrity: `sha512-${"A".repeat(86)}==`,
     tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` })) })
+const targetBundle = (version: string): ReleaseBundle => ({ ...bundle(version), protocol: "atape.release-bundle.v3",
+  updateTargetProtocol: "atape.update-target.v1", fromCaptureStateContracts: ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"] })
 
-const fixture = (runtimeReleaseVersion = "0.4.4", commandEntryVersion = "0.4.4") => {
+const fixture = (runtimeReleaseVersion = "0.4.4", commandEntryVersion = "0.4.4", selected = bundle("0.4.4")) => {
   let config: ClientConfig = { ...emptyClientConfig(), toolsConfigured: true, enabledAdapterIds: ["codex"], adapters: [{
     adapterId: "codex", packageName: "@atape/adapter-codex", displayName: "Codex", upgradeSpec: "file:/old/codex",
     version: "0.2.0", installedAt: "before", updatedAt: "before"
   }] }
-  let offline = false, installFailed = false
+  let offline = false, installFailed = false, entryUnavailable = false, entryChecks = 0
   const installs: string[] = [], checks: Array<{ name: string; cached: boolean }> = []
   const layer = Layer.mergeAll(
     Layer.succeed(CLISetupPlatform, CLISetupPlatform.of({ runtimeReleaseVersion,
@@ -35,8 +37,11 @@ const fixture = (runtimeReleaseVersion = "0.4.4", commandEntryVersion = "0.4.4")
     ) })),
     Layer.succeed(CLIUpgradePlatform, CLIUpgradePlatform.of({ acquireOwnership: () => Effect.die("No CLI update ownership during tool inspection"), latest: cached => Effect.suspend(() => {
       checks.push({ name: "cli", cached })
-      return offline ? Effect.fail(new CLIUpgradeError({ reason: "check", message: "offline" })) : Effect.succeed(bundle("0.4.4"))
-    }), installedVersion: () => Effect.succeed(commandEntryVersion),
+      return offline ? Effect.fail(new CLIUpgradeError({ reason: "check", message: "offline" })) : Effect.succeed(selected)
+    }), installedVersion: () => Effect.suspend(() => {
+      entryChecks++
+      return entryUnavailable ? Effect.fail(new CLIUpgradeError({ reason: "installation", message: "Command entry is unavailable" })) : Effect.succeed(commandEntryVersion)
+    }),
       install: () => Effect.die("No CLI installation during tool inspection") })),
     Layer.succeed(AdapterPackages, AdapterPackages.of({ prune: () => Effect.die("Unexpected package maintenance"), install: spec => Effect.sleep(1).pipe(Effect.andThen(Effect.suspend(() => {
       installs.push(spec)
@@ -49,7 +54,8 @@ const fixture = (runtimeReleaseVersion = "0.4.4", commandEntryVersion = "0.4.4")
     run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) =>
       Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
     config: () => structuredClone(config), edit: (value: ClientConfig) => { config = value }, installs, checks,
-    offline: () => { offline = true }, failInstall: () => { installFailed = true }
+    offline: () => { offline = true }, failInstall: () => { installFailed = true },
+    failEntryInspection: () => { entryUnavailable = true }, entryChecks: () => entryChecks
   }
 }
 
@@ -76,9 +82,40 @@ describe("tool releases through the application Interface", () => {
     }
     expect(client.installs).toEqual([])
   })
-  it("keeps command-entry refresh available after the managed runtime has already advanced", async () => {
-    const rows = await fixture("0.4.4", "0.4.3").run(inspectToolUpdates("0.4.4"))
+  it.each(["atape.release-bundle.v1", "atape.release-bundle.v2"] as const)("keeps %s command-entry refresh available after the managed runtime has already advanced", async protocol => {
+    const selected: ReleaseBundle = protocol === "atape.release-bundle.v1" ? bundle("0.4.4") : {
+      ...bundle("0.4.4"), protocol, migration: { protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8",
+        fromCaptureStateContracts: ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"] }
+    }
+    const rows = await fixture("0.4.4", "0.4.3", selected).run(inspectToolUpdates("0.4.4"))
     expect(rows[0]).toMatchObject({ version: "0.4.4", latest: "0.4.4", status: "available", commandEntryVersion: "0.4.3" })
+  })
+
+  it("reports the current target-owned release without inspecting or updating its retained older command entry", async () => {
+    const client = fixture("0.5.12", "0.5.11", targetBundle("0.5.12")), config = client.config()
+    client.edit({ ...config, adapters: [{ ...config.adapters[0]!, upgradeSpec: "@atape/adapter-codex", version: "0.5.12" }] })
+    client.failEntryInspection()
+    const before = client.config(), row = (await client.run(inspectToolUpdates("0.5.12")))[0]!
+    expect(row).toMatchObject({ version: "0.5.12", latest: "0.5.12", status: "current" })
+    expect(row).not.toHaveProperty("commandEntryVersion"); expect(row).not.toHaveProperty("officialAdapterUpdates")
+    expect(client.entryChecks()).toBe(0); expect(client.config()).toEqual(before); expect(client.installs).toEqual([])
+  })
+
+  it("keeps complete target-owned bundle alignment available for older official Adapters", async () => {
+    const client = fixture("0.5.12", "0.5.11", targetBundle("0.5.12")), config = client.config()
+    client.edit({ ...config, adapters: [{ ...config.adapters[0]!, upgradeSpec: "@atape/adapter-codex", version: "0.5.11" }] })
+    const before = client.config(), row = (await client.run(inspectToolUpdates("0.5.12")))[0]!
+    expect(row).toMatchObject({ version: "0.5.12", latest: "0.5.12", status: "available", officialAdapterUpdates: 1 })
+    expect(row).not.toHaveProperty("commandEntryVersion")
+    expect(client.entryChecks()).toBe(0); expect(client.config()).toEqual(before); expect(client.installs).toEqual([])
+  })
+
+  it("offers a newer target-owned bundle independently of the retained global version", async () => {
+    const client = fixture("0.5.12", "0.5.11", targetBundle("0.5.13"))
+    const row = (await client.run(inspectToolUpdates("0.5.12", true)))[0]!
+    expect(row).toMatchObject({ version: "0.5.12", latest: "0.5.13", status: "available" })
+    expect(row).not.toHaveProperty("commandEntryVersion")
+    expect(client.entryChecks()).toBe(0); expect(client.installs).toEqual([])
   })
   it("limits standalone official actions to the actual runtime even when the CLI bundle is newer", async () => {
     const client = fixture("0.4.3")

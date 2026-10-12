@@ -65,3 +65,16 @@ for (const version of ["0.5.10", "0.5.11", "0.6.0", "1.0.0"]) {
     assert.equal(calls, 1)
   })
 }
+
+test("target-owned clock acceptance cannot skip the genuine .9 boundary when bridge artifacts are supplied", { skip: process.platform === "win32" }, async () => {
+  let calls = 0
+  await assert.rejects(verifyCodexClockRelease({ version: "0.5.12", releaseChannel: "target-owned", releaseDirectory: "/unavailable",
+    bridgeRelease: { version: "0.5.11", directory: "/unavailable" }
+  }, async (url, options) => {
+    calls++
+    assert.equal(url,"https://registry.npmjs.org/@atape/cli/-/cli-0.5.9.tgz")
+    assert.equal(options.credentials,"omit");assert.equal(options.redirect,"error")
+    return new Response("historical clock parent unavailable",{status:503})
+  }), /Historical @atape\/cli@0\.5\.9 download failed \(503\)/)
+  assert.equal(calls,1)
+})

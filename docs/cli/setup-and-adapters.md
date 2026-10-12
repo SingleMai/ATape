@@ -525,8 +525,9 @@ same target even if automatic updates have since been disabled.
 
 Published 0.5.10 cannot directly parse the new v5 official Adapter manifests.
 The 0.5.11 bridge therefore retains the actual old Codex v3 and Claude v4
-Adapter behavior while adding the new updater. Legacy catalog v1/v2 routes and
-npm `latest` retain that bridge. Subsequent feature packages use catalog v3 and
+Adapter behavior while adding the new updater. Publication policy retains that
+bridge on legacy catalog v1/v2 routes and npm `latest`. Feature packages use
+catalog v3 and
 the managed npm channel. A returning old client can still follow the automatic
 bridge and then feature path; publication order alone is insufficient.
 
@@ -795,12 +796,13 @@ acceptance, OS registration or an upgrade of a personal installation.
 
 ### Stable native tool identity: checkout increment
 
-The Host, Server and reader implement Canonical/publication v5 and Analytics v4
-for explicit native identities and recorded file activity. The 0.5.11 candidate
-is a genuine update bridge with older official v3/v4 providers; the subsequent
-target-owned feature release restores the complete v5 provider increment.
-The published 0.5.10 Server does not advertise v5. Implementation in this
-checkout is not evidence of publication or deployment.
+The 0.5.12 target-owned implementation includes Canonical/publication v5 and
+Analytics v4 for explicit native identities and recorded file activity in the
+official Codex/Claude providers. The genuine 0.5.11 update bridge retains older
+v3/v4 provider behavior and is assigned the legacy discovery routes. The 0.5.10
+Server does not advertise v5. See [the release record](../releases/v0.5.12.md)
+for candidate scope and acceptance; implementation, publication and deployment
+remain separate actions.
 
 Upgrade the Server before advertising the v5 feature target. Each configured
 Instance must affirm Canonical v5 for Codex and publication target v5 for Claude,
@@ -855,14 +857,26 @@ builds and other package managers receive guidance instead of an inferred target
 If sync cannot resume, use Resume sync and continue or return with sync stopped.
 The explicit CLI operation prepares and activates the complete CLI/official
 Adapter bundle through the same coordinator used by automatic updates, with
-manual policy. It then refreshes the global npm command entry from the same
-verified CLI archive under the same update ownership. Before tool initialization
-there are no active Adapters to align, so only the verified entry is installed.
-If entry refresh fails after runtime activation, the error identifies the selected
-runtime; reopening or retrying checks the actual command-entry version even when
-the managed runtime already equals the target. Tools retains an explicit entry
-refresh action in that case.
-Before replacing the bootstrap, the internal upgrade preserves the effective
+manual policy. For catalog v3, both operations preserve the global npm command
+entry. Preparation, target execution, migration, ownership and Collector handoff
+remain mandatory, including before tool initialization. Once the managed runtime
+equals the latest bundle, an older global entry does not create another update
+action. Official Adapter versions still align through the complete bundle.
+
+Historical catalog v1/v2 operations also refresh the global npm command entry
+from the same verified CLI archive under the same update ownership. Before tool
+initialization, these legacy operations install only the verified entry. If entry
+refresh fails after runtime activation, their error identifies the selected
+runtime; reopening or retrying checks the actual command-entry version, and Tools
+retains an explicit entry refresh action.
+
+The already published 0.5.11 manual menu still attempts this global refresh after
+selecting a v3 target and can report failure when the npm prefix is not writable.
+Its automatic worker preserves the entry and completes the target-owned handoff.
+The 0.5.12 manual operation follows that same entry-preserving policy; publishing
+it does not change the immutable 0.5.11 menu.
+
+Before a historical bootstrap replacement, the internal upgrade preserves the effective
 Adapter installation records in the underlying configuration. Their currently
 selected versions remain selected even if npm fails or the bootstrap digest
 changes. Built-in manual and automatic updates share one `ATAPE_HOME` update lock
@@ -874,7 +888,7 @@ retry retains its recovery receipt when ownership is busy. Neither lock relies
 on the continued existence of a PID or a removable lock file. Explicit Adapter
 maintenance remains separate.
 
-With independent control active, the built-in update verifies the new bootstrap
+For a historical global-entry replacement with independent control active, the built-in update verifies the new bootstrap
 directly, creates its immutable recovery copy and durably binds that identity.
 It preserves the capture contract and reader floor. If the process dies between
 npm replacement and binding, a later owned startup detects the changed identity

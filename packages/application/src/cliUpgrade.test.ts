@@ -11,6 +11,8 @@ const bundle = (version: string, integrity = `sha512-${"A".repeat(86)}==`): Rele
   packages: releasePackageNames.map(name => ({ name, integrity,
     tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` }))
 })
+const targetBundle = (version: string): ReleaseBundle => ({ ...bundle(version), protocol: "atape.release-bundle.v3",
+  updateTargetProtocol: "atape.update-target.v1", fromCaptureStateContracts: ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"] })
 const fixture = (version = "0.4.2", running = true, wanted = running, installed = "0.4.1", selected = bundle(version)) => {
   let failInstall = false, failResume = false, installs = 0, pauses = 0, stale = false
   let stopDuringActivation = false
@@ -94,7 +96,7 @@ const fixture = (version = "0.4.2", running = true, wanted = running, installed 
   }
   return { run: <A, E>(effect: Effect.Effect<A, E, Layer.Success<typeof layer>>, signal?: AbortSignal) => Effect.runPromise(effect.pipe(Effect.provide(layer)), signal ? { signal } : undefined),
     ownership: () => ({ owned, acquisitions, releases }), hold,
-    prepared, activations, entryBundles, runtimeVersion: () => runtimeVersion, config: () => structuredClone(config),
+    prepared, activations, entryBundles, runtimeVersion: () => runtimeVersion, commandEntryVersion: () => installed, config: () => structuredClone(config),
     leases: () => leases, preparationReleases: () => preparationReleases,
     edit: (change: (config: ClientConfig) => ClientConfig) => { config = change(config) },
     configure: (value: boolean) => { config = { ...config, toolsConfigured: value, ...(value ? {} : { adapters: [] }) } },
@@ -201,12 +203,10 @@ describe("CLI upgrade Module", () => {
     expect(client.config()).toEqual(before)
   })
 
-  it.each(["atape.release-bundle.v2", "atape.release-bundle.v3"] as const)("settles %s before refreshing an unconfigured command entry", async protocol => {
-    const selected: ReleaseBundle = protocol === "atape.release-bundle.v2"
-      ? { ...bundle("0.4.2"), protocol, migration: { protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8",
+  it("settles an explicit v2 capture migration before refreshing an unconfigured command entry", async () => {
+    const selected: ReleaseBundle = { ...bundle("0.4.2"), protocol: "atape.release-bundle.v2",
+      migration: { protocol: "atape.capture-migration.v1", id: "journal-v7-to-v8",
         fromCaptureStateContracts: ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"] } }
-      : { ...bundle("0.4.2"), protocol, updateTargetProtocol: "atape.update-target.v1",
-        fromCaptureStateContracts: ["atape.client.v3-capture.v1", "atape.client.v3-capture.v2"] }
     for (const current of ["0.4.1", "0.4.2"]) {
       const client = fixture("0.4.2", false, false, "0.4.1", selected)
       client.configure(false)
@@ -225,6 +225,73 @@ describe("CLI upgrade Module", () => {
     expect(refused.activations).toEqual([])
     expect(refused.entryBundles).toEqual([])
     expect(refused.starts).toEqual([])
+  })
+
+  it.each([true, false])("activates a complete target-owned release with sync running=%s while the global prefix is unwritable", async running => {
+    const selected = targetBundle("0.5.13"), client = fixture("0.5.13", running, running, "0.5.11", selected)
+    client.edit(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, version: "0.5.12" })) }))
+    client.failInstall()
+    const before = client.config()
+    expect(await client.run(upgradeCLI("0.5.12"))).toEqual({ version: "0.5.13", updated: true, resumed: running })
+    expect(client.prepared).toEqual([{ bundle: selected, adapters: before.adapters, automatic: false }])
+    expect(client.activations).toEqual([{ bundle: selected, automatic: false }])
+    expect(client.commandEntryVersion()).toBe("0.5.11")
+    expect(client.entryBundles).toEqual([])
+    expect(client.runtimeVersion()).toBe("0.5.13")
+    expect(client.running()).toBe(running)
+    expect(client.pauses()).toBe(0); expect(client.starts).toEqual([])
+    expect(client.leases()).toBe(0); expect(client.preparationReleases()).toBe(1)
+    expect(client.ownership()).toEqual({ owned: false, acquisitions: 1, releases: 1 })
+  })
+
+  it("completes an unconfigured target-owned handoff and does not repeat it for the retained older bootstrap", async () => {
+    const selected = targetBundle("0.5.13"), client = fixture("0.5.13", false, false, "0.5.11", selected)
+    client.configure(false); client.failInstall()
+    const before = client.config()
+    expect(await client.run(upgradeCLI("0.5.12"))).toEqual({ version: "0.5.13", updated: true, resumed: false })
+    expect(client.prepared).toEqual([{ bundle: selected, adapters: [], automatic: false }])
+    expect(client.activations).toEqual([{ bundle: selected, automatic: false }])
+    expect(client.config()).toEqual(before)
+    expect(await client.run(checkCLIUpgrade("0.5.13"))).toBeUndefined()
+    expect(await client.run(upgradeCLI("0.5.13"))).toEqual({ version: "0.5.13", updated: false, resumed: false })
+    expect(client.prepared).toHaveLength(1); expect(client.activations).toHaveLength(1)
+    expect(client.commandEntryVersion()).toBe("0.5.11"); expect(client.entryBundles).toEqual([])
+    expect(client.starts).toEqual([])
+  })
+
+  it("preserves Stop during target-owned activation without refreshing the global entry or resuming sync", async () => {
+    const client = fixture("0.5.13", true, true, "0.5.11", targetBundle("0.5.13"))
+    client.stopDuringActivation(); client.failInstall()
+    expect(await client.run(upgradeCLI("0.5.12"))).toEqual({ version: "0.5.13", updated: true, resumed: false })
+    expect(client.activations).toHaveLength(1); expect(client.installs()).toBe(0)
+    expect(client.running()).toBe(false); expect(client.starts).toEqual([])
+  })
+
+  it("aligns older official Adapters at the current target-owned runtime without replacing its bootstrap", async () => {
+    const selected = targetBundle("0.5.13"), client = fixture("0.5.13", false, false, "0.5.11", selected)
+    client.edit(config => ({ ...config, adapters: config.adapters.map(adapter => ({ ...adapter, version: "0.5.12" })) }))
+    client.failInstall()
+    const before = client.config()
+    expect(await client.run(upgradeCLI("0.5.13"))).toEqual({ version: "0.5.13", updated: true, resumed: false })
+    expect(client.prepared).toEqual([{ bundle: selected, adapters: before.adapters, automatic: false }])
+    expect(client.activations).toEqual([{ bundle: selected, automatic: false }])
+    expect(client.config().adapters[0]?.version).toBe("0.5.13"); expect(client.entryBundles).toEqual([])
+  })
+
+  it("does not bypass target-owned preparation failure even without command-entry replacement", async () => {
+    const client = fixture("0.5.13", true, true, "0.5.11", targetBundle("0.5.13")), before = client.config()
+    client.failPrepare(); client.failInstall()
+    await expect(client.run(upgradeCLI("0.5.12"))).rejects.toMatchObject({ reason: "install", message: expect.stringContaining("could not be prepared") })
+    expect(client.prepared).toHaveLength(1); expect(client.activations).toEqual([])
+    expect(client.config()).toEqual(before); expect(client.entryBundles).toEqual([])
+    expect(client.running()).toBe(true)
+  })
+
+  it("advertises a newer target-owned runtime but does not advertise a same-version global entry refresh", async () => {
+    const client = fixture("0.5.13", false, false, "0.5.11", targetBundle("0.5.13"))
+    expect(await client.run(checkCLIUpgrade("0.5.12"))).toBe("0.5.13")
+    expect(await client.run(checkCLIUpgrade("0.5.13"))).toBeUndefined()
+    expect(client.prepared).toEqual([]); expect(client.entryBundles).toEqual([])
   })
 
   it("upgrades and resumes only previously running sync with its original settings", async () => {

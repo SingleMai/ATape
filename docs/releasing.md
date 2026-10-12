@@ -137,6 +137,21 @@ frozen checksummed directory without building or repacking:
 node apps/cli/scripts/codex-clock-release-gate.mjs /absolute/frozen/tarballs
 ```
 
+For a target-owned release, this historical clock gate first performs the
+stopped 0.5.9 transition into the genuine retained 0.5.11 bridge. In the same
+disposable installation, the test explicitly enables automatic updates and
+dispatches the genuine installed bridge worker to the candidate's v3-only
+target-owned bundle. An owned clock Test Adapter expires the ordinary discovery
+cache and retry schedule without editing private updater state. Both legs verify
+replay, stable source Event IDs, higher revisions, Raw receipts, Stop intent,
+no-op and append. The first leg preserves updates-off; the second preserves the
+explicitly enabled preference, then the test explicitly disables it. The second
+leg preserves the bridge's global entry and executes preparation, activation and
+collection in the exact installed candidate. It never advertises a legacy v1/v2
+descriptor for the feature release. The published 0.5.11 manual menu's global
+refresh limitation remains recorded; this gate does not claim that menu succeeded.
+This does not make the historical 0.5.9 clock boundary unattended.
+
 The exact checksummed OpenCode, CodeBuddy, Kimi, Grok and Cursor artifacts also run their installed source-capability
 verification outside the checkout with controlled native data. The workflow publishes the exact release
 tarballs and attaches them plus `SHA256SUMS` to the GitHub Release.
@@ -298,6 +313,26 @@ and routes. Old strict readers must never be offered v5-only Adapters through
 their old route. Installed acceptance must exercise authentic 0.5.10 automatic
 delivery to the real bridge and then the real feature artifact. A stopped
 manual replacement or controlled dispatcher test is not that evidence.
+
+For the 0.5.12 target-owned POSIX release, the formal `test:release` caller
+anonymously acquires all eight genuine 0.5.11 bridge archives with fixed
+published SHA-512 integrity, plus the three genuine 0.5.10 baseline archives.
+Acquisition retains the 8 MiB per-archive bound and 30-second deadline. It reuses
+those bytes across five independent installed cases and verifies their fixed
+identity again for each case: ordinary delivery, public-control sync interruption,
+first private ledger interruption, pre-readiness interruption and orphan apply
+exclusion. Every required case must complete; there is no optional environment
+skip. The owned Server HTTP Test Adapter advertises the feature Server from the
+old client's first connection, covering Server-first sequencing separately from
+real Go deployment. Windows retains the explicit POSIX lifecycle limitation.
+
+Each case also verifies the genuine baseline Claude SourceCapture account's
+registry, binding and SQLite file, then binds its nonempty inventory to the
+completed target receipt and owner. Record the observed source and target
+journal formats; a completed receipt for an existing format-8 account does not
+claim a 7-to-8 conversion. The separate installed candidate migration contract
+exercises controlled SQL7-to-SQL8 data. Claude discovery remains empty in the
+automatic-chain fixture, so this does not establish a live Claude session.
 
 The bridge acceptance must keep the genuine historical global entry unchanged
 and prove that target-owned updates need no npm-prefix write permission. Include

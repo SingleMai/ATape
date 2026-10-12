@@ -1,13 +1,13 @@
 # Claude Code Adapter
 
+The 0.5.12 `target-owned` implementation restores Canonical/publication v5 native
+tool identity and recorded file activity. The 0.5.11 `legacy-bridge` retains
+genuine v4/active-path.2 provider behavior for older clients. Automatic update
+preparation runs in the verified target CLI, so the bridge parent does not
+parse this v5 Adapter manifest. Legacy discovery retains the bridge. See
+[ADR-0126](../architecture/adr/0126-target-owned-managed-updates.md) and
+[target-owned updates](../cli/setup-and-adapters.md#target-owned-updates).
 
-The 0.5.11 `legacy-bridge` package retains the published 0.5.10 Adapter
-Implementation so existing clients can update automatically. The CLI gains
-target-owned update preparation; the official capture profile remains unchanged.
-Ordinary native-tool identity and recorded file activity are planned for the
-subsequent `target-owned` package, which will replay available history forward.
-[ADR-0126](../architecture/adr/0126-target-owned-managed-updates.md) records
-the bridge and the target-owned update Interface.
 Claude captures the source-indicated current conversation through
 `atape.source-capture.v2`. The Adapter interprets Claude's graph; the shared Host
 owns attribution, redaction, durable preparation and delivery. The Server selects
@@ -22,9 +22,15 @@ direct background launches through the same Interface.
 Use **Tools and updates** to add Claude to the global tool selection. Installation
 alone does not enable collection. See the [package README](../../adapters/claude/README.md)
 and [CLI setup guide](../cli/setup-and-adapters.md). Preserve the complete CLI state
-directory when upgrading. A compatible Host and a Server advertising publication
-v2 targets and legacy adoption are required. Older Hosts reject the new manifest.
-Merging, package publication and Server deployment are separate actions.
+directory when upgrading. Current capture requires a compatible Host,
+Server publication v5, v2 targets and legacy adoption. Ordinary collection
+checks the declared minimum before opening its account journal, discovering
+sources or adopting legacy history. Older Hosts reject the new manifest.
+The [0.5.12 release notes](../releases/v0.5.12.md) own publication, deployment
+and acceptance evidence. The 0.5.11 bridge
+Adapter retains the earlier `.2`/Canonical v4 path; its Host, Server and reader
+include v5 support. Published 0.5.10 does not support v5. See
+[the coordinated upgrade boundary](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
 ## Sources and supported history
 
@@ -135,17 +141,49 @@ deduplicated per source/reason.
 
 ## Bounds and Raw policy
 
-Current source profile `claude.jsonl.active-path.2` selects Canonical v4. Explicit
-native `mcp__server__tool` names provide MCP identities; `Skill` tool calls with
+Current source profile `claude.jsonl.active-path.4` selects Canonical v5 and
+uses projection revision 7. Ordinary native `tool_use.name` supplies a stable
+tool identity distinct from its bounded display title. Explicit native
+`mcp__server__tool` names provide MCP identities; `Skill` tool calls with
 a nonempty, trimmed `input.skill` provide Skill names. Names and servers are
 bounded to 500 UTF-8 bytes; invalid or missing identities remain unclassified.
 An oversized or otherwise unadmitted Skill input also omits identity: the Host
 needs the original `skill` field to preserve existing field-redaction rules.
 The original bounded tool input/output and explicit result status retain their
 existing meaning. Result updates without identity preserve the call's earlier
-fact. Command expansion, Skill mentions and reads of `SKILL.md` are not fabricated
+fact; explicit null clears it. The Host applies upload redaction to names,
+original admitted input/output and copied display facts before delivery. Hidden
+identity is cleared instead of combining secret names under a replacement.
+Provider name extraction stays in this Adapter. Command expansion, Skill
+mentions and reads of `SKILL.md` are not fabricated
 as Skill calls. This applies to captured root and child Threads. See
-[Session Analytics](../session-analytics.md#recorded-mcp-and-skill-calls).
+[Session Analytics](../session-analytics.md#stable-tool-grouping) for the separate
+aggregation and evidence Interface.
+
+### Explicit file activity
+
+The unmodified, admitted input of `Read` supplies `file_path` as a read path;
+`Write`, `Edit` and `MultiEdit` supply it as an edit path. `Grep` and `Glob`
+supply `input.path` as a search scope, which is not a list of matching files.
+These facts use the optional `atape.dev/file-activity` metadata admitted by the
+Canonical v5 contract. Root and child Threads use the same
+mapping. Outcomes still describe the call, so a requested edit path does not
+prove the file changed successfully.
+
+Paths remain exactly as recorded: relative and absolute paths are not resolved,
+trimmed or normalized. Missing paths, controls, invalid Unicode, paths exceeding
+2,048 UTF-8 bytes, unadmitted original inputs and metadata over 64 entries or
+4,096 JSON UTF-8 bytes explicitly clear the complete path fact with null. Search patterns, tool result
+text, Bash command text and MCP arguments do not establish file activity.
+A null fact means explicitly unknown coverage; an absent fact on a result update
+preserves the invocation's path. Upload redaction can clear the complete
+fact when a path or its copied input field is hidden. No redacted placeholder
+becomes a synthetic file path.
+
+Source profile `.4` isolates the new projection from `.3`; v1 source proof
+checkpoints and pending projection-6 legacy pages remain readable. The Host
+reprojects available history once while retaining existing Raw acknowledgements.
+The published 0.5.10 packages do not implement this file activity contract.
 
 The source parser admits complete records up to 16 MiB including LF. Default v2
 source-page admission is 32 MiB; explicit caller limits still apply. The complete
@@ -178,6 +216,28 @@ generations, receipts and links remain valid after source disappearance.
 See [Raw capture policy](../cli/raw-capture.md).
 
 ## Recovery and upgrades
+
+The current `.4` path requires an explicit v5 declaration from both the package
+and its Host, plus affirmative Server publication v5 support. The Host advertises
+Canonical v2/v3/v4/v5 only to a package declaring target v5; older SourceCapture
+packages keep their v2/v3/v4 advertisement. The Adapter checks local v5 support
+before opening the selected source. There is no silent downgrade to v4.
+See [v5 ingestion](../api/canonical-ingestion.md#v5-stable-native-tool-identity)
+and [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
+
+Available authenticated history can replay into the new projection with stable
+Event anchors and higher revisions. Already frozen accepted Canonical bytes,
+manifests and Raw acknowledgements are retained; an analytics request does not
+rewrite them or recover missing source history. New v5 source recovery metadata
+carries literal `atape.acp-centered.v5`, which older Hosts cannot read. Recover
+forward with a compatible Server/CLI/Adapter bundle and retained state.
+
+The earlier `.2`/Canonical v4 path used a v3-compatible source-metadata envelope
+plus its independent `canonicalProfileV4` fact. Genuine 0.5.8 recovery and the
+stopped 0.5.8-to-0.5.9 transition were verified for that earlier scope without
+rewriting frozen bytes. That compatibility does not apply to new v5 metadata.
+Keep the [0.5.9 release evidence](../releases/v0.5.9.md#upgrade-and-recovery-boundaries)
+separate from the current [coordinated upgrade](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
 The first release with this v2 path, 0.5.4, requires a stopped manual CLI upgrade
 from 0.5.3 or older; see
@@ -245,7 +305,7 @@ source semantics.
 
 ## Verification and remaining work
 
-Current acceptance uses the shipped factory's sourceCapture Interface, the shared
+Local acceptance uses the Adapter factory's sourceCapture Interface, the shared
 collection Interface, installed packages and authenticated HTTP/PostgreSQL.
 The [candidate record](../releases/evidence/claude-active-path-2026-10-09.md)
 binds completed local checks and their limits separately from final PR gates.
@@ -286,6 +346,7 @@ summary-response records do not establish real provider cost completeness.
 Cross-file Session adoption, nested child histories, child forks and
 spill collection remain separate work. The retained source corpus is Claude Code
 2.1.263 evidence, not a promise for every version or graph shape. Live-provider
-browser staging and upgrades from historical published binaries remain unverified;
-source-built previous-main compatibility is checked separately. This increment
-does not publish packages, deploy a Server or migrate a production database.
+browser staging and cross-release Claude publication recovery into v5 are not
+established by this source corpus. Source-built previous-main compatibility is
+checked separately. See the [0.5.12 release notes](../releases/v0.5.12.md) for
+publication, deployment, database operations and acceptance evidence.

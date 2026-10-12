@@ -2,12 +2,13 @@ import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
 import { createHash } from "node:crypto"
 import { appendFile, chmod, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { build } from "esbuild"
 import { AdapterCollectionLimits } from "../../../packages/domain/src/collector.ts"
-import { releaseBundleURL, releaseCatalogURL, mergeMigrationReleaseBundle, mergeReleaseBundle, migrationReleaseBundleSection, releaseBundleSection } from "../../../packages/domain/src/releaseCatalog.ts"
+import { releaseBundleURL, releaseCatalogURL, mergeMigrationReleaseBundle, mergeReleaseBundle, migrationReleaseBundleSection, releaseBundleSection,
+  mergeTargetReleaseBundle, targetReleaseBundleSection } from "../../../packages/domain/src/releaseCatalog.ts"
 
 const execute = promisify(execFile)
 const packages = ["@atape/cli", "@atape/adapter-codex", "@atape/adapter-claude", "@atape/adapter-opencode",
@@ -34,7 +35,7 @@ const item = (id, type, text, timestamp) => ({ timestamp, type: "event_msg", pay
 /** Actual published old parent and exact candidate npm archives, in a fresh HOME.
  * Test Adapters replace only remote distribution/Server HTTP and OS registration;
  * the real CLI, updater, source reader, Collector and state Interfaces execute. */
-export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory, baselineCLI, baselineCodex, version) {
+export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory, baselineCLI, baselineCodex, version, featureRelease) {
   for (const [name, path] of [["@atape/cli", baselineCLI], ["@atape/adapter-codex", baselineCodex]]) {
     assert.equal(integrity(await readFile(path)), codexClockBaselineIntegrities[name], `Requires the exact npm-published ${name}@0.5.9 archive`)
   }
@@ -42,7 +43,8 @@ export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory
   const root = await realpath(fixtureDirectory)
   const realNpm = (await execute("which", ["npm"], { encoding: "utf8" })).stdout.trim()
   assert.ok(realNpm.startsWith("/"))
-  const checksumLines = (await readFile(join(releaseDirectory,"SHA256SUMS"),"utf8")).trim().split("\n")
+  const loadPackages = async (directory, releaseVersion) => {
+  const checksumLines = (await readFile(join(directory,"SHA256SUMS"),"utf8")).trim().split("\n")
   const checksums = new Map(checksumLines.map(line => {
     const match=/^([a-f0-9]{64})  ([A-Za-z0-9.-]+\.tgz)$/.exec(line)
     assert.ok(match,"Release checksums must identify bounded archive filenames")
@@ -52,18 +54,22 @@ export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory
   assert.equal(checksumLines.length,packages.length)
   const publicPackages = {}
   for (const name of packages) {
-    const archive = await realpath(join(releaseDirectory, `${name.replace(/^@/, "").replaceAll("/", "-")}-${version}.tgz`))
+    const archive = await realpath(join(directory, `${name.replace(/^@/, "").replaceAll("/", "-")}-${releaseVersion}.tgz`))
     const manifest = JSON.parse((await execute("tar", ["-xOf", archive, "package/package.json"], { encoding: "utf8", maxBuffer: 256 * 1024 })).stdout)
-    assert.equal(manifest.name, name); assert.equal(manifest.version, version)
+    assert.equal(manifest.name, name); assert.equal(manifest.version, releaseVersion)
     const bytes = await readFile(archive)
-    assert.equal(sha256(bytes),checksums.get(`${name.replace(/^@/, "").replaceAll("/", "-")}-${version}.tgz`),"Clock transition requires the exact checksummed candidate archives")
+    assert.equal(sha256(bytes),checksums.get(`${name.replace(/^@/, "").replaceAll("/", "-")}-${releaseVersion}.tgz`),"Clock transition requires the exact checksummed candidate archives")
     publicPackages[name] = { archive, manifest: { ...manifest, dist: { integrity: integrity(bytes),
-      tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${version}.tgz` } } }
+      tarball: `https://registry.npmjs.org/${name}/-/${name.slice("@atape/".length)}-${releaseVersion}.tgz` } } }
   }
+  return publicPackages
+  }
+  const publicPackages = await loadPackages(releaseDirectory, version)
   const candidateProfile = publicPackages["@atape/adapter-codex"].manifest.atapeAdapter.legacyCanonicalProfile
   const cliManifest = publicPackages["@atape/cli"].manifest
   const channel = cliManifest.atapeRuntime.releaseChannel
   assert.ok(["legacy-bridge", "target-owned"].includes(channel), "Clock transition requires an explicit packaged publication channel")
+  assert.equal(channel, "legacy-bridge", "A target-owned clock candidate requires the genuine retained bridge leg; it cannot publish a legacy descriptor")
   assert.equal(candidateProfile, channel === "legacy-bridge" ? "atape.acp-centered.v3" : "atape.acp-centered.v5", "Clock projection must match the actual release channel")
   const candidateProjection = channel === "legacy-bridge" ? 5 : 7
   const bundle = { protocol: "atape.release-bundle.v2", version, captureStateContract: cliManifest.atapeRuntime.stateContract,
@@ -71,9 +77,30 @@ export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory
     packages: packages.map(name => ({ name, ...publicPackages[name].manifest.dist })) }
   const legacyBundle = { ...bundle, protocol: "atape.release-bundle.v1" }; delete legacyBundle.migration
   const catalog = mergeMigrationReleaseBundle(undefined, bundle), legacyCatalog = mergeReleaseBundle(undefined, legacyBundle)
-  const releaseBody = migrationReleaseBundleSection(bundle) + "\n" + releaseBundleSection(legacyBundle)
+  let releaseBody = migrationReleaseBundleSection(bundle) + "\n" + releaseBundleSection(legacyBundle)
+  let feature, bridgeTarget
+  if (featureRelease) {
+    assert.equal(version, "0.5.11", "The historical clock bridge must be the retained published .11 release")
+    assert.equal(cliManifest.atapeRuntime.updateTargetProtocol, "atape.update-target.v1")
+    bridgeTarget = { protocol: "atape.release-bundle.v3", version,
+      captureStateContract: cliManifest.atapeRuntime.stateContract, updateControlProtocol: cliManifest.atapeRuntime.updateControlProtocol,
+      updateTargetProtocol: cliManifest.atapeRuntime.updateTargetProtocol,
+      fromCaptureStateContracts: cliManifest.atapeRuntime.fromCaptureStateContracts, packages: bundle.packages }
+    releaseBody += "\n" + targetReleaseBundleSection(bridgeTarget)
+    const artifacts = await loadPackages(featureRelease.directory, featureRelease.version), manifest = artifacts["@atape/cli"].manifest
+    assert.equal(manifest.atapeRuntime.releaseChannel, "target-owned")
+    assert.equal(manifest.atapeRuntime.updateTargetProtocol, "atape.update-target.v1")
+    assert.equal(artifacts["@atape/adapter-codex"].manifest.atapeAdapter.legacyCanonicalProfile, "atape.acp-centered.v5")
+    const target = { protocol: "atape.release-bundle.v3", version: featureRelease.version,
+      captureStateContract: manifest.atapeRuntime.stateContract, updateControlProtocol: manifest.atapeRuntime.updateControlProtocol,
+      updateTargetProtocol: manifest.atapeRuntime.updateTargetProtocol, fromCaptureStateContracts: manifest.atapeRuntime.fromCaptureStateContracts,
+      packages: packages.map(name => ({ name, ...artifacts[name].manifest.dist })) }
+    feature = { version: featureRelease.version, bundle: target, packages: artifacts, releaseBody: targetReleaseBundleSection(target),
+      catalog: mergeTargetReleaseBundle(mergeTargetReleaseBundle(undefined, bridgeTarget), target) }
+  }
   const publicRelease = join(root, "public-release.json")
-  const distribution = { bundle, legacyBundle, catalog, legacyCatalog, releaseBody, packages: publicPackages }
+  const distribution = { bundle, legacyBundle, catalog, legacyCatalog, releaseBody, packages: publicPackages, feature, clockOffsetMs: 0,
+    ...(bridgeTarget ? { bridgeTarget, targetCatalog: mergeTargetReleaseBundle(undefined, bridgeTarget), featureAdvertised: false } : {}) }
   await writeFile(publicRelease, JSON.stringify({ ...distribution, serverVersion:"0.5.9", minimumCLIVersion:"0.5.9" }))
   const prefix = join(root, "prefix"), home = join(root, "home"), userHome = join(root, "user")
   const globalRoot = join(prefix, "lib", "node_modules"), bootstrap = join(globalRoot, "@atape", "cli", "dist", "atape.js")
@@ -92,13 +119,15 @@ for (const method of ["execFile", "execFileSync", "spawn", "spawnSync"]) {
   const original=childProcess[method];
   childProcess[method]=function(file,...args) {
     if (["launchctl","systemctl","open","xdg-open","rundll32"].includes(basename(file))) {
-      appendFileSync(${JSON.stringify(native)},JSON.stringify({method,file})+"\n");
+      appendFileSync(${JSON.stringify(native)},JSON.stringify({method,file,args:args[0],rejected:true})+"\n");
       throw new Error("Native OS registration/browser commands are forbidden in isolated transition acceptance");
     }
     return Reflect.apply(original,this,[file,...args]);
   };
 }
 syncBuiltinESMExports();
+const realNow=Date.now;
+Date.now=()=>realNow()+(JSON.parse(readFileSync(${JSON.stringify(publicRelease)},"utf8")).clockOffsetMs??0);
 const realFetch = globalThis.fetch;
 const saved = file => existsSync(file) ? readFileSync(file,"utf8").split("\n").filter(Boolean).map(JSON.parse) : [];
 globalThis.fetch=async (input,init)=> {
@@ -106,7 +135,11 @@ globalThis.fetch=async (input,init)=> {
  if(address.startsWith("data:"))return realFetch(input,init);
  const fixture=JSON.parse(readFileSync(${JSON.stringify(publicRelease)},"utf8"));
  appendFileSync(${JSON.stringify(requests)},JSON.stringify({address,pid:process.pid})+"\n");
- if(address===${JSON.stringify(releaseCatalogURL("atape.update-catalog.v3"))}||address===${JSON.stringify(releaseBundleURL(version,"atape.release-bundle.v3"))})return new Response(null,{status:404});
+ if(address===${JSON.stringify(releaseCatalogURL("atape.update-catalog.v3"))})return fixture.bridgeTarget?
+  Response.json(fixture.featureAdvertised?fixture.feature.catalog:fixture.targetCatalog):new Response(null,{status:404});
+ if(address===${JSON.stringify(releaseBundleURL(version,"atape.release-bundle.v3"))})return fixture.bridgeTarget?Response.json(fixture.bridgeTarget):new Response(null,{status:404});
+ if(fixture.feature&&address===${JSON.stringify(feature && releaseBundleURL(feature.version,"atape.release-bundle.v3"))})return fixture.featureAdvertised?Response.json(fixture.feature.bundle):new Response(null,{status:404});
+ if(fixture.feature&&${JSON.stringify(feature ? [releaseBundleURL(feature.version,"atape.release-bundle.v1"),releaseBundleURL(feature.version,"atape.release-bundle.v2")] : [])}.includes(address))return new Response(null,{status:404});
  for (const protocol of ["atape.release-bundle.v2","atape.release-bundle.v1"]) {
    const migration=protocol.endsWith("v2");
    const catalogURL=migration?${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))}:${JSON.stringify(releaseCatalogURL("atape.update-catalog.v1"))};
@@ -116,11 +149,15 @@ globalThis.fetch=async (input,init)=> {
  }
  if(address==="https://api.github.com/repos/SingleMai/ATape/releases/latest")return Response.json({tag_name:${JSON.stringify(`v${version}`)},prerelease:false,draft:false,published_at:"2026-10-12T00:00:00Z"});
  if(address===${JSON.stringify(`https://api.github.com/repos/SingleMai/ATape/releases/tags/v${version}`)})return Response.json({tag_name:${JSON.stringify(`v${version}`)},prerelease:false,draft:false,published_at:"2026-10-12T00:00:00Z",body:fixture.releaseBody});
- const artifact=Object.values(fixture.packages).find(item=>item.manifest.dist.tarball===address);
+ if(fixture.feature&&address==="https://api.github.com/repos/SingleMai/ATape/releases/tags/v"+fixture.feature.version)return Response.json({tag_name:"v"+fixture.feature.version,prerelease:false,draft:false,published_at:"2026-10-12T00:00:00Z",body:fixture.feature.releaseBody});
+ const allPackages=[...Object.values(fixture.packages),...Object.values(fixture.feature?.packages??{})];
+ const artifact=allPackages.find(item=>item.manifest.dist.tarball===address);
  if(artifact)return new Response(readFileSync(artifact.archive));
  const url=new URL(address), path=decodeURIComponent(url.pathname);
  if(url.origin==="https://registry.npmjs.org") {
-  for(const [name,item] of Object.entries(fixture.packages)) if(path==="/"+name+${JSON.stringify(`/${version}`)}||path==="/"+name+"/latest")return Response.json(item.manifest);
+  for(const item of allPackages)if(path==="/"+item.manifest.name+"/"+item.manifest.version)return Response.json(item.manifest);
+  for(const [name,item] of Object.entries(fixture.packages))if(path==="/"+name+"/latest")return Response.json(item.manifest);
+  for(const [name,item] of Object.entries(fixture.feature?.packages??{}))if(path==="/"+name+"/atape-managed")return Response.json(item.manifest);
  }
  if(url.origin==="https://upgrade-fixture.invalid") {
   if(path==="/api/v1/instance")return Response.json({protocol:"atape.instance.v1",instance_origin:url.origin,web_origin:url.origin,api_origin:url.origin,
@@ -174,7 +211,8 @@ else if(args[0]==="install") {
  const fixture=JSON.parse(fs.readFileSync(${JSON.stringify(publicRelease)},"utf8"));
  const digest="sha512-"+crypto.createHash("sha512").update(fs.readFileSync(archive)).digest("base64");
  const match=fixture.bundle.packages.find(item=>item.integrity===digest);
- if(!match&&digest!==${JSON.stringify(codexClockBaselineIntegrities["@atape/adapter-codex"])})throw Error("Unverified npm archive");
+ const featureMatch=fixture.feature?.bundle.packages.find(item=>item.integrity===digest);
+ if(!match&&!featureMatch&&digest!==${JSON.stringify(codexClockBaselineIntegrities["@atape/adapter-codex"])})throw Error("Unverified npm archive");
  if(args.includes("--global")&&(destination!==${JSON.stringify(prefix)}||match?.name!=="@atape/cli"))throw Error("Invalid global install");
  cp.execFileSync(${JSON.stringify(realNpm)},["install",...(args.includes("--global")?["--global"]:[]),"--prefix",destination,archive,"--offline","--ignore-scripts","--engine-strict","--no-audit","--no-fund"],
   {env:{...process.env,PATH:process.env.CODEX_CLOCK_ORIGINAL_PATH,NODE_OPTIONS:""},stdio:"pipe",timeout:120000});
@@ -206,7 +244,9 @@ else if(args[0]==="install") {
   assert.equal((await json(join(dirname(dirname(bootstrap)),"package.json"))).version,"0.5.9")
   const helper = join(root,"caller.mjs")
   await build({entryPoints:[fileURLToPath(new URL("../src/runtime/fixtures/codex-clock-bootstrap-transition.ts",import.meta.url))],outfile:helper,bundle:true,
-    platform:"node",format:"esm",target:"node24",define:{__ATAPE_CLI_VERSION__:JSON.stringify(version),__ATAPE_CAPTURE_STATE_CONTRACT__:JSON.stringify("atape.client.v3-capture.v2"),"process.env.NODE_ENV":'"production"'},
+    // This helper only inspects or starts the selected installed executable. Its
+    // identity remains capable of reading the final feature's execution floor.
+    platform:"node",format:"esm",target:"node24",define:{__ATAPE_CLI_VERSION__:JSON.stringify(feature?.version ?? version),__ATAPE_CAPTURE_STATE_CONTRACT__:JSON.stringify("atape.client.v3-capture.v2"),"process.env.NODE_ENV":'"production"'},
     banner:{js:'import { createRequire as __atapeCreateRequire } from "node:module"; const require = __atapeCreateRequire(import.meta.url);'},logLevel:"silent"})
   const requestFile = join(root,"caller-request.json")
   const invoke = async phase => {
@@ -215,7 +255,7 @@ else if(args[0]==="install") {
     return JSON.parse(result.stdout)
   }
   const terminal = fileURLToPath(new URL("verify-codex-clock-upgrade-terminal.py",import.meta.url))
-  const pty = phase => execute("python3",[terminal,bootstrap,root,phase,version],{cwd:root,env:environment,encoding:"utf8",timeout:180_000,maxBuffer:2*1024*1024})
+  const pty = (phase, expectedVersion = version) => execute("python3",[terminal,bootstrap,root,phase,expectedVersion],{cwd:root,env:environment,encoding:"utf8",timeout:180_000,maxBuffer:2*1024*1024})
   const entries = async()=> (await optionalBytes(trace))?.toString("utf8").split("\n").filter(Boolean).map(JSON.parse) ?? []
   const captured = async file => (await optionalBytes(file))?.toString("utf8").split("\n").filter(Boolean).map(JSON.parse) ?? []
   const protectedFiles = [join(home,"config","client.json"),join(home,"state","collector.json"),join(home,"state","collector-process.json.desired.json"),
@@ -239,7 +279,7 @@ else if(args[0]==="install") {
     assert.ok((await captured(captures)).every(batch=>batch.canonicalProfileVersion==="atape.acp-centered.v2"))
     // Match the deployed release/minimum metadata for every upgrade action;
     // lower historical metadata applies only while seeding the real old capture.
-    await writeFile(publicRelease,JSON.stringify({ ...distribution,serverVersion:version,minimumCLIVersion:version }))
+    await writeFile(publicRelease,JSON.stringify({ ...distribution,serverVersion:feature?.version ?? version,minimumCLIVersion:feature?.version ?? version }))
     await invoke("enable-auto")
     const beforeAuto=await snapshot(); beforeAuto.set(join(home,"state","collector-process.json"),await readFile(join(home,"state","collector-process.json")))
     await invoke("dispatch")
@@ -310,12 +350,153 @@ else if(args[0]==="install") {
     const retained = join(root,"retained-codex")
     await npm(["install","--prefix",retained,baselineCodex,"--offline","--ignore-scripts","--no-audit","--no-fund"])
     const oldCheck=join(root,"old-adapter-caller.mjs")
-    const oldRequest={protocolVersion:"atape.adapter.v1alpha1",cursor:continued.state.checkpoint.cursor,
-      rawProgress:continued.state.checkpoint.rawObjects,limits:AdapterCollectionLimits,rawCaptureEnabled:true}
-    await writeFile(oldCheck,`import assert from "node:assert/strict";\nimport { createAtapeAdapter } from ${JSON.stringify(pathToFileURL(join(retained,"node_modules","@atape","adapter-codex","dist","index.js")).href)};\nconst runtime=await createAtapeAdapter({protocolVersion:"atape.adapter.v1alpha1",adapter:{id:"codex",version:"0.5.9"},project:{id:"upgrade-project",type:"directory",path:${JSON.stringify(join(root,"workspace"))}},signal:AbortSignal.timeout(5000)});\ntry{await assert.rejects(runtime.collect({...${JSON.stringify(oldRequest)},signal:AbortSignal.timeout(5000)}),error=>error.reason==="cursor"&&/cursor is invalid/i.test(error.message));process.stdout.write("old-adapter-refused-v${candidateProjection}");}finally{await runtime.close?.()}\n`)
-    assert.equal((await execute(process.execPath,[oldCheck],{cwd:root,env:environment,encoding:"utf8",timeout:15_000,maxBuffer:1024*1024})).stdout,`old-adapter-refused-v${candidateProjection}`)
+    const assertOldAdapterRefuses = async (checkpoint, projection) => {
+    const oldRequest={protocolVersion:"atape.adapter.v1alpha1",cursor:checkpoint.cursor,
+      rawProgress:checkpoint.rawObjects,limits:AdapterCollectionLimits,rawCaptureEnabled:true}
+    await writeFile(oldCheck,`import assert from "node:assert/strict";\nimport { createAtapeAdapter } from ${JSON.stringify(pathToFileURL(join(retained,"node_modules","@atape","adapter-codex","dist","index.js")).href)};\nconst runtime=await createAtapeAdapter({protocolVersion:"atape.adapter.v1alpha1",adapter:{id:"codex",version:"0.5.9"},project:{id:"upgrade-project",type:"directory",path:${JSON.stringify(join(root,"workspace"))}},signal:AbortSignal.timeout(5000)});\ntry{await assert.rejects(runtime.collect({...${JSON.stringify(oldRequest)},signal:AbortSignal.timeout(5000)}),error=>error.reason==="cursor"&&/cursor is invalid/i.test(error.message));process.stdout.write("old-adapter-refused-v${projection}");}finally{await runtime.close?.()}\n`)
+    assert.equal((await execute(process.execPath,[oldCheck],{cwd:root,env:environment,encoding:"utf8",timeout:15_000,maxBuffer:1024*1024})).stdout,`old-adapter-refused-v${projection}`)
+    assert.equal(JSON.parse(Buffer.from(checkpoint.cursor,"base64url").toString("utf8")).eventProjectionVersion,projection)
+    }
+    await assertOldAdapterRefuses(continued.state.checkpoint,candidateProjection)
     await unchanged(credentialBefore); assert.equal(await optionalBytes(native),undefined)
-    const record={baselineVersion:"0.5.9",baselineIntegrities:codexClockBaselineIntegrities,baselineEntrySha256:entryHash,
+    let featureEvidence
+    if (feature) {
+      const bridgeBootstrapBytes = await readFile(bootstrap)
+      assert.equal(sha256(bridgeBootstrapBytes),candidateEntryHash,"Second leg must retain the genuine installed bridge bootstrap")
+      const bridgeManifestBytes = await readFile(join(dirname(dirname(bootstrap)),"package.json"))
+      assert.equal(JSON.parse(bridgeManifestBytes).version,version)
+      const beforeFeature = await invoke("snapshot"), preceding = await captured(captures), precedingEvents = preceding.flatMap(batch=>batch.events)
+      const precedingRaw = await readFile(rawCaptures), beforeFeatureNpmCalls = (await captured(calls)).length
+      const beforeFeatureEntryCount = (await entries()).length
+      const assertNoRegisteredCaptureJournal = async () => {
+        assert.equal(await optionalBytes(join(home,"state","collector.json.capture-installation.json")),undefined)
+        assert.equal(await readdir(join(home,"state","collector.json.captures")).catch(cause=>{if(missing(cause))return undefined;throw cause}),undefined)
+      }
+      // Codex uses the Legacy Canonical runtime even for profile v5. It never
+      // registers a SourceCapture account; the real coordinator completes an
+      // empty journal inventory while the Adapter separately replays projection.
+      await assertNoRegisteredCaptureJournal()
+      // The published bridge's manual UI refreshes the global command even for
+      // a target-owned bundle. Exercise its genuine automatic worker instead.
+      // Advance only the external clock Seam so the ordinary durable retry and
+      // discovery cache expire; do not edit the updater's private state.
+      distribution.featureAdvertised = true
+      distribution.clockOffsetMs += 2 * 24 * 60 * 60 * 1000
+      await writeFile(publicRelease,JSON.stringify({ ...distribution,serverVersion:feature.version,minimumCLIVersion:feature.version }))
+      const enabled = await invoke("enable-auto")
+      assert.equal(enabled.config.autoUpdateEnabled,true)
+      assert.equal(enabled.wanted,false);assert.equal(enabled.status.running,false)
+      await invoke("dispatch")
+      await waitFor(async()=>{
+        const state=await json(join(home,"updates","state.json")).catch(cause=>{if(missing(cause))return undefined;throw cause})
+        const workers=(await entries()).slice(beforeFeatureEntryCount).filter(entry=>entry.args[0]==="__automatic-update")
+        const settled=workers.length>0&&workers.every(worker=>!alive(worker.pid))
+        if(settled&&state?.failures>0)throw new Error(`Genuine installed bridge automatic update failed: ${state.failure}`)
+        const selection=await json(join(home,"updates","runtime.json"))
+        return settled&&state?.version===feature.version&&state.failures===0&&selection.version===feature.version&&
+          await optionalBytes(join(home,"updates","target-update.json"))===undefined
+      },"Genuine installed bridge automatic worker did not settle at the target-owned feature")
+      const selected = await invoke("snapshot"), targetControl = await json(join(home,"updates","control.json"))
+      const bridgeWorkers = (await entries()).slice(beforeFeatureEntryCount).filter(entry=>entry.args[0]==="__automatic-update")
+      assert.ok(bridgeWorkers.length>0&&bridgeWorkers.every(entry=>entry.sha256===candidateEntryHash),
+        "Feature update must execute the exact installed bridge automatic worker")
+      assert.equal(selected.selection.version,feature.version);assert.equal(selected.effective.adapters[0].version,feature.version)
+      assert.equal(selected.wanted,false);assert.equal(selected.status.running,false)
+      assert.equal(selected.config.autoUpdateEnabled,true);assert.equal(selected.config.autoStartEnabled,false)
+      assert.deepEqual(selected.config.projects,beforeFeature.config.projects);assert.deepEqual(selected.config.enabledAdapterIds,beforeFeature.config.enabledAdapterIds)
+      assert.deepEqual(selected.state.checkpoint.rawObjects,beforeFeature.state.checkpoint.rawObjects)
+      assert.equal((await captured(captures)).length,preceding.length,"Stopped target-owned selection must not capture native history")
+      assert.deepEqual(await readFile(rawCaptures),precedingRaw)
+      assert.equal(targetControl.phase,"completed");assert.equal(targetControl.floor.minimumRuntimeVersion,feature.version)
+      assert.equal(targetControl.target.version,feature.version);assert.equal(targetControl.forwardOnly,true)
+      assert.equal(await optionalBytes(join(home,"updates","target-update.json")),undefined)
+      assert.equal(await optionalBytes(join(home,"updates","pending.json")),undefined)
+      assert.equal(await optionalBytes(join(home,"state","collector-process.json.maintenance.json")),undefined)
+      assert.deepEqual(await readdir(join(home,"updates","target-capture-intents")).catch(cause=>{if(missing(cause))return [];throw cause}),[])
+      assert.deepEqual(await readFile(bootstrap),bridgeBootstrapBytes,"Target-owned update must preserve the installed bridge bootstrap")
+      assert.deepEqual(await readFile(join(dirname(dirname(bootstrap)),"package.json")),bridgeManifestBytes)
+      const featureNpmCalls = (await captured(calls)).slice(beforeFeatureNpmCalls)
+      const featureGlobalInstalls = featureNpmCalls.filter(args=>args[0]==="install"&&args.includes("--global"))
+      assert.deepEqual(featureGlobalInstalls,[],`Feature update may not rewrite the global npm installation: ${JSON.stringify(featureGlobalInstalls)}`)
+      const featureEntry = join(home,"releases",feature.version,"node_modules","@atape","cli","dist","atape.js")
+      const featureEntryHash = sha256(await readFile(featureEntry)), packedFeature = (await execute("tar",["-xOf",feature.packages["@atape/cli"].archive,"package/dist/atape.js"],{encoding:"buffer",maxBuffer:16*1024*1024})).stdout
+      assert.equal(featureEntryHash,sha256(packedFeature))
+      const migration = await json(join(home,"updates","capture-migration.json")), requirement = migration.required.requirement, receipt = migration.receipt
+      assert.equal(migration.protocol,"atape.capture-migration.v1");assert.equal(migration.phase,"completed")
+      assert.equal(migration.attempt,undefined)
+      assert.deepEqual(migration.required,await json(join(home,"updates","capture-migration.required.json")))
+      assert.equal(requirement.outerKey,targetControl.key);assert.equal(requirement.source.version,version)
+      assert.deepEqual(requirement.target,targetControl.target)
+      assert.deepEqual(requirement.bundle.packages,feature.bundle.packages)
+      assert.deepEqual(requirement.inventory,[],"Legacy Canonical Codex must have no registered SourceCapture journal inventory")
+      assert.equal(receipt.protocol,"atape.capture-migration-receipt.v1");assert.equal(receipt.planId,"journal-v7-to-v8")
+      assert.equal(receipt.outerKey,targetControl.key);assert.equal(receipt.requirementHash,requirement.hash)
+      assert.equal(receipt.bundleFingerprint,requirement.bundleFingerprint)
+      assert.deepEqual(receipt.target,{version:feature.version,captureStateContract:feature.bundle.captureStateContract})
+      assert.deepEqual(receipt.accounts,[]);assert.deepEqual(migration.progress,[])
+      await assertNoRegisteredCaptureJournal()
+      const targetOwner = await json(join(home,"updates","target-owner.json"))
+      assert.equal(targetOwner.protocol,"atape.update-target.v1");assert.deepEqual(targetOwner.bundle,feature.bundle)
+      assert.equal(targetOwner.entrySha256,featureEntryHash);assert.equal(targetOwner.bootstrapEntry,bootstrap)
+      assert.equal(targetOwner.paths.atapeHome,home)
+      const targetEntries = (await entries()).filter(entry=>entry.args[0]==="__update-target")
+      assert.ok(targetEntries.some(entry=>entry.args.at(-1)==="prepare")&&targetEntries.some(entry=>entry.args.at(-1)==="activate"))
+      assert.ok(targetEntries.every(entry=>entry.sha256===featureEntryHash),"Preparation and activation must execute the exact installed target")
+      await collect()
+      const replayed = (await captured(captures)).slice(preceding.length), events = replayed.flatMap(batch=>batch.events), featureReplay = await invoke("snapshot")
+      assert.ok(replayed.length>0&&replayed.every(batch=>batch.canonicalProfileVersion==="atape.acp-centered.v5"))
+      assert.deepEqual(new Set(events.map(event=>event.sourceEventId)),new Set(precedingEvents.map(event=>event.sourceEventId)))
+      for(const event of events){assert.equal(event.projectionRevision,7);assert.ok(event.revision>Math.max(...precedingEvents.filter(old=>old.sourceEventId===event.sourceEventId).map(old=>old.revision)))}
+      assert.equal(events.find(event=>event.sourceEventId==="clock-unknown").occurredAt,null)
+      const files = events.filter(event=>event.toolUpdateJson).map(event=>JSON.parse(event.toolUpdateJson)).find(update=>update.toolCallId==="clock-files")
+      assert.deepEqual(files._meta["atape.dev/file-activity"],[{operation:"read",path:"src/main.ts"},{operation:"search",path:"src"}])
+      assert.deepEqual(files.rawInput,{parsed_cmd:[{type:"read",path:"src/main.ts"},{type:"search",path:"src"}]})
+      assert.equal(replayed[0].session.updatedAt,"2026-10-11T00:00:03Z")
+      assert.deepEqual(featureReplay.state.checkpoint.rawObjects,beforeFeature.state.checkpoint.rawObjects)
+      assert.deepEqual(await readFile(rawCaptures),precedingRaw)
+      assert.equal(JSON.parse(Buffer.from(featureReplay.state.checkpoint.cursor,"base64url").toString("utf8")).eventProjectionVersion,7)
+      const featureNoOpCount = (await captured(captures)).length
+      await collect();assert.equal((await captured(captures)).length,featureNoOpCount)
+      await appendFile(source,lines([item("clock-feature-appended","AgentMessage","A feature continuation","2026-10-11T00:00:04Z")]))
+      await collect()
+      const featureContinued = await invoke("snapshot"), featureAppend = (await captured(captures)).slice(featureNoOpCount).flatMap(batch=>batch.events)
+      assert.deepEqual(featureAppend.map(event=>event.sourceEventId),["clock-feature-appended"])
+      assert.ok(featureContinued.state.checkpoint.rawObjects[0].serverOffset>beforeFeature.state.checkpoint.rawObjects[0].serverOffset)
+      assert.equal(featureContinued.state.checkpoint.rawObjects[0].sourceGeneration,beforeFeature.state.checkpoint.rawObjects[0].sourceGeneration)
+      assert.equal(featureContinued.wanted,false);assert.equal(featureContinued.status.running,false)
+      assert.equal(featureContinued.config.autoUpdateEnabled,true)
+      const featureDaemons = (await entries()).filter(entry=>entry.args[0]==="__collector-daemon"&&entry.sha256===featureEntryHash)
+      assert.equal(featureDaemons.length,3,"Replay, no-op and append must execute the actual installed feature")
+      await assertOldAdapterRefuses(featureContinued.state.checkpoint,7)
+      const disabled = await invoke("disable-auto")
+      assert.equal(disabled.config.autoUpdateEnabled,false)
+      assert.equal(disabled.wanted,false);assert.equal(disabled.status.running,false)
+      assert.equal(disabled.selection.version,feature.version)
+      assert.deepEqual(disabled.state.checkpoint,featureContinued.state.checkpoint)
+      await assertNoRegisteredCaptureJournal()
+      await unchanged(credentialBefore)
+      assert.deepEqual(await readFile(bootstrap),bridgeBootstrapBytes)
+      const requested = await captured(requests)
+      assert.ok(requested.some(request=>request.address===releaseCatalogURL("atape.update-catalog.v3")&&bridgeWorkers.some(worker=>worker.pid===request.pid)))
+      assert.ok(requested.every(request=>![releaseBundleURL(feature.version,"atape.release-bundle.v1"),
+        releaseBundleURL(feature.version,"atape.release-bundle.v2")].includes(request.address)),"Target-owned feature discovery must not request a legacy descriptor")
+      const nativeProbes = await captured(native)
+      assert.ok(nativeProbes.every(call=>call.rejected===true&&call.method==="execFile"&&Array.isArray(call.args)&&
+        (basename(call.file)==="launchctl"&&call.args.length===2&&call.args[0]==="print"&&/^gui\/\d+$/.test(call.args[1])||
+         basename(call.file)==="systemctl"&&JSON.stringify(call.args)===JSON.stringify(["--user","show-environment"]))),"Native OS registration remains forbidden")
+      featureEvidence = {version:feature.version,entrySha256:featureEntryHash,cliIntegrity:feature.packages["@atape/cli"].manifest.dist.integrity,
+        codexIntegrity:feature.packages["@atape/adapter-codex"].manifest.dist.integrity,bundle:feature.bundle,
+        actualInstalledBridgeAutomaticWorker:true,actualTargetPrepareAndActivate:true,captureMigrationReceiptVerified:true,
+        emptyInventoryLegacyCodex:true,noNonEmptyJournalMigrationClaim:true,targetOwnerVerified:true,featureLegacyDescriptorsAdvertised:false,
+        npmLatestRetainedBridge:true,globalBridgeBootstrapBytesPreserved:true,globalNpmInstalls:featureGlobalInstalls.length,
+        globalNpmReadQueries:featureNpmCalls.filter(args=>["root","prefix"].includes(args[0])&&args.includes("--global")).length,
+        automaticUpdatesExplicitlyEnabled:true,
+        automaticUpdatesEnabledThroughReplay:true,automaticUpdatesExplicitlyDisabledAfterReplay:true,automaticUpdatesOffAtEnd:true,stopIntentPreserved:true,
+        explicitNullReplayed:true,eventIDsPreserved:true,revisionsAdvanced:true,rawReceiptsPreservedAcrossReplay:true,
+        installedNativeFileActivityReplayed:true,noOpContinuationPassed:true,appendedContinuationPassed:true,genuineOldAdapterRejectedProjection7:true,
+        installedCandidateDaemonCycles:3,readerFloor:targetControl.floor}
+    }
+    const bridgeRecord={baselineVersion:"0.5.9",baselineIntegrities:codexClockBaselineIntegrities,baselineEntrySha256:entryHash,
       candidateVersion:version,candidateEntrySha256:candidateEntryHash,candidateCLIIntegrity:publicPackages["@atape/cli"].manifest.dist.integrity,
       candidateCodexIntegrity:publicPackages["@atape/adapter-codex"].manifest.dist.integrity,candidateBundlePackages:bundle.packages,
       genuineOldAutomaticRejectedBeforePause:true,genuineOldUIRejectedBeforePause:true,genuineOldCollectorCapturedProjection4:true,
@@ -324,17 +505,21 @@ else if(args[0]==="install") {
       revisionsAdvanced:true,noOpContinuationPassed:true,appendedContinuationPassed:true,[`genuineOldAdapterRejectedProjection${candidateProjection}`]:true,
       releaseChannel:channel,candidateCanonicalProfile:candidateProfile,candidateProjectionVersion:candidateProjection,
       ...(candidateProjection >= 7 ? { installedNativeFileActivityReplayed: true } : {}),
-      installedCandidateDaemonCycles:3,upgradeServerRelease:version,upgradeServerMinimumCLI:version,
+      installedCandidateDaemonCycles:3,upgradeServerRelease:feature?.version ?? version,upgradeServerMinimumCLI:feature?.version ?? version,
       readerFloor:control.floor,retainedRuntimeRollbackAfterNewCursor:"unsupported; recover forward with target runtime",
       providerCaptureTested:"constructed native-format source through genuine installed readers",realOSRegistrationTested:false,
       server:"owned HTTP Test Adapter for Canonical v2/v3/v4/v5 and Raw; Publication unavailable; no deployed Instance touched"}
+    const record = feature ? {baselineVersion:"0.5.9",releaseVersion:feature.version,releaseChannel:"target-owned",clockBridge:bridgeRecord,feature:featureEvidence,
+      fullChain:"passed-with-genuine-published-bridge-and-controlled-installed-candidate-artifacts",realOSRegistrationTested:false,
+      server:bridgeRecord.server} : bridgeRecord
     await writeFile(join(root,"codex-clock-upgrade-acceptance.json"),JSON.stringify(record,null,2)+"\n",{mode:0o600})
     return record
   } finally {await invoke("cleanup")}
 }
 
 if(process.argv[1]===fileURLToPath(import.meta.url)) {
- const [releaseDirectory,fixtureDirectory,baselineCLI,baselineCodex,version]=process.argv.slice(2)
- if(!version)throw new Error("usage: verify-codex-clock-upgrade.mjs release-dir fixture-dir genuine-cli-0.5.9.tgz genuine-codex-0.5.9.tgz version")
- process.stdout.write(JSON.stringify(await verifyCodexClockUpgrade(releaseDirectory,fixtureDirectory,baselineCLI,baselineCodex,version))+"\n")
+ const [releaseDirectory,fixtureDirectory,baselineCLI,baselineCodex,version,featureDirectory,featureVersion]=process.argv.slice(2)
+ if(!version||Boolean(featureDirectory)!==Boolean(featureVersion))throw new Error("usage: verify-codex-clock-upgrade.mjs bridge-dir fixture-dir genuine-cli-0.5.9.tgz genuine-codex-0.5.9.tgz bridge-version [feature-dir feature-version]")
+ process.stdout.write(JSON.stringify(await verifyCodexClockUpgrade(releaseDirectory,fixtureDirectory,baselineCLI,baselineCodex,version,
+  featureDirectory?{directory:featureDirectory,version:featureVersion}:undefined))+"\n")
 }

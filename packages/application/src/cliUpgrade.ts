@@ -32,7 +32,7 @@ export const checkCLIUpgrade = Effect.fn("CLIUpgrade.check")(function*(current: 
   return yield* platform.latest(true).pipe(
     Effect.flatMap(decodeBundle),
     Effect.flatMap(bundle => newer(current, bundle.version) ? Effect.succeed(undefined) :
-      newer(bundle.version, current) ? Effect.succeed(bundle.version) : platform.installedVersion().pipe(
+      newer(bundle.version, current) ? Effect.succeed(bundle.version) : bundle.protocol === "atape.release-bundle.v3" ? Effect.succeed(undefined) : platform.installedVersion().pipe(
         Effect.map(installed => stableVersion(installed) && newer(bundle.version, installed) ? bundle.version : undefined))),
     Effect.catch(() => Effect.succeed(undefined))
   )
@@ -55,9 +55,12 @@ export const upgradeCLI = Effect.fn("CLIUpgrade.upgrade")(function*(current: str
   if (adapters.some(adapter => !stableVersion(adapter.version) || newer(adapter.version, version))) {
     return yield* new CLIUpgradeError({ reason: "installation", message: "An official Adapter is ahead of this release. Reopen ATape and check versions again." })
   }
-  const updateEntry = newer(version, installed)
+  // Target-owned releases retain the verified npm bootstrap and complete their
+  // executable/capture handoff inside ATAPE_HOME. Legacy releases still replace
+  // the command entry through their historical installation path.
+  const updateEntry = bundle.protocol !== "atape.release-bundle.v3" && newer(version, installed)
   // Both explicit migration and target-owned releases must settle retained
-  // capture state after tools are disconnected, before replacing the npm entry.
+  // capture state after tools are disconnected through the complete coordinator.
   const managedActivation = bundle.protocol === "atape.release-bundle.v2" || bundle.protocol === "atape.release-bundle.v3"
   const updateRuntime = (config.toolsConfigured || managedActivation) &&
     (newer(version, current) || adapters.some(adapter => adapter.version !== version) || (managedActivation && updateEntry))

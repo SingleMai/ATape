@@ -1,0 +1,1390 @@
+{
+  "protocol": "atape.file-activity-release-acceptance.v1",
+  "releaseVersion": "0.5.12",
+  "releaseChannel": "target-owned",
+  "recordedAt": "2026-10-12T20:41:50.778545+00:00",
+  "scope": "Local final candidate working tree and exact installed tarballs. This is not npm publication or production deployment evidence. Required exact-head CI and Security remain mandatory.",
+  "sourceBaseline": "2ac1f1ef35443f6a158d2f87ece1bd27acb63fc1",
+  "nativeSourceRestoration": {
+    "sourceCommit": "7061967c97ce45fe90503dbfc98fa254792ff2ce",
+    "scope": "Eight Codex/Claude source and test files exactly restored from the integrated feature increment. Host and runtime retain the genuine .11 implementation; the .12 CLIUpgrade and ToolUpdates Modules also correct the v3 manual global-entry policy."
+  },
+  "checks": [
+    {
+      "id": "release-gates",
+      "result": "passed",
+      "log": "atape-v012-release-gates.log",
+      "sha256": "fd303c9da5aed924ab7da4e59e836db0ac395a47a7b48f76bde3a17ad640dd0b"
+    },
+    {
+      "id": "dependencies",
+      "result": "passed",
+      "log": "atape-v012-dependencies.log",
+      "sha256": "0c71734e765f42056c7a7421a00962372457e64f6ec3fec9f02d103f09357e57"
+    },
+    {
+      "id": "go-race",
+      "result": "passed",
+      "log": "atape-v012-go-race.log",
+      "sha256": "19229e564c24108e964003897c817bac68c092bf5c52104c697b8deb37a59a67"
+    },
+    {
+      "id": "go-fuzz",
+      "result": "passed",
+      "log": "atape-v012-go-fuzz.log",
+      "sha256": "04c266f63ca4ca820656fe5819eee3768ff954c49c3d7673f308f03e8d6e9a7d"
+    },
+    {
+      "id": "selfhost-config",
+      "result": "passed",
+      "log": "atape-v012-selfhost-config.log",
+      "sha256": "0144975c9e7b744a74af27e1dcf63ee1a1076b4fe958f91bcf38c28d14a37875"
+    },
+    {
+      "id": "web-rollout-unit",
+      "result": "passed",
+      "log": "atape-v012-web-rollout-unit.log",
+      "sha256": "d889ce067392ba7d469d09e620167780a8a9b8933473c7dd205050b46f4f9e85"
+    },
+    {
+      "id": "postgres-integration",
+      "result": "passed",
+      "log": "atape-v012-postgres-integration.log",
+      "sha256": "8449957da03c753b816abb372f52c728d40165cba6c55adc00b17ceb910f30ea"
+    },
+    {
+      "id": "repository-check",
+      "result": "passed",
+      "log": "atape-v012-repository-check.log",
+      "sha256": "f479034a3cea75c852b9e26c3f5f8127a26ae8ce8be4db2704f4f9dec635c1ac"
+    },
+    {
+      "id": "production-build",
+      "result": "passed",
+      "log": "atape-v012-production-build.log",
+      "sha256": "2b8ef52a046b4814999de2179a36847d657c96a2096833ab36a2a5dbd82b2ccc"
+    },
+    {
+      "id": "focused-clock-final",
+      "result": "passed",
+      "log": "atape-v012-clock-final-focused-r2.log",
+      "sha256": "82fba1adb72541425808f5882bea9112a149a04c0daa15154e8228bfc38c3c6d"
+    },
+    {
+      "id": "focused-active-final",
+      "result": "passed",
+      "log": "atape-v012-active-final-focused.log",
+      "sha256": "adb516ec08de50b383d0c663a3e23de72e44969a0d949fb789d1406120f11a28"
+    },
+    {
+      "id": "formal-release",
+      "result": "passed",
+      "log": "atape-v012-formal-release.log",
+      "sha256": "215f93b4114a22c3d31b53eba087e5910a8a4eb6454056561fce9822e5efd5be"
+    },
+    {
+      "id": "final-docs",
+      "result": "passed",
+      "log": "atape-v012-final-docs.log",
+      "sha256": "692ee5f143dfb6a68d57523073d5de3bda8c18c487c8ebb7e33c94663656f3f0"
+    },
+    {
+      "id": "final-architecture",
+      "result": "passed",
+      "log": "atape-v012-final-architecture.log",
+      "sha256": "750e2d288c715991f65112a5507ce91df22d5942fdd688aac94691760a7634ae"
+    },
+    {
+      "id": "final-release-policy",
+      "result": "passed",
+      "log": "atape-v012-final-release-policy.log",
+      "sha256": "b69365a67b79f30f315b2b2b6d8d42657fbae9155e42181358ab60a70571d0f9"
+    },
+    {
+      "command": "pnpm test:self-hosting:restore",
+      "result": "passed",
+      "log": "atape-v012-selfhost-restore.log",
+      "sha256": "181199564c907044c25e87b9c4430c8cb2ec36455062cffccbb61e3abf25d3ed",
+      "scope": "local working-tree verification; final commit image security and production deployment are separate"
+    },
+    {
+      "command": "pnpm build:release:images candidate",
+      "result": "passed",
+      "log": "atape-v012-release-images.log",
+      "sha256": "ab5d6b29cfd94a17b94d095e941e36efcbd783418329f94f4e2a5522b7f630b1",
+      "scope": "local working-tree verification; final commit image security and production deployment are separate"
+    }
+  ],
+  "verificationHistory": [
+    {
+      "command": "pnpm test:release",
+      "attempt": 1,
+      "result": "failed",
+      "exitCode": 1,
+      "log": "/tmp/atape-v012-formal-release-1-failed.log",
+      "sha256": "9ed5c058904b9e41afd045ccece1b1ac273aaa159f47ce7ab878d391abce8078",
+      "location": "verify-codex-clock-upgrade-terminal.py:87, second installed bridge console leg",
+      "observation": "Complete Tools page showed bridge .11 as latest immediately after first leg. The catalog discovery cache was still fresh; the controlled publication had just exposed .12. Repair is being made through actual Check again UI; no gate waiver.",
+      "repairOutcome": "Real Check again exposed .12, then revealed the distinct immutable .11 manual global-entry bug in attempt 2. Final fixture uses the genuine .11 automatic worker; cache/retry expiry occurs only through the owned Date.now Test Adapter."
+    },
+    {
+      "command": "pnpm test:release",
+      "attempt": 2,
+      "result": "failed",
+      "exitCode": 1,
+      "log": "/tmp/atape-v012-formal-release-2-failed.log",
+      "sha256": "d7ec6c68ead4d709f1ac3dcf306fbf73c15fcf71c6452e16f07e4a558abecb50",
+      "location": "verify-codex-clock-upgrade-terminal.py:104, genuine .11 manual console after selecting .12",
+      "observation": "The installed .11 CLI selected the .12 runtime, then attempted global npm entry replacement and reported failure on the deliberately forbidden global .12 install. This is a real limitation of the already published .11 manual menu. The .12 application Module is being repaired and formal .11 to .12 unattended acceptance uses the actual installed .11 automatic worker; .11 bytes are not modified."
+    },
+    {
+      "command": "repository-check",
+      "result": "passed-earlier-source",
+      "status": "passed",
+      "log": "/tmp/atape-v012-repository-check-before-manual-fix.log",
+      "sha256": "15042afe6c82665dda335b5139eba9c0f2647b2e1f415ffee8e7712650226a2a",
+      "scope": "Earlier working tree before the .12 v3 manual-entry policy fix; retained historical evidence, replaced by fresh final check."
+    },
+    {
+      "command": "production-build",
+      "result": "passed-earlier-source",
+      "status": "passed",
+      "log": "/tmp/atape-v012-production-build-before-manual-fix.log",
+      "sha256": "a84200429ab453a1630c6cb15587b45a4706ff7d52c23f4035f21e1242395ada",
+      "scope": "Earlier working tree before the .12 v3 manual-entry policy fix; retained historical evidence, replaced by fresh final check."
+    },
+    {
+      "command": "pnpm test:release",
+      "attempt": 3,
+      "result": "failed",
+      "exitCode": 1,
+      "log": "/tmp/atape-v012-formal-release-3-failed.log",
+      "sha256": "f1e290366a14252b64ed3f3b589d7d90d556872ca6225499c7d910359054e8b1",
+      "location": "verify-codex-clock-upgrade.mjs:410",
+      "observation": "All installed package contracts passed. The clock gate reached successful automatic target selection and pending cleanup, then rejected an npm trace containing --global. Checking whether this is a read-only root/prefix lookup; no failure waiver or success claim.",
+      "repairOutcome": "The npm Test Adapter permits only read-only root/prefix/config queries and exact isolated installs; its feature global install prohibition was unchanged. The overly broad assertion is now the same mutation-specific install-and-global predicate as the active-bridge gate, with exact retained bootstrap/manifest bytes still required.",
+      "repairEvidence": "/tmp/atape-v012-clock-npm-query-assertion-check.json",
+      "repairEvidenceSHA256": "89bd620c0405c0f7a1162efd5d28ef854dbb581aaf59e5e55290724e130426ef"
+    },
+    {
+      "command": "pnpm test:release",
+      "attempt": 4,
+      "result": "failed",
+      "exitCode": 1,
+      "log": "/tmp/atape-v012-formal-release-4-failed.log",
+      "sha256": "b2959c9258515aa9bf96c3f7e0c2aecd875b27b28128e0d88a0a1c8f22017618",
+      "location": "verify-codex-clock-upgrade.mjs:423",
+      "observation": "Genuine bridge automatic target selection, pending cleanup, retained entry identity and mutation-specific npm checks passed. The newly added at-least-one-journal-account receipt assertion failed. Source registration semantics and exact retained fixture facts are being investigated before changing coverage; no waiver.",
+      "repairOutcome": "Both current Codex and the historical Codex package use the LegacyCollector. Persistent actual state and source registration semantics confirm no SourceCapture journal registry or capture directory. The gate now asserts their absence before and after upgrade and exact empty inventory/accounts/progress, while retaining completed transaction/exact target ownership binding. Nonempty SourceCapture coverage belongs to the Claude-enabled active gate and separate installed journal migration contract.",
+      "repairEvidence": "/tmp/atape-v012-clock-empty-inventory-fix-check.json",
+      "repairEvidenceSHA256": "0c5c149ea7419c54352c021d5ca58d8e1e51bef3a629bd6833d9993f0fcc01af"
+    },
+    {
+      "command": "direct verifyCodexClockUpgrade against the exact current .12 archives and genuine public .9/.11",
+      "result": "failed-focused-diagnostic",
+      "log": "/tmp/atape-v012-clock-final-focused.log",
+      "sha256": "e13c19159360b05a9293f0563b6546cde33e002c8ba183905dd08ec66af1184b",
+      "location": "verify-codex-clock-upgrade.mjs:481",
+      "observation": "All actual target preparation, completed receipt/owner, empty inventory, replay, no-op, append and Stop/auto preference assertions passed. A final assertion incorrectly required a standalone bundle fetch even though catalog v3 embeds the exact complete bundle. The installed .11 worker made the required v3 catalog request. The assertion is being corrected to verify discovery and forbid feature legacy descriptors without requiring redundant IO.",
+      "repairOutcome": "Retained worker-bound catalog3 discovery and exact receipt/owner bundle identity; now explicitly forbids feature legacy descriptor requests instead of requiring redundant descriptor IO. Fresh independent clock and active fixtures both pass. Active directly verifies one genuine registered journal, with actual observed SQL8 retained as SQL8; separate installed migration contract verifies real controlled SQL7 to SQL8."
+    }
+  ],
+  "manualTargetOwnedCLI": {
+    "result": "passed",
+    "callerTests": 39,
+    "log": "atape-v012-target-manual-ui-evidence.json",
+    "sha256": "c9546d94ad61ddfc9e1cf8995e9458bb25d4525f25d5d8cfadd04a3d996773f4",
+    "scope": "Application caller Interface tests verify v3 manual complete-bundle preparation and activation without global entry replacement, Stop, same-version inspection, Adapter alignment and v1/v2 compatibility. These are not a claim that the immutable .11 manual menu succeeded."
+  },
+  "repositoryCheck": {
+    "cliPassed": 1151,
+    "cliSkipped": 2,
+    "applicationPassed": 490,
+    "browserScenariosPassed": 100,
+    "limits": "The Linux systemd parser case is platform-inapplicable on macOS; native macOS wake lifecycle is opt-in and was skipped. Required installed POSIX compatibility cases ran separately."
+  },
+  "postgresIntegration": {
+    "result": "passed",
+    "authenticationMaintenanceSeconds": 7.65,
+    "installedHTTPProviderCorpusSeconds": 655.429,
+    "scope": "Complete fresh .12 run with original production and test timing budgets, before the later CLIUpgrade/ToolUpdates manual-entry policy repair. Provider and Go source are unchanged by that repair; final exact-head CI still reruns the full integration suite. Historical .11 local failures remain in their original record."
+  },
+  "publishedBridge": {
+    "version": "0.5.11",
+    "result": "passed",
+    "log": "evidence.json",
+    "sha256": "fa262c49f4185b98d034085e9685df0c3841a48e9ff6602d94ae28d33ce3f8eb",
+    "pinsEvidence": {
+      "log": "published-bridge-pins.json",
+      "sha256": "77bace20b5216745d0baa218a48f41093f515f391befc87919209ff9bb824af6"
+    },
+    "scope": "Anonymous npm/GitHub/static public bytes verified against the frozen .11 archives; the eight retained SHA512 acquisition pins were separately checked from actual public response bodies."
+  },
+  "stoppedHistoricalClockTransition": {
+    "result": "passed",
+    "required": true,
+    "evidence": {
+      "baselineVersion": "0.5.9",
+      "releaseVersion": "0.5.12",
+      "releaseChannel": "target-owned",
+      "clockBridge": {
+        "baselineVersion": "0.5.9",
+        "baselineIntegrities": {
+          "@atape/cli": "sha512-w47H6TUqDg9bWLLKvYQ8J6jgMz0zT3MLs/wzKy9ZFCkkoM+2iReNUneYEeDM/YNHb3xzKP2pbrD1jdRcCQeehw==",
+          "@atape/adapter-codex": "sha512-caOzjllMYtbhyM4dU99AodrNrl48X63f3NedW09otADLyCiR5IpkpLMnNp6DOpLqiXvYVgOBs7Zha0O61RGlEw=="
+        },
+        "baselineEntrySha256": "30fa103b1b2dccd98c7e3f29ae1bcdb0e813f3face74e2718af0c41b7972c42a",
+        "candidateVersion": "0.5.11",
+        "candidateEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+        "candidateCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+        "candidateCodexIntegrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+        "candidateBundlePackages": [
+          {
+            "name": "@atape/cli",
+            "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+            "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-codex",
+            "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-claude",
+            "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-opencode",
+            "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-codebuddy",
+            "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-kimi",
+            "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-grok",
+            "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+          },
+          {
+            "name": "@atape/adapter-cursor",
+            "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+            "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+          }
+        ],
+        "genuineOldAutomaticRejectedBeforePause": true,
+        "genuineOldUIRejectedBeforePause": true,
+        "genuineOldCollectorCapturedProjection4": true,
+        "installedStoppedWholeBundleMenuCompleted": true,
+        "stopIntentPreserved": true,
+        "projectsAndToolsPreserved": true,
+        "credentialBytesPreserved": true,
+        "checkpointBytesPreservedAtSelection": true,
+        "rawReceiptsPreservedAcrossReplay": true,
+        "explicitNullReplayed": true,
+        "eventIDsPreserved": true,
+        "revisionsAdvanced": true,
+        "noOpContinuationPassed": true,
+        "appendedContinuationPassed": true,
+        "genuineOldAdapterRejectedProjection5": true,
+        "releaseChannel": "legacy-bridge",
+        "candidateCanonicalProfile": "atape.acp-centered.v3",
+        "candidateProjectionVersion": 5,
+        "installedCandidateDaemonCycles": 3,
+        "upgradeServerRelease": "0.5.12",
+        "upgradeServerMinimumCLI": "0.5.12",
+        "readerFloor": {
+          "minimumRuntimeVersion": "0.5.11",
+          "captureStateContract": "atape.client.v3-capture.v2"
+        },
+        "retainedRuntimeRollbackAfterNewCursor": "unsupported; recover forward with target runtime",
+        "providerCaptureTested": "constructed native-format source through genuine installed readers",
+        "realOSRegistrationTested": false,
+        "server": "owned HTTP Test Adapter for Canonical v2/v3/v4/v5 and Raw; Publication unavailable; no deployed Instance touched"
+      },
+      "feature": {
+        "version": "0.5.12",
+        "entrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+        "cliIntegrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+        "codexIntegrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+        "bundle": {
+          "protocol": "atape.release-bundle.v3",
+          "version": "0.5.12",
+          "captureStateContract": "atape.client.v3-capture.v2",
+          "updateControlProtocol": "atape.update-control.v1",
+          "updateTargetProtocol": "atape.update-target.v1",
+          "fromCaptureStateContracts": [
+            "atape.client.v3-capture.v1",
+            "atape.client.v3-capture.v2"
+          ],
+          "packages": [
+            {
+              "name": "@atape/cli",
+              "integrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+              "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-codex",
+              "integrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-claude",
+              "integrity": "sha512-lPviL9eCfRhWhHLmRy2oJOgxAe/tMVQ3Bkz6UcJK8ucStmxAT9Hw3TDdlPs7HI/tX3EbGmm4qGRL5tRMSt2o4Q==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-opencode",
+              "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-codebuddy",
+              "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-kimi",
+              "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-grok",
+              "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+            },
+            {
+              "name": "@atape/adapter-cursor",
+              "integrity": "sha512-uizSGMwP4DaNTMqZYAarVXNi6FVy+Sjn9vl75+6KLItXLUCdcr2awBRhqlx256SiIOYPcKAs+RSmdsMsqZDPTQ==",
+              "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+            }
+          ]
+        },
+        "actualInstalledBridgeAutomaticWorker": true,
+        "actualTargetPrepareAndActivate": true,
+        "captureMigrationReceiptVerified": true,
+        "emptyInventoryLegacyCodex": true,
+        "noNonEmptyJournalMigrationClaim": true,
+        "targetOwnerVerified": true,
+        "featureLegacyDescriptorsAdvertised": false,
+        "npmLatestRetainedBridge": true,
+        "globalBridgeBootstrapBytesPreserved": true,
+        "globalNpmInstalls": 0,
+        "globalNpmReadQueries": 6,
+        "automaticUpdatesExplicitlyEnabled": true,
+        "automaticUpdatesEnabledThroughReplay": true,
+        "automaticUpdatesExplicitlyDisabledAfterReplay": true,
+        "automaticUpdatesOffAtEnd": true,
+        "stopIntentPreserved": true,
+        "explicitNullReplayed": true,
+        "eventIDsPreserved": true,
+        "revisionsAdvanced": true,
+        "rawReceiptsPreservedAcrossReplay": true,
+        "installedNativeFileActivityReplayed": true,
+        "noOpContinuationPassed": true,
+        "appendedContinuationPassed": true,
+        "genuineOldAdapterRejectedProjection7": true,
+        "installedCandidateDaemonCycles": 3,
+        "readerFloor": {
+          "minimumRuntimeVersion": "0.5.12",
+          "captureStateContract": "atape.client.v3-capture.v2"
+        }
+      },
+      "fullChain": "passed-with-genuine-published-bridge-and-controlled-installed-candidate-artifacts",
+      "realOSRegistrationTested": false,
+      "server": "owned HTTP Test Adapter for Canonical v2/v3/v4/v5 and Raw; Publication unavailable; no deployed Instance touched"
+    },
+    "scope": "Genuine .9 stopped manual transition to the actual .11 bridge, followed by its genuine installed automatic worker to v3-only .12 in one disposable installation. The test explicitly enables auto for the second leg, verifies preservation, then explicitly disables it. Stop intent persists throughout. This does not make the historical .9 clock boundary automatic."
+  },
+  "installedAutomaticChain": {
+    "baselineVersion": "0.5.10",
+    "bridgeVersion": "0.5.11",
+    "featureVersion": "0.5.12",
+    "cases": [
+      {
+        "case": "full-chain",
+        "elapsedMilliseconds": 31150,
+        "required": true,
+        "result": "passed",
+        "evidence": {
+          "baselineVersion": "0.5.10",
+          "baselineIntegrities": {
+            "@atape/cli": "sha512-edQJ66nr0VMaKgxYaRDOCiSwJeueEVRTRtBQFk815skIPt7sBOR8ZCfFNhMhOHQ+nU/iY8BEsUxQHoO/LPSCJQ==",
+            "@atape/adapter-codex": "sha512-tgiD29qMmiH+3DlXtm94XOYBZlVT/N8uXTgX739r9FruGG0Xi4T4M705xbNmhpnrigH9KtzLmyEinEaVHMvfKA==",
+            "@atape/adapter-claude": "sha512-VDtK5uXgp2vSyhfqKNedpDxFa91R4nfJgrOXH2Hs0O16LhT7RS1dKxiFPhao1q3UReD31xHPnXQcmC8v4oUWYw=="
+          },
+          "baselineEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+          "bridgeVersion": "0.5.11",
+          "bridgeEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+          "bridgeCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+          "bridgeBundle": {
+            "protocol": "atape.release-bundle.v2",
+            "version": "0.5.11",
+            "captureStateContract": "atape.client.v3-capture.v2",
+            "updateControlProtocol": "atape.update-control.v1",
+            "migration": {
+              "protocol": "atape.capture-migration.v1",
+              "id": "journal-v7-to-v8",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ]
+            },
+            "packages": [
+              {
+                "name": "@atape/cli",
+                "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+                "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codex",
+                "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-claude",
+                "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-opencode",
+                "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codebuddy",
+                "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-kimi",
+                "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-grok",
+                "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-cursor",
+                "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+              }
+            ]
+          },
+          "actualPublishedOldAutomaticWorker": true,
+          "oldManifestDecoderAcceptedActualBridgePackages": true,
+          "activeCollectorContinued": true,
+          "wantedPreserved": true,
+          "bootstrapBytesPreservedAtFirstHandoff": true,
+          "globalBootstrapBytesPreserved": true,
+          "globalNPMPrefixReadOnly": true,
+          "automaticGlobalInstallForbidden": true,
+          "projectsAndToolsPreserved": true,
+          "credentialBytesPreserved": true,
+          "acknowledgedCaptureProgressPreserved": true,
+          "canonicalBridgeNoReplay": true,
+          "rawReceiptsPreserved": true,
+          "appendedContinuation": true,
+          "stopAndUpdatesOffPreserved": true,
+          "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+          "actualBaselineClaudeJournalRegistered": true,
+          "baselineJournalVersion": 8,
+          "fullChain": "passed-with-controlled-installed-candidate-artifacts",
+          "feature": {
+            "version": "0.5.12",
+            "entrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+            "cliIntegrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+            "bundle": {
+              "protocol": "atape.release-bundle.v3",
+              "version": "0.5.12",
+              "captureStateContract": "atape.client.v3-capture.v2",
+              "updateControlProtocol": "atape.update-control.v1",
+              "updateTargetProtocol": "atape.update-target.v1",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ],
+              "packages": [
+                {
+                  "name": "@atape/cli",
+                  "integrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codex",
+                  "integrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-claude",
+                  "integrity": "sha512-lPviL9eCfRhWhHLmRy2oJOgxAe/tMVQ3Bkz6UcJK8ucStmxAT9Hw3TDdlPs7HI/tX3EbGmm4qGRL5tRMSt2o4Q==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-opencode",
+                  "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codebuddy",
+                  "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-kimi",
+                  "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-grok",
+                  "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-cursor",
+                  "integrity": "sha512-uizSGMwP4DaNTMqZYAarVXNi6FVy+Sjn9vl75+6KLItXLUCdcr2awBRhqlx256SiIOYPcKAs+RSmdsMsqZDPTQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+                }
+              ]
+            },
+            "actualBridgeAutomaticWorker": true,
+            "actualTargetPrepareAndActivate": true,
+            "nonEmptyCaptureMigrationReceiptVerified": true,
+            "registeredCaptureAccountsVerified": 1,
+            "sourceJournalVersion": 8,
+            "targetJournalVersion": 8,
+            "targetOwnerVerified": true,
+            "nativeV5Replay": true,
+            "eventIDsPreserved": true,
+            "revisionsAdvanced": true,
+            "rawReceiptsPreservedAcrossReplay": true,
+            "nativeFileActivityReplayed": true,
+            "appendedContinuation": true,
+            "lateOfflineLegacyRoutesRetained": true,
+            "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+            "globalBootstrapBytesPreserved": true,
+            "serverUpgradedBeforeLegacyClient": true,
+            "serverVersionReadbacks": 6
+          },
+          "providerCaptureTested": "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",
+          "realOSRegistrationTested": false,
+          "rejectedReadOnlyManagerProbes": 0,
+          "server": "owned authenticated HTTP Test Adapter; no deployed Instance touched"
+        }
+      },
+      {
+        "case": "control-synced",
+        "elapsedMilliseconds": 34420,
+        "required": true,
+        "result": "passed",
+        "evidence": {
+          "baselineVersion": "0.5.10",
+          "baselineIntegrities": {
+            "@atape/cli": "sha512-edQJ66nr0VMaKgxYaRDOCiSwJeueEVRTRtBQFk815skIPt7sBOR8ZCfFNhMhOHQ+nU/iY8BEsUxQHoO/LPSCJQ==",
+            "@atape/adapter-codex": "sha512-tgiD29qMmiH+3DlXtm94XOYBZlVT/N8uXTgX739r9FruGG0Xi4T4M705xbNmhpnrigH9KtzLmyEinEaVHMvfKA==",
+            "@atape/adapter-claude": "sha512-VDtK5uXgp2vSyhfqKNedpDxFa91R4nfJgrOXH2Hs0O16LhT7RS1dKxiFPhao1q3UReD31xHPnXQcmC8v4oUWYw=="
+          },
+          "baselineEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+          "bridgeVersion": "0.5.11",
+          "bridgeEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+          "bridgeCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+          "bridgeBundle": {
+            "protocol": "atape.release-bundle.v2",
+            "version": "0.5.11",
+            "captureStateContract": "atape.client.v3-capture.v2",
+            "updateControlProtocol": "atape.update-control.v1",
+            "migration": {
+              "protocol": "atape.capture-migration.v1",
+              "id": "journal-v7-to-v8",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ]
+            },
+            "packages": [
+              {
+                "name": "@atape/cli",
+                "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+                "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codex",
+                "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-claude",
+                "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-opencode",
+                "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codebuddy",
+                "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-kimi",
+                "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-grok",
+                "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-cursor",
+                "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+              }
+            ]
+          },
+          "actualPublishedOldAutomaticWorker": true,
+          "oldManifestDecoderAcceptedActualBridgePackages": true,
+          "activeCollectorContinued": true,
+          "wantedPreserved": true,
+          "bootstrapBytesPreservedAtFirstHandoff": true,
+          "globalBootstrapBytesPreserved": true,
+          "globalNPMPrefixReadOnly": true,
+          "automaticGlobalInstallForbidden": true,
+          "projectsAndToolsPreserved": true,
+          "credentialBytesPreserved": true,
+          "acknowledgedCaptureProgressPreserved": true,
+          "canonicalBridgeNoReplay": true,
+          "rawReceiptsPreserved": true,
+          "appendedContinuation": true,
+          "stopAndUpdatesOffPreserved": true,
+          "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+          "actualBaselineClaudeJournalRegistered": true,
+          "baselineJournalVersion": 8,
+          "fullChain": "passed-with-controlled-installed-candidate-artifacts",
+          "feature": {
+            "version": "0.5.12",
+            "entrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+            "cliIntegrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+            "bundle": {
+              "protocol": "atape.release-bundle.v3",
+              "version": "0.5.12",
+              "captureStateContract": "atape.client.v3-capture.v2",
+              "updateControlProtocol": "atape.update-control.v1",
+              "updateTargetProtocol": "atape.update-target.v1",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ],
+              "packages": [
+                {
+                  "name": "@atape/cli",
+                  "integrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codex",
+                  "integrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-claude",
+                  "integrity": "sha512-lPviL9eCfRhWhHLmRy2oJOgxAe/tMVQ3Bkz6UcJK8ucStmxAT9Hw3TDdlPs7HI/tX3EbGmm4qGRL5tRMSt2o4Q==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-opencode",
+                  "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codebuddy",
+                  "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-kimi",
+                  "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-grok",
+                  "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-cursor",
+                  "integrity": "sha512-uizSGMwP4DaNTMqZYAarVXNi6FVy+Sjn9vl75+6KLItXLUCdcr2awBRhqlx256SiIOYPcKAs+RSmdsMsqZDPTQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+                }
+              ]
+            },
+            "actualBridgeAutomaticWorker": true,
+            "actualTargetPrepareAndActivate": true,
+            "nonEmptyCaptureMigrationReceiptVerified": true,
+            "registeredCaptureAccountsVerified": 1,
+            "sourceJournalVersion": 8,
+            "targetJournalVersion": 8,
+            "targetOwnerVerified": true,
+            "nativeV5Replay": true,
+            "eventIDsPreserved": true,
+            "revisionsAdvanced": true,
+            "rawReceiptsPreservedAcrossReplay": true,
+            "nativeFileActivityReplayed": true,
+            "appendedContinuation": true,
+            "lateOfflineLegacyRoutesRetained": true,
+            "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+            "globalBootstrapBytesPreserved": true,
+            "serverUpgradedBeforeLegacyClient": true,
+            "serverVersionReadbacks": 6,
+            "recovery": {
+              "point": "control-synced",
+              "actualTargetEntrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+              "actualParentSIGKILL": true,
+              "actualOrphanSIGKILL": true,
+              "actualOldPublicBootstrapRecovery": true,
+              "completedControlThroughout": true
+            }
+          },
+          "providerCaptureTested": "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",
+          "realOSRegistrationTested": false,
+          "rejectedReadOnlyManagerProbes": 1,
+          "server": "owned authenticated HTTP Test Adapter; no deployed Instance touched"
+        }
+      },
+      {
+        "case": "first-private-ledger",
+        "elapsedMilliseconds": 31464,
+        "required": true,
+        "result": "passed",
+        "evidence": {
+          "baselineVersion": "0.5.10",
+          "baselineIntegrities": {
+            "@atape/cli": "sha512-edQJ66nr0VMaKgxYaRDOCiSwJeueEVRTRtBQFk815skIPt7sBOR8ZCfFNhMhOHQ+nU/iY8BEsUxQHoO/LPSCJQ==",
+            "@atape/adapter-codex": "sha512-tgiD29qMmiH+3DlXtm94XOYBZlVT/N8uXTgX739r9FruGG0Xi4T4M705xbNmhpnrigH9KtzLmyEinEaVHMvfKA==",
+            "@atape/adapter-claude": "sha512-VDtK5uXgp2vSyhfqKNedpDxFa91R4nfJgrOXH2Hs0O16LhT7RS1dKxiFPhao1q3UReD31xHPnXQcmC8v4oUWYw=="
+          },
+          "baselineEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+          "bridgeVersion": "0.5.11",
+          "bridgeEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+          "bridgeCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+          "bridgeBundle": {
+            "protocol": "atape.release-bundle.v2",
+            "version": "0.5.11",
+            "captureStateContract": "atape.client.v3-capture.v2",
+            "updateControlProtocol": "atape.update-control.v1",
+            "migration": {
+              "protocol": "atape.capture-migration.v1",
+              "id": "journal-v7-to-v8",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ]
+            },
+            "packages": [
+              {
+                "name": "@atape/cli",
+                "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+                "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codex",
+                "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-claude",
+                "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-opencode",
+                "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codebuddy",
+                "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-kimi",
+                "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-grok",
+                "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-cursor",
+                "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+              }
+            ]
+          },
+          "actualPublishedOldAutomaticWorker": true,
+          "oldManifestDecoderAcceptedActualBridgePackages": true,
+          "activeCollectorContinued": true,
+          "wantedPreserved": true,
+          "bootstrapBytesPreservedAtFirstHandoff": true,
+          "globalBootstrapBytesPreserved": true,
+          "globalNPMPrefixReadOnly": true,
+          "automaticGlobalInstallForbidden": true,
+          "projectsAndToolsPreserved": true,
+          "credentialBytesPreserved": true,
+          "acknowledgedCaptureProgressPreserved": true,
+          "canonicalBridgeNoReplay": true,
+          "rawReceiptsPreserved": true,
+          "appendedContinuation": true,
+          "stopAndUpdatesOffPreserved": true,
+          "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+          "actualBaselineClaudeJournalRegistered": true,
+          "baselineJournalVersion": 8,
+          "fullChain": "passed-with-controlled-installed-candidate-artifacts",
+          "feature": {
+            "version": "0.5.12",
+            "entrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+            "cliIntegrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+            "bundle": {
+              "protocol": "atape.release-bundle.v3",
+              "version": "0.5.12",
+              "captureStateContract": "atape.client.v3-capture.v2",
+              "updateControlProtocol": "atape.update-control.v1",
+              "updateTargetProtocol": "atape.update-target.v1",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ],
+              "packages": [
+                {
+                  "name": "@atape/cli",
+                  "integrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codex",
+                  "integrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-claude",
+                  "integrity": "sha512-lPviL9eCfRhWhHLmRy2oJOgxAe/tMVQ3Bkz6UcJK8ucStmxAT9Hw3TDdlPs7HI/tX3EbGmm4qGRL5tRMSt2o4Q==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-opencode",
+                  "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codebuddy",
+                  "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-kimi",
+                  "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-grok",
+                  "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-cursor",
+                  "integrity": "sha512-uizSGMwP4DaNTMqZYAarVXNi6FVy+Sjn9vl75+6KLItXLUCdcr2awBRhqlx256SiIOYPcKAs+RSmdsMsqZDPTQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+                }
+              ]
+            },
+            "actualBridgeAutomaticWorker": true,
+            "actualTargetPrepareAndActivate": true,
+            "nonEmptyCaptureMigrationReceiptVerified": true,
+            "registeredCaptureAccountsVerified": 1,
+            "sourceJournalVersion": 8,
+            "targetJournalVersion": 8,
+            "targetOwnerVerified": true,
+            "nativeV5Replay": true,
+            "eventIDsPreserved": true,
+            "revisionsAdvanced": true,
+            "rawReceiptsPreservedAcrossReplay": true,
+            "nativeFileActivityReplayed": true,
+            "appendedContinuation": true,
+            "lateOfflineLegacyRoutesRetained": true,
+            "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+            "globalBootstrapBytesPreserved": true,
+            "serverUpgradedBeforeLegacyClient": true,
+            "serverVersionReadbacks": 6,
+            "recovery": {
+              "point": "first-private-ledger",
+              "actualTargetEntrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+              "actualParentSIGKILL": true,
+              "actualOrphanSIGKILL": true,
+              "actualOldPublicBootstrapRecovery": true,
+              "completedControlThroughout": true
+            }
+          },
+          "providerCaptureTested": "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",
+          "realOSRegistrationTested": false,
+          "rejectedReadOnlyManagerProbes": 1,
+          "server": "owned authenticated HTTP Test Adapter; no deployed Instance touched"
+        }
+      },
+      {
+        "case": "before-readiness",
+        "elapsedMilliseconds": 32182,
+        "required": true,
+        "result": "passed",
+        "evidence": {
+          "baselineVersion": "0.5.10",
+          "baselineIntegrities": {
+            "@atape/cli": "sha512-edQJ66nr0VMaKgxYaRDOCiSwJeueEVRTRtBQFk815skIPt7sBOR8ZCfFNhMhOHQ+nU/iY8BEsUxQHoO/LPSCJQ==",
+            "@atape/adapter-codex": "sha512-tgiD29qMmiH+3DlXtm94XOYBZlVT/N8uXTgX739r9FruGG0Xi4T4M705xbNmhpnrigH9KtzLmyEinEaVHMvfKA==",
+            "@atape/adapter-claude": "sha512-VDtK5uXgp2vSyhfqKNedpDxFa91R4nfJgrOXH2Hs0O16LhT7RS1dKxiFPhao1q3UReD31xHPnXQcmC8v4oUWYw=="
+          },
+          "baselineEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+          "bridgeVersion": "0.5.11",
+          "bridgeEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+          "bridgeCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+          "bridgeBundle": {
+            "protocol": "atape.release-bundle.v2",
+            "version": "0.5.11",
+            "captureStateContract": "atape.client.v3-capture.v2",
+            "updateControlProtocol": "atape.update-control.v1",
+            "migration": {
+              "protocol": "atape.capture-migration.v1",
+              "id": "journal-v7-to-v8",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ]
+            },
+            "packages": [
+              {
+                "name": "@atape/cli",
+                "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+                "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codex",
+                "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-claude",
+                "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-opencode",
+                "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codebuddy",
+                "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-kimi",
+                "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-grok",
+                "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-cursor",
+                "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+              }
+            ]
+          },
+          "actualPublishedOldAutomaticWorker": true,
+          "oldManifestDecoderAcceptedActualBridgePackages": true,
+          "activeCollectorContinued": true,
+          "wantedPreserved": true,
+          "bootstrapBytesPreservedAtFirstHandoff": true,
+          "globalBootstrapBytesPreserved": true,
+          "globalNPMPrefixReadOnly": true,
+          "automaticGlobalInstallForbidden": true,
+          "projectsAndToolsPreserved": true,
+          "credentialBytesPreserved": true,
+          "acknowledgedCaptureProgressPreserved": true,
+          "canonicalBridgeNoReplay": true,
+          "rawReceiptsPreserved": true,
+          "appendedContinuation": true,
+          "stopAndUpdatesOffPreserved": true,
+          "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+          "actualBaselineClaudeJournalRegistered": true,
+          "baselineJournalVersion": 8,
+          "fullChain": "passed-with-controlled-installed-candidate-artifacts",
+          "feature": {
+            "version": "0.5.12",
+            "entrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+            "cliIntegrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+            "bundle": {
+              "protocol": "atape.release-bundle.v3",
+              "version": "0.5.12",
+              "captureStateContract": "atape.client.v3-capture.v2",
+              "updateControlProtocol": "atape.update-control.v1",
+              "updateTargetProtocol": "atape.update-target.v1",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ],
+              "packages": [
+                {
+                  "name": "@atape/cli",
+                  "integrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codex",
+                  "integrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-claude",
+                  "integrity": "sha512-lPviL9eCfRhWhHLmRy2oJOgxAe/tMVQ3Bkz6UcJK8ucStmxAT9Hw3TDdlPs7HI/tX3EbGmm4qGRL5tRMSt2o4Q==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-opencode",
+                  "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codebuddy",
+                  "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-kimi",
+                  "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-grok",
+                  "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-cursor",
+                  "integrity": "sha512-uizSGMwP4DaNTMqZYAarVXNi6FVy+Sjn9vl75+6KLItXLUCdcr2awBRhqlx256SiIOYPcKAs+RSmdsMsqZDPTQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+                }
+              ]
+            },
+            "actualBridgeAutomaticWorker": true,
+            "actualTargetPrepareAndActivate": true,
+            "nonEmptyCaptureMigrationReceiptVerified": true,
+            "registeredCaptureAccountsVerified": 1,
+            "sourceJournalVersion": 8,
+            "targetJournalVersion": 8,
+            "targetOwnerVerified": true,
+            "nativeV5Replay": true,
+            "eventIDsPreserved": true,
+            "revisionsAdvanced": true,
+            "rawReceiptsPreservedAcrossReplay": true,
+            "nativeFileActivityReplayed": true,
+            "appendedContinuation": true,
+            "lateOfflineLegacyRoutesRetained": true,
+            "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+            "globalBootstrapBytesPreserved": true,
+            "serverUpgradedBeforeLegacyClient": true,
+            "serverVersionReadbacks": 6,
+            "recovery": {
+              "point": "before-readiness",
+              "actualTargetEntrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+              "actualParentSIGKILL": true,
+              "actualOrphanSIGKILL": true,
+              "actualOldPublicBootstrapRecovery": true,
+              "completedControlThroughout": true
+            }
+          },
+          "providerCaptureTested": "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",
+          "realOSRegistrationTested": false,
+          "rejectedReadOnlyManagerProbes": 1,
+          "server": "owned authenticated HTTP Test Adapter; no deployed Instance touched"
+        }
+      },
+      {
+        "case": "orphan-apply",
+        "elapsedMilliseconds": 43776,
+        "required": true,
+        "result": "passed",
+        "evidence": {
+          "baselineVersion": "0.5.10",
+          "baselineIntegrities": {
+            "@atape/cli": "sha512-edQJ66nr0VMaKgxYaRDOCiSwJeueEVRTRtBQFk815skIPt7sBOR8ZCfFNhMhOHQ+nU/iY8BEsUxQHoO/LPSCJQ==",
+            "@atape/adapter-codex": "sha512-tgiD29qMmiH+3DlXtm94XOYBZlVT/N8uXTgX739r9FruGG0Xi4T4M705xbNmhpnrigH9KtzLmyEinEaVHMvfKA==",
+            "@atape/adapter-claude": "sha512-VDtK5uXgp2vSyhfqKNedpDxFa91R4nfJgrOXH2Hs0O16LhT7RS1dKxiFPhao1q3UReD31xHPnXQcmC8v4oUWYw=="
+          },
+          "baselineEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+          "bridgeVersion": "0.5.11",
+          "bridgeEntrySha256": "c1fe6589fc5a04a3dbcfca6d1dbe4cdd64c9736551d3aa7a385470a987bae4f7",
+          "bridgeCLIIntegrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+          "bridgeBundle": {
+            "protocol": "atape.release-bundle.v2",
+            "version": "0.5.11",
+            "captureStateContract": "atape.client.v3-capture.v2",
+            "updateControlProtocol": "atape.update-control.v1",
+            "migration": {
+              "protocol": "atape.capture-migration.v1",
+              "id": "journal-v7-to-v8",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ]
+            },
+            "packages": [
+              {
+                "name": "@atape/cli",
+                "integrity": "sha512-SYZQnSmI9QSKnzEWumIIE22saB919cA2ebGJzCGfnaI4lDLiGLA4rW9c605464B7SBhNfY8zUV0C6Gvsj2rCZA==",
+                "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codex",
+                "integrity": "sha512-b3h4/RBl8GbNUN/M2IxkjnV/IujJqOLl1z99C9w6mzP499fENSU08SQbjXRmEephe05J92JmcfkPZEcd6wlLDw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-claude",
+                "integrity": "sha512-fgkgFrNltDa6+Vq/0+SE4xmqvCyPL1SdYgP0KIDu/uas2Oz5OyLly/562zzMkfKfymuFCZUGALqzMMbQ8BLw9Q==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-opencode",
+                "integrity": "sha512-WD05HLDZyZg+24SAm9MAjk0Ob+tMoyuzI5Kk/teESNzWNX5aN7X8sCLAcls7NyaQg4uOmRfWAkclvKAR5CW4YQ==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-codebuddy",
+                "integrity": "sha512-3BbggtxinR210yLzqk1GKaRxbT1aWnnv9Xe6/NWDvzkBh5lWnawva6azCGeF9gKjr7UjZgEUKxihzRgQ9eBqKA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-kimi",
+                "integrity": "sha512-y8iAqWqBT+I2E22ofgjVgATIFE9GrMGkCbpSpNw8UwtDx13GyUkijb0YmktcB0sQ7TWr8gmThL9wWeuLlKXacA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-grok",
+                "integrity": "sha512-sKY39aSPOt55XWtHZ6jrLZvcukIMdtfdfjqv+c0p3G1L6EqMZD6ai9mHigy1xcms17Xp/tB5BShPWrvw/PNICw==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.11.tgz"
+              },
+              {
+                "name": "@atape/adapter-cursor",
+                "integrity": "sha512-Ggc3vy7laTb2imRSjK6YvbLqKkSbF1Yl7I5v+yI5BxuwzBe4t8DnQg3Yqn9zs2oQi7X9SsxH7HhyrBqy2UAfSA==",
+                "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.11.tgz"
+              }
+            ]
+          },
+          "actualPublishedOldAutomaticWorker": true,
+          "oldManifestDecoderAcceptedActualBridgePackages": true,
+          "activeCollectorContinued": true,
+          "wantedPreserved": true,
+          "bootstrapBytesPreservedAtFirstHandoff": true,
+          "globalBootstrapBytesPreserved": true,
+          "globalNPMPrefixReadOnly": true,
+          "automaticGlobalInstallForbidden": true,
+          "projectsAndToolsPreserved": true,
+          "credentialBytesPreserved": true,
+          "acknowledgedCaptureProgressPreserved": true,
+          "canonicalBridgeNoReplay": true,
+          "rawReceiptsPreserved": true,
+          "appendedContinuation": true,
+          "stopAndUpdatesOffPreserved": true,
+          "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+          "actualBaselineClaudeJournalRegistered": true,
+          "baselineJournalVersion": 8,
+          "fullChain": "passed-with-controlled-installed-candidate-artifacts",
+          "feature": {
+            "version": "0.5.12",
+            "entrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+            "cliIntegrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+            "bundle": {
+              "protocol": "atape.release-bundle.v3",
+              "version": "0.5.12",
+              "captureStateContract": "atape.client.v3-capture.v2",
+              "updateControlProtocol": "atape.update-control.v1",
+              "updateTargetProtocol": "atape.update-target.v1",
+              "fromCaptureStateContracts": [
+                "atape.client.v3-capture.v1",
+                "atape.client.v3-capture.v2"
+              ],
+              "packages": [
+                {
+                  "name": "@atape/cli",
+                  "integrity": "sha512-jAn1iUKbt+eUOgiYN41fEyrFBlLroaWytsJG2+BAguvBUuU+t/En/jqfaYq3CIuz4lAeib1+ht7Zpom586weCQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/cli/-/cli-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codex",
+                  "integrity": "sha512-s9lJPBMZMMyojIhg0wkGDoICarfMLwrxugdQV/r0qzCz4Zy9lyYVKMiUL939TaB0lij9OX8Zr49DuDDyxVO9WQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codex/-/adapter-codex-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-claude",
+                  "integrity": "sha512-lPviL9eCfRhWhHLmRy2oJOgxAe/tMVQ3Bkz6UcJK8ucStmxAT9Hw3TDdlPs7HI/tX3EbGmm4qGRL5tRMSt2o4Q==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-claude/-/adapter-claude-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-opencode",
+                  "integrity": "sha512-g6ZbiMuzR/4tmuhGfP+w6420+u57K/k6Sap99OPdS1M9wjWhTEQVuQ9f05UnSwqxqazY9xqaQMycWumuNesxRQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-opencode/-/adapter-opencode-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-codebuddy",
+                  "integrity": "sha512-b8woaxKsz9fqok8tqntCiHi3FaKugV7oW99zOSItXLO5uncAoN9vGAy/NWuotJH2kAmvZ30W7DZtKAptiEOREg==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-codebuddy/-/adapter-codebuddy-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-kimi",
+                  "integrity": "sha512-sysne93OUKTvMpWkcXaVdyfZoTK6GqHHFwFAb5jjFjXtUQ1sH0qoVJZBZxZjf2ZLIKEuz7GZSTOxqJ1Vg+DG/w==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-kimi/-/adapter-kimi-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-grok",
+                  "integrity": "sha512-adVnbre65Ed6IdWNk3riiVeIMx9B9WaHjT4tNcpv0Owah5/3zHuWbcN73wNqAf+fX6wMq0bbQY3+4hDKuVhcjA==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-grok/-/adapter-grok-0.5.12.tgz"
+                },
+                {
+                  "name": "@atape/adapter-cursor",
+                  "integrity": "sha512-uizSGMwP4DaNTMqZYAarVXNi6FVy+Sjn9vl75+6KLItXLUCdcr2awBRhqlx256SiIOYPcKAs+RSmdsMsqZDPTQ==",
+                  "tarball": "https://registry.npmjs.org/@atape/adapter-cursor/-/adapter-cursor-0.5.12.tgz"
+                }
+              ]
+            },
+            "actualBridgeAutomaticWorker": true,
+            "actualTargetPrepareAndActivate": true,
+            "nonEmptyCaptureMigrationReceiptVerified": true,
+            "registeredCaptureAccountsVerified": 1,
+            "sourceJournalVersion": 8,
+            "targetJournalVersion": 8,
+            "targetOwnerVerified": true,
+            "nativeV5Replay": true,
+            "eventIDsPreserved": true,
+            "revisionsAdvanced": true,
+            "rawReceiptsPreservedAcrossReplay": true,
+            "nativeFileActivityReplayed": true,
+            "appendedContinuation": true,
+            "lateOfflineLegacyRoutesRetained": true,
+            "retainedOldBootstrapRejectedUnknownCaptureLedger": true,
+            "globalBootstrapBytesPreserved": true,
+            "serverUpgradedBeforeLegacyClient": true,
+            "serverVersionReadbacks": 6,
+            "recovery": {
+              "point": "orphan-apply",
+              "actualTargetEntrySha256": "dba6d87cc0fc533fb6e97806108bf05b705598ecbbba51a99bdd76db115b0483",
+              "actualParentSIGKILL": true,
+              "actualOrphanSIGKILL": true,
+              "actualOldPublicBootstrapRecovery": true,
+              "completedControlThroughout": true,
+              "queuedOldWorker": {
+                "actualEntrySha256": "a1c8ca45d6b338e312b3bb7fe3a40126166d9208278d04a9d3b460537c8f656d",
+                "attemptSuperseded": true,
+                "orphanApplyExclusionPreserved": true,
+                "exit": 1
+              },
+              "stopPreservedAcrossRecovery": true
+            }
+          },
+          "providerCaptureTested": "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",
+          "realOSRegistrationTested": false,
+          "rejectedReadOnlyManagerProbes": 2,
+          "server": "owned authenticated HTTP Test Adapter; no deployed Instance touched"
+        }
+      }
+    ],
+    "scope": "All five independent cases use actual installed immutable npm .10/.11 and final checksummed .12 packages. The HTTP Test Adapter advertises Server/minimum CLI .12 from the first old-client connection. Genuine old global entry and read-only prefix are preserved. Each case directly binds a nonempty genuine Claude SourceCapture journal inventory to the completed target receipt and owner; the observed source and final formats are recorded, without assuming a 7-to-8 conversion. The separate untouched installed candidate contract exercises real controlled SQL7-to-SQL8 migration. Controlled native source and external HTTP/OS Test Adapters do not establish live Provider or OS registration acceptance."
+  },
+  "artifacts": [
+    {
+      "filename": "atape-adapter-claude-0.5.12.tgz",
+      "bytes": 159945,
+      "sha256": "044e331e0301987b9b0e146824f4e87a311a65b5b071cb6226eb6780af7e5f28"
+    },
+    {
+      "filename": "atape-adapter-codebuddy-0.5.12.tgz",
+      "bytes": 153108,
+      "sha256": "c1e5739bd1d25383caae7abadae6f52f1dbec2cc39388b1130072eaa3e76879b"
+    },
+    {
+      "filename": "atape-adapter-codex-0.5.12.tgz",
+      "bytes": 161307,
+      "sha256": "f603d1fe55ccfd0c62e3f03dfa2c7e2e193224ebdba435f38a715f8cb9e29f98"
+    },
+    {
+      "filename": "atape-adapter-cursor-0.5.12.tgz",
+      "bytes": 151178,
+      "sha256": "b57f0edb11a91b249e806ec847859cecb7b0b842bc49348b28bd7464073ad62f"
+    },
+    {
+      "filename": "atape-adapter-grok-0.5.12.tgz",
+      "bytes": 147232,
+      "sha256": "930a84ebd0b65a6ebb144cfa20db6819ee0644350368fa3de867e61dd05e4241"
+    },
+    {
+      "filename": "atape-adapter-kimi-0.5.12.tgz",
+      "bytes": 151242,
+      "sha256": "63c562338da351de480d3a75cf98c3706a837c767cf700d790652f37aeb690d3"
+    },
+    {
+      "filename": "atape-adapter-opencode-0.5.12.tgz",
+      "bytes": 150792,
+      "sha256": "edbdfee9ab28419a643e55711f5ea10bf790e865e29d7576ed948ac5e244cbdf"
+    },
+    {
+      "filename": "atape-cli-0.5.12.tgz",
+      "bytes": 734778,
+      "sha256": "fb4e4995cb8c69b7ae13a5b9816dca6b77595c5b68a349297168c57cf41a1f33"
+    }
+  ],
+  "checksums": {
+    "filename": "SHA256SUMS",
+    "sha256": "02c2e7ff2867c2f91edd2d8baa3052d9dfdc5bc9aa640e55b529cc52c05bab8d"
+  },
+  "manualStaging": {
+    "status": "pending",
+    "unverifiedChecks": [
+      "candidate-artifacts",
+      "official-topology",
+      "github-provider-staging-smoke",
+      "official-domain-egress-deny-smoke",
+      "two-user-two-team",
+      "waf-tls-callback",
+      "backup-restore",
+      "observability-secret-sample",
+      "rollback",
+      "release-signoff"
+    ],
+    "authorization": "The explicit 2026-10-12 Asia/Singapore npm publication request authorizes the candidate-bound manual-only waiver under ADR-0048. No automated gate is waived."
+  },
+  "limits": [
+    "Native Windows automatic update lifecycle has not been executed. Its native-only acquisition caller test is explicitly skipped on this macOS host; required POSIX cases cannot skip.",
+    "Live Claude/Cursor sessions, real GitHub OAuth, native login/wake registration and complete manual staging are unverified.",
+    "Missing source history cannot be reconstructed. File facts remain bounded explicit recorded evidence; search scope and failed edits are not successful filesystem changes.",
+    "Byte identity and decoded provenance content do not establish independent cryptographic signature verification.",
+    "Publication, production ARM image/security checks, matched backup/snapshot and Server deployment are separate subsequent actions.",
+    "Existing discovery cache and 24–30 hour automatic checks mean publication does not prove immediate client uptake.",
+    "Canonical/publication v5 creates a durable format boundary even with unchanged SQL24; image-only downgrade to a pre-v5 Server is unsafe after v5 writes."
+  ]
+}
