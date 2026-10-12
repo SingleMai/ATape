@@ -262,6 +262,9 @@ func normalizeBatch(principal authentication.Principal, batch Batch) (canonical.
 			if tool.Meta != nil && tool.Meta.Identity != nil && tool.Meta.Identity.Type == "tool" && batch.CanonicalProfileVersion != StableToolCanonicalProfileVersion {
 				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "ordinary tool identity requires the v5 profile")
 			}
+			if tool.Meta != nil && tool.Meta.FileActivity != nil && batch.CanonicalProfileVersion != StableToolCanonicalProfileVersion {
+				return canonical.WriteBatch{}, invalid(field+".toolUpdateJson", "file activity requires the v5 profile")
+			}
 			kind, text, label := tool.Summary()
 			if input.Kind != kind && !(input.Kind == "spawn" && input.ChildSourceThreadID != nil) {
 				return canonical.WriteBatch{}, invalid(field+".kind", "does not match the tool update")

@@ -62,7 +62,7 @@ export async function verifyCodexClockUpgrade(releaseDirectory, fixtureDirectory
   }
   const candidateProfile = publicPackages["@atape/adapter-codex"].manifest.atapeAdapter.legacyCanonicalProfile
   assert.ok(["atape.acp-centered.v3", "atape.acp-centered.v5"].includes(candidateProfile), "Clock transition requires an explicitly admitted nullable-clock profile")
-  const candidateProjection = candidateProfile === "atape.acp-centered.v5" ? 6 : 5
+  const candidateProjection = candidateProfile === "atape.acp-centered.v5" ? 7 : 5
   const cliManifest = publicPackages["@atape/cli"].manifest
   const bundle = { protocol: "atape.release-bundle.v2", version, captureStateContract: cliManifest.atapeRuntime.stateContract,
     updateControlProtocol: cliManifest.atapeRuntime.updateControlProtocol, migration: cliManifest.atapeRuntime.captureMigration,
@@ -191,7 +191,10 @@ else if(args[0]==="install") {
   await writeFile(source,lines([{timestamp:"2026-10-11T00:00:00Z",type:"session_meta",payload:{id:"clock-session",session_id:"clock-session",timestamp:"2026-10-11T00:00:00Z",cwd:join(root,"workspace"),source:{},git:{}}},
     item("clock-user","UserMessage","A source input with a recorded clock","2026-10-11T00:00:01Z"),
     item("clock-unknown","AgentMessage","A source answer without a valid clock","invalid-source-clock"),
-    item("clock-answer","AgentMessage","A later recorded answer","2026-10-11T00:00:02Z")]))
+    item("clock-answer","AgentMessage","A later recorded answer","2026-10-11T00:00:02Z"),
+    { timestamp: "2026-10-11T00:00:02Z", type: "event_msg", payload: { type: "item_completed", thread_id: "clock-session",
+      item: { id: "clock-files", type: "CommandExecution", command: "cat src/main.ts && rg needle src", exit_code: 0,
+        parsed_cmd: [{ type: "read", path: "src/main.ts" }, { type: "search", path: "src" }] } } }]))
   for (const file of [environment.npm_config_userconfig,environment.npm_config_globalconfig]) await writeFile(file,"",{mode:0o600})
   const npm = args => execute(realNpm,args,{cwd:root,env:{...environment,PATH:process.env.PATH,NODE_OPTIONS:""},encoding:"utf8",timeout:120_000,maxBuffer:4*1024*1024})
   await npm(["install","--global","--prefix",prefix,baselineCLI,"--offline","--ignore-scripts","--no-audit","--no-fund"])
@@ -229,7 +232,7 @@ else if(args[0]==="install") {
     assert.equal(JSON.parse(Buffer.from(status.state.checkpoint.cursor,"base64url").toString("utf8")).eventProjectionVersion,4)
     assert.equal(status.state.checkpoint.rawObjects.length,1); assert.ok(status.state.checkpoint.rawObjects[0].serverOffset>0)
     const oldEvents=(await captured(captures)).flatMap(batch=>batch.events)
-    assert.equal(oldEvents.length,3); assert.equal(oldEvents.find(event=>event.sourceEventId==="clock-unknown").occurredAt,"1970-01-01T00:00:00.000Z")
+    assert.equal(oldEvents.length,4); assert.equal(oldEvents.find(event=>event.sourceEventId==="clock-unknown").occurredAt,"1970-01-01T00:00:00.000Z")
     assert.ok((await captured(captures)).every(batch=>batch.canonicalProfileVersion==="atape.acp-centered.v2"))
     // Match the deployed release/minimum metadata for every upgrade action;
     // lower historical metadata applies only while seeding the real old capture.
@@ -278,6 +281,13 @@ else if(args[0]==="install") {
     assert.deepEqual(new Set(newEvents.map(event=>event.sourceEventId)),new Set(oldEvents.map(event=>event.sourceEventId)))
     for(const event of newEvents){assert.equal(event.projectionRevision,candidateProjection);assert.ok(event.revision>oldEvents.find(old=>old.sourceEventId===event.sourceEventId).revision)}
     assert.equal(newEvents.find(event=>event.sourceEventId==="clock-unknown").occurredAt,null)
+    if (candidateProjection >= 7) {
+      const files = newEvents.filter(event => event.toolUpdateJson).map(event => JSON.parse(event.toolUpdateJson))
+        .find(update => update.toolCallId === "clock-files")
+      assert.ok(files, "Installed replay must preserve the native file call")
+      assert.deepEqual(files._meta["atape.dev/file-activity"], [{ operation: "read", path: "src/main.ts" }, { operation: "search", path: "src" }])
+      assert.deepEqual(files.rawInput, { parsed_cmd: [{ type: "read", path: "src/main.ts" }, { type: "search", path: "src" }] })
+    }
     assert.equal(corrected[0].session.updatedAt,"2026-10-11T00:00:02Z")
     assert.deepEqual(replay.state.checkpoint.rawObjects,oldRawObjects);assert.deepEqual(await readFile(rawCaptures),rawBefore)
     assert.equal(JSON.parse(Buffer.from(replay.state.checkpoint.cursor,"base64url").toString("utf8")).eventProjectionVersion,candidateProjection)
@@ -310,6 +320,7 @@ else if(args[0]==="install") {
       checkpointBytesPreservedAtSelection:true,rawReceiptsPreservedAcrossReplay:true,explicitNullReplayed:true,eventIDsPreserved:true,
       revisionsAdvanced:true,noOpContinuationPassed:true,appendedContinuationPassed:true,[`genuineOldAdapterRejectedProjection${candidateProjection}`]:true,
       candidateCanonicalProfile:candidateProfile,candidateProjectionVersion:candidateProjection,
+      ...(candidateProjection >= 7 ? { installedNativeFileActivityReplayed: true } : {}),
       installedCandidateDaemonCycles:3,upgradeServerRelease:version,upgradeServerMinimumCLI:version,
       readerFloor:control.floor,retainedRuntimeRollbackAfterNewCursor:"unsupported; recover forward with target runtime",
       providerCaptureTested:"constructed native-format source through genuine installed readers",realOSRegistrationTested:false,

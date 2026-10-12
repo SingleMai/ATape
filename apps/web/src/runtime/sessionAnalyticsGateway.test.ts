@@ -1,7 +1,7 @@
 import { readSessionAnalytics } from "@atape/application"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, stableToolsFixture } from "../../test/sessionAnalyticsFixture"
+import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, fileActivityFixture, sourceFileKey, stableToolsFixture } from "../../test/sessionAnalyticsFixture"
 import { BrowserSessionAnalyticsGatewayLayer } from "./sessionAnalyticsGateway"
 
 const run = <A, E>(effect: Effect.Effect<A, E, import("@atape/application").SessionAnalyticsGateway>) =>
@@ -60,6 +60,32 @@ describe("Session analytics browser Adapter", () => {
     const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
     expect(url.searchParams.get("tool")).toBe(executeToolKey)
     expect(url.searchParams.get("tool")).not.toBe("Run pnpm check")
+  })
+  it("encodes the AND-bound file key and operation with snapshot, Thread and continuation", async () => {
+    const report = { ...fileActivityFixture, activity: { ...fileActivityFixture.activity, scopeThreadId: "child/one" } }
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(report)))
+    vi.stubGlobal("fetch", fetchMock)
+    const query = { metric: "files" as const, file: sourceFileKey, operation: "edit" as const,
+      snapshot: "snapshot-one", thread: "child/one", cursor: "next+=", limit: 4 }
+    expect(await run(readSessionAnalytics("session-reader", query))).toEqual(report)
+    const url = new URL(fetchMock.mock.calls[0]![0] as string, "http://localhost")
+    expect(Object.fromEntries(url.searchParams)).toEqual({ ...query, limit: "4" })
+    expect(url.searchParams.get("file")).not.toBe("/work/src/app.ts")
+    expect(new Headers(fetchMock.mock.calls[0]![1]?.headers).get("Accept"))
+      .toBe("application/vnd.atape.session-analytics.v4+json, application/vnd.atape.session-analytics.v3+json, application/json")
+  })
+  it("requires the v4 file report, including explicit empty coverage and returned path keys", async () => {
+    const { fileActivity: _fileActivity, ...missingReport } = fileActivityFixture
+    const { key: _key, ...missingKey } = fileActivityFixture.fileActivity.paths[0]!
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify(missingReport)))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...fileActivityFixture,
+        fileActivity: { ...fileActivityFixture.fileActivity, paths: [missingKey] } })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...fileActivityFixture,
+        fileActivity: { ...fileActivityFixture.fileActivity, paths: [{ ...fileActivityFixture.fileActivity.paths[0], key: "/work/src/app.ts" }] } }))))
+    for (let index = 0; index < 3; index++) {
+      expect(await run(readSessionAnalytics("session-reader").pipe(Effect.flip))).toMatchObject({ reason: "decode" })
+    }
   })
   it("rejects v4 rows or coverage that omit required identity facts", async () => {
     const { identity: _identity, ...missingIdentity } = stableToolsFixture.tools[0]!

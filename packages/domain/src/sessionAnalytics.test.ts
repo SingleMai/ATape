@@ -13,6 +13,7 @@ const common = { snapshot: "snapshot", sessionId: "session", captureStatus: "hea
     recordedSamples: 0, incompleteSamples: 0 } }, evidence: { items: [{ eventId: "event", threadId: "root", kind: "message",
       label: "Record", occurredAt: null }] } }
 const capabilities = { mcpCalls: 0, skillCalls: 0, unclassifiedCalls: 0, mcp: [], skills: [] }
+const fileActivity = { callsWithActivity: 0, callsWithoutActivity: 1, uniquePaths: 0, readCalls: 0, editCalls: 0, searchCalls: 0, paths: [] }
 const decode = Schema.decodeUnknownSync(SessionAnalytics)
 
 describe("Session Analytics versioned representation", () => {
@@ -36,7 +37,7 @@ describe("Session Analytics versioned representation", () => {
   it("requires stable v4 row keys, nullable closed identities and explicit coverage", () => {
     const tool = { key: `tool:${"a".repeat(64)}`, identity: { type: "tool", name: "exec_command" },
       name: "exec_command", kind: "execute", calls: 1, completed: 0, failed: 0, pending: 0, inProgress: 0, unknown: 1 }
-    const v4 = { ...common, analyticsVersion: 4, capabilities, activity,
+    const v4 = { ...common, analyticsVersion: 4, capabilities, activity, fileActivity,
       summary: { ...common.summary, toolCalls: 1, identifiedToolCalls: 1, unidentifiedToolCalls: 0 }, tools: [tool],
       evidence: { items: common.evidence.items.map(item => ({ ...item, clockQuality: "unknown" })) } }
     expect(decode(v4)).toEqual(v4)
@@ -44,11 +45,14 @@ describe("Session Analytics versioned representation", () => {
     const { key: _key, ...missingKey } = tool
     const { identity: _identity, ...missingIdentity } = tool
     const { unidentifiedToolCalls: _count, ...missingCoverage } = v4.summary
+    const { fileActivity: _fileActivity, ...missingFiles } = v4
     for (const malformed of [
       { ...v4, tools: [missingKey] }, { ...v4, tools: [missingIdentity] }, { ...v4, summary: missingCoverage },
       { ...v4, tools: [{ ...tool, key: "exec_command" }] },
       { ...v4, tools: [{ ...tool, identity: { ...tool.identity, command: "pnpm check" } }] },
-      { ...v4, evidence: common.evidence }
+      { ...v4, evidence: common.evidence }, missingFiles,
+      { ...v4, fileActivity: { ...fileActivity, paths: [{ key: "raw-path", path: "src/a.ts", calls: 1, readCalls: 1, editCalls: 0, searchCalls: 0 }] } },
+      { ...v4, fileActivity: { ...fileActivity, callsWithoutActivity: -1 } }
     ]) expect(() => decode(malformed)).toThrow()
   })
   it("preserves zero point spans and null all-unplaced spans", () => {

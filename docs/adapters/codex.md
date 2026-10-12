@@ -6,7 +6,7 @@ When Raw capture is enabled, unknown or newly introduced Codex records remain av
 
 For a local build or release tarball, use Tools and updates → Integration maintenance
 to install its directory or full archive path, then Choose tools to sync.
-The current stable-tool increment uses Canonical v5 and a v6 cursor. It has not
+The current tool and file-activity increment uses Canonical v5 and a v7 cursor. It has not
 been published or deployed: published 0.5.10 uses Canonical v3 and its projection-v5
 cursor. A supporting Server and complete CLI/Adapter bundle are required for
 the checkout revision; see [coordinated upgrades](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
@@ -105,7 +105,40 @@ identity and display values. The Host applies existing identity, copied-name and
 payload redaction before delivery; grouping rules belong to the Server's
 [Session Analytics Module](../session-analytics.md#stable-tool-grouping).
 See [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
-This increment adds no file-activity derivation or command-name guessing.
+File activity uses only explicit typed source fields described below.
+
+## Explicit file activity
+
+The unpublished Canonical v5 contract carries bounded typed path facts in
+`atape.dev/file-activity`, separately from tool identity and display title:
+
+| Native item | Recorded paths | Meaning |
+| --- | --- | --- |
+| `CommandExecution` | `parsed_cmd[].path` for exact native `read` / `search` types | Read targets or search scopes; one call can carry both. |
+| `FileChange` | Keys of `changes` with `add`, `update` or `delete` types, plus explicit `move_path` destinations | Reported edit targets; failed status does not establish a successful change. |
+| `ImageView` | `path` | Image read target. |
+
+Repeated operation/path pairs are counted once per folded call. Search scopes
+are not matching files. The Adapter keeps the complete bounded original
+`parsed_cmd`, `changes` or `path` input so the Host can honor copied-field
+redaction, including object keys. No shell command, old `apply_patch` envelope,
+function argument, MCP input or result text is classified into file paths.
+
+Paths retain their original spelling without resolution or normalization.
+Invalid Unicode, controls, empty paths, paths above 2,048 UTF-8 bytes, source
+inputs outside the shared 64 KiB admission, or path sets above 64 entries or
+4,096 JSON UTF-8 bytes explicitly clear the complete activity fact with null. Facts are never truncated
+into partial paths. An empty native collection can explicitly clear an earlier
+fact; it does not prove no file was touched. Complete native updates with missing path fields also clear old facts with null;
+unrelated updates omit the field and preserve earlier facts. Null remains unknown.
+Upload masking of a path or its original input clears the copied activity fact.
+Image-view display titles use the generic `View image` so a hidden source path
+cannot survive as a copied basename.
+
+Cursor/projection v7 reads complete v5 and v6 state, preserves source ranks,
+revision floors and Raw receipts, and replays available Canonical history once.
+Older Adapters cannot read the new v7 cursor; recover forward without resetting
+state. Published 0.5.10 has neither this projection nor file activity support.
 
 ## Incremental and Raw behavior
 
@@ -239,17 +272,17 @@ removed files retain their ranks so later files cannot reuse them. Capacity
 exhaustion fails explicitly rather than folding distinct records together.
 
 Released projection v5 established source-clock correction and once-only replay
-of supported older Canonical cursors. Current projection v6 inherits that clock
-behavior and replays available older projections to add explicit tool identities
+of supported older Canonical cursors. Current projection v7 inherits that clock
+behavior and replays available older projections to add explicit tool identities and typed file activity
 with stable Event IDs and a higher revision floor, including old active
 Canonical/Raw pages and completed progress. Saved Raw acknowledgements are
 retained. Later pages freeze
 Session source recency and title at that revision. Unavailable source history
 cannot be repaired; previously accepted epochs are not guessed away by the
 Server. Keep checkpoints and use the updated Adapter for forward recovery;
-older Adapters, including published 0.5.10, cannot read the new v6 cursor. The
+older Adapters, including published 0.5.10, cannot read the new v7 cursor. The
 earlier projection-v5 cursor refusal remains part of the 0.5.9-to-0.5.10 clock
-transition evidence; it does not establish v6 rollback compatibility.
+transition evidence; it does not establish v7 rollback compatibility.
 
 First projection of a changed snapshot makes an additional bounded record scan
 to compute source recency after final ownership/format selection. Continuations
@@ -259,7 +292,7 @@ Canonical profile. Existing uncertain-delivery and redaction-policy constraints
 continue to apply. [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md)
 records the choice and alternatives.
 
-Current projection v6 retains projection v5's clock correction and v4's
+Current projection v7 retains projection v5's clock correction and v4's
 cumulative item repair described in
 [ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md) and preserves
 unknown tool outcomes. A missing or unrecognized provider status is omitted;

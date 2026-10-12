@@ -291,7 +291,28 @@ Server. The same 500-byte, trimmed, well-formed Unicode bounds and copied-fact
 redaction rules apply. An absent namespace preserves the preceding identity on
 the same Thread/call ID; explicit null clears it. V4 continues accepting only
 MCP/Skill identities and rejects `type: "tool"`; v1/v2/v3 continue rejecting
-`_meta` entirely. Tool details retain their existing bounded Interface.
+`_meta` entirely. Tool details retain their existing bounded Interface. V4 also rejects the new file-activity namespace described below.
+
+The unpublished v5 contract also admits optional `atape.dev/file-activity`
+inside the same closed envelope (the tool-identity key remains required):
+
+```json
+{"atape.dev/tool-identity":{"type":"tool","name":"Read"},
+ "atape.dev/file-activity":[{"operation":"read","path":"./src/main.ts"}]}
+```
+
+The value is null or an array of closed operation/path entries. Operations are
+`read`, `edit` and `search`; search means recorded scope. Paths retain exact
+spelling, are nonempty well-formed Unicode with no C0/C1 controls, and admit
+2,048 UTF-8 bytes. The array admits 64 entries and 4,096 UTF-8 bytes of decoded
+`JSON.stringify` representation. Absence preserves the preceding path fact;
+null or [] clears it. Null represents an explicit unknown, including redaction.
+Copied paths retain admitted original fields, including native map keys. Masked
+facts or copied originals clear the complete path array; secret replacements
+never become path identities. No Provider parsing or payload input is added to
+Server analytics. This completes an unpublished contract; compatibility between
+intermediate development-checkout v5 artifacts is not established. See
+[ADR-0125](../architecture/adr/0125-recorded-file-activity.md).
 
 Direct v5 ingestion requires the Host and Server to affirm Canonical v5. The
 Codex paged Adapter declares `legacyCanonicalProfile: "atape.acp-centered.v5"`.

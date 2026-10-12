@@ -1,4 +1,4 @@
-import { CanonicalProfileVersion5, ToolIdentityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
+import { CanonicalProfileVersion5, ToolIdentityMetaKey, FileActivityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
   type AdapterOpenContext, type SourceOpenRequestV2, type SourceCaptureFrame } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
@@ -117,7 +117,7 @@ it("retains explicit native tool, MCP and Skill identities without changing sour
   ])
   await writeFile(file, source)
   const actual = await capture()
-  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.3", canonicalProfileVersion: CanonicalProfileVersion5 })
+  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.4", canonicalProfileVersion: CanonicalProfileVersion5 })
   const calls = actual.events.filter(event => event.update.sessionUpdate === "tool_call")
   expect(calls.filter(event => "_meta" in event.update).map(event => event.update)).toMatchObject([
     { toolCallId: "mcp", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "mcp", server: "docs", name: "read_page" } } },
@@ -138,6 +138,45 @@ it("retains explicit native tool, MCP and Skill identities without changing sour
   expect(rawText(actual.frames)).toBe(source)
   expect(await capture(request({ priorCheckpoint: actual.header.sourceCheckpoint, priorThreads: actual.header.threads }))).toEqual(actual)
   expect(await capture(request({ rawEnabled: false }))).toMatchObject({ header: actual.header, events: actual.events })
+})
+
+it("records only admitted native file paths and explicit search scopes", async () => {
+  const blocks = [
+    { type: "tool_use", id: "read", name: "Read", input: { file_path: "./src/main.ts" } },
+    { type: "tool_use", id: "write", name: "Write", input: { file_path: "/project/new.ts", content: "new body" } },
+    { type: "tool_use", id: "edit", name: "Edit", input: { file_path: "src/main.ts", old_string: "a", new_string: "b" } },
+    { type: "tool_use", id: "multi", name: "MultiEdit", input: { file_path: "src/main.ts", edits: [] } },
+    { type: "tool_use", id: "grep", name: "Grep", input: { path: "src", pattern: "looks/like/a/path.ts" } },
+    { type: "tool_use", id: "glob", name: "Glob", input: { path: "./", pattern: "**/*.ts" } },
+    { type: "tool_use", id: "unknown-scope", name: "Glob", input: { pattern: "src/**/*.ts" } },
+    { type: "tool_use", id: "shell", name: "Bash", input: { command: "cat src/main.ts; rg TODO src", file_path: "invented.ts" } },
+    { type: "tool_use", id: "mcp", name: "mcp__fs__read", input: { file_path: "invented.ts" } },
+    { type: "tool_use", id: "extension", name: "ReadCustom", input: { file_path: "invented.ts" } },
+    { type: "tool_use", id: "oversized", name: "Write", input: { file_path: "omitted.ts", content: "x".repeat(65536) } },
+    ...["", "bad\npath", "bad\0path", "\ud800", "界".repeat(683)].map((file_path, index) =>
+      ({ type: "tool_use", id: `invalid-${index}`, name: "Read", input: { file_path } })),
+    { type: "tool_use", id: "spaces", name: "Read", input: { file_path: " keep spaces " } }
+  ]
+  const sourceRows = rows().slice(0, 2)
+  sourceRows[1]!.message.content = blocks
+  const source = encode(sourceRows); await writeFile(file, source)
+  const actual = await capture()
+  expect(actual.header.profile).toBe("claude.jsonl.active-path.4")
+  const facts = (id: string) => {
+    const update = actual.events.find(event => "toolCallId" in event.update && event.update.toolCallId === id)!.update
+    return "_meta" in update ? update._meta?.[FileActivityMetaKey] : undefined
+  }
+  expect(facts("read")).toEqual([{ operation: "read", path: "./src/main.ts" }])
+  for (const [id, path] of [["write", "/project/new.ts"], ["edit", "src/main.ts"], ["multi", "src/main.ts"]])
+    expect(facts(id!)).toEqual([{ operation: "edit", path }])
+  expect(facts("grep")).toEqual([{ operation: "search", path: "src" }])
+  expect(facts("glob")).toEqual([{ operation: "search", path: "./" }])
+  expect(facts("spaces")).toEqual([{ operation: "read", path: " keep spaces " }])
+  for (const id of ["unknown-scope", "oversized", ...blocks.filter(block => block.id.startsWith("invalid-")).map(block => block.id)])
+    expect(facts(id)).toBeNull()
+  for (const id of ["shell", "mcp", "extension"]) expect(facts(id)).toBeUndefined()
+  expect(rawText(actual.frames)).toBe(source)
+  expect(await capture(request({ priorCheckpoint: actual.header.sourceCheckpoint, priorThreads: actual.header.threads }))).toEqual(actual)
 })
 
 it("selects a generated truncating-resume branch and retains all physical Raw", async () => {
@@ -571,6 +610,22 @@ const legacyFirstPage = async (values: Row[], target = file) => {
 // separate from the unchanged genuine previous-factory cursor acceptance cases.
 const legacyState = (cursor: string): Row => JSON.parse(cursor.startsWith("z3:")
   ? inflateRawSync(Buffer.from(cursor.slice(3), "base64url")).toString("utf8") : cursor)
+
+it.each([5, 6])("validates generated retained projection %s pending slots before the new file projection", async projectionRevision => {
+  const values = rows().slice(0, 2)
+  values[0]!.message.content = [{ type: "text", text: "first root part" }, { type: "text", text: "second root part" }]
+  values[1]!.message.content = [{ type: "tool_use", id: "read", name: "Read", input: { file_path: "retained.ts" } }]
+  const previous = await legacyFirstPage(values), state = legacyState(previous.nextCursor)
+  state.sessions[0].checkpoint.projectionRevision = projectionRevision
+  const checkpoint = JSON.stringify(state)
+  const current = await capture(request({ legacyCheckpoint: checkpoint }))
+  expect(current.events.map(event => event.sourceEventId)).toEqual(["root:0", "root:1", "first:0"])
+  expect(current.events[2]!.update).toMatchObject({ _meta: { [FileActivityMetaKey]: [{ operation: "read", path: "retained.ts" }] } })
+  expect(rawText(current.frames)).toBe(encode(values))
+  state.sessions[0].checkpoint.stream.eventSkip = 3
+  await expect(capture(request({ legacyCheckpoint: JSON.stringify(state) }))).rejects.toThrow("event count")
+})
+
 it.each([false, true])("resolves a genuine first-root partial page with no acknowledged UUID (bookkeeping %s)", async bookkeeping => {
   const values = rows().slice(0, 2)
   values[0]!.message.content = [{ type: "text", text: "first root part" }, { type: "text", text: "second root part" }]

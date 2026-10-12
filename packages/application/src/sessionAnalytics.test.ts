@@ -16,6 +16,10 @@ const activityValue: Extract<SessionAnalytics, { analyticsVersion: 3 }> = { ...v
   activity: { scopeThreadId: null, eventCount: 1, recordedTimeEvents: 0, unknownTimeEvents: 1, legacyTimeEvents: 0,
     firstRecordedAt: null, lastRecordedAt: null, recordSpanMilliseconds: null, backwardClockTransitions: 0,
     buckets: [], unplacedRange: "opaque-unplaced" }, evidence: { items: [], nextCursor: "next" } }
+const emptyFileActivity = { callsWithActivity: 0, callsWithoutActivity: 0, uniquePaths: 0, readCalls: 0, editCalls: 0, searchCalls: 0, paths: [] }
+const fileKey = `file:${"a".repeat(64)}`
+const fileValue: Extract<SessionAnalytics, { analyticsVersion: 4 }> = { ...activityValue, analyticsVersion: 4,
+  summary: { ...value.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 }, tools: [], fileActivity: emptyFileActivity }
 
 describe("SessionAnalytics Module", () => {
   it("offers tool filters only within the wire UTF-8 byte bound", () => {
@@ -29,6 +33,7 @@ describe("SessionAnalytics Module", () => {
     expect(sessionAnalyticsToolSelections({ ...value, tools: [oldRow] })[0]!.filter).toBeNull()
     const key = `tool:${"a".repeat(64)}`
     const report: SessionAnalytics = { ...activityValue, analyticsVersion: 4,
+      fileActivity: { ...emptyFileActivity, callsWithoutActivity: 1 },
       summary: { ...value.summary, toolCalls: 1, identifiedToolCalls: 1, unidentifiedToolCalls: 0 },
       tools: [{ ...oldRow, key, identity: { type: "mcp", server: "界".repeat(166), name: "界".repeat(166) },
         name: `${"界".repeat(166)}/${"界".repeat(166)}` }] }
@@ -81,12 +86,14 @@ describe("SessionAnalytics Module", () => {
   })
   it.each([3, 4] as const)("rejects a v%s response for a different activity Thread scope", async analyticsVersion => {
     const result: SessionAnalytics = analyticsVersion === 3 ? activityValue : { ...activityValue, analyticsVersion,
+      fileActivity: emptyFileActivity,
       summary: { ...value.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 }, tools: [] }
     const error = await Effect.runPromise(readSessionAnalytics("session", { thread: "child" }).pipe(Effect.provide(provide(result)), Effect.flip))
     expect(error.reason).toBe("decode")
   })
   it("reads v4 records without losing required activity or opaque range selection", async () => {
     const report: SessionAnalytics = { ...activityValue, analyticsVersion: 4,
+      fileActivity: emptyFileActivity,
       summary: { ...value.summary, identifiedToolCalls: 0, unidentifiedToolCalls: 0 }, tools: [] }
     expect(await Effect.runPromise(readSessionAnalytics("session", { metric: "records", snapshot: "one", range: "opaque-unplaced" })
       .pipe(Effect.provide(provide(report))))).toEqual(report)
@@ -96,6 +103,38 @@ describe("SessionAnalytics Module", () => {
     expect(report.analyticsVersion).toBe(1); expect("activity" in report).toBe(false)
     const unsupported = await Effect.runPromise(readSessionAnalytics("session", { metric: "records" }).pipe(Effect.provide(provide()), Effect.flip))
     expect(unsupported.status).toBe(422)
+  })
+  it("keeps file key and operation together while dropping incompatible filters and continuation", async () => {
+    const query = selectSessionAnalyticsEvidence({ metric: "files", file: fileKey, operation: "edit", thread: "child",
+      tool: "Read", capability: "lookup", server: "docs", range: "old-range" }, "one")
+    expect(query).toEqual({ metric: "files", file: fileKey, operation: "edit", thread: "child", snapshot: "one" })
+    expect(selectSessionAnalyticsEvidence({ ...query, metric: "records" }, "one", query))
+      .toEqual({ metric: "records", thread: "child", snapshot: "one" })
+    expect(selectSessionAnalyticsEvidence({ ...query, metric: "tools" }, "one", query))
+      .toEqual({ metric: "tools", thread: "child", snapshot: "one" })
+    const scoped = { ...fileValue, activity: { ...fileValue.activity, scopeThreadId: "child" } }
+    const page = { ...query, cursor: "file-page", limit: 4 }
+    const layer = Layer.succeed(SessionAnalyticsGateway, { read: (_id, request) => {
+      expect(request).toEqual(page); return Effect.succeed(scoped)
+    } })
+    expect(await Effect.runPromise(readSessionAnalytics("session", page).pipe(Effect.provide(layer)))).toEqual(scoped)
+  })
+  it.each([1, 2, 3] as const)("marks file activity unavailable on a v%s Server instead of inventing an empty report", async analyticsVersion => {
+    const report: SessionAnalytics = analyticsVersion === 3 ? activityValue : analyticsVersion === 2 ? { ...value, analyticsVersion,
+      capabilities: activityValue.capabilities } : value
+    expect(await Effect.runPromise(readSessionAnalytics("session").pipe(Effect.provide(provide(report))))).toEqual(report)
+    expect(await Effect.runPromise(readSessionAnalytics("session", { metric: "files", file: fileKey, operation: "read", snapshot: "one" })
+      .pipe(Effect.provide(provide(report)), Effect.flip))).toMatchObject({ reason: "http", status: 422 })
+  })
+  it.each([
+    { metric: "tools" as const, file: fileKey }, { metric: "records" as const, operation: "read" as const },
+    { metric: "files" as const, file: "/work/src/app.ts" }, { metric: "files" as const, file: `file:${"A".repeat(64)}` },
+    { metric: "files" as const, tool: "Read" }, { metric: "files" as const, capability: "lookup" },
+    { metric: "files" as const, server: "docs" }, { metric: "files" as const, snapshot: "one", range: "old-range" },
+    { metric: "records" as const, snapshot: "one", range: "range", file: fileKey }
+  ])("rejects incompatible file selections before remote IO: %j", async query => {
+    const layer = Layer.succeed(SessionAnalyticsGateway, { read: () => Effect.die("must not read") })
+    expect(await Effect.runPromise(readSessionAnalytics("session", query).pipe(Effect.provide(layer), Effect.flip))).toMatchObject({ status: 422 })
   })
   it.each([1, 2] as const)("refuses v%s evidence as the result of an opaque records range", async analyticsVersion => {
     const report: SessionAnalytics = analyticsVersion === 1 ? value : { ...value, analyticsVersion: 2,

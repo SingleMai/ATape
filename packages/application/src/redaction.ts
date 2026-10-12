@@ -1,5 +1,5 @@
 import type { AcpContentBlock, AcpSessionUpdate } from "@atape/domain"
-import { AcpToolMetadata, AdapterObservation, ToolIdentityMetaKey, ToolUpdateBytes } from "@atape/domain"
+import { AcpFileActivity, AcpToolIdentity, AdapterObservation, FileActivityMetaKey, ToolIdentityMetaKey, ToolUpdateBytes } from "@atape/domain"
 import { Effect, Layer, Schema } from "effect"
 import { SecretRedactor, type RedactedText, type SecretRedactorService } from "./collectorContracts.ts"
 import { ContentBytes, createEngine, report, stats, UnsafeRedaction, type Engine, type Report } from "./redaction/engine.ts"
@@ -272,18 +272,28 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
       }
     }
     const originalIdentity = value._meta?.[ToolIdentityMetaKey]
-    const copiedNames = originalIdentity == null ? [] : [originalIdentity.name,
-      ...(originalIdentity.type === "mcp" ? [originalIdentity.server] : [])]
+    const originalActivity = value._meta?.[FileActivityMetaKey]
     const envelope = maskedMetadata?.value
     const identityValue = isObject(envelope) ? envelope[ToolIdentityMetaKey] : undefined
     const visibleIdentity = isObject(identityValue) ? identityValue : undefined
+    const fileValue = isObject(envelope) ? envelope[FileActivityMetaKey] : undefined
+    const copiedSourceHidden = (names: ReadonlySet<string>) =>
+      !!(input?.changed && maskedIdentitySource(value.rawInput, input.value, names) ||
+        outputValue?.changed && maskedIdentitySource(value.rawOutput, outputValue.value, names))
     const metadataHidesName = (name: string) => originalIdentity != null &&
       (unsafeMetadata || visibleIdentity === undefined || originalIdentity.name === name && visibleIdentity.name !== name ||
         originalIdentity.type === "mcp" && originalIdentity.server === name && visibleIdentity.server !== name)
-    const hiddenNames = copiedNames.filter(name =>
-      metadataHidesName(name) || input?.changed && maskedIdentitySource(value.rawInput, input.value, new Set([name])) ||
-      outputValue?.changed && maskedIdentitySource(value.rawOutput, outputValue.value, new Set([name])))
+    const copiedNames = originalIdentity == null ? [] : [originalIdentity.name,
+      ...(originalIdentity.type === "mcp" ? [originalIdentity.server] : [])]
+    const hiddenPaths = (originalActivity ?? []).filter(entry => unsafeMetadata ||
+      !Array.isArray(fileValue) || !fileValue.some(candidate => isObject(candidate) && candidate.path === entry.path) ||
+      copiedSourceHidden(new Set([entry.path]))).map(entry => entry.path)
+    const hiddenNames = [...new Set([...copiedNames.filter(name =>
+      metadataHidesName(name) || copiedSourceHidden(new Set([name]))), ...hiddenPaths])]
     const maskedTitle = (value: string) => {
+      // Titles can contain shell-escaped, abbreviated or basename-only path
+      // copies. Reconstructing those forms would put Provider parsing here.
+      if (hiddenPaths.length > 0) return "[REDACTED]"
       // Native titles are capped at 500 UTF-8 bytes. A boundary may retain only
       // a prefix of a hidden copied name; replacing the complete name cannot
       // protect that copy. Fail closed for a possible truncated suffix.
@@ -298,21 +308,26 @@ const canonical = (observation: AdapterObservation, engine: Engine, output: Repo
         .reduce((current, name) => current.replaceAll(name, "[REDACTED]"), value))
     }
     const metadata = () => {
-      const masked = maskedMetadata
-      if (unsafeMetadata || masked === undefined) return { [ToolIdentityMetaKey]: null }
-      // Names are grouping identities. Any masking must clear the complete
-      // fact rather than merge distinct secret names into one replacement.
-      if (masked.changed) return { [ToolIdentityMetaKey]: null }
-      let decoded: AcpToolMetadata
-      try { decoded = Schema.decodeUnknownSync(AcpToolMetadata)(masked.value) }
-      catch { return { [ToolIdentityMetaKey]: null } }
-      const identity = decoded[ToolIdentityMetaKey]
-      if (identity !== null) {
-        const names = new Set([identity.name, ...(identity.type === "mcp" ? [identity.server] : [])])
-        if (input?.changed && maskedIdentitySource(value.rawInput, input.value, names) ||
-          outputValue?.changed && maskedIdentitySource(value.rawOutput, outputValue.value, names)) return { [ToolIdentityMetaKey]: null }
+      // Each namespace is an independent fact. Hiding a path must not erase a
+      // public tool name, and hiding a tool identity must not invent path loss.
+      const identity = () => {
+        if (unsafeMetadata || originalIdentity == null || JSON.stringify(identityValue) !== JSON.stringify(originalIdentity)) return null
+        try {
+          const admitted = Schema.decodeUnknownSync(AcpToolIdentity)(identityValue)
+          return copiedSourceHidden(new Set([admitted.name, ...(admitted.type === "mcp" ? [admitted.server] : [])])) ? null : admitted
+        } catch { return null }
       }
-      return decoded
+      const activity = () => {
+        if (unsafeMetadata || originalActivity == null || JSON.stringify(fileValue) !== JSON.stringify(originalActivity)) return null
+        try {
+          const admitted = Schema.decodeUnknownSync(AcpFileActivity)(fileValue)
+          // Fail closed for the complete call's path fact. Replacement paths
+          // must never merge distinct private files into one visible row.
+          return copiedSourceHidden(new Set(admitted.map(entry => entry.path))) ? null : admitted
+        } catch { return null }
+      }
+      return { [ToolIdentityMetaKey]: identity(),
+        ...(Object.hasOwn(value._meta ?? {}, FileActivityMetaKey) ? { [FileActivityMetaKey]: activity() } : {}) }
     }
     const result = { ...value, ...(typeof value.title === "string" ? { title: maskedTitle(value.title) } : {}),
       ...(Object.hasOwn(value, "_meta") ? { _meta: metadata() } : {}),

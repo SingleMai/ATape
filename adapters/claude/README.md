@@ -49,10 +49,17 @@ Explicit native tool names, MCP and `Skill` tool invocations preserve bounded id
 [Session Analytics](../../docs/session-analytics.md). Skill file reads and command
 expansions are not counted as Skill tools. The Server does not infer identity
 from labels or Raw, and upload redaction can explicitly clear a sensitive identity.
-The effective source profile is `claude.jsonl.active-path.3`; existing v1 source
+The effective source profile is `claude.jsonl.active-path.4`; existing v1 source
 proof checkpoints remain readable. The Host replaces available older Canonical
-projections once and retains existing Raw receipts. Replay and new identities
+projections once and retains existing Raw receipts. Replay, new identities and file activity
 require available source bytes; a lost source does not erase captured history.
+
+The current unpublished v5 projection adds explicit file activity: `Read`
+`file_path`, `Write`/`Edit`/`MultiEdit` `file_path`, and `Grep`/`Glob` `path` scopes.
+Paths retain their original spelling; searches do not claim matching files.
+Missing, malformed, oversized or hidden paths remain unknown. Shell commands,
+MCP inputs and search patterns are not parsed for paths. Upload redaction clears
+sensitive copied facts. See the [Adapter guide](../../docs/adapters/claude.md#explicit-file-activity).
 
 Discovery uses `~/.claude/projects/*/*.jsonl`. `ATAPE_CLAUDE_HOME` selects an absolute
 alternate configuration directory; `ATAPE_CLAUDE_SESSION_FILE` selects an absolute

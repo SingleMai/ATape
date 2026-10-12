@@ -132,8 +132,8 @@ deduplicated per source/reason.
 
 ## Bounds and Raw policy
 
-Current source profile `claude.jsonl.active-path.3` selects Canonical v5 and
-uses projection revision 6. Ordinary native `tool_use.name` supplies a stable
+Current source profile `claude.jsonl.active-path.4` selects Canonical v5 and
+uses projection revision 7. Ordinary native `tool_use.name` supplies a stable
 tool identity distinct from its bounded display title. Explicit native
 `mcp__server__tool` names provide MCP identities; `Skill` tool calls with
 a nonempty, trimmed `input.skill` provide Skill names. Names and servers are
@@ -149,7 +149,32 @@ Provider name extraction stays in this Adapter. Command expansion, Skill
 mentions and reads of `SKILL.md` are not fabricated
 as Skill calls. This applies to captured root and child Threads. See
 [Session Analytics](../session-analytics.md#stable-tool-grouping) for the separate
-aggregation and evidence Interface; this source increment adds no file activity.
+aggregation and evidence Interface.
+
+### Explicit file activity
+
+The unmodified, admitted input of `Read` supplies `file_path` as a read path;
+`Write`, `Edit` and `MultiEdit` supply it as an edit path. `Grep` and `Glob`
+supply `input.path` as a search scope, which is not a list of matching files.
+These facts use the optional `atape.dev/file-activity` metadata admitted by the
+current unpublished Canonical v5 contract. Root and child Threads use the same
+mapping. Outcomes still describe the call, so a requested edit path does not
+prove the file changed successfully.
+
+Paths remain exactly as recorded: relative and absolute paths are not resolved,
+trimmed or normalized. Missing paths, controls, invalid Unicode, paths exceeding
+2,048 UTF-8 bytes, unadmitted original inputs and metadata over 64 entries or
+4,096 JSON UTF-8 bytes explicitly clear the complete path fact with null. Search patterns, tool result
+text, Bash command text and MCP arguments do not establish file activity.
+A null fact means explicitly unknown coverage; an absent fact on a result update
+preserves the invocation's path. Upload redaction can clear the complete
+fact when a path or its copied input field is hidden. No redacted placeholder
+becomes a synthetic file path.
+
+Source profile `.4` isolates the new projection from `.3`; v1 source proof
+checkpoints and pending projection-6 legacy pages remain readable. The Host
+reprojects available history once while retaining existing Raw acknowledgements.
+The published 0.5.10 packages do not implement this file activity contract.
 
 The source parser admits complete records up to 16 MiB including LF. Default v2
 source-page admission is 32 MiB; explicit caller limits still apply. The complete

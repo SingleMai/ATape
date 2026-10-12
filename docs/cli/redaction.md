@@ -239,6 +239,14 @@ If a field rule hides a tool input/output string copied into identity, the Host
 also clears that identity. Masking unrelated arguments does not clear a public
 name or server.
 
+Unpublished Canonical v5 also carries bounded file-activity paths. If any path,
+namespace field or admitted source copied into that fact is hidden, preparation
+clears the complete path fact to null and clears the display title, which may carry escaped or abbreviated path copies.
+Map keys and JSON-encoded original fields participate in copied-fact checks.
+Tool identity and file activity clear independently; unrelated masked arguments
+retain public facts. Null paths never become a shared replacement path in
+analytics. See [file activity](../session-analytics.md#recorded-file-activity).
+
 The configuration admits at most 128 KiB, 128 custom rules, 2048 UTF-8 bytes per
 expression and 64 KiB of expressions overall. Exact literals admit at most 2048
 distinct values and 1 MiB overall. Content processing admits 32 MiB, depth 32,

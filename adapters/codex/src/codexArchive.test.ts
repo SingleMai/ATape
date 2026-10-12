@@ -4,6 +4,7 @@ import {
   AdapterProtocolVersion,
   CanonicalProfileVersion5,
   ToolIdentityMetaKey,
+  FileActivityMetaKey,
   type AdapterCollectionPage,
   type AdapterSourceProgress,
   type LegacyAdapterRuntime
@@ -342,7 +343,7 @@ describe("Codex Adapter", () => {
     expect(upgraded.session.updatedAt).toBe("2026-09-05T00:03:00Z")
     if (phase === "canonical") {
       expect(upgraded.events.map(event => event.sourceEventId)).toEqual(["event-1"])
-      expect(upgraded.events[0]?.projectionRevision).toBe(6)
+      expect(upgraded.events[0]?.projectionRevision).toBe(7)
     } else {
       expect(upgraded.events).toEqual([])
       expect(upgraded.rawSegments[0]?.sourceOffset).toBe(progress[0]?.sourceOffset)
@@ -780,10 +781,65 @@ describe("Codex Adapter", () => {
       expect(update(id)).not.toHaveProperty("_meta")
   })
 
-  it("replays a retained projection 5 checkpoint once with stable IDs, source ranks and acknowledged Raw offsets", async () => {
+  it("records typed file changes, image paths and native parsed command scopes without guessing shell text", async () => {
+    const root = await makeEmptyFixture(), sessionId = "file-activity"
+    // Controlled equivalents of Confab's modern native item test cases. The
+    // command classification and per-path changes are recorded source facts.
+    const items = [
+      { type: "CommandExecution", id: "command", command: ["sh", "-c", "cat guessed.ts; rg TODO guessed"], status: "completed", parsed_cmd: [
+        { type: "read", path: "src/app.ts", cmd: "sed -n 1,20p src/app.ts" },
+        { type: "read", path: "src/app.ts", cmd: "cat src/app.ts" },
+        { type: "search", path: "src", query: "TODO" },
+        { type: "unknown", path: "invented.ts" }, { type: "list_files", path: "also-not-a-read" }
+      ] },
+      { type: "FileChange", id: "changes", status: "failed", changes: {
+        "src/app.ts": { type: "update", unified_diff: "-a\n+b", move_path: "src/renamed.ts" },
+        "README.md": { type: "add", content: "# README" },
+        "removed.ts": { type: "delete" }
+      } },
+      { type: "ImageView", id: "image", path: "/project/screenshot.png" },
+      { type: "McpToolCall", id: "mcp", server: "fs", tool: "read", arguments: { path: "invented.ts" } },
+      { type: "FileChange", id: "empty", changes: {} },
+      { type: "CommandExecution", id: "shell-only", command: ["cat", "invented.ts"] },
+      { type: "FileChange", id: "oversized", changes: { "omitted.ts": { type: "add", content: "x".repeat(65536) } } },
+      { type: "CommandExecution", id: "too-many", parsed_cmd: Array.from({ length: 65 }, (_, n) => ({ type: "read", path: `file-${n}.ts` })) },
+      { type: "CommandExecution", id: "too-wide", parsed_cmd: [0, 1, 2].map(n => ({ type: "read", path: `${n}${"x".repeat(1500)}` })) },
+      { type: "CommandExecution", id: "partial-path", parsed_cmd: [{ type: "read", path: "known.ts" }, { type: "search" }] },
+      { type: "FileChange", id: "unknown-change", changes: { "invented.ts": { type: "new-format" } } },
+      ...["", "bad\npath", "bad\0path", "\ud800", "界".repeat(683)].map((path, n) => ({ type: "ImageView", id: `invalid-${n}`, path }))
+    ]
+    const responses = [
+      { type: "function_call", id: "old-shell", name: "exec_command", arguments: JSON.stringify({ cmd: "cat invented.ts" }) },
+      { type: "custom_tool_call", id: "old-patch", name: "apply_patch", input: "*** Begin Patch\n*** Add File: invented.ts\n+x\n*** End Patch" }
+    ]
+    await writeJsonl(join(root.sessionsDirectory, "files.jsonl"), [sessionMeta({ id: sessionId, cwd: root.project }),
+      ...items.map(item => itemCompleted("2026-09-05T00:01:00Z", sessionId, item))])
+    await writeJsonl(join(root.sessionsDirectory, "response-files.jsonl"), [sessionMeta({ id: sessionId, cwd: root.project }),
+      ...responses.map(payload => responseItem("2026-09-05T00:02:00Z", payload))])
+    const page = await collect(await openAdapter(root.project, "directory"))
+    const events = requiredObservation(page).events
+    const update = (id: string) => events.find(event => event.sourceEventId === id)!.update
+    const facts = (id: string) => { const value = update(id); return "_meta" in value ? value._meta?.[FileActivityMetaKey] : undefined }
+    expect(facts("command")).toEqual([{ operation: "read", path: "src/app.ts" }, { operation: "search", path: "src" }])
+    expect(update("command")).toMatchObject({ kind: "execute", rawInput: { parsed_cmd: items[0]!.parsed_cmd } })
+    expect(facts("changes")).toEqual([
+      { operation: "edit", path: "README.md" }, { operation: "edit", path: "removed.ts" },
+      { operation: "edit", path: "src/app.ts" }, { operation: "edit", path: "src/renamed.ts" }
+    ])
+    expect(update("changes")).toMatchObject({ status: "failed", rawInput: { changes: items[1]!.changes } })
+    expect(facts("image")).toEqual([{ operation: "read", path: "/project/screenshot.png" }])
+    expect(update("image")).toMatchObject({ title: "View image", rawInput: { path: "/project/screenshot.png" } })
+    expect(facts("empty")).toEqual([])
+    for (const id of ["shell-only", "oversized", "too-many", "too-wide", "partial-path", "unknown-change", ...items.filter(item => item.id.startsWith("invalid-")).map(item => item.id)])
+      expect(facts(id)).toBeNull()
+    for (const id of ["old-shell", "old-patch", "mcp"]) expect(facts(id)).toBeUndefined()
+    expect(update("oversized")).not.toHaveProperty("rawInput")
+  })
+
+  it.each([5, 6])("replays a retained projection %s checkpoint once with stable IDs, source ranks and acknowledged Raw offsets", async previousProjection => {
     const root = await makeEmptyFixture(), path = join(root.sessionsDirectory, "tool-replay.jsonl")
     const source = [sessionMeta({ id: "tool-replay", cwd: root.project }),
-      itemCompleted("2026-09-05T00:01:00Z", "tool-replay", { type: "CommandExecution", id: "command", command: ["echo", "before"] })]
+      itemCompleted("2026-09-05T00:01:00Z", "tool-replay", { type: "CommandExecution", id: "command", command: ["echo", "before"], parsed_cmd: [{ type: "read", path: "src/before.ts" }] })]
     await writeJsonl(path, source)
     const originalRuntime = await openAdapter(root.project, "directory")
     let cursor: string | null = null, progress: ReadonlyArray<AdapterSourceProgress> = []
@@ -799,7 +855,7 @@ describe("Codex Adapter", () => {
     }
     expect(progress[0]?.sourceOffset).toBeGreaterThan(0)
     const previous = JSON.parse(Buffer.from(cursor!, "base64url").toString("utf8"))
-    previous.v = 5; previous.eventProjectionVersion = 5
+    previous.v = previousProjection; previous.eventProjectionVersion = previousProjection
     const ranks = previous.sourceRanks, priorRevision = previous.canonicalProgress[0].revision
     cursor = Buffer.from(JSON.stringify(previous)).toString("base64url")
     const runtime = await openAdapter(root.project, "directory"), replayed = []
@@ -812,9 +868,10 @@ describe("Codex Adapter", () => {
     }
     expect(replayed.map(event => [event.sourceEventId, event.sourceOrder, event.eventIndex, event.rawRef]))
       .toEqual(originalEvents.map(event => [event.sourceEventId, event.sourceOrder, event.eventIndex, event.rawRef]))
-    expect(replayed[0]).toMatchObject({ projectionRevision: 6, update: { _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "CommandExecution" } } } })
+    expect(replayed[0]).toMatchObject({ projectionRevision: 7, update: { _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "CommandExecution" } } } })
+    expect(replayed[0]).toMatchObject({ update: { _meta: { [FileActivityMetaKey]: [{ operation: "read", path: "src/before.ts" }] } } })
     expect(replayed[0]!.revision).toBeGreaterThan(priorRevision)
-    expect(JSON.parse(Buffer.from(cursor!, "base64url").toString("utf8"))).toMatchObject({ v: 6, sourceRanks: ranks })
+    expect(JSON.parse(Buffer.from(cursor!, "base64url").toString("utf8"))).toMatchObject({ v: 7, sourceRanks: ranks })
     const noop = await collect(await openAdapter(root.project, "directory"), cursor, progress)
     expect(noop.observations).toEqual([])
     await appendFile(path, JSON.stringify(itemCompleted("2026-09-05T00:02:00Z", "tool-replay", {
@@ -836,6 +893,29 @@ describe("Codex Adapter", () => {
     expect(appended[0]?.update).toMatchObject({ _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "CommandExecution" } } })
     expect(raw[0]?.sourceOffset).toBe(previous.canonicalProgress[0].files[0].size)
     expect(raw.map(segment => segment.content).join("")).toContain('"id":"appended"')
+  })
+
+  it("clears earlier path facts when a complete update for the same native call has an unknown path", async () => {
+    const root = await makeEmptyFixture(), path = join(root.sessionsDirectory, "path-update.jsonl")
+    const firstItem = { type: "ImageView", id: "image", path: "private-original-image.png", status: "running" }
+    await writeJsonl(path, [sessionMeta({ id: "path-update", cwd: root.project }), itemCompleted("2026-09-05T00:01:00Z", "path-update", firstItem)])
+    const first = await collect(await openAdapter(root.project, "directory"))
+    const original = requiredObservation(first).events[0]!
+    expect(original.update).toMatchObject({ title: "View image", _meta: { [FileActivityMetaKey]: [{ operation: "read", path: "private-original-image.png" }] } })
+    let cursor = first.nextCursor, progress: ReadonlyArray<AdapterSourceProgress> = []
+    for (let i = 0; i < 20; i++) {
+      const page = await collect(await openAdapter(root.project, "directory"), cursor, progress)
+      for (const observation of page.observations) progress = mergeProgress(progress, observation.session.sourceSessionId, observation.rawSegments)
+      cursor = page.nextCursor
+      if (!page.hasMore) break
+    }
+    await appendFile(path, JSON.stringify(itemCompleted("2026-09-05T00:02:00Z", "path-update", { type: "ImageView", id: "image", status: "completed" })) + "\n")
+    const modified = new Date(Date.now() + 1000); await utimes(path, modified, modified)
+    const changed = requiredObservation(await collect(await openAdapter(root.project, "directory"), cursor, progress)).events[0]!
+    expect(changed.sourceEventId).toBe(original.sourceEventId)
+    expect(changed.revision).toBeGreaterThan(original.revision)
+    expect(changed.update).toMatchObject({ title: "View image", status: "completed", _meta: { [FileActivityMetaKey]: null } })
+    expect(JSON.stringify(changed.update)).not.toContain("private-original-image.png")
   })
 
   it("preserves unknown tool outcomes instead of inferring success or failure", async () => {
@@ -1070,7 +1150,7 @@ describe("Codex Adapter", () => {
     const firstObservation = requiredObservation(first)
     expect(firstObservation.session.sourceSessionId).toBe("first-session")
     expect(firstObservation.rawSegments).toEqual([])
-    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 12)
+    expect(firstObservation.session.revision).toBe(firstModified.getTime() * 1_000 * 2 + 14)
     expect(first.hasMore).toBe(true)
     const second = await collect(runtime, first.nextCursor)
     const secondObservation = requiredObservation(second)
@@ -1093,7 +1173,7 @@ describe("Codex Adapter", () => {
       expect(requiredObservation(replay).session.sourceSessionId).toBe("first-session")
       expect(replay.hasMore).toBe(true)
       if (replay.nextCursor === null) throw new Error("Expected migrated Cursor")
-      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 6 })
+      expect(JSON.parse(Buffer.from(replay.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 7 })
     }
 
     const stalled = await collect(runtime, null, [], {
@@ -1112,7 +1192,7 @@ describe("Codex Adapter", () => {
     })).toString("base64url"))
     expect(requiredObservation(migrated).events).not.toEqual([])
     if (migrated.nextCursor === null) throw new Error("Expected migrated Cursor")
-    expect(JSON.parse(Buffer.from(migrated.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 6 })
+    expect(JSON.parse(Buffer.from(migrated.nextCursor, "base64url").toString("utf8"))).toMatchObject({ v: 7 })
   })
 
   it("prefers the latest valid Codex title index record", async () => {
@@ -1140,7 +1220,7 @@ describe("Codex Adapter", () => {
 
     expect(observation.session.title).toBe("Checkout accessibility review")
     expect(observation.session.updatedAt).toBe("2026-09-05T00:02:00.000Z")
-    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 12)
+    expect(observation.session.revision).toBe(rolloutModified.getTime() * 1_000 * 2 + 14)
   })
 
   it("collects a title-only rename without new rollout or Raw bytes", async () => {
@@ -1507,7 +1587,7 @@ describe("Codex Adapter", () => {
     state.canonicalProgress[0].revision = priorRevision
     let page = await collect(await openAdapter(fixture.project, "directory"), Buffer.from(JSON.stringify(state)).toString("base64url"), progress)
     expect(requiredObservation(page).events.map(e => e.sourceEventId)).toEqual(requiredObservation(first).events.map(e => e.sourceEventId))
-    expect(requiredObservation(page).events.every(event => event.projectionRevision === 6)).toBe(true)
+    expect(requiredObservation(page).events.every(event => event.projectionRevision === 7)).toBe(true)
     expect(requiredObservation(page).session.revision).toBeGreaterThan(priorRevision)
     for (let i = 0; i < 10; i++) {
       expect(page.observations.flatMap(o => o.rawSegments)).toEqual([])

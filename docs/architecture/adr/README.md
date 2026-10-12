@@ -150,6 +150,7 @@ amendments for scope; keep delivery status in the relevant feature guide.
 | [0122](0122-explicit-legacy-source-clocks.md) | Explicit nullable source clocks in legacy collection |
 | [0123](0123-recorded-activity-ranges.md) | Recorded activity ranges in Session Analytics v3 |
 | [0124](0124-stable-native-tool-identity.md) | Stable native tool identity and Analytics v4 |
+| [0125](0125-recorded-file-activity.md) | Recorded file activity and conditional evidence |
 
 
 When adding a decision, choose an unused number and add it here. Preserve an old

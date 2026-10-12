@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, literalUnknownToolFixture, stableToolsFixture, unknownToolKey } from "../../test/sessionAnalyticsFixture"
+import { activityFixture, analyticsFixture, capabilitiesFixture, executeToolKey, fileActivityFixture, literalUnknownToolFixture, sourceFileKey, stableToolsFixture, unknownToolKey } from "../../test/sessionAnalyticsFixture"
 import { initializeWebI18n } from "../i18n"
 import { SessionAnalyticsView } from "./SessionAnalyticsView"
 
@@ -35,6 +35,51 @@ describe("Session analysis view", () => {
     expect(html).toContain("This Server does not provide recorded activity yet.")
     expect(html).not.toContain("Record span")
     expect(html).not.toContain('value="records"')
+    expect(html).toContain("This Server does not provide file activity yet.")
+    expect(html).not.toContain("Calls with usable file activity")
+    expect(html).not.toContain('value="files"')
+  })
+  it("shows distinct paths and operation calls with returned keys and explicit recorded-attempt semantics", () => {
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} query={{ metric: "files", file: sourceFileKey, operation: "edit" }}
+      state={{ _tag: "Ready", value: fileActivityFixture, refreshing: false }} />)
+    expect(html).toContain("Calls with usable file activity</dt><dd>3</dd>")
+    expect(html).toContain("Calls without usable file activity</dt><dd>2</dd>")
+    expect(html).toContain("Distinct recorded paths</dt><dd>2</dd>")
+    expect(html).toContain("Search paths describe search scope, not matching files.")
+    expect(html).toContain("including failed or unfinished calls")
+    expect(html).toContain(`value="${sourceFileKey}" selected="">/work/src/app.ts</option>`)
+    expect(html).toContain('value="edit" selected="">Modification calls</option>')
+    expect(html).toContain('aria-label="File evidence: Modification calls · /work/src/app.ts"')
+    expect(html).toContain("Failed file modification")
+    expect(html).not.toContain('aria-label="Tool name"')
+    expect(html).not.toContain("rawInput")
+  })
+  it.each([0, 3])("keeps an empty file report distinct from its %s calls without usable activity", callsWithoutActivity => {
+    const value = { ...stableToolsFixture, fileActivity: { ...stableToolsFixture.fileActivity, callsWithoutActivity } }
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value, refreshing: false }} />)
+    expect(html).toContain("No usable file paths were recorded.")
+    expect(html).toContain(`Calls without usable file activity</dt><dd>${callsWithoutActivity}</dd>`)
+    expect(html).not.toContain("This Server does not provide file activity yet.")
+  })
+  it("retains a long source path in full while filtering with its bounded returned key", () => {
+    const path = `/work/${"界".repeat(200)}/app.ts`
+    const value = { ...fileActivityFixture, fileActivity: { ...fileActivityFixture.fileActivity,
+      paths: [{ ...fileActivityFixture.fileActivity.paths[0]!, path }] } }
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} query={{ metric: "files" }} state={{ _tag: "Ready", value, refreshing: false }} />)
+    expect(html).toContain(`value="${sourceFileKey}">${path}</option>`)
+    expect(html).toContain(`aria-label="File evidence: ${path}"`)
+    expect(html).not.toContain('disabled="" aria-label="File evidence:')
+  })
+  it("translates file controls and coverage into Chinese while preserving the native path", () => {
+    initializeWebI18n("zh-CN")
+    const html = renderToStaticMarkup(<SessionAnalyticsView {...props} query={{ metric: "files", file: sourceFileKey, operation: "search" }}
+      state={{ _tag: "Ready", value: fileActivityFixture, refreshing: false }} />)
+    expect(html).toContain("已记录文件活动")
+    expect(html).toContain("缺少可用文件活动的调用")
+    expect(html).toContain('aria-label="文件操作"')
+    expect(html).toContain('value="search" selected="">搜索调用</option>')
+    expect(html).toContain("/work/src/app.ts")
+    initializeWebI18n("en")
   })
   it("shows native v4 identities, coverage, unknown groups and the original evidence titles", () => {
     const html = renderToStaticMarkup(<SessionAnalyticsView {...props} state={{ _tag: "Ready", value: stableToolsFixture, refreshing: false }} />)

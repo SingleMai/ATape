@@ -173,7 +173,22 @@ export const AcpToolIdentity = Schema.Union([
     .annotate({ parseOptions: { onExcessProperty: "error" } })
 ])
 export type AcpToolIdentity = typeof AcpToolIdentity.Type
-export const AcpToolMetadata = Schema.Struct({ [ToolIdentityMetaKey]: Schema.NullOr(AcpToolIdentity) })
+export const FileActivityMetaKey = "atape.dev/file-activity" as const
+// Preserve the recorded spelling. Paths from different source contexts must not
+// be resolved, trimmed or normalized by the shared contract.
+export const FileActivityPath = Schema.String.check(Schema.makeFilter(value => value !== "" &&
+  !/[\u0000-\u001f\u007f-\u009f\uD800-\uDFFF]/u.test(value) &&
+  new TextEncoder().encode(value).byteLength <= 2048))
+export const FileActivityOperation = Schema.Literals(["read", "edit", "search"])
+export type FileActivityOperation = typeof FileActivityOperation.Type
+export const AcpFileActivityEntry = Schema.Struct({ operation: FileActivityOperation, path: FileActivityPath })
+  .annotate({ parseOptions: { onExcessProperty: "error" } })
+export type AcpFileActivityEntry = typeof AcpFileActivityEntry.Type
+export const AcpFileActivity = Schema.Array(AcpFileActivityEntry).check(Schema.isMaxLength(64),
+  Schema.makeFilter(value => new TextEncoder().encode(JSON.stringify(value)).byteLength <= 4096))
+export type AcpFileActivity = typeof AcpFileActivity.Type
+export const AcpToolMetadata = Schema.Struct({ [ToolIdentityMetaKey]: Schema.NullOr(AcpToolIdentity),
+  [FileActivityMetaKey]: Schema.optionalKey(Schema.NullOr(AcpFileActivity)) })
   .annotate({ parseOptions: { onExcessProperty: "error" } })
 export type AcpToolMetadata = typeof AcpToolMetadata.Type
 
@@ -222,7 +237,8 @@ export type AcpToolUpdate = typeof AcpToolUpdate.Type
 
 export const admitsToolMetadata = (profile: CanonicalProfile, update: AcpToolUpdate): boolean =>
   !Object.hasOwn(update, "_meta") || profile === CanonicalProfileVersion5 ||
-  profile === CanonicalProfileVersion4 && update._meta?.[ToolIdentityMetaKey]?.type !== "tool"
+  profile === CanonicalProfileVersion4 && update._meta?.[ToolIdentityMetaKey]?.type !== "tool" &&
+    !Object.hasOwn(update._meta ?? {}, FileActivityMetaKey)
 
 export const AcpSessionUpdate = Schema.Union([
   AcpUserMessageChunk,

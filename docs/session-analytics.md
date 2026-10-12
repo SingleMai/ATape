@@ -6,7 +6,7 @@ the HTTP Adapter exposes its `Open` Interface. The analysis view connects
 statistics, normalized tool identities, recorded activity ranges and conditional
 reader evidence links. This
 guide describes checkout behavior and does not claim publication or deployment.
-The stable native-tool increment uses Canonical/publication v5 and Analytics v4.
+The native-tool and file-activity increments complete the unpublished Canonical/publication v5 and Analytics v4 contracts.
 It is not included in the published 0.5.10 packages or deployed 0.5.10 Server;
 package versions in this checkout remain 0.5.10 until a separately authorized
 release. Server, CLI and the affected Adapters require a coordinated update.
@@ -32,7 +32,7 @@ and `incompleteSamples` describe recorded samples, not completeness of the sourc
 conversation. Session and Thread `captureStatus` retain partial-capture disclosure.
 No work time, tool execution duration, cost, productivity score, inferred outcome
 or generated summary is provided. Record span describes the first and last
-eligible stored source clocks. Codex projection v6 retains projection v5's
+eligible stored source clocks. Codex projection v7 retains projection v5's
 correction of fabricated clocks and v4's historical missing-status correction
 on successful source replay. Unreplayed
 historical records can still carry an older Adapter's epoch or outcome; saved
@@ -75,8 +75,56 @@ Adapters own this extraction. The existing upload preparation Module owns
 redaction; the Server owns folding, grouping and evidence selection. A copied
 identity keeps its admitted original field so field masking also clears the
 copy. Invalid or missing names remain unknown rather than being guessed from
-commands. File activity, cost and inferred task success are outside this
-increment. See [ADR-0124](architecture/adr/0124-stable-native-tool-identity.md).
+commands. Cost and inferred task success are outside this increment. See [ADR-0124](architecture/adr/0124-stable-native-tool-identity.md).
+
+## Recorded file activity
+
+Analytics v4 requires `fileActivity`. It reports recorded read, edit and search
+invocations from explicit Adapter-normalized fields, including failed, pending
+and unknown calls. An edit invocation does not prove a successful filesystem
+change. Search paths describe the recorded **scope**, not matching files.
+
+| Field | Meaning |
+| --- | --- |
+| `callsWithActivity`, `callsWithoutActivity` | Distinct folded structured calls with or without a nonempty usable path fact; sum equals `summary.toolCalls` |
+| `uniquePaths` | Number of distinct exact recorded path strings |
+| `readCalls`, `editCalls`, `searchCalls` | Distinct calls with that recorded operation; one call can enter multiple columns |
+| `paths` | Rows with opaque `key`, exact `path`, distinct `calls` and three operation counts |
+
+Repeated updates and duplicate path/operation entries do not inflate counts.
+One call involving two paths enters each path row but enters Session coverage
+only once. Paths keep their original spelling, including relative paths, case
+and separators; ATape does not resolve a working directory or claim that two
+spellings identify the same filesystem object. Relative spellings shared by
+separate source contexts are aggregated as recorded strings, not physical files.
+Statistics remain Session-wide; Thread and file/operation selections filter
+only evidence. Each selected call returns its last structured update once, with
+its display title and the existing conditional Reader target. Back restores the
+selection and page; full refresh clears all filters and snapshot tokens.
+
+| Source | Explicit recorded facts |
+| --- | --- |
+| Claude | `Read.input.file_path` → read; `Write`, `Edit`, `MultiEdit` file_path → edit; `Grep`/`Glob` explicit input.path → search scope |
+| Codex | `CommandExecution.parsed_cmd[]` closed read/search entries with path; `FileChange.changes` map keys and explicit move_path → edit; `ImageView.path` → read |
+| Unsupported or unavailable source facts | No inference from shell text, patch bodies, MCP input, search patterns or output lists |
+
+The bounded original source field stays available to upload preparation when a
+path is copied. Paths admit no C0/C1 controls or orphan Unicode surrogates and
+at most 2,048 UTF-8 bytes; a call's array admits at most 64 entries and 4,096
+UTF-8 bytes of decoded JSON. Invalid, incomplete or oversized recognized inputs
+produce an explicit unknown/null fact, rather than a truncated path or partial
+collection. Complete empty arrays and explicit null clear earlier facts; absent
+result updates preserve them. Upload redaction also clears the complete call's
+path fact if any path or copied original field is hidden, and clears display titles that may carry escaped or abbreviated path copies. Public tool identity clears independently.
+
+`callsWithoutActivity` includes older projections, unsupported sources,
+missing/invalid/oversized paths and redaction. It is not evidence of no file
+access. Unavailable history remains unrepaired. Available history can replay
+under Claude source profile `.4` or Codex projection/cursor v7 while retaining
+Event IDs, revision floors, checkpoints and Raw acknowledgements. Frozen pending
+publications retain their original bytes. No migration or analytics worker is
+introduced. Earlier Analytics v1-v3 show this report as unavailable.
+See [ADR-0125](architecture/adr/0125-recorded-file-activity.md).
 
 ## Recorded activity and range evidence
 
@@ -179,13 +227,15 @@ or progress writes; they do not silently downgrade identities. Upgrade the
 Server and CLI/Adapter together when a supporting release is available.
 
 Available source history can replay with stable Event IDs and higher projection
-revisions. The new Codex cursor is v6; an older Adapter cannot read it. Recovery
+revisions. The new Codex cursor is v7; an older Adapter cannot read it. Recovery
 continues forward using a compatible runtime and retained progress, rather than
 deleting checkpoints. Claude's new projection similarly requires a compatible
 reader. Missing source history remains unidentified. Already frozen accepted
 publication bytes, manifests and Raw acknowledgements are never rewritten.
 See [the v5 ingestion contract](api/canonical-ingestion.md#v5-stable-native-tool-identity)
 and [the upgrade boundary](cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
+
+No compatibility is claimed between intermediate development-checkout v5/v4 artifacts; their coordinated first release must include the complete file-activity contract.
 
 The earlier v4 source-metadata compatibility encoding and its genuine 0.5.8
 recovery evidence apply only to v4 captures. V5 recovery metadata carries explicit
@@ -210,7 +260,7 @@ Both return the named `SessionAnalytics` representation in
 [OpenAPI](api/openapi-v1.yaml): `snapshot`, optional publication `head`,
 `analyticsVersion`, `sessionId`, `captureStatus`, `summary`, `tools`, `threads`,
 `usage`, version-2/3/4 `capabilities`, version-3/4 `activity` and `evidence`, and
-version-4 stable tool rows and coverage.
+version-4 stable tool rows, coverage and required `fileActivity`.
 Collection fields are arrays, including when empty. The selected version is
 explicit in the body. All statistics except scoped v3/v4 activity describe the full
 selected Session; other filters only select evidence. Each tool evidence anchor is its last structured update. Thought and
@@ -220,12 +270,14 @@ evidence anchors identify the first stored Event in a captured child Thread.
 | Query | Contract |
 | --- | --- |
 | `snapshot` | Opaque conditional current-source token, at most 200 bytes; required on `/evidence` and when using `cursor` or `range` |
-| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, or v3/v4-only `records` |
+| `metric` | `tools` (default), `failed_tools`, `unknown_tools`, `user_inputs`, `thoughts`, `threads`, `mcp_tools`, `skills`, or v3/v4-only `records`, or v4-only `files` |
 | `thread` | Select evidence and v3 activity from one captured Thread, at most 500 bytes |
 | `range` | V3/v4-only opaque server interval or unplaced selection, at most 512 bytes; requires `records` and the same snapshot/Thread scope |
 | `tool` | V4 returned group key; v1–v3 exact displayed label; only the three tool metrics, at most 500 bytes |
 | `capability` | Exact normalized name for `mcp_tools` or `skills`, at most 500 bytes |
 | `server` | Exact normalized server for `mcp_tools`, at most 500 bytes |
+| `file` | V4 returned opaque path key, only with `files` |
+| `operation` | V4 `read`, `edit` or `search`, only with `files`; combines with `file` and Thread using AND |
 | `cursor` | Opaque evidence continuation, at most 1024 bytes, bound to Session, snapshot, analytics version and filters |
 | `limit` | Evidence items per page, 1–100; default 20 |
 
@@ -235,7 +287,7 @@ Unknown, duplicate, empty or malformed query values fail with
 is invalid; `capability` requires `mcp_tools` or `skills`, and `server` requires
 `mcp_tools`. A server/name combination selects that MCP identity. All evidence
 filters, including server and capability, bind the cursor.
-V3/v4 ranges also bind it. V3/v4 evidence items require `clockQuality` as `recorded`,
+V4 file and operation filters also bind it. V3/v4 ranges also bind it. V3/v4 evidence items require `clockQuality` as `recorded`,
 `unknown` or `legacy`; `occurredAt` preserves the stored date or explicit null.
 `evidence.nextCursor` is absent at the end; continuation retains the same source
 token and filters. Each request rechecks authorization.
@@ -271,7 +323,7 @@ still return their full Thread; `limit` does not add legacy paging.
 
 The first increment allows at most 100,000 Event facts, 100,000 Usage facts,
 5,000 Threads, 2,000 distinct tool name/kind groups and 1,000 models. MCP
-server/name and Skill-name groups share an additional 2,000-group bound.
+server/name and Skill-name groups share an additional 2,000-group bound. File activity allows another 2,000 distinct recorded paths.
 Structured tool metadata is bounded to 8 KiB per Event. Aggregate Event metadata is bounded
 to 32 MiB; the complete
 JSON response is bounded to 2 MiB. Exceeding a bound fails explicitly with
@@ -308,8 +360,7 @@ label filtering is disabled on v1–v3, while metric and Thread filters remain
 available. V4 uses the bounded group key even when an MCP display name exceeds
 500 bytes.
 Returning to the conversation revalidates access without displaying cached
-content on failure and provides retry. Full refresh also clears capability and
-server selections. Remaining product work includes file activity, explicit identities from
+content on failure and provides retry. Full refresh also clears capability, server, file and operation selections. Remaining product work includes explicit identities from
 other Providers and non-tool Skill invocation signals. Measure real Session
 sizes and read latency before adding indexed facts
 or persisted derivation. Any future derived read model must bind
