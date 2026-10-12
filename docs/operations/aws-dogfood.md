@@ -141,16 +141,23 @@ previous running state. A maintenance workflow that needs writers to remain
 stopped must retain that boundary through backup and subsequent verification.
 Taking a backup does not prove that restore has been exercised.
 
-V4 adds no database schema migration for 0.5.9. After current readable v4 data is
-accepted, an image-only rollback to a pre-v4 Server cannot promise Reader
-compatibility. A deliberate incompatible rollback needs the matching paired
-PostgreSQL/Raw restore and old image/environment pin; that restore withdraws later
-writes. Readiness failure alone must not trigger a blind data restore. Keep
-writers stopped while the durable-data boundary is uncertain, retain evidence and
-choose a compatible recovery path. An encrypted root-volume snapshot is an
-additional recovery point, not a replacement for the paired-data contract.
+0.5.10 adds no database schema or Canonical storage migration. The retained
+0.5.9 Server already supports nullable Canonical v3/v4 and provides a compatible
+image recovery target. Verify that retained image and the current storage/runtime
+boundary before switching the Server and init/environment pins together. This
+image recovery uses the current durable data; a deliberate data restore remains
+a separate operation and withdraws writes after its recovery point. Neither a
+retained image nor a compatibility check establishes a production rollback.
 
-[The 0.5.9 delivery record](../releases/evidence/v0.5.9-delivery.json) records the
+After readable v4 data is accepted, an image-only rollback to a pre-v4 Server
+cannot promise Reader compatibility. A deliberate incompatible rollback needs
+the matching paired PostgreSQL/Raw restore and old image/environment pin.
+Readiness failure alone must not trigger a blind data restore. Keep writers
+stopped while the durable-data boundary is uncertain, retain evidence and choose
+a compatible recovery path. An encrypted root-volume snapshot is an additional
+recovery point, not a replacement for the paired-data contract.
+
+[The 0.5.10 delivery record](../releases/evidence/v0.5.10-delivery.json) records the
 actual Server, recovery-point, API smoke and package-distribution outcomes;
 manual staging acceptance remains separately pending.
 
