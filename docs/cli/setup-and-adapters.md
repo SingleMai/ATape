@@ -724,6 +724,42 @@ were real and isolated. No production Instance, personal installation, OS login
 registration or fresh Provider conversation was used. After publication, registry
 and catalog visibility require their separate release verification.
 
+### Codex source clocks: 0.5.9 to 0.5.10
+
+An active official-Codex installation on 0.5.9 rejects its first update to the
+nullable-clock Adapter during read-only preflight, before pausing collection.
+The old parent and target bind different active prerequisite scopes. Retrying
+that active update cannot add support to the old Host. The stopped scope retains
+the existing managed update Interface:
+
+1. Finish pending update recovery, choose **Stop sync**, and close other consoles.
+   Preserve the same `ATAPE_HOME`, Projects, credentials and capture progress.
+2. Reopen `atape`, open **Tools and updates**, and choose **Update ATape to 0.5.10**.
+   The actual complete-bundle action switches the CLI and eligible official
+   integrations together, restarts the console and preserves stopped sync.
+   Pinned, local and custom integrations retain their selection.
+3. Confirm both CLI and Codex sync show 0.5.10. Before choosing Start sync, every
+   configured Instance must affirm nullable Canonical v3. Do not install the
+   new Codex Adapter into the 0.5.9 Host by itself.
+4. The updated Adapter replays available source history once with stable Event
+   IDs and higher revisions, preserving Raw acknowledgements. Missing clocks
+   become unknown. Unavailable source history cannot be repaired by this replay.
+
+Once the updated Adapter writes its projection-v5 cursor, the old Codex Adapter
+cannot read it. Recover forward using the selected target runtime and retained
+checkpoints; the common capture-v2 state contract does not establish rollback
+compatibility for this source cursor. Reopen ATape when the reader floor rejects
+an already-open old console. Do not delete checkpoints to bypass that boundary.
+See [Codex source clock quality](../adapters/codex.md#source-clock-quality-and-replay).
+
+The required POSIX release gate uses genuine published 0.5.9 CLI/Codex bytes,
+the exact candidate archives and isolated real npm/CLI/Collector processes.
+It exercises old active refusal, stopped complete-bundle selection, preserved
+configuration/credentials/Raw receipts, available-source replay and continuation,
+and the genuine old Adapter's cursor refusal. Distribution and Server HTTP are
+owned external Test Adapters. It does not establish authenticated live Codex
+acceptance, OS registration or an upgrade of a personal installation.
+
 ### Built-in CLI updates
 
 Open ATape → Tools and updates to inspect current/latest versions and apply each

@@ -183,11 +183,17 @@ preflight, before the Collector is paused. The older parent does not bind the
 new manifest capability into the same scope as the target. This applies even
 when both runtimes use the unchanged capture-state contract. Stop sync before
 upgrading the CLI and matching Adapter bundle; retain checkpoints and Raw
-acknowledgements. The genuine old and current prerequisite Interfaces have been
-verified to agree on the stopped scope and disagree on this active scope. The
-complete stopped 0.5.9 managed handoff has not been executed for this increment;
-the scope evidence is not a full upgrade acceptance result. Other older-parent
-boundaries remain governed by the [upgrade guide](../cli/setup-and-adapters.md#upgrade-the-cli-and-adapters).
+acknowledgements. The required POSIX release gate executes the genuine published
+0.5.9 console's stopped complete-bundle handoff to the exact 0.5.10-or-later
+candidate, then real installed target Collector replay, no-op and append cycles.
+It verifies preserved configuration, credentials, checkpoint bytes, Raw receipts
+and Stop intent through the caller Interfaces, with Instance minimum CLI 0.5.10
+during upgrade. Distribution and Server HTTP are owned external Test Adapters;
+the controlled source records do not establish live Provider acceptance or an
+upgrade of a personal installation. Follow the
+[stopped Codex upgrade](../cli/setup-and-adapters.md#codex-source-clocks-059-to-0510).
+Other older-parent boundaries remain governed by the
+[upgrade guide](../cli/setup-and-adapters.md#upgrade-the-cli-and-adapters).
 
 Supported records with missing, null or invalid source timestamps remain
 captured with `occurredAt: null`. Session `updatedAt` is the maximum admitted

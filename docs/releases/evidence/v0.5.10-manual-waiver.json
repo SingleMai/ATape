@@ -1,0 +1,23 @@
+{
+  "protocol": "atape.manual-release-waiver.v1",
+  "releaseVersion": "0.5.10",
+  "authEpoch": "auth-v1",
+  "status": "authorized",
+  "candidateCommit": null,
+  "authorizedOn": "2026-10-12",
+  "authorization": "On 2026-10-12 Asia/Singapore, the user explicitly requested “可以，那你继续发布新版 npm 包，再升级 Server，把这次改动上线。” This authorizes coordinated publication of the CLI and all seven official Adapters at 0.5.10 and the matching Server upgrade. Under ADR-0048, the package publication request authorizes waiver of the listed manual staging checks only; automated repository, installed integration, historical compatibility and security gates remain mandatory before publication. Earlier release and feature-PR evidence is not reused as this candidate’s acceptance. This increment adds no database schema migration and does not authorize unrelated production data or schema changes.",
+  "scope": "manual-staging-only",
+  "unverifiedChecks": [
+    "candidate-artifacts",
+    "official-topology",
+    "github-provider-staging-smoke",
+    "official-domain-egress-deny-smoke",
+    "two-user-two-team",
+    "waf-tls-callback",
+    "backup-restore",
+    "observability-secret-sample",
+    "rollback",
+    "release-signoff"
+  ],
+  "riskNotice": "docs/releases/v0.5.10.md"
+}
