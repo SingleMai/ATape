@@ -37,7 +37,7 @@ export const inspectToolUpdates = Effect.fn("ToolUpdates.inspect")(function*(cur
     Effect.flatMap(bundle => {
       if (!stableVersion(bundle.version)) return Effect.fail(new ToolUpdateError({ message: "Invalid release metadata." }))
       const row = { ...cliRow, latest: bundle.version, status: releaseStatus(current, bundle.version) }
-      return row.status === "current" ? cli.installedVersion().pipe(Effect.map(entry => stableVersion(entry) && newer(bundle.version, entry)
+      return row.status === "current" && bundle.protocol !== "atape.release-bundle.v3" ? cli.installedVersion().pipe(Effect.map(entry => stableVersion(entry) && newer(bundle.version, entry)
         ? { ...row, status: "available" as const, commandEntryVersion: entry } : row),
         Effect.mapError(() => new ToolUpdateError({ message: "Command entry metadata is unavailable." }))) : Effect.succeed(row)
     }),

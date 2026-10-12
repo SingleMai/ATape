@@ -3,6 +3,7 @@ import { execFile } from "node:child_process"
 import { createHash, randomUUID } from "node:crypto"
 import { appendFile, chmod, copyFile, lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { build } from "esbuild"
@@ -21,6 +22,10 @@ const integrity = bytes => `sha512-${createHash("sha512").update(bytes).digest("
 const json = async file => JSON.parse(await readFile(file, "utf8"))
 const missing = cause => cause.code === "ENOENT"
 const optionalBytes = file => readFile(file).catch(cause => { if (missing(cause)) return undefined; throw cause })
+const journalVersion = path => {
+  const db = new DatabaseSync(path, { readOnly: true })
+  try { return Number(db.prepare("PRAGMA user_version").get().user_version) } finally { db.close() }
+}
 const alive = pid => { try { process.kill(pid, 0); return true } catch (cause) { if (cause.code === "ESRCH") return false; throw cause } }
 const waitFor = async (check, description, timeout = 120_000) => {
   const deadline = Date.now() + timeout
@@ -97,7 +102,8 @@ export async function verifyActiveBridgeUpgrade(releaseDirectory, fixtureDirecto
   // A late-offline .10 sees the newer feature GitHub release from the outset,
   // while immutable legacy routes and npm latest keep pointing to the bridge.
   const distribution = { bundle, legacyBundle, catalog, legacyCatalog, releaseBody, packages: publicPackages, feature,
-    clockOffsetMs: 0, serverVersion: "0.5.10", minimumCLIVersion: "0.5.10", ...(faultPoint ? { fault: { point: faultPoint } } : {}) }
+    clockOffsetMs: 0, serverVersion: feature?.version ?? "0.5.10", minimumCLIVersion: feature?.version ?? "0.5.10",
+    ...(faultPoint ? { fault: { point: faultPoint } } : {}) }
   await writeFile(publicRelease, JSON.stringify(distribution))
   const prefix = join(root, "prefix"), home = join(root, "home"), userHome = join(root, "user")
   const globalRoot = join(prefix, "lib", "node_modules"), bootstrap = join(globalRoot, "@atape", "cli", "dist", "atape.js")
@@ -133,7 +139,8 @@ globalThis.fetch=async (input,init)=> {
  const address=String(input);
  if(address.startsWith("data:"))return realFetch(input,init);
  const fixture=JSON.parse(readFileSync(${JSON.stringify(publicRelease)},"utf8"));
- appendFileSync(${JSON.stringify(requests)},JSON.stringify({address,pid:process.pid})+"\n");
+ appendFileSync(${JSON.stringify(requests)},JSON.stringify({address,pid:process.pid,
+  ...(address==="https://upgrade-fixture.invalid/api/v1/instance"?{serverVersion:fixture.serverVersion,minimumCLIVersion:fixture.minimumCLIVersion}:{})})+"\n");
  for (const protocol of ["atape.release-bundle.v2","atape.release-bundle.v1"]) {
    const migration=protocol.endsWith("v2");
    const catalogURL=migration?${JSON.stringify(releaseCatalogURL("atape.update-catalog.v2"))}:${JSON.stringify(releaseCatalogURL("atape.update-catalog.v1"))};
@@ -384,6 +391,20 @@ else if(args[0]==="install") {
     assert.equal(JSON.parse(Buffer.from(before.state.checkpoint.cursor, "base64url").toString("utf8")).eventProjectionVersion, 5)
     assert.equal(before.state.checkpoint.rawObjects.length, 1)
     assert.ok(before.state.checkpoint.rawObjects[0].serverOffset > 0)
+    assert.equal(before.status.jobs.find(job => job.adapterId === "claude")?.state, "healthy",
+      "The actual baseline Claude SourceCapture cycle must open its journal before empty discovery")
+    const journalKey = sha256(JSON.stringify(["https://upgrade-fixture.invalid", "upgrade-user"]))
+    const journalPath = join(home, "state", "collector.json.captures", `${journalKey}.sqlite`)
+    const journalBinding = { instanceOrigin: "https://upgrade-fixture.invalid", userId: "upgrade-user", installationId: before.state.installationId }
+    const installation = await json(join(home, "state", "collector.json.capture-installation.json"))
+    assert.equal(installation.protocol, "atape.capture-installation.v1"); assert.equal(installation.phase, "ready")
+    assert.equal(installation.installationId, journalBinding.installationId)
+    assert.deepEqual(installation.accounts, [{ key: journalKey, phase: "ready" }])
+    assert.deepEqual(await json(join(dirname(journalPath), `${journalKey}.binding.json`)),
+      { protocol: "atape.capture-account.v1", ...journalBinding, phase: "ready" })
+    assert.equal((await lstat(journalPath)).isFile(), true)
+    const baselineJournalVersion = journalVersion(journalPath)
+    assert.ok([7, 8].includes(baselineJournalVersion), "The genuine baseline must create a supported registered journal")
     const oldBatches = await captured(captures), oldEvents = oldBatches.flatMap(batch => batch.events)
     assert.equal(oldEvents.length, 4)
     assert.ok(oldBatches.every(batch => batch.canonicalProfileVersion === "atape.acp-centered.v3"))
@@ -392,7 +413,7 @@ else if(args[0]==="install") {
     assert.equal(oldTool._meta, undefined); assert.equal(oldTool.rawInput, undefined)
     const credentials = new Map(await Promise.all((await credentialFiles()).map(async file => [file, await readFile(file)])))
     const rawBefore = await readFile(rawCaptures)
-    distribution.serverVersion = version; distribution.minimumCLIVersion = version
+    distribution.serverVersion = feature?.version ?? version; distribution.minimumCLIVersion = feature?.version ?? version
     await writeFile(publicRelease, JSON.stringify(distribution))
     await invoke("enable-auto")
     await invoke("dispatch")
@@ -435,6 +456,8 @@ else if(args[0]==="install") {
     if (feature) {
       const preceding = await captured(captures), previousEvents = preceding.flatMap(batch => batch.events)
       const previousRaw = await readFile(rawCaptures), previousRawObjects = bridgeContinued.state.checkpoint.rawObjects
+      const previousJournalVersion = journalVersion(journalPath)
+      assert.ok([7, 8].includes(previousJournalVersion))
       // Advance only the owned clock Seam. Do not edit the updater's private schedule
       // or force/manual-update APIs to manufacture an automatic second leg.
       distribution.clockOffsetMs += 2 * 24 * 60 * 60 * 1000
@@ -443,6 +466,31 @@ else if(args[0]==="install") {
       await invoke("dispatch")
       const recoveryEvidence = faultPoint ? await interruptAndRecoverFeature() : undefined
       const featureState = await waitSelected(feature.version), featureEntryHash = await selectedHash(feature.version, feature.packages)
+      const targetControl = await json(join(home, "updates", "control.json"))
+      assert.equal(targetControl.phase, "completed"); assert.equal(targetControl.forwardOnly, true)
+      assert.equal(targetControl.target.version, feature.version)
+      const migration = await json(join(home, "updates", "capture-migration.json"))
+      const requirement = migration.required.requirement, receipt = migration.receipt
+      assert.equal(migration.protocol, "atape.capture-migration.v1"); assert.equal(migration.phase, "completed")
+      assert.equal(migration.attempt, undefined)
+      assert.deepEqual(migration.required, await json(join(home, "updates", "capture-migration.required.json")))
+      assert.equal(requirement.outerKey, targetControl.key); assert.equal(requirement.source.version, version)
+      assert.deepEqual(requirement.target, targetControl.target); assert.deepEqual(requirement.bundle.packages, feature.bundle.packages)
+      assert.deepEqual(requirement.inventory.map(account => account.key), [journalKey])
+      const account = requirement.inventory[0]
+      assert.equal(account.path, journalPath); assert.deepEqual(account.binding, journalBinding)
+      assert.equal(account.installationId, journalBinding.installationId); assert.equal(account.format, previousJournalVersion)
+      assert.equal(account.deferred, false)
+      assert.equal(receipt.protocol, "atape.capture-migration-receipt.v1"); assert.equal(receipt.planId, "journal-v7-to-v8")
+      assert.equal(receipt.outerKey, targetControl.key); assert.equal(receipt.requirementHash, requirement.hash)
+      assert.equal(receipt.bundleFingerprint, requirement.bundleFingerprint)
+      assert.deepEqual(receipt.target, { version: feature.version, captureStateContract: feature.bundle.captureStateContract })
+      assert.deepEqual(receipt.accounts, [{ key: journalKey, bindingHash: account.bindingHash, result: "v8" }])
+      assert.deepEqual(migration.progress, receipt.accounts); assert.equal(journalVersion(journalPath), 8)
+      const targetOwner = await json(join(home, "updates", "target-owner.json"))
+      assert.equal(targetOwner.protocol, "atape.update-target.v1"); assert.deepEqual(targetOwner.bundle, feature.bundle)
+      assert.equal(targetOwner.entrySha256, featureEntryHash); assert.equal(targetOwner.bootstrapEntry, bootstrap)
+      assert.equal(targetOwner.paths.atapeHome, home)
       await waitFor(async () => (await captured(captures)).slice(preceding.length).some(batch => batch.canonicalProfileVersion === "atape.acp-centered.v5"),
         "Installed feature Collector did not replay native history to v5")
       const replay = (await captured(captures)).slice(preceding.length)
@@ -469,6 +517,12 @@ else if(args[0]==="install") {
       assert.ok(targets.every(entry => entry.sha256 === featureEntryHash), "Target preparation and activation must use the immutable feature executable")
       assert.equal((await entries()).find(entry => entry.args[0] === "__collector-daemon" && entry.pid === featureState.status.pid)?.sha256, featureEntryHash)
       const requested = await captured(requests)
+      const instanceReadbacks = requested.filter(request => request.address === "https://upgrade-fixture.invalid/api/v1/instance")
+      assert.ok(instanceReadbacks.some(request => request.pid === originalPid || oldWorkers.some(worker => worker.pid === request.pid)),
+        "The genuine .10 caller must observe the already-upgraded Server")
+      assert.ok(instanceReadbacks.length > 0 && instanceReadbacks.every(request =>
+        request.serverVersion === feature.version && request.minimumCLIVersion === feature.version),
+        "All installed callers must see the future Server version and minimum CLI from the first leg onward")
       // The genuine old Collector may discover and cache the immutable v2
       // descriptor before dispatch; its copied worker then consumes that cache.
       const oldCollector = (await entries()).find(entry => entry.args[0] === "__collector-daemon" && entry.pid === originalPid)
@@ -482,9 +536,12 @@ else if(args[0]==="install") {
       assert.equal(await optionalBytes(join(home, "updates", "target-update.json")), undefined)
       featureEvidence = { version: feature.version, entrySha256: featureEntryHash, cliIntegrity: feature.packages["@atape/cli"].manifest.dist.integrity,
         bundle: feature.bundle, actualBridgeAutomaticWorker: true, actualTargetPrepareAndActivate: true,
+        nonEmptyCaptureMigrationReceiptVerified: true, registeredCaptureAccountsVerified: receipt.accounts.length,
+        sourceJournalVersion: previousJournalVersion, targetJournalVersion: 8, targetOwnerVerified: true,
         nativeV5Replay: true, eventIDsPreserved: true, revisionsAdvanced: true, rawReceiptsPreservedAcrossReplay: true,
         nativeFileActivityReplayed: true, appendedContinuation: true, lateOfflineLegacyRoutesRetained: true,
         retainedOldBootstrapRejectedUnknownCaptureLedger: true, globalBootstrapBytesPreserved: true,
+        serverUpgradedBeforeLegacyClient: true, serverVersionReadbacks: instanceReadbacks.length,
         ...(recoveryEvidence ? { recovery: recoveryEvidence } : {}) }
     }
     await unchanged(credentials)
@@ -531,6 +588,7 @@ else if(args[0]==="install") {
       credentialBytesPreserved: true, acknowledgedCaptureProgressPreserved: true, canonicalBridgeNoReplay: true,
       rawReceiptsPreserved: true, appendedContinuation: true, stopAndUpdatesOffPreserved: true,
       retainedOldBootstrapRejectedUnknownCaptureLedger: true,
+      actualBaselineClaudeJournalRegistered: true, baselineJournalVersion,
       fullChain: feature ? "passed-with-controlled-installed-candidate-artifacts" : "not-tested-feature-artifacts-not-supplied",
       ...(featureEvidence ? { feature: featureEvidence } : {}),
       providerCaptureTested: "constructed native-format Codex source through genuine installed readers; actual Claude packages installed and admitted, Claude live source not exercised",

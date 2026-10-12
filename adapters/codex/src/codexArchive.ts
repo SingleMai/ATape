@@ -11,7 +11,7 @@ import type {
   AcpSessionUpdate
 } from "@atape/domain"
 import { createHash } from "node:crypto"
-import { AdapterThread as AdapterThreadSchema, GitAttributionVersion, MaxSourceFailures, type AdapterSourceFailure } from "@atape/domain"
+import { AcpFileActivity, AcpToolIdentity, AdapterThread as AdapterThreadSchema, FileActivityMetaKey, GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, ToolIdentityMetaKey, type AdapterSourceFailure } from "@atape/domain"
 import { open, opendir, realpath, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { codexHome as resolveCodexHome } from "@atape/adapter-catalog/node"
@@ -19,7 +19,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { deflateRawSync, inflateRawSync } from "node:zlib"
 import { Effect, Option, Schema } from "effect"
 
-const CursorVersion = 5 as const
+const CursorVersion = 7 as const
 const MaxCursorBytes = 1024 * 1024
 const MaxDecodedCursorBytes = 16 * 1024 * 1024
 const CompressedCursorPrefix = "z1:"
@@ -30,8 +30,8 @@ const MaxTitleScanBytes = 4 * 1024 * 1024
 const MaxTitleCharacters = 80
 const ReadBlockBytes = 64 * 1024
 const MaxFilesPerSession = 100
-const EventProjectionVersion = 5
-const CanonicalProjectionRevisionOffset = 12
+const EventProjectionVersion = 7
+const CanonicalProjectionRevisionOffset = 14
 const SourceOrderStride = 2 ** 39
 // Keep the new coordinate domain beyond legacy four-digit RFC 3339 clocks.
 const SourceOrderBase = 2 ** 48
@@ -185,7 +185,7 @@ const ActiveCursorSchema = Schema.Struct({
 const CursorSchema = Schema.Struct({
   eventProjectionVersion: Schema.optionalKey(Schema.Number),
   usageVersion: Schema.optionalKey(Schema.Literal(1)),
-  v: Schema.Literal(CursorVersion),
+  v: Schema.Literals([5, 6, CursorVersion]),
   watermarkModifiedMs: Schema.Number,
   watermarkSessionId: Schema.String,
   commitSequence: Schema.optionalKey(Schema.Number),
@@ -1432,16 +1432,23 @@ const mapItemUpdate = (item: Record<string, unknown>, fallbackId: string): AcpSe
     }
     case "CommandExecution": {
       const command = itemText(item.command) || "Shell command"
-      return toolUpdate(id, command, "execute", item.status, item.exit_code)
+      const facts = nativeFileActivity(item)
+      return toolUpdate(id, command, "execute", item.status, item.exit_code, toolIdentity("CommandExecution"), facts?.rawInput, facts?.activity)
     }
     case "McpToolCall": {
       const label = [stringValue(item.server), stringValue(item.tool)].filter(Boolean).join("/") || "MCP tool"
-      return toolUpdate(id, label, "other", item.status)
+      const identity = mcpIdentity(item.server, item.tool)
+      return toolUpdate(id, label, "other", item.status, undefined, identity,
+        identity ? { server: item.server, tool: item.tool } : undefined)
     }
-    case "FileChange":
-      return toolUpdate(id, "Apply file changes", "edit", item.status)
-    case "ImageView":
-      return toolUpdate(id, `View image ${basename(stringValue(item.path) ?? "image")}`, "read", item.status)
+    case "FileChange": {
+      const facts = nativeFileActivity(item)
+      return toolUpdate(id, "Apply file changes", "edit", item.status, undefined, toolIdentity("FileChange"), facts?.rawInput, facts?.activity)
+    }
+    case "ImageView": {
+      const facts = nativeFileActivity(item)
+      return toolUpdate(id, "View image", "read", item.status, undefined, toolIdentity("ImageView"), facts?.rawInput, facts?.activity)
+    }
     case "Extension":
       return toolUpdate(id, stringValue(item.kind) || "Extension", "other", item.status)
     default:
@@ -1501,7 +1508,7 @@ const mapResponseSupplementUpdate = (
   }
   if (type === "custom_tool_call" || type === "function_call") {
     const label = stringValue(item.name) ?? "Codex tool"
-    return toolUpdate(id, label, responseToolKind(label), item.status)
+    return toolUpdate(id, label, responseToolKind(label), item.status, undefined, toolIdentity(item.name))
   }
   return undefined
 }
@@ -1516,12 +1523,58 @@ const responseToolKind = (label: string): "read" | "edit" | "search" | "execute"
   return "other"
 }
 
+const isToolIdentity = Schema.is(AcpToolIdentity)
+const toolIdentity = (name: unknown): AcpToolIdentity | undefined => {
+  const identity = { type: "tool", name }
+  return isToolIdentity(identity) ? identity : undefined
+}
+const mcpIdentity = (server: unknown, name: unknown): AcpToolIdentity | undefined => {
+  const identity = { type: "mcp", server, name }
+  return isToolIdentity(identity) ? identity : undefined
+}
+
+const isFileActivity = Schema.is(AcpFileActivity)
+const admittedFileActivity = (rawInput: unknown, entries: () => ReadonlyArray<unknown>): { readonly rawInput?: unknown; readonly activity: AcpFileActivity | null } => {
+  // Copied paths retain their admitted original field at the upload privacy
+  // boundary. Omitted oversized inputs cannot justify another copy.
+  if (!isBoundedToolValue(rawInput)) return { activity: null }
+  const facts = [...new Map(entries().map(entry => [JSON.stringify(entry), entry])).values()]
+  return { rawInput, activity: isFileActivity(facts) ? facts : null }
+}
+function nativeFileActivity(item: Record<string, unknown>): ReturnType<typeof admittedFileActivity> | undefined {
+  if (item.type === "CommandExecution") {
+    if (!Array.isArray(item.parsed_cmd)) return { activity: null }
+    const parsed = item.parsed_cmd
+    return admittedFileActivity({ parsed_cmd: parsed }, () => parsed.flatMap(value => {
+      const command = record(value)
+      // This is the Provider's recorded classification; shell text does not
+      // establish a read, search scope or file path.
+      return command?.type === "read" || command?.type === "search" ? [{ operation: command.type, path: command.path }] : []
+    }))
+  }
+  if (item.type === "FileChange") {
+    const changes = record(item.changes)
+    if (!changes) return { activity: null }
+    return admittedFileActivity({ changes: item.changes }, () => Object.entries(changes).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0).flatMap(([path, value]) => {
+      const change = record(value)
+      if (!change || change.type !== "add" && change.type !== "update" && change.type !== "delete") return [{ operation: "invalid", path }]
+      return [{ operation: "edit", path }, ...(change.move_path == null ? [] : [{ operation: "edit", path: change.move_path }])]
+    }))
+  }
+  if (item.type === "ImageView")
+    return Object.hasOwn(item, "path") ? admittedFileActivity({ path: item.path }, () => [{ operation: "read", path: item.path }]) : { activity: null }
+  return undefined
+}
+
 const toolUpdate = (
   id: string,
   title: string,
   kind: "read" | "edit" | "search" | "execute" | "fetch" | "other",
   providerStatus: unknown,
-  exitCode?: unknown
+  exitCode?: unknown,
+  identity?: AcpToolIdentity,
+  rawInput?: unknown,
+  activity?: AcpFileActivity | null
 ): AcpSessionUpdate => {
   const status = typeof exitCode === "number"
     ? exitCode === 0 ? "completed" as const : "failed" as const
@@ -1531,7 +1584,9 @@ const toolUpdate = (
     toolCallId: id,
     title: truncateUtf8(title, 500),
     kind,
-    ...(status === undefined ? {} : { status })
+    ...(status === undefined ? {} : { status }),
+    ...(identity ? { _meta: { [ToolIdentityMetaKey]: identity, ...(activity === undefined ? {} : { [FileActivityMetaKey]: activity }) } } : {}),
+    ...(rawInput === undefined ? {} : { rawInput })
   }
 }
 
@@ -1903,7 +1958,10 @@ const decodeCursor = (value: string | null): CodexCursor => {
       : Buffer.from(value, "base64url")
     const parsed = JSON.parse(contents.toString("utf8")) as unknown
     const decoded = Schema.decodeUnknownOption(CursorSchema)(parsed)
-    if (Option.isSome(decoded) && validCursor(decoded.value)) return decoded.value
+    if (Option.isSome(decoded)) {
+      const migrated = { ...decoded.value, v: CursorVersion }
+      if (validCursor(migrated)) return migrated
+    }
     const previous = Schema.decodeUnknownOption(PreviousCursorSchema)(parsed)
     if (Option.isSome(previous)) {
       const { active, ...rest } = previous.value
@@ -1954,7 +2012,7 @@ const validActive = (active: ActiveCursor) => nonNegative(active.revision) && ac
   (active.providerTitleUpdatedAt === undefined || sourceTimestamp(active.providerTitleUpdatedAt) !== null) &&
   (active.sourceUpdatedAt === undefined || active.sourceUpdatedAt === null || sourceTimestamp(active.sourceUpdatedAt) !== null) &&
   (active.frozenThreads === undefined || active.frozenThreads.length <= 100)
-const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === undefined || cursor.eventProjectionVersion === 2 || cursor.eventProjectionVersion === 3 || cursor.eventProjectionVersion === 4 || cursor.eventProjectionVersion === EventProjectionVersion) && Number.isFinite(cursor.watermarkModifiedMs) &&
+const validCursor = (cursor: CodexCursor) => (cursor.eventProjectionVersion === undefined || cursor.eventProjectionVersion === 2 || cursor.eventProjectionVersion === 3 || cursor.eventProjectionVersion === 4 || cursor.eventProjectionVersion === 5 || cursor.eventProjectionVersion === 6 || cursor.eventProjectionVersion === EventProjectionVersion) && Number.isFinite(cursor.watermarkModifiedMs) &&
   cursor.watermarkModifiedMs >= 0 && cursor.watermarkSessionId.length <= 500 &&
   (cursor.lastCanonicalSessionId === undefined || cursor.lastCanonicalSessionId.length <= 500) &&
   (cursor.lastCanonicalSourceKey === undefined || /^[a-f0-9]{64}$/.test(cursor.lastCanonicalSourceKey)) &&

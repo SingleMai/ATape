@@ -3,14 +3,14 @@ import type {
   AtapeAdapterModule,
   LegacyAdapterRuntime
 } from "@atape/domain"
-import { CanonicalProfileVersion3, GitAttributionVersion } from "@atape/domain"
+import { CanonicalProfileVersion5, GitAttributionVersion } from "@atape/domain"
 import { Effect, Ref, Semaphore } from "effect"
 import { CodexArchiveError, collectCodexPage, openCodexArchive } from "./codexArchive.ts"
 
 const module = {
   createAtapeAdapter: async (context: AdapterOpenContext & { readonly signal: AbortSignal }): Promise<LegacyAdapterRuntime> => {
-    if (!context.legacyCanonicalProfiles?.includes(CanonicalProfileVersion3)) {
-      throw new CodexArchiveError({ reason: "configuration", message: "Upgrade the ATape CLI to collect Codex with explicit source clock quality." })
+    if (!context.legacyCanonicalProfiles?.includes(CanonicalProfileVersion5)) {
+      throw new CodexArchiveError({ reason: "configuration", message: "Upgrade the ATape CLI to collect Codex with explicit source clock quality and stable tool identities." })
     }
     if (context.project.type === "git" && context.gitAttribution?.version !== GitAttributionVersion) {
       throw new CodexArchiveError({ reason: "configuration", message: "Upgrade the ATape CLI to collect Git Projects with shared attribution." })
@@ -22,7 +22,7 @@ const module = {
       const opening = yield* Semaphore.make(1)
       const lifetime = new AbortController()
       return {
-        canonicalProfileVersion: CanonicalProfileVersion3,
+        canonicalProfileVersion: CanonicalProfileVersion5,
         collect: request => {
           const signal = AbortSignal.any([context.signal, lifetime.signal, request.signal])
           return Effect.runPromise(opening.withPermit(Effect.gen(function*() {

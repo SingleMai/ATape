@@ -1,4 +1,4 @@
-import { CanonicalProfileVersion4, ToolIdentityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
+import { CanonicalProfileVersion5, ToolIdentityMetaKey, FileActivityMetaKey, SourceCaptureHeaderV2, SourceCapturePage, SourceCaptureVersion2, AdapterCollectionLimits,
   type AdapterOpenContext, type SourceOpenRequestV2, type SourceCaptureFrame } from "@atape/domain"
 import { Effect, Schema } from "effect"
 import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises"
@@ -17,7 +17,7 @@ type Row = Record<string, any>
 let directory: string, file: string, context: AdapterOpenContext & { signal: AbortSignal }
 const sid = "generated-capture-session", encode = (rows: Row[]) => rows.map(row => JSON.stringify(row) + "\n").join("")
 const limits = { rowBytes: 16 * 1024 * 1024, pageBytes: 32 * 1024 * 1024, pageRows: 100, records: 10000, threads: 100, durationMs: 300000 }
-const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion4] }
+const projection = { events: 100000, usage: 100000, pageItems: 1, pageBytes: 32 * 1024 * 1024, canonicalProfiles: [CanonicalProfileVersion5] }
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "atape-claude-capture-")); file = join(directory, "session.jsonl")
   vi.stubEnv("ATAPE_CLAUDE_SESSION_FILE", file)
@@ -84,13 +84,13 @@ const nativeFamily = async () => {
   return { proof, sources, childFile, childId: `claude-agent:${proof.agentId}` }
 }
 
-it.each([undefined, ["atape.acp-centered.v2"] as const])("requires an explicit Host v4 capability before opening source bytes (%s)", async canonicalProfiles => {
+it.each([undefined, ["atape.acp-centered.v2"] as const, ["atape.acp-centered.v4"] as const])("requires an explicit Host v5 capability before opening source bytes (%s)", async canonicalProfiles => {
   // The source does not exist: capability failure must precede discovery/read.
   const { canonicalProfiles: _profiles, ...legacyProjection } = projection
   await expect(capture(request({ projection: { ...legacyProjection, ...(canonicalProfiles ? { canonicalProfiles } : {}) } }))).rejects.toThrow("Upgrade the ATape CLI")
 })
 
-it("retains only explicit native MCP and Skill identities without changing source bodies or outcomes", async () => {
+it("retains explicit native tool, MCP and Skill identities without changing source bodies or outcomes", async () => {
   const blocks = [
     { type: "tool_use", id: "mcp", name: "mcp__docs__read_page", input: { id: "page" } },
     { type: "tool_use", id: "skill", name: "Skill", input: { skill: "plugin:review", args: "private input" } },
@@ -103,7 +103,8 @@ it("retains only explicit native MCP and Skill identities without changing sourc
     { type: "tool_use", id: "large", name: "Skill", input: { skill: "界".repeat(167) } },
     { type: "tool_use", id: "omitted-input", name: "Skill", input: { skill: "private-workflow", args: "x".repeat(65536) } },
     { type: "tool_use", id: "boundary", name: "Skill", input: { skill: "界".repeat(166) } },
-    { type: "tool_use", id: "malformed-mcp", name: "mcp__docs", input: {} }
+    { type: "tool_use", id: "malformed-mcp", name: "mcp__docs", input: {} },
+    ...["", " Read", "Read ", "Read\u0085", "界".repeat(167)].map((name, i) => ({ type: "tool_use", id: `invalid-${i}`, name, input: {} }))
   ]
   const common = { sessionId: sid, cwd: directory, isSidechain: false, timestamp: "2026-10-11T00:00:00Z" }
   const source = encode([
@@ -116,27 +117,66 @@ it("retains only explicit native MCP and Skill identities without changing sourc
   ])
   await writeFile(file, source)
   const actual = await capture()
-  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.2", canonicalProfileVersion: CanonicalProfileVersion4 })
+  expect(actual.header).toMatchObject({ profile: "claude.jsonl.active-path.4", canonicalProfileVersion: CanonicalProfileVersion5 })
   const calls = actual.events.filter(event => event.update.sessionUpdate === "tool_call")
   expect(calls.filter(event => "_meta" in event.update).map(event => event.update)).toMatchObject([
     { toolCallId: "mcp", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "mcp", server: "docs", name: "read_page" } } },
     { toolCallId: "skill", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "skill", name: "plugin:review" } } },
+    { toolCallId: "file", title: "Read", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Read" } } },
+    { toolCallId: "mention", title: "Run Skill workflow", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "tool", name: "Run Skill workflow" } } },
     { toolCallId: "boundary", status: "pending", _meta: { [ToolIdentityMetaKey]: { type: "skill", name: "界".repeat(166) } } }
   ])
   expect(calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "skill")?.update)
     .toMatchObject({ rawInput: { skill: "plugin:review", args: "private input" } })
-  expect(calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "file")?.update)
-    .toMatchObject({ title: "Read", rawInput: { file_path: "/tmp/SKILL.md", skill: "not-an-invocation" } })
-  expect(calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "file")?.update).not.toHaveProperty("_meta")
-  expect(actual.events.every(event => !JSON.stringify(event.update).includes('"atape.dev/file-activity"'))).toBe(true)
   const omitted = calls.find(event => "toolCallId" in event.update && event.update.toolCallId === "omitted-input")!.update
   expect(omitted).not.toHaveProperty("rawInput"); expect(omitted).not.toHaveProperty("_meta")
   expect(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").map(event => event.update)).toMatchObject([
     { toolCallId: "mcp", status: "completed" }, { toolCallId: "skill", status: "failed" }
   ])
   expect(actual.events.filter(event => event.update.sessionUpdate === "tool_call_update").every(event => !("_meta" in event.update))).toBe(true)
+  expect(calls.filter(event => "toolCallId" in event.update && event.update.toolCallId.startsWith("invalid-")).every(event => !("_meta" in event.update))).toBe(true)
   expect(rawText(actual.frames)).toBe(source)
+  expect(await capture(request({ priorCheckpoint: actual.header.sourceCheckpoint, priorThreads: actual.header.threads }))).toEqual(actual)
   expect(await capture(request({ rawEnabled: false }))).toMatchObject({ header: actual.header, events: actual.events })
+})
+
+it("records only admitted native file paths and explicit search scopes", async () => {
+  const blocks = [
+    { type: "tool_use", id: "read", name: "Read", input: { file_path: "./src/main.ts" } },
+    { type: "tool_use", id: "write", name: "Write", input: { file_path: "/project/new.ts", content: "new body" } },
+    { type: "tool_use", id: "edit", name: "Edit", input: { file_path: "src/main.ts", old_string: "a", new_string: "b" } },
+    { type: "tool_use", id: "multi", name: "MultiEdit", input: { file_path: "src/main.ts", edits: [] } },
+    { type: "tool_use", id: "grep", name: "Grep", input: { path: "src", pattern: "looks/like/a/path.ts" } },
+    { type: "tool_use", id: "glob", name: "Glob", input: { path: "./", pattern: "**/*.ts" } },
+    { type: "tool_use", id: "unknown-scope", name: "Glob", input: { pattern: "src/**/*.ts" } },
+    { type: "tool_use", id: "shell", name: "Bash", input: { command: "cat src/main.ts; rg TODO src", file_path: "invented.ts" } },
+    { type: "tool_use", id: "mcp", name: "mcp__fs__read", input: { file_path: "invented.ts" } },
+    { type: "tool_use", id: "extension", name: "ReadCustom", input: { file_path: "invented.ts" } },
+    { type: "tool_use", id: "oversized", name: "Write", input: { file_path: "omitted.ts", content: "x".repeat(65536) } },
+    ...["", "bad\npath", "bad\0path", "\ud800", "界".repeat(683)].map((file_path, index) =>
+      ({ type: "tool_use", id: `invalid-${index}`, name: "Read", input: { file_path } })),
+    { type: "tool_use", id: "spaces", name: "Read", input: { file_path: " keep spaces " } }
+  ]
+  const sourceRows = rows().slice(0, 2)
+  sourceRows[1]!.message.content = blocks
+  const source = encode(sourceRows); await writeFile(file, source)
+  const actual = await capture()
+  expect(actual.header.profile).toBe("claude.jsonl.active-path.4")
+  const facts = (id: string) => {
+    const update = actual.events.find(event => "toolCallId" in event.update && event.update.toolCallId === id)!.update
+    return "_meta" in update ? update._meta?.[FileActivityMetaKey] : undefined
+  }
+  expect(facts("read")).toEqual([{ operation: "read", path: "./src/main.ts" }])
+  for (const [id, path] of [["write", "/project/new.ts"], ["edit", "src/main.ts"], ["multi", "src/main.ts"]])
+    expect(facts(id!)).toEqual([{ operation: "edit", path }])
+  expect(facts("grep")).toEqual([{ operation: "search", path: "src" }])
+  expect(facts("glob")).toEqual([{ operation: "search", path: "./" }])
+  expect(facts("spaces")).toEqual([{ operation: "read", path: " keep spaces " }])
+  for (const id of ["unknown-scope", "oversized", ...blocks.filter(block => block.id.startsWith("invalid-")).map(block => block.id)])
+    expect(facts(id)).toBeNull()
+  for (const id of ["shell", "mcp", "extension"]) expect(facts(id)).toBeUndefined()
+  expect(rawText(actual.frames)).toBe(source)
+  expect(await capture(request({ priorCheckpoint: actual.header.sourceCheckpoint, priorThreads: actual.header.threads }))).toEqual(actual)
 })
 
 it("selects a generated truncating-resume branch and retains all physical Raw", async () => {
@@ -570,6 +610,22 @@ const legacyFirstPage = async (values: Row[], target = file) => {
 // separate from the unchanged genuine previous-factory cursor acceptance cases.
 const legacyState = (cursor: string): Row => JSON.parse(cursor.startsWith("z3:")
   ? inflateRawSync(Buffer.from(cursor.slice(3), "base64url")).toString("utf8") : cursor)
+
+it.each([5, 6])("validates generated retained projection %s pending slots before the new file projection", async projectionRevision => {
+  const values = rows().slice(0, 2)
+  values[0]!.message.content = [{ type: "text", text: "first root part" }, { type: "text", text: "second root part" }]
+  values[1]!.message.content = [{ type: "tool_use", id: "read", name: "Read", input: { file_path: "retained.ts" } }]
+  const previous = await legacyFirstPage(values), state = legacyState(previous.nextCursor)
+  state.sessions[0].checkpoint.projectionRevision = projectionRevision
+  const checkpoint = JSON.stringify(state)
+  const current = await capture(request({ legacyCheckpoint: checkpoint }))
+  expect(current.events.map(event => event.sourceEventId)).toEqual(["root:0", "root:1", "first:0"])
+  expect(current.events[2]!.update).toMatchObject({ _meta: { [FileActivityMetaKey]: [{ operation: "read", path: "retained.ts" }] } })
+  expect(rawText(current.frames)).toBe(encode(values))
+  state.sessions[0].checkpoint.stream.eventSkip = 3
+  await expect(capture(request({ legacyCheckpoint: JSON.stringify(state) }))).rejects.toThrow("event count")
+})
+
 it.each([false, true])("resolves a genuine first-root partial page with no acknowledged UUID (bookkeeping %s)", async bookkeeping => {
   const values = rows().slice(0, 2)
   values[0]!.message.content = [{ type: "text", text: "first root part" }, { type: "text", text: "second root part" }]

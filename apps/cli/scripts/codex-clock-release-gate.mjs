@@ -64,7 +64,7 @@ export async function acquireCodexClockBaselines(directory, fetchPackage = globa
 
 // Every release at or beyond the first clock-profile release must exercise the
 // genuine old parent transition on POSIX; no environment skip override exists.
-export async function verifyCodexClockRelease({ version, releaseDirectory }, fetchPackage = globalThis.fetch) {
+export async function verifyCodexClockRelease({ version, releaseDirectory, releaseChannel, bridgeRelease }, fetchPackage = globalThis.fetch) {
   const parts = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/.exec(version)
   if (!parts) throw new Error("Release version must be SemVer")
   const [major, minor, patch] = parts.slice(1).map(Number)
@@ -73,13 +73,23 @@ export async function verifyCodexClockRelease({ version, releaseDirectory }, fet
   const root = await mkdtemp(join(tmpdir(), "atape-codex-clock-release-"))
   try {
     const baseline = await acquireCodexClockBaselines(join(root, "baseline"), fetchPackage)
-    const evidence = await verifyCodexClockUpgrade(releaseDirectory, join(root, "acceptance"), baseline.cli, baseline.codex, version)
+    let evidence
+    if (releaseChannel === "target-owned") {
+      const { acquireRetainedActiveBridgeRelease, assertRetainedActiveBridgeReleaseBytes } = await import("./active-bridge-release-gate.mjs")
+      const bridge = bridgeRelease ?? await acquireRetainedActiveBridgeRelease(join(root, "retained-bridge"), fetchPackage)
+      await assertRetainedActiveBridgeReleaseBytes(bridge)
+      evidence = await verifyCodexClockUpgrade(bridge.directory, join(root, "acceptance"), baseline.cli, baseline.codex, bridge.version,
+        { directory: releaseDirectory, version })
+    } else {
+      evidence = await verifyCodexClockUpgrade(releaseDirectory, join(root, "acceptance"), baseline.cli, baseline.codex, version)
+    }
     return { required: true, evidence }
   } finally { await rm(root, { recursive: true, force: true }) }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const release = await loadReleaseContract(fileURLToPath(new URL("../../..", import.meta.url)))
-  const result = await verifyCodexClockRelease({ version: release.version, releaseDirectory: process.argv[2] ?? release.releaseDirectory })
+  const result = await verifyCodexClockRelease({ version: release.version, releaseChannel: release.releaseChannel,
+    releaseDirectory: process.argv[2] ?? release.releaseDirectory })
   process.stdout.write(`Codex clock release gate: ${JSON.stringify(result)}\n`)
 }

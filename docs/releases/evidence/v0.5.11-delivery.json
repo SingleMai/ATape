@@ -1,0 +1,80 @@
+{
+  "protocol": "atape.release-delivery.v1",
+  "recordedAt": "2026-10-12T19:43:08.438709+00:00",
+  "releaseVersion": "0.5.11",
+  "status": "publication_complete",
+  "source": {
+    "candidateCommit": "702fc32308c78712ce9bbbf57f98421ce471059b",
+    "waiverCommit": "f9f4bc1074ed3e40a1bede5f99af23581f393178",
+    "pullRequest": "https://github.com/SingleMai/ATape/pull/234",
+    "mergeCommit": "2ac1f1ef35443f6a158d2f87ece1bd27acb63fc1",
+    "mergedAt": "2026-10-12T18:53:19Z",
+    "testedTreeMatchesMerge": true,
+    "tree": "a4b661e1aa2453883b62ad2d2423aabce1bb3d19"
+  },
+  "checks": {
+    "ci": {
+      "url": "https://github.com/SingleMai/ATape/actions/runs/38289791305",
+      "testedCommit": "f9f4bc1074ed3e40a1bede5f99af23581f393178",
+      "result": "passed",
+      "completedAt": "2026-10-12T18:52:10Z",
+      "logSHA256": "352c2f580a2865e639ebe935ddaa44bee7d5663aede93b9088d20231c17eb38d",
+      "fullPostgreSQLIntegration": "passed",
+      "authenticationMaintenance": "passed 8.02s",
+      "installedHTTPProviderCorpus": "passed 983.634s",
+      "physicalENOSPCRecovery": "passed on native Linux"
+    },
+    "security": {
+      "url": "https://github.com/SingleMai/ATape/actions/runs/38289791297",
+      "testedCommit": "f9f4bc1074ed3e40a1bede5f99af23581f393178",
+      "result": "passed",
+      "requiredJobs": 3
+    }
+  },
+  "publication": {
+    "status": "completed",
+    "tag": "v0.5.11",
+    "url": "https://github.com/SingleMai/ATape/actions/runs/38293987130",
+    "sourceCommit": "2ac1f1ef35443f6a158d2f87ece1bd27acb63fc1",
+    "conclusion": "success",
+    "completedAt": "2026-10-12T19:40:05Z",
+    "log": {
+      "filename": "atape-v011-release-completed.log",
+      "sha256": "1ffb1531198f5a7be423bf1dc2492c8eb10fd9a5b184d7b9187cf93d14cee95a"
+    },
+    "artifactComparison": {
+      "filename": "atape-v011-ci-artifact-comparison.json",
+      "sha256": "5f2f94c1bb04f0180ea6a19765d3dab77c8e69cbfa5e6f91f17e6d2e3959505e"
+    },
+    "exactLocalAndCIArchiveFiles": 9,
+    "npmAndGitHub": {
+      "filename": "publication.json",
+      "sha256": "86e5ec7cc97dd624ca1b0e385aadf17f556fac5cb39b2144f46e2f932890a13e"
+    },
+    "staticMetadata": {
+      "filename": "static-publication.json",
+      "sha256": "08c83af2f340aefc7ef3caffe3b3a9349cbfde9969d76a017e9de10e8d9450eb"
+    },
+    "staticFilesPubliclyVerified": 15,
+    "anonymousAcceptance": {
+      "result": "passed",
+      "filename": "evidence.json",
+      "sha256": "fa262c49f4185b98d034085e9685df0c3841a48e9ff6602d94ae28d33ce3f8eb",
+      "requestCount": 116,
+      "remoteWrites": 0,
+      "credentialsSent": false,
+      "scope": "Eight exact npm versions/tarballs and latest identities, nine GitHub assets, legacy/target catalogs and static historical bytes matched the frozen bridge candidate."
+    }
+  },
+  "server": {
+    "status": "not_deployed",
+    "scope": "This genuine bridge is published for old clients. The separately authorized final .12 Server deployment precedes advertising the feature release; no intermediate .11 Server rollout is claimed."
+  },
+  "limits": [
+    "All ten manual staging checks remain pending under the candidate-bound manual-only waiver. Automated CI, integration and security gates passed; no automated gate was waived.",
+    "The earlier local PostgreSQL failures and their diagnostic limits remain in the original .11 candidate acceptance record; complete fresh native Linux PR and Release integration both passed.",
+    "Public byte identity and decoded provenance content do not establish independent cryptographic signature verification.",
+    "POSIX installed acceptance uses controlled native source and external HTTP/OS Test Adapters. Native Windows, live Claude/Cursor, native login/wake and complete manual staging remain unverified.",
+    "Publication does not prove immediate client uptake; discovery cache and automatic scheduling apply."
+  ]
+}

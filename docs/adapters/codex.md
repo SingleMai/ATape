@@ -1,19 +1,25 @@
 # Codex Adapter
 
+The 0.5.12 `target-owned` implementation restores Canonical v5 native tool identity
+and recorded file activity with projection/cursor v7. The 0.5.11
+`legacy-bridge` retains genuine Canonical v3/projection v5 provider behavior
+for older clients. Automatic update preparation runs in the verified target
+CLI, and legacy discovery retains the bridge. See
+[ADR-0126](../architecture/adr/0126-target-owned-managed-updates.md) and
+[target-owned updates](../cli/setup-and-adapters.md#target-owned-updates).
 
-The 0.5.11 `legacy-bridge` package retains the published 0.5.10 Adapter
-Implementation so existing clients can update automatically. The CLI gains
-target-owned update preparation; the official capture profile remains unchanged.
-Ordinary native-tool identity and recorded file activity are planned for the
-subsequent `target-owned` package, which will replay available history forward.
-[ADR-0126](../architecture/adr/0126-target-owned-managed-updates.md) records
-the bridge and the target-owned update Interface.
 `@atape/adapter-codex` collects project-scoped local Codex rollout files and projects their completed conversation items into ATape's ACP-centered Adapter protocol. The Adapter is an experimental compatibility layer: Codex documents the CLI product, but does not publish the local rollout JSONL layout as a stable integration API.
 
 When Raw capture is enabled, unknown or newly introduced Codex records remain available in Raw while being omitted from Canonical until ATape can map them without inventing semantics. The Web conversation flow renders only Canonical events; it does not add “missing capability” placeholders for omitted provider records.
 
 For a local build or release tarball, use Tools and updates → Integration maintenance
 to install its directory or full archive path, then Choose tools to sync.
+The 0.5.12 implementation uses Canonical v5 and a v7 cursor. The
+[release notes](../releases/v0.5.12.md) own publication, deployment and acceptance
+evidence. The 0.5.11 bridge retains Canonical v3 and its
+projection-v5 cursor while adding a v5-capable Host, Server and reader. A
+supporting Server and complete CLI/Adapter bundle are required; see
+[coordinated upgrades](../cli/setup-and-adapters.md#stable-native-tool-identity-checkout-increment).
 
 ## Supported source and limits
 
@@ -90,6 +96,59 @@ Completed Codex items map as follows:
 | `Extension` | `tool_call` with `other` kind |
 
 Private reasoning content is not promoted into Canonical. When Raw capture is enabled, it remains part of the separately uploaded Raw source, subject to the Collector Host's client-side secret redaction.
+
+## Stable native tool facts
+
+Current Canonical v5 capture records explicit native `function_call` and
+`custom_tool_call` names as ordinary tool identities. The closed native item
+types `CommandExecution`, `FileChange` and `ImageView` supply those stable names;
+their original command or display title remains separate. Native `McpToolCall`
+server/tool fields supply an MCP identity. Extension labels, shell text and
+missing or invalid names do not establish an identity. Derived child spawn
+markers likewise remain without an inferred native tool name.
+
+Names must be trimmed, well-formed Unicode and fit 500 UTF-8 bytes. Identity
+absence preserves the preceding fact on the same call; explicit null clears it.
+Explicit outcomes retain their existing meaning. The Adapter retains admitted
+original MCP `server`/`tool` fields so upload field rules can hide their copied
+identity and display values. The Host applies existing identity, copied-name and
+payload redaction before delivery; grouping rules belong to the Server's
+[Session Analytics Module](../session-analytics.md#stable-tool-grouping).
+See [ADR-0124](../architecture/adr/0124-stable-native-tool-identity.md).
+File activity uses only explicit typed source fields described below.
+
+## Explicit file activity
+
+The Canonical v5 contract carries bounded typed path facts in
+`atape.dev/file-activity`, separately from tool identity and display title:
+
+| Native item | Recorded paths | Meaning |
+| --- | --- | --- |
+| `CommandExecution` | `parsed_cmd[].path` for exact native `read` / `search` types | Read targets or search scopes; one call can carry both. |
+| `FileChange` | Keys of `changes` with `add`, `update` or `delete` types, plus explicit `move_path` destinations | Reported edit targets; failed status does not establish a successful change. |
+| `ImageView` | `path` | Image read target. |
+
+Repeated operation/path pairs are counted once per folded call. Search scopes
+are not matching files. The Adapter keeps the complete bounded original
+`parsed_cmd`, `changes` or `path` input so the Host can honor copied-field
+redaction, including object keys. No shell command, old `apply_patch` envelope,
+function argument, MCP input or result text is classified into file paths.
+
+Paths retain their original spelling without resolution or normalization.
+Invalid Unicode, controls, empty paths, paths above 2,048 UTF-8 bytes, source
+inputs outside the shared 64 KiB admission, or path sets above 64 entries or
+4,096 JSON UTF-8 bytes explicitly clear the complete activity fact with null. Facts are never truncated
+into partial paths. An empty native collection can explicitly clear an earlier
+fact; it does not prove no file was touched. Complete native updates with missing path fields also clear old facts with null;
+unrelated updates omit the field and preserve earlier facts. Null remains unknown.
+Upload masking of a path or its original input clears the copied activity fact.
+Image-view display titles use the generic `View image` so a hidden source path
+cannot survive as a copied basename.
+
+Cursor/projection v7 reads complete v5 and v6 state, preserves source ranks,
+revision floors and Raw receipts, and replays available Canonical history once.
+Older Adapters cannot read the new v7 cursor; recover forward without resetting
+state. Published 0.5.10 has neither this projection nor file activity support.
 
 ## Incremental and Raw behavior
 
@@ -178,27 +237,39 @@ observations; they never authorize source reads.
 
 ## Source clock quality and replay
 
-The current Codex paged runtime explicitly declares legacy Canonical v3. A new
-Host must acknowledge that capability; the genuine published 0.5.9 Host refuses
-the factory. Collection also requires affirmative Server support for nullable
-Canonical ingestion. This is a checkout capability and is not evidence that a
-new package version has been published. See
+The current Codex paged runtime explicitly declares
+`legacyCanonicalProfile: "atape.acp-centered.v5"`. Its factory requires explicit
+v5 Host support and defers source opening until collection. Collection requires
+affirmative Server Canonical v5 support before reading source bytes or advancing
+checkpoint/Raw progress. New CLI discovery explicitly opts into v5; default
+Server discovery retains v2/v3/v4 for published clients. The published 0.5.10
+Host/Server do not support this revision. The 0.5.11 bridge adds supporting
+Host/Server behavior while retaining the earlier official Codex projection. See [v5 ingestion](../api/canonical-ingestion.md#v5-stable-native-tool-identity) and
 [the package contract](package-manifest.md#paged-observation-runtime-export).
 
-The first managed update from the genuine published 0.5.9 parent with active
-Codex collection and this new Adapter candidate is rejected during read-only
+The earlier nullable-clock transition from published 0.5.9 to 0.5.10 declared
+legacy Canonical v3. Its first managed update with active Codex collection
+was rejected during read-only
 preflight, before the Collector is paused. The older parent does not bind the
 new manifest capability into the same scope as the target. This applies even
 when both runtimes use the unchanged capture-state contract. Stop sync before
 upgrading the CLI and matching Adapter bundle; retain checkpoints and Raw
-acknowledgements. The required POSIX release gate executes the genuine published
-0.5.9 console's stopped complete-bundle handoff to the exact 0.5.10-or-later
-candidate, then real installed target Collector replay, no-op and append cycles.
-It verifies preserved configuration, credentials, checkpoint bytes, Raw receipts
-and Stop intent through the caller Interfaces, with Instance minimum CLI 0.5.10
-during upgrade. Distribution and Server HTTP are owned external Test Adapters;
-the controlled source records do not establish live Provider acceptance or an
-upgrade of a personal installation. Follow the
+acknowledgements. Historical POSIX acceptance verified the genuine published
+0.5.9 console's stopped complete-bundle clock transition. Reaching the 0.5.12
+v5 feature requires a stopped entry replacement into the compatible 0.5.11
+bridge first, followed by that bridge's target-owned automatic worker. The 0.5.9 decoder
+does not acquire an unattended clock transition retroactively.
+
+Candidate-specific installed acceptance must verify the real two-stage path,
+preserved configuration, credentials, checkpoint bytes, Raw receipts and Stop
+intent, then replay, no-op and append through the installed target Collector.
+The test explicitly enables automatic updates for the bridge-to-feature leg,
+verifies that the target preserves this preference, then explicitly disables it;
+the historical first leg retains updates-off throughout.
+The [release notes](../releases/v0.5.12.md) own completed candidate evidence.
+Distribution and Server HTTP are owned external Test Adapters; controlled
+source records do not establish live Provider acceptance or an upgrade of a
+personal installation. Follow the
 [stopped Codex upgrade](../cli/setup-and-adapters.md#codex-source-clocks-059-to-0510).
 Other older-parent boundaries remain governed by the
 [upgrade guide](../cli/setup-and-adapters.md#upgrade-the-cli-and-adapters).
@@ -218,13 +289,18 @@ byte-offset coordinate. Append and discovery reordering preserve coordinates;
 removed files retain their ranks so later files cannot reuse them. Capacity
 exhaustion fails explicitly rather than folding distinct records together.
 
-Projection v5 replays supported older Canonical cursors once with stable Event
-IDs and a higher revision floor, including old active Canonical/Raw pages and
-completed progress. Saved Raw acknowledgements are retained. Later pages freeze
+Released projection v5 established source-clock correction and once-only replay
+of supported older Canonical cursors. Current projection v7 inherits that clock
+behavior and replays available older projections to add explicit tool identities and typed file activity
+with stable Event IDs and a higher revision floor, including old active
+Canonical/Raw pages and completed progress. Saved Raw acknowledgements are
+retained. Later pages freeze
 Session source recency and title at that revision. Unavailable source history
 cannot be repaired; previously accepted epochs are not guessed away by the
 Server. Keep checkpoints and use the updated Adapter for forward recovery;
-older Adapters cannot read its projection-v5 cursor.
+older Adapters, including published 0.5.10, cannot read the new v7 cursor. The
+earlier projection-v5 cursor refusal remains part of the 0.5.9-to-0.5.10 clock
+transition evidence; it does not establish v7 rollback compatibility.
 
 First projection of a changed snapshot makes an additional bounded record scan
 to compute source recency after final ownership/format selection. Continuations
@@ -234,7 +310,8 @@ Canonical profile. Existing uncertain-delivery and redaction-policy constraints
 continue to apply. [ADR-0122](../architecture/adr/0122-explicit-legacy-source-clocks.md)
 records the choice and alternatives.
 
-Projection v5 retains v4's cumulative item repair described in
+Current projection v7 retains projection v5's clock correction and v4's
+cumulative item repair described in
 [ADR-0055](../architecture/adr/0055-codex-item-update-revisions.md) and preserves
 unknown tool outcomes. A missing or unrecognized provider status is omitted;
 it does not mean success or failure. Explicit provider outcomes and numeric

@@ -13,7 +13,7 @@ import { startCLIAuthFixture } from "../../../scripts/cli-auth-fixture.mjs"
 import { loadReleaseContract } from "../../../scripts/release-contract.mjs"
 import { verifyToolIdentityRelease } from "./tool-identity-release-gate.mjs"
 import { verifyCodexClockRelease } from "./codex-clock-release-gate.mjs"
-import { verifyActiveBridgeRelease } from "./active-bridge-release-gate.mjs"
+import { acquireActiveBridgeBaselines, acquireRetainedActiveBridgeRelease, verifyActiveBridgeRelease } from "./active-bridge-release-gate.mjs"
 
 const execute = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url))
@@ -80,11 +80,28 @@ try {
   await run(process.execPath, ["--test", fileURLToPath(new URL("tool-identity-release-gate.node.mjs", import.meta.url))], repositoryRoot)
   await verifyToolIdentityRelease({ version: release.version, releaseDirectory })
   await run(process.execPath, ["--test", fileURLToPath(new URL("codex-clock-release-gate.node.mjs", import.meta.url))], repositoryRoot)
-  const clockTransition = await verifyCodexClockRelease({ version: release.version, releaseDirectory })
+  const retainedBridgeRelease = release.releaseChannel === "target-owned" && process.platform !== "win32"
+    ? await acquireRetainedActiveBridgeRelease(join(temporaryRoot, "retained-bridge")) : undefined
+  const clockTransition = await verifyCodexClockRelease({ version: release.version, releaseChannel: release.releaseChannel, releaseDirectory,
+    ...(retainedBridgeRelease ? { bridgeRelease: retainedBridgeRelease } : {}) })
   process.stdout.write(`Codex clock release gate: ${JSON.stringify(clockTransition)}\n`)
   await run(process.execPath, ["--test", fileURLToPath(new URL("active-bridge-release-gate.node.mjs", import.meta.url))], repositoryRoot)
-  const activeBridge = await verifyActiveBridgeRelease({ version: release.version, releaseChannel: release.releaseChannel, releaseDirectory })
-  process.stdout.write(`Active bridge release gate: ${JSON.stringify(activeBridge)}\n`)
+  if (release.releaseChannel === "target-owned" && process.platform !== "win32") {
+    // Download each genuine historical archive once; every installed case still
+    // revalidates its immutable bytes and owns an independent installation.
+    const bridgeRelease = retainedBridgeRelease
+    const baselineArchives = await acquireActiveBridgeBaselines(join(temporaryRoot, "active-bridge-baseline"))
+    for (const faultPoint of [undefined, "control-synced", "first-private-ledger", "before-readiness", "orphan-apply"]) {
+      const startedAt = Date.now()
+      const activeBridge = await verifyActiveBridgeRelease({ version: release.version, releaseChannel: release.releaseChannel,
+        releaseDirectory, bridgeRelease, baselineArchives, ...(faultPoint ? { faultPoint } : {}) })
+      assert.equal(activeBridge.required, true, "Target-owned installed acceptance cannot skip a required case")
+      process.stdout.write(`Active bridge release gate (${faultPoint ?? "full-chain"}, ${Date.now() - startedAt}ms): ${JSON.stringify(activeBridge)}\n`)
+    }
+  } else {
+    const activeBridge = await verifyActiveBridgeRelease({ version: release.version, releaseChannel: release.releaseChannel, releaseDirectory })
+    process.stdout.write(`Active bridge release gate: ${JSON.stringify(activeBridge)}\n`)
+  }
   await verifyChecksums()
   await Promise.all([
     mkdir(projectDirectory, { recursive: true }),

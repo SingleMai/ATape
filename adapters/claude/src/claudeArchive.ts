@@ -1,7 +1,7 @@
 import type { AcpSessionUpdate, AdapterEvent, AdapterOpenContext, AdapterUsage,
   SourceCaptureFrame, SourceCaptureLimits, SourceDiscoveryPage, SourceOpenRequestV2, SourceCaptureViewV2, SourceLegacyMigrationRequest } from "@atape/domain"
 import { Effect, Schema } from "effect"
-import { AcpToolIdentity, CanonicalProfileVersion4, GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, ToolIdentityMetaKey, type AdapterSourceFailure } from "@atape/domain"
+import { AcpFileActivity, AcpToolIdentity, CanonicalProfileVersion5, FileActivityMetaKey, GitAttributionVersion, isBoundedToolValue, MaxSourceFailures, ToolIdentityMetaKey, type AdapterSourceFailure } from "@atape/domain"
 import { createHash } from "node:crypto"
 import { constants } from "node:fs"
 import { lstat, open, readdir, realpath } from "node:fs/promises"
@@ -15,7 +15,7 @@ const MaxDiscoveryEntries = 10_000
 const MaxHeaderBytes = 64 * 1024 * 1024
 const MaxCursorBytes = 1024 * 1024
 const MaxDecodedCursorBytes = 16 * 1024 * 1024
-const ProjectionRevision = 5
+const ProjectionRevision = 7
 const RecordSchema = Schema.Record(Schema.String, Schema.Unknown)
 const decodeRecord = Schema.decodeUnknownSync(RecordSchema)
 const CompactionSchema = Schema.Struct({
@@ -441,7 +441,7 @@ async function validatePendingProjection(handle: Awaited<ReturnType<typeof open>
       fail("cursor", "Claude checkpoint has no admitted pending conversation record.")
     const calls = new Map(context.calls)
     const projected = projectRecord(record, context.order, line.end, sourceObjectId, calls,
-      cursor.projectionRevision === ProjectionRevision ? ProjectionRevision : 4)
+      cursor.projectionRevision === 5 ? 5 : cursor.projectionRevision === 6 ? 6 : cursor.projectionRevision === ProjectionRevision ? ProjectionRevision : 4)
     bindChild(record, calls, delegated, children, cursor.sessionId)
     if (skip > projected.events.length) fail("cursor", "Claude record checkpoint exceeds its event count.")
     return
@@ -565,7 +565,7 @@ function rootTitle(root: RecordValue): string {
 }
 
 function projectRecord(record: RecordValue, order: number, revision: number, sourceObjectId: string,
-  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 = ProjectionRevision, includeIdentity = false): { events: Array<AdapterEvent & { readonly occurredAt: string }>; partial: boolean } {
+  calls: Map<string, SourceCall>, projectionRevision: 4 | 5 | 6 | 7 = ProjectionRevision, includeIdentity = false): { events: Array<AdapterEvent & { readonly occurredAt: string }>; partial: boolean } {
   const events: Array<AdapterEvent & { readonly occurredAt: string }> = []
   let partial = false
   if (!record.uuid || record.isMeta === true || record.type !== "user" && record.type !== "assistant") return { events, partial }
@@ -583,7 +583,7 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
         // Source command envelopes need a provider mapping, not fake user prose.
         if (record.type === "user" && userCommandText(block.text)) { partial = true; continue }
         update = { sessionUpdate: record.type === "user" ? "user_message_chunk" : "agent_message_chunk", content: { type: "text", text: block.text } }
-      } else if (projectionRevision === ProjectionRevision && block?.type === "thinking" && record.type === "assistant" &&
+      } else if (projectionRevision >= 5 && block?.type === "thinking" && record.type === "assistant" &&
         typeof block.thinking === "string" && block.thinking.length > 0) {
         update = { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: block.thinking } }
       } else if (block?.type === "tool_use" && record.type === "assistant" && typeof block.id === "string" && typeof block.name === "string") {
@@ -593,14 +593,15 @@ function projectRecord(record: RecordValue, order: number, revision: number, sou
         // A copied Skill name needs its original field at the redaction
         // boundary. An omitted oversized input cannot justify a new copy.
         const identity = includeIdentity && (block.name !== "Skill" || admittedInput) ? toolIdentity(block) : undefined
-        update = { sessionUpdate: "tool_call", toolCallId: block.id, title: block.name, status: "pending", kind: toolKind(block.name),
+        const activity = includeIdentity ? fileActivity(block, admittedInput) : undefined
+        update = { sessionUpdate: "tool_call", toolCallId: block.id, title: includeIdentity ? toolTitle(block.name) : block.name, status: "pending", kind: toolKind(block.name),
           ...(admittedInput ? { rawInput: block.input } : {}),
-          ...(identity ? { _meta: { [ToolIdentityMetaKey]: identity } } : {}) }
+          ...(identity ? { _meta: { [ToolIdentityMetaKey]: identity, ...(activity === undefined ? {} : { [FileActivityMetaKey]: activity }) } } : {}) }
         partial = true; fidelity = "partial"
       } else if (block?.type === "tool_result" && record.type === "user" && typeof block.tool_use_id === "string") {
         const call = calls.get(block.tool_use_id)
         if (!call || record.sourceToolAssistantUUID !== undefined && record.sourceToolAssistantUUID !== call.uuid) fail("unsupported", "Claude tool result has no unambiguous call.")
-        update = { sessionUpdate: "tool_call_update", toolCallId: block.tool_use_id, title: call.name, status: block.is_error === true ? "failed" : "completed", kind: toolKind(call.name),
+        update = { sessionUpdate: "tool_call_update", toolCallId: block.tool_use_id, title: includeIdentity ? toolTitle(call.name) : call.name, status: block.is_error === true ? "failed" : "completed", kind: toolKind(call.name),
           ...(isBoundedToolValue(block.content) ? { rawOutput: block.content } : {}) }
         partial = true; fidelity = "partial"
       } else if (block?.type === "thinking" && block.thinking === "") {
@@ -662,7 +663,7 @@ function decodeCursor(value: string | null): Cursor | undefined {
     if (Buffer.byteLength(value) > MaxDecodedCursorBytes) throw new Error()
     const c = Schema.decodeUnknownSync(CursorSchema)(JSON.parse(value))
     if (!c.sessionId || !isAbsolute(c.origin) || !Number.isSafeInteger(c.bytes) || c.bytes < 0 || !/^[a-f0-9]{64}$/.test(c.digest)) throw new Error()
-    if (c.projectionRevision !== undefined && ![2, 3, 4, ProjectionRevision].includes(c.projectionRevision)) throw new Error()
+    if (c.projectionRevision !== undefined && ![2, 3, 4, 5, 6, ProjectionRevision].includes(c.projectionRevision)) throw new Error()
     if (c.familyRevision !== undefined && (!Number.isSafeInteger(c.familyRevision) || c.familyRevision < 1)) throw new Error()
     if (c.familyObservedAt !== undefined && timestamp(c.familyObservedAt) !== c.familyObservedAt) throw new Error()
     if (c.children) {
@@ -822,15 +823,37 @@ async function belongsToProject(archive: Archive, root: RecordValue, signal: Abo
 const toolKind = (name: string): "read" | "edit" | "execute" | "search" | "other" =>
   name === "Read" ? "read" : ["Write", "Edit", "MultiEdit"].includes(name) ? "edit" : name === "Bash" ? "execute" : ["Grep", "Glob"].includes(name) ? "search" : "other"
 
+const isFileActivity = Schema.is(AcpFileActivity)
+function fileActivity(block: RecordValue, admittedInput: boolean): AcpFileActivity | null | undefined {
+  const operation = toolKind(block.name as string)
+  if (operation !== "read" && operation !== "edit" && operation !== "search") return undefined
+  const input = object(block.input)
+  if (!admittedInput || !input) return null
+  // Search paths are explicit scopes, never the contents of a pattern or result.
+  const facts = [{ operation, path: operation === "search" ? input.path : input.file_path }]
+  return isFileActivity(facts) ? facts : null
+}
+
 // Only explicit native tool invocations establish an identity. Reading a Skill
 // file, mentioning a tool, or retaining an injected command envelope does not.
+function toolTitle(name: string): string {
+  if (name.trim() === "") return "Claude tool"
+  const bytes = Buffer.from(name)
+  let end = Math.min(bytes.length, 500)
+  while (end < bytes.length && (bytes[end]! & 0xc0) === 0x80) end--
+  return bytes.subarray(0, end).toString("utf8")
+}
 const isToolIdentity = Schema.is(AcpToolIdentity)
 function toolIdentity(block: RecordValue): AcpToolIdentity | undefined {
   if (block.name === "Skill") {
     const identity = { type: "skill", name: object(block.input)?.skill }
     return isToolIdentity(identity) ? identity : undefined
   }
-  if (typeof block.name !== "string" || !block.name.startsWith("mcp__")) return undefined
+  if (typeof block.name !== "string") return undefined
+  if (!block.name.startsWith("mcp__")) {
+    const identity = { type: "tool", name: block.name }
+    return isToolIdentity(identity) ? identity : undefined
+  }
   const separator = block.name.indexOf("__", 5)
   if (separator < 0) return undefined
   const identity = { type: "mcp", server: block.name.slice(5, separator), name: block.name.slice(separator + 2) }
@@ -846,7 +869,7 @@ type CaptureStream = {
   file: string; threadId: string; root: RecordValue; refs: RecordRef[]; nodes: Map<string, CaptureNode>; selected: Set<number>
   latestUsage: Map<string, number>; children: Child[]; proof: SourceProof; events: number; usage: number; observedAt: string
 }
-const captureProfile = "claude.jsonl.active-path.2"
+const captureProfile = "claude.jsonl.active-path.4"
 const emptyNormalization = (): Normalization => ({ records: new Map(), calls: new Map(), leaf: null, order: 0, continuation: undefined, response: undefined })
 const captureFailure = (cause: unknown) => cause instanceof ClaudeArchiveError ? cause : new ClaudeArchiveError({ reason: "io", message: "Could not read the selected Claude source view." })
 function captureCheckpoint(value: string | undefined): CaptureCheckpoint | undefined {
@@ -1073,8 +1096,8 @@ async function indexCaptureStream(file: string, rootIdentity: RecordValue | unde
  * publication. Provider branch selection and source integrity stay here. */
 export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2): Effect.Effect<SourceCaptureViewV2, ClaudeArchiveError> => Effect.tryPromise({
   try: async () => {
-    if (!request.projection.canonicalProfiles?.includes(CanonicalProfileVersion4))
-      fail("unsupported", "Upgrade the ATape CLI to retain normalized tool identities with Canonical v4.")
+    if (!request.projection.canonicalProfiles?.includes(CanonicalProfileVersion5))
+      fail("unsupported", "Upgrade the ATape CLI to retain normalized tool identities with Canonical v5.")
     let readSignal: AbortSignal | undefined
     const started = performance.now(), check = () => {
       request.signal.throwIfAborted()
@@ -1147,7 +1170,7 @@ export const openClaudeCapture = (archive: Archive, request: SourceOpenRequestV2
     const sourceCheckpoint = JSON.stringify({ v: 1, sessionId: origin.sourceId, origin: origin.cwd, rootUuid: origin.originKey, streams: [...proofs.values()] } satisfies CaptureCheckpoint)
     if (Buffer.byteLength(sourceCheckpoint) > MaxCursorBytes) fail("limit", "Claude source checkpoint exceeds its metadata capacity.")
     const observedAt = streams.filter(stream => linkedThreads.has(stream.threadId)).map(stream => stream.observedAt).sort().at(-1)!
-    const header = { profile: captureProfile, canonicalProfileVersion: CanonicalProfileVersion4, origin, sourceCheckpoint,
+    const header = { profile: captureProfile, canonicalProfileVersion: CanonicalProfileVersion5, origin, sourceCheckpoint,
       session: { sourceSessionId: origin.sourceId, title: rootTitle(root.root), summary: "Claude Code conversation", insight: "",
         actor: { name: "User", harness: "Claude Code" }, branch: string(root.root.gitBranch) ?? "", status: "active" as const,
         captureStatus: "partial" as const, updatedAt: observedAt, reportedEventCount: eventCount },

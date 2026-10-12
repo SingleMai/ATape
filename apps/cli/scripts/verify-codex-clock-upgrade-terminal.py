@@ -104,7 +104,8 @@ try:
         assert process.poll() == 0, "Console did not exit: " + transcript[-8000:].decode(errors="replace")
         assert termios.tcgetattr(slave) == before, "terminal attributes were not restored"
         print(json.dumps({"phase": phase, "terminalRestored": True, "exit": process.returncode,
-                          "rejectionVisible": phase == "reject", "versionShown": version if phase == "rebound" else "0.5.9"}))
+                          "rejectionVisible": phase == "reject",
+                          "versionShown": "0.5.9" if phase == "reject" else version}))
 finally:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGKILL)
